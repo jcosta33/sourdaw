@@ -538,10 +538,16 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(saved.rawMatchesProjection).toBe(true);
         const namedLane = await page.evaluate(
             async ({ trackId, projectId }) => {
-                const [{ projectStore }, { getProjectSnapshotKey }, { readNamedProjectJson }] = await Promise.all([
+                const [
+                    { projectStore },
+                    { getProjectSnapshotKey },
+                    { readNamedProjectJson },
+                    { isHydratableProjectData },
+                ] = await Promise.all([
                     import('/src/modules/Project/stores/index.ts'),
                     import('/src/modules/Project/useCases/index.ts'),
                     import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
+                    import('/src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts'),
                 ]);
                 const project = projectStore.value;
                 if (!project || project.projectId !== projectId) {
@@ -551,7 +557,10 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 if (!raw) {
                     throw new Error('Named project JSON is missing after Save');
                 }
-                const data = JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData;
+                const data: unknown = JSON.parse(raw);
+                if (!isHydratableProjectData(data)) {
+                    throw new Error('Named project JSON after Save is not hydratable');
+                }
                 return data.takeLanes?.lanes.find((lane) => lane.trackId === trackId);
             },
             { trackId: recordedTrackId, projectId: saved.projectId }
@@ -657,9 +666,10 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             .click();
         await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
         const named = await page.evaluate(async (name) => {
-            const [{ getRecentProjects }, { readNamedProjectJson }] = await Promise.all([
+            const [{ getRecentProjects }, { readNamedProjectJson }, { isHydratableProjectData }] = await Promise.all([
                 import('/src/modules/Project/useCases/index.ts'),
                 import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
+                import('/src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts'),
             ]);
             const entry = getRecentProjects().find((item) => item.name === name);
             if (!entry) {
@@ -669,10 +679,11 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             if (!raw) {
                 throw new Error('Named project JSON is missing');
             }
-            return {
-                key: entry.key,
-                data: JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData,
-            };
+            const data: unknown = JSON.parse(raw);
+            if (!isHydratableProjectData(data)) {
+                throw new Error('Named recent project JSON is not hydratable');
+            }
+            return { key: entry.key, data };
         }, PROJECT_NAME);
         const namedLane = named.data.takeLanes?.lanes.find((lane) => lane.trackId === recordedTrackId);
         expect(namedLane?.takes.find((take) => take.id === selected.id)?.midiSource).toEqual(selected.midiSource);
@@ -708,6 +719,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 const [
                     { readNamedProjectJson },
                     { applyImportedProjectData },
+                    { isHydratableProjectData },
                     { getCrdtDoc, captureProjectRootIdentity },
                     { trackStore, takeLaneStore, clipSelectionStore },
                     { projectStore, arrangementStore },
@@ -716,6 +728,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 ] = await Promise.all([
                     import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
                     import('/src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts'),
+                    import('/src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts'),
                     import('/src/modules/CrdtDocument/useCases/index.ts'),
                     import('/src/modules/Arrangement/stores/index.ts'),
                     import('/src/modules/Project/stores/index.ts'),
@@ -747,7 +760,12 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 }
                 const results = [];
                 for (const route of ['top', 'saved'] as const) {
-                    const data = JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData;
+                    const data: unknown = JSON.parse(raw);
+                    if (!isHydratableProjectData(data)) {
+                        throw new Error(
+                            'Named JSON fixture is not hydratable before corrupting the frozen MIDI source'
+                        );
+                    }
                     const activeArrangement = data.arrangements?.find((item) => item.id === data.activeArrangementId);
                     const lanes = route === 'top' ? data.takeLanes : activeArrangement?.takeLanes;
                     const take = lanes?.lanes.flatMap((lane) => lane.takes).find((item) => item.midiSource);
@@ -761,7 +779,8 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                     };
                     take.midiSource = { ...malformed, rows: malformedRows };
                     const fileContent = JSON.stringify(data);
-                    const result = await applyImportedProjectData({ data: JSON.parse(fileContent) });
+                    const malformedData: unknown = JSON.parse(fileContent);
+                    const result = await applyImportedProjectData({ data: malformedData });
                     results.push({ route, result, unchanged: snapshot() === beforeImport });
                 }
                 return results;

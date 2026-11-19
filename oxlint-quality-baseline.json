@@ -19875,11 +19875,6 @@
             "count": 6
         }
     },
-    "tests/e2e/midiCycleTakeAcceptance.spec.ts": {
-        "sourdaw-craft/no-external-data-assertion": {
-            "count": 2
-        }
-    },
     "tests/e2e/midiEditor.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
             "count": 3
