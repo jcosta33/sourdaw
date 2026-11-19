@@ -1,3 +1,5 @@
+import { deflateRawSync } from 'node:zlib';
+
 import * as native from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -146,6 +148,10 @@ describe('AutomergeRepository stateless incremental encoding', () => {
         'full',
         'truncated',
         'magic',
+        'checksum',
+        'wrong-chunk',
+        'duplicate-frame',
+        'missing-frame',
         'duplicate',
         'missing',
         'stale',
@@ -155,6 +161,15 @@ describe('AutomergeRepository stateless incremental encoding', () => {
         'null-response',
     ] as const)('falls back to exact captured state for a %s response', async (kind) => {
         const { repository, frontiers, requested } = await setup();
+        const firstRootFrame = Uint8Array.from(native.saveSince(repository.getDoc('root')!, frontiers.get('root')!));
+        if (kind === 'missing-frame') {
+            repository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.second = true;
+            });
+        }
+        expect(native.getChangesMetaSince(repository.getDoc('root')!, frontiers.get('root')!)).toHaveLength(
+            kind === 'missing-frame' ? 2 : 1
+        );
         const expected = new Map(
             repository
                 .getDocIds()
@@ -174,6 +189,24 @@ describe('AutomergeRepository stateless incremental encoding', () => {
         }
         if (kind === 'magic') {
             documents[0]!.chunk[0] = 0;
+        }
+        if (kind === 'checksum') {
+            const root = documents.find((item) => item.id === 'root')!;
+            root.chunk[4] = root.chunk[4]! ^ 1;
+        }
+        if (kind === 'wrong-chunk') {
+            documents[0]!.chunk = documents[1]!.chunk;
+        }
+        if (kind === 'duplicate-frame') {
+            const original = documents[0]!.chunk;
+            const repeated = new Uint8Array(original.length * 2);
+            repeated.set(original);
+            repeated.set(original, original.length);
+            documents[0]!.chunk = repeated;
+        }
+        if (kind === 'missing-frame') {
+            const root = documents.find((item) => item.id === 'root')!;
+            root.chunk = firstRootFrame;
         }
         if (kind === 'duplicate') {
             documents[1] = documents[0]!;
@@ -197,6 +230,7 @@ describe('AutomergeRepository stateless incremental encoding', () => {
         repository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.afterCapture = true;
         });
+        vi.mocked(native.saveSince).mockClear();
         if (kind === 'null-response') {
             held.worker.emitRawMessage(null);
         } else if (kind === 'wrong-type') {
@@ -205,10 +239,72 @@ describe('AutomergeRepository stateless incremental encoding', () => {
             held.worker.emitMessage({ id: held.request.id, type: 'incrementalsEncoded', documents });
         }
         const actual = await capture;
+        expect(native.saveSince).toHaveBeenCalledTimes(held.request.documents.length);
         for (const item of actual.chunks) {
             expect(item.chunk).toEqual(expected.get(item.id));
+            const source = repository.getDoc(item.id)!;
+            const replay = native.loadIncremental(
+                native.clone(native.view(source, frontiers.get(item.id)!)),
+                item.chunk
+            );
+            try {
+                expect(native.getHeads(replay)).toEqual(item.heads);
+                expect(replay).toMatchObject({ first: item.id });
+                expect(Object.hasOwn(replay, 'second')).toBe(kind === 'missing-frame' && item.id === 'root');
+                expect(replay).not.toHaveProperty('afterCapture');
+            } finally {
+                native.free(replay);
+            }
         }
         assertLiveCursors(repository);
+    });
+
+    it.each(['valid', 'bad checksum'] as const)('verifies a compressed frame with %s', async (kind) => {
+        const base = native.from({ value: 0 }, { actor: 'aaaaaaaaaaaaaaaa' });
+        const frontier = native.getHeads(base);
+        const updated = native.change(native.clone(base, { actor: native.getActorId(base) }), (doc) => {
+            doc.value = 1;
+        });
+        const expected = Uint8Array.from(native.saveSince(updated, frontier));
+        // This native fixture's raw and compressed body lengths both fit one unsigned LEB byte.
+        expect(expected[8]).toBe(1);
+        expect(expected[9]).toBe(expected.length - 10);
+        expect(expected.length - 10).toBeLessThan(128);
+        const deflated = deflateRawSync(expected.subarray(10));
+        expect(deflated.byteLength).toBeLessThan(128);
+        const compressed = Uint8Array.from([...expected.subarray(0, 8), 2, deflated.byteLength, ...deflated]);
+        expect(native.decodeChange(compressed).hash).toBe(native.getHeads(updated)[0]);
+        if (kind === 'bad checksum') {
+            compressed[4] = compressed[4]! ^ 1;
+        }
+        const warn = vi.fn();
+        try {
+            const [actual] = await captureNativeIncrementals(
+                new Map([['root', updated]]),
+                new Map([['root', frontier]]),
+                (documents) => {
+                    const encoded = encodeNativeIncrementals(documents);
+                    encoded[0]!.chunk = compressed;
+                    vi.mocked(native.saveSince).mockClear();
+                    return Promise.resolve({ type: 'incrementalsEncoded', documents: encoded });
+                },
+                warn
+            );
+            const usedFallback = kind === 'bad checksum';
+            expect(warn).toHaveBeenCalledTimes(usedFallback ? 1 : 0);
+            expect(native.saveSince).toHaveBeenCalledTimes(usedFallback ? 1 : 0);
+            expect(actual?.chunk).toEqual(usedFallback ? expected : compressed);
+            const replay = native.loadIncremental(native.clone(base), actual!.chunk);
+            try {
+                expect(replay.value).toBe(1);
+                expect(native.getHeads(replay)).toEqual(actual!.heads);
+            } finally {
+                native.free(replay);
+            }
+        } finally {
+            native.free(base);
+            native.free(updated);
+        }
     });
 
     it.each(['replace', 'rollback'] as const)(

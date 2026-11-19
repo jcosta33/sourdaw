@@ -1,11 +1,25 @@
-import { type Doc, type Heads, clone, free, getActorId, getBackend, getHeads } from '@automerge/automerge';
+import {
+    type Doc,
+    type Heads,
+    clone,
+    decodeChange,
+    free,
+    getActorId,
+    getBackend,
+    getChangesMetaSince,
+    getHeads,
+} from '@automerge/automerge';
 
 import {
     encodeNativeIncrementals,
+    retainsActiveFrontier,
     sameNativeHeads,
     type EncodedIncremental,
     type IncrementalEncodingInput,
 } from '../models/NativeIncrementalEncoding';
+
+const INCREMENTAL_VALIDATION_FRAMES_PER_TASK = 8;
+const INCREMENTAL_VALIDATION_BYTES_PER_TASK = 64 * 1024;
 
 function readHeads(value: unknown): value is Heads {
     return (
@@ -47,15 +61,66 @@ function readIncrementalFrameEnd(bytes: Uint8Array, offset: number): number {
     throw new Error('Invalid incremental Worker change length');
 }
 
-/** Framing only: native semantic integrity belongs to the encoder and replay checks. */
-function assertIncrementalFrames(bytes: Uint8Array): void {
-    if (bytes.length === 0) {
-        throw new Error('Incremental Worker omitted changed-document bytes');
+function yieldForIncrementalValidation(): Promise<void> {
+    const channel = new MessageChannel();
+    return new Promise((resolve) => {
+        channel.port1.onmessage = () => {
+            channel.port1.close();
+            channel.port2.close();
+            resolve();
+        };
+        channel.port2.postMessage(undefined);
+    });
+}
+
+function assertCapturedFrame(frame: Uint8Array, hash: string, backend: ReturnType<typeof getBackend>): void {
+    if (frame[8] === 2) {
+        // The decoder recomputes the hash without trusting the stored checksum.
+        const checksum = Array.from(frame.subarray(4, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        if (hash.startsWith(checksum) && decodeChange(frame).hash === hash) {
+            return;
+        }
+    } else {
+        const expected = backend.getChangeByHash(hash);
+        if (expected?.length === frame.length && frame.every((byte, index) => byte === expected[index])) {
+            return;
+        }
     }
+    throw new Error('Incremental Worker change differs from captured history');
+}
+
+/** Verify ordered change membership using the captured document's active history. */
+async function assertIncrementalFrames(bytes: Uint8Array, doc: Doc<unknown>, frontier: Heads): Promise<void> {
+    await yieldForIncrementalValidation();
+    const changes = getChangesMetaSince(doc, retainsActiveFrontier(doc, frontier) ? frontier : []);
+    const backend = getBackend(doc);
     let offset = 0;
-    while (offset < bytes.length) {
+    let batchFrames = 0;
+    let batchBytes = 0;
+    for (const { hash } of changes) {
+        if (offset === bytes.length) {
+            throw new Error('Incremental Worker omitted captured changes');
+        }
         assertIncrementalFrameHeader(bytes, offset);
-        offset = readIncrementalFrameEnd(bytes, offset);
+        const end = readIncrementalFrameEnd(bytes, offset);
+        const frame = bytes.subarray(offset, end);
+        // Compressed and oversized frames each get their own task.
+        const cost = frame[8] === 2 ? INCREMENTAL_VALIDATION_BYTES_PER_TASK : frame.byteLength;
+        if (
+            batchFrames >= INCREMENTAL_VALIDATION_FRAMES_PER_TASK ||
+            (batchBytes > 0 && batchBytes + cost > INCREMENTAL_VALIDATION_BYTES_PER_TASK)
+        ) {
+            await yieldForIncrementalValidation();
+            batchFrames = 0;
+            batchBytes = 0;
+        }
+        assertCapturedFrame(frame, hash, backend);
+        batchFrames++;
+        batchBytes += cost;
+        offset = end;
+    }
+    if (offset !== bytes.length) {
+        throw new Error('Incremental Worker returned extra changes');
     }
 }
 
@@ -90,22 +155,24 @@ function readIncrementalResponseDocuments(response: unknown, expectedCount: numb
     return response.documents;
 }
 
-function validateEncodedIncrementals(
+async function validateEncodedIncrementals(
     response: unknown,
-    captured: readonly IncrementalEncodingInput[]
-): EncodedIncremental[] {
+    captured: readonly IncrementalEncodingInput[],
+    clones: ReadonlyMap<string, Doc<unknown>>
+): Promise<EncodedIncremental[]> {
     const entries = readIncrementalResponseDocuments(response, captured.length);
-    const expected = new Map(captured.map((entry) => [entry.id, entry.heads]));
+    const expected = new Map(captured.map((entry) => [entry.id, entry]));
     const result: EncodedIncremental[] = [];
     for (const entry of entries) {
         if (!isEncodedIncremental(entry)) {
             throw new Error('Invalid incremental encoding response document');
         }
-        const heads = expected.get(entry.id);
-        if (!heads || !sameNativeHeads(heads, entry.heads)) {
+        const original = expected.get(entry.id);
+        const doc = clones.get(entry.id);
+        if (!original || !doc || !sameNativeHeads(original.heads, entry.heads)) {
             throw new Error('Incremental encoding response heads changed');
         }
-        assertIncrementalFrames(entry.chunk);
+        await assertIncrementalFrames(entry.chunk, doc, original.frontier);
         expected.delete(entry.id);
         result.push({ id: entry.id, heads: entry.heads, chunk: entry.chunk });
     }
@@ -123,7 +190,7 @@ export async function captureNativeIncrementals(
     warn: (error: unknown) => void
 ): Promise<EncodedIncremental[]> {
     const captured: IncrementalEncodingInput[] = [];
-    const clones: Doc<unknown>[] = [];
+    const clones = new Map<string, Doc<unknown>>();
     const unchanged: EncodedIncremental[] = [];
     try {
         for (const [id, doc] of documents) {
@@ -135,20 +202,20 @@ export async function captureNativeIncrementals(
                 continue;
             }
             const encoding = clone(doc, { actor: getActorId(doc) });
-            clones.push(encoding);
+            clones.set(id, encoding);
             captured.push({ id, heads, frontier, seed: Uint8Array.from(getBackend(encoding).saveNoCompress()) });
         }
         if (captured.length === 0) {
             return unchanged;
         }
         try {
-            return [...unchanged, ...validateEncodedIncrementals(await request(captured), captured)];
+            return [...unchanged, ...(await validateEncodedIncrementals(await request(captured), captured, clones))];
         } catch (error) {
             warn(error);
             return [...unchanged, ...encodeNativeIncrementals(captured)];
         }
     } finally {
-        for (const doc of clones) {
+        for (const doc of clones.values()) {
             free(doc);
         }
     }
