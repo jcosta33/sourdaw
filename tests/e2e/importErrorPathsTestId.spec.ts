@@ -8,7 +8,7 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 //
 // importMidiFile (Arrangement use case) catches a parse failure from
 // readMidiFile and calls notifyUser(`Failed to import "${file.name}" -
-// invalid or corrupt MIDI file`, 'error') — rendered as a role="alert" toast.
+// invalid or corrupt MIDI file`, 'error') — announced through the alert region.
 // The track count must not rise.
 test.describe('Import error paths — corrupt MIDI rejected', () => {
     test.beforeEach(async ({ page }) => {
@@ -44,12 +44,14 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
             buffer: Buffer.from('this is not a midi file'.repeat(8)),
         });
 
-        // The error toast renders (role="alert") naming the file and the
+        // The error toast renders naming the file and the
         // corrupt-MIDI reason.
-        const toast = page.getByRole('alert');
+        const toast = page.getByTestId('notification-toast');
         await expect(toast).toBeVisible({ timeout: 10_000 });
         await expect(toast).toContainText(/corrupt\.mid/i);
         await expect(toast).toContainText(/invalid or corrupt MIDI file/i);
+
+        await expect(page.getByRole('alert')).toContainText(/corrupt\.mid.*invalid or corrupt MIDI file/i);
 
         // No track was added by the failed import — the count is unchanged.
         await expect(trackList.getByRole('row')).toHaveCount(tracksAfterAdd);
