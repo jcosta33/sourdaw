@@ -2312,6 +2312,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
     };
 
+    const reanchorPendingWriteBases = (baseValue: TData | null): void => {
+        if (pendingWritesByOwner.size === 0) {
+            return;
+        }
+        const baseDocumentPresence = captureBaseDocumentPresence();
+        for (const remaining of pendingWritesByOwner.values()) {
+            remaining.baseValue = baseValue;
+            remaining.baseDocumentPresence = baseDocumentPresence;
+            remaining.flushBaseUnknown = false;
+        }
+    };
+
     const settleStaleCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
         if (!releasePendingWrite(pending)) {
             return;
@@ -2319,12 +2331,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         const visibleBefore = cachedValue;
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         committedSetRevision = Math.max(committedSetRevision, claimRevision);
-        const baseDocumentPresence = captureBaseDocumentPresence();
-        for (const remaining of pendingWritesByOwner.values()) {
-            remaining.baseValue = committedCacheValue;
-            remaining.baseDocumentPresence = baseDocumentPresence;
-            remaining.flushBaseUnknown = false;
-        }
+        reanchorPendingWriteBases(committedCacheValue);
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
             notifyDeferredChange();
@@ -2517,12 +2524,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             absencePresentation = 'default';
         }
         acceptedAuthorityEpoch += 1;
-        const baseDocumentPresence = captureBaseDocumentPresence();
-        for (const remaining of pendingWritesByOwner.values()) {
-            remaining.baseValue = projected;
-            remaining.baseDocumentPresence = baseDocumentPresence;
-            remaining.flushBaseUnknown = false;
-        }
+        reanchorPendingWriteBases(projected);
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
             notifyDeferredChange();
