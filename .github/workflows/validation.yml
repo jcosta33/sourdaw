@@ -530,13 +530,10 @@ jobs:
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
-      # Real-render specs launch Chromium from inside a loaded shard. Without
-      # the pinned Playwright build they fall back to the image's full Chrome,
-      # whose cold start exceeded a 120s warm-up under shard load (run
-      # 42099824047). The isolated account installs it into its own HOME,
-      # bounded like the Browser AI leg's install in heavy-gates.yml.
+      # The 125.7 MiB shell download reached only 20% after 85s in run
+      # 44331696186. Playwright times out idle connections after 30s.
       - name: Install Chromium
-        timeout-minutes: 2
+        timeout-minutes: 10
         run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
       # Keep the shard within the repository's two-worker test limit.
