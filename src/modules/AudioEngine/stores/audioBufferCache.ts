@@ -31,7 +31,6 @@ import {
     isValidPreparedSerializedAudioBuffer,
     type PreparedSerializedAudioBuffer,
 } from '../models/SerializedAudioBuffer';
-import { readAudioBufferDurabilityInWorker } from '../repositories/readAudioBufferDurabilityInWorker';
 
 import { isAudioBufferHeld } from './audioBufferResidencyHolds';
 import {
@@ -274,48 +273,19 @@ function isProtectedFromCollection(metadata: BufferMeta): boolean {
 let dbPromise: Promise<IDBDatabase> | null = null;
 let dbConnectionGeneration = 0;
 
-/** `versionchange` means another context is upgrading or deleting this database
- * and is blocked on our connection. Closing is necessary but not sufficient:
- * the very next timeline paint calls `refreshAccessTime` -> `openDb()`, which
- * would reconnect within a frame and re-block the upgrade it just yielded to.
- * So the close latches, and `openDb()` refuses for the rest of the page's life.
+/** A `versionchange` closes the connection and prevents reopening until reload.
+ * The next access-time refresh would otherwise re-block the upgrade, and only
+ * a reload can pick up the code compiled against the new schema.
  *
- * Playback and waveform drawing are unaffected, because the decoded buffers
- * live in the in-memory `cache` and nothing here touches it. Persistence,
- * removal, the access-time refresh and the store clear degrade to a warning.
+ * Resident playback and waveform drawing still work. Persistence, removal and
+ * clearing warn, and access-time refresh exits early. Exports still write a
+ * file, but evicted PCM contributes to `missingBufferCount` and the export
+ * warning because the disk read for it is unavailable while latched.
  *
- * It is **not** true that only durability pauses. `exportBuffers` resolves
- * ids the LRU has evicted by reading them back out of IDB, and that read is
- * now permanently unavailable, so a `.sourdaw` export taken while latched
- * omits the PCM for every non-resident id. The in-memory cache holds 64
- * entries, so any project past that exports short. It is reported rather than
- * silent — the omissions become `buildProjectData`'s `missingBufferCount` and
- * `exportProjectFile` raises a user-facing warning — but the file is still
- * written, and no reload un-writes a file already on disk.
- *
- * The `DB_VERSION` 1 -> 2 bump for the metadata store is what makes that
- * reachable: until it, no build ever asked for a version another build did not
- * already have, so nothing could fire `versionchange` and this whole latch was
- * inert. It is live from that version on, for anyone with two tabs open across
- * the upgrade. A gate on the load side is queued separately and is not this
- * change; what is not still outstanding is the refresh half — `refreshAccessTime`
- * reads the latch on entry and returns, so the once-per-id-per-window warning
- * this comment used to warn about does not happen.
- *
- * Nothing resets this in-process on purpose. The upgrade completing is not an
- * event this context can observe, and the reason to reconnect afterwards would
- * be to talk to a schema this module was not compiled against. A reload
- * re-evaluates this module against the new schema, which is the only point at
- * which reconnecting is correct.
- *
- * The latch is read on entry to `openDb()`, so it cannot rescue a caller that
- * already holds a resolved connection when `versionchange` fires — that one
- * still gets `InvalidStateError` off the closed handle. Nothing in this file
- * is exposed to that today, and the reason is an invariant with no guard on
- * it: direct reads open their transaction without another await.
- * `versionchange` is delivered as a task while the post-`await` continuation
- * is a microtask. The separate durability Worker opens its own transaction,
- * and its main-thread caller rechecks the latch after the awaited reply. */
+ * Direct reads start their transaction in the microtask after `openDb()`,
+ * before another `versionchange` task. A supplied durability reader may span
+ * tasks, so its caller rechecks the latch before accepting the result or
+ * using the original connection for fallback. */
 let versionChangeLatched = false;
 
 const VERSION_CHANGE_LATCH_MESSAGE = 'IDB connection surrendered to a versionchange; reload to reconnect';
@@ -1996,12 +1966,23 @@ export function authenticateCheckpointAudioRetentionReceipt(
     return authority;
 }
 
-async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
+type AudioDurabilityReader = (ids: readonly string[]) => Promise<readonly (string | null)[] | undefined>;
+
+type AudioDurabilityReadOptions = {
+    readRevisions: AudioDurabilityReader | undefined;
+    lifecycleWitness?: ReturnType<typeof preparedAudioBufferLifecycle.captureProjectDurabilityWitness>;
+    settlementsSettled?: boolean;
+};
+
+async function readDurableAudioBufferRevisions(
+    ids: readonly string[],
+    readRevisions: AudioDurabilityReader | undefined
+): Promise<ReadonlyMap<string, string | null>> {
     if (ids.length === 0) {
         return new Map();
     }
     const database = await openDb();
-    const offThread = await readAudioBufferDurabilityInWorker(ids);
+    const offThread = await readRevisions?.(ids);
     if (versionChangeLatched) {
         throw new Error(VERSION_CHANGE_LATCH_MESSAGE);
     }
@@ -2015,8 +1996,11 @@ async function ensureDurableAudioBuffersInScope(
     requiredIds: readonly string[],
     admissionWitness: AudioStorageWriteAdmissionWitness,
     scope: ProjectAudioStorageLockScope,
-    lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
-    settlementsSettled = false
+    {
+        readRevisions,
+        lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
+        settlementsSettled = false,
+    }: AudioDurabilityReadOptions
 ): Promise<CachedAudioBuffersDurabilityResult> {
     if (
         !settlementsSettled &&
@@ -2113,7 +2097,7 @@ async function ensureDurableAudioBuffersInScope(
         if (recovery === 'failed') {
             return failAndRelease(requiredIds);
         }
-        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds);
+        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds, readRevisions);
         if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
@@ -2197,13 +2181,14 @@ async function ensureDurableAudioBuffersInScope(
 
 function ensureDurableAudioBuffers(
     ids: readonly string[],
-    scope?: ProjectAudioStorageLockScope
+    scope?: ProjectAudioStorageLockScope,
+    readRevisions?: AudioDurabilityReader
 ): Promise<CachedAudioBuffersDurabilityResult> {
     const requiredIds = [...new Set(ids)];
     const admissionWitness = captureAudioStorageWriteAdmission(requiredIds);
     if (scope !== undefined) {
         return runInProjectAudioStorageLock(scope, () =>
-            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope)
+            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope, { readRevisions })
         );
     }
     const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
@@ -2216,7 +2201,11 @@ function ensureDurableAudioBuffers(
                 return Promise.resolve({ status: 'superseded' as const });
             }
             return runInProjectAudioStorageLock(activeScope, () =>
-                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, lifecycleWitness, true)
+                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, {
+                    readRevisions,
+                    lifecycleWitness,
+                    settlementsSettled: true,
+                })
             );
         });
     if (

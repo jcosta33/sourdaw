@@ -1,3 +1,4 @@
+import { readAudioBufferDurabilityInWorker } from '../repositories/readAudioBufferDurabilityInWorker';
 import { audioBufferCache } from '../stores/audioBufferCache';
 
 import type { ProjectAudioStorageLockScope } from '#/infra/storage/withProjectAudioStorageLock';
@@ -23,5 +24,5 @@ export function ensureCachedAudioBuffersDurable(
     requiredAudioBufferIds: readonly string[],
     scope?: ProjectAudioStorageLockScope
 ): Promise<CachedAudioBuffersDurabilityResult> {
-    return audioBufferCache.ensureDurable(requiredAudioBufferIds, scope);
+    return audioBufferCache.ensureDurable(requiredAudioBufferIds, scope, readAudioBufferDurabilityInWorker);
 }
