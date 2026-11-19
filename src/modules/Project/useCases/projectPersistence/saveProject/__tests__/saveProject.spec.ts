@@ -329,17 +329,38 @@ describe('saveProject', () => {
         expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
     });
 
-    it('bounds same-owner stale retries under one cancellation deadline', async () => {
+    it('limits same-owner stale preparation to three attempts with independent deadlines', async () => {
+        const timeout = vi.spyOn(AbortSignal, 'timeout');
         vi.mocked(command.executeAppAction).mockRejectedValue(new ProjectSavePreparationStaleError());
 
         await expect(saveProject()).resolves.toBe(false);
 
-        const options = vi.mocked(command.executeAppAction).mock.calls.map(([, attempt]) => attempt);
-        expect(options).toHaveLength(3);
-        expect(options[0]?.signal).toBeInstanceOf(AbortSignal);
-        expect(options.every((attempt) => attempt?.signal === options[0]?.signal)).toBe(true);
+        const signals = vi.mocked(command.executeAppAction).mock.calls.map(([, attempt]) => attempt?.signal);
+        expect(timeout.mock.calls).toEqual([[30_000], [30_000], [30_000]]);
+        expect(signals).toHaveLength(3);
+        expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+        expect(new Set(signals).size).toBe(3);
         expect(mocks.buildProjectData).not.toHaveBeenCalled();
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a stale preparation when its deadline has expired', async () => {
+        const deadline = new AbortController();
+        const elapsed = new DOMException('Save preparation timed out', 'TimeoutError');
+        vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
+        vi.mocked(command.executeAppAction).mockImplementationOnce(async () => {
+            deadline.abort(elapsed);
+            throw new ProjectSavePreparationStaleError();
+        });
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(command.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.loggerWarn).toHaveBeenCalledWith('[saveProject] Project persistence failed:', elapsed);
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
     });
 
     it('does not retry a dispatch with no authoritative committed observer', async () => {
