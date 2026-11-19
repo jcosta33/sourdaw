@@ -140,21 +140,15 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
         return counters;
     }
 
-    function measureStringify(change: () => void): number {
-        let stringifyCalls = 0;
-        const originalStringify = JSON.stringify.bind(JSON);
+    function recordStringifyInputs(change: () => void): unknown[] {
         const spy = vi.spyOn(JSON, 'stringify');
-        spy.mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
-            stringifyCalls += 1;
-            return originalStringify(...args);
-        });
         try {
             change();
             flushAutomergeStorageWrites();
+            return spy.mock.calls.map(([input]) => input);
         } finally {
             spy.mockRestore();
         }
-        return stringifyCalls;
     }
 
     it('serializes fewer slots for a local write than for a full re-projection', () => {
@@ -163,41 +157,25 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
             throw new Error('transportStore must hold its seeded default');
         }
 
-        const localWriteCost = measureStringify(() => {
+        const localWriteInputs = recordStringifyInputs(() => {
             transportStore.set({ ...transport, tempo: 118 });
         });
-        const fullProjectionCost = measureStringify(() => {
+        const nativeTransport = automergeRepository.getDoc('root')?.transport;
+        const fullProjectionInputs = recordStringifyInputs(() => {
             automergeRepository.changeDoc<Record<string, unknown>>('root', (doc) => {
                 doc.externalSlot = { touched: true };
             });
         });
 
-        // Measured on this harness: 3 serializations for the local write —
-        // its authored `toDocSafe` round-trip, the fresh terminal decode, and
-        // one base-capture presence snapshot — against 67 for the full
-        // re-projection, which is what every local write used to pay, and
-        // grows with the project because each slot serializes its whole
-        // payload.
-        //
-        // The #4858 ownership guard's base-versus-desired compare (one
-        // stringify per side of a composite slot) does not run here: the
-        // transport store's only baseline is its module-init seed, retained as
-        // a deferred baseline before any port existed, and a write derived
-        // from that baseline flushes with an unknown base (#5268). A write
-        // whose base is committed or hydrated authority pays both sides of
-        // that compare again.
-        //
-        // The presence snapshot (the #4962 flush guard) reads and serializes
-        // the document slot beside the base: once at pending creation and
-        // once at each commit re-anchor of surviving pendings. In this window
-        // only the commit re-anchor pays a stringify — the write's pending is
-        // created fresh and the new project document holds no transport slot
-        // yet, so that capture reads an absence without serializing. Seeding
-        // the slot at project creation would move this pin to 6, by the
-        // capture's own design.
-        expect(localWriteCost).toBe(3);
-        expect(localWriteCost).toBeLessThan(fullProjectionCost);
-        expect(fullProjectionCost).toBeGreaterThanOrEqual(projectSlotProjections.length);
+        // The authored slot and the terminal decode envelope are the whole
+        // local cost. The module-init seed leaves the write an unknown base
+        // (#5268), pending creation sees an absent slot, and this commit
+        // leaves no pending successors that need a new presence snapshot.
+        expect(nativeTransport).toMatchObject({ tempo: 118 });
+        expect(transportStore.value?.tempo).toBe(118);
+        expect(localWriteInputs).toEqual([nativeTransport, [nativeTransport]]);
+        expect(localWriteInputs.length).toBeLessThan(fullProjectionInputs.length);
+        expect(fullProjectionInputs.length).toBeGreaterThanOrEqual(projectSlotProjections.length);
     });
 
     it('dispatches no slot re-projection for a local single-slot write', () => {

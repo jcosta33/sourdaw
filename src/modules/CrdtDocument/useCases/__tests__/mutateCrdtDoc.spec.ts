@@ -34,13 +34,16 @@ describe('mutateCrdtDoc', () => {
         );
     });
 
-    it('forwards the canonical description and bounded policy only through private preparation', () => {
+    it.each([
+        { scope: 'a whole slot', ownedPath: undefined },
+        { scope: 'a nested path', ownedPath: ['rows', 'selected'] as const },
+    ])('forwards canonical settings for $scope only through private preparation', ({ ownedPath }) => {
         const changeFn = vi.fn();
         const canonicalMutation = {
             kind: 'canonical-json-slot-v1' as const,
             key: 'slot',
             baseValue: null,
-            value: { count: 1 },
+            value: { rows: { selected: { count: 1 } } },
         };
         const input = {
             id: 'root',
@@ -49,6 +52,7 @@ describe('mutateCrdtDoc', () => {
             localSlots: ['slot'],
             canonicalMutation,
             preparationPolicy: 'bounded-native-sequence-v1' as const,
+            ownedPath,
         };
 
         cloneProspectiveCrdtMutation(input);
@@ -62,7 +66,7 @@ describe('mutateCrdtDoc', () => {
             undefined,
             ['slot'],
             canonicalMutation,
-            'bounded-native-sequence-v1'
+            { preparationPolicy: 'bounded-native-sequence-v1', ownedPath }
         );
         expect(automergeRepository.changeDoc).toHaveBeenCalledExactlyOnceWith(
             'root',

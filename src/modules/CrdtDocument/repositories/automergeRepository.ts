@@ -26,7 +26,6 @@ import {
     getCurrentAutomergeStorageMutationOwner,
     captureAutomergeStorageMutationAuthority,
     runOutsideAutomergeStoragePublisherScope,
-    type AutomergeStoragePreparationOptions,
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
@@ -50,22 +49,9 @@ import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
 import { captureNativeIncrementals } from './captureNativeIncrementals';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
+import { resolveNativePreparationSettings, type NativePreparationSettings } from './resolveNativePreparationSettings';
 
 type AnyDoc = Record<string, unknown>;
-
-type NativePreparationSettings = {
-    preparationPolicy?: ProspectiveMutationWorkerRequest['preparationPolicy'];
-    ownedPath?: AutomergeStoragePreparationOptions['ownedPath'];
-};
-
-function resolveNativePreparationSettings(
-    settings: NativePreparationSettings | NativePreparationSettings['preparationPolicy']
-): NativePreparationSettings {
-    if (typeof settings === 'string') {
-        return { preparationPolicy: settings };
-    }
-    return settings ?? {};
-}
 
 type ProspectiveValidation<TDoc> = {
     validateDocument: (document: Doc<TDoc>) => void;
