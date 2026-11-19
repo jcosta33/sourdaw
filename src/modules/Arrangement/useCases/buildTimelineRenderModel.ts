@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
-import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
+import { type Preferences } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import {
     DEFAULT_TEMPO_BPM,
@@ -31,7 +31,7 @@ import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
-import { getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
+import { getTimelineTrackHeightMode, getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
@@ -237,13 +237,12 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     return { ...cachedModel, tracks, dataDirty: true };
 }
 
-export function buildTimelineRenderModel(heightMode?: Preferences['trackHeight']): TimelineRenderModel {
+export function buildTimelineRenderModel(trackHeightMode = getTimelineTrackHeightMode()): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
     const transportState = transportStore.value;
     const midiState = midiStore.value;
     const ws = clipSelectionStore.value;
-    const trackHeightMode = heightMode ?? preferencesStore.value?.trackHeight ?? 'normal';
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;

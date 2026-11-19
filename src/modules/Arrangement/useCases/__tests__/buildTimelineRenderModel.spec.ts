@@ -1018,6 +1018,10 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
         expect(hitTestClip(10 * 12, 180)).toEqual({ trackId: 'lower', clipId: 'main-clip' });
         expect(trackStoreMock.value?.tracks).toBe(fixture);
         expect(fixture.map(({ height }) => height)).toEqual([64, 80, 48]);
+
+        const { tracks: forcedNormal } = buildTimelineRenderModel('normal');
+        expect(forcedNormal.map(({ height }) => height)).toEqual([26, 80, 48]);
+        expect(buildTimelineRenderModel().tracks.map(({ height }) => height)).toEqual([26, 120, 72]);
     });
 });
 
