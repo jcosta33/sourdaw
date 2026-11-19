@@ -175,6 +175,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setClipFade: noSupportPath,
     importMidiFile: noSupportPath,
     normalizeClip: noSupportPath,
+    relinkClipAudioSources: noSupportPath,
     reverseClip: noSupportPath,
     restoreReversedClip: noSupportPath,
     glueClips: noSupportPath,

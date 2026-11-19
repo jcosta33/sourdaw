@@ -7903,14 +7903,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/relinkClipAudioSource.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts": {
         "eslint/complexity": {
             "count": 1
@@ -17307,9 +17299,6 @@
             "count": 2
         },
         "sourdaw-craft/no-complex-ternary-branch": {
-            "count": 1
-        },
-        "sourdaw-craft/no-control-flow-ternary": {
             "count": 1
         },
         "typescript/no-non-null-assertion": {

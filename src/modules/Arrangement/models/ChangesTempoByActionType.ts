@@ -157,6 +157,7 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     setClipFade: false,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,

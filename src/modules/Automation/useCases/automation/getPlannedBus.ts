@@ -242,6 +242,7 @@ const plannedBusByActionType: {
     setClipFade: unchangedBus,
     importMidiFile: unchangedBus,
     normalizeClip: unchangedBus,
+    relinkClipAudioSources: unchangedBus,
     reverseClip: unchangedBus,
     restoreReversedClip: unchangedBus,
     glueClips: unchangedBus,

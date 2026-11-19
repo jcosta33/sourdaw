@@ -157,6 +157,7 @@ export const projectsTakeLaneStateByActionType: { readonly [Type in AppActionTyp
     setClipFade: false,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,
