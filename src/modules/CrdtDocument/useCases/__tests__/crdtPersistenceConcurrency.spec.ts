@@ -61,6 +61,26 @@ async function importContext(): Promise<PersistenceContext> {
     };
 }
 
+async function installContextSnapshot(
+    context: PersistenceContext,
+    snapshot: CrdtPersistenceSnapshot,
+    shouldCommit: () => boolean
+) {
+    const bundle = snapshot.bundle;
+    if (!bundle) {
+        throw new Error('Expected a snapshot bundle to load');
+    }
+    let durableHeadsByDoc: Map<string, string[]> | undefined;
+    const loaded = await context.repository.automergeRepository.loadAll({
+        bundle,
+        shouldCommit,
+        onInstalled: (heads) => {
+            durableHeadsByDoc = heads;
+        },
+    });
+    return { loaded, snapshot, durableHeadsByDoc };
+}
+
 async function loadContextSnapshot({
     context,
     snapshot,
@@ -68,17 +88,9 @@ async function loadContextSnapshot({
     context: PersistenceContext;
     snapshot: CrdtPersistenceSnapshot;
 }): Promise<void> {
-    const bundle = snapshot.bundle;
-    if (!bundle) {
-        throw new Error('Expected a snapshot bundle to load');
-    }
-    const loaded = await context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
-        const committed = await context.repository.automergeRepository.loadAll({
-            bundle,
-            shouldCommit,
-        });
-        return { loaded: committed, snapshot };
-    });
+    const loaded = await context.queue.runCrdtPersistenceLoad(({ shouldCommit }) =>
+        installContextSnapshot(context, snapshot, shouldCommit)
+    );
     expect(loaded).toBe(true);
 }
 
@@ -289,13 +301,15 @@ describe('CRDT persistence across independent queue contexts', () => {
         const transaction = await persistence.waitForTransaction('readwrite', 2);
         expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
         transaction.complete();
-        // An ordinary project load supersedes the in-flight generation without
-        // pending a replacement: the live documents already are the durable
-        // project, so this load only re-adopts its authority.
-        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
-            loaded: true,
-            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
-        }));
+        // An ordinary project load installs the exact committed snapshot and
+        // supplies its durable frontier to the successor generation.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
+            const durable = await context.snapshot.loadPersistenceSnapshotFromIdb();
+            if (!durable) {
+                throw new Error('Expected the committed snapshot during supersession');
+            }
+            return installContextSnapshot(context, durable, shouldCommit);
+        });
 
         await expect(superseded).resolves.toMatchObject({
             status: 'superseded',
