@@ -18788,9 +18788,6 @@
         },
         "typescript/no-non-null-assertion": {
             "count": 1
-        },
-        "typescript/no-unsafe-type-assertion": {
-            "count": 1
         }
     },
     "src/modules/WorkspaceShell/presentations/views/MidiStatusBadge.tsx": {

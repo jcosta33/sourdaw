@@ -311,7 +311,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                 onDragLeave={
                     view === 'home'
                         ? (e) => {
-                              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              const relatedTarget = e.relatedTarget;
+                              if (!(relatedTarget instanceof Node) || !e.currentTarget.contains(relatedTarget)) {
                                   setIsDragOver(false);
                               }
                           }
