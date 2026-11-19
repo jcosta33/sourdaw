@@ -1,6 +1,6 @@
 import { type DecodedChange } from '@automerge/automerge';
 
-export const NATIVE_SEQUENCE_MAX_OPERATIONS = 768;
+export const NATIVE_SEQUENCE_MAX_OPERATIONS = 384;
 export const NATIVE_SEQUENCE_MAX_BYTES = 65_536;
 /** Source authority is read in separate host tasks, without exporting the entire native history. */
 export const NATIVE_SEQUENCE_HISTORY_BATCH_SIZE = 128;

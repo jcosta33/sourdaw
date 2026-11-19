@@ -80,7 +80,7 @@ describe('private canonical materialization Worker runtime', () => {
         let replay = clone(initial, { actor });
         for (const bytes of result.changes) {
             expect(bytes.byteLength).toBeLessThanOrEqual(65_536);
-            expect(decodeChange(bytes).ops.length).toBeLessThanOrEqual(768);
+            expect(decodeChange(bytes).ops.length).toBeLessThanOrEqual(384);
             [replay] = applyChanges(replay, [bytes]);
         }
         expect(replay).toEqual({ slot: { text: 'native sequence '.repeat(300) } });

@@ -884,16 +884,23 @@ describe('private Project Save preparation with real native storage', () => {
         const collect = (entries: readonly PerformanceEntry[]): void => {
             for (const entry of entries) {
                 if (entry.name.startsWith('automerge-')) {
-                    timings.push({
-                        name: entry.name,
-                        duration: entry.duration,
-                        detail: 'detail' in entry ? entry.detail : undefined,
-                    });
+                    const detail: unknown = 'detail' in entry ? entry.detail : undefined;
+                    timings.push({ name: entry.name, duration: entry.duration, detail });
                     if (
                         (entry.name.includes('prospective-') || entry.name.includes('materialization-handoff')) &&
                         entry.duration >= 50
                     ) {
-                        cancellation.abort(new Error(`Actual native preparation phase exceeded50ms: ${entry.name}`));
+                        const primaryKey = isRecord(detail) ? detail.primaryKey : undefined;
+                        const sequenceIndex = isRecord(detail) ? detail.sequenceIndex : undefined;
+                        const attribution = JSON.stringify({
+                            primaryKey: typeof primaryKey === 'string' ? primaryKey : null,
+                            sequenceIndex: typeof sequenceIndex === 'number' ? sequenceIndex : null,
+                        });
+                        cancellation.abort(
+                            new Error(
+                                `Actual native preparation phase reached 50 ms: ${entry.name} took ${entry.duration} ms ${attribution}`
+                            )
+                        );
                     }
                 }
             }

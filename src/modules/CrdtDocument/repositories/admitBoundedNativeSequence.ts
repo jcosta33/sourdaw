@@ -145,10 +145,12 @@ function assertDecodedAuthority(
     return { operationCount, canonicalEncoding };
 }
 
+type SequenceChangeAuthority = Pick<DecodedChange, 'hash' | 'actor' | 'deps' | 'message' | 'time'>;
+
 type AppliedSequenceExpectation = {
     actor: string;
     previousHeads: Heads;
-    decoded: DecodedChange;
+    authority: SequenceChangeAuthority;
     sequence: number;
     startOp: number;
     span: number;
@@ -156,16 +158,16 @@ type AppliedSequenceExpectation = {
 
 function matchesAppliedSequenceHistory(addition: ChangeMetadata, expected: AppliedSequenceExpectation): boolean {
     return (
-        addition.hash === expected.decoded.hash &&
-        addition.actor === expected.decoded.actor &&
+        addition.hash === expected.authority.hash &&
+        addition.actor === expected.authority.actor &&
         isAbsentNativeAuthor(addition.author) &&
         !hasOpaqueNativeMetadata(addition) &&
         addition.seq === expected.sequence &&
         addition.startOp === expected.startOp &&
         addition.maxOp === expected.startOp + expected.span - 1 &&
-        nativeChangeMessage(addition.message) === nativeChangeMessage(expected.decoded.message) &&
-        addition.time === expected.decoded.time &&
-        sameNativeHeads(addition.deps, expected.decoded.deps)
+        nativeChangeMessage(addition.message) === nativeChangeMessage(expected.authority.message) &&
+        addition.time === expected.authority.time &&
+        sameNativeHeads(addition.deps, expected.authority.deps)
     );
 }
 
@@ -262,7 +264,7 @@ function readSequenceChunk<TDoc>(
     cursor: SequenceCursor<TDoc>,
     chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; totalOperations: number },
     assertCurrent: () => void
-): { decoded: DecodedChange; span: number } {
+): { authority: SequenceChangeAuthority; span: number } {
     const { bytes, index, totalOperations } = chunk;
     const started = performance.now();
     assertCurrent();
@@ -273,7 +275,7 @@ function readSequenceChunk<TDoc>(
         if (cursor.previousOwnHash) {
             dependencies.add(cursor.previousOwnHash);
         }
-        const authority = assertDecodedAuthority(decoded, bytes, {
+        const validation = assertDecodedAuthority(decoded, bytes, {
             actor: input.actor,
             sequence: cursor.sequence,
             startOp: cursor.startOp,
@@ -281,12 +283,13 @@ function readSequenceChunk<TDoc>(
             message: input.message,
             time: cursor.time,
         });
-        canonicalEncoding = authority.canonicalEncoding;
-        if (cursor.operationCount + authority.operationCount > totalOperations) {
+        canonicalEncoding = validation.canonicalEncoding;
+        if (cursor.operationCount + validation.operationCount > totalOperations) {
             throw new Error('Native sequence operation membership changed');
         }
         assertCurrent();
-        return { decoded, span: authority.operationCount };
+        const { hash, actor, deps, message, time } = decoded;
+        return { authority: { hash, actor, deps, message, time }, span: validation.operationCount };
     } finally {
         measure('automerge-prospective-response-task', started, performance.now(), {
             primaryKey: input.key,
@@ -299,10 +302,10 @@ function readSequenceChunk<TDoc>(
 function admitSequenceChunk<TDoc>(
     input: Input<TDoc>,
     cursor: SequenceCursor<TDoc>,
-    chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; decoded: DecodedChange; span: number },
+    chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; authority: SequenceChangeAuthority; span: number },
     assertCurrent: () => void
 ): void {
-    const { bytes, index, decoded, span } = chunk;
+    const { bytes, index, authority, span } = chunk;
     const started = performance.now();
     assertCurrent();
     let applyEnded: number | undefined;
@@ -326,7 +329,7 @@ function admitSequenceChunk<TDoc>(
         const hash = assertAppliedSequenceChange(cursor.document, {
             actor: input.actor,
             previousHeads: cursor.previousHeads,
-            decoded,
+            authority,
             sequence: cursor.sequence,
             startOp: cursor.startOp,
             span,
@@ -337,7 +340,7 @@ function admitSequenceChunk<TDoc>(
         cursor.sequence++;
         cursor.startOp += span;
         cursor.operationCount += span;
-        cursor.time = decoded.time;
+        cursor.time = authority.time;
     } finally {
         const ended = performance.now();
         const detail = { primaryKey: input.key, sequenceIndex: index };
