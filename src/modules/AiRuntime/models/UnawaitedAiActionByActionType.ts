@@ -87,6 +87,7 @@ export const unawaitedAiActionByActionType: { readonly [Type in RuntimeActionTyp
     addAutomationPoint: false,
     setAutomationLaneEnabled: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     copyMidiArticulations: false,

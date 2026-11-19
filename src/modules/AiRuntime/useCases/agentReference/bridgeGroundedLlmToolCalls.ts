@@ -29,6 +29,7 @@ import {
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
 } from '../../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
+import { containsMidiNoteEditCall } from '../../transformers/containsMidiNoteEditCall';
 import {
     bridgeLlmToolCalls,
     type LlmActionBridgeResult,
@@ -191,6 +192,7 @@ type BridgeGroundedLlmToolCallsInput = {
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
     creativeAuthority?: CreativeRequestAuthority;
+    midiNoteEditClipId?: string;
     /**
      * The grounding of the pending card this batch refines. Absent, the batch grounds exactly as any
      * request does; present, a call may inherit a pending command instead of grounding in this text.
@@ -203,6 +205,8 @@ type BridgeGroundedLlmToolCallsInput = {
     protectionFacts?: ProposalProtectionFacts;
     /** Complete binding for replay of the same already-admitted request, never a new refinement. */
     requestProtections?: BoundRequestProtections;
+    /** Clip protection text with a contextual tone constraint consumed by the admitted MIDI-only route. */
+    midiToneProtectionPrompt?: string;
 };
 
 type GroundToolCallInput = {
@@ -7327,6 +7331,15 @@ function groundInheritedRefinement(route: {
 }
 
 export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (
+        containsMidiNoteEditCall(input.calls) &&
+        (input.midiNoteEditClipId === undefined ||
+            input.compilerEvidence?.commands.length !== 1 ||
+            input.compilerEvidence.commands[0]?.name !== 'editMidiNotes' ||
+            input.compilerEvidence.commands[0].arguments.clipId !== input.midiNoteEditClipId)
+    ) {
+        return refuseProtectedRequest('Selective MIDI editing requires one application-admitted note selection.');
+    }
     if (input.requestProtections !== undefined && input.requestProtections.request !== input.prompt) {
         return refuseProtectedRequest('Stored protections belong to a different request');
     }
@@ -7454,7 +7467,7 @@ function refuseWhenProtectionIsUnresolved(
     }
     // A protection binding any clip is a clip protection, so every member it lists must name an object.
     // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
-    const clipProtection = readClipProtection(input.prompt, context, protections);
+    const clipProtection = readClipProtection(input.prompt, context, protections, input.midiToneProtectionPrompt);
     const unnamedMembers =
         clipProtection.clips.length > 0
             ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
@@ -7491,10 +7504,12 @@ function refuseWhenProtectionIsUnresolved(
  * extend an earlier exclusion; the blanked text keeps every offset of the request.
  */
 function readClipProtection(
-    prompt: string,
+    originalPrompt: string,
     context: ProjectContext,
-    trackProtections: ReturnType<typeof readExplicitProtections>
+    trackProtections: ReturnType<typeof readExplicitProtections>,
+    midiToneProtectionPrompt?: string
 ): ReturnType<typeof getExplicitClipProtection> & { read: string } {
+    const prompt = midiToneProtectionPrompt ?? originalPrompt;
     const clipProtection = getExplicitClipProtection(prompt, context);
     if (clipProtection.complete) {
         return { ...clipProtection, read: prompt };
@@ -7580,6 +7595,7 @@ function bridgeUnrefinedLlmToolCalls(
         projectRevision,
         workflowCapabilityId,
         creativeAuthority,
+        midiToneProtectionPrompt,
         requestProtections,
     }: BridgeGroundedLlmToolCallsInput,
     catalog: GroundingCatalog
@@ -7613,7 +7629,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            complete = readClipProtection(prompt, context, trackProtections).complete;
+            complete = readClipProtection(prompt, context, trackProtections, midiToneProtectionPrompt).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

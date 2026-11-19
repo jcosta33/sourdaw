@@ -18,6 +18,10 @@ function isCompRegionSupportPath(path: string): boolean {
     );
 }
 
+function isMidiNoteEditSupportPath(path: string): boolean {
+    return path.startsWith('guard.') && path !== 'guard.trackId';
+}
+
 /** The arguments paths an action derives from a source it promotes, which carry no intent of their own. */
 const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportPathPredicate | null } = {
     importStemSet: noSupportPath,
@@ -153,6 +157,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     addAutomationPoint: noSupportPath,
     insertAutomationLanePoints: noSupportPath,
     quantizeNotes: noSupportPath,
+    editMidiNotes: isMidiNoteEditSupportPath,
     removeShortMidiOverlaps: noSupportPath,
     createDrumPreviewBranches: noSupportPath,
     deleteDrumPreviewBranches: noSupportPath,

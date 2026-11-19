@@ -135,6 +135,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     addAutomationPoint: false,
     insertAutomationLanePoints: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

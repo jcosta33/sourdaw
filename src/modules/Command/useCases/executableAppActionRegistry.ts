@@ -13,6 +13,8 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
+import { editMidiNotesCommand } from '../models/EditMidiNotesCommand';
+
 export type ExecutableAppActionRisk =
     'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive' | 'external-effect';
 
@@ -1194,6 +1196,7 @@ export const executableAppActionDescriptors = [
             required: ['clipId', 'notes'],
         },
     },
+    editMidiNotesCommand,
     {
         actionType: 'quantizeNotes',
         risk: 'destructive-reversible',
@@ -3186,19 +3189,21 @@ type InferJsonSchemaObject<Schema extends { properties: Record<string, unknown> 
     }
 >;
 
-type InferJsonSchema<Schema> = Schema extends { enum: readonly (infer Value)[] }
-    ? Value
-    : Schema extends { type: 'string' }
-      ? string
-      : Schema extends { type: 'number' | 'integer' }
-        ? number
-        : Schema extends { type: 'boolean' }
-          ? boolean
-          : Schema extends { type: 'array'; items: infer Item }
-            ? InferJsonSchema<Item>[]
-            : Schema extends { type: 'object'; properties: infer Properties extends Record<string, unknown> }
-              ? InferJsonSchemaObject<Schema & { properties: Properties }>
-              : never;
+type InferJsonSchema<Schema> = Schema extends { anyOf: readonly (infer Alternative)[] }
+    ? InferJsonSchema<Alternative>
+    : Schema extends { enum: readonly (infer Value)[] }
+      ? Value
+      : Schema extends { type: 'string' }
+        ? string
+        : Schema extends { type: 'number' | 'integer' }
+          ? number
+          : Schema extends { type: 'boolean' }
+            ? boolean
+            : Schema extends { type: 'array'; items: infer Item }
+              ? InferJsonSchema<Item>[]
+              : Schema extends { type: 'object'; properties: infer Properties extends Record<string, unknown> }
+                ? InferJsonSchemaObject<Schema & { properties: Properties }>
+                : never;
 
 type DescriptorAction<Descriptor> = Descriptor extends {
     actionType: infer ActionType extends AppActionType;
@@ -3409,6 +3414,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipStretchRatio: CLIP_MUTATION_IDENTITY,
     fitClipToBeats: CLIP_MUTATION_IDENTITY,
     addNotes: ADD_NOTES_MUTATION_IDENTITY,
+    editMidiNotes: ADD_NOTES_MUTATION_IDENTITY,
     quantizeNotes: CLIP_MUTATION_IDENTITY,
     removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
     arpeggiate: CLIP_MUTATION_IDENTITY,
@@ -3531,6 +3537,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipStretchRatio: true,
     fitClipToBeats: false,
     addNotes: false,
+    editMidiNotes: false,
     quantizeNotes: false,
     removeShortMidiOverlaps: false,
     arpeggiate: false,

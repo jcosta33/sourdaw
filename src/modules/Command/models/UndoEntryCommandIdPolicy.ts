@@ -135,6 +135,7 @@ export const undoEntryStoresCommandIdByActionType: { readonly [Type in AppAction
     addAutomationPoint: false,
     insertAutomationLanePoints: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

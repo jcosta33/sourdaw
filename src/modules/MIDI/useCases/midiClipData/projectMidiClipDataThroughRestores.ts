@@ -181,6 +181,7 @@ const controllerRestoresByActionType: {
     addAutomationPoint: noControllerRestores,
     insertAutomationLanePoints: noControllerRestores,
     quantizeNotes: noControllerRestores,
+    editMidiNotes: noControllerRestores,
     removeShortMidiOverlaps: noControllerRestores,
     createDrumPreviewBranches: noControllerRestores,
     deleteDrumPreviewBranches: noControllerRestores,

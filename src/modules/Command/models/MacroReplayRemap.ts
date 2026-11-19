@@ -276,6 +276,7 @@ export const macroReplayRemapByActionType: {
     addAutomationPoint: remapAutomationLane,
     insertAutomationLanePoints: leaveReferencesUnmapped,
     quantizeNotes: leaveReferencesUnmapped,
+    editMidiNotes: leaveReferencesUnmapped,
     removeShortMidiOverlaps: leaveReferencesUnmapped,
     createDrumPreviewBranches: leaveReferencesUnmapped,
     deleteDrumPreviewBranches: leaveReferencesUnmapped,

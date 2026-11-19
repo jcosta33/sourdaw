@@ -135,6 +135,7 @@ export const globalTimeMutatesTrackByActionType: { readonly [Type in AppActionTy
     addAutomationPoint: false,
     insertAutomationLanePoints: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

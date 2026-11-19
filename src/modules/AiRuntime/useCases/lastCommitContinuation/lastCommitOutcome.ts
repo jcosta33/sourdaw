@@ -42,8 +42,3 @@ export type ContinuedFigure = {
 export type ContinueRequest = Extract<LastCommitRequest, { kind: 'continue' }>;
 
 export type RetargetRequest = Extract<LastCommitRequest, { kind: 'retarget' }>;
-
-/** One command of the committed batch, as the undo history holds it applied. */
-export type CommittedCommand = { type: string; payload: Record<string, unknown>; label: string };
-
-export type CommittedBatch = { runId: string; workId: string; revertGroupId: string; commands: CommittedCommand[] };

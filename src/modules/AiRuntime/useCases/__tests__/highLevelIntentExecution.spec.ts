@@ -7,8 +7,15 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
-import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import {
+    addClip,
+    clearClipSelection,
+    createTrack,
+    getArrangementHandlers,
+    selectClip,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     clearHandlerRegistry,
@@ -22,6 +29,7 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -30,12 +38,21 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import {
+    clearPianoRollSelection,
+    getMidiNoteTransformHandlers,
+    projectPianoRollTakeNotes,
+    readPianoRollSelection,
+    setPianoRollSelection,
+} from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { captureMusicalContentBinding, resolveMusicalContentReadScope } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -49,9 +66,11 @@ import {
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { captureMidiNoteEditGuard } from '../actionStateGuards/captureMidiNoteEditGuard';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { revertAiActionGroup } from '../aiHistoryActions';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
+import { checkMidiNoteEditAuthority } from '../checkMidiNoteEditAuthority';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
@@ -62,6 +81,10 @@ import {
 import {
     BLUES_CLIP_END_BEAT,
     BLUES_CLIP_START_BEAT,
+    assertDiscoveredCommandSchemas,
+    catalogDiscoveryCall,
+    getApplicationToolReceipts,
+    proposeCall,
     BLUES_PROMPT,
     bluesProposalItems,
     deriveBluesNotes,
@@ -72,9 +95,10 @@ import {
     GENERATED_TRACK_ID,
     proposeDiscoveredCalls,
     scriptProviderTurns,
+    type ScriptedTurn,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
-import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
 
@@ -87,7 +111,7 @@ const bluesIntake = nonAcousticMetricIntakeTurn({
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
-    return { backend, generateWebLlmCompletion: vi.fn() };
+    return { backend, generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
 });
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -104,6 +128,11 @@ vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -124,8 +153,8 @@ async function sendChatMessage(prompt: string, options?: { mode: 'preview' }): P
 
 function getConfirmationId(): string {
     return (
-        chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)?.pendingActionConfirmationId ??
-        ''
+        chatStore.value?.messages.findLast((message) => message.pendingActionConfirmationId)
+            ?.pendingActionConfirmationId ?? ''
     );
 }
 
@@ -186,6 +215,350 @@ async function commitBluesSong(): Promise<PendingAppActionConfirmation> {
     return confirmation;
 }
 
+const PHRASE_TASK =
+    'Reshape the selected MIDI notes in the Lead Motif clip into a blues phrase, with the opening intact and the same instrument sound.';
+const SPARSE_PHRASE_TASK = 'Keep that tone, but make the lick less busy';
+const PHRASE_CLIP_ID = 'existing-midi-motif';
+const PHRASE_TRACK_ID = 'existing-motif-track';
+const PHRASE_SIBLING_ID = 'existing-midi-sibling';
+const OPENING = {
+    id: 'protected-opening',
+    pitch: 60,
+    startBeat: 0,
+    duration: 1,
+    velocity: 81,
+    expression: { slide: [{ offsetBeats: 0.25, value: 99 }] },
+};
+const THIRD = {
+    id: 'major-third',
+    pitch: 64,
+    startBeat: 2,
+    duration: 1,
+    velocity: 88,
+    channel: 3,
+    articulation: 'accent',
+    expression: { pressure: [{ offsetBeats: 0.25, value: 55 }] },
+};
+const FILLER = { id: 'filler', pitch: 67, startBeat: 3.5, duration: 0.25, velocity: 77 };
+const ENDING = { id: 'untouched-ending', pitch: 60, startBeat: 6, duration: 1, velocity: 89 };
+const PHRASE_NOTES = [OPENING, THIRD, FILLER, ENDING];
+const PHRASE_OPERATIONS = [
+    { type: 'patch', noteId: THIRD.id, patch: { pitch: 63, startBeat: 2.25, duration: 0.75, velocity: 96 } },
+    { type: 'delete', noteId: FILLER.id },
+    { type: 'insert', note: { pitch: 58, startBeat: 3.25, duration: 0.25, velocity: 84 } },
+];
+
+function durablePhraseNotes() {
+    return getCrdtDoc<{ midi?: NonNullable<typeof midiStore.value> }>('root')?.midi?.notesByClipId[PHRASE_CLIP_ID];
+}
+
+function durablePhraseDevices() {
+    return getCrdtDoc<{ tracks?: { tracks: Track[] } }>('root')?.tracks?.tracks.find(
+        (track) => track.id === PHRASE_TRACK_ID
+    )?.devices;
+}
+
+function selectPhraseNotes(noteIds: string[]) {
+    const track = trackStore.value?.tracks.find(({ id }) => id === PHRASE_TRACK_ID);
+    const clip = track?.clips.find(({ id }) => id === PHRASE_CLIP_ID);
+    const notes = midiStore.value?.notesByClipId[PHRASE_CLIP_ID];
+    if (!track || !clip || !notes) {
+        throw new Error('Expected a live motif to select');
+    }
+    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, notes);
+    setPianoRollSelection(clip.id, noteIds, [], [{ clipId: clip.id, projection }]);
+}
+
+function seedMidiPhrase(clipName = 'Lead Motif') {
+    projectStore.set(defaultProjectStoreState);
+    const track = createTrack({ id: PHRASE_TRACK_ID, kind: 'midi', name: 'Electric piano' });
+    const instrument = track.devices[0];
+    if (!instrument) {
+        throw new Error('Expected the motif to have an instrument');
+    }
+    instrument.parameterValues.filterCutoff = 1_720;
+    instrument.parameterValues.filterResonance = 2.8;
+    instrument.parameterValues.sustain = 0.61;
+    trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    const add = (id: string, startBeat: number, name: string) =>
+        addClip({
+            id,
+            trackId: track.id,
+            name,
+            type: 'midi',
+            startBeat,
+            endBeat: startBeat + 8,
+        });
+    const clip = add(PHRASE_CLIP_ID, 16, clipName);
+    expect(add(PHRASE_SIBLING_ID, 26, 'Sibling Motif')).not.toBeNull();
+    if (!clip) {
+        throw new Error('Expected the existing motif clip');
+    }
+    midiStore.set({
+        ...emptyMidiState(),
+        notesByClipId: {
+            [PHRASE_CLIP_ID]: structuredClone(PHRASE_NOTES),
+            [PHRASE_SIBLING_ID]: [{ id: 'sibling-note', pitch: 72, duration: 1, startBeat: 2, velocity: 90 }],
+        },
+    });
+    selectPhraseNotes([THIRD.id, FILLER.id]);
+}
+
+function capturedPhraseAuthority() {
+    const binding = captureMusicalContentBinding();
+    const windows = resolveMusicalContentReadScope(binding, [PHRASE_CLIP_ID]);
+    const authority: NonNullable<Parameters<typeof checkMidiNoteEditAuthority>[0]['authority']> = {
+        schemaVersion: 1,
+        authorityId: 'phrase-authority',
+        catalogId: 'catalog',
+        requestDigest: 'request',
+        revision: binding.expectedRevision,
+        selection: { trackId: PHRASE_TRACK_ID, clipId: PHRASE_CLIP_ID, clipIds: [PHRASE_CLIP_ID], activeView: 'clip' },
+        mode: 'edit',
+        targets: [
+            {
+                provenance: 'explicit-reference',
+                objectType: 'clip',
+                objectIds: [PHRASE_CLIP_ID],
+                parentTrackId: PHRASE_TRACK_ID,
+            },
+        ],
+        editDimensions: ['midi-content'],
+        prohibitions: [],
+        creationSlots: [],
+        uncertainty: 'none',
+    };
+    const input = {
+        call: { name: 'editMidiNotes', arguments: { clipId: PHRASE_CLIP_ID } },
+        proof: { binding, windows, authorityId: authority.authorityId },
+        authority,
+        revision: binding.expectedRevision,
+    };
+    const admitted = checkMidiNoteEditAuthority(input);
+    if (!admitted) {
+        throw new Error('Expected live phrase authority');
+    }
+    return { input, admitted };
+}
+
+function assertMidiReadReceipt(
+    message: Parameters<typeof getApplicationToolReceipts>[0],
+    partial: boolean,
+    selectedNoteIds: string[]
+): void {
+    const receipt = getApplicationToolReceipts(message).find(
+        (entry) =>
+            typeof entry === 'object' && entry !== null && 'toolName' in entry && entry.toolName === 'project.query'
+    );
+    const completeExpected = {
+        status: 'success',
+        data: {
+            queryType: 'musical-content',
+            nextCursor: null,
+            items: expect.arrayContaining(
+                selectedNoteIds.map((noteId) => expect.objectContaining({ noteId, selected: true }))
+            ),
+        },
+    };
+    const partialExpected = { status: 'success', data: { nextCursor: expect.any(String) } };
+    let expected: typeof completeExpected | typeof partialExpected = completeExpected;
+    if (partial) {
+        expected = partialExpected;
+    }
+    expect(receipt).toMatchObject(expected);
+}
+
+function scriptMidiPhraseEdit(
+    options: {
+        clipId?: string;
+        operations?: unknown[];
+        read?: boolean | 'partial';
+        selectedNoteIds?: string[];
+        canInsert?: boolean;
+        changeDuringRead?: () => void;
+        plain?: boolean;
+    } = {}
+) {
+    const clipId = options.clipId ?? PHRASE_CLIP_ID;
+    const read = () => [
+        {
+            name: 'project.query',
+            arguments: {
+                type: 'musical-content',
+                filters: { stableId: PHRASE_CLIP_ID, startBeat: 16, endBeat: 20 },
+                page: { limit: options.read === 'partial' ? 1 : 50 },
+            },
+        },
+    ];
+    const command = {
+        name: 'editMidiNotes',
+        arguments: { clipId, operations: options.operations ?? PHRASE_OPERATIONS },
+    };
+    const proposal = () => {
+        if (options.plain) {
+            return [{ name: 'command.batch.propose', arguments: { commands: [command] } }];
+        }
+        return [
+            proposeCall([{ id: 'edit-phrase', ...command }], {
+                semantic: { classification: 'complex', uncertainty: [] },
+                objective: 'Reshape the phrase while preserving the opening and the instrument.',
+                constraints: [],
+                scope: {
+                    targetIds: [clipId, PHRASE_TRACK_ID],
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                capabilityIds: [],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Preserve all notes outside the selection.'],
+                stoppingConditions: ['Stop if the selected notes changed.'],
+            }),
+        ];
+    };
+    const turns: ScriptedTurn[] = [
+        nonAcousticMetricIntakeTurn({
+            modeId: 'edit',
+            targetObjectIds: [PHRASE_CLIP_ID],
+            dimensions: ['midi-content'],
+            creationSlotObjectTypes: options.canInsert === false ? [] : ['notes'],
+        }),
+    ];
+    if (options.read !== false) {
+        turns.push(read);
+    }
+    turns.push(
+        (message) => {
+            if (options.read !== false) {
+                assertMidiReadReceipt(
+                    message,
+                    options.read === 'partial',
+                    options.selectedNoteIds ?? [THIRD.id, FILLER.id]
+                );
+                if (options.read === 'partial') {
+                    return [catalogDiscoveryCall(['editMidiNotes'])];
+                }
+            }
+            options.changeDuringRead?.();
+            return [catalogDiscoveryCall(['editMidiNotes'])];
+        },
+        (message) => {
+            if (options.read !== false) {
+                assertDiscoveredCommandSchemas(message, ['editMidiNotes']);
+            }
+            return proposal();
+        }
+    );
+    if (options.read === false || options.read === 'partial') {
+        turns.push(proposal, proposal);
+    }
+    turns.push(() => []);
+    return scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, turns);
+}
+
+async function commitScriptedPhraseEdit(prompt = PHRASE_TASK) {
+    scriptMidiPhraseEdit();
+    await sendChatMessage(prompt);
+    const confirmation = requireConfirmation();
+    await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+        status: 'executed',
+    });
+    return confirmation;
+}
+
+function readAcceptedReceipt(confirmation: PendingAppActionConfirmation) {
+    const commandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!commandBatch) {
+        throw new Error('Expected an accepted versioned Command batch');
+    }
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error(parsed.reason);
+    }
+    const receipt = agentRunLifecycle
+        .get(confirmation.runId)
+        ?.receipts.find(({ workId }) => workId === parsed.envelope.batchId);
+    if (!receipt) {
+        throw new Error('Expected a receipt for the exact accepted batch');
+    }
+    return receipt;
+}
+
+function readCapturedThread(requests: string[]) {
+    const section = /^thread_context:\n(?<payload>.+)$/mu.exec(requests[0] ?? '')?.groups?.payload;
+    if (!section) {
+        throw new Error('Expected the prior accepted result in the next actual provider request');
+    }
+    const thread: unknown = JSON.parse(section);
+    return { section, thread };
+}
+
+const FOLLOWUP_CUTOFF = 1_840;
+const FOLLOWUP_RESONANCE = 3.2;
+const REPLACEMENT_CUTOFF = 2_060;
+
+async function commitScriptedToneChange(track: Track) {
+    const device = track.devices[0];
+    if (!device) {
+        throw new Error('Expected a Synth on the tone target');
+    }
+    const deviceId = device.id;
+    const name = 'setDeviceParameter';
+    const changes = [
+        { deviceId, paramId: 'filterCutoff', value: FOLLOWUP_CUTOFF },
+        { deviceId, paramId: 'filterResonance', value: FOLLOWUP_RESONANCE },
+    ];
+    scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
+        () => [catalogDiscoveryCall([name])],
+        (message) => {
+            assertDiscoveredCommandSchemas(message, [name]);
+            return [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: changes.map((args) => ({ name, arguments: args })),
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Set the requested filter cutoff and resonance.',
+                            constraints: [],
+                            scope: {
+                                targetIds: [track.id, deviceId, ...changes.map(({ paramId }) => paramId)],
+                                targetRanges: [],
+                                protectedTargetIds: [`${deviceId}:sustain`],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [name],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: ['Check the device owner and preserve its other settings.'],
+                            stoppingConditions: ['Stop if the device changed.'],
+                        },
+                    },
+                },
+            ];
+        },
+        () => [],
+    ]);
+    await sendChatMessage(
+        `Set the ${track.name} ${device.name} Filter Cutoff to ${String(FOLLOWUP_CUTOFF)} Hz and Filter Resonance to ${String(FOLLOWUP_RESONANCE)}, leaving Sustain unchanged.`
+    );
+    const reply = chatStore.value?.messages.at(-1);
+    expect(getConfirmationId(), reply?.error ?? reply?.content).not.toBe('');
+    const confirmation = requireConfirmation();
+    expect(confirmation.actions).toEqual(
+        changes.map((payload) => ({
+            type: 'setDeviceParameter',
+            payload: expect.objectContaining({ ...payload, expectedTrackId: track.id }),
+        }))
+    );
+    await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+        status: 'executed',
+    });
+    return { confirmation, deviceId, receipt: readAcceptedReceipt(confirmation) };
+}
+
 describe('high-level intent execution', () => {
     beforeEach(async () => {
         // Dependency resolutions are cached per invoker for the process lifetime (src/infra/di/
@@ -234,6 +607,7 @@ describe('high-level intent execution', () => {
     });
 
     afterEach(async () => {
+        clearClipSelection();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
@@ -252,6 +626,487 @@ describe('high-level intent execution', () => {
         await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('reads the selected motif, previews exact note edits, and commits and undoes one guarded batch', async () => {
+        seedMidiPhrase();
+        const tracksBefore = structuredClone(trackStore.value);
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
+        const confirmation = requireConfirmation();
+        expect(confirmation.actionLabels[0]).toContain('change pitch 64 at beat 2 to pitch 63');
+        expect(confirmation.actionLabels[0]).toContain('remove pitch 67 at beat 3.5');
+        expect(confirmation.actionLabels[0]).toContain('insert pitch 58 at beat 3.25');
+        expect(confirmation.actions).toMatchObject([
+            {
+                type: 'editMidiNotes',
+                payload: {
+                    clipId: PHRASE_CLIP_ID,
+                    guard: {
+                        expectedNotes: PHRASE_NOTES,
+                        scope: { allowedNoteIds: [THIRD.id, FILLER.id], protectedNoteIds: [OPENING.id, ENDING.id] },
+                    },
+                },
+            },
+        ]);
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(durablePhraseNotes()).toEqual([
+            OPENING,
+            { ...THIRD, pitch: 63, startBeat: 2.25, duration: 0.75, velocity: 96 },
+            ENDING,
+            {
+                id: expect.stringMatching(/^note-command-/u),
+                pitch: 58,
+                startBeat: 3.25,
+                duration: 0.25,
+                velocity: 84,
+                probability: 100,
+            },
+        ]);
+        expect(trackStore.value).toEqual(tracksBefore);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+                ?.content
+        ).toContain('Outcome: committed');
+        await undo();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(trackStore.value).toEqual(tracksBefore);
+    });
+
+    it('refuses edits when the admitted clip or track is protected, but retains a note protection in the guard', () => {
+        seedMidiPhrase();
+        const { input } = capturedPhraseAuthority();
+        for (const prohibition of [
+            { kind: 'exclude-dimension', dimension: 'midi-content' },
+            { kind: 'protect-object', objectId: PHRASE_CLIP_ID },
+            { kind: 'protect-object', objectId: PHRASE_TRACK_ID },
+        ] as const) {
+            expect(
+                checkMidiNoteEditAuthority({ ...input, authority: { ...input.authority, prohibitions: [prohibition] } })
+            ).toBeNull();
+        }
+        const authority = {
+            ...input.authority,
+            prohibitions: [{ kind: 'protect-object' as const, objectId: THIRD.id }],
+        };
+        const admitted = checkMidiNoteEditAuthority({ ...input, authority });
+        if (!admitted) {
+            throw new Error('Expected the clip to remain admissible');
+        }
+        expect(captureMidiNoteEditGuard(admitted)?.scope.protectedNoteIds).toContain(THIRD.id);
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each(['locked', 'linked'] as const)('refuses the captured phrase when its clip becomes %s', (state) => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        const tracks = structuredClone(trackStore.value);
+        const clip = tracks?.tracks
+            .find((track) => track.id === PHRASE_TRACK_ID)
+            ?.clips.find((item) => item.id === PHRASE_CLIP_ID);
+        if (!tracks || !clip) {
+            throw new Error('Expected the phrase clip');
+        }
+        if (state === 'locked') {
+            clip.locked = true;
+        } else {
+            clip.isLinkedInstance = true;
+        }
+        trackStore.set(tracks);
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('refuses a selected phrase when a take owns its clip', () => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: PHRASE_TRACK_ID,
+                    takes: [
+                        {
+                            id: 'take',
+                            clipId: PHRASE_CLIP_ID,
+                            name: 'Take',
+                            startBeat: 16,
+                            endBeat: 24,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('refuses stale selection and a read window that does not cover the selected notes', () => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        const windows = admitted.proof.windows.map((window) => ({ ...window, startBeat: window.endBeat }));
+        expect(captureMidiNoteEditGuard({ ...admitted, proof: { ...admitted.proof, windows } })).toBeNull();
+        clearPianoRollSelection();
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each([
+        {
+            name: 'wrong clip owner',
+            input: { clipId: PHRASE_SIBLING_ID },
+            reason: 'positive edit authority and complete current musical evidence',
+        },
+        {
+            name: 'protected opening',
+            input: { operations: [{ type: 'delete', noteId: OPENING.id }] },
+            reason: 'outside the admitted MIDI selection',
+        },
+        { name: 'missing read', input: { read: false }, reason: 'Required musical evidence was not read' },
+        { name: 'partial read', input: { read: 'partial' as const }, reason: 'Required musical evidence was not read' },
+        {
+            name: 'stale read',
+            input: { changeDuringRead: () => clearPianoRollSelection() },
+            reason: 'Musical evidence is stale',
+        },
+        { name: 'direct command escape', input: { plain: true }, reason: 'requires one structured command list item' },
+        {
+            name: 'provider-supplied insert ID',
+            input: {
+                operations: [{ type: 'insert', note: { id: 'forged-note', pitch: 48, duration: 0.5, startBeat: 2 } }],
+            },
+            reason: 'positive edit authority and complete current musical evidence',
+        },
+    ])('does not propose a MIDI edit with $name', async ({ input, reason }) => {
+        seedMidiPhrase();
+        const transcript = scriptMidiPhraseEdit(input);
+        await sendChatMessage(PHRASE_TASK);
+        expect(getConfirmationId()).toBe('');
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect([...transcript, JSON.stringify(chatStore.value?.messages)].join('\n')).toContain(reason);
+    });
+
+    it('invalidates a selective edit when the note selection changes after proposal', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        clearPianoRollSelection();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('MIDI note selection changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('invalidates a selective edit when selection changes to a resolved subset of the same clip', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        const historyBefore = structuredClone(undoStore.value?.past);
+        selectPhraseNotes([THIRD.id]);
+        expect(readPianoRollSelection()).toMatchObject({
+            status: 'resolved',
+            clipId: PHRASE_CLIP_ID,
+            viewIds: [THIRD.id],
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('MIDI note selection changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toEqual(historyBefore);
+    });
+
+    it('requires a new musical read after project revision drift, even on another track', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        await executeAppAction({ type: 'addTrack', payload: { name: 'New unrelated track', kind: 'audio' } });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('project revision changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+    });
+
+    it('keeps internal note guards out of the next provider request', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        requireConfirmation();
+        const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [() => []]);
+        await sendChatMessage('Which edit is waiting for confirmation?');
+        expect(messages[0]).toContain('thread_context');
+        expect(messages[0]).toContain('editMidiNotes');
+        expect(messages[0]).not.toContain('expectedNotes');
+        expect(messages[0]).not.toContain('selectionToken');
+        expect(messages[0]).not.toContain(ENDING.id);
+    });
+
+    it('follows an accepted motif edit with fresh authority to simplify only its notes and preserve its tone', async () => {
+        seedMidiPhrase();
+        const first = await commitScriptedPhraseEdit();
+        const receipt = readAcceptedReceipt(first);
+        const acceptedNotes = structuredClone(durablePhraseNotes());
+        const acceptedDevices = structuredClone(durablePhraseDevices());
+        const acceptedRevision = captureProjectRevision();
+        const pickup = acceptedNotes?.find(({ pitch, startBeat }) => pitch === 58 && startBeat === 3.25);
+        if (!acceptedNotes || !acceptedDevices || !pickup) {
+            throw new Error('Expected an accepted, receipted motif and its generated pickup');
+        }
+        expect(acceptedDevices[0]?.parameterValues).toMatchObject({ filterCutoff: 1_720, filterResonance: 2.8 });
+        const firstUndo = structuredClone(undoStore.value?.past ?? []);
+        expect(firstUndo).toHaveLength(1);
+
+        const selectedNoteIds = [THIRD.id, pickup.id];
+        selectClip(PHRASE_CLIP_ID);
+        selectPhraseNotes(selectedNoteIds);
+        const operations = [
+            { type: 'patch', noteId: THIRD.id, patch: { duration: 0.5 } },
+            { type: 'delete', noteId: pickup.id },
+        ];
+        const requests = scriptMidiPhraseEdit({ selectedNoteIds, canInsert: false, operations });
+        await sendChatMessage(SPARSE_PHRASE_TASK);
+        const { section, thread } = readCapturedThread(requests);
+        expect(thread).toMatchObject({
+            requests: [{ value: PHRASE_TASK, trust: 'untrusted_user_string', truncated: false }],
+            pendingProposal: null,
+            lastCommit: {
+                runId: first.runId,
+                receiptIds: [receipt.receiptIdentity],
+                standing: 'standing',
+                commands: [{ name: 'editMidiNotes', arguments: { clipId: PHRASE_CLIP_ID } }],
+            },
+        });
+        for (const privateField of ['expectedNotes', 'guard', 'selectionToken', 'authorityId']) {
+            expect(section).not.toContain(`"${privateField}"`);
+        }
+        expect(section).not.toContain(pickup.id);
+        expect(section).not.toContain(OPENING.id);
+        expect(section).not.toContain(ENDING.id);
+
+        const second = requireConfirmation();
+        expect(second.id, chatStore.value?.messages.at(-1)?.content).not.toBe(first.id);
+        expect(second.runId).not.toBe(first.runId);
+        expect(second.projectRevision).toBe(acceptedRevision);
+        expect(second.projectRevision).not.toBe(first.projectRevision);
+        expect(second.actions).toMatchObject([
+            {
+                type: 'editMidiNotes',
+                payload: {
+                    clipId: PHRASE_CLIP_ID,
+                    operations,
+                    guard: {
+                        trackId: PHRASE_TRACK_ID,
+                        expectedNotes: acceptedNotes,
+                        scope: {
+                            allowedNoteIds: selectedNoteIds,
+                            protectedNoteIds: [OPENING.id, ENDING.id],
+                            insertionBudget: 0,
+                        },
+                    },
+                },
+            },
+        ]);
+        expect(durablePhraseNotes()).toEqual(acceptedNotes);
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(durablePhraseNotes()).toEqual(
+            acceptedNotes
+                .filter(({ id }) => id !== pickup.id)
+                .map((note) => (note.id === THIRD.id ? { ...note, duration: 0.5 } : note))
+        );
+        expect(durablePhraseDevices()).toEqual(acceptedDevices);
+        expect(undoStore.value?.past).toEqual([...firstUndo, expect.any(Object)]);
+        await undo();
+        expect(durablePhraseNotes()).toEqual(acceptedNotes);
+        expect(durablePhraseDevices()).toEqual(acceptedDevices);
+        expect(undoStore.value?.past).toEqual(firstUndo);
+    });
+
+    it.each([
+        { name: 'same track', prior: 'same' },
+        { name: 'different track', prior: 'different' },
+        { name: 'undone result', prior: 'undone' },
+        { name: 'superseded parameter', prior: 'changed' },
+    ] as const)(
+        'checks the $name against a recorded processing receipt before a MIDI continuation',
+        async ({ prior }) => {
+            seedMidiPhrase();
+            const phaseTrack = trackStore.value?.tracks.find(({ id }) => id === PHRASE_TRACK_ID);
+            if (!phaseTrack) {
+                throw new Error('Expected the seeded motif track');
+            }
+            let toneTrack = phaseTrack;
+            if (prior === 'different') {
+                toneTrack = createTrack({ kind: 'midi', name: 'Other Keys' });
+                const device = toneTrack.devices[0];
+                if (!device) {
+                    throw new Error('Expected a device on the unrelated track');
+                }
+                device.parameterValues = { filterCutoff: 960, filterResonance: 4, sustain: 0.63 };
+                trackStore.set({ tracks: [phaseTrack, toneTrack], selectedTrackId: phaseTrack.id, ghostClips: [] });
+            }
+            const { confirmation: first, deviceId, receipt } = await commitScriptedToneChange(toneTrack);
+            if (prior === 'undone') {
+                await undo();
+            }
+            if (prior === 'changed') {
+                await executeAppAction({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: 'filterCutoff', value: REPLACEMENT_CUTOFF },
+                });
+            }
+            const devicesBefore = structuredClone(durablePhraseDevices());
+            const runtimeWritesBefore = runtimeMocks.updateDeviceParam.mock.calls.length;
+            expect(runtimeWritesBefore).toBeGreaterThan(0);
+            const acceptedSettings = { filterCutoff: FOLLOWUP_CUTOFF, filterResonance: FOLLOWUP_RESONANCE };
+            const originalSettings = { filterCutoff: 1_720, filterResonance: 2.8 };
+            const expectedSettings = {
+                same: acceptedSettings,
+                different: originalSettings,
+                undone: originalSettings,
+                changed: { ...acceptedSettings, filterCutoff: REPLACEMENT_CUTOFF },
+            };
+            expect(devicesBefore?.[0]?.parameterValues).toMatchObject(expectedSettings[prior]);
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            selectClip(PHRASE_CLIP_ID);
+            selectPhraseNotes([THIRD.id, FILLER.id]);
+            const requests = scriptMidiPhraseEdit({
+                canInsert: false,
+                operations: [
+                    { type: 'patch', noteId: THIRD.id, patch: { duration: 0.5 } },
+                    { type: 'delete', noteId: FILLER.id },
+                ],
+            });
+            await sendChatMessage(SPARSE_PHRASE_TASK);
+            const { section, thread } = readCapturedThread(requests);
+            expect(thread).toMatchObject({
+                lastCommit: {
+                    runId: first.runId,
+                    receiptIds: [receipt.receiptIdentity],
+                    standing: prior === 'undone' ? 'undone' : 'standing',
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            targetTrackId: toneTrack.id,
+                            arguments: {
+                                deviceId,
+                                paramId: 'filterCutoff',
+                                value: FOLLOWUP_CUTOFF,
+                            },
+                        },
+                        {
+                            name: 'setDeviceParameter',
+                            targetTrackId: toneTrack.id,
+                            arguments: {
+                                deviceId,
+                                paramId: 'filterResonance',
+                                value: FOLLOWUP_RESONANCE,
+                            },
+                        },
+                    ],
+                },
+            });
+            for (const guard of ['expectedTrackId', 'expectedDeviceType', 'expectedDeviceIds', 'expectedValue']) {
+                expect(section).not.toContain(`"${guard}"`);
+            }
+            const second = requireConfirmation();
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            expect(second.id === first.id).toBe(prior !== 'same');
+            expect(
+                prior === 'same' ||
+                    [...requests, chatStore.value?.messages.at(-1)?.content]
+                        .join('\n')
+                        .includes('Transform compilation includes a protected or unresolved target')
+            ).toBe(true);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
+            if (prior !== 'same') {
+                return;
+            }
+            expect(second.id, chatStore.value?.messages.at(-1)?.content).not.toBe(first.id);
+            expect(second.actions.map(({ type }) => type)).toEqual(['editMidiNotes']);
+            await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(durablePhraseNotes()).toEqual([OPENING, { ...THIRD, duration: 0.5 }, ENDING]);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            await undo();
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
+            expect(undoStore.value?.past).toHaveLength(2);
+        }
+    );
+
+    it.each([
+        {
+            name: 'a selected clip named Tone',
+            clipName: 'Tone',
+            prompt: SPARSE_PHRASE_TASK,
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'an adjacent unresolved protection',
+            clipName: 'Lead Motif',
+            prompt: `${SPARSE_PHRASE_TASK}. Keep Ghost unchanged.`,
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'a broader protection that mentions tone',
+            clipName: 'Lead Motif',
+            prompt: 'Keep that tone and the arrangement, but make the lick less busy',
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'no fresh musical read',
+            clipName: 'Lead Motif',
+            prompt: SPARSE_PHRASE_TASK,
+            read: false,
+            reason: 'Required musical evidence was not read',
+        },
+    ])('refuses a contextual tone continuation with $name', async ({ clipName, prompt, read, reason }) => {
+        seedMidiPhrase(clipName);
+        const first = await commitScriptedPhraseEdit(PHRASE_TASK.replace('Lead Motif', clipName));
+        const notes = durablePhraseNotes();
+        const pickup = notes?.find(({ pitch, startBeat }) => pitch === 58 && startBeat === 3.25);
+        if (!pickup) {
+            throw new Error('Expected the accepted result to contain its generated pickup');
+        }
+        const selectedNoteIds = [THIRD.id, pickup.id];
+        selectClip(PHRASE_CLIP_ID);
+        selectPhraseNotes(selectedNoteIds);
+        const requests = scriptMidiPhraseEdit({
+            selectedNoteIds,
+            canInsert: false,
+            read,
+            operations: [{ type: 'delete', noteId: pickup.id }],
+        });
+        await sendChatMessage(prompt);
+        expect(requireConfirmation().id, chatStore.value?.messages.at(-1)?.content).toBe(first.id);
+        expect(durablePhraseNotes()).toEqual(notes);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect([...requests, chatStore.value?.messages.at(-1)?.content].join('\n')).toContain(reason);
     });
 
     it('previews a blues song without touching the project or the undo history', async () => {

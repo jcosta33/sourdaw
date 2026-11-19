@@ -3,9 +3,11 @@ import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { midiStore } from '../../stores/midiStore';
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
+import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
+import { projectMidiNoteWrite } from '../../useCases/midiNoteTransforms/projectMidiNoteWrite';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { isAddNotesSessionEntry } from './isAddNotesSessionEntry';
@@ -59,15 +61,16 @@ function getBatchMidiNotesBucketSnapshot(
         return snapshot;
     }
     for (const action of context.actions.slice(0, context.actionIndex)) {
-        if (
-            action.type !== 'addNotes' ||
-            action.payload.clipId !== clipId ||
-            !isMaterializedAddNotesArguments(action.payload)
-        ) {
-            continue;
+        if (action.type === 'addNotes' || action.type === 'editMidiNotes' || action.type === 'restoreMidiClipNotes') {
+            const projected = projectMidiNoteWrite(action, clipId, {
+                present: snapshot.present,
+                value: snapshot.notes,
+            });
+            if (projected && isMidiNoteSnapshot(projected.value)) {
+                snapshot.notes = projected.value;
+                snapshot.present = projected.present;
+            }
         }
-        snapshot.notes.push(...getMaterializedNotes(action));
-        snapshot.present = true;
     }
     return snapshot;
 }

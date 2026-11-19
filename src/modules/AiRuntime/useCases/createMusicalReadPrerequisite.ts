@@ -118,12 +118,19 @@ export function createMusicalReadPrerequisite(
     }
     const clipIds = [...new Set(authority.targets.flatMap((target) => target.objectIds))];
     const windows = resolveMusicalContentReadScope(binding, clipIds);
+    const captured = { binding, windows, authorityId: authority.authorityId };
     let index = 0;
     let cursor: string | undefined;
     let offset = 0;
     let total: number | undefined;
     let found = new Set<string>();
     return {
+        completed() {
+            if (index === windows.length && musicalContentBindingIsCurrent(binding)) {
+                return structuredClone(captured);
+            }
+            return undefined;
+        },
         hint() {
             const window = windows[index];
             if (!window) {

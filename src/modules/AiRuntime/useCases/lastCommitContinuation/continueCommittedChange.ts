@@ -1,6 +1,7 @@
 import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import { roundToThousandths } from '#/utils/Math/roundToThousandths';
 
+import { type CommittedBatch, type CommittedCommand } from '../../models/CommittedBatch';
 import { clarify, denied } from '../../models/LastCommitRefusal';
 import { type ProjectContext, type ProjectContextDeviceParameter } from '../../models/ProjectContext';
 import { type ProposalGroundingValue } from '../../models/ProposalGroundingBasis';
@@ -10,13 +11,7 @@ import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 
 import { createsObjects } from './createsObjects';
 import { groundContinuedCalls } from './groundContinuedCalls';
-import {
-    type CommittedBatch,
-    type CommittedCommand,
-    type ContinuedFigure,
-    type ContinueRequest,
-    type LastCommitContinuation,
-} from './lastCommitOutcome';
+import { type ContinuedFigure, type ContinueRequest, type LastCommitContinuation } from './lastCommitOutcome';
 import { readStatedArguments } from './readStatedArguments';
 
 /**

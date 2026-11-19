@@ -140,6 +140,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     addAutomationPoint: 'none',
     insertAutomationLanePoints: 'none',
     quantizeNotes: 'none',
+    editMidiNotes: 'none',
     removeShortMidiOverlaps: 'none',
     createDrumPreviewBranches: 'none',
     deleteDrumPreviewBranches: 'none',

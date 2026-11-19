@@ -206,6 +206,7 @@ export const macroReplayPayloadResetByActionType: {
     addAutomationPoint: keepRecordedPayload,
     insertAutomationLanePoints: keepRecordedPayload,
     quantizeNotes: keepRecordedPayload,
+    editMidiNotes: keepRecordedPayload,
     removeShortMidiOverlaps: keepRecordedPayload,
     createDrumPreviewBranches: keepRecordedPayload,
     deleteDrumPreviewBranches: keepRecordedPayload,

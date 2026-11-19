@@ -7,6 +7,9 @@
  */
 export const ADD_NOTES_MAX_NOTES_PER_COMMAND = 128;
 
+/** The most ordered note operations one selective MIDI edit may carry. */
+export const MIDI_NOTE_EDIT_MAX_OPERATIONS = 128;
+
 /**
  * The shortest note a caller may ask for, in beats — a 64th note at common time. The same three
  * readers share it for the same reason they share the count bound: the schema the provider is

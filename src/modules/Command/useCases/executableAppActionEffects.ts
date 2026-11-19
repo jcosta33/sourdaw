@@ -166,6 +166,13 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['notes'],
     },
+    editMidiNotes: {
+        dimensions: ['midi-content'],
+        scope: 'target',
+        creates: ['notes'],
+        removes: ['notes'],
+        noteFields: ['pitch', 'startBeat', 'duration', 'velocity'],
+    },
     quantizeNotes: {
         dimensions: ['midi-content'],
         scope: 'target',

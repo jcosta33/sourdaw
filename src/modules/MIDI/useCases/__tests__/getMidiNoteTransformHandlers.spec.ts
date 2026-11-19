@@ -62,6 +62,7 @@ describe('getMidiNoteTransformHandlers', () => {
         expect(Object.keys(handlers).sort()).toEqual([
             'addNotes',
             'copyMidiArticulations',
+            'editMidiNotes',
             'humanizeNotes',
             'invertNotes',
             'quantizeNoteLengths',

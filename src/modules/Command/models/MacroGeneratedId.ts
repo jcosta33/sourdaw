@@ -190,6 +190,7 @@ export const macroGeneratedIdByActionType: {
     addAutomationPoint: pointIdOf,
     insertAutomationLanePoints: noGeneratedId,
     quantizeNotes: noGeneratedId,
+    editMidiNotes: noGeneratedId,
     removeShortMidiOverlaps: noGeneratedId,
     createDrumPreviewBranches: noGeneratedId,
     deleteDrumPreviewBranches: noGeneratedId,

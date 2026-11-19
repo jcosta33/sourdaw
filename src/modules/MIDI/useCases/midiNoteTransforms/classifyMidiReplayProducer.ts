@@ -157,6 +157,7 @@ const midiReplayProducerByActionType: {
     addAutomationPoint: producesNothing,
     insertAutomationLanePoints: producesNothing,
     quantizeNotes: producesNothing,
+    editMidiNotes: producesNothing,
     removeShortMidiOverlaps: producesNothing,
     createDrumPreviewBranches: producesNothing,
     deleteDrumPreviewBranches: producesNothing,

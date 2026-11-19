@@ -1,3 +1,9 @@
+import {
+    type MidiNoteEditOperation as MidiNoteEditOperationModel,
+    type MidiNoteEditScope as MidiNoteEditScopeModel,
+    type MidiNoteEditWindow,
+} from '../models/MidiNoteEdit';
+
 import { type MidiClipNoteSnapshot } from './midiClipDataSnapshots';
 
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
@@ -92,7 +98,25 @@ export type OriginalMidiBaseRowReplacementPayload = {
     readonly replacementSlotPresent: boolean;
 };
 
+export type MidiNoteEditScope = MidiNoteEditScopeModel;
+export type MidiNoteEditOperation = MidiNoteEditOperationModel;
+
+export type EditMidiNotesPayload = {
+    clipId: string;
+    operations: MidiNoteEditOperation[];
+    /** Only the application may attach this scope and its exact before-image. */
+    guard: {
+        readonly trackId: string;
+        readonly expectedNotes: readonly MidiClipNoteSnapshot[];
+        readonly expectedNotesBucketPresent: boolean;
+        readonly selectionToken?: string;
+        readonly editWindow: MidiNoteEditWindow;
+        readonly scope: MidiNoteEditScope;
+    };
+};
+
 export type MidiAppAction =
+    | { type: 'editMidiNotes'; payload: EditMidiNotesPayload }
     | { type: 'replaceOriginalMidiBaseRow'; payload: OriginalMidiBaseRowReplacementPayload }
     | {
           type: 'quantizeNotes';

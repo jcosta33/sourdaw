@@ -225,6 +225,7 @@ export const plannedTrackByActionType: {
     addAutomationPoint: noPlannedTrack,
     insertAutomationLanePoints: noPlannedTrack,
     quantizeNotes: noPlannedTrack,
+    editMidiNotes: noPlannedTrack,
     removeShortMidiOverlaps: noPlannedTrack,
     createDrumPreviewBranches: noPlannedTrack,
     deleteDrumPreviewBranches: noPlannedTrack,

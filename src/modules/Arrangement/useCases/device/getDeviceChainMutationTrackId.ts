@@ -156,6 +156,7 @@ export const deviceChainMutationTrackIdByActionType: {
     addAutomationPoint: noMutatedTrack,
     insertAutomationLanePoints: noMutatedTrack,
     quantizeNotes: noMutatedTrack,
+    editMidiNotes: noMutatedTrack,
     removeShortMidiOverlaps: noMutatedTrack,
     createDrumPreviewBranches: noMutatedTrack,
     deleteDrumPreviewBranches: noMutatedTrack,

@@ -195,6 +195,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     addAutomationPoint: noUnprojectedWrite,
     insertAutomationLanePoints: noUnprojectedWrite,
     quantizeNotes: noUnprojectedWrite,
+    editMidiNotes: noUnprojectedWrite,
     removeShortMidiOverlaps: noUnprojectedWrite,
     createDrumPreviewBranches: noUnprojectedWrite,
     deleteDrumPreviewBranches: noUnprojectedWrite,

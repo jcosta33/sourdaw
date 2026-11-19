@@ -2,6 +2,7 @@ import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
+import { isMidiNoteEditProposal } from '../isMidiNoteEditProposal';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 import { type ClipContentWindowInput, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
@@ -11,6 +12,7 @@ import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegist
 
 export const midiActionNames = [
     'addNotes',
+    'editMidiNotes',
     'quantizeNotes',
     'removeShortMidiOverlaps',
     'arpeggiate',
@@ -155,6 +157,19 @@ const midiStrategyDefinitions = [
                     })),
                 },
             };
+        },
+    },
+    {
+        name: 'editMidiNotes',
+        transform: ({ call, context, index }) => {
+            if (isMidiNoteEditProposal(call.arguments) && findEditableMidiClip(context, call.arguments.clipId)) {
+                return { type: 'editMidiNotes', payload: call.arguments };
+            }
+            return rejection(
+                index,
+                call.name,
+                'Expected one existing writable MIDI clip and bounded patch, delete or insert operations'
+            );
         },
     },
     {

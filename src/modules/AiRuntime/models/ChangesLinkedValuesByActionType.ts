@@ -140,6 +140,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     addAutomationPoint: true,
     insertAutomationLanePoints: true,
     quantizeNotes: true,
+    editMidiNotes: true,
     removeShortMidiOverlaps: true,
     createDrumPreviewBranches: true,
     deleteDrumPreviewBranches: true,

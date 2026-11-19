@@ -11,6 +11,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function midiNoteEditIdArguments(argumentsValue: CommandArguments): string[] {
+    const operations = argumentsValue.operations;
+    if (!Array.isArray(operations)) {
+        return [];
+    }
+    return operations.flatMap((operation, index) =>
+        isRecord(operation) && operation.type === 'insert' ? [`operations[${String(index)}].note.id`] : []
+    );
+}
+
 /**
  * The arguments whose ids a command's envelope must record as application-assigned, for the
  * actions that mint more than one or whose set depends on their arguments. `null` defers to the
@@ -171,6 +181,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     addAutomationPoint: ruleDrivenArguments,
     insertAutomationLanePoints: ruleDrivenArguments,
     quantizeNotes: ruleDrivenArguments,
+    editMidiNotes: midiNoteEditIdArguments,
     removeShortMidiOverlaps: ruleDrivenArguments,
     createDrumPreviewBranches: ruleDrivenArguments,
     deleteDrumPreviewBranches: ruleDrivenArguments,

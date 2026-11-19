@@ -170,6 +170,17 @@ describe('addNotes command registration', () => {
         resetActionHistoryMetadataPort();
     });
 
+    it('registers selective MIDI editing as a canonical command', () => {
+        expect(isExecutableAppActionType('editMidiNotes')).toBe(true);
+        const registration = getExecutableCommandRegistration('editMidiNotes');
+        expect(registration.discoverability).toBe('visible');
+        expect(registration.confirmation.required).toBe(true);
+        expect(registration.providerSchema.required).toEqual(['clipId', 'operations']);
+        expect(Object.keys(registration.providerSchema.properties)).toEqual(['clipId', 'operations']);
+        expect(registration.materializedArgumentsValidator?.({ clipId: 'clip-midi', operations: [] })).toBe(false);
+        expect(registration.sessionEntryValidator).toBeTypeOf('function');
+    });
+
     it('registers addNotes as an executable, discoverable, application-materialized MIDI mutation', () => {
         expect(isExecutableAppActionType('addNotes')).toBe(true);
 

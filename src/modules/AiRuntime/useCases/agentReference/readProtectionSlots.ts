@@ -376,4 +376,8 @@ function readSlots(masked: string, names: readonly Range[] = []): Slot[] {
     return slots;
 }
 
-export const protectionSlots = { read: readSlots, startRanges: readProtectionStartRanges } as const;
+export const protectionSlots = {
+    read: readSlots,
+    startRanges: readProtectionStartRanges,
+    startsInstruction: (text: string) => instructionStartPattern.test(` ${text.trimStart()}`),
+} as const;

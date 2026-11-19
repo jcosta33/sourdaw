@@ -10,11 +10,12 @@ const EXPECTED = new Set<string>([
     'playMacro',
     'deleteMacro',
     'renameMacro',
+    'editMidiNotes',
     'insertAutomationLanePoints',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {
-    it('excludes the macro meta-actions and local automation insertions', () => {
+    it('excludes macro meta-actions, authority-bound MIDI note edits, and local automation insertions', () => {
         const actual = new Set(
             Object.entries(macroRecordingExcludesActionType)
                 .filter(([, value]) => value)

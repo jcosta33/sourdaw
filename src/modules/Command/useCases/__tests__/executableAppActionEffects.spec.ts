@@ -22,7 +22,7 @@ function rowFor(actionType: string): ExecutableAppActionEffect {
 function actionTypesWith(flag: 'create' | 'delete' | 'routing' | 'tempo' | 'master'): ReadonlySet<string> {
     return new Set(
         Object.entries(commandBatchEffectByActionType)
-            .filter(([, effect]) => effect[flag] === true)
+            .filter(([, effect]) => effect[flag] !== undefined)
             .map(([actionType]) => actionType)
     );
 }

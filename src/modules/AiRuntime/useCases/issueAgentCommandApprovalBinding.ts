@@ -1,7 +1,8 @@
-import { issueCommandApprovalBinding } from '#/modules/Command/useCases';
+import { issueCommandApprovalBinding, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { approvedProjectRevision } from './approvedProjectRevision';
 import { type compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { readMidiNoteEditApprovalRefusal } from './readMidiNoteEditApprovalRefusal';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type CommandApprovalInput = Parameters<typeof issueCommandApprovalBinding>[0];
@@ -11,12 +12,21 @@ type ApprovalBindingRejection = {
     stale: boolean;
 };
 
+function readApprovedBatchActions(batch: Pick<CommandApprovalInput, 'authority' | 'serialized'>) {
+    const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+    if (parsed.status !== 'valid') {
+        return [];
+    }
+    return parsed.envelope.commands.map((command) => ({ type: command.operation, payload: command.arguments }));
+}
+
 export function issueAgentCommandApprovalBinding(input: {
     approval: ReturnType<typeof compileAgentRiskApproval>;
     commandBatch: Pick<CommandApprovalInput, 'authority' | 'serialized'>;
     confirmationId?: string;
     onRejection?: (rejection: ApprovalBindingRejection) => void;
 }) {
+    const actions = readApprovedBatchActions(input.commandBatch);
     return issueCommandApprovalBinding({
         authority: input.commandBatch.authority,
         serialized: input.commandBatch.serialized,
@@ -31,6 +41,11 @@ export function issueAgentCommandApprovalBinding(input: {
                 currentRevision,
                 confirmationId: input.confirmationId,
             });
+            const selectionRefusal = validation.status === 'valid' ? readMidiNoteEditApprovalRefusal(actions) : null;
+            if (selectionRefusal !== null) {
+                input.onRejection?.({ reason: selectionRefusal, stale: true });
+                return { status: 'invalid', reason: selectionRefusal, stale: true };
+            }
             if (validation.status === 'invalid' && input.onRejection) {
                 input.onRejection({ reason: validation.reason, stale: validation.stale });
             }
