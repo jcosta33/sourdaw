@@ -121,8 +121,9 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
 /**
  * The `thread_context` section for one message profile, within that profile's byte cap. The cap
  * is filled in the order a refinement needs: the newest earlier request, the pending proposal's
- * commands, the last commit's commands and measured deltas, then the optional cancelled batch and
- * its commands. Complete public readings are tried before the earlier requests from newest back.
+ * commands, the last commit's commands and measured deltas, and the complete readings for both.
+ * Then it tries the optional cancelled batch, its commands and its complete reading, followed by
+ * the earlier requests from newest back.
  * A command whose arguments do not fit is kept by name and label alone, marked `argumentsOmitted`.
  * An entry that still does not fit is left out whole and counted. Later commands and deltas are
  * still tried, while requests stop at the first that does not fit. Pending proposal and last commit
@@ -145,7 +146,7 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
         fitted = candidate;
         return true;
     };
-    const tryAddReadings = (): void => {
+    const tryAddCurrentReadings = (): void => {
         const pendingReading = thread.pendingProposal?.creativeInterpretation;
         if (pendingReading !== undefined) {
             tryAdd({ ...fitted, pendingReading });
@@ -153,10 +154,6 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
         const committedReading = thread.lastCommit?.creativeInterpretation;
         if (committedReading !== undefined) {
             tryAdd({ ...fitted, committedReading });
-        }
-        const cancelledReading = thread.lastCancelled?.creativeInterpretation;
-        if (fitted.cancelled && cancelledReading !== undefined) {
-            tryAdd({ ...fitted, cancelledReading });
         }
     };
     // A command whose arguments do not fit is still named: its name and label are what a refinement
@@ -175,6 +172,10 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
                     cancelledCommands: [...fitted.cancelledCommands, entry],
                 }));
             }
+            const cancelledReading = thread.lastCancelled.creativeInterpretation;
+            if (cancelledReading !== undefined) {
+                tryAdd({ ...fitted, cancelledReading });
+            }
         }
     };
     const newestFirstRequests = [...thread.requests].reverse();
@@ -189,8 +190,8 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     for (const delta of thread.lastCommit?.measuredDeltas ?? []) {
         tryAdd({ ...fitted, measuredDeltas: [...fitted.measuredDeltas, delta] });
     }
+    tryAddCurrentReadings();
     tryAddCancelled();
-    tryAddReadings();
     if (requestsFit) {
         for (const request of newestFirstRequests.slice(1)) {
             if (!tryAdd({ ...fitted, requests: [request, ...fitted.requests] })) {

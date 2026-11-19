@@ -1412,6 +1412,65 @@ describe('thread context for the planner', () => {
             ]);
         });
 
+        it.each(['pendingProposal', 'lastCommit'] as const)(
+            'keeps the %s reading ahead of cancelled command arguments',
+            (source) => {
+                const creativeInterpretation = 'A small vintage receiver with a warm midrange';
+                const current = {
+                    runId: 'r',
+                    creativeInterpretation,
+                    commands: [
+                        {
+                            name: 'setTrackGain',
+                            label: 'Set lead gain',
+                            arguments: { trackId: 'lead', value: 0.7 },
+                        },
+                    ],
+                };
+                const cancelledReading = 'The previous riff';
+                const cancelledCommand = {
+                    name: 'createMidiClip',
+                    label: 'Create a 38-note riff',
+                    arguments: { trackId: 'lead', startBeat: 0, endBeat: 10, notes: riffNotes(38) },
+                };
+                const thread: ThreadContext = {
+                    requests: ['Keep that tone'],
+                    pendingProposal: null,
+                    lastCommit: null,
+                    lastCancelled: {
+                        runId: 'r',
+                        batchId: 'b',
+                        confirmationId: 'c',
+                        creativeInterpretation: cancelledReading,
+                        commands: [cancelledCommand],
+                    },
+                };
+
+                if (source === 'pendingProposal') {
+                    thread.pendingProposal = { ...current, confirmationId: 'p', batchPosition: null };
+                } else {
+                    thread.lastCommit = { ...current, receiptIds: ['r'], standing: 'standing', measuredDeltas: [] };
+                }
+
+                const local = fitThreadContext(thread, 'local');
+                const localContext = readSection(`\n\n${local.section}\n\n`);
+                expect(localContext[source]).toHaveProperty('creativeInterpretation', creativeInterpretation);
+                expect(localContext[source]).toHaveProperty('commands', current.commands);
+                expect(localContext.lastCancelled).toMatchObject({
+                    creativeInterpretation: cancelledReading,
+                    omittedCommandCount: 0,
+                });
+                expect(localContext.lastCancelled).toHaveProperty('commands', [
+                    { name: cancelledCommand.name, label: cancelledCommand.label, argumentsOmitted: true },
+                ]);
+
+                const hosted = fitThreadContext(thread, 'hosted');
+                const hostedContext = readSection(`\n\n${hosted.section}\n\n`);
+                expect(hostedContext[source]).toHaveProperty('creativeInterpretation', creativeInterpretation);
+                expect(hostedContext.lastCancelled).toHaveProperty('commands', [cancelledCommand]);
+            }
+        );
+
         it('drops the oldest requests first under the cap and keeps the newest', () => {
             const thread = createFullThreadContext();
             const local = fitThreadContext(thread, 'local');
