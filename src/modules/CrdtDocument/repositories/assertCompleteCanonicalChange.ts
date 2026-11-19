@@ -1,7 +1,7 @@
-import { decodeChange } from '@automerge/automerge';
+import { decodeChange, type DecodedChange } from '@automerge/automerge';
 
 /** One complete native change is admitted; a document or appended chunks never enter adoption. */
-export function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): void {
+export function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): DecodedChange {
     if (
         bytes.length < 10 ||
         bytes[0] !== 0x85 ||
@@ -26,10 +26,10 @@ export function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): v
             // Native insertion accepts a corrupt checksum; the public decoder
             // recomputes the change hash, including for compressed changes.
             const checksum = Array.from(bytes.subarray(4, 8), (value) => value.toString(16).padStart(2, '0')).join('');
-            let hash: string;
+            let decoded: DecodedChange;
             const started = performance.now();
             try {
-                hash = decodeChange(bytes).hash;
+                decoded = decodeChange(bytes);
             } finally {
                 performance.measure('automerge-prospective-vendor-decode-task', {
                     start: started,
@@ -37,10 +37,10 @@ export function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): v
                 });
                 performance.clearMeasures('automerge-prospective-vendor-decode-task');
             }
-            if (!hash.startsWith(checksum)) {
+            if (!decoded.hash.startsWith(checksum)) {
                 throw new Error('Prospective mutation Worker returned an invalid change checksum');
             }
-            return;
+            return decoded;
         }
     }
     throw new Error('Prospective mutation Worker returned an invalid change length');

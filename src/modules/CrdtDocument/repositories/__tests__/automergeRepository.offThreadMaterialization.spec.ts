@@ -915,41 +915,50 @@ describe('repository canonical Worker candidate adoption', () => {
         }
     );
 
-    it.each(['aabbcc', ''])('keeps the complete ordinary callback for native author %s', (author) => {
-        const original = from<Document>({ slot: { count: 0 } }, { actor, author });
-        repository.insertDoc('root', original);
-        const callback = vi.fn((doc: Document) => {
-            doc.slot.count = 1;
-            doc.other = true;
-        });
-        const prepared = repository.cloneProspectiveMutation<Document>(
-            'root',
-            callback,
-            'Detect',
-            undefined,
-            ['slot'],
-            {
-                kind: 'canonical-json-slot-v1',
-                key: 'slot',
-                baseValue: original.slot,
-                value: { count: 1 },
-                documentPresence: { slot: original.slot },
-            }
-        );
-        expect(getAuthor(original)).toBe(author);
-        expect(prepared.requestMaterialization).toBeUndefined();
-        publish(prepared.materialize());
-        expect(callback).toHaveBeenCalledTimes(1);
-        expect(mocks.request).not.toHaveBeenCalled();
-        const actual = repository.getDoc<Document>('root');
-        expect(actual?.other).toBe(true);
-        const baseline = change(clone(original, { actor }), { message: 'Detect' }, (doc) => {
-            doc.slot.count = 1;
-            doc.other = true;
-        });
-        expect(actual).toEqual(baseline);
-        expect(getAuthor(actual!)).toBe(getAuthor(baseline));
-    });
+    it.each([
+        { author: 'aabbcc', requestedPolicy: undefined },
+        { author: '', requestedPolicy: undefined },
+        { author: 'aabbcc', requestedPolicy: 'bounded-native-sequence-v1' },
+        { author: '', requestedPolicy: 'bounded-native-sequence-v1' },
+    ] as const)(
+        'preserves native author "$author" with requested policy $requestedPolicy',
+        ({ author, requestedPolicy }) => {
+            const original = from<Document>({ slot: { count: 0 } }, { actor, author });
+            repository.insertDoc('root', original);
+            const callback = vi.fn((doc: Document) => {
+                doc.slot.count = 1;
+                doc.other = true;
+            });
+            const prepared = repository.cloneProspectiveMutation<Document>(
+                'root',
+                callback,
+                'Detect',
+                undefined,
+                ['slot'],
+                {
+                    kind: 'canonical-json-slot-v1',
+                    key: 'slot',
+                    baseValue: original.slot,
+                    value: { count: 1 },
+                    documentPresence: { slot: original.slot },
+                },
+                requestedPolicy === undefined ? undefined : { preparationPolicy: requestedPolicy, ownedPath: ['count'] }
+            );
+            expect(getAuthor(original)).toBe(author);
+            expect(prepared.requestMaterialization).toBeUndefined();
+            publish(prepared.materialize());
+            expect(callback).toHaveBeenCalledTimes(1);
+            expect(mocks.request).not.toHaveBeenCalled();
+            const actual = repository.getDoc<Document>('root');
+            expect(actual?.other).toBe(true);
+            const baseline = change(clone(original, { actor }), { message: 'Detect' }, (doc) => {
+                doc.slot.count = 1;
+                doc.other = true;
+            });
+            expect(actual).toEqual(baseline);
+            expect(getAuthor(actual!)).toBe(getAuthor(baseline));
+        }
+    );
 
     it.each(['mutation', 'validator', 'beforePublication', 'authority'] as const)(
         'frees a direct prospective candidate exactly once when %s refuses publication',
