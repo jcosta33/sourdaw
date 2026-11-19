@@ -295,6 +295,7 @@ export const trackProjectionByActionType: {
     setClipFade: keepTrack,
     importMidiFile: keepTrack,
     normalizeClip: keepTrack,
+    relinkClipAudioSources: keepTrack,
     reverseClip: keepTrack,
     restoreReversedClip: keepTrack,
     glueClips: keepTrack,

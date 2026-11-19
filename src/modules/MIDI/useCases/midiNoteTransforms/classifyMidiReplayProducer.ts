@@ -179,6 +179,7 @@ const midiReplayProducerByActionType: {
     setClipFade: producesNothing,
     importMidiFile: producesNothing,
     normalizeClip: producesNothing,
+    relinkClipAudioSources: producesNothing,
     reverseClip: producesNothing,
     restoreReversedClip: producesNothing,
     glueClips: producesNothing,

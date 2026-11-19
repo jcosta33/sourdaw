@@ -162,6 +162,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setClipFade: true,
     importMidiFile: true,
     normalizeClip: true,
+    relinkClipAudioSources: true,
     reverseClip: true,
     restoreReversedClip: true,
     glueClips: true,

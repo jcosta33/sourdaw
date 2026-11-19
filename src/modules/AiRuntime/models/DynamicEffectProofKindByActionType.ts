@@ -161,6 +161,7 @@ export const dynamicEffectProofKindByActionType: { readonly [Type in AppActionTy
     setClipFade: 'none',
     importMidiFile: 'none',
     normalizeClip: 'none',
+    relinkClipAudioSources: 'none',
     reverseClip: 'none',
     restoreReversedClip: 'none',
     glueClips: 'none',

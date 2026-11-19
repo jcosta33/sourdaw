@@ -164,6 +164,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     setClipFade: noApplicationIdRule,
     importMidiFile: noApplicationIdRule,
     normalizeClip: noApplicationIdRule,
+    relinkClipAudioSources: noApplicationIdRule,
     reverseClip: { argument: 'reversedBufferId', prefix: 'reversed-command-' },
     restoreReversedClip: noApplicationIdRule,
     glueClips: noApplicationIdRule,

@@ -316,6 +316,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setClipFade: describeFromRegistry,
     importMidiFile: describeFromRegistry,
     normalizeClip: describeNormalizedClip,
+    relinkClipAudioSources: describeFromRegistry,
     reverseClip: describeFromRegistry,
     restoreReversedClip: describeFromRegistry,
     glueClips: describeGluedClips,
