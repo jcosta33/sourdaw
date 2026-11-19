@@ -156,6 +156,39 @@ describe('ResizeHandle', () => {
         });
     });
 
+    it.each([
+        ['Home', (handle: HTMLElement) => fireEvent.keyDown(handle, { key: 'Home' })],
+        ['End', (handle: HTMLElement) => fireEvent.keyDown(handle, { key: 'End' })],
+        ['an arrow key', (handle: HTMLElement) => fireEvent.keyDown(handle, { key: 'ArrowDown' })],
+        ['another pointer moving', () => fireEvent.pointerMove(document, { pointerId: 2, clientY: 180 })],
+        ['another pointer releasing', () => fireEvent.pointerUp(document, { pointerId: 2 })],
+        ['another pointer canceling', () => fireEvent.pointerCancel(document, { pointerId: 2 })],
+        ['a compatibility mouse move', () => fireEvent.mouseMove(document, { clientY: 180 })],
+        ['a compatibility mouse up', () => fireEvent.mouseUp(document)],
+    ] as const)('keeps the initiating pointer in control despite %s', (_label, interrupt) => {
+        render(<ResizeHandle {...defaultProps} />);
+        const handle = screen.getByRole('separator');
+        handle.focus();
+        expect(handle).toHaveFocus();
+        fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+        fireEvent.pointerMove(document, { pointerId: 1, clientY: 120 });
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(100);
+
+        interrupt(handle);
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(100);
+
+        fireEvent.pointerMove(document, { pointerId: 1, clientY: 130 });
+        fireEvent.pointerUp(document, { pointerId: 1 });
+
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackHeight',
+            payload: { trackId: 'track1', height: 110 },
+        });
+        expect(timelineViewStore.value?.trackHeightPreview).toBeNull();
+    });
+
     it('discards a canceled pointer resize and allows the next drag to commit', () => {
         render(<ResizeHandle {...defaultProps} />);
         const handle = screen.getByRole('separator');

@@ -22,41 +22,15 @@ export const ResizeHandle = ({
     heightScale,
 }: ResizeHandleProps): ReactElement => {
     const pendingHeightRef = useRef<number | null>(null);
-    const pointerCancelControllerRef = useRef<AbortController | null>(null);
 
-    useEffect(
-        () => () => {
-            pointerCancelControllerRef.current?.abort();
-            setTimelineTrackHeightPreview(trackId, null);
-        },
-        [trackId]
-    );
+    useEffect(() => () => setTimelineTrackHeightPreview(trackId, null), [trackId]);
 
     return (
         <DragResizeHandle
             side="bottom"
             cursor="ns-resize"
             onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => {
-                event.stopPropagation();
-                if (event.button !== 0 || pointerCancelControllerRef.current) {
-                    return;
-                }
-                const pointerId = event.pointerId;
-                const controller = new AbortController();
-                pointerCancelControllerRef.current = controller;
-                document.addEventListener(
-                    'pointercancel',
-                    (cancellation) => {
-                        if (cancellation.pointerId === pointerId) {
-                            pendingHeightRef.current = null;
-                            setTimelineTrackHeightPreview(trackId, null);
-                        }
-                    },
-                    // Clear the draft before DragResizeHandle's end callback runs.
-                    { capture: true, signal: controller.signal }
-                );
-            }}
+            onPointerDown={(event) => event.stopPropagation()}
             onResize={(delta) => {
                 const next = clampTrackHeight(pendingHeightRef.current ?? height, delta / heightScale);
                 pendingHeightRef.current = next;
@@ -66,13 +40,15 @@ export const ResizeHandle = ({
                 pendingHeightRef.current = clampTrackHeight(size / heightScale, 0);
             }}
             onResizeEnd={() => {
-                pointerCancelControllerRef.current?.abort();
-                pointerCancelControllerRef.current = null;
                 const next = pendingHeightRef.current;
                 pendingHeightRef.current = null;
                 if (next !== null && Math.abs(next - height) > Number.EPSILON * MAX_TRACK_HEIGHT) {
                     void executeUserAppAction({ type: 'setTrackHeight', payload: { trackId, height: next } });
                 }
+                setTimelineTrackHeightPreview(trackId, null);
+            }}
+            onResizeCancel={() => {
+                pendingHeightRef.current = null;
                 setTimelineTrackHeightPreview(trackId, null);
             }}
             className="absolute bottom-0 left-0 right-0 h-1 cursor-ns-resize opacity-0 hover:opacity-100 hover:bg-ring/40 focus-visible:opacity-100 focus-visible:bg-ring/40 transition-opacity"
