@@ -1149,19 +1149,25 @@ expect(
 // proved, and one on any step reports that step green whatever it ran. The
 // pins above each cover one named job or step; this sweep covers every job in
 // every file, because a softened leg reports a failing proof as a passing
-// summary wherever it lands. The single exception is the first changed-paths
-// filter attempt: its softening only hands the question to its retry step and
+// summary wherever it lands. The first changed-paths filter attempt hands
+// the question to its retry step and
 // to the Resolve scope verdict guard, which fail the job when neither attempt
 // produced verdicts. The other exception class is the package-manager cache
 // restore: a setup-node step with a `cache` only speeds the install up, so a
 // refused or stalled restore must fall through to the uncached install instead
 // of hanging the job (#5929). The healthGatesWorkflow spec pins its step cap and
-// the unsoftened Node install before it; here only that step shape may soften.
+// the unsoftened Node install before it. The scheduled Fermenter observations
+// report their own verdict and do not decide the Nightly job result.
 expect(
     stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
     'the first changed-paths filter attempt must continue on error so its retry can absorb a transient API failure'
 );
-const continueOnErrorStepPins = new Set(['validation.ymldecideFilter changed paths']);
+const continueOnErrorStepPins = new Set([
+    'validation.ymldecideFilter changed paths',
+    'nightly.ymldesktop-measureCapture the Fermenter build receipt',
+    'nightly.ymldesktop-measureProve Fermenter in the packaged app',
+    'nightly.ymldesktop-measureUpload the Fermenter proof record',
+]);
 const isSetupNodeCacheStep = (step) =>
     typeof step?.uses === 'string' &&
     step.uses.startsWith('actions/setup-node@') &&

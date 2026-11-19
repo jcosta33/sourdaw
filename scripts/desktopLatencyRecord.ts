@@ -205,7 +205,7 @@ const SCAN_HELPER_FILE = (platform: NodeJS.Platform): string =>
  * native-only rebuild — exactly what the #3070 cutover is — packs a
  * byte-identical `app.asar`, so these two are what actually changes.
  */
-function payloadRelativePaths(platform: NodeJS.Platform): string[] {
+export function payloadRelativePaths(platform: NodeJS.Platform): string[] {
     return [
         'Contents/Resources/app.asar',
         `Contents/Resources/${NATIVE_ADDON_FILE}`,
