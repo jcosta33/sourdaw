@@ -980,6 +980,20 @@ describe('private Project Save preparation with real native storage', () => {
             expect(
                 timings.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task')
             ).toHaveLength(1);
+            const historySlices = timings.filter(
+                (entry) => entry.name === 'automerge-prospective-sequence-planning-history-task'
+            );
+            expect(historySlices).toHaveLength(Math.ceil(history.length / 128));
+            for (const [index, entry] of historySlices.entries()) {
+                expect(entry.detail).toEqual({
+                    primaryKey: 'arrangements',
+                    sequenceIndex: undefined,
+                    historyIndex: index,
+                    visitedChangeCount: Math.min(history.length, (index + 1) * 128),
+                    historyComplete: index === historySlices.length - 1,
+                });
+                expect(entry.duration).toBeLessThan(50);
+            }
             for (const name of [
                 'automerge-storage-materialization-handoff-task',
                 'automerge-storage-prepared-publication',

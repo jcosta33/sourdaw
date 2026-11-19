@@ -7,6 +7,7 @@ import { initializeWasm } from '@automerge/automerge/slim';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { hasOpaqueNativeMetadata } from '../../models/NativeMutationSequence';
 import { type ProspectiveMutationWorkerResult } from '../../models/ProspectiveMutationWorkerProtocol';
@@ -42,13 +43,24 @@ afterEach(async () => {
     await settleNativePreparationWorkers();
 });
 
-async function fixture(peer = false) {
+async function fixture(peer = false, historyLength = 0, concurrent = false) {
     let source = A.from<State>({ slot: { text: '' } }, { actor: ACTOR });
+    for (let index = 0; index < historyLength; index++) {
+        source = A.change(source, (draft) => {
+            draft.unrelated = `Earlier owner edit ${index}`;
+        });
+    }
     if (peer) {
         const other = A.change(A.clone(source, { actor: PEER }), (draft) => {
             draft.unrelated = 'Peer maximum '.repeat(300);
         });
-        source = A.merge(A.clone(source, { actor: ACTOR }), other);
+        let owner = A.clone(source, { actor: ACTOR });
+        if (concurrent) {
+            owner = A.change(owner, (draft) => {
+                draft.unrelated = 'Concurrent owner edit';
+            });
+        }
+        source = A.merge(owner, other);
         A.free(other);
     }
     const target = { text: 'Native sequence '.repeat(180), confidence: 0.9517297589061063 };
@@ -99,6 +111,58 @@ function admit(source: A.Doc<State>, result: ProspectiveMutationWorkerResult) {
         assertCurrent: () => undefined,
     });
 }
+
+describe('bounded source history planning', () => {
+    it('reads every source metadata node once across host slices while retaining peer maximum and actor sequence', async () => {
+        const { source, result, target } = await fixture(true, 300, true);
+        expect(A.getHeads(source)).toHaveLength(2);
+        const history = A.getChangesMetaSince(source, []);
+        const readMetadata = vi.spyOn(A.getBackend(source), 'getChangeMetaByHash');
+        const measure = vi.spyOn(performance, 'measure');
+        let candidate: A.Doc<State> | undefined;
+        try {
+            candidate = await admit(source, result);
+            expect(candidate.slot).toEqual(target);
+            expect(readMetadata.mock.calls.map(([hash]) => hash).toSorted()).toEqual(
+                history.map((entry) => entry.hash).toSorted()
+            );
+            const slices = measure.mock.calls
+                .filter(([name]) => name === 'automerge-prospective-sequence-planning-history-task')
+                .map(([, options]) => options);
+            expect(slices).toHaveLength(Math.ceil(history.length / 128));
+            for (const [index, options] of slices.entries()) {
+                if (!isRecord(options)) {
+                    throw new Error('History slice must expose its actual metadata census');
+                }
+                expect(options.detail).toEqual({
+                    primaryKey: 'slot',
+                    sequenceIndex: undefined,
+                    historyIndex: index,
+                    visitedChangeCount: Math.min(history.length, (index + 1) * 128),
+                    historyComplete: index === slices.length - 1,
+                });
+            }
+        } finally {
+            readMetadata.mockRestore();
+            measure.mockRestore();
+            if (candidate) {
+                A.free(candidate);
+            }
+            A.free(source);
+        }
+    });
+
+    it('refuses missing metadata from the captured source rather than trusting Worker authority', async () => {
+        const { source, result } = await fixture();
+        const readMetadata = vi.spyOn(A.getBackend(source), 'getChangeMetaByHash').mockReturnValueOnce(null);
+        try {
+            await expect(admit(source, result)).rejects.toThrow('Native source history metadata is unavailable');
+        } finally {
+            readMetadata.mockRestore();
+            A.free(source);
+        }
+    });
+});
 
 function replaceFirst(result: ProspectiveMutationWorkerResult, edit: (value: A.DecodedChange) => A.DecodedChange) {
     const first = result.changes[0];

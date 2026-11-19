@@ -214,6 +214,7 @@ function measureDetail(measure: PreparationMeasure): Record<string, unknown> {
 }
 
 const SEQUENCE_PLANNING_NAME = 'automerge-prospective-sequence-planning-task';
+const SEQUENCE_HISTORY_NAME = 'automerge-prospective-sequence-planning-history-task';
 const SEQUENCE_SLICE_NAME = 'automerge-prospective-sequence-slice-task';
 const SEQUENCE_PHASE_NAMES: readonly string[] = [
     'automerge-prospective-response-task',
@@ -224,7 +225,10 @@ const SEQUENCE_PHASE_NAMES: readonly string[] = [
 
 function nativeSequencePhases(measures: PreparationMeasure[]): PreparationMeasure[] {
     return measures.filter(
-        (entry) => entry.name === SEQUENCE_PLANNING_NAME || SEQUENCE_PHASE_NAMES.includes(entry.name)
+        (entry) =>
+            entry.name === SEQUENCE_PLANNING_NAME ||
+            entry.name === SEQUENCE_HISTORY_NAME ||
+            SEQUENCE_PHASE_NAMES.includes(entry.name)
     );
 }
 
@@ -251,7 +255,8 @@ function assertCompletedSequence(
     workerTerminated: number,
     end: number
 ): number {
-    expect(phases).toHaveLength(1 + SEQUENCE_PHASE_NAMES.length * changeCount);
+    const history = phases.filter((entry) => entry.name === SEQUENCE_HISTORY_NAME);
+    expect(phases).toHaveLength(1 + history.length + SEQUENCE_PHASE_NAMES.length * changeCount);
     const planning = phases.filter((entry) => entry.name === SEQUENCE_PLANNING_NAME);
     expect(planning).toHaveLength(1);
     expect(measureDetail(planning[0]).sequenceIndex).toBeUndefined();
@@ -265,11 +270,31 @@ function assertCompletedSequence(
         ).toEqual(indices);
     }
     const planningEnd = planning[0].startTime + planning[0].duration;
+    const finalHistory = history.at(-1);
+    if (!finalHistory) {
+        throw new Error('Native planning source history census is missing');
+    }
+    const visitedChangeCount = measureDetail(finalHistory).visitedChangeCount;
+    if (typeof visitedChangeCount !== 'number' || !Number.isSafeInteger(visitedChangeCount) || visitedChangeCount < 1) {
+        throw new Error('Native planning must visit the complete nonempty source history');
+    }
+    expect(history).toHaveLength(Math.ceil(visitedChangeCount / 128));
+    let historyEnd = planningEnd;
+    for (const [index, entry] of history.entries()) {
+        const detail = measureDetail(entry);
+        expect(detail.sequenceIndex).toBeUndefined();
+        expect(detail.historyIndex).toBe(index);
+        expect(detail.visitedChangeCount).toBe(Math.min(visitedChangeCount, (index + 1) * 128));
+        expect(detail.historyComplete).toBe(index === history.length - 1);
+        expect(entry.startTime).toBeGreaterThanOrEqual(historyEnd);
+        expect(entry.duration).toBeLessThan(JANK_TASK_CEILING_MS);
+        historyEnd = entry.startTime + entry.duration;
+    }
     for (const phase of phases) {
         expect(phase.startTime).toBeGreaterThanOrEqual(workerTerminated);
         expect(phase.startTime + phase.duration).toBeLessThanOrEqual(end);
     }
-    let sliceEnd = planningEnd;
+    let sliceEnd = historyEnd;
     for (const slice of phases.filter((entry) => entry.name === SEQUENCE_SLICE_NAME)) {
         expect(slice.startTime).toBeGreaterThanOrEqual(sliceEnd);
         sliceEnd = slice.startTime + slice.duration;

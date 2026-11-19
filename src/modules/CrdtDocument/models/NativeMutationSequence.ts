@@ -2,6 +2,8 @@ import { type DecodedChange } from '@automerge/automerge';
 
 export const NATIVE_SEQUENCE_MAX_OPERATIONS = 1024;
 export const NATIVE_SEQUENCE_MAX_BYTES = 65_536;
+/** Source authority is read in separate host tasks, without exporting the entire native history. */
+export const NATIVE_SEQUENCE_HISTORY_BATCH_SIZE = 128;
 export type NativeMutationSequence = { readonly changeCount: number; readonly operationCount: number };
 
 /** Native optional authors are omitted by the decoder and nullable in metadata. */
