@@ -138,6 +138,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     removeAutomationLane: 'none',
     setAutomationLaneEnabled: 'none',
     addAutomationPoint: 'none',
+    insertAutomationLanePoints: 'none',
     quantizeNotes: 'none',
     removeShortMidiOverlaps: 'none',
     createDrumPreviewBranches: 'none',

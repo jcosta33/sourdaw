@@ -73,6 +73,13 @@ annotated with an imported callback type takes its parameter shape from that con
 In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`. Existing fixes from native
 `typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
 redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
+The stock type-aware `typescript/no-unsafe-type-assertion` rule checks narrowing casts in
+selected product directories in `.oxlint-quality.json`. The scope includes whole modules,
+selected WorkspaceShell layers, shared layout and UI components, helpers, and routes. It follows
+the same TS and TSX product exclusions. Check the stock diagnostics before admitting a directory.
+Review casts backed by runtime invariants such as the FLAC encoder's single-bit mask. Prefer a
+compiler-visible guard. When TypeScript cannot infer the invariant, use a rule-specific
+directive that explains it.
 The stock type-aware generic rule reports parameters that establish no type relationship.
 The quality pass counts `no-else-return` findings when a preceding branch already returns on every
 path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
@@ -125,7 +132,10 @@ measure a real observation window can use a line-scoped reason for the duration.
 The stock Vitest assertion-presence pilot applies to TS and TSX specs and tests under `src/`,
 excluding `*.e2e.spec.*`. It uses Vitest's default `expect`, `expectTypeOf`, `assert`, and
 `assertType` names. Review still checks whether the assertion observes the case's claim.
-The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion
+The stock Vitest conditional-expect, focused-test, and disabled-test rules run on
+Vitest specs and tests, excluding `*.e2e.spec.*`, `tests/e2e/`, `server/`, and `electron/out/`.
+The admission rules reject `.only` and unconditional `.skip` on suites or cases.
+`.todo`, `.skipIf`, and `.runIf` remain available. The local assertion
 rule checks imported Vitest `expect`, including aliases, `soft`, and `poll`, and leaves
 Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and the
 [public Vitest ESLint rule](https://github.com/vitest-dev/eslint-plugin-vitest/blob/main/src/rules/valid-expect.ts)

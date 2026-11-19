@@ -204,6 +204,7 @@ export const macroReplayPayloadResetByActionType: {
     removeAutomationLane: keepRecordedPayload,
     setAutomationLaneEnabled: keepRecordedPayload,
     addAutomationPoint: keepRecordedPayload,
+    insertAutomationLanePoints: keepRecordedPayload,
     quantizeNotes: keepRecordedPayload,
     removeShortMidiOverlaps: keepRecordedPayload,
     createDrumPreviewBranches: keepRecordedPayload,

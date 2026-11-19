@@ -218,6 +218,7 @@ const plannedBusByActionType: {
     removeAutomationLane: unchangedBus,
     setAutomationLaneEnabled: unchangedBus,
     addAutomationPoint: unchangedBus,
+    insertAutomationLanePoints: unchangedBus,
     quantizeNotes: unchangedBus,
     removeShortMidiOverlaps: unchangedBus,
     createDrumPreviewBranches: unchangedBus,

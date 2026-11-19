@@ -205,6 +205,7 @@ const midiSnapshotByActionType: {
     removeAutomationLane: unchangedSnapshot,
     setAutomationLaneEnabled: unchangedSnapshot,
     addAutomationPoint: unchangedSnapshot,
+    insertAutomationLanePoints: unchangedSnapshot,
     quantizeNotes: unchangedSnapshot,
     removeShortMidiOverlaps: unchangedSnapshot,
     createDrumPreviewBranches: unchangedSnapshot,

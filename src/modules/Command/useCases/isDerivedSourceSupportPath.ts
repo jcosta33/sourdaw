@@ -151,6 +151,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     removeAutomationLane: noSupportPath,
     setAutomationLaneEnabled: noSupportPath,
     addAutomationPoint: noSupportPath,
+    insertAutomationLanePoints: noSupportPath,
     quantizeNotes: noSupportPath,
     removeShortMidiOverlaps: noSupportPath,
     createDrumPreviewBranches: noSupportPath,

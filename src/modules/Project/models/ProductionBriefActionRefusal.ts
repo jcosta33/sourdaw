@@ -138,6 +138,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     removeAutomationLane: 'none',
     setAutomationLaneEnabled: 'none',
     addAutomationPoint: 'none',
+    insertAutomationLanePoints: 'none',
     quantizeNotes: 'none',
     removeShortMidiOverlaps: 'none',
     createDrumPreviewBranches: 'none',
