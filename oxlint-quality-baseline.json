@@ -10630,11 +10630,6 @@
             "count": 1
         }
     },
-    "src/modules/Automation/useCases/automation/addAutomationPoint.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
     "src/modules/Automation/useCases/automation/automationTimeStateCodec.ts": {
         "eslint/complexity": {
             "count": 1
@@ -12745,11 +12740,6 @@
     },
     "src/modules/CrdtDocument/models/ActionHistoryState.ts": {
         "sourdaw-craft/no-long-array-chain": {
-            "count": 1
-        }
-    },
-    "src/modules/CrdtDocument/models/ProspectiveMutationWorkerProtocol.ts": {
-        "eslint/complexity": {
             "count": 1
         }
     },
@@ -17033,9 +17023,6 @@
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 1
         },

@@ -21,6 +21,12 @@ type ActiveRackVoice = {
     generation: number;
 };
 
+const CLIP_PLAYBACK_PREVIEW_OPTIONS = { preserveInputTrackIds: true };
+
+function previewOptionsForTrackMode(preserveInputTrackIds: boolean) {
+    return preserveInputTrackIds ? CLIP_PLAYBACK_PREVIEW_OPTIONS : undefined;
+}
+
 export class MidiRack {
     private processors: MidiProcessor[] = [];
     private processorTypes: Map<string, ProcessorType> = new Map();
@@ -178,6 +184,7 @@ export class MidiRack {
             }
             this.lastDiscontinuityEpoch = discontinuityEpoch;
         }
+        const previewOptions = previewOptionsForTrackMode(preserveInputTrackIds);
         this.preview.beginBlock(
             previewEnabled,
             blockStartSamples,
@@ -187,7 +194,8 @@ export class MidiRack {
             routeId,
             trackId,
             captureEpoch,
-            this.projectionVersion
+            this.projectionVersion,
+            previewOptions
         );
         const preview = previewEnabled ? this.preview : undefined;
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
@@ -289,7 +297,8 @@ export class MidiRack {
                     routeId,
                     trackId,
                     captureEpoch,
-                    this.projectionVersion
+                    this.projectionVersion,
+                    previewOptions
                 );
                 preview?.recordProcessorEvents(input, processor.id, false, true);
                 preview?.recordProcessorProvenance(processor.id, false, true, 0);
