@@ -135,7 +135,7 @@ describe('prospective mutation Worker ownership', () => {
             response.sequence = { changeCount: 1, operationCount: 0 };
         }
         if (kind === 'excess-span') {
-            response.sequence = { changeCount: 1, operationCount: 1025 };
+            response.sequence = { changeCount: 1, operationCount: 769 };
         }
         if (kind === 'type2') {
             changes[0]![8] = 2;
