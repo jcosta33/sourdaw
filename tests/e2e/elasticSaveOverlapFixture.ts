@@ -86,7 +86,8 @@ type Controller = {
     stop(): Promise<void>;
 };
 let active: Controller | undefined;
-const OVERLAP_LIFETIME_MS = 30_000;
+// Allow two bounded preparation attempts and time for durable Save settlement.
+const OVERLAP_LIFETIME_MS = 90_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -441,11 +441,20 @@ describe('public Save of the active arrangement', () => {
         expect(opened.readHistory()).toEqual(history);
     }, 30_000);
 
-    it('replans the same native project after a rename and records the committed name in Recent', async () => {
+    it('replans on a fresh deadline after a rename and records the new name in Recent', async ({ onTestFinished }) => {
         const opened = await openSaveProject();
         await opened.renameSourceTrack(EDITED_NAME);
         const history = opened.readHistory();
         vi.spyOn(Date, 'now').mockReturnValue(SAVED_AT);
+        const firstDeadline = new AbortController();
+        const retryDeadline = new AbortController();
+        const timeout = vi
+            .spyOn(AbortSignal, 'timeout')
+            .mockReturnValueOnce(firstDeadline.signal)
+            .mockReturnValueOnce(retryDeadline.signal);
+        onTestFinished(() => {
+            timeout.mockRestore();
+        });
         const first = Promise.withResolvers<HeldReply>();
         nextReply = first;
         const saving = opened.saveProject();
@@ -476,12 +485,15 @@ describe('public Save of the active arrangement', () => {
             ]);
             expect(opened.readRoot().projectMeta).toMatchObject({ name: 'Renamed during Save', updatedAt: CREATED_AT });
             expect(opened.readNamedRecord()).toBeUndefined();
+            // Expire the first lifetime while the replacement Worker reply is still held.
+            firstDeadline.abort(new DOMException('The first preparation deadline expired', 'TimeoutError'));
         } finally {
             current.release();
             await settlement;
         }
 
         expect(await settlement).toEqual([{ status: 'fulfilled', value: true }]);
+        expect(timeout.mock.calls).toEqual([[30_000], [30_000]]);
         expectSavedSources(opened, EDITED_NAME);
         expect(opened.readNamed().meta.name).toBe('Renamed during Save');
         expect(opened.getRecentProjects()).toMatchObject([{ name: 'Renamed during Save' }]);

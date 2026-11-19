@@ -319,7 +319,6 @@ async function prepareSaveData(
     identity: string,
     expectedOutgoingProjectIdentity: string | undefined
 ) {
-    const signal = AbortSignal.timeout(SAVE_PREPARATION_TIMEOUT_MS);
     const payload: { intent: 'prepareSnapshot'; expectedOutgoingProjectIdentity?: string } = {
         intent: 'prepareSnapshot',
     };
@@ -328,8 +327,8 @@ async function prepareSaveData(
     }
 
     for (let attempt = 0; attempt < MAX_SAVE_PREPARATION_ATTEMPTS; attempt += 1) {
-        signal.throwIfAborted();
         assertSavePreparationAuthority(project, identity);
+        const signal = AbortSignal.timeout(SAVE_PREPARATION_TIMEOUT_MS);
         let committedRevision: string | undefined;
         try {
             await executeAppAction(
@@ -344,6 +343,7 @@ async function prepareSaveData(
                 }
             );
         } catch (error) {
+            signal.throwIfAborted();
             if (!(error instanceof ProjectSavePreparationStaleError)) {
                 throw error;
             }
