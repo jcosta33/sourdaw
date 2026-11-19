@@ -1,4 +1,10 @@
 import {
+    readPersistentPcmRevision,
+    readPreparedOwner,
+    requiresPromotionReconciliation,
+    type PreparedAudioBufferMetadata,
+} from '../models/AudioBufferPersistenceIdentity';
+import {
     canonicalAudioBufferIds,
     checkpointAudioVersionKey,
     CHECKPOINT_AUDIO_VERSION_META_STORE_NAME,
@@ -12,15 +18,7 @@ import {
     type CheckpointAudioRetention,
     type CheckpointAudioVersionMetadata,
 } from '../models/CheckpointAudioRetention';
-import {
-    isValidPreparedSerializedAudioBuffer,
-    readPersistentPcmRevision,
-    readPreparedOwner,
-    requiresPromotionReconciliation,
-    type PreparedAudioBufferMetadata,
-} from '../stores/preparedAudioBufferOwnership';
-
-import type { SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
+import { isValidPreparedSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
 
 const BUFFER_STORE_NAME = 'buffers';
 const META_STORE_NAME = 'bufferMeta';

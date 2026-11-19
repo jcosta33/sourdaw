@@ -5,6 +5,8 @@ export type SerializedAudioBuffer = {
     sizeInBytes: number;
 };
 
+export type PreparedSerializedAudioBuffer = SerializedAudioBuffer & { lastAccessed: number };
+
 function isFloat32Array(value: unknown): value is Float32Array {
     return Object.prototype.toString.call(value) === '[object Float32Array]';
 }
@@ -31,5 +33,14 @@ export function isValidSerializedAudioBuffer(value: unknown): value is Serialize
         channelData.length === candidate.numberOfChannels &&
         channelData.every((channel) => channel.length === length) &&
         candidate.sizeInBytes === sizeInBytes
+    );
+}
+
+export function isValidPreparedSerializedAudioBuffer(data: unknown): data is PreparedSerializedAudioBuffer {
+    return (
+        isValidSerializedAudioBuffer(data) &&
+        'lastAccessed' in data &&
+        typeof data.lastAccessed === 'number' &&
+        Number.isFinite(data.lastAccessed)
     );
 }

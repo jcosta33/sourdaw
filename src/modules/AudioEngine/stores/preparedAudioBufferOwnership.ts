@@ -1,25 +1,12 @@
-import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
-
-export type PreparedAudioBufferOwner = {
-    schemaVersion: 1;
-    createdAtMs?: number;
-    leaseId: string;
-    persistenceRevision?: string;
-    promotionRevision?: string;
-    status: 'project-owned' | 'temporary';
-};
-
-export type PreparedAudioBufferMetadata = {
-    freezeProjectId?: number;
-    lastAccessed: number;
-    persistenceRevision?: string;
-    preparedOwner?: PreparedAudioBufferOwner;
-    sizeInBytes: number;
-};
-
-export type PreparedSerializedAudioBuffer = SerializedAudioBuffer & {
-    lastAccessed: number;
-};
+import {
+    readPreparedOwner,
+    type PreparedAudioBufferMetadata,
+    type PreparedAudioBufferOwner,
+} from '../models/AudioBufferPersistenceIdentity';
+import {
+    isValidPreparedSerializedAudioBuffer,
+    type PreparedSerializedAudioBuffer,
+} from '../models/SerializedAudioBuffer';
 
 export type PreparedAudioBufferRecoveryMetadata = {
     id: string;
@@ -102,14 +89,6 @@ export function readPreparedAudioRecoveryRecord(value: unknown): PreparedAudioBu
     return recovery as PreparedAudioBufferRecoveryRecord;
 }
 
-export function isValidPreparedSerializedAudioBuffer(data: unknown): data is PreparedSerializedAudioBuffer {
-    return (
-        isValidSerializedAudioBuffer(data) &&
-        typeof (data as Record<string, unknown>).lastAccessed === 'number' &&
-        Number.isFinite((data as Record<string, unknown>).lastAccessed)
-    );
-}
-
 export function preparedIdentityFailure(id: string, leaseId: string): string | undefined {
     if (id.trim().length === 0) {
         return 'Prepared audio buffer ID is invalid.';
@@ -118,75 +97,6 @@ export function preparedIdentityFailure(id: string, leaseId: string): string | u
         return 'Prepared audio lease ID is invalid.';
     }
     return undefined;
-}
-
-export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner | null | 'invalid' {
-    if (metadata === undefined) {
-        return null;
-    }
-    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
-        return 'invalid';
-    }
-    const owner = (metadata as Record<string, unknown>).preparedOwner;
-    if (owner === undefined) {
-        return null;
-    }
-    if (owner === null || typeof owner !== 'object' || Array.isArray(owner)) {
-        return 'invalid';
-    }
-    if ((metadata as Record<string, unknown>).persistenceRevision !== undefined) {
-        return 'invalid';
-    }
-    const candidate = owner as Record<string, unknown>;
-    const createdAtMs = candidate.createdAtMs;
-    const leaseId = candidate.leaseId;
-    const persistenceRevision = candidate.persistenceRevision;
-    const promotionRevision = candidate.promotionRevision;
-    const status = candidate.status;
-    if (
-        candidate.schemaVersion !== 1 ||
-        typeof leaseId !== 'string' ||
-        leaseId.trim().length === 0 ||
-        (persistenceRevision !== undefined &&
-            (typeof persistenceRevision !== 'string' || persistenceRevision.trim().length === 0)) ||
-        (promotionRevision !== undefined &&
-            (typeof promotionRevision !== 'string' || promotionRevision.trim().length === 0)) ||
-        (status === 'temporary' && promotionRevision !== undefined) ||
-        (createdAtMs !== undefined && (typeof createdAtMs !== 'number' || !Number.isFinite(createdAtMs))) ||
-        (status !== 'temporary' && status !== 'project-owned')
-    ) {
-        return 'invalid';
-    }
-    const validated: PreparedAudioBufferOwner = { schemaVersion: 1, leaseId, status };
-    if (createdAtMs !== undefined) {
-        validated.createdAtMs = createdAtMs;
-    }
-    if (persistenceRevision !== undefined) {
-        validated.persistenceRevision = persistenceRevision;
-    }
-    if (promotionRevision !== undefined) {
-        validated.promotionRevision = promotionRevision;
-    }
-    return validated;
-}
-
-export function readPersistentPcmRevision(metadata: unknown): string | null {
-    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
-        return null;
-    }
-    const candidate = metadata as Record<string, unknown>;
-    const ordinaryRevision = candidate.persistenceRevision;
-    const owner = readPreparedOwner(metadata);
-    if (owner === 'invalid') {
-        return null;
-    }
-    if (owner !== null) {
-        return owner.persistenceRevision ?? null;
-    }
-    if (ordinaryRevision === undefined) {
-        return null;
-    }
-    return typeof ordinaryRevision === 'string' && ordinaryRevision.trim().length > 0 ? ordinaryRevision : null;
 }
 
 export function isValidPreparedAudioBufferPair(
@@ -253,12 +163,6 @@ export function finalizedOwner(owner: PreparedAudioBufferOwner): PreparedAudioBu
         finalized.persistenceRevision = owner.persistenceRevision;
     }
     return finalized;
-}
-
-export function requiresPromotionReconciliation(
-    owner: PreparedAudioBufferOwner
-): owner is PreparedAudioBufferOwner & { promotionRevision: string; status: 'project-owned' } {
-    return owner.status === 'project-owned' && owner.promotionRevision !== undefined;
 }
 
 export function temporaryOwner(owner: PreparedAudioBufferOwner): PreparedAudioBufferOwner {

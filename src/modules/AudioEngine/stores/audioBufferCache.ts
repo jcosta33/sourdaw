@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { readIndexedDbRecordPairs } from '#/infra/storage/readIndexedDbRecordPairs';
 import {
     runInProjectAudioStorageLock,
     type ProjectAudioStorageLockScope,
@@ -6,12 +7,31 @@ import {
 } from '#/infra/storage/withProjectAudioStorageLock';
 
 import {
+    AUDIO_BUFFER_DATABASE_NAME as DB_NAME,
+    AUDIO_BUFFER_DATABASE_VERSION as DB_VERSION,
+    AUDIO_BUFFER_METADATA_STORE as META_STORE_NAME,
+    AUDIO_BUFFER_PCM_STORE as STORE_NAME,
+    isValidAudioBufferMetadata as isValidBufferMetadata,
+    readDurableAudioBufferRevision,
+} from '../models/AudioBufferDurability';
+import {
+    readPersistentPcmRevision,
+    readPreparedOwner,
+    requiresPromotionReconciliation,
+    type PreparedAudioBufferMetadata,
+} from '../models/AudioBufferPersistenceIdentity';
+import {
     CHECKPOINT_AUDIO_VERSION_META_STORE_NAME,
     CHECKPOINT_AUDIO_VERSION_STORE_NAME,
     CHECKPOINT_RETENTION_STORE_NAME,
     readCheckpointAudioRetention,
     readCheckpointAudioVersionKey,
 } from '../models/CheckpointAudioRetention';
+import {
+    isValidPreparedSerializedAudioBuffer,
+    type PreparedSerializedAudioBuffer,
+} from '../models/SerializedAudioBuffer';
+import { readAudioBufferDurabilityInWorker } from '../repositories/readAudioBufferDurabilityInWorker';
 
 import { isAudioBufferHeld } from './audioBufferResidencyHolds';
 import {
@@ -23,14 +43,6 @@ import {
     createPreparedAudioBufferLifecycle,
     PreparedAudioStoragePhaseUnavailableError,
 } from './preparedAudioBufferLifecycle';
-import {
-    isValidPreparedSerializedAudioBuffer,
-    readPersistentPcmRevision,
-    readPreparedOwner,
-    requiresPromotionReconciliation,
-    type PreparedAudioBufferMetadata,
-    type PreparedSerializedAudioBuffer,
-} from './preparedAudioBufferOwnership';
 
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
  * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
@@ -214,32 +226,6 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
     waveformCache.set(key, peaks);
 }
 
-const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 5;
-const STORE_NAME = 'buffers';
-
-/** Everything the age and size collectors read, split out of the record so that
- * moving a timestamp does not rewrite the audio next to it.
- *
- * A record is `sampleRate` and `numberOfChannels` and then however many
- * megabytes of `Float32Array`; the two numbers the collectors want are 16 bytes
- * of it. IndexedDB has no partial update, so `put`ting a record back to change
- * `lastAccessed` rewrites the PCM — 384 KB per second of 48 kHz stereo, so
- * ~1.5 MB for a four-second loop and ~69 MB for a three-minute freeze bounce,
- * once per id per refresh window, forever. And both collectors reached those
- * two numbers through `getAll()`, materialising every record in the store to
- * read them; `cleanupUnusedFreezeFiles` caps that store at 2 GiB.
- *
- * Measured in `audioBufferCacheMetadataStore.spec.ts` on one second of 48 kHz
- * stereo: a refresh wrote 384 152 bytes and now writes 62, and a two-record
- * collector pass read 768 322 bytes (age) / 768 324 (size) and now reads 142 /
- * 144 — the rows and their keys, and no PCM at all.
- *
- * The record keeps its own `lastAccessed` and `sizeInBytes` fields. They stop
- * being the collectors' input at this version and become what the record was
- * persisted with — which is exactly what the lazy back-fill needs to seed a row
- * for a record written before this store existed. */
-const META_STORE_NAME = 'bufferMeta';
 const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
 type BufferMeta = PreparedAudioBufferMetadata;
 
@@ -326,11 +312,10 @@ let dbConnectionGeneration = 0;
  * already holds a resolved connection when `versionchange` fires — that one
  * still gets `InvalidStateError` off the closed handle. Nothing in this file
  * is exposed to that today, and the reason is an invariant with no guard on
- * it: **every `await openDb()` here is followed synchronously by
- * `db.transaction()`**. `versionchange` is delivered as a task while the
- * post-`await` continuation is a microtask, so no `versionchange` can be
- * interleaved between the two. Put any new `await` between an `openDb()` and
- * its `transaction()` and that stops being true. */
+ * it: direct reads open their transaction without another await.
+ * `versionchange` is delivered as a task while the post-`await` continuation
+ * is a microtask. The separate durability Worker opens its own transaction,
+ * and its main-thread caller rechecks the latch after the awaited reply. */
 let versionChangeLatched = false;
 
 const VERSION_CHANGE_LATCH_MESSAGE = 'IDB connection surrendered to a versionchange; reload to reconnect';
@@ -1140,22 +1125,6 @@ function readOrdinaryStoredBuffer(data: unknown): OrdinaryStoredBuffer | null {
         validated.sizeInBytes = candidate.sizeInBytes;
     }
     return validated;
-}
-
-function isValidBufferMetadata(metadata: unknown, sizeInBytes: number): metadata is BufferMeta {
-    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
-        return false;
-    }
-    const candidate = metadata as Record<string, unknown>;
-    return (
-        typeof candidate.lastAccessed === 'number' &&
-        Number.isFinite(candidate.lastAccessed) &&
-        candidate.sizeInBytes === sizeInBytes &&
-        (candidate.freezeProjectId === undefined ||
-            (typeof candidate.freezeProjectId === 'number' &&
-                Number.isSafeInteger(candidate.freezeProjectId) &&
-                candidate.freezeProjectId >= 0))
-    );
 }
 
 /** Refresh a buffer's last-access stamp. The age-based collector deletes on
@@ -1991,38 +1960,6 @@ type CachedAudioBuffersDurabilityResult =
           status: 'superseded';
       };
 
-function readDurableAudioBufferRevision(data: unknown, metadata: unknown): string | null {
-    if (
-        !isValidSerializedBuffer(data) ||
-        metadata === null ||
-        typeof metadata !== 'object' ||
-        Array.isArray(metadata)
-    ) {
-        return null;
-    }
-    const candidate = metadata as Record<string, unknown>;
-    if (
-        typeof candidate.lastAccessed !== 'number' ||
-        !Number.isFinite(candidate.lastAccessed) ||
-        candidate.sizeInBytes !== data.sizeInBytes ||
-        (candidate.freezeProjectId !== undefined &&
-            (typeof candidate.freezeProjectId !== 'number' ||
-                !Number.isSafeInteger(candidate.freezeProjectId) ||
-                candidate.freezeProjectId < 0))
-    ) {
-        return null;
-    }
-    const owner = readPreparedOwner(metadata);
-    if (!(
-        owner === null ||
-        (owner !== 'invalid' && owner.status === 'project-owned' && !requiresPromotionReconciliation(owner))
-    )) {
-        return null;
-    }
-    const revision = readPersistentPcmRevision(metadata);
-    return typeof revision === 'string' ? revision : null;
-}
-
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
@@ -2064,21 +2001,14 @@ async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<
         return new Map();
     }
     const database = await openDb();
-    const transaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
-    const bufferStore = transaction.objectStore(STORE_NAME);
-    const metadataStore = transaction.objectStore(META_STORE_NAME);
-    const pairs = await Promise.all(
-        ids.map((id) =>
-            Promise.all([
-                awaitRequest(bufferStore.get(id) as IDBRequest<SerializedBuffer | undefined>),
-                awaitRequest(metadataStore.get(id) as IDBRequest<BufferMeta | undefined>),
-            ])
-        )
-    );
-    await awaitTransaction(transaction);
-    return new Map(
-        ids.map((id, index) => [id, readDurableAudioBufferRevision(pairs[index]?.[0], pairs[index]?.[1])] as const)
-    );
+    const offThread = await readAudioBufferDurabilityInWorker(ids);
+    if (versionChangeLatched) {
+        throw new Error(VERSION_CHANGE_LATCH_MESSAGE);
+    }
+    const revisions =
+        offThread ??
+        (await readIndexedDbRecordPairs(database, [STORE_NAME, META_STORE_NAME], ids, readDurableAudioBufferRevision));
+    return new Map(ids.map((id, index) => [id, revisions[index] ?? null]));
 }
 
 async function ensureDurableAudioBuffersInScope(

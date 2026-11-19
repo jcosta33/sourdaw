@@ -9129,7 +9129,7 @@
     },
     "src/modules/AudioEngine/stores/audioBufferCache.ts": {
         "eslint/complexity": {
-            "count": 12
+            "count": 11
         },
         "eslint/max-depth": {
             "count": 3
@@ -9190,7 +9190,7 @@
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferPersistenceAttempts.ts": {
