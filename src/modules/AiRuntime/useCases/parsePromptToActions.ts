@@ -17,6 +17,7 @@ import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
+    isPublicCreativeInterpretation,
     type CreativeRequestAuthority,
     getCreativeSelectionSnapshot,
 } from '../models/CreativeInterpretation';
@@ -1373,7 +1374,10 @@ const planPromptIntent = inject({ logger })(
                                       }
                                       creativeAuthority = admission.authority;
                                       const publicReadingReceipt: { creativeInterpretation?: string } = {};
-                                      if ('creativeInterpretation' in admission) {
+                                      if (
+                                          'creativeInterpretation' in admission &&
+                                          isPublicCreativeInterpretation(admission.creativeInterpretation)
+                                      ) {
                                           publicReadingReceipt.creativeInterpretation =
                                               admission.creativeInterpretation;
                                       }
