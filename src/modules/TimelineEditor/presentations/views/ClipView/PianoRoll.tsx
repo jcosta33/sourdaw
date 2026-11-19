@@ -369,6 +369,7 @@ export const PianoRoll = ({
         canvasRef,
         scrollRef,
         notes,
+        openedClipNotes,
         clipId,
         trackId,
         openedClipIds,
