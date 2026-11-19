@@ -29,7 +29,7 @@ import {
     type ProjectData,
     type ProjectExportedAudioBuffer,
 } from '../../../models/ProjectData';
-import { arrangementStore } from '../../../stores/arrangementStore';
+import { arrangementStore, type ArrangementSnapshot } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { takeSnapshot } from '../../arrangement/takeSnapshot';
 
@@ -104,6 +104,34 @@ function collectOrdinaryBufferIds(trackState: TrackStoreState | null | undefined
         }
     }
     return ids;
+}
+
+/** Audio references from the live tracks and every arrangement, in export order. */
+function collectProjectAudioBufferIds(tracks: TrackStoreState, arrangements: readonly ArrangementSnapshot[]) {
+    const allBufferIds = new Set<string>();
+    const frozenBufferIds = new Set<string>();
+    const ordinaryBufferIds = new Set<string>();
+    for (const id of collectBufferIds(tracks)) {
+        allBufferIds.add(id);
+    }
+    for (const id of collectFrozenBufferIds(tracks)) {
+        frozenBufferIds.add(id);
+    }
+    for (const id of collectOrdinaryBufferIds(tracks)) {
+        ordinaryBufferIds.add(id);
+    }
+    for (const arr of arrangements) {
+        for (const id of collectBufferIds(arr.tracks)) {
+            allBufferIds.add(id);
+        }
+        for (const id of collectFrozenBufferIds(arr.tracks)) {
+            frozenBufferIds.add(id);
+        }
+        for (const id of collectOrdinaryBufferIds(arr.tracks)) {
+            ordinaryBufferIds.add(id);
+        }
+    }
+    return { allBufferIds, frozenBufferIds, ordinaryBufferIds };
 }
 
 /** Result of serializing the live project: the `ProjectData` snapshot, the
@@ -183,31 +211,7 @@ export async function buildProjectData({
         );
     }
 
-    // Collect all audioBufferIds referenced by the project (current track state
-    // and every arrangement, including non-active ones).
-    const allBufferIds = new Set<string>();
-    const frozenBufferIds = new Set<string>();
-    const ordinaryBufferIds = new Set<string>();
-    for (const id of collectBufferIds(tracks)) {
-        allBufferIds.add(id);
-    }
-    for (const id of collectFrozenBufferIds(tracks)) {
-        frozenBufferIds.add(id);
-    }
-    for (const id of collectOrdinaryBufferIds(tracks)) {
-        ordinaryBufferIds.add(id);
-    }
-    for (const arr of arrangements) {
-        for (const id of collectBufferIds(arr.tracks)) {
-            allBufferIds.add(id);
-        }
-        for (const id of collectFrozenBufferIds(arr.tracks)) {
-            frozenBufferIds.add(id);
-        }
-        for (const id of collectOrdinaryBufferIds(arr.tracks)) {
-            ordinaryBufferIds.add(id);
-        }
-    }
+    const { allBufferIds, frozenBufferIds, ordinaryBufferIds } = collectProjectAudioBufferIds(tracks, arrangements);
     const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
         ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
         : {};

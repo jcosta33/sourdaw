@@ -819,6 +819,22 @@ async function persistIncrementalCrdtProject(
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
+    retainCapturedIncrementals(generation, capturedBatch);
+
+    await flushPendingChunks(generation, attempt);
+    if (generation !== persistenceState.persistenceGeneration) {
+        return;
+    }
+
+    if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
+    }
+}
+
+function retainCapturedIncrementals(
+    generation: number,
+    capturedBatch: Awaited<ReturnType<typeof automergeRepository.captureIncrementalsOffThread>>
+): void {
     if (!capturedBatch.isCurrent()) {
         throw new Error('[CrdtPersistence] Project authority changed during incremental encoding');
     }
@@ -833,15 +849,6 @@ async function persistIncrementalCrdtProject(
             });
         }
         persistenceState.exportFrontiers.set(id, captured.heads);
-    }
-
-    await flushPendingChunks(generation, attempt);
-    if (generation !== persistenceState.persistenceGeneration) {
-        return;
-    }
-
-    if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
-        await compactCrdtProject(generation, settlePendingWrites, attempt);
     }
 }
 
@@ -934,6 +941,13 @@ function finishFullSnapshotCommit(pending: PendingFullSnapshot): void {
     crdtProjectCompactionState.incrementalSaveCount = 0;
 }
 
+function stagePendingFullSnapshot(pending: PendingFullSnapshot): void {
+    persistenceState.pendingFullSnapshot = pending;
+    if (pending.headsByDoc) {
+        persistenceState.exportFrontiers = new Map(pending.headsByDoc);
+    }
+}
+
 /** Keep a serialized full bundle pending until its replace transaction commits. */
 async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: PersistenceAttempt): Promise<void> {
     if (pending.generation !== persistenceState.persistenceGeneration) {
@@ -942,10 +956,7 @@ async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: Persis
 
     const generationSignal = persistenceState.persistenceAbortController.signal;
     let currentPending = pending;
-    persistenceState.pendingFullSnapshot = currentPending;
-    if (currentPending.headsByDoc) {
-        persistenceState.exportFrontiers = new Map(currentPending.headsByDoc);
-    }
+    stagePendingFullSnapshot(currentPending);
 
     try {
         while (currentPending.generation === persistenceState.persistenceGeneration) {
