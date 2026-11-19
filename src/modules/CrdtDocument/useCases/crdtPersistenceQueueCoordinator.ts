@@ -813,6 +813,19 @@ async function persistIncrementalCrdtProject(
     // it further.
     sessionUndoWitnessStampPort.stamp();
 
+    capturePendingIncrementalChunks(activeDocIds, generation);
+
+    await flushPendingChunks(generation, attempt);
+    if (generation !== persistenceState.persistenceGeneration) {
+        return;
+    }
+
+    if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
+    }
+}
+
+function capturePendingIncrementalChunks(activeDocIds: readonly DocId[], generation: number): void {
     for (const id of activeDocIds) {
         const captured = automergeRepository.captureDocIncremental(id, persistenceState.exportFrontiers.get(id) ?? []);
         if (!captured) {
@@ -827,15 +840,6 @@ async function persistIncrementalCrdtProject(
             });
         }
         persistenceState.exportFrontiers.set(id, captured.heads);
-    }
-
-    await flushPendingChunks(generation, attempt);
-    if (generation !== persistenceState.persistenceGeneration) {
-        return;
-    }
-
-    if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
-        await compactCrdtProject(generation, settlePendingWrites, attempt);
     }
 }
 
@@ -1003,6 +1007,10 @@ async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: Persis
         throw error;
     }
 
+    completePendingFullSnapshot(currentPending);
+}
+
+function completePendingFullSnapshot(currentPending: PendingFullSnapshot): void {
     if (
         currentPending.generation === persistenceState.persistenceGeneration &&
         persistenceState.pendingFullSnapshot === currentPending
