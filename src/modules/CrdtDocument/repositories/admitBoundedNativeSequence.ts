@@ -26,6 +26,7 @@ import {
     nativeChangeMessage,
     nativeOperationCount,
 } from '../models/NativeMutationSequence';
+import { isNativePatchWithinOwnedPath } from '../models/NativePatchOwnership';
 import {
     isNativeMutationSequence,
     type ProspectiveMutationWorkerResult,
@@ -41,6 +42,7 @@ type Input<TDoc> = {
     actor: string;
     message: string | undefined;
     key: string;
+    ownedPath?: readonly [string, ...string[]];
     signal: AbortSignal;
     assertCurrent(): void;
 };
@@ -302,25 +304,35 @@ function readSequenceChunk<TDoc>(
 function admitSequenceChunk<TDoc>(
     input: Input<TDoc>,
     cursor: SequenceCursor<TDoc>,
-    chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; authority: SequenceChangeAuthority; span: number },
+    chunk: {
+        bytes: Uint8Array<ArrayBuffer>;
+        index: number;
+        authority: SequenceChangeAuthority;
+        span: number;
+        ownedPath?: readonly string[];
+    },
     assertCurrent: () => void
 ): void {
-    const { bytes, index, authority, span } = chunk;
+    const { bytes, index, authority, span, ownedPath } = chunk;
     const started = performance.now();
     assertCurrent();
     let applyEnded: number | undefined;
     try {
         [cursor.document] = applyChanges(cursor.document, [bytes], {
-            patchCallback: (patches) => {
+            patchCallback: (patches, { before }) => {
                 for (const patch of patches) {
+                    const changesSlot = patch.path[0] === input.key;
                     const retiresEvidence =
                         patch.action === 'del' &&
                         patch.path.length === 1 &&
                         patch.path[0] === '_storagePublicationEvidence';
-                    if (patch.path[0] !== input.key && !retiresEvidence) {
+                    if (!changesSlot && !retiresEvidence) {
                         throw new Error('Prospective mutation Worker changed an unowned slot');
                     }
-                    cursor.ownedSlotChanged ||= patch.path[0] === input.key;
+                    if (changesSlot && ownedPath && !isNativePatchWithinOwnedPath(patch, ownedPath, before)) {
+                        throw new Error('Prospective mutation Worker changed outside its owned path');
+                    }
+                    cursor.ownedSlotChanged ||= changesSlot;
                     cursor.retiredEvidence ||= retiresEvidence;
                 }
             },
@@ -375,6 +387,7 @@ export async function admitBoundedNativeSequence<TDoc>(input: Input<TDoc>): Prom
         }
         const changes = input.result.changes.map(ownBoundedChange);
         const finalHeads = [...input.result.heads];
+        const ownedPath = input.ownedPath && [input.key, ...input.ownedPath];
         const pending = getHeads(input.source);
         const history = { backend: getBackend(input.source), pending, discovered: new Set(pending) };
         assertCurrent();
@@ -392,7 +405,7 @@ export async function admitBoundedNativeSequence<TDoc>(input: Input<TDoc>): Prom
                 assertCurrent
             );
             await yieldToHost(input.signal);
-            admitSequenceChunk(input, state, { bytes, index, ...response }, assertCurrent);
+            admitSequenceChunk(input, state, { bytes, index, ...response, ownedPath }, assertCurrent);
         }
         if (
             state.operationCount !== sequence.operationCount ||

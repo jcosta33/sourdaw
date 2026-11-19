@@ -26,6 +26,7 @@ import {
     getCurrentAutomergeStorageMutationOwner,
     captureAutomergeStorageMutationAuthority,
     runOutsideAutomergeStoragePublisherScope,
+    type AutomergeStoragePreparationOptions,
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
@@ -51,6 +52,20 @@ import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 
 type AnyDoc = Record<string, unknown>;
+
+type NativePreparationSettings = {
+    preparationPolicy?: ProspectiveMutationWorkerRequest['preparationPolicy'];
+    ownedPath?: AutomergeStoragePreparationOptions['ownedPath'];
+};
+
+function resolveNativePreparationSettings(
+    settings: NativePreparationSettings | NativePreparationSettings['preparationPolicy']
+): NativePreparationSettings {
+    if (typeof settings === 'string') {
+        return { preparationPolicy: settings };
+    }
+    return settings ?? {};
+}
 
 type ProspectiveValidation<TDoc> = {
     validateDocument: (document: Doc<TDoc>) => void;
@@ -559,8 +574,9 @@ class AutomergeRepository {
         snapshotTransaction?: object,
         localSlots?: readonly string[],
         canonicalMutation?: CanonicalStorageSlotMutation,
-        preparationPolicy?: ProspectiveMutationWorkerRequest['preparationPolicy']
+        preparationSettings?: NativePreparationSettings | NativePreparationSettings['preparationPolicy']
     ) {
+        const { preparationPolicy, ownedPath } = resolveNativePreparationSettings(preparationSettings);
         if (preparationPolicy !== undefined && !isBoundedNativePreparationPolicy(preparationPolicy)) {
             throw new Error('Unsupported native preparation policy');
         }
@@ -629,6 +645,7 @@ class AutomergeRepository {
                         actor,
                         message,
                         key: mutation.key,
+                        ownedPath,
                         signal: materializationSignal,
                         assertCurrent: assertSequenceAuthority,
                     });

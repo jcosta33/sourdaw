@@ -59,6 +59,7 @@ type AutomergeStoragePortMutationInput = {
     snapshotTransaction?: object;
     canonicalMutation?: CanonicalStorageSlotMutation;
     preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
+    ownedPath?: AutomergeStoragePreparationOptions['ownedPath'];
 };
 
 type PreparedStorageCandidate = {
@@ -303,9 +304,13 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     preserveLocalRuntimeStateOnRecompute?: true;
 };
 
-export type AutomergeStoragePreparationOptions = {
-    readonly preparationPolicy?: 'bounded-native-sequence-v1';
-};
+export type AutomergeStoragePreparationOptions =
+    | { readonly preparationPolicy?: 'bounded-native-sequence-v1'; readonly ownedPath?: never }
+    | {
+          readonly preparationPolicy: 'bounded-native-sequence-v1';
+          /** Map-key path relative to the prepared slot, supplied by the local write owner. */
+          readonly ownedPath: readonly [string, ...string[]];
+      };
 
 /**
  * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
@@ -2944,6 +2949,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     };
                     if (preparationPolicy !== undefined) {
                         input.preparationPolicy = preparationPolicy;
+                        input.ownedPath = preparationOptions?.ownedPath;
                     }
                     cloned = runWithAutomergeStorageMutationOwner(transaction.commitOwner, () =>
                         cloneDocForMutation.call(port, input)

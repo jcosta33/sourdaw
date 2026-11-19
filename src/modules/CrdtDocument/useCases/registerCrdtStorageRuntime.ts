@@ -102,6 +102,7 @@ export function registerCrdtStorageRuntime(): void {
             snapshotTransaction,
             canonicalMutation,
             preparationPolicy,
+            ownedPath,
         }) => {
             const cloned = cloneProspectiveCrdtMutation<StorageRuntimeDoc>({
                 id: docId,
@@ -111,6 +112,7 @@ export function registerCrdtStorageRuntime(): void {
                 snapshotTransaction,
                 canonicalMutation,
                 preparationPolicy,
+                ownedPath,
             });
             return {
                 requestMaterialization: cloned.requestMaterialization,

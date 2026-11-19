@@ -28,6 +28,7 @@ export type MutateCrdtDocInput<DocShape> = {
     localSlots?: readonly string[];
     canonicalMutation?: CanonicalStorageSlotMutation;
     preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
+    ownedPath?: AutomergeStoragePreparationOptions['ownedPath'];
     prospectiveValidation?: Parameters<typeof automergeRepository.changeDoc<DocShape>>[5];
 };
 
