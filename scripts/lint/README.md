@@ -132,7 +132,10 @@ measure a real observation window can use a line-scoped reason for the duration.
 The stock Vitest assertion-presence pilot applies to TS and TSX specs and tests under `src/`,
 excluding `*.e2e.spec.*`. It uses Vitest's default `expect`, `expectTypeOf`, `assert`, and
 `assertType` names. Review still checks whether the assertion observes the case's claim.
-The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion
+The stock Vitest conditional-expect, focused-test, and disabled-test rules run on
+Vitest specs and tests, excluding `*.e2e.spec.*`, `tests/e2e/`, `server/`, and `electron/out/`.
+The admission rules reject `.only` and unconditional `.skip` on suites or cases.
+`.todo`, `.skipIf`, and `.runIf` remain available. The local assertion
 rule checks imported Vitest `expect`, including aliases, `soft`, and `poll`, and leaves
 Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and the
 [public Vitest ESLint rule](https://github.com/vitest-dev/eslint-plugin-vitest/blob/main/src/rules/valid-expect.ts)

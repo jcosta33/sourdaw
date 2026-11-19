@@ -30,6 +30,8 @@ export const qualityRuleIds = [
     'typescript/switch-exhaustiveness-check',
     'vitest/expect-expect',
     'vitest/no-conditional-expect',
+    'vitest/no-disabled-tests',
+    'vitest/no-focused-tests',
 ] as const;
 
 const qualityRules: ReadonlySet<string> = new Set(qualityRuleIds);

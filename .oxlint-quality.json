@@ -106,6 +106,8 @@
             "excludeFiles": ["**/*.e2e.spec.*", "tests/e2e/**", "server/**", "electron/out/**"],
             "rules": {
                 "vitest/no-conditional-expect": "error",
+                "vitest/no-disabled-tests": "error",
+                "vitest/no-focused-tests": "error",
                 "sourdaw-craft/no-invalid-vitest-expect": "error"
             }
         },
