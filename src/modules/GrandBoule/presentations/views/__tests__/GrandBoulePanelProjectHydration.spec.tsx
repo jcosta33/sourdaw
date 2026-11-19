@@ -7,14 +7,14 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig';
 import { createDefaultGrandBoulePersistedState, toGrandBouleDeviceState } from '../../../models/GrandBouleDeviceState';
 import { type GrandBoulePresetParameters } from '../../../models/GrandBoulePreset';
-import { createDisconnectedGrandBouleEngineHandle } from '../../../repositories/grandBouleEngineHandle';
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus, type GrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { reconcileGrandBouleDevicesFromProject } from '../../../useCases/reconcileGrandBouleDevicesFromProject';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
-vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
-    resolveGrandBouleEngine: () => createDisconnectedGrandBouleEngineHandle(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
