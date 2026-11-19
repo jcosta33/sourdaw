@@ -19,8 +19,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
-import { parseProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
 import { encodeBoundedMutationSequence } from '../encodeBoundedMutationSequence';
+import { parseProspectiveMutationWorkerRequest } from '../parseProspectiveMutationWorkerRequest';
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
 
 vi.mock('@automerge/automerge/slim', async (importOriginal) => {

@@ -1,9 +1,11 @@
-import { NATIVE_SEQUENCE_MAX_BYTES } from '../models/NativeMutationSequence';
 import {
-    isNativeMutationSequence,
+    BOUNDED_NATIVE_SEQUENCE_POLICY,
+    NATIVE_SEQUENCE_MAX_BYTES,
     type ProspectiveMutationWorkerRequest,
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
+
+import { isNativeMutationSequence } from './isNativeMutationSequence';
 
 function isOwnedChangeArray(value: unknown, maximumChanges = 1): value is Uint8Array<ArrayBuffer>[] {
     if (!Array.isArray(value) || value.length > maximumChanges) {
@@ -114,7 +116,7 @@ export function requestProspectiveMutation(
                 finish(undefined, new Error('Invalid prospective mutation Worker response'));
                 return;
             }
-            if (request.preparationPolicy === 'bounded-native-sequence-v1') {
+            if (request.preparationPolicy === BOUNDED_NATIVE_SEQUENCE_POLICY) {
                 const bounded = readBoundedNativeResponse(data);
                 if (bounded) {
                     finish(bounded);

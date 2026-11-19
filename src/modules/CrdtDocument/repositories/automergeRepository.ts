@@ -34,13 +34,14 @@ import {
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
-import { isAbsentNativeAuthor, isBoundedNativePreparationPolicy } from '../models/NativeMutationSequence';
 import {
+    BOUNDED_NATIVE_SEQUENCE_POLICY,
     type ProspectiveMutationWorkerResult,
     type ProspectiveMutationWorkerRequest,
 } from '../models/ProspectiveMutationWorkerProtocol';
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 import { advanceRootIdentityEpoch, readRootIdentityEpoch } from '../stores/rootIdentityEpoch';
+import { isAbsentNativeAuthor } from '../transformers/nativeChangeMetadata';
 
 import { admitBoundedNativeSequence } from './admitBoundedNativeSequence';
 import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChanges';
@@ -99,6 +100,10 @@ function createDocumentIdentityChangedError(): Error {
 
 function createRepositoryChangedDuringLoadError(): Error {
     return new Error('[AutomergeRepository] Repository changed during load; retry from fresh state');
+}
+
+function isBoundedNativePreparationPolicy(value: unknown): value is typeof BOUNDED_NATIVE_SEQUENCE_POLICY {
+    return value === BOUNDED_NATIVE_SEQUENCE_POLICY;
 }
 
 function createSnapshotTransactionOverlapError(id: DocId): Error {
