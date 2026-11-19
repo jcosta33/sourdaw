@@ -1,10 +1,11 @@
-import { captureDeviceParameterRuntimeWriteAuthority, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
+import { sendProofParam } from './helpers';
 import {
     CEILING_PARAMETER,
     proofLimiterCeilingProjection,
@@ -112,7 +113,7 @@ function restoreCeilingPreview(deviceId: string, scope: CeilingProjection, gestu
     );
     try {
         if (gesture.preview !== restored && gesture.runtime.isCurrent() && gesture.runtime.canCommit()) {
-            updateDeviceParam(owner.track.id, deviceId, CEILING_PARAMETER, restored, gesture.runtime.owner);
+            sendProofParam(deviceId, CEILING_PARAMETER, restored, gesture.runtime.owner);
         }
     } catch (error) {
         notifyUser(
@@ -202,11 +203,11 @@ function getProofLimiterCeilingSettlement(deviceId: string): CeilingSettlement |
 }
 
 function previewCeiling(gesture: CeilingGesture, value: number): void {
-    const { deviceId, trackId, runtime } = gesture;
+    const { deviceId, runtime } = gesture;
     if (!gesture.isAdmissible() || Object.is(getProofState(deviceId).patch.limCeiling, value)) {
         return;
     }
-    updateDeviceParam(trackId, deviceId, CEILING_PARAMETER, value, runtime.owner);
+    sendProofParam(deviceId, CEILING_PARAMETER, value, runtime.owner);
     gesture.preview = value;
     updateProofPatch({ deviceId, patch: { limCeiling: value }, preservePresetId: true });
 }
