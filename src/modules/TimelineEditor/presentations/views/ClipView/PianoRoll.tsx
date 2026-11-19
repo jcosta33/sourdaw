@@ -15,6 +15,7 @@ import {
     type Dispatch,
     type SetStateAction,
     useEffect,
+    useEffectEvent,
     useRef,
     useLayoutEffect,
     useState,
@@ -36,6 +37,8 @@ import {
     setNotePitchBend,
     setStepRecordBeat,
     toggleStepRecordingForClip,
+    projectPianoRollTakeNotes,
+    type setPianoRollSelection,
 } from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
@@ -56,7 +59,6 @@ import {
     getPianoRollContentHeight,
     getPianoRollRowTop,
 } from '../../helpers/pianoRollConstants';
-import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
@@ -64,6 +66,8 @@ import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';
 import { PianoRollToolbar } from './PianoRollToolbar';
+
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 /**
  * Structural equality for the `clipId -> length in beats` map used to derive
@@ -102,7 +106,10 @@ type PianoRollProps = {
     /** A9: additional clip IDs to show simultaneously (multi-clip editing) */
     openedClipIds?: string[];
     selectedNoteIds: Set<string>;
-    onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
+    onSelectedNoteIdsChange: (
+        change: SetStateAction<Set<string>>,
+        projections: Parameters<typeof setPianoRollSelection>[3]
+    ) => void;
     onScrollChange?: (scrollLeft: number) => void;
     onBeatWidthChange?: (beatWidth: number) => void;
     onContentWidthChange?: (contentWidth: number) => void;
@@ -155,7 +162,13 @@ export const PianoRoll = ({
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
-    const setSelectedNoteIds = onSelectedNoteIdsChange;
+    const setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>> = (change) => {
+        let projections: Parameters<typeof setPianoRollSelection>[3] = [];
+        if (takeProjections.size <= 256) {
+            projections = Array.from(takeProjections, ([id, projection]) => ({ clipId: id, projection }));
+        }
+        onSelectedNoteIdsChange(change, projections);
+    };
     const [gridSnap, setGridSnap] = useState(0.25);
 
     const { keyRoot, scaleName } = useStore(projectStore);
@@ -420,34 +433,35 @@ export const PianoRoll = ({
     // The native application menu cannot synthesize a keyboard event: its
     // mouse clicks are explicit editor commands. Keep the command at the
     // focused Piano Roll boundary so arrangement editing never steals it.
+    const handleNativeEdit = useEffectEvent((event: Event): void => {
+        const request =
+            event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
+        if (request?.action === 'edit:deselect-all') {
+            setSelectedNoteIds(new Set());
+            request.handled = true;
+            return;
+        }
+        if (request?.action !== 'edit:select-all') {
+            return;
+        }
+        const allIds = new Set(notes.map((note) => note.id));
+        for (const openedNotes of Object.values(openedClipNotes ?? {})) {
+            for (const note of openedNotes) {
+                allIds.add(note.id);
+            }
+        }
+        setSelectedNoteIds(allIds);
+        request.handled = true;
+    });
     useEffect(() => {
         const canvas = canvasRef.current;
         if (canvas === null) {
             return undefined;
         }
-        const handleNativeEdit = (event: Event): void => {
-            const request =
-                event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
-            if (request?.action === 'edit:deselect-all') {
-                onSelectedNoteIdsChange(new Set());
-                request.handled = true;
-                return;
-            }
-            if (request?.action !== 'edit:select-all') {
-                return;
-            }
-            const allIds = new Set(notes.map((note) => note.id));
-            for (const openedNotes of Object.values(openedClipNotes ?? {})) {
-                for (const note of openedNotes) {
-                    allIds.add(note.id);
-                }
-            }
-            onSelectedNoteIdsChange(allIds);
-            request.handled = true;
-        };
-        canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
-        return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
-    }, [notes, openedClipNotes, onSelectedNoteIdsChange]);
+        const listener = (event: Event): void => handleNativeEdit(event);
+        canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, listener);
+        return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, listener);
+    }, []);
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);

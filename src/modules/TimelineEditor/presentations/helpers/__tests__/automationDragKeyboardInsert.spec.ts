@@ -2,21 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+import { resolveAutomationCurveSplit } from '#/utils/resolveAutomationCurveSplit';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { insertAutomationPointPreservingShape } from '../automationDrag';
 
-const mocks = vi.hoisted(() => ({
-    pushUndoEntry: vi.fn<(label: string, undo: () => void, redo: () => void) => void>(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    commitUndoEntry: vi.fn(),
-    createUndoEntry: vi.fn(),
-    getExecutableAppActionEffect: vi.fn(() => null),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
-    executeAppAction: vi.fn(),
-    pushUndoEntry: mocks.pushUndoEntry,
 }));
 
 const makeLane = (points: AutomationPoint[]): AutomationLane => ({
@@ -53,7 +47,7 @@ describe('insertAutomationPointPreservingShape', () => {
         vi.clearAllMocks();
     });
 
-    it.each<{ name: string; points: AutomationPoint[]; beat: number }>([
+    it.each<{ name: string; points: AutomationPoint[]; beat: number; inserted: Omit<AutomationPoint, 'beat' | 'id'> }>([
         {
             name: 'inside a step segment',
             points: [
@@ -61,6 +55,7 @@ describe('insertAutomationPointPreservingShape', () => {
                 { id: 'b', beat: 8, value: 0.9, curve: 'linear', tension: 0 },
             ],
             beat: 3,
+            inserted: { value: 0.2, curve: 'step', tension: 0 },
         },
         {
             name: 'inside a linear segment',
@@ -69,6 +64,7 @@ describe('insertAutomationPointPreservingShape', () => {
                 { id: 'b', beat: 8, value: 0.9, curve: 'linear', tension: 0 },
             ],
             beat: 3,
+            inserted: { value: expect.closeTo(0.4, 12), curve: 'linear', tension: 0 },
         },
         {
             name: 'after the last point of a lane ending on an exponential segment',
@@ -77,6 +73,7 @@ describe('insertAutomationPointPreservingShape', () => {
                 { id: 'b', beat: 2, value: 0.7, curve: 'exponential', tension: 0.6 },
             ],
             beat: 3,
+            inserted: { value: 0.7, curve: 'exponential', tension: 0.6 },
         },
         {
             name: 'before the first point',
@@ -85,17 +82,42 @@ describe('insertAutomationPointPreservingShape', () => {
                 { id: 'b', beat: 8, value: 0.6, curve: 'linear', tension: 0 },
             ],
             beat: 3,
+            inserted: { value: 0.3, curve: 'linear', tension: 0 },
         },
-    ])('adds a point $name and plays the same values on both sides', ({ points, beat }) => {
+        {
+            name: 'after the last point of a lane ending on a stairs segment',
+            points: [
+                { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+                { id: 'b', beat: 2, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+            ],
+            beat: 3,
+            inserted: { value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+        },
+    ])('dispatches the beat $name and preserves values on both sides', ({ points, beat, inserted }) => {
         automationStore.set({ lanes: [makeLane(points)] });
         const before = sampleLane();
 
         expect(insertAutomationPointPreservingShape('lane-1', beat)).toBe(true);
 
-        expect(storedPoints()).toHaveLength(points.length + 1);
-        expect(storedPoints().some((point) => point.beat === beat)).toBe(true);
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'insertAutomationLanePoints',
+                payload: {
+                    laneId: 'lane-1',
+                    owner: { trackId: 'track-1', parameterId: 'volume' },
+                    insertion: { kind: 'split', beat },
+                },
+            },
+            expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
+        );
+        expect(storedPoints()).toStrictEqual(points);
+        const splitPoint = resolveAutomationCurveSplit(points, beat);
+        if (splitPoint === undefined) {
+            throw new Error('Expected an exact curve split');
+        }
+        expect(splitPoint).toStrictEqual({ beat, ...inserted });
+        automationStore.set({ lanes: [makeLane([...points, splitPoint].sort((a, b) => a.beat - b.beat))] });
         expectSameSamples(before, sampleLane());
-        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
     });
 
     it.each<{ name: string; points: AutomationPoint[] }>([
@@ -144,7 +166,7 @@ describe('insertAutomationPointPreservingShape', () => {
 
         expect(storedPoints()).toEqual(points);
         expectSameSamples(before, sampleLane());
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('refuses a linear split whose left neighbour is a smooth segment reading it', () => {
@@ -160,7 +182,7 @@ describe('insertAutomationPointPreservingShape', () => {
         expect(insertAutomationPointPreservingShape('lane-1', 6)).toBe(false);
 
         expect(storedPoints()).toEqual(points);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('refuses a beat that already holds a point', () => {
@@ -173,7 +195,7 @@ describe('insertAutomationPointPreservingShape', () => {
         expect(insertAutomationPointPreservingShape('lane-1', 0)).toBe(false);
 
         expect(storedPoints()).toEqual(points);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('refuses an empty lane', () => {
@@ -182,39 +204,6 @@ describe('insertAutomationPointPreservingShape', () => {
         expect(insertAutomationPointPreservingShape('lane-1', 3)).toBe(false);
 
         expect(storedPoints()).toEqual([]);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
-    });
-
-    it('copies the step count after the last point of a lane ending on a stairs segment', () => {
-        const points: AutomationPoint[] = [
-            { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
-            { id: 'b', beat: 2, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
-        ];
-        automationStore.set({ lanes: [makeLane(points)] });
-        const before = sampleLane();
-
-        expect(insertAutomationPointPreservingShape('lane-1', 3)).toBe(true);
-
-        expect(storedPoints()[2]).toMatchObject({ beat: 3, value: 0.5, curve: 'stairs', stairSteps: 6 });
-        expectSameSamples(before, sampleLane());
-    });
-
-    it('removes exactly the inserted point on undo and re-adds the same point on redo', () => {
-        const points: AutomationPoint[] = [
-            { id: 'a', beat: 0, value: 0.2, curve: 'step', tension: 0 },
-            { id: 'b', beat: 8, value: 0.9, curve: 'linear', tension: 0 },
-        ];
-        automationStore.set({ lanes: [makeLane(points)] });
-
-        insertAutomationPointPreservingShape('lane-1', 3);
-        const inserted = storedPoints();
-        const [entry] = mocks.pushUndoEntry.mock.calls;
-        expect(entry).toBeDefined();
-
-        entry?.[1]();
-        expect(storedPoints()).toEqual(points);
-
-        entry?.[2]();
-        expect(storedPoints()).toEqual(inserted);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 });

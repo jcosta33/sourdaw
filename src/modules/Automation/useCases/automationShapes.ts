@@ -1,15 +1,15 @@
 import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 
-import { type AutomationPoint } from '../models/Automation';
-import { automationStore } from '../stores/automationStore';
+import { type AutomationLane, type AutomationPoint } from '../models/Automation';
 
-import { DEFAULT_BEAT_MERGE_EPSILON, batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
+import { DEFAULT_BEAT_MERGE_EPSILON } from './automation/batchAddAutomationPoints';
 import { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
+import { mergeAutomationPointBatch } from './automation/mergeAutomationPointBatch';
 
 // Local shape (AGENTS.md model isolation). Structurally compatible with what
 // Arrangement's `generateShapePoints` accepts; we do not import the type from
 // another module's transformer or use case surface.
-export type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
+type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
 
 /** Hump character of the 'smooth' shape: 0.5 gives the symmetric S-hump. */
 const SMOOTH_CURVE_TENSION = 0.5;
@@ -104,7 +104,7 @@ function generateAutomationShapePoints({
 }
 
 /**
- * The merge epsilon a generated shape hands `batchAddAutomationPoints`: half
+ * The merge epsilon for generated shapes: half
  * the batch's own smallest adjacent beat gap, capped at the freehand default.
  * Generated shapes space their points by a fraction of the cycle (sine a
  * quarter, random an eighth), so a short range or many cycles puts neighbours
@@ -141,29 +141,19 @@ function shapeMergeEpsilon(points: readonly AutomationPoint[]): number {
  * created. The lane's travel is what the fader can reach, so that is what a
  * full-depth shape spans.
  */
-export function insertAutomationShape(
-    laneId: string,
+export function planAutomationShapeInsertion(
+    lane: Pick<AutomationLane, 'points' | 'minValue' | 'maxValue' | 'parameterId' | 'clipId'>,
     shape: AutomationShapeType,
     startBeat: number,
     endBeat: number,
     cycles = 1
-): void {
-    const state = automationStore.value;
-    if (!state) {
-        return;
-    }
-
-    const lane = state.lanes.find((length) => length.id === laneId);
-    if (!lane) {
-        return;
-    }
-
+): AutomationPoint[] | null {
     const cycleDuration = (endBeat - startBeat) / cycles;
     const allPoints: AutomationPoint[] = [];
 
     for (let cycleIndex = 0; cycleIndex < cycles; cycleIndex++) {
         const cycleStart = startBeat + cycleIndex * cycleDuration;
-        const cycleEnd = cycleStart + cycleDuration;
+        const cycleEnd = cycleIndex === cycles - 1 ? endBeat : cycleStart + cycleDuration;
         const points = generateAutomationShapePoints({
             shape,
             startBeat: cycleStart,
@@ -178,5 +168,5 @@ export function insertAutomationShape(
         }
     }
 
-    batchAddAutomationPoints(laneId, allPoints, shapeMergeEpsilon(allPoints));
+    return mergeAutomationPointBatch(lane.points, allPoints, shapeMergeEpsilon(allPoints));
 }

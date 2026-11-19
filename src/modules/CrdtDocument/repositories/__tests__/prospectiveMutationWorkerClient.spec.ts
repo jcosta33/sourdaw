@@ -73,6 +73,93 @@ function sparseEnvelopeArray(): unknown[] {
 }
 
 describe('prospective mutation Worker ownership', () => {
+    it('bounds an explicitly requested native sequence and privately owns every reply byte', async () => {
+        const { doc, request } = fixture();
+        const optedIn = { ...request, preparationPolicy: 'bounded-native-sequence-v1' as const };
+        const first = change(clone(doc), (draft) => {
+            draft.slot.count = 1;
+        });
+        const second = change(first, (draft) => {
+            draft.slot.count = 2;
+        });
+        const changes = getChanges(doc, second).map((bytes) => Uint8Array.from(bytes));
+        expect(changes).toHaveLength(2);
+        const result = requestProspectiveMutation(optedIn, new AbortController().signal);
+        const worker = ControlledWorker.instances[0]!;
+        worker.onmessage?.(
+            new MessageEvent('message', {
+                data: {
+                    status: 'complete',
+                    changes,
+                    heads: getHeads(second),
+                    sequence: { changeCount: 2, operationCount: 2 },
+                },
+            })
+        );
+        const admitted = await result;
+        expect(admitted.changes).toHaveLength(2);
+        expect(admitted.changes[0]).toEqual(changes[0]);
+        changes[0]!.fill(0);
+        expect(admitted.changes[0]?.some((byte) => byte !== 0)).toBe(true);
+        expectReleased(worker);
+    });
+
+    it.each([
+        'missing-membership',
+        'wrong-count',
+        'empty-span',
+        'excess-span',
+        'type2',
+        'oversized',
+        'shared',
+        'aliased',
+    ] as const)('rejects bounded native transport %s', async (kind) => {
+        const { doc, request } = fixture();
+        const changed = change(clone(doc), (draft) => {
+            draft.slot.count = 1;
+        });
+        const changes = getChanges(doc, changed).map((bytes) => Uint8Array.from(bytes));
+        const response: Record<string, unknown> = {
+            status: 'complete',
+            changes,
+            heads: getHeads(changed),
+            sequence: { changeCount: 1, operationCount: 1 },
+        };
+        if (kind === 'missing-membership') {
+            delete response.sequence;
+        }
+        if (kind === 'wrong-count') {
+            response.sequence = { changeCount: 2, operationCount: 2 };
+        }
+        if (kind === 'empty-span') {
+            response.sequence = { changeCount: 1, operationCount: 0 };
+        }
+        if (kind === 'excess-span') {
+            response.sequence = { changeCount: 1, operationCount: 129 };
+        }
+        if (kind === 'type2') {
+            changes[0]![8] = 2;
+        }
+        if (kind === 'oversized') {
+            response.changes = [new Uint8Array(65_537)];
+        }
+        if (kind === 'shared') {
+            response.changes = [new Uint8Array(new SharedArrayBuffer(16))];
+        }
+        if (kind === 'aliased') {
+            response.changes = [new Uint8Array(new ArrayBuffer(16), 1)];
+        }
+        const result = requestProspectiveMutation(
+            { ...request, preparationPolicy: 'bounded-native-sequence-v1' },
+            new AbortController().signal
+        );
+        const rejected = expect(result).rejects.toThrow('Invalid prospective mutation Worker response');
+        const worker = ControlledWorker.instances[0]!;
+        worker.onmessage?.(new MessageEvent('message', { data: response }));
+        await rejected;
+        expectReleased(worker);
+    });
+
     it('accepts an owned zero-change response and releases its timer and listeners', async () => {
         vi.useFakeTimers();
         const { request } = fixture();

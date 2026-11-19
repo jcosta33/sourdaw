@@ -3,6 +3,8 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
+import { startVisiblePianoFrameLoop } from './startVisiblePianoFrameLoop';
+
 /**
  * Interactive 3D grand piano model.
  *
@@ -351,7 +353,6 @@ export const PianoModel3D = ({
         // when the vertex count exceeds the currently-cached capacity.
         const vertexScratch: number[] = [];
         let uploadBuffer: Float32Array | null = null;
-        let rafId = 0;
 
         const render = (): void => {
             const W = canvas.width;
@@ -552,13 +553,11 @@ export const PianoModel3D = ({
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
             gl.bufferData(gl.ARRAY_BUFFER, uploadBuffer.subarray(0, vertexCount), gl.DYNAMIC_DRAW);
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount / 6);
-
-            rafId = requestAnimationFrame(render);
         };
 
-        rafId = requestAnimationFrame(render);
+        const stopRendering = startVisiblePianoFrameLoop(canvas, render);
         return () => {
-            cancelAnimationFrame(rafId);
+            stopRendering();
             gl.deleteBuffer(vbo);
             gl.deleteVertexArray(vao);
             gl.deleteProgram(prog);

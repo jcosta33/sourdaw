@@ -75,6 +75,26 @@
             }
         },
         {
+            "files": [
+                "src/modules/{AgentAdapters,CommandInterface,ControlRoom,ControlSurface,FactorySynthesis,Gluten,Levain}/**/*.{ts,tsx}",
+                "src/modules/{Metering,ProjectVersioning,Proof,PunchRecording,SessionLauncher,Tuner}/**/*.{ts,tsx}",
+                "src/modules/WorkspaceShell/{events,handlers,models,repositories,stores,useCases}/**/*.{ts,tsx}",
+                "src/modules/WorkspaceShell/presentations/{helpers,views}/**/*.{ts,tsx}",
+                "src/components/{layout,ui}/**/*.{ts,tsx}",
+                "src/{helpers,routes}/**/*.{ts,tsx}"
+            ],
+            "excludeFiles": [
+                "**/*.d.ts",
+                "**/*.{spec,test,mock}.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/__tests__/**",
+                "src/**/testing/**"
+            ],
+            "rules": {
+                "typescript/no-unsafe-type-assertion": "error"
+            }
+        },
+        {
             "files": ["src/**/*.{spec,test}.{ts,tsx}"],
             "excludeFiles": ["**/*.e2e.spec.*"],
             "rules": {
@@ -86,6 +106,8 @@
             "excludeFiles": ["**/*.e2e.spec.*", "tests/e2e/**", "server/**", "electron/out/**"],
             "rules": {
                 "vitest/no-conditional-expect": "error",
+                "vitest/no-disabled-tests": "error",
+                "vitest/no-focused-tests": "error",
                 "sourdaw-craft/no-invalid-vitest-expect": "error"
             }
         },
