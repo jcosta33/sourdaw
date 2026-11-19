@@ -1,4 +1,11 @@
 import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
+import { type AutomergeStoragePreparationOptions } from '#/infra/store/storage/createAutomergeStorage';
+
+import {
+    NATIVE_SEQUENCE_MAX_OPERATIONS,
+    type NativeMutationSequence,
+    isBoundedNativePreparationPolicy,
+} from './NativeMutationSequence';
 
 export type ProspectiveMutationWorkerRequest = {
     readonly seed: Uint8Array<ArrayBuffer>;
@@ -7,11 +14,13 @@ export type ProspectiveMutationWorkerRequest = {
     readonly message?: string;
     readonly time?: number;
     readonly mutation: CanonicalStorageSlotMutation;
+    readonly preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
 };
 
 export type ProspectiveMutationWorkerResult = {
     readonly changes: Uint8Array<ArrayBuffer>[];
     readonly heads: readonly string[];
+    readonly sequence?: NativeMutationSequence;
 };
 
 export type ProspectiveMutationWorkerResponse =
@@ -53,7 +62,9 @@ function hasValidOptionalMetadata(
     );
 }
 
-export function parseProspectiveMutationWorkerRequest(value: unknown): ProspectiveMutationWorkerRequest {
+type ProspectiveMutationEnvelope = Omit<ProspectiveMutationWorkerRequest, 'mutation'> & Record<string, unknown>;
+
+function assertProspectiveMutationEnvelope(value: unknown): asserts value is ProspectiveMutationEnvelope {
     if (
         !isRecord(value) ||
         !(value.seed instanceof Uint8Array) ||
@@ -64,10 +75,15 @@ export function parseProspectiveMutationWorkerRequest(value: unknown): Prospecti
         ) ||
         typeof value.actor !== 'string' ||
         !/^(?:[a-f0-9]{2})+$/.test(value.actor) ||
-        !hasValidOptionalMetadata(value)
+        !hasValidOptionalMetadata(value) ||
+        (value.preparationPolicy !== undefined && !isBoundedNativePreparationPolicy(value.preparationPolicy))
     ) {
         throw new TypeError('Invalid prospective mutation Worker envelope');
     }
+}
+
+export function parseProspectiveMutationWorkerRequest(value: unknown): ProspectiveMutationWorkerRequest {
+    assertProspectiveMutationEnvelope(value);
     const mutation = value.mutation;
     if (
         !isRecord(mutation) ||
@@ -82,7 +98,7 @@ export function parseProspectiveMutationWorkerRequest(value: unknown): Prospecti
         throw new TypeError('Invalid canonical storage slot description');
     }
     const documentPresence = mutation.documentPresence;
-    return {
+    const parsed: ProspectiveMutationWorkerRequest = {
         seed: new Uint8Array(value.seed.buffer, value.seed.byteOffset, value.seed.byteLength),
         heads: value.heads,
         actor: value.actor,
@@ -96,4 +112,21 @@ export function parseProspectiveMutationWorkerRequest(value: unknown): Prospecti
             documentPresence: documentPresence === undefined ? undefined : { slot: documentPresence.slot },
         },
     };
+    if (value.preparationPolicy === 'bounded-native-sequence-v1') {
+        return { ...parsed, preparationPolicy: value.preparationPolicy };
+    }
+    return parsed;
+}
+
+export function isNativeMutationSequence(value: unknown, changeCount: number): value is NativeMutationSequence {
+    return (
+        isRecord(value) &&
+        Number.isSafeInteger(value.changeCount) &&
+        value.changeCount === changeCount &&
+        typeof value.operationCount === 'number' &&
+        Number.isSafeInteger(value.operationCount) &&
+        value.operationCount >= changeCount &&
+        value.operationCount <= changeCount * NATIVE_SEQUENCE_MAX_OPERATIONS &&
+        (changeCount > 0 || value.operationCount === 0)
+    );
 }
