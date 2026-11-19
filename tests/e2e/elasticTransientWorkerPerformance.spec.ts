@@ -1997,7 +1997,8 @@ for (const projectScale of [false, true]) {
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
             }, projectScale);
             await panel.getByTestId('elastic-detect-button').click();
-            const measured = await page.evaluate(async (projectScale) => {
+            // Return a handle so serializing the measurements cannot extend the final traced renderer task.
+            const pendingMeasurement = page.evaluateHandle(async (projectScale) => {
                 const target = window as Window & {
                     elasticMeasurement?: Promise<{
                         start: number;
@@ -2032,7 +2033,18 @@ for (const projectScale of [false, true]) {
                 }
                 return { ...measurement, inputMarkStart: inputMark.startTime, prospectiveRequests };
             }, projectScale);
-            await coldTrace.stop();
+            let measurementHandle: Awaited<typeof pendingMeasurement>;
+            try {
+                measurementHandle = await pendingMeasurement;
+            } finally {
+                await coldTrace.stop();
+            }
+            let measured: Awaited<ReturnType<typeof measurementHandle.jsonValue>>;
+            try {
+                measured = await measurementHandle.jsonValue();
+            } finally {
+                await measurementHandle.dispose();
+            }
             const overlap = await attachSaveOverlap(page, info);
             await captureNativeReferencePhase(page, 'finish', 'cold-detect');
             await coldTrace.attach();
