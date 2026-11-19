@@ -139,17 +139,17 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
     it('repaints the mounted shelf as project replay restores Warm then Bright', () => {
         render(<GrandBoulePanel deviceId={DEVICE_ID} />);
 
-        fireEvent.click(presetButton(/Warm Crumb/));
-        expect(presetButton(/Warm Crumb/)).toHaveClass('bg-neutral-300/10');
-        fireEvent.click(presetButton(/Bright Crust/));
-        expect(presetButton(/Bright Crust/)).toHaveClass('bg-neutral-300/10');
+        fireEvent.click(presetButton('Warm Crumb'));
+        expect(presetButton('Warm Crumb')).toHaveClass('bg-neutral-300/10');
+        fireEvent.click(presetButton('Bright Crust'));
+        expect(presetButton('Bright Crust')).toHaveClass('bg-neutral-300/10');
 
         act(() => replayProjectVoicing(WARM));
         expect(createGrandBouleStore(DEVICE_ID).value?.parameters).toEqual(WARM);
-        expectActivePreset(/Warm Crumb/);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Warm Crumb'));
 
         act(() => replayProjectVoicing(BRIGHT));
-        expectActivePreset(/Bright Crust/);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Bright Crust'));
         expect(createGrandBouleStore(DEVICE_ID).value?.config.micPosition).toBe(2);
         expect(createGrandBouleStore(SECOND_DEVICE_ID).value?.parameters).toEqual(
             createDefaultGrandBoulePersistedState().parameters
@@ -159,19 +159,19 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
     it('indicates cold-hydrated voicings and clears a near match on the first device', () => {
         act(() => replayProjectVoicing(WARM));
         const view = render(<GrandBoulePanel deviceId={DEVICE_ID} />);
-        expectActivePreset(/Warm Crumb/);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Warm Crumb'));
 
         act(() => replayProjectVoicing({ ...WARM, toneTilt: WARM.toneTilt + 0.0001 }));
-        expectActivePreset(null);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf(null));
 
         view.rerender(<GrandBoulePanel deviceId={SECOND_DEVICE_ID} />);
-        expectActivePreset(/Classic Miche/);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Classic Miche'));
         expect(createGrandBouleStore(SECOND_DEVICE_ID).value?.config.micPosition).toBe(0);
     });
 
     it('indicates Classic at the neutral defaults', () => {
         render(<GrandBoulePanel deviceId={DEVICE_ID} />);
-        expectActivePreset(/Classic Miche/);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Classic Miche'));
     });
 
     it('re-reads for the new device when the panel is re-keyed', () => {
@@ -236,19 +236,28 @@ function replayProjectVoicing(parameters: GrandBoulePresetParameters): void {
     reconcileGrandBouleDevicesFromProject();
 }
 
-function presetButton(name: RegExp): HTMLElement {
-    return screen.getByRole('button', { name });
+const PRESET_NAMES = ['Warm Crumb', 'Bright Crust', 'Classic Miche'] as const;
+type PresetName = (typeof PRESET_NAMES)[number];
+
+function presetButton(preset: PresetName): HTMLElement {
+    return screen.getByRole('button', { name: (name) => name.startsWith(preset) });
 }
 
-function expectActivePreset(name: RegExp | null): void {
-    for (const preset of [/Warm Crumb/, /Bright Crust/, /Classic Miche/]) {
-        const button = presetButton(preset);
-        if (preset.source === name?.source) {
-            expect(button).toHaveClass('bg-neutral-300/10');
-            expect(button).toHaveAttribute('aria-pressed', 'true');
-        } else {
-            expect(button).not.toHaveClass('bg-neutral-300/10');
-            expect(button).toHaveAttribute('aria-pressed', 'false');
-        }
-    }
+function readPresetShelf() {
+    return PRESET_NAMES.map((name) => {
+        const button = presetButton(name);
+        return {
+            name,
+            highlighted: button.classList.contains('bg-neutral-300/10'),
+            pressed: button.getAttribute('aria-pressed'),
+        };
+    });
+}
+
+function expectedPresetShelf(active: PresetName | null) {
+    return PRESET_NAMES.map((name) => ({
+        name,
+        highlighted: name === active,
+        pressed: name === active ? 'true' : 'false',
+    }));
 }

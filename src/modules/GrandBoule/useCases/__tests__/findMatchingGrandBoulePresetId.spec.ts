@@ -20,7 +20,7 @@ describe('findMatchingGrandBoulePresetId', () => {
     it('returns the unique factory match', () => {
         vi.mocked(listBuiltinGrandBoulePresets).mockReturnValue([alternate, classic]);
 
-        expect(findMatchingGrandBoulePresetId({ ...parameters })).toBe(classic.id);
+        expect(findMatchingGrandBoulePresetId(createNeutralPresetParameters())).toBe(classic.id);
     });
 
     it('leaves ambiguous factory voicings unmarked', () => {
