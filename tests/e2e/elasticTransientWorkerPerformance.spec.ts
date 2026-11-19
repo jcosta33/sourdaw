@@ -178,10 +178,10 @@ function enclosingTask(
     tasks: MainThreadTask[]
 ): MainThreadTask | undefined {
     const startFromInputMs = phase.startTime - inputMarkStart;
-    // Match in integer microseconds so floating-point rounding cannot move an endpoint past the trace tolerance.
+    // Match in integer microseconds with one Chromium performance.now() tick for alignment with the CDP trace.
     const startUs = Math.round(startFromInputMs * 1000);
     const endUs = Math.round((startFromInputMs + phase.duration) * 1000);
-    const toleranceUs = 2;
+    const toleranceUs = 5;
     const matches = tasks.filter((candidate) => {
         const taskStartUs = Math.round(candidate.startFromInputMs * 1000);
         const taskEndUs = Math.round((candidate.startFromInputMs + candidate.durationMs) * 1000);
