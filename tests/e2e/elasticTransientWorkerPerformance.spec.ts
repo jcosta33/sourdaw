@@ -186,11 +186,11 @@ type NativePhase = ReturnType<typeof materializationTaskSpans>[number];
 
 function assertAppTaskShare(vendor: NativePhase, callbackMs = 0): void {
     if (!vendor.enclosingTask) {
-        throw new Error('Missing enclosing renderer task for ' + vendor.name);
+        throw new Error(`Missing enclosing renderer task for ${vendor.name}`);
     }
     const sdkMs = vendor.duration - callbackMs;
     const appMs = vendor.enclosingTask.durationMs - sdkMs;
-    expect(appMs, vendor.name + ' application overhead').toBeLessThan(APP_TASK_SHARE_MS);
+    expect(appMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
 }
 
 function assertSequenceTasks(
@@ -249,7 +249,7 @@ function assertSequenceTasks(
         const response = responses[index];
         expect(response.startTime + response.duration).toBeLessThanOrEqual(apply.startTime);
         expect(authority.startTime + authority.duration).toBeLessThanOrEqual(
-            responses[index + 1]?.startTime ?? boundary
+            responses.at(index + 1)?.startTime ?? boundary
         );
         if (apply.enclosingTask) {
             tasks.push(apply.enclosingTask);
@@ -285,11 +285,11 @@ function assertProspectiveObservations(
         expect(request.posted).toBe(true);
         expect(request.terminated).not.toBeNull();
         expect(request.replies.length).toBeLessThanOrEqual(1);
-        const next = requests[index + 1];
+        const next = requests.at(index + 1);
         const boundary = next?.requested ?? publication.startTime;
         const phases = chunks.filter((phase) => phase.startTime >= request.requested && phase.startTime < boundary);
         assigned += phases.length;
-        const [reply] = request.replies;
+        const reply = request.replies.at(0);
         if (!reply) {
             expect(next, 'The published attempt must have a Worker reply').toBeDefined();
             expect(phases, 'A cancelled Worker without a reply cannot enter native admission').toEqual([]);
@@ -451,15 +451,15 @@ function assertElasticTiming(measurement: ElasticTiming, phase: string): void {
     expect(measurement.mainThreadTasks.length).toBeGreaterThan(0);
     expect(
         measurement.mainThreadTasks.filter((task) => task.durationMs >= JANK_TASK_CEILING_MS),
-        phase + ' main-thread budget'
+        `${phase} main-thread budget`
     ).toEqual([]);
     expect(
         measurement.longTasks.filter((task) => task.duration >= JANK_TASK_CEILING_MS),
-        phase + ' observed long tasks'
+        `${phase} observed long tasks`
     ).toEqual([]);
     expect(
         measurement.preparationTasks.filter((task) => task.duration >= JANK_TASK_CEILING_MS),
-        phase + ' preparation budget'
+        `${phase} preparation budget`
     ).toEqual([]);
     expect(measurement.preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
     expect(measurement.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the recorded design target

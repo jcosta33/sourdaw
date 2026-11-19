@@ -1,13 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-
 import * as native from '@automerge/automerge';
-import { initializeWasm } from '@automerge/automerge/slim';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ProspectiveMutationWorkerResult } from '../../models/ProspectiveMutationWorkerProtocol';
-import { materializeProspectiveMutation } from '../../workers/prospectiveMutationWorkerRuntime';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
+
+import {
+    type ProspectiveMutationWorkerRequest,
+    type ProspectiveMutationWorkerResult,
+} from '../../models/ProspectiveMutationWorkerProtocol';
 import { admitBoundedNativeSequence } from '../admitBoundedNativeSequence';
+import { requestProspectiveMutation } from '../prospectiveMutationWorkerClient';
 
 const actor = 'aaaaaaaaaaaaaaaa';
 const peerActor = 'bbbbbbbbbbbbbbbb';
@@ -17,10 +18,13 @@ type State = {
     _storagePublicationEvidence?: { revision: number };
 };
 
-beforeAll(async () => {
-    const require = createRequire(import.meta.url);
-    const binary = readFileSync(require.resolve('@automerge/automerge/automerge.wasm'));
-    await initializeWasm(Uint8Array.from(binary));
+beforeEach(() => {
+    vi.stubGlobal('Worker', NativePreparationWorker);
+});
+
+afterEach(async () => {
+    vi.unstubAllGlobals();
+    await settleNativePreparationWorkers();
 });
 
 function fixture() {
@@ -34,7 +38,7 @@ function fixture() {
     let owner = native.clone(initial, { actor });
     for (let index = 0; index < 130; index++) {
         owner = native.change(owner, (draft) => {
-            draft.warpStates.states.sibling.text = 'Retained owner edit ' + index;
+            draft.warpStates.states.sibling.text = `Retained owner edit ${index}`;
         });
     }
     const peer = native.change(native.clone(initial, { actor: peerActor }), (draft) => {
@@ -46,7 +50,7 @@ function fixture() {
     const { target: current, sibling } = source.warpStates.states;
     const base = { states: { target: { text: current.text }, sibling: { text: sibling.text } } };
     const target = { text: 'new markers '.repeat(100), confidence: float };
-    const request = {
+    const request: ProspectiveMutationWorkerRequest = {
         seed: Uint8Array.from(native.save(source)),
         actor,
         heads: native.getHeads(source),
@@ -62,6 +66,10 @@ function fixture() {
         },
     };
     return { source, base, request, target };
+}
+
+function requestNativeChanges(request: ProspectiveMutationWorkerRequest) {
+    return requestProspectiveMutation(request, new AbortController().signal);
 }
 
 function admit(source: native.Doc<State>, result: ProspectiveMutationWorkerResult, signal: AbortSignal) {
@@ -87,10 +95,10 @@ describe('bounded Detect response admission', () => {
         const sourceHeads = native.getHeads(source);
         expect(sourceHeads).toHaveLength(2);
         const observedHistory = vi.spyOn(native.getBackend(source), 'getChangeMetaByHash');
-        const result = materializeProspectiveMutation(request);
-        expect(result.changes.length).toBeGreaterThan(1);
         let prepared: native.Doc<State> | undefined;
         try {
+            const result = await requestNativeChanges(request);
+            expect(result.changes.length).toBeGreaterThan(1);
             prepared = await admit(source, result, new AbortController().signal);
             expect(observedHistory.mock.calls.map(([hash]) => hash).toSorted()).toEqual(
                 sourceHistory.map((entry) => entry.hash).toSorted()
@@ -105,7 +113,9 @@ describe('bounded Detect response admission', () => {
             expect(native.toJS(source)).toEqual(sourceValue);
             expect(native.getHeads(source)).toEqual(sourceHeads);
             const finalChange = native.getChangesMetaSince(prepared, sourceHeads).at(-1);
-            if (!finalChange) throw new Error('Missing final change');
+            if (!finalChange) {
+                throw new Error('Missing final change');
+            }
             prepared = native.change(prepared, (draft) => {
                 draft.warpStates.states.target.text = 'subsequent real edit';
             });
@@ -114,7 +124,9 @@ describe('bounded Detect response admission', () => {
             expect(nextChange?.startOp).toBe(finalChange.maxOp + 1);
         } finally {
             observedHistory.mockRestore();
-            if (prepared) native.free(prepared);
+            if (prepared) {
+                native.free(prepared);
+            }
             native.free(source);
         }
     });
@@ -123,7 +135,7 @@ describe('bounded Detect response admission', () => {
         const { source, base, request } = fixture();
         const before = native.toJS(source);
         try {
-            const wrongTarget = materializeProspectiveMutation({
+            const wrongTarget = await requestNativeChanges({
                 ...request,
                 mutation: { ...request.mutation, value: { states: { ...base.states, sibling: { text: 'foreign' } } } },
             });
@@ -140,10 +152,12 @@ describe('bounded Detect response admission', () => {
         const { source, request } = fixture();
         const before = native.toJS(source);
         try {
-            const result = materializeProspectiveMutation(request);
+            const result = await requestNativeChanges(request);
             expect(result.changes.length).toBeGreaterThan(1);
             const bytes = result.changes.at(-1);
-            if (!bytes) throw new Error('Expected final change');
+            if (!bytes) {
+                throw new Error('Expected final change');
+            }
             bytes[4] = (bytes[4] ?? 0) ^ 0xff;
             await expect(admit(source, result, new AbortController().signal)).rejects.toThrow(
                 'invalid change checksum'
@@ -160,7 +174,7 @@ describe('bounded Detect response admission', () => {
         const before = native.toJS(source);
         const controller = new AbortController();
         try {
-            const result = materializeProspectiveMutation(request);
+            const result = await requestNativeChanges(request);
             const pending = admit(source, result, controller.signal);
             const channel = new MessageChannel();
             channel.port1.onmessage = () => {
@@ -179,7 +193,7 @@ describe('bounded Detect response admission', () => {
     it('keeps a zero-operation reply on the captured heads', async () => {
         const { source, request, base } = fixture();
         try {
-            const result = materializeProspectiveMutation({
+            const result = await requestNativeChanges({
                 ...request,
                 mutation: { ...request.mutation, value: base },
             });
