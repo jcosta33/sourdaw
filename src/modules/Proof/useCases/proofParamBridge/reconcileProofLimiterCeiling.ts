@@ -13,6 +13,7 @@ export type CeilingProjection = {
     readOwner: () => ReturnType<typeof readProofOwner>;
     stop: () => void;
     cancelGesture?: () => void;
+    ceilingForSync?: (displayed: number) => { value: number; runtimeOwner?: symbol };
 };
 
 const scopes = new Map<string, CeilingProjection>();
@@ -74,14 +75,21 @@ function reconcileProofLimiterCeiling(deviceId: string): CeilingProjection | und
         return undefined;
     }
     const project = captureProjectIdentity();
-    const bridge = bridges.get(deviceId);
+    let bridge = bridges.get(deviceId);
     const trackId = owner.track.id;
     function readOwner() {
-        if (captureProjectIdentity() !== project || bridges.get(deviceId) !== bridge) {
+        const registeredBridge = bridges.get(deviceId);
+        if (captureProjectIdentity() !== project || (bridge && bridge !== registeredBridge)) {
             return undefined;
         }
         const current = readProofOwner(deviceId);
-        return current?.track.id === trackId ? current : undefined;
+        if (current?.track.id !== trackId) {
+            return undefined;
+        }
+        // The first bridge promotes this device's loading controller. A later
+        // bridge change retires the scope and its gesture.
+        bridge ??= registeredBridge;
+        return current;
     }
 
     let committed = readCeilingRecord(owner.device.parameterValues);

@@ -35,6 +35,9 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { getProofState, proofStore, updateProofMeters } from '../../../stores/proofStore';
 import { proofLimiterCeiling } from '../../../useCases/proofParamBridge/proofLimiterCeiling';
+import { registerProofDevice } from '../../../useCases/proofParamBridge/registerProofDevice';
+import { syncFullPatch } from '../../../useCases/proofParamBridge/syncFullPatch';
+import { unregisterProofDevice } from '../../../useCases/proofParamBridge/unregisterProofDevice';
 import { resetProofForProject } from '../../../useCases/resetProofForProject';
 import { ProofPanel } from '../ProofPanel';
 
@@ -138,6 +141,7 @@ describe('Proof cumulative disclosure in project truth', () => {
     });
     afterEach(() => {
         cleanup();
+        unregisterProofDevice('a');
         stopAutomationRecording();
         transportStore.set(defaultTransportState);
         resetProofForProject();
@@ -435,7 +439,7 @@ describe('Proof cumulative disclosure in project truth', () => {
     });
 
     it.each([undefined, -1, -3])('replays a held ceiling from prior value %s on the same panel', async (previous) => {
-        const initialParams = previous === undefined ? {} : { lim_ceiling: previous };
+        const initialParams: Record<string, number> = previous === undefined ? {} : { lim_ceiling: previous };
         const state = trackStore.value;
         if (!state) {
             throw new Error('Missing the Proof fixture project');
@@ -459,13 +463,12 @@ describe('Proof cumulative disclosure in project truth', () => {
         expect(before.past).toHaveLength(1);
         render(<ProofPanel deviceId="a" />);
         await selectTier('build');
-        const sliders = ['Master limiter ceiling', 'Mission limiter ceiling', 'Limiter ceiling'].map((name) =>
-            screen.getByRole('slider', { name, exact: true })
-        );
-        const [ceiling] = sliders;
-        if (!ceiling) {
-            throw new Error('Expected the Check ceiling knob');
-        }
+        const ceiling = screen.getByRole('slider', { name: /^Master limiter ceiling$/ });
+        const sliders = [
+            ceiling,
+            screen.getByRole('slider', { name: /^Mission limiter ceiling$/ }),
+            screen.getByRole('slider', { name: /^Limiter ceiling$/ }),
+        ];
         const assertDisplay = (value: number): void => {
             for (const slider of sliders) {
                 expect(Number(slider.getAttribute('aria-valuenow'))).toBeCloseTo(value, 12);
@@ -570,6 +573,62 @@ describe('Proof cumulative disclosure in project truth', () => {
             { parameterId: 'a:lim_ceiling', points: [] },
             { parameterId: 'b:input_gain', points: [{ beat: 1, value: 0.7, curve: 'linear', tension: 0 }] },
         ]);
+    });
+
+    it('carries a held ceiling into its first runtime registration and replays its one history entry', async () => {
+        render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        const preview = getProofState('a').patch.limCeiling;
+        const baselineHistory = captureUndoHistory();
+        const previewWrite = audioEngine.updateDeviceParam.mock.calls.at(-1);
+        expect(previewWrite).toEqual(['track', 'a', 'lim_ceiling', preview, expect.any(Symbol)]);
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        audioEngine.updateDeviceParam.mockClear();
+
+        act(() => {
+            registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+            syncFullPatch('a');
+        });
+        const mountedWhileHeld = Number(ceiling.getAttribute('aria-valuenow'));
+        const registrationWrite = audioEngine.updateDeviceParam.mock.calls.find(([, , key]) => key === 'lim_ceiling');
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(captureUndoHistory()).toEqual(baselineHistory);
+
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        await waitFor(() => expect(documentParameter('a', 'lim_ceiling')).toBe(preview));
+        expect(projectParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(captureUndoHistory().past).toHaveLength(baselineHistory.past.length + 1);
+        expect(mountedWhileHeld).toBe(preview);
+        expect(registrationWrite).toEqual(previewWrite);
+        expect(Number(ceiling.getAttribute('aria-valuenow'))).toBe(preview);
+
+        await act(() => undo());
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(projectParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        await act(() => redo());
+        expect(documentParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(projectParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(Number(ceiling.getAttribute('aria-valuenow'))).toBe(preview);
+    });
+
+    it('retires an old ceiling drag when a registered Proof bridge is replaced', async () => {
+        registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+        render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        act(() => {
+            registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+            syncFullPatch('a');
+        });
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        audioEngine.updateDeviceParam.mockClear();
+        await act(async () => {
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        });
+        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(projectParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(captureUndoHistory().past).toEqual([]);
     });
 
     it('settles successive ceiling releases before the bypass write waiting on them', async () => {

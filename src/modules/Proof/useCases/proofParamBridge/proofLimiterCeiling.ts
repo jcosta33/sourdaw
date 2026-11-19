@@ -33,6 +33,7 @@ function releaseCeilingGesture(scope: CeilingProjection, gesture: CeilingGesture
     gesture.runtime.release();
     gestures.delete(scope);
     delete scope.cancelGesture;
+    delete scope.ceilingForSync;
 }
 
 function discardProofLimiterCeilingGesture(deviceId: string): void {
@@ -83,6 +84,17 @@ function acquireCeilingGesture(deviceId: string, scope: CeilingProjection): Ceil
         },
     };
     gestures.set(scope, gesture);
+    scope.ceilingForSync = (value) => {
+        if (!Object.is(value, gesture.preview)) {
+            return { value };
+        }
+        if (gesture.isAdmissible()) {
+            return { value, runtimeOwner: runtime.owner };
+        }
+        const latest = scope.readOwner();
+        const record = latest ? proofLimiterCeilingRecord.read(latest.device.parameterValues) : baseline;
+        return { value: proofLimiterCeilingRecord.valueForDisplay(record) };
+    };
     scope.cancelGesture = () => {
         gesture.cancelled = true;
         releaseCeilingGesture(scope, gesture);
