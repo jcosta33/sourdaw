@@ -2,7 +2,7 @@
  * PianoRoll toolbar — snap, scale, fold, step input, ghost notes,
  * chord mode, paint mode, lasso mode, and zoom controls.
  */
-import { type ReactElement } from 'react';
+import { type ReactElement, useRef } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
@@ -113,6 +113,100 @@ type PianoRollToolbarProps = {
      * because a caller that does not know the instrument cannot promise one.
      */
     mpeExpressionLanes?: readonly MpeExpressionLane[];
+};
+
+type ExpressionLane = NonNullable<PianoRollToolbarProps['activeExpressionLane']>;
+
+type ExpressionLaneAccessoryProps = {
+    activeExpressionLane: ExpressionLane;
+    onActiveExpressionLaneChange: (lane: ExpressionLane) => void;
+    mpeExpressionLanes: readonly MpeExpressionLane[];
+    onReturnToVelocity: () => void;
+};
+
+const ExpressionLaneAccessory = ({
+    activeExpressionLane,
+    onActiveExpressionLaneChange,
+    mpeExpressionLanes,
+    onReturnToVelocity,
+}: ExpressionLaneAccessoryProps): ReactElement => {
+    if (mpeExpressionLanes.length > 0) {
+        return (
+            <DawCompactSelect
+                value={activeExpressionLane}
+                onChange={(event) => onActiveExpressionLaneChange(event.target.value as ExpressionLane)}
+                size="micro"
+                aria-label="Active expression lane"
+            >
+                <option value="velocity">Velocity</option>
+                {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
+                    <option key={lane} value={lane}>
+                        {MPE_LANE_LABELS[lane]}
+                    </option>
+                ))}
+            </DawCompactSelect>
+        );
+    }
+    if (activeExpressionLane === 'velocity') {
+        return (
+            <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                Velocity only for this instrument
+            </span>
+        );
+    }
+    return (
+        <Button variant="ghost" size="xs" onClick={onReturnToVelocity}>
+            Return to Velocity
+        </Button>
+    );
+};
+
+const ExpressionControl = ({
+    showExpressionView,
+    onToggleExpressionView,
+    activeExpressionLane,
+    onActiveExpressionLaneChange,
+    mpeExpressionLanes = [],
+}: Pick<
+    PianoRollToolbarProps,
+    | 'showExpressionView'
+    | 'onToggleExpressionView'
+    | 'activeExpressionLane'
+    | 'onActiveExpressionLaneChange'
+    | 'mpeExpressionLanes'
+>): ReactElement => {
+    const expressionToggleRef = useRef<HTMLButtonElement>(null);
+    return (
+        <>
+            <Button
+                ref={expressionToggleRef}
+                variant={showExpressionView ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleExpressionView}
+                className={cn(
+                    'text-[10px] px-2',
+                    showExpressionView && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+                )}
+                aria-pressed={showExpressionView}
+                aria-label="Toggle Expression View (I4)"
+                data-testid="toolbar-expression"
+            >
+                Expression
+            </Button>
+
+            {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
+                <ExpressionLaneAccessory
+                    activeExpressionLane={activeExpressionLane}
+                    onActiveExpressionLaneChange={onActiveExpressionLaneChange}
+                    mpeExpressionLanes={mpeExpressionLanes}
+                    onReturnToVelocity={() => {
+                        onActiveExpressionLaneChange('velocity');
+                        expressionToggleRef.current?.focus();
+                    }}
+                />
+            ) : null}
+        </>
+    );
 };
 
 export const PianoRollToolbar = ({
@@ -336,38 +430,13 @@ export const PianoRollToolbar = ({
 
         <ToolbarDivider />
 
-        <Button
-            variant={showExpressionView ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleExpressionView}
-            className={cn(
-                'text-[10px] px-2',
-                showExpressionView && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
-            )}
-            aria-pressed={showExpressionView}
-            aria-label="Toggle Expression View (I4)"
-            data-testid="toolbar-expression"
-        >
-            Expression
-        </Button>
-
-        {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
-            <DawCompactSelect
-                value={activeExpressionLane}
-                onChange={(event) =>
-                    onActiveExpressionLaneChange(event.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')
-                }
-                size="micro"
-                aria-label="Active expression lane"
-            >
-                <option value="velocity">Velocity</option>
-                {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
-                    <option key={lane} value={lane}>
-                        {MPE_LANE_LABELS[lane]}
-                    </option>
-                ))}
-            </DawCompactSelect>
-        ) : null}
+        <ExpressionControl
+            showExpressionView={showExpressionView}
+            onToggleExpressionView={onToggleExpressionView}
+            activeExpressionLane={activeExpressionLane}
+            onActiveExpressionLaneChange={onActiveExpressionLaneChange}
+            mpeExpressionLanes={mpeExpressionLanes}
+        />
 
         {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
             <>
