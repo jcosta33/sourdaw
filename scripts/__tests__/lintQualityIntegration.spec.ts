@@ -17,6 +17,92 @@ function isolateTypeScriptProject(directory: string, parent: string, files: stri
 }
 
 describe('production quality lint', () => {
+    it('reports focused and disabled Vitest cases only in Vitest test files', () => {
+        const directories: string[] = [];
+        try {
+            const scripts = mkdtempSync(join(root, 'scripts/lint-vitest-admission-'));
+            directories.push(scripts);
+            const playwright = mkdtempSync(join(root, 'tests/e2e/lint-vitest-admission-'));
+            directories.push(playwright);
+            const server = mkdtempSync(join(root, 'server/lint-vitest-admission-'));
+            directories.push(server);
+            const admission = `import { describe, expect, it, test as check } from 'vitest';
+describe.only('focused suite', () => {});
+it.only('focused case', () => expect(true).toBe(true));
+check.concurrent.only.each([1])('focused parameterized alias', (value) => expect(value).toBe(1));
+describe.skip('disabled suite', () => {});
+it.skip('disabled case', () => expect(true).toBe(true));
+it.todo('placeholder');
+it.skipIf(process.platform === 'win32')('Unix case', () => expect(true).toBe(true));
+it.runIf(process.platform === 'darwin')('macOS case', () => expect(true).toBe(true));
+it.each([1])('parameterized case', (value) => expect(value).toBe(1));
+`;
+            const fixtures = [
+                [scripts, 'vitest.spec.ts', admission],
+                [scripts, 'vitest.test.ts', admission],
+                [scripts, 'helper.ts', admission],
+                [scripts, 'browser.e2e.spec.ts', admission],
+                [playwright, 'browser.spec.ts', admission],
+                [server, 'server.spec.ts', admission],
+                [
+                    scripts,
+                    'node.spec.ts',
+                    "import { test } from 'node:test';\ntest.only('node', () => {});\ntest.skip('node', () => {});\n",
+                ],
+                [
+                    scripts,
+                    'local.spec.ts',
+                    'const test = { only: (value: number) => value, skip: (value: number) => value };\ntest.only(1);\ntest.skip(1);\n',
+                ],
+            ] as const;
+            const targets = fixtures.map(([directory, file, content]) => {
+                const target = join(directory, file);
+                writeFileSync(target, content);
+                return target;
+            });
+            for (const [directory, parent] of [
+                [scripts, 'scripts/tsconfig.json'],
+                [playwright, 'tests/tsconfig.json'],
+                [server, 'tsconfig.json'],
+            ] as const) {
+                isolateTypeScriptProject(
+                    directory,
+                    parent,
+                    fixtures.filter(([dir]) => dir === directory).map(([, file]) => file)
+                );
+            }
+            const result = spawnSync(
+                resolve(root, 'node_modules/.bin/oxlint'),
+                buildQualityLintArgv(targets).slice(2),
+                {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 60_000,
+                }
+            );
+            expect(result.error).toBeUndefined();
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(targets.length);
+            const focused = 'vitest/no-focused-tests';
+            const disabled = 'vitest/no-disabled-tests';
+            const expected = ['vitest.spec.ts', 'vitest.test.ts'].flatMap((file) => [
+                [file, focused, 2],
+                [file, focused, 3],
+                [file, focused, 4],
+                [file, disabled, 5],
+                [file, disabled, 6],
+            ]);
+            expect(report.diagnostics.map(({ file, rule, line }) => [basename(file), rule, line]).toSorted()).toEqual(
+                expected.toSorted()
+            );
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+        } finally {
+            for (const directory of directories) {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        }
+    }, 75_000);
+
     it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
         const scripts = mkdtempSync(join(root, 'scripts/lint-quality-probe-'));
         const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-probe-'));
