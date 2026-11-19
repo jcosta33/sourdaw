@@ -1266,6 +1266,17 @@ describe('thread context for the planner', () => {
     describe('sizing', () => {
         const escapedReading = String.fromCharCode(0).repeat(512);
 
+        const riffNotes = (length: number) =>
+            Array.from({ length }, (_, index) => ({
+                pitch: 36 + (index % 24),
+                startBeat: index / 4,
+                durationBeats: 0.25,
+                velocity: 100,
+                releaseVelocity: 64,
+                probability: 1,
+                muted: false,
+            }));
+
         it('keeps the newest request and result identities when admitted readings expand in JSON', () => {
             const commands = [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }];
             const measuredDeltas = [{ targetId: 'bass', metric: 'integratedLoudness', delta: -3, unit: 'LUFS' }];
@@ -1356,6 +1367,51 @@ describe('thread context for the planner', () => {
             });
         });
 
+        it('keeps pending MIDI arguments ahead of cancelled history when space is tight', () => {
+            const pendingCommand = {
+                name: 'createMidiClip',
+                label: 'Create MIDI clip "New Riff" with 12 notes',
+                arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 3, notes: riffNotes(12) },
+            };
+            const cancelledCommand = {
+                name: 'createMidiClip',
+                label: 'Create MIDI clip "Old Riff" with 35 notes',
+                arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 9, notes: riffNotes(35) },
+            };
+            const thread: ThreadContext = {
+                requests: ['Keep the riff short'],
+                pendingProposal: {
+                    runId: 'pending-run',
+                    confirmationId: 'pending-card',
+                    batchPosition: null,
+                    commands: [pendingCommand],
+                },
+                lastCommit: null,
+                lastCancelled: {
+                    runId: 'cancelled-run',
+                    batchId: 'cancelled-batch',
+                    confirmationId: 'cancelled-card',
+                    commands: [cancelledCommand],
+                },
+            };
+
+            const local = fitThreadContext(thread, 'local');
+            const localContext = readSection(`\n\n${local.section}\n\n`);
+            expect(localContext.pendingProposal).toHaveProperty('commands', [pendingCommand]);
+            expect(localContext.lastCancelled).toMatchObject({
+                batchId: 'cancelled-batch',
+                omittedCommandCount: 0,
+            });
+            expect(localContext.lastCancelled).toHaveProperty('commands', [
+                { name: cancelledCommand.name, label: cancelledCommand.label, argumentsOmitted: true },
+            ]);
+
+            const hosted = fitThreadContext(thread, 'hosted');
+            expect(readSection(`\n\n${hosted.section}\n\n`).lastCancelled).toHaveProperty('commands', [
+                cancelledCommand,
+            ]);
+        });
+
         it('drops the oldest requests first under the cap and keeps the newest', () => {
             const thread = createFullThreadContext();
             const local = fitThreadContext(thread, 'local');
@@ -1419,15 +1475,7 @@ describe('thread context for the planner', () => {
         });
 
         it('keeps a command whose arguments alone exceed the cap by its name and label', () => {
-            const notes = Array.from({ length: 96 }, (_, index) => ({
-                pitch: 36 + (index % 24),
-                startBeat: index / 4,
-                durationBeats: 0.25,
-                velocity: 100,
-                releaseVelocity: 64,
-                probability: 1,
-                muted: false,
-            }));
+            const notes = riffNotes(96);
             const thread: ThreadContext = {
                 requests: ['write a riff', 'make it busier'],
                 pendingProposal: {
@@ -1514,15 +1562,7 @@ describe('thread context for the planner', () => {
         });
 
         it('keeps a committed command whose arguments alone exceed the cap by its name and label', () => {
-            const notes = Array.from({ length: 96 }, (_, index) => ({
-                pitch: 36 + (index % 24),
-                startBeat: index / 4,
-                durationBeats: 0.25,
-                velocity: 100,
-                releaseVelocity: 64,
-                probability: 1,
-                muted: false,
-            }));
+            const notes = riffNotes(96);
             const thread: ThreadContext = {
                 requests: ['write a riff'],
                 pendingProposal: null,

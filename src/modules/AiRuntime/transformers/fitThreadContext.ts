@@ -120,13 +120,13 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
 
 /**
  * The `thread_context` section for one message profile, within that profile's byte cap. The cap
- * is filled in the order a refinement needs: the newest earlier request, then the pending
- * proposal's commands and the last commit's commands and measured deltas. Complete public readings
- * are then tried before the earlier requests from newest back. A command whose arguments do not fit
- * is kept by name and label alone, marked `argumentsOmitted`. An entry that does not fit even so is left out whole and counted; the entries
- * after a command or delta that did not fit are still tried, but requests stop at the first that
- * does not fit, so what survives is always the newest run of turns and the oldest go first. Only
- * the section's ids and counts are always present, and their bounds keep them within either cap.
+ * is filled in the order a refinement needs: the newest earlier request, the pending proposal's
+ * commands, the last commit's commands and measured deltas, then the optional cancelled batch and
+ * its commands. Complete public readings are tried before the earlier requests from newest back.
+ * A command whose arguments do not fit is kept by name and label alone, marked `argumentsOmitted`.
+ * An entry that still does not fit is left out whole and counted. Later commands and deltas are
+ * still tried, while requests stop at the first that does not fit. Pending proposal and last commit
+ * ids and counts are always present, and their bounds keep them within either cap.
  */
 export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessageProfile): FittedThreadContext {
     const cap = THREAD_CONTEXT_MAX_BYTES[profile];
@@ -180,7 +180,6 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     const newestFirstRequests = [...thread.requests].reverse();
     const newestRequest = newestFirstRequests[0];
     const requestsFit = newestRequest === undefined || tryAdd({ ...fitted, requests: [newestRequest] });
-    tryAddCancelled();
     for (const command of thread.pendingProposal?.commands ?? []) {
         tryAddCommand(command, (entry) => ({ ...fitted, pendingCommands: [...fitted.pendingCommands, entry] }));
     }
@@ -190,6 +189,7 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     for (const delta of thread.lastCommit?.measuredDeltas ?? []) {
         tryAdd({ ...fitted, measuredDeltas: [...fitted.measuredDeltas, delta] });
     }
+    tryAddCancelled();
     tryAddReadings();
     if (requestsFit) {
         for (const request of newestFirstRequests.slice(1)) {
