@@ -177,14 +177,16 @@ function enclosingTask(
     inputMarkStart: number,
     tasks: MainThreadTask[]
 ): MainThreadTask | undefined {
-    const start = phase.startTime - inputMarkStart;
-    const end = start + phase.duration;
-    // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
-    const matches = tasks.filter(
-        (candidate) =>
-            candidate.startFromInputMs <= start + 0.002 &&
-            candidate.startFromInputMs + candidate.durationMs >= end - 0.002
-    );
+    const startFromInputMs = phase.startTime - inputMarkStart;
+    // Match in integer microseconds so floating-point rounding cannot move an endpoint past the trace tolerance.
+    const startUs = Math.round(startFromInputMs * 1000);
+    const endUs = Math.round((startFromInputMs + phase.duration) * 1000);
+    const toleranceUs = 2;
+    const matches = tasks.filter((candidate) => {
+        const taskStartUs = Math.round(candidate.startFromInputMs * 1000);
+        const taskEndUs = Math.round((candidate.startFromInputMs + candidate.durationMs) * 1000);
+        return taskStartUs <= startUs + toleranceUs && taskEndUs >= endUs - toleranceUs;
+    });
     return matches.length === 1 ? matches[0] : undefined;
 }
 
