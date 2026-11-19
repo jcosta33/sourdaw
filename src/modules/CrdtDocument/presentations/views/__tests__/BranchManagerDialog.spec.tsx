@@ -137,7 +137,7 @@ describe('BranchManagerDialog', () => {
             mocks.forkProjectBranch.mockRejectedValueOnce(new Error('fork failed'));
             render(<BranchManagerDialog onClose={vi.fn()} />);
 
-            fireEvent.change(screen.getByPlaceholderText('New branch name'), { target: { value: 'next' } });
+            fireEvent.change(screen.getByRole('textbox', { name: 'New branch name' }), { target: { value: 'next' } });
             fireEvent.click(screen.getByRole('button', { name: /Fork/ }));
 
             expect((await screen.findByRole('alert')).textContent).toContain('Could not create branch "next"');

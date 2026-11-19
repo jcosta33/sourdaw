@@ -91,13 +91,12 @@ export function createAcceptanceRenderLaw(input: {
         const lag = ((position % 3) * Math.PI) / 18;
         const left = new Float64Array(frames);
         const right = new Float64Array(frames);
-        for (let frame = 0; frame < frames; frame++) {
+        // All partials are multiples of 10 Hz, so their weighted sum repeats every 4,800 frames.
+        const periodFrames = Math.min(frames, SAMPLE_RATE / 10);
+        const oscillatorLeft = new Float64Array(periodFrames);
+        const oscillatorRight = new Float64Array(periodFrames);
+        for (let frame = 0; frame < periodFrames; frame++) {
             const time = start + frame / SAMPLE_RATE;
-            const sinceStrike = time % beatSeconds;
-            const risen = Math.min(sinceStrike, STRIKE_RISE_SECONDS);
-            const rise = 0.5 * (1 - Math.cos((Math.PI * risen) / STRIKE_RISE_SECONDS));
-            const decay = Math.exp(-Math.max(0, sinceStrike - STRIKE_RISE_SECONDS) / STRIKE_DECAY_SECONDS);
-            const envelope = level * (sustain + (1 - sustain) * rise * decay);
             let l = 0;
             let r = 0;
             for (let index = 0; index < PARTIAL_HZ.length; index++) {
@@ -106,8 +105,19 @@ export function createAcceptanceRenderLaw(input: {
                 l += weight * Math.sin(phase);
                 r += weight * Math.sin(phase - lag * (index + 1));
             }
-            left[frame] = envelope * l;
-            right[frame] = envelope * r;
+            oscillatorLeft[frame] = l;
+            oscillatorRight[frame] = r;
+        }
+        for (let frame = 0; frame < frames; frame++) {
+            const time = start + frame / SAMPLE_RATE;
+            const sinceStrike = time % beatSeconds;
+            const risen = Math.min(sinceStrike, STRIKE_RISE_SECONDS);
+            const rise = 0.5 * (1 - Math.cos((Math.PI * risen) / STRIKE_RISE_SECONDS));
+            const decay = Math.exp(-Math.max(0, sinceStrike - STRIKE_RISE_SECONDS) / STRIKE_DECAY_SECONDS);
+            const envelope = level * (sustain + (1 - sustain) * rise * decay);
+            const oscillatorFrame = frame % periodFrames;
+            left[frame] = envelope * oscillatorLeft[oscillatorFrame]!;
+            right[frame] = envelope * oscillatorRight[oscillatorFrame]!;
         }
         const signal = { left, right };
         const bytes = left.byteLength + right.byteLength;

@@ -354,6 +354,23 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.queryByDisplayValue('Kick In')).not.toBeInTheDocument();
     });
 
+    it('keeps the name editor open during composing Enter and commits on ordinary Enter', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.doubleClick(screen.getByText('Track 1'));
+        const input = screen.getByDisplayValue('Track 1');
+        fireEvent.change(input, { target: { value: 'Kick In' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(screen.getByDisplayValue('Kick In')).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: false });
+        expect(mocks.executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'Kick In' },
+        });
+        expect(screen.queryByDisplayValue('Kick In')).not.toBeInTheDocument();
+    });
+
     it('opens a context menu at the click position and closes it after choosing Mute', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 

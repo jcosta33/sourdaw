@@ -133,6 +133,7 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,

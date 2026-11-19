@@ -690,6 +690,19 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
+        title: 'insertAutomationLanePoints refuses a lane that follows another lane',
+        actionType: 'insertAutomationLanePoints',
+        divergedAction: {
+            type: 'insertAutomationLanePoints',
+            payload: {
+                laneId: 'automation-follower',
+                owner: { trackId: 'track-live', parameterId: 'gain' },
+                insertion: { kind: 'shape', shape: 'random', startBeat: 4, endBeat: 8 },
+            },
+        },
+        reason: 'Lane "Gain" follows automation lane automation-source; transform its source lane instead.',
+    },
+    {
         title: 'restoreAutomationLanePoints refuses a diverged recorded-lane snapshot',
         actionType: 'restoreAutomationLanePoints',
         divergedAction: {

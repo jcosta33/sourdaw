@@ -262,13 +262,10 @@ jobs:
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
-      # Real-render specs launch Chromium from inside a loaded shard. Without
-      # the pinned Playwright build they fall back to the image's full Chrome,
-      # whose cold start exceeded a 120s warm-up under shard load (run
-      # 42099824047). The isolated account installs it into its own HOME,
-      # bounded like the required unit shards' install in validation.yml.
+      # The 125.7 MiB shell download reached only 20% after 85s in run
+      # 44331696186. Playwright times out idle connections after 30s.
       - name: Install Chromium
-        timeout-minutes: 2
+        timeout-minutes: 10
         run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
       # Keep the shard within the repository's two-worker test limit.
@@ -558,6 +555,13 @@ jobs:
         id: build-packaged-app
         run: pnpm desktop:build
 
+      # Record the bytes this job produced before any packaged-app consumer runs.
+      - name: Capture the Fermenter build receipt
+        id: capture-fermenter
+        if: ${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}
+        continue-on-error: true
+        run: node scripts/proveDesktopFermenter.ts --capture --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
+
       - name: Measure the packaged app
         run: pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json
 
@@ -591,6 +595,39 @@ jobs:
           name: desktop-agent-workspace-${{ github.sha }}
           path: measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
           retention-days: 90
+
+      # This observation reports its own verdict and leaves the Nightly job result unchanged.
+      - name: Prove Fermenter in the packaged app
+        id: prove-fermenter
+        if: ${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          FERMENTER_CAPTURE_OUTCOME: ${{ steps.capture-fermenter.outcome }}
+        run: |
+          status=0
+          node scripts/proveDesktopFermenter.ts --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \
+            --json "$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" || status=$?
+          case "$status" in
+            0) verdict=proven ;;
+            1) verdict=failed ;;
+            *) verdict=not-run ;;
+          esac
+          printf 'Fermenter packaged proof — **%s**\n' "$verdict" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Fermenter packaged proof reported $verdict"
+          fi
+          exit "$status"
+
+      - name: Upload the Fermenter proof record
+        if: ${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-fermenter-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sourdaw-fermenter-proof-${{ github.run_id }}-${{ github.run_attempt }}.json
+          retention-days: 7
+          if-no-files-found: error
 
   e2e:
     name: End-to-end ${{ matrix.shard }}/12

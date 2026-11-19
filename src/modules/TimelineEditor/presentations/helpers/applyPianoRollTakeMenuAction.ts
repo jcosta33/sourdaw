@@ -4,6 +4,7 @@ import {
     getMidiClipNotesSnapshot,
     isValidMidiNoteSnapshot,
     projectMidiNoteMenuTransform,
+    type projectPianoRollTakeNotes,
     sliceMidiTakeNoteForEdit,
 } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -11,7 +12,8 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
-import { type FrozenPianoRollNoteOwner, type PianoRollTakeNotes } from './projectPianoRollTakeNotes';
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
+type FrozenPianoRollNoteOwner = NonNullable<ReturnType<PianoRollTakeNotes['ownersByViewId']['get']>>;
 
 type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
 type BaseRowAction = Extract<AppAction, { type: 'replaceOriginalMidiBaseRow' }>;
