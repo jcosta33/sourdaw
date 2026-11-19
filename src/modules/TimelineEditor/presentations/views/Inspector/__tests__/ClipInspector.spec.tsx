@@ -192,6 +192,7 @@ vi.mock('#/utils/UI/colorPresets', () => ({
 
 const arrangementMocks = vi.hoisted(() => ({
     getClipEndLimit: vi.fn<(clipId: string) => number | null>(),
+    renameClip: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -204,7 +205,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         setClipFade: vi.fn(),
         setClipGain: vi.fn(),
         setClipColor: vi.fn(),
-        renameClip: vi.fn(),
+        renameClip: arrangementMocks.renameClip,
         setClipFollowAction: vi.fn(),
     };
 });
@@ -267,6 +268,20 @@ describe('ClipInspector', () => {
     it('should display clip name', () => {
         render(<ClipInspector {...defaultProps} />);
         expect(screen.getByText('Test Audio')).toBeInTheDocument();
+    });
+
+    it('commits a clip rename on Enter only after composition', () => {
+        render(<ClipInspector {...defaultProps} />);
+        fireEvent.doubleClick(screen.getByText('Test Audio'));
+        const input = screen.getByLabelText('Rename clip Test Audio');
+        fireEvent.change(input, { target: { value: 'Renamed Audio' } });
+
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(arrangementMocks.renameClip).not.toHaveBeenCalled();
+        expect(input).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(arrangementMocks.renameClip).toHaveBeenCalledExactlyOnceWith('clip-1', 'Renamed Audio');
     });
 
     it('should call onBack when back button is clicked', () => {

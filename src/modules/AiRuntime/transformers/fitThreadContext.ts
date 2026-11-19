@@ -167,17 +167,20 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
         }
         tryAdd(withCommand({ name: command.name, label: command.label, argumentsOmitted: true }));
     };
+    const tryAddCancelled = (): void => {
+        if (thread.lastCancelled && tryAdd({ ...fitted, cancelled: true })) {
+            for (const command of thread.lastCancelled.commands) {
+                tryAddCommand(command, (entry) => ({
+                    ...fitted,
+                    cancelledCommands: [...fitted.cancelledCommands, entry],
+                }));
+            }
+        }
+    };
     const newestFirstRequests = [...thread.requests].reverse();
     const newestRequest = newestFirstRequests[0];
     const requestsFit = newestRequest === undefined || tryAdd({ ...fitted, requests: [newestRequest] });
-    if (thread.lastCancelled) {
-        tryAdd({ ...fitted, cancelled: true });
-    }
-    if (fitted.cancelled) {
-        for (const command of thread.lastCancelled?.commands ?? []) {
-            tryAddCommand(command, (entry) => ({ ...fitted, cancelledCommands: [...fitted.cancelledCommands, entry] }));
-        }
-    }
+    tryAddCancelled();
     for (const command of thread.pendingProposal?.commands ?? []) {
         tryAddCommand(command, (entry) => ({ ...fitted, pendingCommands: [...fitted.pendingCommands, entry] }));
     }

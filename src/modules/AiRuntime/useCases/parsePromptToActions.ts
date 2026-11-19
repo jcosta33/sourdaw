@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
-import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
+import { doesProductionBriefAllowActionBatch, type captureMusicalContentBinding } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -150,6 +150,7 @@ type ParsePromptToActionsInput = {
     preset?: { id: string; expectedContext: PresetContext };
     signal?: AbortSignal;
     projectRevision?: string;
+    musicalContentBinding?: ReturnType<typeof captureMusicalContentBinding>;
     stemImportScope?: StemImportPromptScope;
     onProviderResult?: (result: ModelProviderResult) => void;
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
@@ -752,6 +753,7 @@ const planPromptIntent = inject({ logger })(
             preset,
             signal,
             projectRevision,
+            musicalContentBinding,
             stemImportScope,
             onProviderResult,
             streamIdentity,
@@ -1180,7 +1182,25 @@ const planPromptIntent = inject({ logger })(
                         },
                     };
                 };
+                const offeredMusicalWorkflows: NonNullable<
+                    Parameters<typeof runApplicationOwnedToolLoop>[0]['offeredMusicalWorkflows']
+                >[number][] = [];
+                if (articulationTransferCapability) {
+                    offeredMusicalWorkflows.push('articulation-transfer');
+                }
+                if (midiOverlapTransformCapability) {
+                    offeredMusicalWorkflows.push('midi-overlap-shortening');
+                }
+                if (syncopatedArpeggioCapability) {
+                    offeredMusicalWorkflows.push('syncopated-arpeggio');
+                }
+                if (drumPreviewBranchesCapability) {
+                    offeredMusicalWorkflows.push('drum-preview-branches');
+                }
                 const planningOutcome = await runApplicationOwnedToolLoop({
+                    musicalContentBinding,
+                    offeredMusicalWorkflows,
+                    readCreativeAuthority: () => creativeAuthority,
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
                     // The loop binds this authority to the actual admitted generic or workflow intake.
                     readMeasurementOpportunity: () => {

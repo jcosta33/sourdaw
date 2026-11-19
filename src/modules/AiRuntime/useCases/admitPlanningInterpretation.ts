@@ -189,6 +189,25 @@ function admitJointAnswerInterpretation(input: PlanningInterpretationInput, answ
     return result.status === 'admitted' ? { ...result, kind: 'answer' as const } : result;
 }
 
+function admitCreativeOrLiteralInterpretation(
+    input: PlanningInterpretationInput,
+    legacyArguments: ToolCallResult['arguments'],
+    metricIntent: unknown,
+    creativeInterpretation: string | undefined
+) {
+    if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
+        return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };
+    }
+    if (legacyArguments.modeId === 'literal') {
+        return admitLiteralInterpretation(input, legacyArguments, metricIntent);
+    }
+    const result = admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
+    if (result.status === 'admitted' && creativeInterpretation !== undefined) {
+        return { ...result, creativeInterpretation };
+    }
+    return result;
+}
+
 export function admitPlanningInterpretation(input: PlanningInterpretationInput) {
     const { answer, metricIntent, creativeInterpretation, ...legacyArguments } = input.call.arguments;
     if (creativeInterpretation !== undefined && !isPublicCreativeInterpretation(creativeInterpretation)) {
@@ -212,17 +231,7 @@ export function admitPlanningInterpretation(input: PlanningInterpretationInput) 
         };
     }
     if (answer === undefined || answer === null) {
-        if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
-            return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };
-        }
-        if (legacyArguments.modeId === 'literal') {
-            return admitLiteralInterpretation(input, legacyArguments, metricIntent);
-        }
-        const result = admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
-        if (result.status === 'admitted' && creativeInterpretation !== undefined) {
-            return { ...result, creativeInterpretation };
-        }
-        return result;
+        return admitCreativeOrLiteralInterpretation(input, legacyArguments, metricIntent, creativeInterpretation);
     }
     return admitJointAnswerInterpretation(input, answer, metricIntent);
 }

@@ -287,6 +287,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     removeAutomationLane: unaffected,
     setAutomationLaneEnabled: unaffected,
     addAutomationPoint: unaffected,
+    insertAutomationLanePoints: unaffected,
     quantizeNotes: unaffected,
     removeShortMidiOverlaps: { before: readRemoveShortMidiOverlapsIds, after: noIds },
     createDrumPreviewBranches: { before: readCreateDrumPreviewBranchesIds, after: noIds },

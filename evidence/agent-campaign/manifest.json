@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "d01fc9d0acd842de238de77357f2f6e11d04f890d7bfd807005f7219bc73bd4c"
+        "digest": "8a50a2e18b879ee1df061756bdfdf653f504bb412b163b977c8084bf7e9ee31a"
     },
     "census": {
         "digest": "bc024d8f218cf5df0e3227802cb6fe46787ad7fc4d75a67ac6ac694eeffd08ff"
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "6930b4836923bd5f1c451f1a7df020b998de1a350baf67bcc845e1f809a5a2fe"
+                    "digest": "a59824552bb5575402807adffc90e11beacff70f67849add9f42d94c6edd37e5"
                 }
             ]
         },

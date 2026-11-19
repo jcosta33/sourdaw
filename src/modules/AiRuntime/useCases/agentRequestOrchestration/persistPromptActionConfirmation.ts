@@ -148,6 +148,18 @@ function recordConfirmationMetricGoalPlan(
     });
 }
 
+function describeProposedPromptContent(
+    input: PersistPromptActionConfirmationInput,
+    metricGoalState: string | null | undefined
+): string {
+    const interpretation = readPublicCreativeInterpretation(
+        agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? [],
+        readMetricCreativeAuthorityIds(metricGoalState) ?? []
+    );
+    const publicReading = interpretation === null ? '' : `\n\nInterpretation: ${interpretation}`;
+    return `${describeBatchPosition(input.batchPosition)}${input.content}${publicReading}\n\n${describeAgentRiskApproval(input.agentApproval)}`;
+}
+
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = input.confirmationId ?? createPromptConfirmationId();
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
@@ -207,15 +219,11 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         }
 
         recordConfirmationMetricGoalPlan(input, confirmation);
-        const interpretation = readPublicCreativeInterpretation(
-            agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? [],
-            readMetricCreativeAuthorityIds(confirmation.approvalSnapshot.metricGoalState) ?? []
-        );
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,
             pendingActionConfirmationStatus: 'proposed',
-            content: `${describeBatchPosition(input.batchPosition)}${input.content}${interpretation === null ? '' : `\n\nInterpretation: ${interpretation}`}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
+            content: describeProposedPromptContent(input, confirmation.approvalSnapshot.metricGoalState),
         });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,
