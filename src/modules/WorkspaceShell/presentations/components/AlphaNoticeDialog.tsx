@@ -71,7 +71,7 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                     {/* Body Text */}
                     <p className="text-sm text-white/60 leading-relaxed max-w-[340px]">
                         This app is in early alpha. This might be overproofed, and features will change. If you have
-                        questions or feedback, start a GitHub Discussion. Please report bugs in GitHub Issues.
+                        questions or feedback, start a GitHub Discussion. Please report bugs in GitHub Discussions.
                     </p>
 
                     {/* Actions */}
@@ -95,7 +95,7 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                                 size="bare"
                                 className="group flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-white/[0.07] bg-white/[0.05] text-white/70 transition-all duration-200 cursor-pointer hover:bg-white/[0.1] hover:text-white"
                             >
-                                <a href={PROJECT_LINKS.issues} target="_blank" rel="noopener noreferrer">
+                                <a href={PROJECT_LINKS.bugReport} target="_blank" rel="noopener noreferrer">
                                     <Bug className="size-4" aria-hidden="true" />
                                     <span className="text-xs font-semibold">Report a bug</span>
                                 </a>

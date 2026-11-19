@@ -1729,6 +1729,7 @@
             "sources": [
                 "https://github.com/jcosta33/sourdaw",
                 "https://github.com/jcosta33/sourdaw/discussions",
+                "https://github.com/jcosta33/sourdaw/discussions/categories/general",
                 "https://github.com/jcosta33/sourdaw/issues",
                 "https://sourdaw.app"
             ],
@@ -1994,6 +1995,11 @@
             "surface": "community-links",
             "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
             "value": "https://github.com/jcosta33/sourdaw/discussions"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/discussions/categories/general"
         },
         {
             "surface": "community-links",

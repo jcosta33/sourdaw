@@ -9,12 +9,12 @@ import {
     toggleAutomationVisibility,
     removeAutomationLane,
     restoreAutomationLanes,
-    insertAutomationShape,
     deleteSelectedPoints,
     getSelectionBounds,
     adjustYZoom,
     zoomToUsedRange,
     getAutomationLaneCeiling,
+    insertAutomationLanePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { captureGestureBeat, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -331,11 +331,11 @@ export const AutomationLaneRow = ({
     };
 
     const handleShapeInsert = (shape: AutomationShapeType) => {
-        if (!contextMenu) {
-            return;
+        if (contextMenu) {
+            const { beat } = contextMenu;
+            void insertAutomationLanePoints(lane, { kind: 'shape', shape, startBeat: beat, endBeat: beat + 4 });
+            setContextMenu(null);
         }
-        insertAutomationShape(lane.id, shape, contextMenu.beat, contextMenu.beat + 4);
-        setContextMenu(null);
     };
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
@@ -751,7 +751,8 @@ export const AutomationLaneRow = ({
                         y={Math.min(rubberBand.y1, rubberBand.y2)}
                         width={Math.abs(rubberBand.x2 - rubberBand.x1)}
                         height={Math.abs(rubberBand.y2 - rubberBand.y1)}
-                        fill={`${curveColor}15`}
+                        fill={curveColor}
+                        fillOpacity={0.1}
                         stroke={curveColor}
                         strokeWidth={1}
                         strokeDasharray="3 2"

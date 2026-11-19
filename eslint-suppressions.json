@@ -258,14 +258,8 @@
     }
   },
   "src/modules/Automation/presentations/views/ModulationMatrix.tsx": {
-    "@eslint-react/set-state-in-effect": {
-      "count": 1
-    },
     "no-void": {
       "count": 4
-    },
-    "react-hooks/set-state-in-effect": {
-      "count": 1
     }
   },
   "src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx": {

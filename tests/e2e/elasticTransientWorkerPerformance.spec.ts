@@ -3,11 +3,7 @@ import { cpus, platform, release } from 'node:os';
 
 import { type Page, type TestInfo } from '@playwright/test';
 
-import {
-    isNativeSdkDurationWithinBudget,
-    JANK_TASK_CEILING_MS,
-    NATIVE_REFERENCE_FACTOR,
-} from '../../scripts/e2eNativeTaskBudget';
+import { JANK_TASK_CEILING_MS } from '../../scripts/e2eNativeTaskBudget';
 
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
@@ -17,11 +13,6 @@ import {
     wait_for_console_marker,
     wait_for_console_marker_after,
 } from './firstPaintDiagnostics';
-import { type createElasticNativeApplyReference } from './helpers/elasticNativeApplyReference';
-
-// Scheduling, callback and validation work around an SDK call may occupy at most half a 60 Hz frame.
-const APP_TASK_SHARE_MS = 1000 / 60 / 2;
-
 /**
  * Frame-gap hard gate. A single 33.3 ms gap is one dropped frame under shared-runner
  * preemption (the shard-11 rerun tripped exactly 2x the 60 Hz interval with zero long
@@ -29,6 +20,7 @@ const APP_TASK_SHARE_MS = 1000 / 60 / 2;
  * The 25 ms / 60 Hz budget stays recorded per gap in the JSON attachment.
  */
 const FRAME_GAP_FREEZE_MS = 100;
+const APP_TASK_SHARE_MS = 1000 / 60 / 2;
 
 /**
  * Click-to-completion wall-span hard gate. The 1 s budget is the design target and
@@ -53,28 +45,25 @@ type CapturedLongTask = {
 };
 type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
 type MainThreadTask = { startFromInputMs: number; durationMs: number; threadDurationMs: number | null };
-type PreparationMeasure = { name: string; duration: number; startTime: number };
-type NativeOperation = 'apply' | 'decode';
-const NATIVE_APPLY_MEASURE = 'automerge-prospective-vendor-apply-task';
+type PreparationMeasure = { name: string; duration: number; startTime: number; detail?: unknown };
 const NATIVE_DECODE_MEASURE = 'automerge-prospective-vendor-decode-task';
+const NATIVE_RESPONSE_MEASURE = 'automerge-prospective-response-task';
+const NATIVE_APPLY_MEASURE = 'automerge-prospective-apply-task';
+const NATIVE_VENDOR_APPLY_MEASURE = 'automerge-prospective-vendor-apply-task';
 const PATCH_CALLBACK_MEASURE = 'automerge-prospective-patch-callback';
-const PREPARATION_WRAPPER_OWNER = new Map<string, NativeOperation>([
-    ['elastic-transient-change-task', 'apply'],
-    ['automerge-prospective-apply-task', 'apply'],
-    ['automerge-prospective-response-task', 'decode'],
-]);
+const NATIVE_AUTHORITY_MEASURE = 'automerge-prospective-authority-task';
+const PREPARED_PUBLICATION_MEASURE = 'automerge-storage-prepared-publication';
 type ProspectiveObservation = {
     primaryKey: string;
     requested: number;
     posted: boolean;
-    heads: string[];
+    preparationPolicy: string | null;
     replies: { received: number; status: string | null; changeCount: number | null }[];
     terminated: number | null;
 };
 type BrowserProspectiveObservation = {
     requests: ProspectiveObservation[];
     failures: string[];
-    nativeReference: ReturnType<typeof createElasticNativeApplyReference>;
     restore(): void;
 };
 type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]>; tasks(): MainThreadTask[] };
@@ -98,10 +87,6 @@ type TraceMarks = { start: string; end: string };
 const DETECT_TRACE_MARKS: TraceMarks = {
     start: 'elastic-detect-input-start',
     end: 'elastic-detect-dom-complete',
-};
-const REFERENCE_TRACE_MARKS: TraceMarks = {
-    start: 'elastic-native-apply-reference-start',
-    end: 'elastic-native-apply-reference-end',
 };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -151,12 +136,14 @@ function readElasticIntervalTasks(
 const MATERIALIZATION_PHASE_NAMES: readonly string[] = [
     'elastic-transient-plan-task',
     'elastic-transient-clone-task',
-    'automerge-prospective-response-task',
+    'automerge-prospective-sequence-planning-task',
+    'automerge-prospective-sequence-planning-history-task',
+    NATIVE_RESPONSE_MEASURE,
     NATIVE_DECODE_MEASURE,
-    'automerge-prospective-apply-task',
     NATIVE_APPLY_MEASURE,
+    NATIVE_VENDOR_APPLY_MEASURE,
     PATCH_CALLBACK_MEASURE,
-    'automerge-prospective-authority-task',
+    NATIVE_AUTHORITY_MEASURE,
     'elastic-transient-change-task',
     'automerge-storage-materialization-handoff-task',
 ];
@@ -180,8 +167,7 @@ function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart
     return measures
         .filter(
             (measure) =>
-                MATERIALIZATION_PHASE_NAMES.includes(measure.name) ||
-                measure.name === 'automerge-storage-prepared-publication'
+                MATERIALIZATION_PHASE_NAMES.includes(measure.name) || measure.name === PREPARED_PUBLICATION_MEASURE
         )
         .map((phase) => ({ ...phase, enclosingTask: enclosingTask(phase, inputMarkStart, tasks) }));
 }
@@ -195,44 +181,134 @@ function assertMaterializationTaskSpans(phases: ReturnType<typeof materializatio
         expect(phase.enclosingTask, `Native phase has no complete enclosing RunTask: ${phase.name}`).toBeDefined();
     }
 }
-function assertProspectiveObservations(measures: PreparationMeasure[], requests: ProspectiveObservation[]): void {
-    expect(requests.length, 'Native request census must be independent of phase emission').toBeGreaterThan(0);
-    for (const request of requests) {
-        expect(request.primaryKey, 'Other prospective roles cannot be silently attributed to Detect').toBe(
-            'warpStates'
+
+type NativePhase = ReturnType<typeof materializationTaskSpans>[number];
+
+function assertAppTaskShare(vendor: NativePhase, callbackMs = 0): void {
+    if (!vendor.enclosingTask) {
+        throw new Error(`Missing enclosing renderer task for ${vendor.name}`);
+    }
+    const sdkMs = vendor.duration - callbackMs;
+    const appMs = vendor.enclosingTask.durationMs - sdkMs;
+    expect(appMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
+}
+
+function assertSequenceTasks(
+    phases: NativePhase[],
+    reply: ProspectiveObservation['replies'][number],
+    boundary: number,
+    published: boolean
+): MainThreadTask[] {
+    const named = (name: string) => phases.filter((phase) => phase.name === name);
+    const responses = named(NATIVE_RESPONSE_MEASURE);
+    const decoded = named(NATIVE_DECODE_MEASURE);
+    const applies = named(NATIVE_APPLY_MEASURE);
+    const vendorApplies = named(NATIVE_VENDOR_APPLY_MEASURE);
+    const callbacks = named(PATCH_CALLBACK_MEASURE);
+    const authorities = named(NATIVE_AUTHORITY_MEASURE);
+    expect(reply.status).toBe('complete');
+    if (reply.changeCount === null) {
+        throw new Error('Completed Detect reply lacks a native change count');
+    }
+    if (published) {
+        expect(reply.changeCount).toBeGreaterThan(1);
+        expect(responses).toHaveLength(reply.changeCount);
+        expect(applies).toHaveLength(reply.changeCount);
+    } else {
+        expect(responses.length).toBeLessThanOrEqual(reply.changeCount);
+        expect(applies.length).toBeGreaterThanOrEqual(responses.length - 1);
+        expect(applies.length).toBeLessThanOrEqual(responses.length);
+    }
+    expect(decoded).toHaveLength(responses.length);
+    expect(authorities).toHaveLength(applies.length);
+    expect(vendorApplies).toHaveLength(applies.length);
+
+    const tasks: MainThreadTask[] = [];
+    for (const [index, response] of responses.entries()) {
+        const decode = decoded[index];
+        expect(response.detail).toMatchObject({ primaryKey: 'warpStates', sequenceIndex: index });
+        expect(decode.enclosingTask).toBe(response.enclosingTask);
+        expect(response.startTime).toBeGreaterThanOrEqual(reply.received);
+        assertAppTaskShare(decode);
+        if (response.enclosingTask) {
+            tasks.push(response.enclosingTask);
+        }
+    }
+    for (const [index, apply] of applies.entries()) {
+        const vendor = vendorApplies[index];
+        const authority = authorities[index];
+        for (const scope of [apply, authority, vendor]) {
+            expect(scope.detail).toMatchObject({ primaryKey: 'warpStates', sequenceIndex: index });
+            expect(scope.enclosingTask).toBe(apply.enclosingTask);
+        }
+        const patchCallbacks = callbacks.filter((callback) => callback.enclosingTask === vendor.enclosingTask);
+        assertAppTaskShare(
+            vendor,
+            patchCallbacks.reduce((sum, callback) => sum + callback.duration, 0)
         );
+        const response = responses[index];
+        expect(response.startTime + response.duration).toBeLessThanOrEqual(apply.startTime);
+        expect(authority.startTime + authority.duration).toBeLessThanOrEqual(
+            responses.at(index + 1)?.startTime ?? boundary
+        );
+        if (apply.enclosingTask) {
+            tasks.push(apply.enclosingTask);
+        }
+    }
+    return tasks;
+}
+
+function assertProspectiveObservations(
+    nativePhases: NativePhase[],
+    measures: PreparationMeasure[],
+    requests: ProspectiveObservation[]
+): void {
+    // Count all Worker attempts independently of the production timing marks.
+    expect(requests.length).toBeGreaterThan(0);
+    const publications = nativePhases.filter((phase) => phase.name === PREPARED_PUBLICATION_MEASURE);
+    expect(publications).toHaveLength(1);
+    const [publication] = publications;
+    const chunkNames = new Set([
+        NATIVE_RESPONSE_MEASURE,
+        NATIVE_DECODE_MEASURE,
+        NATIVE_APPLY_MEASURE,
+        NATIVE_VENDOR_APPLY_MEASURE,
+        PATCH_CALLBACK_MEASURE,
+        NATIVE_AUTHORITY_MEASURE,
+    ]);
+    const chunks = nativePhases.filter((phase) => chunkNames.has(phase.name));
+    let assigned = 0;
+    const tasks = [publication.enclosingTask];
+    for (const [index, request] of requests.entries()) {
+        expect(request.primaryKey).toBe('warpStates');
+        expect(request.preparationPolicy).toBe('bounded-native-sequence-v1');
         expect(request.posted).toBe(true);
         expect(request.terminated).not.toBeNull();
         expect(request.replies.length).toBeLessThanOrEqual(1);
-        for (const reply of request.replies) {
-            expect(reply.status).toBe('complete');
-            expect(reply.changeCount).not.toBeNull();
+        const next = requests.at(index + 1);
+        const boundary = next?.requested ?? publication.startTime;
+        const phases = chunks.filter((phase) => phase.startTime >= request.requested && phase.startTime < boundary);
+        assigned += phases.length;
+        const reply = request.replies.at(0);
+        if (!reply) {
+            expect(next, 'The published attempt must have a Worker reply').toBeDefined();
+            expect(phases, 'A cancelled Worker without a reply cannot enter native admission').toEqual([]);
+            continue;
         }
+        tasks.push(...assertSequenceTasks(phases, reply, boundary, next === undefined));
     }
-    const completed = requests.flatMap((request) => request.replies);
-    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
-    const applies = measures.filter((entry) => entry.name === 'automerge-prospective-apply-task');
-    const authorities = measures.filter((entry) => entry.name === 'automerge-prospective-authority-task');
-    const decoded = measures.filter((entry) => entry.name === NATIVE_DECODE_MEASURE);
-    const nativeApplies = measures.filter((entry) => entry.name === NATIVE_APPLY_MEASURE);
-    expect(responses).toHaveLength(completed.length);
-    expect(decoded).toHaveLength(completed.filter((reply) => reply.changeCount === 1).length);
-    expect(applies.length).toBeGreaterThan(0);
-    expect(applies.length).toBeLessThanOrEqual(completed.length);
-    expect(authorities).toHaveLength(applies.length);
-    expect(nativeApplies).toHaveLength(1);
-    expect(measures.filter((entry) => entry.name === PATCH_CALLBACK_MEASURE)).toHaveLength(nativeApplies.length);
-    // A reply can be discarded before materialize; termination is not admission or publication.
+    expect(assigned, 'Every native move belongs to a Worker attempt').toBe(chunks.length);
+    expect(new Set(tasks).size).toBe(tasks.length);
+    expect(
+        nativePhases.filter((phase) => phase.name === 'automerge-storage-materialization-handoff-task')
+    ).toHaveLength(requests.length);
     expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
-        requests.length
-    );
-    expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
         requests.length
     );
 }
 
 async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<void> {
-    await page.evaluate(async (referenceUrl) => {
+    await page.evaluate(() => {
         const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
         if (target.elasticProspectiveObservation) {
             throw new Error('Prospective observations already installed');
@@ -243,8 +319,6 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
         if (!postDescriptor || !terminateDescriptor) {
             throw new Error('Native Worker descriptors are required for passive observation');
         }
-        const referenceModule: typeof import('./helpers/elasticNativeApplyReference') = await import(referenceUrl);
-        const nativeReference = referenceModule.createElasticNativeApplyReference();
         const requests: ProspectiveObservation[] = [];
         const failures: string[] = [];
         const pending = new WeakMap<Worker, ProspectiveObservation>();
@@ -271,7 +345,10 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                 primaryKey: data.mutation.key,
                 requested: performance.now(),
                 posted: false,
-                heads: data.heads.filter((head: unknown): head is string => typeof head === 'string'),
+                preparationPolicy:
+                    'preparationPolicy' in data && typeof data.preparationPolicy === 'string'
+                        ? data.preparationPolicy
+                        : null,
                 replies: [],
                 terminated: null,
             };
@@ -289,11 +366,6 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                 if (observation) {
                     observation.posted = true;
                     pending.set(receiver, observation);
-                    const request = args[0];
-                    let observeReply: ((reply: unknown) => void) | undefined;
-                    if (typeof request === 'object' && request !== null && 'actor' in request && 'heads' in request) {
-                        observeReply = nativeReference.observeRequest({ actor: request.actor, heads: request.heads });
-                    }
                     const receive = (event: MessageEvent<unknown>): void => {
                         const reply = event.data;
                         let status: string | null = null;
@@ -305,7 +377,6 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                             }
                         }
                         observation.replies.push({ received: performance.now(), status, changeCount });
-                        observeReply?.(reply);
                     };
                     const error = (): void => {
                         failures.push('Actual prospective Worker emitted a native error');
@@ -337,13 +408,11 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
         target.elasticProspectiveObservation = {
             requests,
             failures,
-            nativeReference,
             restore() {
                 try {
                     for (const cleanup of cleanups) {
                         cleanup();
                     }
-                    nativeReference.dispose();
                 } finally {
                     if (prototype.postMessage === post) {
                         Object.defineProperty(prototype, 'postMessage', postDescriptor);
@@ -359,69 +428,10 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                 }
             },
         };
-    }, '/tests/e2e/helpers/elasticNativeApplyReference.ts');
+    });
     elasticProspectiveObserverPages.set(info, page);
 }
 
-async function captureNativeReferencePhase(page: Page, step: 'arm' | 'finish', phase: string): Promise<void> {
-    await page.evaluate(
-        ({ step, phase }) => {
-            const observation = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
-                .elasticProspectiveObservation;
-            if (!observation) {
-                throw new Error('Native Detect reference requires the actual Worker observer');
-            }
-            observation.nativeReference[step](phase);
-        },
-        { step, phase }
-    );
-}
-
-async function attachNativeApplyReference(page: Page, info: TestInfo) {
-    const trace = await startElasticTaskTrace(page, info, 'native-apply-reference', REFERENCE_TRACE_MARKS);
-    let reference;
-    try {
-        reference = await page.evaluate(() => {
-            const observation = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
-                .elasticProspectiveObservation;
-            if (!observation) {
-                throw new Error('Native Detect reference requires the actual Worker observer');
-            }
-            return observation.nativeReference.measure();
-        });
-    } finally {
-        await trace.stop();
-    }
-    const tasks = trace.tasks();
-    const phases = reference.phases.map((phase) => ({
-        ...phase,
-        samples: phase.samples.map((sample) => ({
-            ...sample,
-            enclosingTask: enclosingTask(sample, reference.startTime, tasks),
-        })),
-        decodeSamples: phase.decodeSamples.map((sample) => ({
-            ...sample,
-            enclosingTask: enclosingTask(sample, reference.startTime, tasks),
-        })),
-    }));
-    await info.attach('elastic-native-apply-reference.json', {
-        body: JSON.stringify({ ...reference, phases, tasks }, null, 2),
-        contentType: 'application/json',
-    });
-    expect(phases.map((phase) => phase.phase)).toEqual(['cold-detect', 're-detect-populated', 'sensitivity-populated']);
-    for (const phase of phases) {
-        expect(phase.samples).toHaveLength(5);
-        expect(phase.decodeSamples).toHaveLength(5);
-    }
-    const sampleTasks = phases.flatMap((phase) =>
-        [...phase.samples, ...phase.decodeSamples].map((sample) => sample.enclosingTask)
-    );
-    expect(sampleTasks.every((task) => task !== undefined && task.threadDurationMs !== null)).toBe(true);
-    expect(new Set(sampleTasks).size).toBe(sampleTasks.length);
-    return phases;
-}
-
-type NativeReferencePhase = Awaited<ReturnType<typeof attachNativeApplyReference>>[number];
 type NativeTaskMeasurement = {
     inputMarkStart: number;
     mainThreadTasks: MainThreadTask[];
@@ -437,123 +447,20 @@ type ElasticTiming = NativeTaskMeasurement & {
     commitTasks: PreparationMeasure[];
 };
 
-function containsMeasure(outer: PreparationMeasure, inner: PreparationMeasure): boolean {
-    return outer.startTime <= inner.startTime && outer.startTime + outer.duration >= inner.startTime + inner.duration;
-}
-
-function readExactlyOnePhase(name: string, measurement: NativeTaskMeasurement) {
-    const matches = measurement.nativePhases.filter((phase) => phase.name === name);
-    expect(matches, name).toHaveLength(1);
-    return matches[0];
-}
-
-function readNativeTask(
-    operation: NativeOperation,
-    measurement: NativeTaskMeasurement,
-    reference: NativeReferencePhase
-) {
-    const phase = readExactlyOnePhase(
-        operation === 'apply' ? NATIVE_APPLY_MEASURE : NATIVE_DECODE_MEASURE,
-        measurement
-    );
-    const task = phase.enclosingTask;
-    if (!task || !measurement.mainThreadTasks.includes(task)) {
-        throw new Error(`Native ${operation} must have exactly one complete renderer task`);
-    }
-    let callbackMs = 0;
-    if (operation === 'apply') {
-        const callback = readExactlyOnePhase(PATCH_CALLBACK_MEASURE, measurement);
-        expect(callback.enclosingTask).toBe(task);
-        expect(containsMeasure(phase, callback)).toBe(true);
-        callbackMs = callback.duration;
-    }
-    const sdkMs = phase.duration - callbackMs;
-    expect(sdkMs).toBeGreaterThan(0);
-    const durations = (operation === 'apply' ? reference.samples : reference.decodeSamples).map(
-        (sample) => sample.duration
-    );
-    expect(durations.every((duration) => Number.isFinite(duration) && duration > 0)).toBe(true);
-    const medianMs = durations.toSorted((left, right) => left - right)[2];
-    return { operation, phase, task, sdkMs, medianMs, appMs: task.durationMs - sdkMs };
-}
-
-function matchesLongTask(
-    entry: CapturedLongTask,
-    task: MainThreadTask,
-    phase: PreparationMeasure,
-    inputMarkStart: number
-): boolean {
-    // The trace and the observer can record different task-entry boundaries.
-    // Bound that difference and rounding to one millisecond, and require the
-    // observer's interval to cover the actual SDK call inside that task.
-    const observerResolutionMs = 1;
-    const taskStart = inputMarkStart + task.startFromInputMs;
-    const observedEnd = entry.start + entry.duration;
-    return (
-        entry.name === 'self' &&
-        Math.abs(entry.start - taskStart) <= observerResolutionMs &&
-        observedEnd <= taskStart + task.durationMs + observerResolutionMs &&
-        entry.start <= phase.startTime + observerResolutionMs &&
-        observedEnd + observerResolutionMs >= phase.startTime + phase.duration
-    );
-}
-
-function assertNativeTaskBudget(measurement: NativeTaskMeasurement, reference: NativeReferencePhase): void {
-    const controls = [
-        readNativeTask('apply', measurement, reference),
-        readNativeTask('decode', measurement, reference),
-    ];
-    expect(controls[0].task).not.toBe(controls[1].task);
-    const failures: string[] = [];
-    const qualified = controls.filter(({ operation, sdkMs, medianMs, appMs, task, phase }) => {
-        const observedLongTask = measurement.longTasks.some((entry) =>
-            matchesLongTask(entry, task, phase, measurement.inputMarkStart)
-        );
-        const sdkWithinBudget = isNativeSdkDurationWithinBudget(task.durationMs, observedLongTask, sdkMs, medianMs);
-        const appWithinBudget = appMs >= -0.002 && appMs < APP_TASK_SHARE_MS;
-        if (!sdkWithinBudget) {
-            failures.push(
-                `${operation} SDK span ${sdkMs} ms exceeds ${NATIVE_REFERENCE_FACTOR}× median ${medianMs} ms`
-            );
-        }
-        if (!appWithinBudget) {
-            failures.push(`${operation} application share ${appMs} ms exceeds its half-frame budget`);
-        }
-        return sdkWithinBudget && appWithinBudget;
-    });
-    for (const task of measurement.mainThreadTasks) {
-        if (task.durationMs >= JANK_TASK_CEILING_MS && !qualified.some((control) => control.task === task)) {
-            failures.push(`Renderer task ${task.durationMs} ms at input + ${task.startFromInputMs} ms is unqualified`);
-        }
-    }
-    for (const prep of measurement.preparationTasks) {
-        const owner = PREPARATION_WRAPPER_OWNER.get(prep.name);
-        const wrapper = measurement.nativePhases.find(
-            (phase) => phase.name === prep.name && phase.startTime === prep.startTime
-        );
-        const control = qualified.find(
-            (entry) =>
-                entry.operation === owner && entry.task === wrapper?.enclosingTask && containsMeasure(prep, entry.phase)
-        );
-        const productMs = prep.duration - (control?.sdkMs ?? 0);
-        if (productMs >= JANK_TASK_CEILING_MS) {
-            failures.push(`${prep.name} has ${productMs} ms of unqualified work`);
-        }
-    }
-    for (const entry of measurement.longTasks) {
-        const matches = qualified.filter(({ task, phase }) =>
-            matchesLongTask(entry, task, phase, measurement.inputMarkStart)
-        );
-        if (matches.length !== 1) {
-            failures.push(`Browser long task ${entry.duration} ms at ${entry.start} ms is unqualified`);
-        }
-    }
-    expect(failures, `${reference.phase} main-thread budget`).toEqual([]);
-}
-
-function assertElasticTiming(measurement: ElasticTiming, reference: NativeReferencePhase): void {
+function assertElasticTiming(measurement: ElasticTiming, phase: string): void {
     expect(measurement.mainThreadTasks.length).toBeGreaterThan(0);
-    assertNativeTaskBudget(measurement, reference);
+    expect(
+        measurement.mainThreadTasks.filter((task) => task.durationMs >= JANK_TASK_CEILING_MS),
+        `${phase} main-thread budget`
+    ).toEqual([]);
+    expect(
+        measurement.longTasks.filter((task) => task.duration >= JANK_TASK_CEILING_MS),
+        `${phase} observed long tasks`
+    ).toEqual([]);
+    expect(
+        measurement.preparationTasks.filter((task) => task.duration >= JANK_TASK_CEILING_MS),
+        `${phase} preparation budget`
+    ).toEqual([]);
     expect(measurement.preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
     expect(measurement.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the recorded design target
     expect(measurement.copy.length).toBeGreaterThan(1);
@@ -956,7 +863,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
     await observeProspectiveRequests(page, info);
-    await captureNativeReferencePhase(page, 'arm', 'cold-detect');
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
@@ -965,7 +871,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
-            measures: { name: string; duration: number; startTime: number }[];
+            measures: PreparationMeasure[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
@@ -1009,7 +915,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                     entry.name === 'automerge-storage-materialization-handoff-task' ||
                     entry.name.startsWith('automerge-prospective-')
                 ) {
-                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+                    metrics.measures.push({
+                        name: entry.name,
+                        duration: entry.duration,
+                        startTime: entry.startTime,
+                        detail: 'detail' in entry ? entry.detail : undefined,
+                    });
                 }
             }
         };
@@ -1069,7 +980,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 frames: number[];
                 observedFrames: number[];
                 tasks: CapturedLongTask[];
-                measures: { name: string; duration: number; startTime: number }[];
+                measures: PreparationMeasure[];
             }>;
         };
         if (!target.elasticMeasurement) {
@@ -1091,7 +1002,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         };
     });
     await coldTrace.stop();
-    await captureNativeReferencePhase(page, 'finish', 'cold-detect');
     const after = await sourceState(page);
     const gaps = measured.frames.slice(1).flatMap((time, index) => {
         const previous = measured.frames[index];
@@ -1157,9 +1067,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         commitTasks,
         browser: await page.evaluate(() => navigator.userAgent),
         criterion:
-            'Hard gates: tasks under 50 ms unless an isolated SDK call qualifies against its exact same-page reference. ' +
-            'A task reaching 50 ms or matched by the long-task observer needs an SDK span within 2× its reference median. ' +
-            'App work sharing any SDK task stays under half a 60 Hz frame, with no frame gap over 100 ms during Detect. ' +
+            'Hard gates: each bounded Detect task stays under 50 ms with no frame gap over 100 ms. ' +
             'Recorded per task and per gap: 60 Hz budgets (task <= 16.667 ms, rAF gap <= 25 ms) and the capture-to-afterCommit wall span.',
     };
     await info.attach('elastic-120-second-performance.json', {
@@ -1177,8 +1085,8 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(copy.length).toBeGreaterThan(1);
     expect(gaps.length).toBeGreaterThan(1);
     expect(preparedPublications).toHaveLength(1);
-    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
     assertMaterializationTaskSpans(result.nativePhases);
+    assertProspectiveObservations(result.nativePhases, measured.measures, measured.prospectiveRequests);
     await page.keyboard.press(`${modifier}+z`);
     await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
     await page.keyboard.press(`${modifier}+Shift+z`);
@@ -1203,7 +1111,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
     expect(retained).toHaveLength(2);
 
-    await captureNativeReferencePhase(page, 'arm', 're-detect-populated');
     const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
     await armPopulatedMeasurement(page, 'click');
     await panel.getByTestId('elastic-detect-button').click();
@@ -1222,7 +1129,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await page.keyboard.press(`${modifier}+Shift+z`);
     await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
 
-    await captureNativeReferencePhase(page, 'arm', 'sensitivity-populated');
     const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
     await armPopulatedMeasurement(page, 'sensitivity');
     await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
@@ -1242,11 +1148,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
-    // Reference work follows every product route so it cannot warm the measured SDK calls.
-    const [coldReference, repeatedReference, sensitivityReference] = await attachNativeApplyReference(page, info);
-    assertElasticTiming(result, coldReference);
-    assertElasticTiming(repeatedMeasurement, repeatedReference);
-    assertElasticTiming(sensitivityMeasurement, sensitivityReference);
+    assertElasticTiming(result, 'cold-detect');
+    assertElasticTiming(repeatedMeasurement, 're-detect-populated');
+    assertElasticTiming(sensitivityMeasurement, 'sensitivity-populated');
 });
 
 /** Same five-amplitude pulse fixture as the accepted Elastic sensitivity integration. */
@@ -1451,7 +1355,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
-            measures: { name: string; duration: number; startTime: number }[];
+            measures: PreparationMeasure[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { populatedElasticMeasurement?: Promise<Metrics> };
@@ -1500,7 +1404,12 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     entry.name === 'automerge-storage-materialization-handoff-task' ||
                     entry.name.startsWith('automerge-prospective-')
                 ) {
-                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+                    metrics.measures.push({
+                        name: entry.name,
+                        duration: entry.duration,
+                        startTime: entry.startTime,
+                        detail: 'detail' in entry ? entry.detail : undefined,
+                    });
                 }
             }
         };
@@ -1576,7 +1485,7 @@ async function assertPopulatedMeasurement(
                 frames: number[];
                 observedFrames: number[];
                 tasks: CapturedLongTask[];
-                measures: { name: string; duration: number; startTime: number }[];
+                measures: PreparationMeasure[];
             }>;
         };
         if (!target.populatedElasticMeasurement) {
@@ -1598,7 +1507,6 @@ async function assertPopulatedMeasurement(
         };
     });
     await trace.stop();
-    await captureNativeReferencePhase(page, 'finish', phase);
     const after = await sourceState(page);
     const gaps = measured.frames
         .slice(1)
@@ -1667,7 +1575,7 @@ async function assertPopulatedMeasurement(
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
     }
     expect(preparedPublications).toHaveLength(1);
-    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
     assertMaterializationTaskSpans(result.nativePhases);
+    assertProspectiveObservations(result.nativePhases, measured.measures, measured.prospectiveRequests);
     return result;
 }
