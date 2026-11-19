@@ -1,7 +1,17 @@
 // @vitest-environment node
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +53,8 @@ function fixture() {
     const binary = join(app, 'Contents/MacOS/Sourdaw');
     const addon = join(app, 'Contents/Resources/sourdaw-native.node');
     const scanner = join(app, 'Contents/Resources/sourdaw-plugin-scan-helper');
-    for (const file of [binary, addon, scanner, join(app, 'Contents/Resources/app.asar')]) {
+    const asar = join(app, 'Contents/Resources/app.asar');
+    for (const file of [binary, addon, scanner, asar]) {
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, 'fixture executable or payload', { mode: 0o700 });
     }
@@ -55,7 +66,7 @@ function fixture() {
         FERMENTER_CAPTURE_OUTCOME: 'success',
     };
     const receipt = captureBuildReceipt(options, env, true);
-    return { options, receipt, env, tracked, app, binary, addon, scanner };
+    return { options, receipt, env, tracked, app, binary, addon, scanner, asar };
 }
 
 describe('packaged Fermenter proof', () => {
@@ -153,17 +164,55 @@ describe('packaged Fermenter proof', () => {
         expect(drive).not.toHaveBeenCalled();
     });
 
-    it.each(['addon', 'binary'] as const)('rejects changed %s bytes before launch', async (component) => {
-        const fixtureFiles = fixture();
-        const { options, env } = fixtureFiles;
-        writeFileSync(fixtureFiles[component], 'other bytes');
+    it('rejects an oversized receipt even if its JSON and provenance are valid', async () => {
+        const { options, env, receipt } = fixture();
+        writeFileSync(options.receipt, `${JSON.stringify(receipt)}${' '.repeat(1024)}`);
         const drive = vi.fn(completeDrive);
         expect(await runProof(options, env, { hostSupported: true, drive })).toMatchObject({
             verdict: 'not-run',
-            failureCode: 'build-receipt-digest-mismatch',
+            failureCode: 'build-receipt-unavailable-or-invalid',
         });
         expect(drive).not.toHaveBeenCalled();
     });
+
+    it('rejects a receipt symlink with matching bytes and provenance', async () => {
+        const { options, env } = fixture();
+        const regularReceipt = join(options.checkout, 'regular-receipt.json');
+        renameSync(options.receipt, regularReceipt);
+        symlinkSync(regularReceipt, options.receipt);
+        const drive = vi.fn(completeDrive);
+        expect(await runProof(options, env, { hostSupported: true, drive })).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'build-receipt-unavailable-or-invalid',
+        });
+        expect(drive).not.toHaveBeenCalled();
+    });
+
+    it('rejects a bundle executable with unchanged bytes and no execute permission', async () => {
+        const { options, env, binary } = fixture();
+        chmodSync(binary, 0o600);
+        const drive = vi.fn(completeDrive);
+        expect(await runProof(options, env, { hostSupported: true, drive })).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'bundle-unavailable-or-invalid',
+        });
+        expect(drive).not.toHaveBeenCalled();
+    });
+
+    it.each(['asar', 'addon', 'scanner', 'binary'] as const)(
+        'rejects changed %s bytes before launch',
+        async (component) => {
+            const fixtureFiles = fixture();
+            const { options, env } = fixtureFiles;
+            writeFileSync(fixtureFiles[component], 'other bytes');
+            const drive = vi.fn(completeDrive);
+            expect(await runProof(options, env, { hostSupported: true, drive })).toMatchObject({
+                verdict: 'not-run',
+                failureCode: 'build-receipt-digest-mismatch',
+            });
+            expect(drive).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects a linked installed component even when it resolves to the original bytes', async () => {
         const { options, env, addon, scanner } = fixture();

@@ -2,16 +2,20 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     accessSync,
+    closeSync,
     constants,
+    fstatSync,
     linkSync,
     lstatSync,
     mkdtempSync,
-    readFileSync,
+    openSync,
+    readSync,
     realpathSync,
     rmSync,
     writeFileSync,
+    type BigIntStats,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import {
@@ -20,15 +24,10 @@ import {
     type FermenterDrive,
     type FermenterObservation,
 } from './desktopFermenterEvidence.ts';
-import { readPayloadIdentity } from './desktopLatencyRecord.ts';
+import { digestPayloadComponents, payloadRelativePaths } from './desktopLatencyRecord.ts';
 
 const APP_PATH = 'release/desktop/mac-arm64/Sourdaw.app';
 const EXECUTABLE = 'Contents/MacOS/Sourdaw';
-const PAYLOAD_FILES = [
-    'Contents/Resources/app.asar',
-    'Contents/Resources/sourdaw-native.node',
-    'Contents/Resources/sourdaw-plugin-scan-helper',
-];
 const COMMIT = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
@@ -104,13 +103,75 @@ function checkedHead(checkout: string, expectedSha: string): void {
     }
 }
 
+type FileAdmission = { maxBytes?: number; canonical?: boolean; executable?: boolean };
+
+function sameFileSnapshot(before: BigIntStats, after: BigIntStats): boolean {
+    return (
+        after.isFile() &&
+        after.dev === before.dev &&
+        after.ino === before.ino &&
+        after.size === before.size &&
+        after.mtimeNs === before.mtimeNs &&
+        after.ctimeNs === before.ctimeNs
+    );
+}
+
+function readExpectedBytes(fd: number, size: number): Buffer {
+    const buffer = Buffer.alloc(size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+        const count = readSync(fd, buffer, offset, buffer.length - offset, null);
+        if (count === 0) {
+            break;
+        }
+        offset += count;
+    }
+    if (offset !== size) {
+        throw new Error('file length changed while reading');
+    }
+    return buffer.subarray(0, size);
+}
+
+function readStableRegularFile(path: string, options: FileAdmission): Buffer {
+    if (!(constants.O_NOFOLLOW > 0) || !(constants.O_NONBLOCK > 0)) {
+        throw new Error('safe file open flags are unavailable');
+    }
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+        const before = fstatSync(fd, { bigint: true });
+        const size = Number(before.size);
+        if (!before.isFile() || size <= 0 || !Number.isSafeInteger(size) || size > (options.maxBytes ?? Infinity)) {
+            throw new Error('invalid regular file or file length');
+        }
+        if (options.canonical && realpathSync(path) !== path) {
+            throw new Error('bundle file uses a noncanonical path');
+        }
+        if (options.executable) {
+            if ((before.mode & 0o111n) === 0n) {
+                throw new Error('bundle executable has no execute permission');
+            }
+            accessSync(path, constants.X_OK);
+        }
+        const bytes = readExpectedBytes(fd, size);
+        const after = fstatSync(fd, { bigint: true });
+        const named = lstatSync(path, { bigint: true });
+        if (
+            !sameFileSnapshot(before, after) ||
+            !sameFileSnapshot(after, named) ||
+            (options.canonical && realpathSync(path) !== path)
+        ) {
+            throw new Error('file changed while reading');
+        }
+        return bytes;
+    } finally {
+        closeSync(fd);
+    }
+}
+
 function readBuildReceipt(path: string): BuildReceipt {
     try {
-        const stat = lstatSync(path);
-        if (!stat.isFile() || stat.size > MAX_RECEIPT_BYTES) {
-            throw new Error('invalid receipt');
-        }
-        const receipt: unknown = JSON.parse(readFileSync(path, 'utf8'));
+        const bytes = readStableRegularFile(path, { maxBytes: MAX_RECEIPT_BYTES });
+        const receipt: unknown = JSON.parse(bytes.toString('utf8'));
         if (typeof receipt !== 'object' || receipt === null) {
             throw new Error('invalid receipt');
         }
@@ -134,24 +195,18 @@ function readBuildReceipt(path: string): BuildReceipt {
 
 function measureBundle(appPath: string): Digests & { binary: string } {
     try {
-        if (!lstatSync(appPath).isDirectory()) {
+        const app = join(realpathSync(dirname(appPath)), basename(appPath));
+        if (!lstatSync(app).isDirectory()) {
             throw new Error('invalid bundle');
-        }
-        const app = realpathSync(appPath);
-        for (const relative of [EXECUTABLE, ...PAYLOAD_FILES]) {
-            const file = join(app, relative);
-            const stat = lstatSync(file);
-            if (!stat.isFile() || stat.size === 0 || realpathSync(file) !== file) {
-                throw new Error('invalid bundle file');
-            }
         }
         const binary = join(app, EXECUTABLE);
-        accessSync(binary, constants.X_OK);
-        const { sha256, files } = readPayloadIdentity(app, 'darwin');
-        if (files.join('\n') !== PAYLOAD_FILES.join('\n')) {
-            throw new Error('invalid bundle');
-        }
-        const executableSha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
+        const executable = readStableRegularFile(binary, { canonical: true, executable: true });
+        const components = payloadRelativePaths('darwin').map((path) => ({
+            path,
+            bytes: readStableRegularFile(join(app, path), { canonical: true }),
+        }));
+        const sha256 = digestPayloadComponents(components);
+        const executableSha256 = createHash('sha256').update(executable).digest('hex');
         return { binary, payloadSha256: sha256, executableSha256 };
     } catch {
         throw new FermenterProofError('bundle-unavailable-or-invalid');
