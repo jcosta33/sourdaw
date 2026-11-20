@@ -83,6 +83,7 @@ export const macroRecordingExcludesActionType: { readonly [Type in AppActionType
     setLevainIdentity: true,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: true,
+    setBacteriaFactoryPatch: true,
     setGlutenFactoryPreset: true,
     createBus: false,
     createFolder: false,

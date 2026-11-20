@@ -267,6 +267,7 @@ export const macroReplayCreateByActionType: {
     setLevainIdentity: notAGeneratedCreate,
     setGrandBouleDeviceState: notAGeneratedCreate,
     setToasterFactoryKit: notAGeneratedCreate,
+    setBacteriaFactoryPatch: notAGeneratedCreate,
     setGlutenFactoryPreset: notAGeneratedCreate,
     createBus: notAGeneratedCreate,
     createFolder: notAGeneratedCreate,

@@ -90,6 +90,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     setLevainIdentity: noApplicationIdRule,
     setGrandBouleDeviceState: noApplicationIdRule,
     setToasterFactoryKit: noApplicationIdRule,
+    setBacteriaFactoryPatch: noApplicationIdRule,
     setGlutenFactoryPreset: noApplicationIdRule,
     createBus: { argument: 'busId', prefix: 'bus-command-' },
     createFolder: { argument: 'folderTrackId', prefix: 'folder-command-' },

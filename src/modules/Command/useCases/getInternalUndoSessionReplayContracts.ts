@@ -33,7 +33,12 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
 }
 
 function createCapturedDeviceReplayContract(
-    actionType: 'setGlutenFactoryPreset' | 'setGrandBouleDeviceState' | 'setLevainIdentity' | 'setToasterFactoryKit'
+    actionType:
+        | 'setBacteriaFactoryPatch'
+        | 'setGlutenFactoryPreset'
+        | 'setGrandBouleDeviceState'
+        | 'setLevainIdentity'
+        | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -45,6 +50,7 @@ function createCapturedDeviceReplayContract(
         validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
     };
 }
+
 /**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
@@ -70,6 +76,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
+        createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
         createCapturedDeviceReplayContract('setLevainIdentity'),

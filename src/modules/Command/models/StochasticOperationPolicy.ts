@@ -83,6 +83,7 @@ export const commandRequiresSeedByActionType: { readonly [Type in AppActionType]
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setBacteriaFactoryPatch: false,
     setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,

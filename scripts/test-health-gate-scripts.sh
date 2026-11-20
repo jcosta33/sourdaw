@@ -1169,6 +1169,8 @@ const continueOnErrorStepPins = new Set([
     'nightly.ymldesktop-measureUpload the Fermenter proof record',
     'nightly.ymldesktop-measureProve premium editor mounts in the packaged app',
     'nightly.ymldesktop-measureUpload the premium editor proof record',
+    'nightly.ymldesktop-measureProve premium editor workspace in the packaged app',
+    'nightly.ymldesktop-measureUpload the premium editor workspace proof record',
 ]);
 const isSetupNodeCacheStep = (step) =>
     typeof step?.uses === 'string' &&
