@@ -10,12 +10,13 @@ import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type ToasterFactoryKitAction } from '../events/toasterAppActions';
+import { reconcileToasterKitFromProject } from '../useCases/reconcileToasterKitFromProject';
+
 import {
     invertToasterFactoryKitAction,
     isToasterFactoryKitSessionEntry,
     validToasterFactoryKitCapture,
-} from '../models/ToasterFactoryKitCapture';
-import { reconcileToasterKitFromProject } from '../useCases/reconcileToasterKitFromProject';
+} from './toasterFactoryKitActionValidation';
 
 type Admission = NonNullable<ReturnType<typeof captureDevicePatchCommitValidation>>;
 const admissions = new WeakMap<ToasterFactoryKitAction, Admission>();

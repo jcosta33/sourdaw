@@ -1,15 +1,6 @@
-import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
-import { type ToasterFactoryKitAction } from '../events/toasterAppActions';
-
 import { fromToasterKitState, TOASTER_KIT_STATE_VERSION, toToasterKitState } from './ToasterKitState';
-
-type Payload = ToasterFactoryKitAction['payload'];
-
-function isNonemptyString(value: unknown): value is string {
-    return typeof value === 'string' && value.trim().length > 0;
-}
 
 function isJsonValue(value: unknown, depth = 0): boolean {
     if (depth > 64) {
@@ -65,43 +56,13 @@ function readChunkCapture(chunk: unknown): ChunkCapture | null {
     return valuesEqual(expected, kit) ? { unowned, hasKit: true } : null;
 }
 
-export function validToasterFactoryKitCapture(payload: unknown): payload is Payload {
-    if (
-        !isRecord(payload) ||
-        Object.keys(payload).length !== 6 ||
-        !isNonemptyString(payload.deviceId) ||
-        !isNonemptyString(payload.trackId) ||
-        !isNonemptyString(payload.label) ||
-        !Array.isArray(payload.deviceIds) ||
-        !Array.from(payload.deviceIds).every(isNonemptyString) ||
-        new Set(payload.deviceIds).size !== payload.deviceIds.length ||
-        !payload.deviceIds.includes(payload.deviceId) ||
-        (payload.before === null && payload.after === null)
-    ) {
-        return false;
-    }
-    const before = readChunkCapture(payload.before);
-    const after = readChunkCapture(payload.after);
+export function validToasterKitReplacement(beforeChunk: unknown, afterChunk: unknown): boolean {
+    const before = readChunkCapture(beforeChunk);
+    const after = readChunkCapture(afterChunk);
     return (
         before !== null &&
         after !== null &&
         (before.hasKit || after.hasKit) &&
         valuesEqual(before.unowned, after.unowned)
-    );
-}
-
-export function invertToasterFactoryKitAction(action: ToasterFactoryKitAction): ToasterFactoryKitAction {
-    const { before, after } = action.payload;
-    return { type: action.type, payload: { ...action.payload, before: after, after: before } };
-}
-
-export function isToasterFactoryKitSessionEntry(entry: HandlerSessionActionEntry): boolean {
-    const { action, inverseAction, redoAction } = entry;
-    return (
-        action.type === 'setToasterFactoryKit' &&
-        validToasterFactoryKitCapture(action.payload) &&
-        !valuesEqual(action.payload.before, action.payload.after) &&
-        valuesEqual(inverseAction, invertToasterFactoryKitAction(action)) &&
-        valuesEqual(redoAction, action)
     );
 }

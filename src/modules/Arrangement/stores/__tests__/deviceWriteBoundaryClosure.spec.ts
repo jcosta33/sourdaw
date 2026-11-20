@@ -1111,9 +1111,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
-        // The Toaster before and after records declare empty scalar footprints
-        // while projecting a captured chunk into a detached device chain.
-        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 2,
+        // The Fermenter and Toaster helpers accept detached device chains. The
+        // two Toaster snapshots use empty scalar footprints for the kit chunk.
+        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 4,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
