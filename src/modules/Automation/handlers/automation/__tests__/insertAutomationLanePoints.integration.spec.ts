@@ -482,6 +482,32 @@ describe('local automation lane insertion', () => {
         ]);
     });
 
+    it('replaces nearby breakpoints in one stroke with exact persistent Undo and Redo', async () => {
+        await insertAutomationLanePoints(targetLane, {
+            kind: 'stroke',
+            points: [
+                { beat: 4, value: 0.35, curve: 'linear', tension: 0 },
+                { beat: 5, value: 1.5, curve: 'linear', tension: 0 },
+            ],
+        });
+
+        const painted = readLane();
+        expect(painted).toStrictEqual([
+            initialPoints[0],
+            { id: expect.any(String), beat: 4, value: 0.35, curve: 'linear', tension: 0 },
+            { id: expect.any(String), beat: 5, value: 1.5, curve: 'linear', tension: 0 },
+            ...initialPoints.slice(2),
+        ]);
+        expect(readHistory()?.past.map((entry) => entry.label)).toEqual(['Draw automation']);
+        expect(notices).toEqual([]);
+
+        await reloadFromIndexedDb();
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+        expect(readLane()).toStrictEqual(initialPoints);
+        await redo({ stepOverConflicts: false });
+        expect(readLane()).toStrictEqual(painted);
+    });
+
     it('settles two insertions submitted in the same turn', async () => {
         const first = insertAutomationLanePoints(targetLane, pointAction().payload.insertion);
         const second = insertAutomationLanePoints(targetLane, pointAction(5).payload.insertion);
