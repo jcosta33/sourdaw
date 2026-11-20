@@ -269,7 +269,7 @@ function invokeWorker(
             }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            failCrdtWorker(instance, new Error(`crdtWorker postMessage failed: ${message}`));
+            failCrdtWorker(instance, new Error(`crdtWorker postMessage failed: ${message}`, { cause: error }));
         }
     });
     return options ? response.finally(() => disconnectAbort?.()) : response;
