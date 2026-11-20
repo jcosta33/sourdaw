@@ -358,7 +358,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
         lassoPathRef.current = null;
         pendingStampRef.current = null;
-        dragRef.current = { ...INITIAL_DRAG_STATE };
+        dragRef.current = INITIAL_DRAG_STATE;
         return true;
     };
 

@@ -1011,11 +1011,14 @@ function drawLasso(ctx: CanvasRenderingContext2D, path: PianoRollLassoPath | nul
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    const first = path[0]!;
-    ctx.moveTo(first.x, first.y);
-    for (let index = 1; index < path.length; index++) {
-        const point = path[index]!;
-        ctx.lineTo(point.x, point.y);
+    let isFirstPoint = true;
+    for (const point of path) {
+        if (isFirstPoint) {
+            ctx.moveTo(point.x, point.y);
+            isFirstPoint = false;
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
     }
     ctx.stroke();
     ctx.restore();
