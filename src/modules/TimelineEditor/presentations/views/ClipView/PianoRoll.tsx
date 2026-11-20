@@ -171,10 +171,12 @@ export const PianoRoll = ({
         }
         const viewport = scrollRef.current;
         if (viewport) {
-            zoomAnchorRef.current =
-                viewport.scrollTop <= RULER_HEIGHT
-                    ? viewport.scrollTop
-                    : RULER_HEIGHT + Math.floor(((viewport.scrollTop - RULER_HEIGHT) / rowHeight) * height);
+            if (viewport.scrollTop <= RULER_HEIGHT) {
+                zoomAnchorRef.current = viewport.scrollTop;
+            } else {
+                zoomAnchorRef.current =
+                    RULER_HEIGHT + Math.floor(((viewport.scrollTop - RULER_HEIGHT) / rowHeight) * height);
+            }
         }
         setRowHeight(height);
     };

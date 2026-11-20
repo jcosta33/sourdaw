@@ -432,7 +432,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 if (si) {
                     drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight, rowHeight);
                 }
-                drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current, rowHeight);
+                drawPreview(ctx, pitchToRow, bw, { preview: deps.drawPreviewRef.current, rowHeight });
                 drawRubberBand(ctx, deps.rubberBandRef.current);
                 ctx.restore();
             }
@@ -972,8 +972,7 @@ function drawPreview(
     ctx: CanvasRenderingContext2D,
     pitchToRow: Map<number, number>,
     beatWidth: number,
-    preview: { beat: number; pitch: number; duration: number } | null,
-    rowHeight: number
+    { preview, rowHeight }: { preview: { beat: number; pitch: number; duration: number } | null; rowHeight: number }
 ): void {
     if (!preview) {
         return;
