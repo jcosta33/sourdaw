@@ -88,6 +88,7 @@ function renderedControl(body: Locator, row: DeviceObservation): Locator {
         case 'Yeast':
             return body.getByText(name, { exact: true });
     }
+    throw new Error('unsupported device editor control route');
 }
 
 async function observeEditor(dialog: Locator, row: DeviceObservation, instanceId: string): Promise<void> {
