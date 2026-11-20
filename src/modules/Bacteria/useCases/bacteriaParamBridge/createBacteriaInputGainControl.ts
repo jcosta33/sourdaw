@@ -1,5 +1,6 @@
 import { clampDeviceParamWrite, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { captureDeviceParameterRuntimeWriteAuthority, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { projectTransitionEpoch } from '#/modules/Project/stores';
@@ -100,6 +101,14 @@ function releaseUnusedRuntime(control: InputControl, runtime: RuntimeAuthority):
     }
 }
 
+function writeInputPreview(gesture: InputGesture, value: number): boolean {
+    return setDeviceParameter(gesture.owner.deviceId, INPUT, value, {
+        transient: true,
+        automationRecordingPolicy: 'suppressed',
+        runtimeOwner: gesture.runtime.owner,
+    });
+}
+
 function restorePreview(gesture: InputGesture): void {
     const { owner, runtime, preview } = gesture;
     if (preview === undefined || !runtime.isCurrent() || !runtime.canCommit()) {
@@ -112,7 +121,7 @@ function restorePreview(gesture: InputGesture): void {
     try {
         const restored = latest.baseline.value ?? DEFAULT_PATCH.inputGain;
         if (restored !== preview) {
-            updateDeviceParam(owner.trackId, owner.deviceId, INPUT, restored, runtime.owner);
+            writeInputPreview(gesture, restored);
         }
     } catch (error) {
         reportInputError(error);
@@ -286,15 +295,16 @@ function queueInput(control: InputControl, gesture: InputGesture, value: number)
 }
 
 function previewInput(control: InputControl, gesture: InputGesture, value: number): void {
-    const { deviceId, trackId } = gesture.owner;
-    const previous = gesture.preview;
-    gesture.preview = value;
     try {
-        updateDeviceParam(trackId, deviceId, INPUT, value, gesture.runtime.owner);
+        if (!writeInputPreview(gesture, value)) {
+            cancelHeldGesture(control);
+            return;
+        }
+        gesture.preview = value;
         control.show(value);
     } catch (error) {
-        if (value === (gesture.owner.baseline.value ?? DEFAULT_PATCH.inputGain)) {
-            gesture.preview = previous;
+        if (value !== (gesture.owner.baseline.value ?? DEFAULT_PATCH.inputGain)) {
+            gesture.preview = value;
         }
         cancelHeldGesture(control);
         reportInputError(error);

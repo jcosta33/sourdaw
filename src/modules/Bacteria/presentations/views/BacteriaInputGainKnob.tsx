@@ -14,8 +14,8 @@ export function BacteriaInputGainKnob({
     deviceId: string;
     committedValue: number;
 }): ReactElement {
-    const [preview, showPreview] = useState<number>();
-    const [control] = useState(() => createBacteriaInputGainControl(deviceId, showPreview));
+    const [preview, setPreview] = useState<number>();
+    const [control] = useState(() => createBacteriaInputGainControl(deviceId, setPreview));
     useLayoutEffect(() => control.connect(), [control]);
     const value = preview ?? committedValue;
     return (
