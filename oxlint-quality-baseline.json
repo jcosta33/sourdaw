@@ -13921,11 +13921,6 @@
             "count": 1
         }
     },
-    "src/modules/Gluten/useCases/glutenParamBridge/hydrateGlutenPatchFromProject.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx": {
         "eslint/max-lines-per-function": {
             "count": 1

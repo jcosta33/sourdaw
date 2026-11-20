@@ -76,6 +76,23 @@ function read(document: Readonly<Record<string, unknown>>, input: Input): Snapsh
     return { value: { track: trackValue, owners: values }, track: selectedTrack, owners };
 }
 
+function matchesOwnerFootprint(current: Snapshot | null, before: Snapshot): boolean {
+    return (
+        valuesEqual(current?.value.track, before.value.track) &&
+        current?.track?.kind === before.track?.kind &&
+        current?.owners[0]?.device.type === before.owners[0]?.device.type
+    );
+}
+
+function matchesParameterValues(stored: unknown, parameters: Readonly<DevicePatchState['parameterValues']>): boolean {
+    return (
+        isRecord(stored) &&
+        Object.entries(parameters).every(([key, value]) =>
+            value === null ? !Object.hasOwn(stored, key) : Object.hasOwn(stored, key) && stored[key] === value
+        )
+    );
+}
+
 function startWrittenIntentObservation(
     input: Input,
     before: Snapshot,
@@ -219,18 +236,12 @@ export function captureDevicePatchCommitValidation(input: Input) {
         matchesCommittedParameters: (parameters: Readonly<DevicePatchState['parameterValues']>): boolean => {
             const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
             const snapshot = current ? read(current, input) : null;
-            const stored = snapshot?.owners[0]?.device.parameterValues;
             return (
                 typeof trackIdentity === 'string' &&
                 typeof deviceIdentity === 'string' &&
                 matchesOwner(snapshot) &&
-                valuesEqual(snapshot?.value.track, before.value.track) &&
-                snapshot?.track?.kind === before.track?.kind &&
-                snapshot?.owners[0]?.device.type === before.owners[0]?.device.type &&
-                isRecord(stored) &&
-                Object.entries(parameters).every(([key, value]) =>
-                    value === null ? !Object.hasOwn(stored, key) : Object.hasOwn(stored, key) && stored[key] === value
-                )
+                matchesOwnerFootprint(snapshot, before) &&
+                matchesParameterValues(snapshot?.owners[0]?.device.parameterValues, parameters)
             );
         },
         start() {

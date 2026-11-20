@@ -36,6 +36,15 @@ function matchesFactoryPreset(presetId: string, parameters: Payload['after']): b
     return preset !== undefined && valuesEqual(encodeGlutenPresetParameters(preset.patch), parameters);
 }
 
+function namesUniqueOwner(deviceIds: unknown, deviceId: string): boolean {
+    return (
+        Array.isArray(deviceIds) &&
+        Array.from(deviceIds).every(presentString) &&
+        new Set(deviceIds).size === deviceIds.length &&
+        deviceIds.includes(deviceId)
+    );
+}
+
 export function validGlutenFactoryPresetCapture(payload: unknown): payload is Payload {
     return (
         isRecord(payload) &&
@@ -43,10 +52,7 @@ export function validGlutenFactoryPresetCapture(payload: unknown): payload is Pa
         presentString(payload.deviceId) &&
         presentString(payload.trackId) &&
         presentString(payload.presetId) &&
-        Array.isArray(payload.deviceIds) &&
-        Array.from(payload.deviceIds).every(presentString) &&
-        new Set(payload.deviceIds).size === payload.deviceIds.length &&
-        payload.deviceIds.includes(payload.deviceId) &&
+        namesUniqueOwner(payload.deviceIds, payload.deviceId) &&
         isPresetFootprint(payload.before) &&
         isPresetFootprint(payload.after) &&
         (matchesFactoryPreset(payload.presetId, payload.after) ||
