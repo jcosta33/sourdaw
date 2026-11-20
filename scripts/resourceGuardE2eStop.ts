@@ -14,15 +14,16 @@ function endedByStopRequest(result: Pick<GuardedCommandResult, 'code' | 'signal'
  * A recorded e2e dev server never exits by itself, so its recovery proof ends
  * only when someone stops it: SIGINT is re-raised by the runner and SIGTERM
  * exits 143. Once the guard's observer verified the server under this run's
- * token, that stop is the proof's success. A guard-issued stop (timeout,
- * memory, leak) carries a `reason` and never qualifies.
+ * token, that stop is the proof's success. An operator interrupt delivered to
+ * the guard itself reaches the same stop through reason 'signal'. A
+ * guard-issued stop (timeout, memory, leak) never qualifies.
  */
 export function isVerifiedE2eServerStop(
     result: Pick<GuardedCommandResult, 'code' | 'signal' | 'reason'>,
     observation: { observed: boolean; mismatch?: string }
 ): boolean {
     return (
-        result.reason === undefined &&
+        (result.reason === undefined || result.reason === 'signal') &&
         observation.observed &&
         observation.mismatch === undefined &&
         endedByStopRequest(result)
