@@ -12,7 +12,11 @@ export function subscribeToGrandBouleRuntime(deviceId: string, listener: () => v
 }
 
 export function notifyGrandBouleRuntimeReady(deviceId: string): void {
-    for (const listener of [...(listeners.get(deviceId) ?? [])]) {
+    const deviceListeners = listeners.get(deviceId);
+    if (!deviceListeners) {
+        return;
+    }
+    for (const listener of [...deviceListeners]) {
         listener();
     }
 }

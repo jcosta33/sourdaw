@@ -4,14 +4,13 @@ import {
     notifyGrandBouleRuntimeReady,
     subscribeToGrandBouleRuntime,
 } from '../../stores/grandBouleRuntimeNotifications';
+import { initGrandBouleSubscribers } from '../grandBouleSubscriber';
 
 const mocks = vi.hoisted(() => ({ reconcile: vi.fn() }));
 
 vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
     reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,
 }));
-
-import { initGrandBouleSubscribers } from '../grandBouleSubscriber';
 
 describe('initGrandBouleSubscribers', () => {
     it('keeps a successor subscription when an old unsubscribe is called again', () => {
