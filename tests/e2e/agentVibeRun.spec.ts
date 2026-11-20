@@ -229,8 +229,9 @@ async function auditionBothSides(page: Page, batch: number) {
     ] as const) {
         await card.getByRole('button', { name: button, exact: true }).click();
         await expect(status, `batch ${String(batch)} ${button} audition`).toHaveText(label, { timeout: 30_000 });
-        await card.getByRole('button', { name: 'Stop comparison' }).click();
-        await expect(status).toHaveText('Stopped');
+        await expect(status, `batch ${String(batch)} ${button} audition ends`).toHaveText('Stopped', {
+            timeout: 30_000,
+        });
     }
     await expect
         .poll(async () => (await startedSources(page)).length - startsBefore, {
