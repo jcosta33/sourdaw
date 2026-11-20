@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockTrackStore, mockPrepareExtraction } = vi.hoisted(() => ({
+const { mockTrackStore, mockPrepareExtraction, mockResolveTemplateId } = vi.hoisted(() => ({
     mockTrackStore: { value: null as unknown as { tracks: Array<{ clips: Array<Record<string, unknown>> }> } },
     mockPrepareExtraction: vi.fn(),
+    mockResolveTemplateId: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     prepareGrooveExtraction: mockPrepareExtraction,
-    createGrooveExtractionTemplateId: (clipId: string) => `groove-${clipId}-minted`,
+    resolveGrooveExtractionTemplateId: mockResolveTemplateId,
 }));
 
 import { proposeYeastGrooveExtraction } from '../proposeYeastGrooveExtraction';
@@ -24,6 +25,7 @@ function stateWithClips(clips: Array<Record<string, unknown>>) {
 describe('proposeYeastGrooveExtraction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockResolveTemplateId.mockReturnValue('groove-c1-v1');
     });
 
     it('returns ineligible-clip when the clip is not found', () => {
@@ -78,5 +80,21 @@ describe('proposeYeastGrooveExtraction', () => {
         const result = proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/16' });
         expect(result.status).toBe('empty');
         expect(result).toMatchObject({ clipId: 'c1', sourceName: 'Empty', subdivision: '1/16' });
+    });
+
+    it('previews under the id the clip resolves from its own name and subdivision', () => {
+        mockTrackStore.value = stateWithClips([midiClip('c1', 'My Clip')]);
+        mockResolveTemplateId.mockReturnValue('groove-c1-v2');
+        mockPrepareExtraction.mockReturnValue({ status: 'empty' });
+
+        proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/8' });
+
+        expect(mockResolveTemplateId).toHaveBeenCalledWith({ clipId: 'c1', sourceName: 'My Clip', subdivision: '1/8' });
+        expect(mockPrepareExtraction).toHaveBeenCalledWith({
+            clipId: 'c1',
+            sourceName: 'My Clip',
+            subdivision: '1/8',
+            templateId: 'groove-c1-v2',
+        });
     });
 });

@@ -14,6 +14,7 @@ import {
     humanizeNotes,
     moveMidiNote,
     removeMidiNote,
+    resolveGrooveExtractionTemplateId,
     restoreStrumOriginals,
     setNoteVelocity,
     setNotesForClip,
@@ -108,6 +109,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     applyGrooveToClip: vi.fn(),
     extractGrooveFromClip: vi.fn(),
     snapClipToScale: vi.fn(),
+    resolveGrooveExtractionTemplateId: vi.fn(({ clipId }: { clipId: string }) => `groove-${clipId}-v1`),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -632,7 +634,7 @@ describe('PianoRollContextMenu', () => {
         await waitFor(() =>
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'extractGroove',
-                payload: { clipId: 'clip-9', templateId: expect.stringMatching(/^groove-clip-9-[0-9a-f-]{36}$/) },
+                payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v1' },
             })
         );
         await waitFor(() => expect(applyButton).not.toBeDisabled());
@@ -644,6 +646,25 @@ describe('PianoRollContextMenu', () => {
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
             })
         );
+    });
+
+    it('extracts under the id the clip resolves, never a freshly minted one', async () => {
+        vi.mocked(resolveGrooveExtractionTemplateId).mockReturnValueOnce('groove-clip-9-v2');
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-9" />);
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+
+        await waitFor(() =>
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'extractGroove',
+                payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v2' },
+            })
+        );
+        expect(resolveGrooveExtractionTemplateId).toHaveBeenCalledWith({
+            clipId: 'clip-9',
+            sourceName: 'clip-9',
+            subdivision: '1/16',
+        });
     });
 
     it('should delete the selected notes and restore them on undo', () => {

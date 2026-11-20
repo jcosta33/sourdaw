@@ -5,6 +5,7 @@ import { defaultGrooveTemplateState, grooveTemplateStore } from '../../../stores
 import { createGrooveTemplate } from '../../../useCases/grooveTemplates/createGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from '../../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../../useCases/grooveTemplates/prepareGrooveExtraction';
+import { resolveGrooveExtractionTemplateId } from '../../../useCases/grooveTemplates/resolveGrooveExtractionTemplateId';
 import { handleDeleteGrooveTemplate } from '../handleDeleteGrooveTemplate';
 import { handleExtractGroove } from '../handleExtractGroove';
 
@@ -346,6 +347,22 @@ describe('handleExtractGroove', () => {
             expect(again.payload.templateId).toBe('groove-clip-source-v1');
             expect(handleExtractGroove.execute(again)).toEqual({ status: 'no-write' });
             expect(extractedIds()).toEqual(['groove-clip-source-v1']);
+        });
+
+        it('treats a retry under the id the resolver names as a no-write, and a changed clip as the next free id', () => {
+            const resolve = () =>
+                resolveGrooveExtractionTemplateId({ clipId: 'clip-source', sourceName: 'Source', subdivision: '1/16' });
+            const firstId = resolve();
+            handleExtractGroove.describe(createAction(firstId));
+            void handleExtractGroove.execute(createAction(firstId));
+
+            const retry = createAction(resolve());
+            expect(retry.payload.templateId).toBe(firstId);
+            expect(handleExtractGroove.isNoop?.(retry)).toBe(true);
+            expect(handleExtractGroove.execute(retry)).toEqual({ status: 'no-write' });
+
+            mocks.notes = [{ id: 'note', startBeat: 0.06, velocity: 96 }];
+            expect(resolve()).toBe('groove-clip-source-v2');
         });
 
         it('still refuses an explicit id that holds other content', () => {

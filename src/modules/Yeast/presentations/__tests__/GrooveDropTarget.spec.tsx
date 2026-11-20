@@ -1,6 +1,6 @@
 import { change, init } from '@automerge/automerge';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -13,12 +13,6 @@ import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/
 import { createGrooveTemplate, getMidiGrooveHandlers, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { GrooveDropTarget } from '../views/GrooveDropTarget';
-
-function extractedTemplates() {
-    return (grooveTemplateStore.value?.templates ?? []).filter(
-        (template) => template.provenance.type === 'midi-clip' && template.provenance.sourceId === 'clip-source'
-    );
-}
 
 function createTrackState(): TrackStoreState {
     return {
@@ -115,7 +109,6 @@ describe('GrooveDropTarget', () => {
     });
 
     afterEach(() => {
-        vi.restoreAllMocks();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         clearUndoHistory();
@@ -131,12 +124,16 @@ describe('GrooveDropTarget', () => {
         });
 
         expect(await screen.findByText('Previewing “Source clip groove”')).toBeInTheDocument();
-        expect(extractedTemplates()).toEqual([]);
+        expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'groove-clip-source-v1')).toBe(
+            false
+        );
 
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
         await waitFor(() => {
-            expect(extractedTemplates()).toHaveLength(1);
+            expect(
+                grooveTemplateStore.value?.templates.some((template) => template.id === 'groove-clip-source-v1')
+            ).toBe(true);
         });
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Extract groove template']);
     });
@@ -254,7 +251,7 @@ describe('GrooveDropTarget', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('shows and commits a collision-resolved name and gives a second extraction its own template', async () => {
+    it('shows and commits a collision-resolved name while an identical retry remains a no-write', async () => {
         createGrooveTemplate({
             id: 'occupied-name',
             name: 'Source clip groove',
@@ -272,22 +269,22 @@ describe('GrooveDropTarget', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
         await waitFor(() => {
-            expect(extractedTemplates().map((template) => template.name)).toEqual(['Source clip groove 2']);
+            expect(grooveTemplateStore.value?.templates).toContainEqual(
+                expect.objectContaining({ id: 'groove-clip-source-v1', name: 'Source clip groove 2' })
+            );
         });
         expect(undoStore.value?.past).toHaveLength(1);
 
         fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
             dataTransfer: createDataTransfer('clip-source'),
         });
-        expect(await screen.findByText('Previewing “Source clip groove 3”')).toBeInTheDocument();
+        expect(await screen.findByText('Previewing “Source clip groove 2”')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
         await waitFor(() => {
-            expect(extractedTemplates()).toHaveLength(2);
+            expect(screen.queryByText('Previewing “Source clip groove 2”')).not.toBeInTheDocument();
         });
-        const [first, second] = extractedTemplates();
-        expect(first?.id).not.toBe(second?.id);
-        expect(undoStore.value?.past).toHaveLength(2);
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it('distinguishes a stale proposal from a template identity conflict', async () => {
@@ -311,19 +308,18 @@ describe('GrooveDropTarget', () => {
         firstView.unmount();
 
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
-        vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
-        createGrooveTemplate({
-            id: 'groove-clip-source-00000000-0000-4000-8000-000000000001',
-            name: 'Source clip groove',
-            subdivision: '1/16',
-            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
-            provenance: { type: 'user', sourceId: 'identity-conflict' },
-        });
         render(<GrooveDropTarget />);
         fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
             dataTransfer: createDataTransfer('clip-source'),
         });
         await screen.findByText('Previewing “Source clip groove”');
+        createGrooveTemplate({
+            id: 'groove-clip-source-v1',
+            name: 'Source clip groove',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'identity-conflict' },
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
