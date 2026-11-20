@@ -98,6 +98,7 @@ export const automationReferenceByActionType: {
     setGrandBouleDeviceState: automationReferenceRules.namesLaneOrContent,
     setToasterFactoryKit: automationReferenceRules.namesLaneOrContent,
     setGlutenFactoryPreset: automationReferenceRules.namesLaneOrContent,
+    setProofPatchSelection: automationReferenceRules.namesLaneOrContent,
     createBus: automationReferenceRules.namesLaneOrContent,
     createFolder: automationReferenceRules.namesLaneOrContent,
     setSend: automationReferenceRules.namesLaneOrContent,

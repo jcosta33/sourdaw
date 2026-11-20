@@ -265,6 +265,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setGrandBouleDeviceState: readEffectDeclaredEdits,
     setToasterFactoryKit: readEffectDeclaredEdits,
     setGlutenFactoryPreset: readEffectDeclaredEdits,
+    setProofPatchSelection: readEffectDeclaredEdits,
     createBus: readEffectDeclaredEdits,
     createFolder: readEffectDeclaredEdits,
     setSend: readSendRoutingEdits,

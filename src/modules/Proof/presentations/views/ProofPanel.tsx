@@ -45,7 +45,6 @@ import {
     type ProofState,
 } from '../../stores/proofStore';
 import { hydrateProofDisclosureFromProject } from '../../useCases/hydrateProofDisclosureFromProject';
-import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { proofLimiterCeiling } from '../../useCases/proofParamBridge/proofLimiterCeiling';
 import { proofLimiterCeilingProjection } from '../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
 import { rehydrateRestoredPatch } from '../../useCases/proofParamBridge/rehydrateRestoredPatch';
@@ -53,8 +52,8 @@ import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
-import { setProofTarget } from '../../useCases/proofParamBridge/setProofTarget';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
+import { prepareProofPatchSelection } from '../../useCases/selectProofPatch';
 import { setProofPanelUiLevel } from '../../useCases/setProofPanelUiLevel';
 import { LoudnessHistory } from '../components/LoudnessHistory';
 import { ProofDynSection } from '../components/ProofDynSection';
@@ -426,7 +425,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
     const ceilingPreviewTokenRef = useRef<number | null>(null);
     const gestureDeviceIdRef = useRef(deviceId);
-    const patchSnapshotRef = useRef(patchSnapshot);
+    const previousPatchRef = useRef({ patch, snapshot: patchSnapshot });
     const acceptedPatchSnapshotRef = useRef<string | null>(null);
 
     const advanceGestureOwner = (): number => {
@@ -437,7 +436,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     };
 
     const invalidateGesture = (): void => {
-        proofLimiterCeiling.discard(deviceId);
+        proofLimiterCeiling.cancelHeld(deviceId);
         acceptedPatchSnapshotRef.current = null;
         activeGestureFinalizerRef.current = null;
         advanceGestureOwner();
@@ -473,8 +472,8 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     useLayoutEffect(() => {
         const previousDeviceId = gestureDeviceIdRef.current;
         gestureDeviceIdRef.current = deviceId;
-        const previousPatchSnapshot = patchSnapshotRef.current;
-        patchSnapshotRef.current = patchSnapshot;
+        const previousPatch = previousPatchRef.current;
+        previousPatchRef.current = { patch, snapshot: patchSnapshot };
         if (previousDeviceId !== deviceId) {
             proofLimiterCeiling.cancelHeld(previousDeviceId);
             ceilingPreviewTokenRef.current = null;
@@ -485,14 +484,27 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         }
         const acceptedPatch = acceptedPatchSnapshotRef.current === patchSnapshot;
         acceptedPatchSnapshotRef.current = null;
-        if (previousPatchSnapshot !== patchSnapshot && !acceptedPatch) {
+        if (previousPatch.snapshot !== patchSnapshot && !acceptedPatch) {
+            // A target-only history replay leaves a held ceiling's processing state intact.
+            if (
+                ceilingPreviewTokenRef.current === activeGestureTokenRef.current &&
+                getProofPatchSnapshot({
+                    ...patch,
+                    name: previousPatch.patch.name,
+                    presetId: previousPatch.patch.presetId,
+                    target: previousPatch.patch.target,
+                    targetLufs: previousPatch.patch.targetLufs,
+                }) === previousPatch.snapshot
+            ) {
+                return;
+            }
             if (!proofLimiterCeiling.settlement(deviceId)) {
                 proofLimiterCeiling.discard(deviceId);
             }
             activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
         }
-    }, [deviceId, patchSnapshot]);
+    }, [deviceId, patch, patchSnapshot]);
 
     const handlePatchChange: ProofPatchChange = (edit) => {
         const token = activeGestureTokenRef.current;
@@ -527,7 +539,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
     const handleTargetSelection = (target: ProofTarget): void => {
         finalizeActiveGesture();
-        afterCeilingSettlement(() => setProofTarget({ deviceId, target }));
+        afterCeilingSettlement(prepareProofPatchSelection(deviceId, { kind: 'target', target }));
+    };
+
+    const handlePresetSelection = (presetId: string): void => {
+        invalidateGesture();
+        afterCeilingSettlement(prepareProofPatchSelection(deviceId, { kind: 'preset', presetId }));
     };
 
     // The order use case owns the engine reorder and its persisted record.
@@ -570,10 +587,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 title={preset.name}
                                                 subtitle={`${preset.patch.target} · ${formatLufs(preset.patch.targetLufs)} LUFS`}
-                                                onPress={() => {
-                                                    invalidateGesture();
-                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch });
-                                                }}
+                                                onPress={() => handlePresetSelection(preset.id)}
                                             />
                                         );
                                     })}

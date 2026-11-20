@@ -99,6 +99,7 @@ const renderReceiptGateByActionType: GateLookup = {
     setGrandBouleDeviceState: notRenderReceiptGated,
     setToasterFactoryKit: notRenderReceiptGated,
     setGlutenFactoryPreset: notRenderReceiptGated,
+    setProofPatchSelection: notRenderReceiptGated,
     createBus: notRenderReceiptGated,
     createFolder: notRenderReceiptGated,
     setSend: notRenderReceiptGated,

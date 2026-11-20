@@ -97,6 +97,7 @@ export const rangeOverlapByActionType: {
     setGrandBouleDeviceState: rangeOverlapRules.none,
     setToasterFactoryKit: rangeOverlapRules.none,
     setGlutenFactoryPreset: rangeOverlapRules.none,
+    setProofPatchSelection: rangeOverlapRules.none,
     createBus: rangeOverlapRules.none,
     createFolder: rangeOverlapRules.none,
     setSend: rangeOverlapRules.none,

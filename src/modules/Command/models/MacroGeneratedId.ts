@@ -139,6 +139,7 @@ export const macroGeneratedIdByActionType: {
     setGrandBouleDeviceState: noGeneratedId,
     setToasterFactoryKit: noGeneratedId,
     setGlutenFactoryPreset: noGeneratedId,
+    setProofPatchSelection: noGeneratedId,
     createBus: noGeneratedId,
     createFolder: noGeneratedId,
     setSend: noGeneratedId,

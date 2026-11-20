@@ -4,6 +4,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
 import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
@@ -80,7 +81,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(41);
+        expect(handlerMaps).toHaveLength(42);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -99,6 +100,9 @@ describe('getProductionCommandHandlerMaps', () => {
         ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
             { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setProofPatchSelection')).toEqual([
+            { actionType: 'setProofPatchSelection', handler: getProofHandlers().setProofPatchSelection },
         ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setLevainIdentity')).toEqual([
             { actionType: 'setLevainIdentity', handler: getLevainHandlers().setLevainIdentity },

@@ -144,6 +144,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setGrandBouleDeviceState: noUnprojectedWrite,
     setToasterFactoryKit: noUnprojectedWrite,
     setGlutenFactoryPreset: noUnprojectedWrite,
+    setProofPatchSelection: noUnprojectedWrite,
     createBus: noUnprojectedWrite,
     createFolder: noUnprojectedWrite,
     setSend: noUnprojectedWrite,

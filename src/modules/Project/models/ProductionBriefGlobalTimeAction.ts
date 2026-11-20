@@ -84,6 +84,7 @@ export const globalTimeMutatesTrackByActionType: { readonly [Type in AppActionTy
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
     setGlutenFactoryPreset: false,
+    setProofPatchSelection: false,
     createBus: false,
     createFolder: false,
     setSend: false,

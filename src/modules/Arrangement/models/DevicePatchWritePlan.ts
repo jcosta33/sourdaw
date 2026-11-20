@@ -182,6 +182,7 @@ function requiresCapturedPatchStep(action: AppAction): boolean {
     return (
         action.type === 'setFermenterPatch' ||
         action.type === 'setGlutenFactoryPreset' ||
+        action.type === 'setProofPatchSelection' ||
         action.type === 'setLevainIdentity' ||
         action.type === 'setToasterFactoryKit'
     );

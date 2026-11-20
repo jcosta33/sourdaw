@@ -1,8 +1,6 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { type ProofPatch } from '../../models/ProofPatch';
-import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
 import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { loadProofPatch } from '../../stores/proofStore';
 
@@ -24,6 +22,5 @@ export function loadProofPatchWithAudio({ deviceId, patch }: LoadProofPatchWithA
     }
 
     loadProofPatch({ deviceId, patch });
-    persistDevicePatch(deviceId, getProofPatchParameterValues(patch));
     syncFullPatch(deviceId);
 }

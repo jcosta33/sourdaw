@@ -1,6 +1,8 @@
+import { getObjectId } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -11,7 +13,7 @@ import {
     trackStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/useCases';
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     createAutomationLane,
@@ -20,9 +22,19 @@ import {
     startAutomationRecording,
     stopAutomationRecording,
 } from '#/modules/Automation/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { captureUndoHistory, clearUndoHistory, executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearHandlerRegistry } from '#/modules/Command/stores';
 import {
+    captureUndoHistory,
+    clearUndoHistory,
+    executeUserAppAction,
+    reconcileSessionUndoForProject,
+    redo,
+    registerProductionCommandHandlers,
+    stampSessionUndoWitness,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    captureDurableDocumentWitness,
     createCrdtDoc,
     getCrdtDoc,
     mutateCrdtDoc,
@@ -31,21 +43,34 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { getProofPatchParameterValues } from '../../../services/getProofPatchParameterValues';
 import { getProofState, proofStore, updateProofMeters } from '../../../stores/proofStore';
 import { proofLimiterCeiling } from '../../../useCases/proofParamBridge/proofLimiterCeiling';
 import { registerProofDevice } from '../../../useCases/proofParamBridge/registerProofDevice';
 import { syncFullPatch } from '../../../useCases/proofParamBridge/syncFullPatch';
 import { unregisterProofDevice } from '../../../useCases/proofParamBridge/unregisterProofDevice';
+import { PROOF_PRESETS } from '../../../useCases/proofPresets';
 import { resetProofForProject } from '../../../useCases/resetProofForProject';
+import { selectProofPatch } from '../../../useCases/selectProofPatch';
 import { ProofPanel } from '../ProofPanel';
 
-const audioEngine = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
+const audioEngine = vi.hoisted(() => ({ updateDeviceParam: vi.fn(), updateDevicePatch: vi.fn() }));
+const PROJECT_ID = 'proof-disclosure-view';
+const SESSION_KEY = 'sourdaw-undo-session';
+
+function registerHandlers(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+    reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+}
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audioEngine.updateDeviceParam,
+    updateDevicePatch: audioEngine.updateDevicePatch,
 }));
 
 function projectParameter(deviceId: string, parameter: string): number | undefined {
@@ -57,6 +82,42 @@ function documentParameter(deviceId: string, parameter: string): number | undefi
     return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')
         ?.tracks.tracks.flatMap((track) => track.devices)
         .find((device) => device.id === deviceId)?.parameterValues?.[parameter];
+}
+
+function seedProofParameters(parameterValues: Record<string, number>): void {
+    const project = trackStore.value;
+    if (!project) {
+        throw new Error('Missing the Proof fixture project');
+    }
+    trackStore.set({
+        ...project,
+        tracks: project.tracks.map((track) => ({
+            ...track,
+            devices: track.devices.map((device) =>
+                device.id === 'a'
+                    ? { ...device, parameterValues, deviceState: { version: 1, data: { disclosureTier: 'shape' } } }
+                    : device
+            ),
+        })),
+    });
+    flushAutomergeStorageWrites();
+}
+
+function expectProofParameters(parameterValues: Record<string, number>): void {
+    const raw = getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root');
+    for (const tracks of [trackStore.value?.tracks, raw?.tracks.tracks]) {
+        const device = tracks?.[0]?.devices.find(({ id }) => id === 'a');
+        expect(device?.parameterValues).toEqual(parameterValues);
+        expect(device?.deviceState).toEqual({ version: 1, data: { disclosureTier: 'shape' } });
+        expect(tracks?.[0]?.devices.find(({ id }) => id === 'b')?.parameterValues).toEqual({ lim_ceiling: -4 });
+    }
+}
+
+async function seedSentinel(): Promise<void> {
+    await executeUserAppAction({
+        type: 'setDeviceParameter',
+        payload: { deviceId: 'b', paramId: 'lim_ceiling', value: -4 },
+    });
 }
 
 async function pressProofSlider(
@@ -108,16 +169,21 @@ function beginMasterCeilingPreview(): HTMLElement {
 }
 
 describe('Proof cumulative disclosure in project truth', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('Proof disclosure view');
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => {} });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        resetCrdtProjectAuthority(PROJECT_ID);
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        clearHandlerRegistry();
         clearUndoHistory();
-        registerHandlerMap(getArrangementHandlers());
+        sessionStorage.removeItem(SESSION_KEY);
+        registerHandlers();
         audioEngine.updateDeviceParam.mockClear();
+        audioEngine.updateDevicePatch.mockClear();
         automationStore.set({ lanes: [] });
         transportStore.set(defaultTransportState);
         proofStore.set({ a: getProofState('a'), b: getProofState('b') });
@@ -149,7 +215,374 @@ describe('Proof cumulative disclosure in project truth', () => {
         trackStore.set({ ...defaultTrackState, tracks: [] });
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
+        clearUndoHistory();
+        sessionStorage.removeItem(SESSION_KEY);
         configureAutomergeStoragePort(null);
+    });
+
+    it.each([
+        { prior: {}, target: 'streaming', targetLufs: -14 },
+        { prior: { target_mode: 1 }, target: 'streaming', targetLufs: -14 },
+        { prior: { target_lufs: -18 }, target: 'streaming', targetLufs: -14 },
+        { prior: { target_mode: 5, target_lufs: -18 }, target: 'custom', targetLufs: -18 },
+    ])('replays a target pair from the raw prior row $prior', async ({ prior, target, targetLufs }) => {
+        const initial = Object.fromEntries(Object.entries({ ...prior, lim_ceiling: -3 }));
+        seedProofParameters(initial);
+        await seedSentinel();
+        const baseline = captureUndoHistory();
+        render(<ProofPanel deviceId="a" />);
+
+        audioEngine.updateDeviceParam.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+        await waitFor(() => expectProofParameters({ ...initial, target_mode: 3, target_lufs: -23 }));
+        expect(captureUndoHistory().past).toHaveLength(2);
+        expect(getProofState('a').patch).toMatchObject({ target: 'broadcast', targetLufs: -23, limCeiling: -3 });
+
+        await act(() => undo());
+        expectProofParameters(initial);
+        expect(getProofState('a').patch).toMatchObject({ target, targetLufs, limCeiling: -3 });
+        expect(captureUndoHistory().past).toEqual(baseline.past);
+
+        await act(() => redo());
+        expectProofParameters({ ...initial, target_mode: 3, target_lufs: -23 });
+        expect(getProofState('a').patch).toMatchObject({ target: 'broadcast', targetLufs: -23, limCeiling: -3 });
+        expect(screen.getByRole('button', { name: 'Broadcast', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audioEngine.updateDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('replays every preset field over sparse project values on the same Proof device', async () => {
+        const initial = {
+            lim_ceiling: -3,
+            target_mode: 3,
+            dyn_band0_ratio: 5,
+            chain_order_0: 3,
+            chain_order_1: 1,
+            chain_order_2: 2,
+            chain_order_3: 0,
+            chain_order_4: 4,
+            unrelated_parameter: 41,
+        };
+        seedProofParameters(initial);
+        await seedSentinel();
+        const baseline = captureUndoHistory();
+        const reorderModules = vi.fn();
+        registerProofDevice({ deviceId: 'a', bridge: { reorderModules, resetIntegrated: vi.fn() } });
+        render(<ProofPanel deviceId="a" />);
+        const originalPatch = getProofState('a').patch;
+        const choice = screen.getByRole('button', { name: /^Club \/ DJ club/ });
+        const factory = PROOF_PRESETS.find(({ id }) => id === 'club');
+        if (!factory) {
+            throw new Error('Missing the Club / DJ factory preset');
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'A/B compare' }));
+        const expected = { ...getProofPatchParameterValues(factory.patch), unrelated_parameter: 41 };
+        audioEngine.updateDeviceParam.mockClear();
+        fireEvent.click(choice);
+        await waitFor(() => expectProofParameters(expected));
+        expect(captureUndoHistory().past).toHaveLength(2);
+        expect(getProofState('a').patch).toEqual(factory.patch);
+        expect(choice).toHaveClass('border-white/18');
+        expect(reorderModules).toHaveBeenLastCalledWith(factory.patch.chainOrder);
+
+        audioEngine.updateDeviceParam.mockClear();
+        await act(() => undo());
+        expectProofParameters(initial);
+        expect(getProofState('a').patch).toEqual(originalPatch);
+        expect(choice).not.toHaveClass('border-white/18');
+        expect(reorderModules).toHaveBeenLastCalledWith(originalPatch.chainOrder);
+        expect(audioEngine.updateDevicePatch).toHaveBeenLastCalledWith('track', 'a', {
+            chain_order_0: 3,
+            chain_order_1: 1,
+            chain_order_2: 2,
+            chain_order_3: 0,
+            chain_order_4: 4,
+        });
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 4))).toEqual(
+            expect.arrayContaining([
+                ['track', 'a', 'ab_bypass', 1],
+                ['track', 'a', 'lim_ceiling', -3],
+                ['track', 'a', 'dyn_band0_ratio', 5],
+                ['track', 'a', 'dyn_band0_threshold', originalPatch.dynBands[0]?.threshold],
+            ])
+        );
+        expect(captureUndoHistory().past).toEqual(baseline.past);
+
+        await act(() => redo());
+        expectProofParameters(expected);
+        expect(getProofState('a').patch).toEqual(factory.patch);
+        expect(choice).toHaveClass('border-white/18');
+        expect(reorderModules).toHaveBeenLastCalledWith(factory.patch.chainOrder);
+    });
+
+    it('writes the missing leaf when the displayed default target is picked', async () => {
+        seedProofParameters({ target_mode: 0 });
+        await seedSentinel();
+        render(<ProofPanel deviceId="a" />);
+
+        const streaming = screen.getByRole('button', { name: 'Streaming', exact: true });
+        expect(streaming).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(streaming);
+        await waitFor(() => expectProofParameters({ target_mode: 0, target_lufs: -14 }));
+        expect(captureUndoHistory().past).toHaveLength(2);
+
+        await act(() => undo());
+        expectProofParameters({ target_mode: 0 });
+        expect(streaming).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('recovers explicit preset identity through target Undo and the saved session history', async () => {
+        render(<ProofPanel deviceId="a" />);
+        const preset = screen.getByRole('button', { name: /^Streaming Master/ });
+        const streaming = screen.getByRole('button', { name: 'Streaming', exact: true });
+        const broadcast = screen.getByRole('button', { name: 'Broadcast', exact: true });
+        fireEvent.click(preset);
+        await waitFor(() => expect(preset).toHaveClass('border-white/18'));
+        const history = captureUndoHistory();
+        expect(history.past).toHaveLength(1);
+
+        audioEngine.updateDeviceParam.mockClear();
+        await act(() => selectProofPatch('a', { kind: 'preset', presetId: 'streaming' }));
+        expect(preset).toHaveClass('border-white/18');
+        expect(captureUndoHistory()).toEqual(history);
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('track', 'a', 'lim_ceiling', -1);
+        await act(async () => fireEvent.click(streaming));
+        expect(preset).toHaveClass('border-white/18');
+        expect(captureUndoHistory()).toEqual(history);
+
+        fireEvent.click(broadcast);
+        await waitFor(() => expect(broadcast).toHaveAttribute('aria-pressed', 'true'));
+        expect(preset).not.toHaveClass('border-white/18');
+        expect(getProofState('a').patch.name).toBe('Streaming Master');
+        expect(captureUndoHistory().past).toHaveLength(2);
+        stampSessionUndoWitness();
+        expect(sessionStorage.getItem(SESSION_KEY)).toContain('setProofPatchSelection');
+        registerHandlers();
+        expect(captureUndoHistory().past).toHaveLength(2);
+
+        await act(() => undo());
+        expect(preset).toHaveClass('border-white/18');
+        expect(streaming).toHaveAttribute('aria-pressed', 'true');
+        expect(getProofState('a').patch.name).toBe('Streaming Master');
+        stampSessionUndoWitness();
+        registerHandlers();
+        expect(captureUndoHistory().future).toHaveLength(1);
+
+        await act(() => redo());
+        expect(preset).not.toHaveClass('border-white/18');
+        expect(broadcast).toHaveAttribute('aria-pressed', 'true');
+        expect(getProofState('a').patch.name).toBe('Streaming Master');
+
+        fireEvent.click(streaming);
+        await waitFor(() => expect(streaming).toHaveAttribute('aria-pressed', 'true'));
+        expect(preset).not.toHaveClass('border-white/18');
+        const numericallyEqual = captureUndoHistory();
+        fireEvent.click(preset);
+        await waitFor(() => expect(preset).toHaveClass('border-white/18'));
+        expect(captureUndoHistory()).toEqual(numericallyEqual);
+    });
+
+    it('orders a pending ceiling release, target pick, and factory pick before replay', async () => {
+        render(<ProofPanel deviceId="a" />);
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const barrier = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        try {
+            const ceiling = beginMasterCeilingPreview();
+            const preview = getProofState('a').patch.limCeiling;
+            fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: /^Club \/ DJ club/ }));
+            expect(captureUndoHistory().past).toEqual([]);
+            expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+            held.resolve();
+            await barrier;
+            await waitFor(() => expect(getProofState('a').patch.presetId).toBe('club'));
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+
+            expect(captureUndoHistory().past).toMatchObject([
+                { action: { type: 'setDeviceParameter', payload: { paramId: 'lim_ceiling', value: preview } } },
+                {
+                    action: {
+                        type: 'setProofPatchSelection',
+                        payload: { selection: { kind: 'target', target: 'broadcast' } },
+                    },
+                },
+                {
+                    action: {
+                        type: 'setProofPatchSelection',
+                        payload: { selection: { kind: 'preset', presetId: 'club' } },
+                    },
+                },
+            ]);
+            await act(() => undo());
+            expect(getProofState('a').patch).toMatchObject({
+                target: 'broadcast',
+                targetLufs: -23,
+                limCeiling: preview,
+            });
+            expect(documentParameter('a', 'lim_ceiling')).toBe(preview);
+            await act(() => undo());
+            expect(getProofState('a').patch).toMatchObject({
+                target: 'streaming',
+                targetLufs: -14,
+                limCeiling: preview,
+            });
+            expect(documentParameter('a', 'target_mode')).toBeUndefined();
+            await act(() => undo());
+            expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+            expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        } finally {
+            held.resolve();
+            await barrier;
+        }
+    });
+
+    it.each([
+        { kind: 'target', button: /^Broadcast$/ },
+        { kind: 'preset', button: /^Club \/ DJ club/ },
+    ])('does not retarget a waiting $kind choice to a replacement with the same ID', async ({ kind, button }) => {
+        const device = () => getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.devices[0];
+        const original = device();
+        const originalIdentity = original && getObjectId(original);
+        if (!original || !originalIdentity) {
+            throw new Error('Missing the original Proof owner');
+        }
+        const replacement = { ...structuredClone(original), parameterValues: { lim_ceiling: -3 } };
+        render(<ProofPanel deviceId="a" />);
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const barrier = transactSnapshot(async (snapshotTransaction) => {
+            entered.resolve();
+            await held.promise;
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                snapshotTransaction,
+                changeFn: (doc) => {
+                    const track = doc.tracks.tracks[0];
+                    if (!track) {
+                        throw new Error('Missing the Proof track');
+                    }
+                    track.devices.splice(0, 1, replacement);
+                },
+            });
+            trackStore.hydrate();
+        });
+        await entered.promise;
+        try {
+            const ceiling = beginMasterCeilingPreview();
+            if (kind === 'preset') {
+                fireEvent.pointerUp(ceiling, { pointerId: 1 });
+            }
+            fireEvent.click(screen.getByRole('button', { name: button }));
+            const settlement = proofLimiterCeiling.settlement('a');
+            if (!settlement) {
+                throw new Error('Expected a held ceiling release');
+            }
+            await act(async () => {
+                held.resolve();
+                await barrier;
+                await settlement.done;
+            });
+            const committedDevice = device();
+            expect(committedDevice).toEqual(replacement);
+            expect(committedDevice && getObjectId(committedDevice)).not.toBe(originalIdentity);
+            expect(captureUndoHistory().past).toEqual([]);
+            expect(getProofState('a').patch.target).toBe('streaming');
+            expect(getProofState('a').patch.presetId).toBeUndefined();
+        } finally {
+            held.resolve();
+            await barrier;
+        }
+    });
+
+    it('discards a still-held ceiling when selecting a preset and ignores the late terminal event', async () => {
+        render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        fireEvent.click(screen.getByRole('button', { name: /^Club \/ DJ club/ }));
+        await waitFor(() => expect(getProofState('a').patch.presetId).toBe('club'));
+
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(documentParameter('a', 'lim_ceiling')).toBe(-0.5);
+        await act(() => undo());
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+    });
+
+    it('replays a target without retiring a ceiling preview acquired afterward', async () => {
+        render(<ProofPanel deviceId="a" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+        await waitFor(() => expect(captureUndoHistory().past).toHaveLength(1));
+        const ceiling = beginMasterCeilingPreview();
+        const preview = getProofState('a').patch.limCeiling;
+        audioEngine.updateDeviceParam.mockClear();
+        audioEngine.updateDevicePatch.mockClear();
+
+        await act(() => undo());
+        expect(ceiling).toHaveAttribute('aria-valuenow', String(preview));
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audioEngine.updateDevicePatch).not.toHaveBeenCalled();
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        await waitFor(() => expect(documentParameter('a', 'lim_ceiling')).toBe(preview));
+        expect(captureUndoHistory().past).toMatchObject([
+            { action: { type: 'setDeviceParameter', payload: { paramId: 'lim_ceiling', value: preview } } },
+        ]);
+    });
+
+    it.each([
+        { kind: 'target', target: 'broadcast' },
+        { kind: 'preset', presetId: 'club' },
+    ] as const)('refuses a waiting $kind change after a peer changes its captured target', async (selection) => {
+        seedProofParameters({ target_mode: 1, target_lufs: -9, lim_ceiling: -3 });
+        await seedSentinel();
+        const initialHistory = captureUndoHistory();
+        render(<ProofPanel deviceId="a" />);
+        const initialPatch = getProofState('a').patch;
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const barrier = transactSnapshot(async (snapshotTransaction) => {
+            entered.resolve();
+            await held.promise;
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                snapshotTransaction,
+                changeFn: (doc) => {
+                    const device = doc.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Missing the Proof owner');
+                    }
+                    device.parameterValues.target_mode = 4;
+                    device.parameterValues.target_lufs = -16;
+                },
+            });
+            trackStore.hydrate();
+        });
+        await entered.promise;
+        try {
+            const pending = selectProofPatch('a', selection);
+            await act(async () => {
+                held.resolve();
+                await barrier;
+                await pending;
+            });
+            expectProofParameters({ target_mode: 4, target_lufs: -16, lim_ceiling: -3 });
+            expect(captureUndoHistory()).toEqual(initialHistory);
+            expect(getProofState('a').patch).toBe(initialPatch);
+            expect(audioEngine.updateDeviceParam).not.toHaveBeenCalledWith(
+                'track',
+                'a',
+                expect.any(String),
+                expect.any(Number)
+            );
+        } finally {
+            held.resolve();
+            await barrier;
+        }
     });
 
     it('uses the shared five named tiers with Play selected', () => {

@@ -14,6 +14,7 @@ const EXPECTED = new Set<string>([
     'setLevainIdentity',
     'setToasterFactoryKit',
     'setGlutenFactoryPreset',
+    'setProofPatchSelection',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {

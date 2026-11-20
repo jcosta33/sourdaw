@@ -11,7 +11,7 @@ import { PROOF_PRESETS } from '../proofPresets';
 
 type NumberRange = readonly [min: number, max: number];
 
-function numberFromRestoredParam(value: number | undefined, [min, max]: NumberRange): number | null {
+function numberFromRestoredParam(value: number | null | undefined, [min, max]: NumberRange): number | null {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
         return null;
     }
@@ -55,7 +55,7 @@ function integerFromRestoredParam(value: number | undefined, [min, max]: NumberR
     return value;
 }
 
-function getRestoredProofParameterValues(deviceId: string): Record<string, number> | null {
+export function getRestoredProofParameterValues(deviceId: string): Record<string, number> | null {
     const trackState = getTrackStoreState();
     if (!trackState) {
         return null;
@@ -149,14 +149,18 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
         restoredPatch.ditherBits = ditherBits;
     }
 
-    const target = proofTargetFromInt(parameterValues.target_mode);
+    return { ...restoredPatch, ...readRestoredProofTarget(parameterValues) };
+}
+
+export function readRestoredProofTarget(
+    parameterValues: Readonly<Record<string, number | null>>
+): Pick<ProofPatch, 'target' | 'targetLufs'> | undefined {
+    const target = proofTargetFromInt(parameterValues.target_mode ?? undefined);
     const targetLufs = numberFromRestoredParam(parameterValues.target_lufs, PROOF_PATCH_RANGES.targetLufs);
     if (target !== null && targetLufs !== null && (target === 'custom' || targetLufs === TARGET_LUFS[target])) {
-        restoredPatch.target = target;
-        restoredPatch.targetLufs = targetLufs;
+        return { target, targetLufs };
     }
-
-    return restoredPatch;
+    return undefined;
 }
 
 function getRestoredEqBands(
@@ -352,7 +356,7 @@ function getRestoredExcBands(
     return bands.some((entry) => entry.restored) ? bands.map((entry) => entry.band) : null;
 }
 
-function getRestoredProofPatch(parameterValues: Record<string, number>, basePatch: ProofPatch): Partial<ProofPatch> {
+export function getRestoredProofPatch(parameterValues: Record<string, number>, basePatch: ProofPatch): ProofPatch {
     const restoredPatch = getRestoredScalarPatch(parameterValues);
     const eqBands = getRestoredEqBands(parameterValues, basePatch.eqBands);
     if (eqBands) {
@@ -378,7 +382,7 @@ function getRestoredProofPatch(parameterValues: Record<string, number>, basePatc
     if (chainOrder) {
         restoredPatch.chainOrder = chainOrder;
     }
-    return restoredPatch;
+    return { ...basePatch, ...restoredPatch };
 }
 
 function getMatchingProofPreset(patch: ProofPatch) {
@@ -414,7 +418,7 @@ export function rehydrateRestoredPatch(deviceId: string): void {
     }
 
     const restoredPatch = getRestoredProofPatch(parameterValues, state.patch);
-    const matchingPreset = getMatchingProofPreset({ ...state.patch, ...restoredPatch });
+    const matchingPreset = getMatchingProofPreset(restoredPatch);
     hydrateProofPatch({
         deviceId,
         patch: matchingPreset

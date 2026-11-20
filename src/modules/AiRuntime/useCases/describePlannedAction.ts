@@ -203,6 +203,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setGrandBouleDeviceState: describeFromRegistry,
     setToasterFactoryKit: describeFromRegistry,
     setGlutenFactoryPreset: describeFromRegistry,
+    setProofPatchSelection: describeFromRegistry,
     createBus: describeFromRegistry,
     createFolder: describeFromRegistry,
     setSend: describeFromRegistry,
