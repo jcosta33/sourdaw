@@ -250,7 +250,7 @@ fn preview_releases_follow_sustain_and_sostenuto() {
     let sostenuto: PushPedal = GrandBouleInstance::push_sostenuto;
 
     for pedal in [sustain, sostenuto] {
-        let programme = |preview, keep_pedal_down| {
+        let programme = |preview: bool, keep_pedal_down: bool| {
             let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 1);
             if preview {
                 assert!(instance.push_preview_note_on(STRIKE, NOTE, 0.7, 0));
