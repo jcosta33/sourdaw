@@ -316,6 +316,38 @@ describe('Grinder disclosure in project truth', () => {
             expect(writes.mock.calls.every(([, deviceId]) => deviceId === 'a')).toBe(true);
         });
 
+        it('cannot release Gain to a removed device or edit a replacement of another type', async () => {
+            render(<GrinderPanel deviceId="a" />);
+            const knob = gainKnob();
+            const original = trackStore.value!;
+            const track = original.tracks[0]!;
+            const [owner, sentinel] = track.devices;
+            if (!owner || !sentinel) {
+                throw new Error('Expected both fixture devices');
+            }
+            const previousSentinel = rawValues(sentinel.id);
+
+            dragGain(knob);
+            expect(writes.mock.calls).toEqual([['track', 'a', 'gain', 9]]);
+            act(() => trackStore.set({ ...original, tracks: [{ ...track, devices: [sentinel] }] }));
+            await act(async () => {
+                fireEvent.pointerUp(knob, { pointerId: 1 });
+            });
+            expect(trackStore.value?.tracks[0]?.devices.map(({ id }) => id)).toEqual([sentinel.id]);
+            expect(rawValues(sentinel.id)).toEqual(previousSentinel);
+
+            const replacement = { ...owner, type: 'bacteria', parameterValues: { inputGain: -3 } };
+            act(() => trackStore.set({ ...original, tracks: [{ ...track, devices: [replacement, sentinel] }] }));
+            await act(async () => {
+                fireEvent.keyDown(knob, { key: 'ArrowUp' });
+            });
+
+            expect(rawValues('a')).toEqual(replacement.parameterValues);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toMatchObject(replacement);
+            expect(writes.mock.calls).toEqual([['track', 'a', 'gain', 9]]);
+            expect(captureUndoHistory().past).toHaveLength(0);
+        });
+
         it('restores owned preview on pointer cancellation and cannot overwrite a competing runtime write', async () => {
             render(<GrinderPanel deviceId="a" />);
             const knob = gainKnob();
