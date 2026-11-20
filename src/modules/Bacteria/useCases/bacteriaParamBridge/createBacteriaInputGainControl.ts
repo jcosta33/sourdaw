@@ -42,6 +42,8 @@ type InputGesture = {
     hasEditAuthority: () => boolean;
     runtime: RuntimeAuthority;
     preview?: number;
+    predecessor?: PendingInput;
+    deferredPreview?: number;
 };
 type PendingInput = {
     owner: InputOwner;
@@ -138,11 +140,10 @@ function acquireGesture(control: InputControl): number {
         return control.token;
     }
     const pending = control.pending;
+    const predecessor = pending && sameOwner(pending.owner, owner) ? pending : undefined;
     const runtime =
-        pending && sameOwner(pending.owner, owner)
-            ? pending.runtime
-            : captureDeviceParameterRuntimeWriteAuthority(owner.trackId, owner.deviceId, INPUT);
-    control.gesture = { owner, token: control.token, hasEditAuthority: authority.isCurrent, runtime };
+        predecessor?.runtime ?? captureDeviceParameterRuntimeWriteAuthority(owner.trackId, owner.deviceId, INPUT);
+    control.gesture = { owner, token: control.token, hasEditAuthority: authority.isCurrent, runtime, predecessor };
     return control.token;
 }
 
@@ -151,11 +152,13 @@ function gestureIsCurrent(control: InputControl, token: string | number): boolea
     if (!gesture || gesture.token !== token) {
         return false;
     }
-    if (
-        !gesture.hasEditAuthority() ||
-        !baselineMatches(gesture.owner, readInputOwner(control.deviceId)) ||
-        !gesture.runtime.canCommit()
-    ) {
+    const current = readInputOwner(control.deviceId);
+    // Our own queued edits may publish intermediate baselines. While waiting
+    // for their receipt, this gesture can update only its local display.
+    const ownerMatches = gesture.predecessor
+        ? sameOwner(gesture.owner, current)
+        : baselineMatches(gesture.owner, current);
+    if (!gesture.hasEditAuthority() || !ownerMatches || !gesture.runtime.canCommit()) {
         cancelHeldGesture(control);
         return false;
     }
@@ -217,11 +220,34 @@ async function commitInput(
     return committed;
 }
 
+function settleHeldGesture(control: InputControl, predecessor: PendingInput, committed: boolean): void {
+    const gesture = control.gesture;
+    if (gesture?.predecessor !== predecessor) {
+        control.show(gesture?.preview);
+        return;
+    }
+    if (!committed) {
+        cancelHeldGesture(control);
+        return;
+    }
+    const value = gesture.deferredPreview;
+    delete gesture.predecessor;
+    delete gesture.deferredPreview;
+    gesture.owner = { ...gesture.owner, baseline: { present: true, value: predecessor.value } };
+    if (!gestureIsCurrent(control, gesture.token)) {
+        return;
+    }
+    if (value === undefined) {
+        control.show(undefined);
+        return;
+    }
+    previewInput(control, gesture, value);
+}
+
 function queueInput(control: InputControl, gesture: InputGesture, value: number): void {
     delete control.gesture;
     const { owner: originalOwner } = gesture;
-    const pending = control.pending;
-    const previous = pending && sameOwner(pending.owner, originalOwner) ? pending : undefined;
+    const previous = gesture.predecessor;
     // Consecutive key presses build on the immediately preceding intent. Its
     // committed receipt and the expected parameter guard both have to agree.
     const owner = previous ? { ...originalOwner, baseline: { present: true, value: previous.value } } : originalOwner;
@@ -232,13 +258,14 @@ function queueInput(control: InputControl, gesture: InputGesture, value: number)
         return;
     }
     const committed = commitInput(gesture, owner, value, previous);
-    control.pending = { owner, value, runtime: gesture.runtime, committed };
+    const pending = { owner, value, runtime: gesture.runtime, committed };
+    control.pending = pending;
     control.show(value);
-    void committed.then(() => {
-        if (control.pending?.committed === committed) {
+    void committed.then((didCommit) => {
+        if (control.pending === pending) {
             delete control.pending;
             if (control.mounted) {
-                control.show(control.gesture?.preview);
+                settleHeldGesture(control, pending, didCommit);
             }
         }
         releaseUnusedRuntime(control, gesture.runtime);
@@ -272,10 +299,12 @@ function changeInput(control: InputControl, rawValue: number, transient = false)
     paramBatcher.cancel(`${control.deviceId}:${INPUT}`);
     const value = clampDeviceParamWrite({ deviceId: control.deviceId, paramId: INPUT, value: rawValue });
     if (transient) {
-        // A previously released edit owns its pending runtime write.
-        if (!control.pending) {
-            previewInput(control, control.gesture, value);
+        if (control.gesture.predecessor) {
+            control.gesture.deferredPreview = value;
+            control.show(value);
+            return;
         }
+        previewInput(control, control.gesture, value);
         return;
     }
     queueInput(control, control.gesture, value);

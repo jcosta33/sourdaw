@@ -163,6 +163,24 @@ function startDrag(knob: HTMLElement): void {
     fireEvent.pointerMove(knob, { pointerId: 1, clientY: 75 });
 }
 
+async function whileSnapshotHeld(run: () => void): Promise<void> {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const snapshot = transactSnapshot(async () => {
+        entered.resolve();
+        await resume.promise;
+    });
+    await entered.promise;
+    try {
+        run();
+    } finally {
+        await act(async () => {
+            resume.resolve();
+            await snapshot;
+        });
+    }
+}
+
 describe('Bacteria Play Input gain', () => {
     beforeEach(async () => {
         engineWrites.mockClear();
@@ -392,32 +410,61 @@ describe('Bacteria Play Input gain', () => {
         }
     });
 
-    it.each(['release', 'keyboard'] as const)(
+    it('continues a held drag after its own pending keyboard action settles', async () => {
+        render(<BacteriaPanel deviceId={DEVICE_ID} />);
+        const knob = inputKnob();
+        await whileSnapshotHeld(() => {
+            fireEvent.keyDown(knob, { key: 'ArrowUp' });
+            startDrag(knob);
+            expect(knob).toHaveAttribute('aria-valuenow', '8.5');
+            expect(inputWrites()).toEqual([]);
+            expect(projectedParameterValues()).not.toHaveProperty(INPUT);
+            expect(undoDepth()).toBe(0);
+        });
+        await waitFor(() => expect(inputWrites()).toEqual([0.5, 8.5]));
+        expect(undoDepth()).toBe(1);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+
+        fireEvent.pointerMove(knob, { pointerId: 1, clientY: 50 });
+        expect(inputWrites().at(-1)).toBe(16.5);
+        expect(knob).toHaveAttribute('aria-valuenow', '16.5');
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(undoDepth()).toBe(1);
+
+        fireEvent.pointerUp(knob, { pointerId: 1 });
+        await waitFor(() => expect(undoDepth()).toBe(2));
+        expect(rawParameterValues()).toHaveProperty(INPUT, 16.5);
+
+        await act(undo);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(knob).toHaveAttribute('aria-valuenow', '0.5');
+        await act(undo);
+        expect(rawParameterValues()).not.toHaveProperty(INPUT);
+        expect(knob).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    it.each(['release', 'keyboard', 'keyboard with a new held drag'] as const)(
         'leaves a newer runtime write alone while a %s is pending',
         async (kind) => {
             render(<BacteriaPanel deviceId={DEVICE_ID} />);
             const knob = inputKnob();
-            const entered = Promise.withResolvers<void>();
-            const resume = Promise.withResolvers<void>();
-            const snapshot = transactSnapshot(async () => {
-                entered.resolve();
-                await resume.promise;
-            });
-            await entered.promise;
-            try {
+            await whileSnapshotHeld(() => {
                 if (kind === 'release') {
                     startDrag(knob);
                     fireEvent.pointerUp(knob, { pointerId: 1 });
                 } else {
                     fireEvent.keyDown(knob, { key: 'ArrowUp' });
                 }
+                if (kind === 'keyboard with a new held drag') {
+                    startDrag(knob);
+                }
                 updateDeviceParam(TRACK_ID, DEVICE_ID, INPUT, -7);
-            } finally {
-                resume.resolve();
-                await snapshot;
-            }
+            });
 
             await waitFor(() => expect(knob).toHaveAttribute('aria-valuenow', '0'));
+            if (kind === 'keyboard with a new held drag') {
+                fireEvent.pointerUp(knob, { pointerId: 1 });
+            }
             expect(inputWrites()).toEqual(kind === 'release' ? [8, -7] : [-7]);
             expect(rawParameterValues()).not.toHaveProperty(INPUT);
             expect(undoDepth()).toBe(0);
