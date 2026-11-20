@@ -17,7 +17,7 @@ export function recordPromptBarRunPlan(input: {
     runId: string;
     actionLabels: readonly string[];
     metricGoalState: string | undefined;
-    receipts: readonly ApplicationToolReceipt[] | undefined;
+    receipts: ApplicationToolReceipt[] | undefined;
     envelope: ParsedEnvelope;
     authority: CompiledAuthority;
     revision: string;
@@ -31,15 +31,15 @@ export function recordPromptBarRunPlan(input: {
         runId: input.runId,
         summary: input.actionLabels.join('\n'),
         metricGoalState: input.metricGoalState,
-        applicationToolReceipts: [...(input.receipts ?? [])],
+        applicationToolReceipts: input.receipts ?? [],
         commandIds: input.envelope.commands.map((command) => command.commandId),
         serializedBatchIdentity: input.envelope.idempotencyKey,
         revision: input.revision,
         scope: {
             targetIds: [...authority.scope.targetIds],
-            targetRanges: authority.scope.targetRanges.map((range) => ({ ...range })),
+            targetRanges: authority.scope.targetRanges.map(({ startBeat, endBeat }) => ({ startBeat, endBeat })),
             protectedTargetIds: [...authority.scope.protectedTargetIds],
-            protectedRanges: authority.scope.protectedRanges.map((range) => ({ ...range })),
+            protectedRanges: authority.scope.protectedRanges.map(({ startBeat, endBeat }) => ({ startBeat, endBeat })),
         },
         grants: {
             ...authority.grants,
