@@ -3692,6 +3692,78 @@ pub async fn set_plugin_state_bytes(
     write_plugin_state_chunk(&instance_id, plugin_state, state)
 }
 
+/// How long reading one instance's tail may wait for the audio thread to
+/// release it: the audio thread holds the seam for the length of a block, so
+/// this is sized for a block and not for a plugin command of unbounded duration.
+const TAIL_READ_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// One instance's processing tail as the plugin reports it now.
+///
+/// snake_case on the wire, matching `PluginInstance` and the `plugin-tail-changed`
+/// payload; mirrored by hand in the frontend as `PluginTailReading`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PluginTailReading {
+    pub instance_id: String,
+    /// Frames at the rate the instance was activated with, never converted: both
+    /// formats' infinite sentinel would not survive a conversion (see
+    /// `PluginInstance::tail_samples`).
+    pub tail_samples: u32,
+}
+
+/// Re-read the tail of each named instance from the plugin itself.
+///
+/// VST3 has no tail-changed notification, so a tail revised after load is only
+/// visible to a host that asks; an export asks here when it needs the figure. An
+/// unknown instance, or one the control path could not be reached for, is left
+/// out of the answer: a fabricated tail would read downstream as a shorter decay.
+pub async fn read_plugin_tails(
+    instance_ids: Vec<String>,
+    state: &AppState,
+) -> Result<Vec<PluginTailReading>, String> {
+    // Resolve the runtimes under the map lock and release it before reading:
+    // the reads wait on the audio thread and must not park every other reader
+    // of this map.
+    let runtimes = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        instance_ids
+            .into_iter()
+            .filter_map(|instance_id| {
+                let runtime = Arc::clone(&engine_plugins.get(&instance_id)?.runtime);
+                Some((instance_id, runtime))
+            })
+            .collect::<Vec<_>>()
+    };
+    Ok(read_tails(runtimes))
+}
+
+fn read_tails<Runtime: HostedPluginRuntime>(
+    runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
+) -> Vec<PluginTailReading> {
+    runtimes
+        .into_iter()
+        .filter_map(|(instance_id, runtime)| {
+            let read =
+                runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| Ok(plugin.tail_samples()));
+            match read {
+                Ok(tail_samples) => Some(PluginTailReading {
+                    instance_id,
+                    tail_samples,
+                }),
+                Err(error) => {
+                    eprintln!(
+                        "[Plugin] tail read failed for instance {}: {}",
+                        instance_id, error
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
 // ── Native audio engine ────────────────────────────────────────────────
 //
 // There is no explicit start command. The engine's recorded bootstrap (#1984)
@@ -11031,6 +11103,187 @@ mod tests {
             .expect("state read should succeed");
 
         assert_eq!(restored, chunk);
+    }
+
+    /// A backend whose tail the test moves after construction, standing in for
+    /// a VST3 plugin switched to a longer preset: nothing tells the host, and
+    /// only asking the plugin again shows it.
+    struct MovableTailPlugin {
+        tail_samples: Arc<std::sync::atomic::AtomicU32>,
+        processing: Arc<daw_plugin_host::ProcessingGate>,
+    }
+
+    impl AudioPlugin for MovableTailPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "movable-tail"
+        }
+    }
+
+    impl HostedPluginRuntime for MovableTailPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<daw_plugin_host::ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: daw_plugin_host::HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _parameter_updates: &[daw_plugin_host::HostParameterUpdate],
+        ) {
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _midi_events: &[daw_plugin_host::HostMidiEvent],
+            _parameter_updates: &[daw_plugin_host::HostParameterUpdate],
+        ) {
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+
+        fn tail_samples(&self) -> u32 {
+            self.tail_samples.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    fn movable_tail_runtime(
+        initial: u32,
+    ) -> (
+        Arc<SharedHostedPlugin<MovableTailPlugin>>,
+        Arc<std::sync::atomic::AtomicU32>,
+    ) {
+        let tail_samples = Arc::new(std::sync::atomic::AtomicU32::new(initial));
+        let runtime = Arc::new(SharedHostedPlugin::new(MovableTailPlugin {
+            tail_samples: Arc::clone(&tail_samples),
+            processing: Arc::new(daw_plugin_host::ProcessingGate::default()),
+        }));
+        (runtime, tail_samples)
+    }
+
+    #[test]
+    fn a_tail_that_changed_after_load_is_read_back_from_the_plugin() {
+        let (runtime, tail_samples) = movable_tail_runtime(96_000);
+        let reading = |tail| PluginTailReading {
+            instance_id: "inst-1".to_string(),
+            tail_samples: tail,
+        };
+
+        assert_eq!(
+            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))]),
+            vec![reading(96_000)]
+        );
+
+        tail_samples.store(240_000, std::sync::atomic::Ordering::SeqCst);
+
+        assert_eq!(
+            read_tails(vec![("inst-1".to_string(), runtime)]),
+            vec![reading(240_000)],
+            "a tail revised after load must be the one the read answers"
+        );
+    }
+
+    #[test]
+    fn an_instance_whose_control_path_is_busy_is_left_out_of_the_tail_answer() {
+        let (busy, _busy_tail) = movable_tail_runtime(96_000);
+        let (idle, _idle_tail) = movable_tail_runtime(48_000);
+
+        let answer = busy
+            .with_control(Duration::from_millis(50), |_| {
+                Ok(read_tails(vec![
+                    ("busy".to_string(), Arc::clone(&busy)),
+                    ("idle".to_string(), Arc::clone(&idle)),
+                ]))
+            })
+            .expect("the control path is free for the outer call");
+
+        assert_eq!(
+            answer,
+            vec![PluginTailReading {
+                instance_id: "idle".to_string(),
+                tail_samples: 48_000,
+            }],
+            "an unreached instance must be omitted, not answered with a made-up tail"
+        );
+    }
+
+    #[test]
+    fn read_plugin_tails_omits_an_unknown_instance_and_answers_the_known_one() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+
+        let answer = crate::block_on_test(read_plugin_tails(
+            vec![
+                "no-such-instance".to_string(),
+                "engine-owned-fixture".to_string(),
+            ],
+            &state,
+        ))
+        .expect("the tail read should succeed");
+
+        assert_eq!(
+            answer,
+            vec![PluginTailReading {
+                instance_id: "engine-owned-fixture".to_string(),
+                tail_samples: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn the_tail_reading_serializes_with_the_snake_case_wire_names_the_frontend_reads() {
+        let json = serde_json::to_string(&PluginTailReading {
+            instance_id: "inst-7".to_string(),
+            tail_samples: 1024,
+        })
+        .expect("reading serialises");
+
+        assert_eq!(json, r#"{"instance_id":"inst-7","tail_samples":1024}"#);
     }
 
     #[test]

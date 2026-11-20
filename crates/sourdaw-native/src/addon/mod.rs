@@ -766,6 +766,15 @@ impl SourdawNative {
         )?))
     }
 
+    /// Re-read the processing tail of each named instance; see
+    /// `commands::plugins::read_plugin_tails`.
+    #[napi]
+    pub async fn read_plugin_tails(&self, instance_ids: Vec<String>) -> Result<Value> {
+        json(reason(
+            commands::plugins::read_plugin_tails(instance_ids, &self.singletons.app_state).await,
+        )?)
+    }
+
     #[napi]
     pub async fn set_plugin_state_bytes(
         &self,
