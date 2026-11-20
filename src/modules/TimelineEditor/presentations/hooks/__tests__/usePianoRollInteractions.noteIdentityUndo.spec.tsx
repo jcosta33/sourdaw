@@ -499,7 +499,9 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
                     fireEvent.mouseMove(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
                     fireEvent.mouseUp(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
                     expect(getNotesForClip(owner)).toEqual(expected(edited));
-                    if (owner === 'clip-2') expect(getNotesForClip('clip-1')).toEqual([peer]);
+                    if (owner === 'clip-2') {
+                        expect(getNotesForClip('clip-1')).toEqual([peer]);
+                    }
                     await undoSync();
                     expect(getNotesForClip(owner)).toEqual(expected(note));
                     await redoSync();
