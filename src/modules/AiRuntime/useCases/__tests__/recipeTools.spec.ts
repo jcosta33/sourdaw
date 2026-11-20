@@ -257,6 +257,53 @@ describe('recipe.discover', () => {
         }
     });
 
+    // Red when drum recipes match by the drums role alone: drums-thin's low shelf and low-mid bell
+    // would then be offered for the hi-hat and the overheads as well as the shells.
+    it.each([
+        ['Kick', 'kick', true],
+        ['Snare', 'snare', true],
+        ['Hi-Hat', 'hi-hat', false],
+        ['Overheads', 'overhead', false],
+    ])('offers drums-thin on a %s track only when it is a shell', async (name, canonicalRole, offered) => {
+        trackStore.set({ tracks: [createTrack({ id: 'drum-1', name })], selectedTrackId: null, ghostClips: [] });
+
+        const receipt = await runRecipeDiscovery(`loop-thin-${canonicalRole}`, {
+            descriptors: ['thin'],
+            targetId: 'drum-1',
+        });
+
+        expect(receipt.data).toMatchObject({ role: { recipeRole: 'drums', source: 'target', canonicalRole } });
+        const data = receipt.data as { candidates: { id: string }[] };
+        expect(data.candidates.some((candidate) => candidate.id === 'drums-thin')).toBe(offered);
+    });
+
+    it('keeps drums-thin off an Overheads track even when the drums role is argued', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'overheads-1', name: 'Overheads' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-thin-argued', {
+            descriptors: ['thin'],
+            targetId: 'overheads-1',
+            role: 'drums',
+        });
+
+        const data = receipt.data as { candidates: { id: string }[] };
+        expect(data.candidates.map((candidate) => candidate.id)).not.toContain('drums-thin');
+    });
+
+    it('names only drum-family roles as drum parts, and every one of them on some recipe', () => {
+        const drumFamily = Object.entries(CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE)
+            .filter(([, recipeRole]) => recipeRole === 'drums')
+            .map(([role]) => role)
+            .toSorted();
+        const declared = [...new Set(getMixRecipeCatalog().recipes.flatMap((recipe) => recipe.drumParts ?? []))];
+
+        expect(declared.toSorted()).toEqual(drumFamily);
+    });
+
     it('resolves an untagged "Pad" track to the keys recipe role', async () => {
         trackStore.set({ tracks: [createTrack({ id: 'pad-1', name: 'Pad' })], selectedTrackId: null, ghostClips: [] });
 
@@ -1172,6 +1219,22 @@ describe('recipe.expand', () => {
 
         expect(onFx.commands[0]?.arguments).toMatchObject({ trackId: 'fx-1', deviceType: 'builtin-eq' });
         expect(onBass.commands[0]?.arguments).toMatchObject({ trackId: 'bass-1', deviceType: 'builtin-eq' });
+    });
+
+    // Red when expansion admits a drums recipe on any drum-family track: the planner could then
+    // expand drums-thin onto the overheads that discovery never offered it for.
+    it('refuses drums-thin on an Overheads track and names the drum parts it serves', async () => {
+        setTracks([createTrack({ id: 'overheads-1', name: 'Overheads' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-thin-overheads', {
+            recipeId: 'drums-thin',
+            targetId: 'overheads-1',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain(
+            'serves the drum parts kick, snare, tom, drums, but target "overheads-1" has the canonical role overhead'
+        );
     });
 
     it('refuses a recipe whose role the explicit role argument excludes', async () => {

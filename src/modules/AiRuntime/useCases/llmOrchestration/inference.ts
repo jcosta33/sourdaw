@@ -63,6 +63,7 @@ import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanni
 import {
     describeLocalContextWindowShortfall,
     describeLocalPlannerRequired,
+    describeNoLocalModelOffered,
     type LocalContextWindowShortfall,
     readEngineContextWindowShortfall,
 } from '../../transformers/localContextWindowRefusal';
@@ -80,6 +81,7 @@ import {
     BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
+import { resolveLocalModelToAutoLoad } from '../aiRuntimeQueries/resolveLocalModelToAutoLoad';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
@@ -327,17 +329,20 @@ async function generateLocalToolPlanningOutcome(input: {
     answeringTurn: AnsweringTurn;
     signal?: AbortSignal;
 }): Promise<LocalToolPlanningAttempt> {
-    const activeModelId = getActiveModelId();
-    if (!WEBLLM_PLANNING_MODEL_IDS.has(activeModelId)) {
+    const modelId = resolveLocalModelToAutoLoad();
+    if (modelId === null) {
+        return { status: 'not-a-planner', reason: describeNoLocalModelOffered() };
+    }
+    if (!WEBLLM_PLANNING_MODEL_IDS.has(modelId)) {
         return {
             status: 'not-a-planner',
             reason: describeLocalPlannerRequired(
-                activeModelId,
+                modelId,
                 readOfferedLocalPlanners().map((model) => model.displayName)
             ),
         };
     }
-    const windowTokens = getWebLlmContextWindowSize();
+    const windowTokens = getWebLlmContextWindowSize(modelId);
     const budget = budgetLocalPlanningRequest({
         systemPrompt: serializeWebLlmToolPlanningPrompt(input.systemPrompt, input.tools),
         userMessage: input.userMessage,
@@ -348,7 +353,7 @@ async function generateLocalToolPlanningOutcome(input: {
         return { status: 'exceeded', shortfall: budget };
     }
     if (!isWebLlmLoaded()) {
-        await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
+        await waitForInference(initWebLlmEngine(modelId, { signal: input.signal }), input.signal);
         // Loading publishes its progress and then `ready`; the local model now answers the turn.
         answeringStatus.publish(input.answeringTurn, readAnsweringStatus('webllm'));
     }

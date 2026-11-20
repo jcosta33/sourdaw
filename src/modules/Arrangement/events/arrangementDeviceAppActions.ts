@@ -28,7 +28,13 @@ export type ArrangementDeviceAppAction =
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
     | {
           type: 'removeDevice';
-          payload: { deviceId: string; expectedTrackId?: string; expectedDeviceIds?: readonly string[] };
+          payload: {
+              deviceId: string;
+              expectedTrackId?: string;
+              expectedDeviceIds?: readonly string[];
+              /** Internal AI replay guard. Provider payloads cannot set this field. */
+              expectedFrozen?: boolean;
+          };
       }
     | {
           /** Inverse of `removeDevice`; emitted only from the device handler's pre-execute snapshot. */

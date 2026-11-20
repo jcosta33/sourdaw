@@ -33,6 +33,11 @@
 //! (`request_restart` is `[thread-safe]` the same way; its hint is serviced by
 //! the latency watcher.)
 //!
+//! A VST3 `restartComponent` asking for a bus change or a reload is routed
+//! here too: the plugin raises it on the UI thread, which may allocate, and
+//! the restart it asks for is carried back to the UI thread from here, because
+//! every lifecycle call in it is one the format makes there.
+//!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
 //! reads, and its `request_resize` is refused outright rather than accepted and
@@ -42,6 +47,7 @@
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
@@ -53,7 +59,7 @@ use daw_plugin_host::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
@@ -144,7 +150,7 @@ pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest)
 /// back. A cancelled unload brings it back, but the asks it recorded meanwhile
 /// had their wakes spent on those refused visits, and a flag with no wake behind
 /// it waits until the plugin asks again. So this raises every process-wide hint
-/// and replays both channel asks for `instance_id`.
+/// and replays every channel ask for `instance_id`.
 ///
 /// Replaying is safe because every ask is a recorded flag the visit reads and
 /// clears: an instance that recorded nothing has a visit that finds nothing and
@@ -162,6 +168,7 @@ fn carry_standing_asks_through(instance_id: &str, wake: impl Fn(&str, PluginHost
     signal_pending_latency_requery();
     wake(instance_id, PluginHostRequest::StateDirty);
     wake(instance_id, PluginHostRequest::ParametersRescan);
+    wake(instance_id, PluginHostRequest::ComponentRestart);
 }
 
 fn queue_request(queued: QueuedRequest) {
@@ -422,6 +429,49 @@ fn report_state_change(
     reached_plugin
 }
 
+/// The shell's UI thread, once it has registered its window host.
+///
+/// A VST3 component restart is a sequence of host-to-plugin lifecycle calls —
+/// `setActive`, `getBusInfo`, `setBusArrangements`, `setupProcessing` — and the
+/// format makes every one of them on the UI thread. This watcher is not that
+/// thread, so it carries the restart there through the same lending seam the
+/// editor commands use.
+static UI_THREAD: RwLock<Option<Arc<dyn UiThread>>> = RwLock::new(None);
+
+/// Name the thread component restarts are carried to. The shell's window host
+/// is that thread; registering a later one replaces the first.
+pub fn use_ui_thread(ui: Arc<dyn UiThread>) {
+    *UI_THREAD
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ui);
+}
+
+fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
+    UI_THREAD
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Carry a recorded bus or reload restart out on the UI thread.
+///
+/// A layout the host cannot route is not a failed follow-up: the instance
+/// latches the refusal, reports it and passes its blocks dry, and asking again
+/// would refuse the same layout. Only not reaching the plugin is retried.
+fn restart_component(
+    runtime: &SharedHostedPlugin,
+    ui: Option<&dyn UiThread>,
+) -> Result<(), String> {
+    let Some(ui) = ui else {
+        return Err("no UI thread is registered to carry a component restart".to_string());
+    };
+    runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            lend_on_ui_thread(ui, plugin, |plugin| plugin.apply_component_restart())
+        })
+        .map(|_routed_or_refused| ())
+}
+
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
@@ -489,11 +539,8 @@ fn serve_channel_wake(
 
     let again = serve_queued_request(
         queued,
-        |instance_id, request| match request {
-            PluginHostRequest::StateDirty => report_state_change(&runtime, instance_id, events),
-            PluginHostRequest::ParametersRescan => {
-                rescan_parameters(&runtime, instance_id, engine_plugins, events)
-            }
+        |instance_id, request| {
+            carry_request(&runtime, instance_id, request, engine_plugins, events)
         },
         || runtime.ensure_public_control_allowed().is_ok(),
     );
@@ -503,11 +550,129 @@ fn serve_channel_wake(
     }
 }
 
+/// Carry one ask out to the follow-up that answers it.
+fn carry_request(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    request: PluginHostRequest,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) -> Result<(), String> {
+    match request {
+        PluginHostRequest::StateDirty => report_state_change(runtime, instance_id, events),
+        PluginHostRequest::ParametersRescan => {
+            rescan_parameters(runtime, instance_id, engine_plugins, events)
+        }
+        PluginHostRequest::ComponentRestart => {
+            restart_component(runtime, registered_ui_thread().as_deref())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
+
+    /// A UI thread that is never the caller's, and runs what it is handed
+    /// inline while counting it.
+    #[derive(Default)]
+    struct CountingUiThread {
+        lent: std::sync::atomic::AtomicUsize,
+    }
+
+    impl UiThread for CountingUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), String> {
+            self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.run();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_component_restart_is_carried_to_the_ui_thread() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+        let ui = CountingUiThread::default();
+
+        assert_eq!(restart_component(&runtime, Some(&ui)), Ok(()));
+
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the restart runs on the UI thread, never on the watcher"
+        );
+    }
+
+    /// The registered UI thread is process-wide, so every test here that
+    /// registers or clears it takes this first.
+    static UI_THREAD_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn registered_ui_thread_guard(
+        ui: Option<Arc<dyn UiThread>>,
+    ) -> std::sync::MutexGuard<'static, ()> {
+        let guard = UI_THREAD_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *UI_THREAD
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ui;
+        guard
+    }
+
+    #[test]
+    fn a_component_restart_wake_reaches_the_registered_ui_thread() {
+        let ui = Arc::new(CountingUiThread::default());
+        let _registered = registered_ui_thread_guard(None);
+        use_ui_thread(Arc::clone(&ui) as Arc<dyn UiThread>);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
+        assert_eq!(
+            carry_request(
+                &runtime,
+                "inst-1",
+                PluginHostRequest::ComponentRestart,
+                &engine_plugins,
+                &events,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the wake carries the restart to the thread the shell registered"
+        );
+    }
+
+    #[test]
+    fn a_component_restart_wake_with_no_ui_thread_registered_is_retried() {
+        let _registered = registered_ui_thread_guard(None);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
+        let again = serve_queued_request(
+            ("inst-1".to_string(), PluginHostRequest::ComponentRestart, 0),
+            |instance_id, request| {
+                carry_request(&runtime, instance_id, request, &engine_plugins, &events)
+            },
+            || runtime.ensure_public_control_allowed().is_ok(),
+        );
+        assert_eq!(
+            again,
+            Some(("inst-1".to_string(), PluginHostRequest::ComponentRestart, 1)),
+            "the wake is queued again for when a UI thread is registered"
+        );
+    }
 
     #[test]
     fn a_recorded_state_change_becomes_an_event_naming_the_instance() {
@@ -1001,7 +1166,9 @@ mod tests {
                     PluginHostRequest::StateDirty => {
                         report_state_change(&runtime, instance_id, &sink)
                     }
-                    PluginHostRequest::ParametersRescan => Ok(()),
+                    PluginHostRequest::ParametersRescan | PluginHostRequest::ComponentRestart => {
+                        Ok(())
+                    }
                 },
                 || true,
             );
@@ -1014,11 +1181,11 @@ mod tests {
         );
     }
 
-    /// The replay is both channel asks, and it is every hint: an instance may be
+    /// The replay is every channel ask, and it is every hint: an instance may be
     /// holding any of them, and a hint the cancel left down is an ask nothing
     /// carries.
     #[test]
-    fn carrying_standing_asks_replays_both_channel_asks_and_raises_every_hint() {
+    fn carrying_standing_asks_replays_every_channel_ask_and_raises_every_hint() {
         let _guard = main_thread_callback_hint_guard();
         let replayed = std::cell::RefCell::new(Vec::new());
 
@@ -1033,6 +1200,7 @@ mod tests {
             [
                 ("inst-1".to_string(), PluginHostRequest::StateDirty),
                 ("inst-1".to_string(), PluginHostRequest::ParametersRescan),
+                ("inst-1".to_string(), PluginHostRequest::ComponentRestart),
             ]
         );
         assert!(take_pending_main_thread_callback_signal());
