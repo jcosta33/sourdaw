@@ -3,6 +3,8 @@ import { Container } from '#/infra/di/Container';
 import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/MIDI/events';
 
 type GrandBouleEvents = {
+    'audioDevice.loaded': { deviceId: string; deviceType: string };
+    'audioDevice.removed': { deviceId: string; deviceType: string };
     'midi.noteOn': MidiNoteOnPayload;
     'midi.noteOff': MidiNoteOffPayload;
     'midi.pedalCc': MidiPedalCcPayload;
