@@ -217,6 +217,98 @@ describe('handleZoomTracksVertical', () => {
             expect(handleZoomTracksVertical.validateSessionEntry?.(tampered)).toBe(false);
         });
 
+        /** The described zoom entry with its undo and redo height lists replaced, each check isolated. */
+        function entryWithHeights(heights: {
+            settled?: { trackId: string; height: number }[];
+            previous?: { trackId: string; height: number }[];
+            redoExpected?: { trackId: string; height: number }[];
+            redoReplacement?: { trackId: string; height: number }[];
+        }) {
+            const settled = heights.settled ?? [
+                { trackId: 't1', height: 74 },
+                { trackId: 't2', height: 110 },
+            ];
+            const previous = heights.previous ?? [
+                { trackId: 't1', height: 64 },
+                { trackId: 't2', height: 100 },
+            ];
+            return {
+                action: zoom,
+                inverseAction: {
+                    type: 'restoreTrackHeights',
+                    payload: { expected: settled, replacement: previous },
+                },
+                redoAction: {
+                    type: 'restoreTrackHeights',
+                    payload: {
+                        expected: heights.redoExpected ?? previous,
+                        replacement: heights.redoReplacement ?? settled,
+                    },
+                },
+            } as const;
+        }
+
+        it('accepts the isolated entry builder with every list right', () => {
+            expect(handleZoomTracksVertical.validateSessionEntry?.(entryWithHeights({}))).toBe(true);
+        });
+
+        it.each([
+            [
+                'only the redo expectation is wrong',
+                {
+                    redoExpected: [
+                        { trackId: 't1', height: 65 },
+                        { trackId: 't2', height: 100 },
+                    ],
+                },
+            ],
+            [
+                'only the redo replacement is wrong',
+                {
+                    redoReplacement: [
+                        { trackId: 't1', height: 75 },
+                        { trackId: 't2', height: 110 },
+                    ],
+                },
+            ],
+            [
+                'the settled list is shorter than the previous list',
+                {
+                    settled: [{ trackId: 't1', height: 74 }],
+                    redoReplacement: [{ trackId: 't1', height: 74 }],
+                },
+            ],
+            ['the settled list is empty', { settled: [], redoReplacement: [] }],
+            [
+                'a settled track id is renamed',
+                {
+                    settled: [
+                        { trackId: 't1', height: 74 },
+                        { trackId: 'other', height: 110 },
+                    ],
+                    redoReplacement: [
+                        { trackId: 't1', height: 74 },
+                        { trackId: 'other', height: 110 },
+                    ],
+                },
+            ],
+            [
+                'the settled tracks are reordered',
+                {
+                    settled: [
+                        { trackId: 't2', height: 74 },
+                        { trackId: 't1', height: 110 },
+                    ],
+                    redoReplacement: [
+                        { trackId: 't2', height: 74 },
+                        { trackId: 't1', height: 110 },
+                    ],
+                },
+            ],
+        ])('refuses a saved zoom when %s', (_name, heights) => {
+            expect(handleZoomTracksVertical.validateSessionEntry?.(entryWithHeights(heights))).toBe(false);
+        });
+
         it('refuses an entry whose redo is not its undo reversed, or that has none', () => {
             const entry = describedEntry();
 

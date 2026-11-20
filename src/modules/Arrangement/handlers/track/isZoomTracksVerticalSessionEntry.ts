@@ -28,6 +28,7 @@ export function isZoomTracksVerticalSessionEntry(entry: HandlerSessionActionEntr
     const { expected: settled, replacement: previous } = inverseAction.payload;
     return (
         previous.length > 0 &&
+        settled.length === previous.length &&
         sameHeights(redoAction.payload.expected, previous) &&
         sameHeights(redoAction.payload.replacement, settled) &&
         settled.every(

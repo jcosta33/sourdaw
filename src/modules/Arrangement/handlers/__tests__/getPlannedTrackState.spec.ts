@@ -89,6 +89,12 @@ describe('getPlannedTrackState', () => {
         expect(planned?.height).toBe(120);
     });
 
+    it('plans no copy of a source that does not exist', () => {
+        expect(
+            plan([{ type: 'duplicateTrack', payload: { trackId: 'nope', targetTrackId: 'copy' } }], 'copy')
+        ).toBeNull();
+    });
+
     it('does not plan a restore for another track', () => {
         trackStore.set({
             ...defaultTrackState,

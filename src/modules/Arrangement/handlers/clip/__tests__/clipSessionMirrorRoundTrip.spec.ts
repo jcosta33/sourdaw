@@ -2324,6 +2324,52 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(heights()).toEqual({ [TRACK_ID]: 100, [FOLDER_ID]: 300, [SHORT_ID]: 51 });
         });
 
+        it.each([
+            [
+                'its undo restores heights the zoom never left',
+                (entry: Record<string, unknown>) => {
+                    const inverse = entry.inverseAction;
+                    if (!isRecord(inverse) || !isRecord(inverse.payload) || !Array.isArray(inverse.payload.expected)) {
+                        throw new Error('Expected a saved height restore');
+                    }
+                    const first = inverse.payload.expected[0];
+                    if (!isRecord(first) || typeof first.height !== 'number') {
+                        throw new Error('Expected a saved height');
+                    }
+                    first.height += 1;
+                },
+            ],
+            [
+                'its arguments carry a key the zoom does not take',
+                (entry: Record<string, unknown>) => {
+                    if (!isRecord(entry.action) || !isRecord(entry.action.payload)) {
+                        throw new Error('Expected saved zoom arguments');
+                    }
+                    entry.action.payload.extra = true;
+                },
+            ],
+        ])('drops a saved zoom after a reload when %s, leaving the heights as saved', async (_name, tamper) => {
+            expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: 20 } }])).toMatchObject({
+                status: 'committed',
+            });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            const zoomed = heights();
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const [entry] = Array.isArray(saved.past) ? saved.past : [];
+            if (!isRecord(entry)) {
+                throw new Error('Expected a saved zoom entry');
+            }
+            tamper(entry);
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+
+            reloadSavedProject();
+
+            expect(undoStore.value?.past ?? []).toEqual([]);
+            expect(heights()).toEqual(zoomed);
+        });
+
         it('refuses to undo a zoom whose rows a later edit resized, keeping that edit', async () => {
             expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: -20 } }])).toMatchObject({
                 status: 'committed',

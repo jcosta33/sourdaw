@@ -122,14 +122,21 @@ describe('trackStrategy', () => {
             expect(bridge(name, args)).toBeNull();
         });
 
+        const FOLD_REASON = 'Expected an available folder trackId and boolean folded value';
+        const HEIGHT_REASON = 'Expected an available trackId and a height from 30 through 300';
+
         it.each([
-            ['foldTrack', { trackId: 'track-vox', folded: true }],
-            ['foldTrack', { trackId: 'ghost', folded: true }],
-            ['setTrackHeight', { trackId: 'track-vox', height: 29 }],
-            ['setTrackHeight', { trackId: 'track-vox', height: 301 }],
-            ['setTrackHeight', { trackId: 'ghost', height: 100 }],
-        ])('rejects %s with %j', (name, args) => {
-            expect(bridge(name, args)).toMatchObject({ index: 0, name, reason: expect.any(String) });
+            ['foldTrack', { trackId: 'track-vox', folded: true }, FOLD_REASON],
+            ['foldTrack', { trackId: 'ghost', folded: true }, FOLD_REASON],
+            ['foldTrack', { trackId: 'track-drums-folder', folded: 'yes' }, FOLD_REASON],
+            ['foldTrack', { trackId: 'track-drums-folder', folded: true, extra: 1 }, FOLD_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: 29 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: 301 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'ghost', height: 100 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: Number.NaN }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: '100' }, HEIGHT_REASON],
+        ])('rejects %s with %j', (name, args, reason) => {
+            expect(bridge(name, args)).toEqual({ index: 0, name, reason });
         });
     });
 });
