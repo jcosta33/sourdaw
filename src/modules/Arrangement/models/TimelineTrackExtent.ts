@@ -1,8 +1,24 @@
 import { type Track } from './Track';
 
+const FOLDER_TRACK_HEIGHT = 26;
+
 /** Height of one variation lane (one per track alternative) under its track. */
 export const VARIATION_LANE_HEIGHT = 24;
 export const AUTOMATION_SUB_LANE_HEIGHT = 40;
+
+export type TimelineTrackHeightPreview = { trackId: string; height: number };
+
+/** Display the project height, or its local resize preview, at the current view scale. */
+export function getTimelineTrackHeight(
+    track: Track,
+    scale: number,
+    preview?: TimelineTrackHeightPreview | null
+): number {
+    if (track.kind === 'folder') {
+        return FOLDER_TRACK_HEIGHT;
+    }
+    return (preview?.trackId === track.id ? preview.height : track.height) * scale;
+}
 
 type LaneHostingTrack = Pick<Track, 'kind' | 'showVariationLanes' | 'alternatives'>;
 

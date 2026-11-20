@@ -65,8 +65,8 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     setTimelineViewportHeight: vi.fn(),
 }));
 
-vi.mock('#/modules/Preferences/stores', () => ({ preferencesStore: {} }));
-vi.mock('#/modules/Preferences/useCases', () => ({
+vi.mock('#/modules/Preferences/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Preferences/useCases')>()),
     defaultPreferences: { trackHeight: 'normal' },
     onSoloModePreferenceApplied: vi.fn(),
     setTrackHeight: vi.fn(),

@@ -6179,9 +6179,6 @@
         }
     },
     "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 4
         }
@@ -16997,7 +16994,7 @@
     },
     "src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts": {
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
@@ -17063,7 +17060,7 @@
             "count": 5
         },
         "eslint/max-depth": {
-            "count": 17
+            "count": 16
         },
         "eslint/max-lines-per-function": {
             "count": 5
@@ -17078,7 +17075,7 @@
             "count": 6
         },
         "typescript/no-non-null-assertion": {
-            "count": 20
+            "count": 18
         }
     },
     "src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts": {

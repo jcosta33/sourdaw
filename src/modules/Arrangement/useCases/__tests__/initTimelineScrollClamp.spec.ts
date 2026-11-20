@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
 
 import { createTrack, type Track } from '../../models/Track';
 import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
@@ -121,6 +123,25 @@ describe('initTimelineScrollClamp', () => {
         });
 
         expect(timelineViewStore.value?.scrollY).toBe(30);
+    });
+
+    it('re-clamps the current vertical scroll when local row heights shrink', () => {
+        const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        const tracks = ['a', 'b', 'c'].map((id) => makeTrack({ id, kind: 'audio', height: 80 }));
+        try {
+            setTrackHeight('normal');
+            trackStore.set({ tracks, selectedTrackId: null });
+            setTimelineViewportHeight(100);
+            setScrollY(1000);
+            expect(timelineViewStore.value?.scrollY).toBe(140);
+
+            setTrackHeight('compact');
+
+            expect(timelineViewStore.value?.scrollY).toBe(50);
+            expect(trackStore.value?.tracks).toBe(tracks);
+        } finally {
+            setTrackHeight(previousMode);
+        }
     });
 
     it('stops clamping once unsubscribed', () => {
