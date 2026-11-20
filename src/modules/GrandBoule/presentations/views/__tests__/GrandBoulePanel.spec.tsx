@@ -17,7 +17,10 @@ const projectTrackState = vi.hoisted(() => ({
     },
 }));
 
-const runtime = vi.hoisted(() => ({ nodes: [] as { deviceId: string; grandBouleControls: unknown }[] }));
+const runtime = vi.hoisted(() => ({
+    nodes: [] as { deviceId: string; grandBouleControls: unknown }[],
+    read: vi.fn(),
+}));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { value?: unknown }, defaultValue: unknown) => {
@@ -50,14 +53,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     quantiseDeviceParameterValue: ({ value }: { value: number }) => value,
 }));
 
-// Non-spread listing of ensureTrackStrip, getAudioSampleRate, sendNativeLiveMidiControl and
-// writeNativeBuiltinParameters — resolveGrandBouleEngine imports the first two for the engine
-// readiness tile, the third to mirror a panel pedal onto the engine's own body, and the fourth to
-// mirror a calibration write onto the native body (#4302). `ensureTrackStrip` answers no device
-// nodes here, so the resolved handle is always disconnected and never calls it.
+// The strip seam holds only the runtime nodes each case installs; native writes remain observable
+// through the existing panel tests without constructing an audio engine.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: () => ({ deviceNodes: runtime.nodes, analyserNode: null }),
-    getTrackStrip: () => ({ deviceNodes: runtime.nodes, analyserNode: null }),
+    getTrackStrip: () => {
+        runtime.read();
+        return { deviceNodes: runtime.nodes, analyserNode: null };
+    },
     getAudioSampleRate: () => 44100,
     sendNativeLiveMidiControl: async () => true,
     writeNativeBuiltinParameters: () => {},
@@ -220,7 +223,9 @@ describe('GrandBoulePanel', () => {
         reopened.rerender(<GrandBoulePanel deviceId="another-device" />);
         expect(screen.getByText('idle')).toBeInTheDocument();
         reopened.unmount();
+        runtime.read.mockClear();
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
+        expect(runtime.read).not.toHaveBeenCalled();
     });
 
     it('renders interactive control elements (buttons, knobs, or sliders)', () => {

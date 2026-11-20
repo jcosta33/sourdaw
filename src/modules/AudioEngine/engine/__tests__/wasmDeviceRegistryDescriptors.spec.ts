@@ -1663,7 +1663,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(retirement?.aborted).toBe(false);
             const onRetired = vi.fn(() => expect(loaded.grandBouleControls?.ready).toBe(false));
             retirement?.addEventListener('abort', onRetired);
-            loaded.controller?.destroy();
+            loaded.controller?.destroy?.();
             expect(onRetired).toHaveBeenCalledOnce();
             expect(result.destroy).toHaveBeenCalledOnce();
         });

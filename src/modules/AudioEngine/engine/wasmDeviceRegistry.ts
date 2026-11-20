@@ -1684,7 +1684,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             // The failed stand-in stays in the chain, so the device has not left
             // the project and its failure announces no removal.
             replaceRuntimeFailure?.(publishedNode, placeholder);
-            publishedNode.controller?.destroy();
+            publishedNode.controller?.destroy?.();
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {
