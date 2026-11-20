@@ -39,7 +39,7 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 });
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
-// nodes that AudioEngineImpl reads directly (the two carrier gates for sends
+// nodes that the engine reads directly (the two carrier gates for sends
 // and the destination edge, analyserNode for the ungated sidechain key,
 // deviceNodes for note-off fan-out, meterNode for the dispose shutdown sweep)
 // so the engine's own routing logic is exercised.
