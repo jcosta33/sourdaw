@@ -628,10 +628,24 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 }
             }
 
-            // 3. Bar / beat grid lines
             const barBeats = model.timeSignatureNumerator;
             const firstBar = Math.floor(viewportStartBeat / barBeats);
             const lastBar = Math.ceil((viewportStartBeat + w / pixelsPerBeat / dpr) / barBeats) + 1;
+
+            // Keep the existing clip, grid and playhead geometry ahead of the automation budget.
+            // The backing is emitted before the grid so the bar lines remain visible through the row.
+            const remainingAfterGridAndPlayhead = MAX_RECTS - rectCount - (lastBar - firstBar + 1) - 2;
+            const maxAutomationSegments =
+                automationRows.length > 0 ? Math.floor(remainingAfterGridAndPlayhead / automationRows.length) - 2 : 0;
+            if (maxAutomationSegments > 0) {
+                const backing = resolveToken('--color-bg-well', '#0e0c0b');
+                for (const { top } of automationRows) {
+                    addRect(0, top, w, top + AUTOMATION_SUB_LANE_HEIGHT * dpr, backing);
+                    addRect(0, top, w, top + dpr, '#ffffff', 0.08);
+                }
+            }
+
+            // 3. Bar / beat grid lines
             for (let bar = firstBar; bar <= lastBar; bar++) {
                 const beat = bar * barBeats;
                 const gx = beatToX(beat);
@@ -641,16 +655,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 addRect(gx, 0, gx + dpr, h, '#ffffff', bar % 4 === 0 ? 0.08 : 0.04);
             }
 
-            // Preserve clip/grid geometry and reserve two quads for the playhead.
-            if (automationRows.length > 0) {
-                const rowBudget = Math.floor((MAX_RECTS - rectCount - 2) / automationRows.length);
-                const maxSegments = rowBudget - 2;
+            if (maxAutomationSegments > 0) {
                 for (const { lane, top } of automationRows) {
-                    if (maxSegments <= 0) {
-                        break;
-                    }
-                    addRect(0, top, w, top + AUTOMATION_SUB_LANE_HEIGHT * dpr, '#000000', 0.25);
-                    addRect(0, top, w, top + dpr, '#ffffff', 0.08);
                     const [red, green, blue] = colorToRgba(inlineAutomationColor(lane), 1);
                     forEachInlineAutomationSegment(
                         lane,
@@ -675,7 +681,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             );
                             rectCount++;
                         },
-                        maxSegments
+                        maxAutomationSegments
                     );
                 }
             }

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetResolvedTokenCache } from '#/utils/UI/resolveToken';
+
 import {
     forEachMidiNoteRect,
     resolveMidiClipFrame,
@@ -374,7 +376,7 @@ afterEach(() => {
 });
 
 /** One rect the frame wrote to the vertex buffer, in device pixels, with its alpha. */
-type DecodedRect = { x1: number; y1: number; x2: number; y2: number; alpha: number };
+type DecodedRect = { x1: number; y1: number; x2: number; y2: number; rgb: number[]; alpha: number };
 
 function decode_rects(handles: WebGpuMockHandles, canvas: HTMLCanvasElement): DecodedRect[] {
     const rect_write = handles.writeBuffer.mock.calls.find(
@@ -396,6 +398,7 @@ function decode_rects(handles: WebGpuMockHandles, canvas: HTMLCanvasElement): De
             y1: ((1 - data[base + 1]!) / 2) * canvas.height,
             x2: ((data[base + 6]! + 1) / 2) * canvas.width,
             y2: ((1 - data[base + 13]!) / 2) * canvas.height,
+            rgb: [2, 3, 4].map((channel) => Math.round(data[base + channel]! * 255)),
             alpha: data[base + 5]!,
         });
     }
@@ -433,7 +436,7 @@ describe('createWebGpuRenderer clip name labels', () => {
         expect(handles.setBindGroup).toHaveBeenCalled();
     });
 
-    it('draws variation clips, inline automation, and following clips in separate rows', async () => {
+    it('draws variation clips, light-backed inline automation, and following clips in separate rows', async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 400;
         canvas.height = 128;
@@ -447,7 +450,7 @@ describe('createWebGpuRenderer clip name labels', () => {
         const track = base.tracks[0]!;
         const clip = { ...track.clips[0]!, name: 'Variation Clip' };
 
-        renderer.render({
+        const model: TimelineRenderModel = {
             ...base,
             scrollY: 8,
             tracks: [
@@ -463,6 +466,7 @@ describe('createWebGpuRenderer clip name labels', () => {
                             parameterName: 'Pan',
                             minValue: -1,
                             maxValue: 1,
+                            color: '#428391',
                             valueAtBeat: () => 0,
                         },
                     ],
@@ -475,13 +479,31 @@ describe('createWebGpuRenderer clip name labels', () => {
                     clips: [{ ...clip, id: 'following-clip', name: 'Following Clip' }],
                 },
             ],
-        });
+        };
+        const theme = document.documentElement.style;
+        theme.setProperty('--color-bg-well', '#dfd9d0');
+        resetResolvedTokenCache();
+        try {
+            renderer.render(model);
+        } finally {
+            theme.removeProperty('--color-bg-well');
+            resetResolvedTokenCache();
+        }
 
         expect(handles.labelFillText).toHaveBeenCalledWith('Variation Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
         expect(handles.labelFillText).toHaveBeenCalledWith('Following Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
         const rects = decode_rects(handles, canvas);
         expect(rects).toContainEqual(expect.objectContaining({ x1: 50, y1: 42, x2: 150, y2: 62 }));
-        expect(rects.find((rect) => rect.x1 === 0 && rect.y1 === 83 && rect.y2 === 85)?.x2).toBeCloseTo(4);
+        const backing = rects.findIndex(
+            (rect) => rect.x1 === 0 && rect.x2 === 400 && rect.y1 === 64 && rect.y2 === 104
+        );
+        expect(rects[backing]).toMatchObject({ rgb: [223, 217, 208], alpha: 1 });
+        const grid = rects.findIndex((rect) => rect.x1 === 0 && rect.y1 === 0 && rect.y2 === 128 && rect.x2 < 2);
+        expect(grid).toBeGreaterThan(backing);
+        const stroke = rects.findIndex((rect) => rect.x1 === 0 && rect.y1 === 83 && rect.y2 === 85);
+        expect(stroke).toBeGreaterThan(grid);
+        expect(rects[stroke]).toMatchObject({ rgb: [66, 131, 145], alpha: 1 });
+        expect(rects[stroke]?.x2).toBeCloseTo(4);
         expect(rects).toContainEqual(expect.objectContaining({ x1: 50, y1: 106, x2: 150, y2: 126 }));
     });
 
