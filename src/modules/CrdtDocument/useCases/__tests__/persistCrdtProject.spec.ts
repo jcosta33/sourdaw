@@ -358,7 +358,10 @@ describe('persistCrdtProject', () => {
         expect(await reopening).toBe(true);
         expect(automergeRepository.getHeads('root')).toEqual(branchHeads);
         const saving = persistCrdtProject();
-        const transaction = await persistence.waitForTransaction('readwrite', 2);
+        const transaction = await Promise.race([persistence.waitForTransaction('readwrite', 2), saving]);
+        if (!transaction) {
+            throw new Error('Persistence completed without a root incremental transaction');
+        }
         const chunk = transaction.writes.find((write) => write.kind === 'add');
         if (!chunk) {
             throw new Error('Expected the restored root to be exported');
@@ -474,6 +477,9 @@ describe('persistCrdtProject', () => {
             .materialize();
         candidate.publish({
             id: 'root',
+            message: undefined,
+            snapshotTransaction: undefined,
+            localSlots: undefined,
             validation: {
                 validateDocument: () => undefined,
                 beforePublication: () => undefined,
