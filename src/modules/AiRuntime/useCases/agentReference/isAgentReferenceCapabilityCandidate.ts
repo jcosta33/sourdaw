@@ -29,6 +29,24 @@ const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
 const vcaMemberTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 
+function isNotVca(kind: string): boolean {
+    return kind !== 'vca';
+}
+
+/** Which track kinds satisfy each track capability. */
+const trackKindRules: ReadonlyMap<string, (kind: string) => boolean> = new Map([
+    ['track', () => true],
+    ['removable-track', (kind: string) => kind !== 'master'],
+    ['folder-track', (kind: string) => kind === 'folder'],
+    ['armable-track', isNotVca],
+    ['device-host-track', isNotVca],
+    ['duplicable-track', (kind: string) => duplicableTrackKinds.has(kind)],
+    ['routable-source', (kind: string) => routableTrackKinds.has(kind)],
+    ['bus', (kind: string) => kind === 'bus'],
+    ['output', (kind: string) => kind === 'bus' || kind === 'master'],
+    ['vca-member-track', (kind: string) => vcaMemberTrackKinds.has(kind)],
+]);
+
 /** Applies the canonical target-capability contract to one immutable-context ID. */
 export function isAgentReferenceCapabilityCandidate(input: {
     capability: string;
@@ -36,32 +54,10 @@ export function isAgentReferenceCapabilityCandidate(input: {
     dependencyId?: string;
     id: string;
 }): boolean {
+    const trackKindRule = trackKindRules.get(input.capability);
     const track = input.context.tracks.find((candidate) => candidate.id === input.id);
-    if (track) {
-        if (input.capability === 'track' || input.capability === 'removable-track') {
-            return input.capability !== 'removable-track' || track.kind !== 'master';
-        }
-        if (input.capability === 'folder-track') {
-            return track.kind === 'folder';
-        }
-        if (input.capability === 'armable-track' || input.capability === 'device-host-track') {
-            return track.kind !== 'vca';
-        }
-        if (input.capability === 'duplicable-track') {
-            return duplicableTrackKinds.has(track.kind);
-        }
-        if (input.capability === 'routable-source') {
-            return routableTrackKinds.has(track.kind);
-        }
-        if (input.capability === 'bus') {
-            return track.kind === 'bus';
-        }
-        if (input.capability === 'output') {
-            return track.kind === 'bus' || track.kind === 'master';
-        }
-        if (input.capability === 'vca-member-track') {
-            return vcaMemberTrackKinds.has(track.kind);
-        }
+    if (track && trackKindRule) {
+        return trackKindRule(track.kind);
     }
     if (input.capability === 'device') {
         return input.context.tracks.some(

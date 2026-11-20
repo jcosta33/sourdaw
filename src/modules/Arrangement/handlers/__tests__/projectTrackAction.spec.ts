@@ -56,6 +56,11 @@ describe('projectTrackAction', () => {
                 'setSend',
                 'setClipGain',
                 'removeSend',
+                'hideTrack',
+                'foldTrack',
+                'setTrackHeight',
+                'zoomTracksVertical',
+                'restoreTrackHeights',
             ].sort()
         );
     });
