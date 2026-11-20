@@ -1,4 +1,4 @@
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -26,9 +26,26 @@ export const PromptDialog = (): ReactElement => {
         inputRef.current?.select();
     });
 
+    const open = Boolean(pending);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        function stopComposingEscape(event: KeyboardEvent) {
+            if (event.key === 'Escape' && event.isComposing && event.target === inputRef.current) {
+                event.stopPropagation();
+            }
+        }
+
+        // Window capture runs before Radix's document capture and preserves the IME's default action.
+        window.addEventListener('keydown', stopComposingEscape, true);
+        return () => window.removeEventListener('keydown', stopComposingEscape, true);
+    }, [open]);
+
     return (
         <Dialog
-            open={Boolean(pending)}
+            open={open}
             onOpenChange={(open) => {
                 if (!open) {
                     cancel();
