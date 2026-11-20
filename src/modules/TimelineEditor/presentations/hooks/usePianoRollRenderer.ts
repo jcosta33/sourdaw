@@ -62,10 +62,12 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { type ClipPlacement, resolveAudibleNoteWindow } from '../helpers/audibleNoteWindow';
+import { drawPianoRollLasso } from '../helpers/drawPianoRollLasso';
 import {
     NOTE_NAMES,
     RULER_HEIGHT,
     NOTE_INSET_X,
+    type PianoRollLassoPath,
     getPaintedNoteWidth,
     getScaleIntervals,
     PITCH_RAIL_WIDTH,
@@ -126,6 +128,7 @@ type RendererDeps = {
     drawPreviewRef: RefObject<{ beat: number; pitch: number; duration: number } | null>;
     /** Active rubber band selection rectangle */
     rubberBandRef: RefObject<{ x: number; y: number; w: number; h: number } | null>;
+    lassoPathRef: RefObject<PianoRollLassoPath | null>;
     /** Ephemeral drag preview — avoids flooding midiStore during note move/resize */
     dragPreviewRef: RefObject<{
         noteIds: Set<string>;
@@ -195,6 +198,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     const prevDragRef = useRef<unknown>(undefined);
     const prevDrawPreviewRef = useRef<unknown>(undefined);
     const prevRubberRef = useRef<unknown>(undefined);
+    const prevLassoPathRef = useRef<PianoRollLassoPath | null>(null);
+    const prevLassoLengthRef = useRef(0);
     const prevGhostRef = useRef<boolean | null>(null);
     const prevScrollRef = useRef<number | null>(null);
 
@@ -304,6 +309,10 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const dragDirty = deps.dragPreviewRef.current !== prevDragRef.current;
             const drawDirty = deps.drawPreviewRef.current !== prevDrawPreviewRef.current;
             const rubberDirty = deps.rubberBandRef.current !== prevRubberRef.current;
+            const lassoPath = deps.lassoPathRef.current;
+            const lassoLength = lassoPath?.length ?? 0;
+            // Points append in place during a gesture. The reference changes at its boundaries.
+            const lassoDirty = lassoPath !== prevLassoPathRef.current || lassoLength !== prevLassoLengthRef.current;
             // Ghost-note toggle is a boolean input to the render loop; without a
             // dirty flag, turning ghost notes off while nothing else changes
             // leaves them drawn on the cached dynamic layer until the next
@@ -326,6 +335,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 dragDirty ||
                 drawDirty ||
                 rubberDirty ||
+                lassoDirty ||
                 ghostDirty;
 
             if (needsRepaint) {
@@ -338,6 +348,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 prevDragRef.current = deps.dragPreviewRef.current;
                 prevDrawPreviewRef.current = deps.drawPreviewRef.current;
                 prevRubberRef.current = deps.rubberBandRef.current;
+                prevLassoPathRef.current = lassoPath;
+                prevLassoLengthRef.current = lassoLength;
                 prevGhostRef.current = ghost;
                 prevScrollRef.current = scrollDevicePx;
 
@@ -434,6 +446,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 }
                 drawPreview(ctx, pitchToRow, bw, { preview: deps.drawPreviewRef.current, rowHeight });
                 drawRubberBand(ctx, deps.rubberBandRef.current);
+                drawPianoRollLasso(ctx, lassoPath);
                 ctx.restore();
             }
 

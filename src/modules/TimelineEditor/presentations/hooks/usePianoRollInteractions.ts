@@ -14,6 +14,7 @@ import {
     useRef,
     useEffect,
     useLayoutEffect,
+    useEffectEvent,
     useState,
 } from 'react';
 
@@ -60,6 +61,7 @@ import {
     NOTE_INSET_X,
     getPaintedNoteWidth,
     type DragState,
+    type PianoRollLassoPath,
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
     getVisiblePitches,
@@ -268,6 +270,7 @@ type InteractionArgs = {
     notePreviewEnabled: boolean;
     drawPreviewRef: React.RefObject<{ beat: number; pitch: number; duration: number } | null>;
     rubberBandRef: React.RefObject<{ x: number; y: number; w: number; h: number } | null>;
+    lassoPathRef: React.RefObject<PianoRollLassoPath | null>;
     dragPreviewRef: React.RefObject<{
         noteIds: Set<string>;
         beatDelta: number;
@@ -282,6 +285,8 @@ type InteractionHandlers = {
     handleMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleMouseUp: (e: MouseEvent<HTMLCanvasElement>) => void;
+    handleMouseLeave: (e: MouseEvent<HTMLCanvasElement>) => void;
+    cancelLasso: () => boolean;
     handleDoubleClick: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleKeyDown: (e: KeyboardEvent<HTMLCanvasElement>) => void;
     handleContextMenu: (e: MouseEvent<HTMLCanvasElement>) => void;
@@ -321,12 +326,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         notePreviewEnabled,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
     } = args;
 
     const dragRef = useRef<DragState>({ ...INITIAL_DRAG_STATE });
     const paintNotesRef = useRef<Set<string>>(new Set());
-    const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
     const previousRowHeightRef = useRef(rowHeight);
     useLayoutEffect(() => {
         const ratio = rowHeight / previousRowHeightRef.current;
@@ -335,12 +340,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             return;
         }
         dragRef.current.startY *= ratio;
-        lassoPathRef.current = lassoPathRef.current.map((point) => ({ ...point, y: point.y * ratio }));
+        if (lassoPathRef.current) {
+            lassoPathRef.current = lassoPathRef.current.map((point) => ({ x: point.x, y: point.y * ratio }));
+        }
         const band = rubberBandRef.current;
         if (band) {
             rubberBandRef.current = { ...band, y: band.y * ratio, h: band.h * ratio };
         }
-    }, [rowHeight, rubberBandRef]);
+    }, [rowHeight, rubberBandRef, lassoPathRef]);
     const auditionRef = useRef<(() => void) | null>(null);
     /** R-A13: debounce timer for note-hover audition. */
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -355,13 +362,39 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // convention). A click without drag still stamps a note at the clicked
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
     // can commit a stamp when no meaningful drag occurred.
-    const pendingStampRef = useRef<{ pitch: number; beat: number } | null>(null);
+    const pendingStampRef = useRef<{
+        pitch: number;
+        beat: number;
+        chord?: { type: PianoRollChordType; clipId: string; duration: number };
+    } | null>(null);
     // The cell the current click sequence stamped. A double-click on empty grid
     // lands its second click on that fresh note; the dblclick must not delete
     // it. Matched by cell, not id, because a frozen-take stamp is inserted
     // asynchronously and has no id here. The cell was empty when the sequence
     // began, so no earlier note can share it.
     const stampedByClickRef = useRef<{ pitch: number; beat: number } | null>(null);
+
+    const cancelLasso = (): boolean => {
+        if (dragRef.current.mode !== 'lasso') {
+            return false;
+        }
+        lassoPathRef.current = null;
+        pendingStampRef.current = null;
+        dragRef.current = INITIAL_DRAG_STATE;
+        return true;
+    };
+
+    const cancelLassoOnWindowBlur = useEffectEvent(cancelLasso);
+    useEffect(() => {
+        const onBlur = (): void => {
+            cancelLassoOnWindowBlur();
+        };
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('blur', onBlur);
+            cancelLassoOnWindowBlur();
+        };
+    }, []);
 
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
@@ -619,8 +652,37 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         return null;
     };
 
+    const preparePendingStamp = (pitch: number, beat: number): void => {
+        pendingStampRef.current = { pitch, beat };
+        const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
+        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
+    };
+
+    const commitPendingChord = (pending: NonNullable<typeof pendingStampRef.current>): void => {
+        const chord = pending.chord;
+        if (!chord) {
+            return;
+        }
+        const { pitch, beat } = pending;
+        const created = stampChord(chord.clipId, pitch, beat, chord.duration, getDefaultNoteVelocity(), chord.type);
+        if (created.length === 0) {
+            return;
+        }
+        stampedByClickRef.current = { pitch, beat };
+        const createdIds = created.map((note) => note.id);
+        pushUndoEntry(
+            `Stamp ${chord.type} chord`,
+            () => removeNotesByIds(chord.clipId, createdIds),
+            () => appendNotesToClip(chord.clipId, created)
+        );
+        setSelectedNoteIds(new Set(createdIds));
+    };
+
     // ── Mouse handlers ───────────────────────────────────────────────
     const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
+        if (dragRef.current.mode === 'lasso') {
+            return;
+        }
         // R-A13: cancel hover preview timer on mousedown
         if (hoverTimerRef.current !== null) {
             clearTimeout(hoverTimerRef.current);
@@ -725,7 +787,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 pendingStampRef.current = null;
                 return;
             } else if (lassoMode) {
+                if (event.button !== 0) {
+                    return;
+                }
                 lassoPathRef.current = [{ x, y: noteY }];
+                pendingStampRef.current = null;
                 setSelectedNoteIds(new Set());
                 dragRef.current = {
                     mode: 'lasso',
@@ -758,27 +824,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                         setStepBeat((prev) => prev + gridSnap);
                         setSelectedNoteIds(new Set());
-                    } else if (chordMode) {
-                        const beat = cellStartAtPointer(x / beatWidth);
-                        const created = stampChord(
-                            targetClipId,
-                            pitch,
-                            beat,
-                            gridSnap,
-                            getDefaultNoteVelocity(),
-                            chordType
-                        );
-                        if (created.length > 0) {
-                            stampedByClickRef.current = { pitch, beat };
-                            const createdIds = created.map((node) => node.id);
-                            pushUndoEntry(
-                                `Stamp ${chordType} chord`,
-                                () => removeNotesByIds(targetClipId, createdIds),
-                                () => appendNotesToClip(targetClipId, created)
-                            );
-                            setSelectedNoteIds(new Set(createdIds));
-                        }
-                    } else if (paintMode) {
+                    } else if (paintMode && !chordMode) {
                         const beat = cellStartAtPointer(x / beatWidth);
                         stampedByClickRef.current = { pitch, beat };
                         if (insertFrozen(targetClipId, beat, pitch, gridSnap, getDefaultNoteVelocity())) {
@@ -809,10 +855,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // must sound that clip's track instrument — a focused
                         // clip on another track would otherwise audition
                         // through the primary's instrument.
-                        const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
-                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
                         const beat = cellStartAtPointer(x / beatWidth);
-                        pendingStampRef.current = { pitch, beat };
+                        if (chordMode) {
+                            pendingStampRef.current = {
+                                pitch,
+                                beat,
+                                chord: { type: chordType, clipId: targetClipId, duration: gridSnap },
+                            };
+                        } else {
+                            preparePendingStamp(pitch, beat);
+                        }
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
                         dragRef.current = {
                             mode: 'rubber-band',
@@ -957,30 +1009,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         if (drag.mode === 'lasso') {
-            lassoPathRef.current.push({ x, y: noteY });
-            draw();
-            const canvasEl = canvasRef.current;
-            if (canvasEl) {
-                const ctx = canvasEl.getContext('2d');
-                // The lasso path is stored in content space, and the renderer
-                // leaves the context transformed into content space (scaled by
-                // devicePixelRatio and translated by the scroll offset), so
-                // these points need no further conversion.
-                if (ctx && lassoPathRef.current.length > 1) {
-                    ctx.strokeStyle = 'rgba(128, 104, 152, 0.8)';
-                    ctx.lineWidth = 1.5;
-                    ctx.setLineDash([4, 3]);
-                    ctx.beginPath();
-                    const p0 = lassoPathRef.current[0]!;
-                    ctx.moveTo(p0.x, p0.y + getPianoRollRowTop(0));
-                    for (let index = 1; index < lassoPathRef.current.length; index++) {
-                        const pt = lassoPathRef.current[index]!;
-                        ctx.lineTo(pt.x, pt.y + getPianoRollRowTop(0));
-                    }
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-            }
+            lassoPathRef.current?.push({ x, y: noteY });
             return;
         }
 
@@ -1074,11 +1103,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>): void => {
+        const drag = dragRef.current;
+        if (drag.mode === 'lasso' && event.button !== 0) {
+            return;
+        }
         if (auditionRef.current) {
             auditionRef.current();
             auditionRef.current = null;
         }
-        const drag = dragRef.current;
 
         if (drag.mode === 'rubber-band') {
             const rb = rubberBandRef.current;
@@ -1112,6 +1144,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     }
                 }
                 setSelectedNoteIds(event.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
+            } else if (pendingStamp?.chord) {
+                if (event.type === 'mouseup') {
+                    if (pendingStamp.chord.clipId === targetClipId) {
+                        commitPendingChord(pendingStamp);
+                    }
+                }
             } else if (pendingStamp) {
                 // Click without drag — stamp a note at the click location.
                 if (
@@ -1353,7 +1391,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         dragPreviewRef.current = null;
         drawPreviewRef.current = null;
 
-        if (drag.mode === 'lasso' && lassoPathRef.current.length > 2) {
+        const path = lassoPathRef.current;
+        if (cancelLasso()) {
+            if (!path || path.length < 3) {
+                return;
+            }
             // Lasso hit test against the note's bounding box (not just its
             // center — long notes with their center outside a tight lasso but
             // edges enclosed would otherwise be missed):
@@ -1365,7 +1407,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             // A full edge-intersection test is not needed for lasso UX and is
             // expensive for long polygons.
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-            const path = lassoPathRef.current;
 
             let pathMinX = Infinity;
             let pathMinY = Infinity;
@@ -1447,7 +1488,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 }
             }
             setSelectedNoteIds(enclosed);
-            lassoPathRef.current = [];
+            return;
         }
 
         if (drag.mode === 'paint') {
@@ -1474,6 +1515,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         dragRef.current = { ...INITIAL_DRAG_STATE };
+    };
+
+    const handleMouseLeave = (event: MouseEvent<HTMLCanvasElement>): void => {
+        if (!cancelLasso()) {
+            handleMouseUp(event);
+        }
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>): void => {
@@ -1507,6 +1554,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+        if (event.key === 'Escape' && cancelLasso()) {
+            event.preventDefault();
+            return;
+        }
         // The focused piano roll owns Delete / Backspace even with nothing
         // selected: claiming the key (preventDefault) keeps the global layer
         // from deleting arrangement clips behind the editor. Every key this
@@ -2000,6 +2051,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
         event.preventDefault();
+        cancelLasso();
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -2014,6 +2066,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
+        cancelLasso,
         handleDoubleClick,
         handleKeyDown,
         handleContextMenu,

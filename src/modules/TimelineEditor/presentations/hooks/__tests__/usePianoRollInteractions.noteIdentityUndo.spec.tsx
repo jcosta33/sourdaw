@@ -209,6 +209,7 @@ const renderRoll = (overrides: Partial<HarnessArgs> = {}): { canvas: HTMLElement
         notePreviewEnabled: false,
         drawPreviewRef: { current: null },
         rubberBandRef: { current: null },
+        lassoPathRef: { current: null },
         dragPreviewRef: { current: null },
         ...overrides,
     };

@@ -189,8 +189,12 @@ function assertAppTaskShare(vendor: NativePhase, callbackMs = 0): void {
         throw new Error(`Missing enclosing renderer task for ${vendor.name}`);
     }
     const sdkMs = vendor.duration - callbackMs;
-    const appMs = vendor.enclosingTask.durationMs - sdkMs;
-    expect(appMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
+    const { durationMs, threadDurationMs } = vendor.enclosingTask;
+    const appWallMs = durationMs - sdkMs;
+    // Scheduling gaps can inflate the wall residual. Total renderer CPU also bounds application CPU.
+    const appUpperBoundMs =
+        isFiniteNumber(threadDurationMs) && threadDurationMs >= 0 ? Math.min(appWallMs, threadDurationMs) : appWallMs;
+    expect(appUpperBoundMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
 }
 
 function assertSequenceTasks(

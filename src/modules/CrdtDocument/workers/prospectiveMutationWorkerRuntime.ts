@@ -3,11 +3,12 @@ import { change, free, getChangesSince, getHeads, getMissingDeps, load, type Doc
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
 import {
-    parseProspectiveMutationWorkerRequest,
+    BOUNDED_NATIVE_SEQUENCE_POLICY,
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
 
 import { encodeBoundedMutationSequence } from './encodeBoundedMutationSequence';
+import { parseProspectiveMutationWorkerRequest } from './parseProspectiveMutationWorkerRequest';
 
 export function materializeProspectiveMutation(request: unknown): ProspectiveMutationWorkerResult {
     const input = parseProspectiveMutationWorkerRequest(request);
@@ -28,7 +29,7 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
         if (getMissingDeps(document, []).length > 0) {
             throw new Error('Prospective mutation candidate has missing dependencies');
         }
-        if (input.preparationPolicy === 'bounded-native-sequence-v1') {
+        if (input.preparationPolicy === BOUNDED_NATIVE_SEQUENCE_POLICY) {
             return encodeBoundedMutationSequence(document, input.heads);
         }
         return {

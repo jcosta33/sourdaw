@@ -1,7 +1,12 @@
-import { getAutomationSubLaneTop, getVariationLaneCount } from '../models/TimelineTrackExtent';
+import {
+    getAutomationSubLaneTop,
+    getTimelineTrackHeight,
+    getVariationLaneCount,
+    type TimelineTrackHeightPreview,
+} from '../models/TimelineTrackExtent';
 import { type Track } from '../models/Track';
 
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from './getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from './getVisibleTimelineTracks';
 
 /**
  * Total height of the rows the timeline canvas lays out: visible tracks only,
@@ -11,13 +16,15 @@ import { getTimelineTrackHeight, getVisibleTimelineTracks } from './getVisibleTi
  */
 export function getTimelineContentHeight(
     tracks: readonly Track[],
-    automationRows?: ReadonlyMap<string, readonly unknown[]>
+    automationRows?: ReadonlyMap<string, readonly unknown[]>,
+    trackHeightScale = 1,
+    trackHeightPreview?: TimelineTrackHeightPreview | null
 ): number {
     return getVisibleTimelineTracks(tracks).reduce(
         (sum, track) =>
             sum +
             getAutomationSubLaneTop(
-                getTimelineTrackHeight(track),
+                getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview),
                 getVariationLaneCount(track),
                 automationRows?.get(track.id)?.length
             ),

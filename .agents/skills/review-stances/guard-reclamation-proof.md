@@ -161,6 +161,15 @@ evidence out of the child output unless it explains retention`, where startup, s
     malformed text without sending any signals. Removing the parser's positive filter must fail
     `pnpm guard --profile focused --show-output -- pnpm cargo:test --package sourdaw-native pid_files_admit_only_positive_process_ids`.
 
+    The killed-supervisor fixture from #5274 treats marker existence as readiness. Partial descendant JSON can
+    throw on parse, as seen in #7013, and a truncated decimal PID can parse as a different valid PID. #7022
+    publishes each marker only after its full payload is written. Restore a direct write to the final path in
+    `publishDescendantReady` and `publishRootPid` independently. Each must fail its matching JSON or PID row of
+    “keeps the guard readiness marker $markerName absent during a partial write” in
+    `scripts/__tests__/resourceGuardStorage.spec.ts`. Split the write at the filesystem boundary and require the
+    final path absent during the write and the full payload after publication. Keep the lifecycle case's real
+    supervisor kill, tracked descendant and storage retention while it lives, and reclaim on a later guard start.
+
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c
 [posix-pid-reuse]: https://www.govinfo.gov/content/pkg/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64/pdf/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64.pdf
