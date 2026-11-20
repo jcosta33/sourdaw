@@ -147,13 +147,15 @@ function resolveHoldObject(
     return resolveConstraintObject(object, context);
 }
 
-function pushMeasuredHolds(
-    reading: PerceptualConstraintReading,
-    clause: string,
-    hold: HoldPart,
-    masked: string,
-    context: ProjectContext
-) {
+/** What every reader of one request shares: its masked and own text, the project, and the reading it fills. */
+type RequestReader = {
+    masked: string;
+    prompt: string;
+    context: ProjectContext;
+    reading: PerceptualConstraintReading;
+};
+
+function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: string, hold: HoldPart) {
     const { object, constraintIds } = hold;
     const qualities = Array.from(new Set(constraintIds.map((id) => QUALITY_OF[id]))).join(' and ');
     if (hold.unreadable !== null) {
@@ -332,19 +334,20 @@ function readQualityParts(
     return { parts, end };
 }
 
+/** One kept term of a quality clause, with the clause it is quoted by and the part holding its object. */
+type KeptTerm = { term: string; clause: string; part: QualityPart };
+
 function pushQualityTerm(
-    term: string,
-    clause: string,
-    part: QualityPart,
-    descriptorOf: QualityPattern['descriptorOf'],
-    surroundings: { masked: string; context: ProjectContext; reading: PerceptualConstraintReading }
+    reader: RequestReader,
+    { term, clause, part }: KeptTerm,
+    descriptorOf: QualityPattern['descriptorOf']
 ) {
-    const { masked, context, reading } = surroundings;
+    const { context, reading } = reader;
     const descriptor = descriptorOf(term);
     const hold = descriptor === undefined ? undefined : DESCRIPTOR_HOLDS.get(descriptor);
     if (hold !== undefined) {
         const holdPart = { start: part.start, object: part.object, constraintIds: [hold], unreadable: null };
-        pushMeasuredHolds(reading, clause, holdPart, masked, context);
+        pushMeasuredHolds(reader, clause, holdPart);
         return;
     }
     if (descriptor === 'intimate') {
@@ -360,13 +363,8 @@ function pushQualityTerm(
  * `unread` is the masked text with the hold clauses blanked, so no quality is read twice; a pronoun's
  * scope is still judged against the whole masked request. Returns the spans it read.
  */
-function readQualityConstraints(
-    unread: string,
-    masked: string,
-    prompt: string,
-    context: ProjectContext,
-    reading: PerceptualConstraintReading
-): ConsumedSpan[] {
+function readQualityConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
+    const { prompt } = reader;
     const { pattern, continuation, termPattern, descriptorOf } = readQualityPattern();
     const spans: ConsumedSpan[] = [];
     for (const match of unread.matchAll(pattern)) {
@@ -376,7 +374,7 @@ function readQualityConstraints(
         // "keep the lo-fi vibe" states a quality with no object to hold it on.
         for (const part of parts.filter((entry) => normalizeObjectText(entry.object).length > 0)) {
             for (const term of part.terms) {
-                pushQualityTerm(term, clause, part, descriptorOf, { masked, context, reading });
+                pushQualityTerm(reader, { term, clause, part }, descriptorOf);
             }
         }
     }
@@ -399,15 +397,16 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = maskTrackReferences(prompt, context, '□');
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
+    const reader: RequestReader = { masked, prompt, context, reading };
     const lowEnd = readLowEndConstraints(masked, prompt, context, reading);
     const holds = readHoldClauses(masked, prompt);
     for (const hold of holds) {
         for (const part of hold.parts) {
-            pushMeasuredHolds(reading, hold.clause, part, masked, context);
+            pushMeasuredHolds(reader, hold.clause, part);
         }
     }
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    const qualities = readQualityConstraints(maskClauses(masked, holds), masked, prompt, context, reading);
+    const qualities = readQualityConstraints(maskClauses(masked, holds), reader);
     reading.unsupported.push(...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...qualities]));
     return unionPerceptualConstraintReadings(reading);
 }

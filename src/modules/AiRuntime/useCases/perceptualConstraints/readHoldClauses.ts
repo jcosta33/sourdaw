@@ -134,35 +134,56 @@ function verbOf(match: RegExpExecArray): string | undefined {
     return `${verb} ${particle}`;
 }
 
-/**
- * Each noun's family, and the part's one object: the "of" tail or an object standing before a noun.
- * Two different objects in one part hold no single scope, so the part is unreadable.
- */
-function readNounPart(match: RegExpExecArray, prompt: string, clause: () => string): HoldPart {
-    const nounsSpan = match.indices?.groups?.nouns;
-    const nouns = match.groups?.nouns ?? '';
-    const verb = verbOf(match);
-    const constraintIds: MeasuredConstraintId[] = [];
+/** Each held noun the clause's noun list names, with the object word standing before it. */
+function nounsOf(match: RegExpExecArray): RegExpExecArray[] {
+    return Array.from((match.groups?.nouns ?? '').matchAll(NOUN_IN_LIST));
+}
+
+/** Each noun's family under the clause's verb, once each, in the order the nouns name them. */
+function nounConstraintIds(nouns: readonly RegExpExecArray[], verb: string | undefined): MeasuredConstraintId[] {
+    const ids = nouns.map((noun) => nounConstraintId(noun.groups?.noun ?? '', verb));
+    return ids.filter((id, index) => ids.indexOf(id) === index);
+}
+
+/** An object word standing before one noun of the list, read from the prompt by the list's offsets. */
+function preObjectOf(noun: RegExpExecArray, nounsStart: number, prompt: string): string | null {
+    const preSpan = noun.indices?.groups?.pre;
+    if (preSpan === undefined) {
+        return null;
+    }
+    return prompt.slice(nounsStart + preSpan[0], nounsStart + preSpan[1]);
+}
+
+/** Every distinct object the clause names: the "of" tail first, then each object before a noun. */
+function nounObjects(match: RegExpExecArray, nouns: readonly RegExpExecArray[], prompt: string): string[] {
     const objects = new Map<string, string>();
     const tail = spanText(prompt, match.indices?.groups?.object);
     if (tail !== null) {
         objects.set(normalizeObjectText(tail), tail);
     }
-    for (const noun of nouns.matchAll(NOUN_IN_LIST)) {
-        const id = nounConstraintId(noun.groups?.noun ?? '', verb);
-        if (!constraintIds.includes(id)) {
-            constraintIds.push(id);
-        }
-        const preSpan = noun.indices?.groups?.pre;
-        if (preSpan !== undefined && nounsSpan !== undefined) {
-            const pre = prompt.slice(nounsSpan[0] + preSpan[0], nounsSpan[0] + preSpan[1]);
+    const nounsStart = match.indices?.groups?.nouns?.[0];
+    if (nounsStart === undefined) {
+        return Array.from(objects.values());
+    }
+    for (const noun of nouns) {
+        const pre = preObjectOf(noun, nounsStart, prompt);
+        if (pre !== null) {
             objects.set(normalizeObjectText(pre), pre);
         }
     }
-    const [object = null, ...others] = objects.values();
+    return Array.from(objects.values());
+}
+
+/**
+ * Each noun's family, and the part's one object: the "of" tail or an object standing before a noun.
+ * Two different objects in one part hold no single scope, so the part is unreadable.
+ */
+function readNounPart(match: RegExpExecArray, prompt: string, clause: () => string): HoldPart {
+    const nouns = nounsOf(match);
+    const [object = null, ...others] = nounObjects(match, nouns, prompt);
     return {
         start: match.index,
-        constraintIds,
+        constraintIds: nounConstraintIds(nouns, verbOf(match)),
         object,
         unreadable: others.length > 0 ? `“${clause()}” names more than one scope for one hold.` : null,
     };
