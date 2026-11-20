@@ -541,11 +541,29 @@ describe('WebLLM engineLifecycle injectables', () => {
             return held;
         }
 
-        it('joins the load of another model in flight when no model is named', async () => {
+        it('answers an unnamed request with the loaded model while another model loads', async () => {
             Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
-            await loadModelX();
+            const loaded = await loadModelX();
             const held = holdAdmission();
             const switching = initWebLlmEngine('model-y');
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+            const switchSignal = engineState.initSignal;
+
+            await expect(initWebLlmEngine(undefined)).resolves.toBe(loaded);
+
+            expect(switchSignal?.aborted).toBe(false);
+            expect(engineState.activeModelId).toBe(LOADED_MODEL);
+            expect(llmStatusStore.value?.state).toBe('loading');
+            held.release();
+            const switched = await switching;
+            expect(engineState.engine).toBe(switched);
+            expect(engineState.activeModelId).toBe('model-y');
+        });
+
+        it('joins the load in flight when an unnamed request finds nothing installed', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const held = holdAdmission();
+            const first = initWebLlmEngine('model-y');
             await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
             const switchSignal = engineState.initSignal;
 
@@ -553,9 +571,9 @@ describe('WebLLM engineLifecycle injectables', () => {
 
             expect(switchSignal?.aborted).toBe(false);
             held.release();
-            const [switched, joinedEngine] = await Promise.all([switching, joined]);
-            expect(joinedEngine).toBe(switched);
-            expect(engineState.engine).toBe(switched);
+            const [firstEngine, joinedEngine] = await Promise.all([first, joined]);
+            expect(joinedEngine).toBe(firstEngine);
+            expect(createWebWorkerEngineMock).toHaveBeenCalledTimes(1);
             expect(engineState.activeModelId).toBe('model-y');
         });
 

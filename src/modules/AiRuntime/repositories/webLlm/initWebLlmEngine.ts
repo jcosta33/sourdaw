@@ -24,10 +24,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             if (!MODEL_RELEASE_ADMISSION.webLlm) {
                 return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
             }
-            // A request that names no model asks for whatever is loading or loaded, so it joins a
-            // switch in flight rather than cancelling it by naming the model being replaced.
+            // A request that names no model is answered by the loaded engine and leaves a switch
+            // in flight alone. With nothing installed it joins the attempt loading.
             const inFlightModel = engineState.initSignal?.aborted ? null : engineState.initModelId;
-            const targetModel = modelId ?? inFlightModel ?? engineState.activeModelId;
+            const unnamedTarget = engineState.engine ? null : inFlightModel;
+            const targetModel = modelId ?? unnamedTarget ?? engineState.activeModelId;
             let targetArtifactSetDigest: string;
             try {
                 targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
@@ -47,15 +48,17 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 targetModel === engineState.activeModelId &&
                 targetArtifactSetDigest === engineState.activeArtifactSetDigest
             ) {
-                // A switch still in flight for another model is no longer wanted.
-                if (engineState.initPromise) {
+                // Naming the loaded model withdraws a switch still in flight for another one.
+                if (modelId !== undefined && engineState.initPromise) {
                     engineState.initController?.abort(
                         new DOMException('WebLLM initialization superseded', 'AbortError')
                     );
                 }
-                // A refused load leaves its error showing, and an aborted one its loading text, while this one answers.
+                // A refused load leaves its error showing, and an aborted one its loading text, while this one
+                // answers; a switch still loading owns the status.
                 const shown = llmStatusStore.value?.state;
-                if (shown === 'error' || shown === 'loading') {
+                const switchLoading = engineState.initPromise !== null && !engineState.initSignal?.aborted;
+                if (shown === 'error' || (shown === 'loading' && !switchLoading)) {
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
                 return Promise.resolve(engineState.engine);
