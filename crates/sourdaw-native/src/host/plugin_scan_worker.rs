@@ -503,23 +503,31 @@ fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
             descriptor: |path| {
                 // One CLAP bundle may declare many plugins; each row keeps the
                 // descriptor id the instance pass will be asked to instantiate.
-                extract_clap_metadata(path).map(|bundle| {
-                    bundle
-                        .into_iter()
-                        .map(ClapDescriptorMetadata::into_scanned_descriptor)
-                        .collect()
-                })
+                extract_clap_metadata(path)
+                    .map(|bundle| {
+                        bundle
+                            .into_iter()
+                            .map(ClapDescriptorMetadata::into_scanned_descriptor)
+                            .collect()
+                    })
+                    .map_err(|error| error.to_string())
             },
-            instance: extract_clap_instance_metadata,
+            instance: |path, plugin_id| {
+                extract_clap_instance_metadata(path, plugin_id).map_err(|error| error.to_string())
+            },
         }),
         PluginFormat::Vst3 => Some(FormatScanBackend {
             descriptor: |path| {
-                extract_vst3_metadata(path).map(|metadata| vec![metadata.into_scanned_descriptor()])
+                extract_vst3_metadata(path)
+                    .map(|metadata| vec![metadata.into_scanned_descriptor()])
+                    .map_err(|error| error.to_string())
             },
             // VST3's extractor resolves its own class from the bundle, so the
             // selector adds nothing there — and its descriptor pass declares
             // exactly one row, so only one instance is ever asked for.
-            instance: |path, _plugin_id| extract_vst3_instance_metadata(path),
+            instance: |path, _plugin_id| {
+                extract_vst3_instance_metadata(path).map_err(|error| error.to_string())
+            },
         }),
         PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }

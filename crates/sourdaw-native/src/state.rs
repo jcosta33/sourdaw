@@ -999,6 +999,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::host::plugin_window::NoWindowHost;
+    use daw_plugin_host::PluginError;
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
@@ -1020,11 +1021,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1036,7 +1037,7 @@ mod tests {
             true
         }
 
-        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), PluginError> {
             self.editor_open
                 .store(true, std::sync::atomic::Ordering::SeqCst);
             Ok((640, 480))
@@ -1066,11 +1067,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1083,13 +1084,14 @@ mod tests {
             self.resize = Some(resize);
         }
 
-        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), PluginError> {
             self.calls.lock().expect("call log").push("open");
             // What a view does while it lays itself out against its new parent.
             let resize = self
                 .resize
                 .as_ref()
-                .ok_or_else(|| "the host installed no resizer before the open".to_string())?;
+                // No resizer means the host opened against no window at all.
+                .ok_or(PluginError::GuiUnsupported)?;
             resize(1024, 768);
             Ok((1024, 768))
         }
@@ -1150,11 +1152,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
     }
@@ -1172,8 +1174,10 @@ mod tests {
             "a backend that reports an editor must be believed"
         );
         assert_eq!(
-            plugin.open_gui(std::ptr::null_mut()),
-            Ok((640, 480)),
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .expect("the backend's editor opens"),
+            (640, 480),
             "the editor size must come from the plugin, not from a downcast that missed"
         );
         assert!(
@@ -1201,6 +1205,8 @@ mod tests {
         let refusal = plugin
             .open_gui(std::ptr::null_mut())
             .expect_err("a plugin with no editor cannot open one");
+        assert!(matches!(refusal, PluginError::GuiUnsupported), "{refusal}");
+        let refusal = refusal.to_string();
         assert_eq!(refusal, "Plugin does not support GUI");
         assert!(
             !refusal.contains("CLAP"),
