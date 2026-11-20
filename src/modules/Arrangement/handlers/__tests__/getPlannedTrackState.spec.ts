@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../models/Track';
 import { defaultTrackState, trackStore } from '../../stores/trackStore';
+import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getPlannedTrackState, plannedTrackByActionType } from '../getPlannedTrackState';
 
 function plan(prior: readonly AppAction[], trackId: string) {
@@ -22,7 +23,43 @@ describe('getPlannedTrackState', () => {
         const none = plannedTrackByActionType.selectTrack;
         const creatingEntries = Object.entries(plannedTrackByActionType).filter(([, entry]) => entry !== none);
         const creating = creatingEntries.map(([type]) => type).sort();
-        expect(creating).toEqual(['addTrack', 'createBus']);
+        expect(creating).toEqual(['addTrack', 'createBus', 'restoreTrack']);
+    });
+
+    it('plans a track an earlier restoreTrack restores from its snapshot, through the actions after it', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 'gone', name: 'Gone', kind: 'audio', gain: 0.5 }), height: 120 }],
+        });
+        const snapshot = captureTrackRemovalSnapshot('gone');
+        trackStore.set(defaultTrackState);
+        if (!snapshot) {
+            throw new Error('Expected a removal snapshot');
+        }
+
+        const planned = plan(
+            [
+                { type: 'restoreTrack', payload: snapshot },
+                { type: 'setTrackHeight', payload: { trackId: 'gone', height: 200 } },
+            ],
+            'gone'
+        );
+
+        expect(planned).toMatchObject({ id: 'gone', name: 'Gone', gain: 0.5, height: 200 });
+    });
+
+    it('does not plan a restore for another track', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: 'gone', name: 'Gone', kind: 'audio', gain: 0.5 })],
+        });
+        const snapshot = captureTrackRemovalSnapshot('gone');
+        trackStore.set(defaultTrackState);
+        if (!snapshot) {
+            throw new Error('Expected a removal snapshot');
+        }
+
+        expect(plan([{ type: 'restoreTrack', payload: snapshot }], 'other')).toBeNull();
     });
 
     it('plans a track an earlier addTrack creates, under its name and gain', () => {

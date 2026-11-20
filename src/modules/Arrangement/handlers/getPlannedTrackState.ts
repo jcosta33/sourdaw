@@ -1,6 +1,7 @@
 import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { createTrack, type Track } from '../models/Track';
+import { decodeTrackSnapshot } from '../stores/trackStore';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 import { planDefaultTrackName } from './planDefaultTrackName';
@@ -83,6 +84,19 @@ function planCreatedBus(
     );
 }
 
+function planRestoredTrack(
+    action: ActionOf<'restoreTrack'>,
+    context: HandlerValidationContext,
+    _actionIndex: number,
+    trackId: string
+): Track | null {
+    if (action.payload.trackId !== trackId) {
+        return null;
+    }
+    const restored = decodeTrackSnapshot(action.payload.trackSnapshot);
+    return restored === null ? null : projectTrackThroughPriorBatchActions(restored, context);
+}
+
 // Every action type states whether it creates the planned track: a new action does not compile until it does.
 export const plannedTrackByActionType: {
     readonly [Type in AppActionType]: (
@@ -97,7 +111,7 @@ export const plannedTrackByActionType: {
     addTrack: planAddedTrack,
     removeTrack: noPlannedTrack,
     discardCreatedTrack: noPlannedTrack,
-    restoreTrack: noPlannedTrack,
+    restoreTrack: planRestoredTrack,
     restoreClip: noPlannedTrack,
     discardDuplicatedClip: noPlannedTrack,
     removeAllTracks: noPlannedTrack,

@@ -4,7 +4,8 @@ import { handleFoldTrack } from '../foldTrack';
 
 const mocks = vi.hoisted(() => ({
     foldTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; kind?: string; collapsed: boolean }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<() => { tracks: { id: string; kind?: string; collapsed: boolean; devices?: never[] }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/foldTrack', () => ({
@@ -140,6 +141,25 @@ describe('handleFoldTrack', () => {
             expect(handleFoldTrack.isNoop?.(forward())).toBe(true);
             expect(handleFoldTrack.isNoop?.(forward(true))).toBe(true);
             expect(handleFoldTrack.isNoop?.(forward(false))).toBe(false);
+        });
+    });
+
+    it('describes against the state an earlier action of its batch left', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'folder', collapsed: false, devices: [] }],
+        });
+        const first = { type: 'foldTrack', payload: { trackId: 't1', folded: true } } as const;
+        const second = { type: 'foldTrack', payload: { trackId: 't1', folded: false } } as const;
+
+        const description = handleFoldTrack.describe(second, { actions: [first, second], actionIndex: 1 });
+
+        expect(description.inverseAction).toEqual({
+            type: 'foldTrack',
+            payload: { trackId: 't1', folded: true, expectedFolded: false },
+        });
+        expect(description.redoAction).toEqual({
+            type: 'foldTrack',
+            payload: { trackId: 't1', folded: false, expectedFolded: true },
         });
     });
 });

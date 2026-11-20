@@ -2269,7 +2269,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             return executeAppActionBatch(actions, { groupId: 'agent-display', requireCompensation: true });
         }
 
-        beforeEach(seedDisplayTracks);
+        beforeEach(() => {
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            seedDisplayTracks();
+        });
 
         it.each([
             [
@@ -2481,6 +2484,74 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
             expect(result).toMatchObject({ status: 'committed' });
             expect(trackNamed(SHORT_ID)).toMatchObject({ hidden: true, height: 100, frozen: true });
+        });
+
+        it('undoes a zoom and the removal of a zoomed track as one group, restoring the track and every height', async () => {
+            const result = await runAsAgent([
+                { type: 'zoomTracksVertical', payload: { delta: 40 } },
+                { type: 'removeTrack', payload: { trackId: SHORT_ID } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(heights()).toEqual({ [TRACK_ID]: 120, [FOLDER_ID]: 300 });
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(heights()).toEqual({ [TRACK_ID]: 80, [FOLDER_ID]: 290, [SHORT_ID]: 31 });
+
+            await redo();
+            expect(heights()).toEqual({ [TRACK_ID]: 120, [FOLDER_ID]: 300 });
+        });
+
+        it.each([
+            [
+                'hideTrack',
+                FOLDER_ID,
+                { type: 'hideTrack', payload: { trackId: FOLDER_ID, hidden: true } },
+                () => trackNamed(FOLDER_ID).hidden,
+                false,
+            ],
+            [
+                'foldTrack',
+                FOLDER_ID,
+                { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
+                () => trackNamed(FOLDER_ID).collapsed,
+                false,
+            ],
+            [
+                'setTrackHeight',
+                FOLDER_ID,
+                { type: 'setTrackHeight', payload: { trackId: FOLDER_ID, height: 120 } },
+                () => trackNamed(FOLDER_ID).height,
+                290,
+            ],
+        ] as const)(
+            'undoes %s and the removal of the same track as one group',
+            async (_name, trackId, edit, read, original) => {
+                const result = await runAsAgent([structuredClone(edit), { type: 'removeTrack', payload: { trackId } }]);
+
+                expect(result).toMatchObject({ status: 'committed' });
+                expect(trackStore.value?.tracks.some((track) => track.id === trackId)).toBe(false);
+
+                expect((await undo()).headConsumed).toBe(true);
+                expect(read()).toBe(original);
+            }
+        );
+
+        it('redoes a batch that creates a track and zooms it, leaving the track at the forward height', async () => {
+            const result = await runAsAgent([
+                { type: 'addTrack', payload: { id: 'track-created', kind: 'audio', name: 'Created' } },
+                { type: 'zoomTracksVertical', payload: { delta: 40 } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            const forward = heights();
+            expect(forward['track-created']).toBeGreaterThan(80);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(heights()['track-created']).toBeUndefined();
+
+            await redo();
+            expect(heights()).toEqual(forward);
         });
     });
 

@@ -1,4 +1,4 @@
-import { type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Track } from '../../stores/trackStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -16,13 +16,38 @@ export function readPlannedDisplayTrack(trackId: string, context?: HandlerValida
     return getTrackStoreState()?.tracks.find((track) => track.id === trackId) ?? null;
 }
 
-/** Every live track as the earlier actions of its batch leave it, in store order. */
+function readTrackIdAfter(trackIds: readonly string[], action: AppAction): readonly string[] {
+    if (action.type === 'removeTrack') {
+        return trackIds.filter((id) => id !== action.payload.trackId);
+    }
+    const createdId = readCreatedTrackId(action);
+    return createdId === null || trackIds.includes(createdId) ? trackIds : [...trackIds, createdId];
+}
+
+function readCreatedTrackId(action: AppAction): string | null {
+    if (action.type === 'addTrack') {
+        return action.payload.id ?? null;
+    }
+    if (action.type === 'createBus') {
+        return action.payload.busId ?? null;
+    }
+    return action.type === 'restoreTrack' ? action.payload.trackId : null;
+}
+
+/**
+ * Every track as the earlier actions of the batch leave it: the live tracks, those an earlier action
+ * creates or restores after them, and none an earlier action removes.
+ */
 export function readPlannedDisplayTracks(context?: HandlerValidationContext): Track[] {
     const live = getTrackStoreState()?.tracks ?? [];
     if (!context) {
         return live;
     }
-    return live.flatMap((track) => getPlannedTrackState(context, track.id) ?? []);
+    const trackIds = context.actions.slice(0, context.actionIndex).reduce(
+        readTrackIdAfter,
+        live.map((track) => track.id)
+    );
+    return trackIds.flatMap((id) => getPlannedTrackState(context, id) ?? []);
 }
 
 export function describeMissingTrack(trackId: string): string {

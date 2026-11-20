@@ -4,7 +4,7 @@ import { handleHideTrack } from '../hideTrack';
 
 const mocks = vi.hoisted(() => ({
     hideTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; hidden: boolean }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; hidden: boolean; devices?: never[] }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/hideTrack', () => ({
@@ -130,6 +130,23 @@ describe('handleHideTrack', () => {
             expect(handleHideTrack.isNoop?.(forward())).toBe(true);
             expect(handleHideTrack.isNoop?.(forward(true))).toBe(true);
             expect(handleHideTrack.isNoop?.(forward(false))).toBe(false);
+        });
+    });
+
+    it('describes against the state an earlier action of its batch left', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', hidden: false, devices: [] }] });
+        const first = { type: 'hideTrack', payload: { trackId: 't1', hidden: true } } as const;
+        const second = { type: 'hideTrack', payload: { trackId: 't1', hidden: false } } as const;
+
+        const description = handleHideTrack.describe(second, { actions: [first, second], actionIndex: 1 });
+
+        expect(description.inverseAction).toEqual({
+            type: 'hideTrack',
+            payload: { trackId: 't1', hidden: true, expectedHidden: false },
+        });
+        expect(description.redoAction).toEqual({
+            type: 'hideTrack',
+            payload: { trackId: 't1', hidden: false, expectedHidden: true },
         });
     });
 });

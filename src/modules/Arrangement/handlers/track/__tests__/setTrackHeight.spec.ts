@@ -4,7 +4,7 @@ import { handleSetTrackHeight } from '../setTrackHeight';
 
 const mocks = vi.hoisted(() => ({
     setTrackHeight: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; height: number }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; height: number; devices?: never[] }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight', () => ({
@@ -126,6 +126,23 @@ describe('handleSetTrackHeight', () => {
             expect(handleSetTrackHeight.isNoop?.(forward(120, 120))).toBe(true);
             expect(handleSetTrackHeight.isNoop?.(forward(120, 90))).toBe(false);
             expect(handleSetTrackHeight.isNoop?.(forward(500))).toBe(false);
+        });
+    });
+
+    it('describes against the height an earlier action of its batch left', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 80, devices: [] }] });
+        const first = { type: 'setTrackHeight', payload: { trackId: 't1', height: 120 } } as const;
+        const second = { type: 'setTrackHeight', payload: { trackId: 't1', height: 200 } } as const;
+
+        const description = handleSetTrackHeight.describe(second, { actions: [first, second], actionIndex: 1 });
+
+        expect(description.inverseAction).toEqual({
+            type: 'setTrackHeight',
+            payload: { trackId: 't1', height: 120, expectedHeight: 200 },
+        });
+        expect(description.redoAction).toEqual({
+            type: 'setTrackHeight',
+            payload: { trackId: 't1', height: 200, expectedHeight: 120 },
         });
     });
 });
