@@ -34,7 +34,8 @@
 //! so a worker holding a gate while waiting here is a cycle the ordering rules
 //! alone cannot rule out. An implementation therefore gives up after a
 //! deadline, which releases the claim and lets the UI thread through. The
-//! control gate is an unbounded wait and cannot be the one to yield.
+//! control gate's own deadline is sized for a hung plugin, far beyond the
+//! shell's force-exit deadline, so it cannot be the one to yield.
 
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard};

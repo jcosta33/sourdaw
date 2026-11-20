@@ -916,7 +916,7 @@ fn claim_command_owned_instances<'stores>(
 /// Close one engine-owned editor, without parking the shell's UI thread on the
 /// instance's control gate.
 ///
-/// The gate's wait is unbounded and the editor hop's is not, which is the whole
+/// The gate's wait is far longer than the editor hop's, which is the whole
 /// ordering that keeps a quit survivable: a worker holding this gate may be
 /// waiting for the UI thread, so the UI thread claiming it would close the
 /// cycle. It refuses instead, and the refusal is reported rather than swallowed
@@ -2487,9 +2487,10 @@ mod tests {
 
     /// The quit freeze. `shutdown` runs this pass on the shell's main thread,
     /// and a worker holding an instance's control gate may be waiting for that
-    /// same thread to run an editor call. The gate's wait is unbounded, so a
-    /// pass that took it would close the cycle and burn the shell's whole
-    /// force-exit budget with every plugin still alive at the end of it.
+    /// same thread to run an editor call. The gate's wait outlasts the shell's
+    /// force-exit deadline, so a pass that took it would close the cycle and
+    /// burn the shell's whole force-exit budget with every plugin still alive
+    /// at the end of it.
     #[test]
     fn the_exit_pass_refuses_an_instance_whose_control_gate_is_held() {
         let state = Arc::new(AppState::default());

@@ -270,6 +270,22 @@ describe('activateExternalPlugin', () => {
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(2);
     });
 
+    it('shows the unresponsive message when the host refuses a restore because the plugin stopped responding', async () => {
+        // The shape the desktop bridge rejects with: its own prefix, then the native message.
+        mocks.setPluginStateRepo.mockRejectedValueOnce(
+            new Error(
+                "Error invoking remote method 'set_plugin_state': Error: plugin-unresponsive: Plugin 'Comp' stopped responding inside a call and is no longer processed or controlled"
+            )
+        );
+
+        await activateExternalPlugin({ pluginId: 'compressor', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
+            status: 'error',
+            message: 'compressor stopped responding and no longer processes audio.',
+        });
+    });
+
     // Issue 3693: a plugin that rejects its saved chunk holds its own defaults,
     // so its runtime state must not reach a save. The marker records exactly
     // that, resolves on the first successful restore, and never resolves on a

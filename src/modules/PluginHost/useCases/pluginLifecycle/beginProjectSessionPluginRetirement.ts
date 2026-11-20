@@ -2,6 +2,7 @@ import { carriedExternalPluginStateFence } from './carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
+import { failUnresponsiveExternalPlugins } from './failUnresponsiveExternalPlugins';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadEveryPluginCarryingLiveState } from './unloadEveryPluginCarryingLiveState';
 import { warnLiveStatesLost } from './warnLiveStatesLost';
@@ -24,7 +25,7 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     const rebuild = await pluginLifecycleScheduler.beginRebuildAfterCurrent();
     externalPluginStateCaptureAuthority.invalidateAll();
     externalPluginActivationEpoch.current += 1;
-    const admittedActivations = [...externalPluginActivationTasks.values()];
+    const admittedActivations = new Map(externalPluginActivationTasks);
     const lostPlugins = new Set<string>();
     let reopened = false;
     function endFence(): void {
@@ -36,8 +37,7 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     }
     return {
         retire: async (): Promise<void> => {
-            await Promise.allSettled(admittedActivations);
-            await rebuild.waitForExistingOperations();
+            failUnresponsiveExternalPlugins(await rebuild.waitForExistingOperations(admittedActivations));
             // The fence holds every lifecycle turn, so the reads run directly.
             await unloadEveryPluginCarryingLiveState('inside-lifecycle', lostPlugins);
             clearLoadedExternalPlugins();

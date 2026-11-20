@@ -892,8 +892,9 @@ impl AppState {
     /// The same operation, but refusing an instance whose control gate is busy
     /// rather than waiting for it.
     ///
-    /// For callers that must not park: the gate's wait is unbounded, and a
-    /// caller running on the shell's UI thread cannot afford one — the worker
+    /// For callers that must not park: the gate's wait runs to its 10 s
+    /// deadline, and a caller running on the shell's UI thread cannot afford
+    /// one — the worker
     /// holding the gate may itself be waiting for that very thread, and the
     /// refusal is what breaks the cycle. See
     /// [`SharedHostedPlugin::try_with_control`](crate::host::native_bridge::SharedHostedPlugin::try_with_control).

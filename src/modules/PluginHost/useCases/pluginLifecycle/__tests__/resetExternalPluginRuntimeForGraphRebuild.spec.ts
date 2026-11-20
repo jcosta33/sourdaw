@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { type PluginInstance } from '../../../repositories/pluginBridge/types';
 import {
@@ -12,6 +12,7 @@ import { externalLatencyReporters } from '../externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from '../externalPluginActivationTasks';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
+import { LIFECYCLE_SETTLEMENT_DEADLINE_MS } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
@@ -19,6 +20,7 @@ import type { unloadPlugin as unloadPluginRepoSignature } from '../../../reposit
 const mocks = vi.hoisted(() => ({
     loadPlugin: vi.fn(),
     unloadPlugin: vi.fn<typeof unloadPluginRepoSignature>(),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
 }));
 
 /** The repository's own reply shape, for tests settling a deferred unload by hand. */
@@ -30,6 +32,34 @@ vi.mock('../../../repositories/pluginBridge/onPluginLatencyChanged', () => ({
     onPluginLatencyChanged: vi.fn(() => Promise.resolve(() => {})),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: vi.fn() } }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+
+const EMPTY_UNLOAD_REPLY: UnloadReply = { unloadedInstanceIds: [], errors: [], reports: [] };
+
+/**
+ * Leave `instanceId`'s keyed unload pending for the whole case — the IPC of a
+ * plugin hung inside its own native call never answers — and hold the bulk
+ * unload that follows until the case releases it.
+ */
+function hangKeyedUnload(instanceId: string): { releaseBulkUnload: () => void } {
+    const hungUnload = Promise.withResolvers<UnloadReply>();
+    const bulkUnload = Promise.withResolvers<UnloadReply>();
+    // Answer at last once the case is over, so a wedged turn cannot leak into later cases.
+    onTestFinished(() => {
+        hungUnload.resolve({ unloadedInstanceIds: [instanceId], errors: [], reports: [] });
+        bulkUnload.resolve(EMPTY_UNLOAD_REPLY);
+    });
+    mocks.unloadPlugin.mockImplementation((requested?: string) => {
+        if (requested === instanceId) {
+            return hungUnload.promise;
+        }
+        if (requested === undefined) {
+            return bulkUnload.promise;
+        }
+        return Promise.resolve(EMPTY_UNLOAD_REPLY);
+    });
+    return { releaseBulkUnload: () => bulkUnload.resolve(EMPTY_UNLOAD_REPLY) };
+}
 
 describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     beforeEach(() => {
@@ -238,6 +268,92 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         sessionRetirement.reopen();
 
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops waiting on a lifecycle call that never answers, fails that plugin by name, and admits later activations', async () => {
+        await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' });
+        const { releaseBulkUnload } = hangKeyedUnload('plugin-instance-1');
+        void unloadPlugin('plugin-instance-1');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith('plugin-instance-1'));
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const reset = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined));
+        expect(externalPluginActivationStore.value?.byInstanceId['plugin-instance-1']).toEqual({
+            status: 'error',
+            message: expect.stringContaining('hung-compressor'),
+        });
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('hung-compressor'), 'error');
+        releaseBulkUnload();
+        await reset;
+
+        mocks.loadPlugin.mockResolvedValue({
+            instance_id: 'any',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 0,
+            engine_plugin_id: 1003,
+        });
+        await expect(activateExternalPlugin({ pluginId: 'equalizer', instanceId: 'other-instance' })).resolves.toEqual({
+            status: 'active',
+        });
+        // The hung call keeps no lifecycle turn: the instance it hung on comes
+        // back as a fresh load rather than queueing behind a call that cannot answer.
+        await expect(
+            activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' })
+        ).resolves.toEqual({ status: 'active' });
+    });
+
+    it('ends a project-session retirement behind a lifecycle call that never answers', async () => {
+        await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' });
+        const { releaseBulkUnload } = hangKeyedUnload('plugin-instance-1');
+        void unloadPlugin('plugin-instance-1');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith('plugin-instance-1'));
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const retirement = await beginProjectSessionPluginRetirement();
+        const retiring = retirement.retire();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined));
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('hung-compressor'), 'error');
+        releaseBulkUnload();
+        await retiring;
+        retirement.release();
+    });
+
+    it('waits out an operation that settles inside the deadline and fails nothing', async () => {
+        loadedExternalInstances.add('plugin-instance-1');
+        const keyedUnload = Promise.withResolvers<UnloadReply>();
+        mocks.unloadPlugin.mockImplementation((requested?: string) =>
+            requested === undefined ? Promise.resolve(EMPTY_UNLOAD_REPLY) : keyedUnload.promise
+        );
+        void unloadPlugin('plugin-instance-1');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith('plugin-instance-1'));
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const reset = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS - 1);
+        expect(mocks.unloadPlugin).not.toHaveBeenCalledWith(undefined);
+        vi.useRealTimers();
+        keyedUnload.resolve({ unloadedInstanceIds: ['plugin-instance-1'], errors: [], reports: [] });
+        await reset;
+
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined);
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
     });
 
     it('serializes bulk unload after an already admitted keyed lifecycle operation', async () => {

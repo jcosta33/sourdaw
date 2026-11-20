@@ -267,7 +267,8 @@ fn take_engine_owned_plugins(state: &AppState) -> Vec<(String, EnginePluginInsta
 ///
 /// Runs on the records [`drain_the_lost_engine`] already took, with the gate,
 /// the registry and every state lock released, because each call below reaches
-/// third-party code behind a per-instance control wait of unbounded length.
+/// third-party code behind a per-instance control wait that runs to its gate
+/// deadline when a hung call holds the instance.
 ///
 /// The editor close comes first, for the reason `shutdown.rs` states as its
 /// own step ordering: the final drop of a retired runtime runs the format's

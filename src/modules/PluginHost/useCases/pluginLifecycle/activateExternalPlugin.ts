@@ -8,6 +8,7 @@ import {
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
+import { activationFailureMessage } from './activationFailureMessage';
 import {
     carriedExternalPluginStateFence,
     carriedExternalPluginStates,
@@ -185,7 +186,7 @@ export function activateExternalPlugin({
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
                     const reason = String(error);
-                    setActivationStatus(instanceId, 'error', reason);
+                    setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, reason));
                     // The plugin rejected the chunk and holds its defaults; its
                     // runtime state must not reach a save until real state
                     // exists again.
@@ -336,7 +337,7 @@ export function activateExternalPlugin({
         } catch (error) {
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
-            setActivationStatus(instanceId, 'error', String(error));
+            setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, String(error)));
             // The plugin rejected the chunk and holds its defaults; its runtime
             // state must not reach a save until real state exists again.
             markExternalPluginRestoreFailure(instanceId);
