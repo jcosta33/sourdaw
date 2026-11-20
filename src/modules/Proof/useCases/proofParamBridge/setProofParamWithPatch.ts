@@ -15,7 +15,8 @@ import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
 import { syncImager } from './syncImager';
 
-type SetProofParamWithPatchInput = ProofPatchEdit & { deviceId: string };
+type OtherProofPatchEdit = Exclude<ProofPatchEdit, { key: 'limCeiling' }>;
+type SetProofParamWithPatchInput = OtherProofPatchEdit & { deviceId: string };
 
 type GetMappedScalarParamOutput = {
     name: string;
@@ -50,7 +51,7 @@ function mergeChangedBands<Item extends object, Change extends { bandIndex: numb
     return { value, changedParams };
 }
 
-function getPersistedPatchParams(input: ProofPatchEdit): ProofEngineParam[] {
+function getPersistedPatchParams(input: OtherProofPatchEdit): ProofEngineParam[] {
     switch (input.key) {
         case 'eqBands':
             return input.value.flatMap((band, index) => [
@@ -94,7 +95,6 @@ function getPersistedPatchParams(input: ProofPatchEdit): ProofEngineParam[] {
         case 'imgMonoBassFreq':
         case 'excBypassed':
         case 'limBypassed':
-        case 'limCeiling':
         case 'limRelease':
         case 'limLookahead':
         case 'ditherMode':
@@ -192,7 +192,7 @@ type NormalizedChangedAggregateEdit = {
 };
 
 function createNormalizedChangedAggregateEdit(
-    input: ProofPatchEdit,
+    input: OtherProofPatchEdit,
     patch: Partial<ProofPatch>,
     valid = true
 ): NormalizedChangedAggregateEdit {
@@ -274,7 +274,7 @@ function normalizeChangedAggregateEdit(
     return null;
 }
 
-function getMappedScalarParam(input: ProofPatchEdit): GetMappedScalarParamOutput {
+function getMappedScalarParam(input: OtherProofPatchEdit): GetMappedScalarParamOutput {
     switch (input.key) {
         case 'inputGain':
             return { name: 'input_gain', value: input.value };
@@ -290,8 +290,6 @@ function getMappedScalarParam(input: ProofPatchEdit): GetMappedScalarParamOutput
             return { name: 'exc_bypass', value: input.value ? 1 : 0 };
         case 'limBypassed':
             return { name: 'lim_bypass', value: input.value ? 1 : 0 };
-        case 'limCeiling':
-            return { name: 'lim_ceiling', value: input.value };
         case 'limRelease':
             return { name: 'lim_release', value: input.value };
         case 'limLookahead':
@@ -315,10 +313,8 @@ function getMappedScalarParam(input: ProofPatchEdit): GetMappedScalarParamOutput
     return null;
 }
 
-type SetProofParamWithPatchOutput = void;
-
 /** Set a patch parameter and send to audio engine. */
-export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetProofParamWithPatchOutput {
+export function setProofParamWithPatch(input: SetProofParamWithPatchInput): void {
     const { deviceId } = input;
     const target = resolveEligibleDeviceWriteTarget(deviceId);
     if (target.status !== 'eligible') {

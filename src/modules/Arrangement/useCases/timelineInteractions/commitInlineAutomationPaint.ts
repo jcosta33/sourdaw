@@ -2,6 +2,7 @@ import {
     addAutomationLane,
     batchAddAutomationPoints,
     getAutomationLanes,
+    insertAutomationLanePoints,
     removeAutomationLane,
     replaceAutomationLanePoints,
     simplifyGesturePoints,
@@ -10,13 +11,18 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
-type CommitInlineAutomationPaintInput = {
+type AutomationLaneTarget = Parameters<typeof insertAutomationLanePoints>[0];
+
+type LegacyPaint = {
     laneId?: string;
     trackId: string;
     parameterId: string;
     parameterName: string;
     points: AutomationPoint[];
 };
+
+export type CommitInlineAutomationPaintInput =
+    LegacyPaint | { inlineLane: AutomationLaneTarget; points: AutomationPoint[] };
 
 type AutomationLaneForPaint = ReturnType<typeof getAutomationLanes>[number];
 
@@ -42,7 +48,7 @@ function cloneLane(lane: AutomationLaneForPaint): AutomationLaneSnapshot {
     };
 }
 
-function findTargetLane(input: CommitInlineAutomationPaintInput): AutomationLaneForPaint | null {
+function findTargetLane(input: LegacyPaint): AutomationLaneForPaint | null {
     const lanes = getAutomationLanes();
     if (input.laneId) {
         return lanes.find((lane) => lane.id === input.laneId) ?? null;
@@ -51,7 +57,7 @@ function findTargetLane(input: CommitInlineAutomationPaintInput): AutomationLane
     return lanes.find((lane) => lane.trackId === input.trackId && lane.parameterId === input.parameterId) ?? null;
 }
 
-function createTargetLane(input: CommitInlineAutomationPaintInput): AutomationLaneForPaint | null {
+function createTargetLane(input: LegacyPaint): AutomationLaneForPaint | null {
     addAutomationLane(input.trackId, input.parameterId, input.parameterName);
     return findTargetLane(input);
 }
@@ -59,6 +65,12 @@ function createTargetLane(input: CommitInlineAutomationPaintInput): AutomationLa
 export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintInput): boolean {
     if (input.points.length === 0) {
         return false;
+    }
+
+    if ('inlineLane' in input) {
+        const points = simplifyGesturePoints(input.points);
+        void insertAutomationLanePoints(input.inlineLane, { kind: 'stroke', points });
+        return true;
     }
 
     const previousLane = findTargetLane(input);

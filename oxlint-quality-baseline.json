@@ -3269,7 +3269,7 @@
     },
     "src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts": {
@@ -6049,9 +6049,6 @@
     "src/modules/Arrangement/presentations/helpers/timelineTools.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-params": {
-            "count": 1
         }
     },
     "src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx": {
@@ -8051,14 +8048,6 @@
     "src/modules/Arrangement/useCases/timelineInteractions/getTrackAtY.ts": {
         "typescript/no-non-null-assertion": {
             "count": 2
-        }
-    },
-    "src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-depth": {
-            "count": 1
         }
     },
     "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts": {
@@ -13015,7 +13004,7 @@
     },
     "src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
@@ -18776,9 +18765,6 @@
             "count": 1
         },
         "typescript/no-non-null-assertion": {
-            "count": 1
-        },
-        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },
