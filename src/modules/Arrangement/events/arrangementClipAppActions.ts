@@ -1,18 +1,7 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/modules/Knead/events';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { type AudioSourceTile } from '#/utils/audioSourceTime';
-import {
-    type ClipAutomationLaneSnapshot,
-    type ClipSatelliteEntrySnapshot,
-    type ClipSatelliteGainEnvelopeSnapshot,
-    type ClipSplitActionSnapshot,
-    type ClipStateSnapshot,
-    type CommandSourceProof,
-    type CompRegionSnapshot,
-    type CompTakeLaneSnapshot,
-    type MidiClipNoteSnapshot,
-    type RetiredTakeLaneSnapshot,
-    type TakeSnapshot,
-} from '#/utils/handlerContract';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
 import {
@@ -24,6 +13,17 @@ import {
     type TransientQuantizeMoveSnapshot,
     type TransientQuantizeSkipSnapshot,
 } from './arrangementClipSnapshots';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSatelliteEntrySnapshot,
+    type ClipSatelliteGainEnvelopeSnapshot,
+    type ClipSplitActionSnapshot,
+    type ClipStateSnapshot,
+    type CompRegionSnapshot,
+    type CompTakeLaneSnapshot,
+    type RetiredTakeLaneSnapshot,
+    type TakeSnapshot,
+} from './arrangementClipStateSnapshots';
 import { type TrackClipStateSnapshot } from './arrangementTrackSnapshots';
 
 /** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
@@ -399,6 +399,52 @@ export type ArrangementClipAppAction =
           };
       }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
+    | {
+          type: 'relinkClipAudioSources';
+          payload: {
+              targets: Array<{
+                  trackId: string;
+                  trackKind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
+                  activeAlternativeId: string;
+                  alternativeId: string | null;
+                  clipId: string;
+                  before: Pick<
+                      ClipStateSnapshot,
+                      | 'audioBufferId'
+                      | 'fileId'
+                      | 'assetHash'
+                      | 'audioOffsetBeats'
+                      | 'audioOffsetSeconds'
+                      | 'audioUnwrappedOffsetSeconds'
+                      | 'audioLoopStartSeconds'
+                      | 'audioLoopPassEntrySeconds'
+                      | 'audioLoopPassOriginBeat'
+                      | 'stretchMode'
+                      | 'stretchRatio'
+                      | 'loopEnabled'
+                      | 'loopLength'
+                      | 'loopOriginBeat'
+                  >;
+                  after: Pick<
+                      ClipStateSnapshot,
+                      | 'audioBufferId'
+                      | 'fileId'
+                      | 'assetHash'
+                      | 'audioOffsetBeats'
+                      | 'audioOffsetSeconds'
+                      | 'audioUnwrappedOffsetSeconds'
+                      | 'audioLoopStartSeconds'
+                      | 'audioLoopPassEntrySeconds'
+                      | 'audioLoopPassOriginBeat'
+                      | 'stretchMode'
+                      | 'stretchRatio'
+                      | 'loopEnabled'
+                      | 'loopLength'
+                      | 'loopOriginBeat'
+                  >;
+              }>;
+          };
+      }
     | {
           type: 'reverseClip';
           payload: {

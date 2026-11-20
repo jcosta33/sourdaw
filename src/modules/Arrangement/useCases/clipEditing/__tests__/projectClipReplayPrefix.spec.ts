@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSplitActionSnapshot,
+} from '../../../events/arrangementClipStateSnapshots';
 import { projectClipReplayPrefix } from '../projectClipReplayPrefix';
 
 const existingClip = ClipDummy.create({ id: 'existing', trackId: 'track', startBeat: 0, endBeat: 4 });
@@ -43,6 +47,40 @@ const geometryOnlyRestore: AppAction = {
 };
 
 describe('projectClipReplayPrefix source completeness', () => {
+    it('projects a guarded relink through the current action dispatcher without changing source geometry', () => {
+        const source = { ...existingClip, type: 'audio' as const, audioBufferId: 'missing' };
+        const track = TrackDummy.create({ id: 'track', clips: [source] });
+        const relink: AppAction = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: [
+                    {
+                        trackId: track.id,
+                        trackKind: track.kind,
+                        activeAlternativeId: track.activeAlternativeId,
+                        alternativeId: null,
+                        clipId: source.id,
+                        before: { audioBufferId: 'missing' },
+                        after: { audioBufferId: 'replacement' },
+                    },
+                ],
+            },
+        };
+
+        const projected = projectClipReplayPrefix([relink], { ...initial, tracks: [track] });
+
+        expect(projected?.tracks?.[0]?.clips[0]).toEqual({ ...source, audioBufferId: 'replacement' });
+        expect(projected?.clips[0]?.clip).toEqual({ ...source, audioBufferId: 'replacement' });
+        expect(projected?.lanes).toEqual(initial.automationLanes);
+        expect(track.clips[0]).toEqual(source);
+        expect(
+            projectClipReplayPrefix(
+                [{ type: 'trimClipStart', payload: { clipId: source.id, newStartBeat: 1 } }, relink],
+                { ...initial, tracks: [track] }
+            )
+        ).toBeNull();
+    });
+
     it('restores Source owners and rich tracks at the incoming relative-order position after peer prepend', () => {
         const restored = ClipDummy.create({
             id: 'restored',

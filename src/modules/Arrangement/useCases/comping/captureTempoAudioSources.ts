@@ -1,8 +1,8 @@
+import { type TempoAudioSourcePromotionSnapshot } from '#/modules/Transport/events';
+import { getTempoAudioSourceRequirements } from '#/modules/Transport/stores';
 import { captureAudioSourceState } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
-import { getTempoAudioSourceRequirements } from '#/utils/tempoAudioSourceCoverage';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';

@@ -161,6 +161,7 @@ use crate::commands::offline_plugins::{
 };
 use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
+use daw_dsp::grand_boule::parameters::midi_to_key;
 use daw_dsp::grinder::nam::native_admission::{
     next_native_nam_request, NativeGrinderModelRequest, NativeNamLease, NativeNamPlan,
     NativeNamReservation, NativeNamTarget, NativeNamTransaction, NativePreparedNam,
@@ -173,8 +174,9 @@ use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANG
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::{MidiControlEvent, MidiNoteEvent};
 use daw_engine::scheduler::{
-    precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
-    ScoringReading, ScoringTelemetry, TIMELINE_CHAIN_SLOT_BUDGET,
+    precedence_first, BuiltinEffectType, GrandBoulePreviewEvent, GraphCommand,
+    GraphProgressSnapshot, PluginCore, ScoringReading, ScoringTelemetry,
+    TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipFade,
@@ -189,6 +191,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
@@ -570,6 +573,22 @@ pub enum GraphCommandPayload {
         device_id: String,
         assignments: Vec<ModAssignmentPayload>,
     },
+    /// Strike one key on an already-published live Grand Boule body.
+    #[serde(rename_all = "camelCase")]
+    StartGrandBoulePreview {
+        #[serde(flatten)]
+        target: GrandBoulePreviewAddress,
+        strike_id: NonZeroU32,
+        note: u8,
+        velocity: f64,
+    },
+    /// Release the exact preview strike on the same live body.
+    #[serde(rename_all = "camelCase")]
+    ReleaseGrandBoulePreview {
+        #[serde(flatten)]
+        target: GrandBoulePreviewAddress,
+        strike_id: NonZeroU32,
+    },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
     /// A batch variant rather than a command of its own, because a producer
@@ -717,6 +736,65 @@ pub enum GraphCommandPayload {
     /// at a frame.
     #[serde(rename_all = "camelCase")]
     SetMasterGain { gain: f64 },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrandBoulePreviewAddress {
+    track_id: String,
+    device_id: String,
+    generation: String,
+}
+
+impl GrandBoulePreviewAddress {
+    fn resolve(&self, registry: &GraphRegistry) -> Result<usize, String> {
+        let device = registry
+            .devices
+            .get(&self.device_id)
+            .filter(|device| {
+                device.strip_id == self.track_id
+                    && registry
+                        .strips
+                        .get(&self.track_id)
+                        .is_some_and(|strip| strip.device_ids.contains(&self.device_id))
+            })
+            .ok_or_else(|| {
+                "Grand Boule preview target is not on the requested strip".to_string()
+            })?;
+        if device.builtin() != Some(BuiltinEffectType::GrandBoule) {
+            return Err("Grand Boule preview target is not a Grand Boule device".into());
+        }
+        let incarnation = registry
+            .engine_incarnation()
+            .ok_or_else(|| "Grand Boule preview engine incarnation is unavailable".to_string())?;
+        if self.generation != grand_boule_preview_generation(&incarnation, device.native_effect_id)
+        {
+            return Err("Grand Boule preview target generation is stale".into());
+        }
+        Ok(device.native_effect_id)
+    }
+}
+
+fn grand_boule_preview_addresses(
+    commands: &[GraphCommandPayload],
+) -> impl Iterator<Item = &GrandBoulePreviewAddress> {
+    commands.iter().filter_map(|command| match command {
+        GraphCommandPayload::StartGrandBoulePreview { target, .. }
+        | GraphCommandPayload::ReleaseGrandBoulePreview { target, .. } => Some(target),
+        _ => None,
+    })
+}
+
+const GRAND_BOULE_PREVIEW_LIVE_ONLY: &str = "Grand Boule preview is live-only";
+
+fn grand_boule_preview_generation(incarnation: &str, effect_id: usize) -> String {
+    let mut hash = Sha256::new();
+    hash.update(incarnation.as_bytes());
+    hash.update(effect_id.to_le_bytes());
+    hash.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -959,6 +1037,15 @@ pub struct StripReportPayload {
     pub kind: &'static str,
     pub id: String,
     pub device_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub grand_boule_preview_targets: Vec<GrandBoulePreviewTargetPayload>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrandBoulePreviewTargetPayload {
+    device_id: String,
+    generation: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1541,7 +1628,7 @@ fn prepare_native_grinders(
             return Err("Native NAM target generation mismatch".into());
         }
         let (authority, request, applied) = if input.initial {
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             (Arc::new(AtomicU64::new(request)), request, None)
         } else {
             let command = mapped
@@ -1579,7 +1666,10 @@ fn prepare_native_grinders(
         metadata.push((device.native_effect_id, authority, request, applied));
     }
     // Reserve the whole atomic transaction before the first parser/constructor.
-    let mut leases = transaction.reserve(&reservations)?.into_iter();
+    let mut leases = transaction
+        .reserve(&reservations)
+        .map_err(|error| error.to_string())?
+        .into_iter();
     let mut receipts = Vec::with_capacity(inputs.len());
     for ((input, plan), (effect, authority, request, applied)) in
         inputs.iter().zip(plans).zip(metadata)
@@ -1593,7 +1683,10 @@ fn prepare_native_grinders(
                     .next()
                     .ok_or_else(|| "Native NAM reservation absent".to_string())?;
                 witness = Some(Arc::downgrade(&lease));
-                Some(NativePreparedNam::build(text, plan, lease, hash)?)
+                Some(
+                    NativePreparedNam::build(text, plan, lease, hash)
+                        .map_err(|error| error.to_string())?,
+                )
             }
             (None, None) => None,
             _ => return Err("Native NAM preflight plan absent".into()),
@@ -2821,12 +2914,11 @@ fn builtin_parameter(
 /// comparison the layer-routing law makes.
 ///
 /// An address the engine names itself belongs to no instrument's vocabulary,
-/// and [`BuiltinParamName::parse`] admits no empty name, so the empty string
-/// can never be read as a routing key.
-fn addressed_parameter_name(param: &DeviceParam) -> &str {
+/// so it spells no name and can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> Option<&str> {
     match param {
         DeviceParam::BuiltinNamed(name) => name.as_str(),
-        _ => "",
+        _ => None,
     }
 }
 
@@ -3421,7 +3513,8 @@ fn map_device(
         })
         .and_then(|patch| {
             Ok((
-                PluginCore::transient_shaper_with_patch(sample_rate, &patch)?,
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch)
+                    .map_err(|error| error.to_string())?,
                 Vec::new(),
             ))
         }),
@@ -3474,7 +3567,11 @@ fn map_device(
         },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
-                .and_then(|writes| Ok((PluginCore::builtin(builtin, sample_rate)?, writes)))
+                .and_then(|writes| {
+                    let core = PluginCore::builtin(builtin, sample_rate)
+                        .map_err(|error| error.to_string())?;
+                    Ok((core, writes))
+                })
         }
     };
     let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
@@ -3685,10 +3782,8 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 }
 
 /// A final pass over `registry`, reporting what each named strip's chain
-/// really holds — never an echo of any one command's request. Shared by
-/// `map_batch`, for the strips a batch touched, and by an unload's own
-/// release, for the strips it touched outside any batch.
-pub(crate) fn strip_reports(
+/// really holds — never an echo of any one command's request.
+fn strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
 ) -> Result<Vec<StripReportPayload>, String> {
@@ -3706,9 +3801,50 @@ pub(crate) fn strip_reports(
                 },
                 id: strip_id.clone(),
                 device_ids: entry.device_ids.clone(),
+                grand_boule_preview_targets: Vec::new(),
             })
         })
         .collect()
+}
+
+fn populate_grand_boule_preview_targets(
+    registry: &GraphRegistry,
+    reports: &mut [StripReportPayload],
+) {
+    let Some(incarnation) = registry.engine_incarnation() else {
+        return;
+    };
+    for report in reports {
+        report.grand_boule_preview_targets = report
+            .device_ids
+            .iter()
+            .filter_map(|device_id| {
+                let device = registry.devices.get(device_id)?;
+                if device.strip_id != report.id
+                    || device.builtin() != Some(BuiltinEffectType::GrandBoule)
+                {
+                    return None;
+                }
+                Some(GrandBoulePreviewTargetPayload {
+                    device_id: device_id.clone(),
+                    generation: grand_boule_preview_generation(
+                        &incarnation,
+                        device.native_effect_id,
+                    ),
+                })
+            })
+            .collect();
+    }
+}
+
+/// The live report a plugin unload publishes only when its strip release was fenced.
+pub(crate) fn live_strip_reports(
+    registry: &GraphRegistry,
+    strip_ids: &[String],
+) -> Result<Vec<StripReportPayload>, String> {
+    let mut reports = strip_reports(registry, strip_ids)?;
+    populate_grand_boule_preview_targets(registry, &mut reports);
+    Ok(reports)
 }
 
 /// Map a whole batch. `registry` is the caller's working clone; on `Err`
@@ -4492,7 +4628,7 @@ fn map_command(
                 budgets,
                 touched,
             )?;
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             ops.push(GraphCommand::SetGrinderModel {
                 effect_id,
                 request: Box::new(NativeGrinderModelRequest {
@@ -4645,6 +4781,38 @@ fn map_command(
             Ok(())
         }
 
+        GraphCommandPayload::StartGrandBoulePreview {
+            target,
+            strike_id,
+            note,
+            velocity,
+        } => {
+            if midi_to_key(*note).is_none() {
+                return Err("Grand Boule preview note must be in A0 through C8".into());
+            }
+            let normalized_velocity = *velocity as f32;
+            if !(0.0..=1.0).contains(velocity) || normalized_velocity == 0.0 {
+                return Err("Grand Boule preview velocity must be in (0, 1]".into());
+            }
+            ops.push(GraphCommand::SendGrandBoulePreview(
+                target.resolve(registry)?,
+                GrandBoulePreviewEvent::Attack {
+                    strike_id: *strike_id,
+                    note: *note,
+                    velocity: normalized_velocity,
+                },
+            ));
+            Ok(())
+        }
+        GraphCommandPayload::ReleaseGrandBoulePreview { target, strike_id } => {
+            ops.push(GraphCommand::SendGrandBoulePreview(
+                target.resolve(registry)?,
+                GrandBoulePreviewEvent::Release {
+                    strike_id: *strike_id,
+                },
+            ));
+            Ok(())
+        }
         GraphCommandPayload::ScheduleMidi {
             track_id,
             device_id,
@@ -5381,7 +5549,9 @@ pub async fn apply_graph_commands(
             .sum();
         match NativeNamTransaction::begin(bytes, native_inputs.len()) {
             Ok(transaction) => Some(transaction),
-            Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+            Err(reason) => {
+                return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+            }
         }
     };
     // Bounded semantic preflight precedes every graph/engine critical section
@@ -5395,7 +5565,9 @@ pub async fn apply_graph_commands(
                 .and_then(|rate| NativeNamPlan::inspect(text, rate))
             {
                 Ok(plan) => Some(plan),
-                Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+                Err(reason) => {
+                    return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+                }
             },
         };
         native_plans.push(plan);
@@ -5415,6 +5587,15 @@ pub async fn apply_graph_commands(
         return result_json(&GraphApplyResultPayload::rejected(reason));
     }
 
+    let mut preview_count = 0;
+    for target in grand_boule_preview_addresses(&batch.commands) {
+        if let Err(reason) = target.resolve(&registry_guard) {
+            return result_json(&GraphApplyResultPayload::rejected(reason));
+        }
+        preview_count += 1;
+    }
+    let preview_only = preview_count > 0 && preview_count == batch.commands.len();
+
     {
         let samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
         if let Some(lease) = &batch.timeline_lease {
@@ -5428,13 +5609,15 @@ pub async fn apply_graph_commands(
         }
     }
 
-    if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
-        return match failure {
-            SlotStartFailure::Lock(error) => Err(format!("Failed to lock engine: {error}")),
-            SlotStartFailure::Start(error) => result_json(&GraphApplyResultPayload::rejected(
-                format!("engine-not-running: {error}"),
-            )),
-        };
+    if preview_count == 0 {
+        if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
+            return match failure {
+                SlotStartFailure::Lock(error) => Err(format!("Failed to lock engine: {error}")),
+                SlotStartFailure::Start(error) => result_json(&GraphApplyResultPayload::rejected(
+                    format!("engine-not-running: {error}"),
+                )),
+            };
+        }
     }
 
     // An engine object existing is not the same as it rendering: a stalled
@@ -5465,6 +5648,10 @@ pub async fn apply_graph_commands(
                     EngineNotRendering::StreamStalled { fault }.to_string(),
                 ));
             }
+        } else if preview_count > 0 {
+            return result_json(&GraphApplyResultPayload::rejected(
+                "engine-not-running: Grand Boule preview needs its live engine".into(),
+            ));
         }
         // `None` here falls through to the later `engine_guard` below, whose
         // "engine was released while this batch was admitted" refusal
@@ -5615,38 +5802,45 @@ pub async fn apply_graph_commands(
     });
     drop(levain_banks);
     drop(samples);
-    drop(engine_guard);
-    drop(registry_guard);
-    let native_receipts = match &native_transaction {
-        None => Vec::new(),
-        Some(transaction) => match prepare_native_grinders(
-            &native_inputs,
-            &native_plans,
-            transaction,
-            &mut mapped,
-            &mut working,
-            engine_id,
-            sample_rate,
-        ) {
-            Ok(receipts) => receipts,
-            Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
-        },
+    // A preview-only batch has nothing to prepare, so its lookup and fence
+    // share the same guards. An unrelated batch cannot invalidate an exact
+    // release to a Grand Boule it leaves in place.
+    let native_receipts = if preview_only {
+        Vec::new()
+    } else {
+        drop(engine_guard);
+        drop(registry_guard);
+        let receipts = match &native_transaction {
+            None => Vec::new(),
+            Some(transaction) => match prepare_native_grinders(
+                &native_inputs,
+                &native_plans,
+                transaction,
+                &mut mapped,
+                &mut working,
+                engine_id,
+                sample_rate,
+            ) {
+                Ok(receipts) => receipts,
+                Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+            },
+        };
+        #[cfg(test)]
+        if !receipts.is_empty() {
+            tests::pause_after_native_model_preparation(&receipts);
+        }
+        // A scalar batch, removal, engine restart or another producer can
+        // advance while preparation runs. The check below guards publication.
+        registry_guard = state
+            .graph
+            .lock()
+            .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+        engine_guard = state
+            .engine
+            .lock()
+            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        receipts
     };
-    #[cfg(test)]
-    if !native_receipts.is_empty() {
-        tests::pause_after_native_model_preparation(&native_receipts);
-    }
-    // A scalar batch, removal, engine restart or another command producer can
-    // advance while preparation runs. Nothing prepared against that old view
-    // is admitted into its successor. Losing work is destroyed control-side.
-    let mut registry_guard = state
-        .graph
-        .lock()
-        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
-    let mut engine_guard = state
-        .engine
-        .lock()
-        .map_err(|error| format!("Failed to lock engine: {error}"))?;
     let Some(engine) = engine_guard.as_mut() else {
         return result_json(&GraphApplyResultPayload::rejected(
             "Native engine retired during model preparation".into(),
@@ -5660,6 +5854,18 @@ pub async fn apply_graph_commands(
         return result_json(&GraphApplyResultPayload::rejected(
             "Native graph/engine generation changed during preparation".into(),
         ));
+    }
+
+    // Prefix mapping resolves the event where it occurs in command order.
+    // A mixed batch also has to keep that exact body in its committed graph.
+    for target in grand_boule_preview_addresses(&batch.commands) {
+        if let Err(reason) = target.resolve(&working) {
+            return result_json(
+                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                    attached_crumbs.named_with(&attached_crumbs_this_batch),
+                ),
+            );
+        }
     }
 
     let mut samples = state
@@ -5710,7 +5916,7 @@ pub async fn apply_graph_commands(
             // rejection. The attach's own registration went onto the ring
             // ahead of it, so the report still belongs to this answer.
             return result_json(
-                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                &GraphApplyResultPayload::rejected(reason.to_string()).reporting_attached_crumbs(
                     attached_crumbs.named_with(&attached_crumbs_this_batch),
                 ),
             );
@@ -5778,6 +5984,9 @@ pub async fn apply_graph_commands(
     // The engine lock goes first: `attach_dormant_plugins` takes it itself, and
     // this one is not reentrant.
     let engine_incarnation = working.engine_incarnation();
+    if !mapped.reports.is_empty() {
+        populate_grand_boule_preview_targets(&working, &mut mapped.reports);
+    }
     // `map_batch` advanced this count for the fence just published, so it is
     // the number the engine's `batches_applied` reaches when this batch drains
     // — the same number the ledger stamped every write in it with.
@@ -6016,6 +6225,15 @@ pub async fn map_graph_batch(
         Ok(batch) => batch,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
+    if grand_boule_preview_addresses(&prior_commands)
+        .chain(grand_boule_preview_addresses(&batch.commands))
+        .next()
+        .is_some()
+    {
+        return result_json(&GraphApplyResultPayload::rejected(
+            GRAND_BOULE_PREVIEW_LIVE_ONLY.into(),
+        ));
+    }
     if batch.schema_version == 2
         || !native_grinder_inputs(&batch)?.is_empty()
         || prior_commands.iter().any(command_has_native_model)
@@ -6155,6 +6373,12 @@ fn map_offline_batch(
     sample_rate: f32,
     hosted: &mut HostedInstances,
 ) -> Result<Vec<GraphCommand>, String> {
+    if grand_boule_preview_addresses(&batch.commands)
+        .next()
+        .is_some()
+    {
+        return Err(GRAND_BOULE_PREVIEW_LIVE_ONLY.into());
+    }
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
         return Err("Imported native NAM is live-only; offline NAM remains gated".into());
     }
@@ -6191,17 +6415,19 @@ fn render_offline_ops(
     // unless the batch itself says otherwise (its own set-transport commands
     // are mapped after this preamble and override it).
     let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1 + plugin_commands);
-    renderer.push(GraphCommand::SetTransportPlayback {
-        is_playing: true,
-        song_pos_seconds: 0.0,
-    })?;
+    renderer
+        .push(GraphCommand::SetTransportPlayback {
+            is_playing: true,
+            song_pos_seconds: 0.0,
+        })
+        .map_err(|error| error.to_string())?;
     // Ahead of the batch: its splices name these ids, and the graph refuses an
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
         plugins.register(&mut renderer)?;
     }
     for op in ops {
-        renderer.push(op)?;
+        renderer.push(op).map_err(|error| error.to_string())?;
     }
 
     // This thread processes every block, so it is every instance's audio
@@ -7081,11 +7307,13 @@ mod tests {
                     kind: "track",
                     id: "t1".to_string(),
                     device_ids: Vec::new(),
+                    grand_boule_preview_targets: Vec::new(),
                 },
                 StripReportPayload {
                     kind: "bus",
                     id: "b1".to_string(),
                     device_ids: Vec::new(),
+                    grand_boule_preview_targets: Vec::new(),
                 },
             ]
         );
@@ -7764,6 +7992,7 @@ mod tests {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: vec!["d-knead".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }],
             "the degraded insert must still produce the strip's observation"
         );
@@ -7800,6 +8029,7 @@ mod tests {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: vec!["d-front".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }]
         );
     }
@@ -7854,6 +8084,7 @@ mod tests {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: vec!["d-front".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }],
             "the strip still reports the chain the caller resyncs from"
         );
@@ -9402,6 +9633,248 @@ mod tests {
     }
 
     #[test]
+    fn grand_boule_preview_targets_the_admitted_effect_across_same_id_replacement() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        let (engine, mut command_rx, _adoption) =
+            daw_engine::engine_handle_for_command_capture(128).unwrap();
+        *state.engine.lock().unwrap() = Some(engine);
+        let apply = |commands| {
+            block_on_test(apply_graph_commands(
+                json!({ "schemaVersion": 1, "commands": commands }),
+                &state,
+                &crumbs,
+            ))
+            .unwrap()
+        };
+        let topology = strip_with_device("piano", "grand-boule", json!({}));
+        let first = apply(topology.clone());
+        assert_eq!(first["application"], "applied");
+        let first_target = &first["reports"][0]["grandBoulePreviewTargets"][0];
+        assert_eq!(first_target["deviceId"], "piano");
+        let first_generation = first_target["generation"].as_str().unwrap();
+        let mut first_ops = Vec::new();
+        while let Ok(op) = command_rx.pop() {
+            first_ops.push(op);
+        }
+        let first_effect = registered_effect_ids(&first_ops)[0];
+        drop(first_ops);
+
+        let with_insert = apply(json!([{
+            "kind": "insert-device", "trackId": "t1", "index": 1,
+            "device": { "id": "limiter", "type": "crust" }
+        }]));
+        assert_eq!(with_insert["application"], "applied");
+        assert_eq!(
+            with_insert["reports"][0]["grandBoulePreviewTargets"],
+            json!([first_target])
+        );
+        while command_rx.pop().is_ok() {}
+
+        let attack = |generation: &str| {
+            json!({
+                "kind": "start-grand-boule-preview", "trackId": "t1", "deviceId": "piano",
+                "generation": generation, "strikeId": 9, "note": 60, "velocity": 0.375
+            })
+        };
+        let release = |generation: &str| {
+            json!({
+                "kind": "release-grand-boule-preview", "trackId": "t1", "deviceId": "piano",
+                "generation": generation, "strikeId": 9
+            })
+        };
+        let remove = json!({ "kind": "remove-device", "trackId": "t1", "deviceId": "piano" });
+        let result = apply(json!([attack(first_generation), remove]));
+        assert_eq!(result["acceptance"], "rejected");
+        assert!(
+            command_rx.pop().is_err(),
+            "the target must survive its own batch"
+        );
+
+        let result = apply(json!([attack(first_generation)]));
+        assert_eq!(result["application"], "applied");
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::BeginBatch { commands: 1 })
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::SendGrandBoulePreview(
+                id, GrandBoulePreviewEvent::Attack { strike_id, note: 60, velocity }
+            )) if id == first_effect && strike_id.get() == 9 && velocity == 0.375
+        ));
+
+        let replacement = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "replaceTopology": true, "commands": topology }),
+            &state,
+            &crumbs,
+        ))
+        .unwrap();
+        assert_eq!(replacement["application"], "applied");
+        let target = &replacement["reports"][0]["grandBoulePreviewTargets"][0];
+        assert_eq!(target["deviceId"], "piano");
+        let generation = target["generation"].as_str().unwrap();
+        assert_ne!(generation, first_generation);
+        let mut replacement_ops = Vec::new();
+        while let Ok(op) = command_rx.pop() {
+            replacement_ops.push(op);
+        }
+        let effect = registered_effect_ids(&replacement_ops)[0];
+        assert_ne!(effect, first_effect);
+        drop(replacement_ops);
+
+        let result = apply(json!([attack(generation)]));
+        assert_eq!(result["application"], "applied");
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::BeginBatch { commands: 1 })
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::SendGrandBoulePreview(
+                id, GrandBoulePreviewEvent::Attack { strike_id, note: 60, velocity }
+            )) if id == effect && strike_id.get() == 9 && velocity == 0.375
+        ));
+
+        let result = apply(json!([release(first_generation)]));
+        assert_eq!(result["acceptance"], "rejected");
+        assert_eq!(
+            result["reason"],
+            "Grand Boule preview target generation is stale"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "an old release must not reach the replacement"
+        );
+
+        let result = apply(json!([release(generation)]));
+        assert_eq!(result["application"], "applied");
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::BeginBatch { commands: 1 })
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::SendGrandBoulePreview(
+                id, GrandBoulePreviewEvent::Release { strike_id }
+            )) if id == effect && strike_id.get() == 9
+        ));
+        assert!(command_rx.pop().is_err());
+    }
+
+    #[test]
+    fn grand_boule_preview_refuses_wrong_addresses_invalid_strikes_and_offline_commands() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        let (engine, mut command_rx, _adoption) =
+            daw_engine::engine_handle_for_command_capture(128).unwrap();
+        *state.engine.lock().unwrap() = Some(engine);
+        let apply = |commands| {
+            block_on_test(apply_graph_commands(
+                json!({ "schemaVersion": 1, "commands": commands }),
+                &state,
+                &crumbs,
+            ))
+            .unwrap()
+        };
+        let mut topology = strip_with_device("piano", "grand-boule", json!({}));
+        topology[0]["devices"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "id": "synth", "type": "fermenter" }));
+        topology.as_array_mut().unwrap().push(track_strip("t2"));
+        let created = apply(topology.clone());
+        assert_eq!(created["application"], "applied");
+        let targets = created["reports"][0]["grandBoulePreviewTargets"]
+            .as_array()
+            .unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0]["deviceId"], "piano");
+        assert!(created["reports"][1]
+            .get("grandBoulePreviewTargets")
+            .is_none());
+        let generation = targets[0]["generation"].as_str().unwrap();
+        while command_rx.pop().is_ok() {}
+
+        let attack = json!({
+            "kind": "start-grand-boule-preview", "trackId": "t1", "deviceId": "piano",
+            "generation": generation, "strikeId": 9, "note": 60, "velocity": 0.375
+        });
+        for (field, invalid) in [
+            ("trackId", json!("t2")),
+            ("deviceId", json!("synth")),
+            ("strikeId", json!(0)),
+            ("strikeId", json!(u64::from(u32::MAX) + 1)),
+            ("note", json!(20)),
+            ("note", json!(109)),
+            ("velocity", json!(0)),
+            ("velocity", json!(1.000000001)),
+            ("velocity", Value::Null),
+        ] {
+            let mut invalid_attack = attack.clone();
+            invalid_attack[field] = invalid;
+            let result = apply(json!([invalid_attack]));
+            assert_eq!(
+                result["acceptance"], "rejected",
+                "accepted {invalid_attack}"
+            );
+            assert!(
+                command_rx.pop().is_err(),
+                "rejected {field} reached the engine"
+            );
+        }
+
+        let offline = block_on_test(map_graph_batch(
+            json!([]),
+            json!({ "schemaVersion": 1, "commands": topology }),
+            48_000.0,
+            None,
+            &state,
+        ))
+        .unwrap();
+        assert_eq!(offline["application"], "applied");
+        assert!(offline["reports"][0]
+            .get("grandBoulePreviewTargets")
+            .is_none());
+        let rejected = block_on_test(map_graph_batch(
+            topology.clone(),
+            json!({ "schemaVersion": 1, "commands": [attack] }),
+            48_000.0,
+            None,
+            &state,
+        ))
+        .unwrap();
+        assert_eq!(rejected["acceptance"], "rejected");
+        assert_eq!(rejected["reason"], "Grand Boule preview is live-only");
+
+        topology.as_array_mut().unwrap().push(attack.clone());
+        let mut hosted = HostedInstances::offline(&state).unwrap();
+        let refused = map_offline_batch(
+            &batch(topology),
+            &TimelineSamplePool::default(),
+            &mut LevainBankStore::default(),
+            48_000.0,
+            &mut hosted,
+        );
+        assert!(matches!(refused, Err(reason) if reason == "Grand Boule preview is live-only"));
+        assert!(command_rx.pop().is_err());
+
+        let empty = AppState::default();
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [attack] }),
+            &empty,
+            &crumbs,
+        ))
+        .unwrap();
+        assert_eq!(result["acceptance"], "rejected");
+        assert_eq!(
+            result["reason"],
+            "Grand Boule preview target is not on the requested strip"
+        );
+        assert!(empty.engine.lock().unwrap().is_none());
+    }
+
+    #[test]
     fn grinder_model_wire2_uses_actual_network_and_wire1_cannot_silently_drop_it() {
         use daw_dsp::grinder::engine::GrinderEngine;
         const FRAMES: usize = 4096;
@@ -10942,6 +11415,7 @@ mod tests {
                     kind: "track",
                     id: "t1".to_string(),
                     device_ids: vec!["d1".to_string()],
+                    grand_boule_preview_targets: Vec::new(),
                 }],
                 vec![AttachedPluginPayload {
                     instance_id: "i1".to_string(),
@@ -10968,6 +11442,7 @@ mod tests {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: vec!["d1".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }],
         ))
         .expect("mapped serializes");
@@ -10988,6 +11463,7 @@ mod tests {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: Vec::new(),
+                grand_boule_preview_targets: Vec::new(),
             }],
         ))
         .expect("needs-reconcile serializes");
@@ -17841,7 +18317,7 @@ mod tests {
             assert_eq!(
                 record
                     .iter()
-                    .map(|(name, value)| (name.as_str(), *value))
+                    .map(|(name, value)| (name.as_str().unwrap(), *value))
                     .collect::<Vec<_>>(),
                 vec![
                     ("dither_bits", expected),
@@ -17896,7 +18372,7 @@ mod tests {
         let live =
             immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").unwrap();
         assert_eq!(live.len(), 1, "only runtime A/B is a live DSP target");
-        assert_eq!(addressed_parameter_name(&live[0].0), "ab_bypass");
+        assert_eq!(addressed_parameter_name(&live[0].0), Some("ab_bypass"));
         for bad in [
             json!({"eq_band0Xfreq":400}),
             json!({"dither_mode":0.25}),

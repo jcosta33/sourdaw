@@ -1,5 +1,6 @@
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import {
     captureProjectRootIdentity,
     getCrdtDoc,
@@ -7,7 +8,7 @@ import {
     stageCommandSourcePublication,
 } from '#/modules/CrdtDocument/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { type AppAction, type CommandSourceProof, type HandlerCommitValidation } from '#/utils/handlerContract';
+import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';

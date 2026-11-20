@@ -39,9 +39,11 @@ use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
 use daw_dsp::proof::parameter_registry::{self as proof_parameters, NativeAdmission};
+use daw_dsp::toaster::transient::TransientShaperError;
 use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::Arc;
 use triple_buffer::{Input, Output};
@@ -424,6 +426,20 @@ impl BuiltinEffectType {
     }
 }
 
+/// An instance-local piano preview strike or its matching release.
+#[derive(Clone, Copy, Debug)]
+pub enum GrandBoulePreviewEvent {
+    Attack {
+        strike_id: NonZeroU32,
+        note: u8,
+        /// Velocity as a fraction of full scale.
+        velocity: f32,
+    },
+    Release {
+        strike_id: NonZeroU32,
+    },
+}
+
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
     // Built-in effects
@@ -572,6 +588,10 @@ pub enum GraphCommand {
     /// reaches the base member channel, and only a note-off naming that
     /// channel lifts it.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Address a Grand Boule preview to the exact registered effect ID.
+    /// Preview events land in graph command order at the head of the body's
+    /// next rendered block, before the ordinary MIDI appended at render time.
+    SendGrandBoulePreview(usize, GrandBoulePreviewEvent),
     /// Apply one live controller message to this plugin.
     ///
     /// The live path for a pedal, and the only one: a MIDI clip carries no
@@ -1001,6 +1021,7 @@ impl GraphCommand {
             | Self::AddModAssignment { .. }
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::SendGrandBoulePreview(..)
             | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
@@ -1104,6 +1125,7 @@ impl GraphCommand {
             | Self::ClearModAssignments(..)
             | Self::AddModAssignment { .. }
             | Self::SendMidiNote(..)
+            | Self::SendGrandBoulePreview(..)
             | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
@@ -1172,7 +1194,10 @@ impl PluginCore {
     /// actually opened at, so no two producers can construct the same
     /// built-in against different clocks. Fails when the body refuses the
     /// sample rate.
-    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
+    pub fn builtin(
+        plugin_type: BuiltinEffectType,
+        sample_rate: f32,
+    ) -> Result<Self, TransientShaperError> {
         Ok(match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
@@ -1420,14 +1445,17 @@ impl PluginCore {
     pub fn transient_shaper_with_patch(
         sample_rate: f32,
         patch: &[(BuiltinParamName, f32)],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, TransientShaperError> {
         let mut body = TransientShaperBody {
             engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
             attack_gain: 1.0,
             sustain_gain: 1.0,
         };
         for (name, value) in patch {
-            body.set_param(name.as_str(), *value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            body.set_param(name, *value);
         }
         Ok(Self::TransientShaper(Box::new(body)))
     }
@@ -1839,7 +1867,10 @@ impl FermenterBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Fermenter.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -1873,18 +1904,21 @@ const LAYER_ROUTING_KEY: &str = "active_layer";
 /// its own, and every caller that builds a patch from one — a body's own
 /// `load_patch`, and the graph mapper's immediate parameter batch — reuses
 /// this rather than reordering it again. `name` is a function pointer so
-/// every filter below can hold it.
+/// every filter below can hold it; an entry it spells as `None` names no key
+/// and follows in patch order with the rest.
 pub fn precedence_first<'a, T: Copy>(
     patch: &'a [(T, f32)],
-    name: fn(&T) -> &str,
+    name: fn(&T) -> Option<&str>,
     first: &'static [&'static str],
 ) -> impl Iterator<Item = (T, f32)> + 'a {
-    let led = first
-        .iter()
-        .flat_map(move |key| patch.iter().filter(move |(entry, _)| name(entry) == *key));
+    let led = first.iter().flat_map(move |key| {
+        patch
+            .iter()
+            .filter(move |(entry, _)| name(entry) == Some(*key))
+    });
     let rest = patch
         .iter()
-        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == *key));
+        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == Some(*key)));
     led.chain(rest).copied()
 }
 
@@ -1937,6 +1971,11 @@ const _: () = assert!(GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES);
 /// moves between the two runtimes steals voices at the same point rather than
 /// sounding different under load.
 const GRAND_BOULE_MAX_VOICES: u32 = 64;
+
+/// Share the DSP's 256-event run queue with the entire ordinary MIDI buffer.
+/// The DSP owns its queue size (`GRAND_BOULE_MAX_BLOCK_EVENTS`); the pressure
+/// test exercises both budgets at capacity against the real instance.
+const GRAND_BOULE_PREVIEW_EVENT_CAPACITY: usize = 256 - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
 
 /// The full-scale 7-bit MIDI velocity, which is the divisor that turns the
 /// figure a producer wrote into the `0..1` fraction the instrument takes.
@@ -1998,6 +2037,13 @@ const GRAND_BOULE_DAMPER_ENGAGED_POSITION: f32 = 0.5;
 /// meant to hold.
 pub struct GrandBouleBody {
     instance: GrandBouleInstance,
+    /// Held strikes each reserve one release slot in the DSP queue. An
+    /// attack spends two slots (its own event and its eventual release), a
+    /// release converts a reservation to an event, and a render empties the
+    /// queued events while keeping the held reservations.
+    held_preview_strikes: [NonZeroU32; GRAND_BOULE_PREVIEW_EVENT_CAPACITY],
+    held_preview_count: usize,
+    pending_preview_count: usize,
     /// The damper position this body last took, as the instrument holds it.
     ///
     /// Kept here because the instrument exposes no reading of it, and
@@ -2018,8 +2064,74 @@ impl GrandBouleBody {
     fn new(sample_rate: f32) -> Self {
         Self {
             instance: GrandBouleInstance::new(sample_rate, GRAND_BOULE_MAX_VOICES),
+            held_preview_strikes: [NonZeroU32::MIN; GRAND_BOULE_PREVIEW_EVENT_CAPACITY],
+            held_preview_count: 0,
+            pending_preview_count: 0,
             damper_position: 0.0,
             sostenuto_engaged: false,
+        }
+    }
+
+    fn enqueue_preview(
+        &mut self,
+        event: GrandBoulePreviewEvent,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        match event {
+            GrandBoulePreviewEvent::Attack {
+                strike_id,
+                note,
+                velocity,
+            } => {
+                if self.held_preview_strikes[..self.held_preview_count].contains(&strike_id) {
+                    return;
+                }
+                if self.held_preview_count + self.pending_preview_count + 2
+                    > GRAND_BOULE_PREVIEW_EVENT_CAPACITY
+                    || !self
+                        .instance
+                        .push_preview_note_on(strike_id.get(), note, velocity, 0)
+                {
+                    diagnostics.record_scheduler_event_buffer_overflow(1);
+                    return;
+                }
+                self.held_preview_strikes[self.held_preview_count] = strike_id;
+                self.held_preview_count += 1;
+                self.pending_preview_count += 1;
+            }
+            GrandBoulePreviewEvent::Release { strike_id } => {
+                let Some(index) = self.held_preview_strikes[..self.held_preview_count]
+                    .iter()
+                    .position(|held| *held == strike_id)
+                else {
+                    return;
+                };
+                self.enqueue_preview_release(index, diagnostics);
+            }
+        }
+    }
+
+    fn enqueue_preview_release(
+        &mut self,
+        index: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let strike_id = self.held_preview_strikes[index];
+        if !self.instance.push_preview_note_off(strike_id.get(), 0) {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
+            return false;
+        }
+        self.held_preview_count -= 1;
+        self.held_preview_strikes[index] = self.held_preview_strikes[self.held_preview_count];
+        self.pending_preview_count += 1;
+        true
+    }
+
+    fn release_held_previews(&mut self, diagnostics: &mut ActiveMidiRtDiagnostics) {
+        for index in (0..self.held_preview_count).rev() {
+            if !self.enqueue_preview_release(index, diagnostics) {
+                break;
+            }
         }
     }
 
@@ -2108,11 +2220,8 @@ impl GrandBouleBody {
                 .push_note_off_on_channel(event.note, channel, offset),
             (false, None) => self.instance.push_note_off(event.note, offset),
         };
-        // Unreachable as the two capacities stand: a block carries at most
-        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
-        // takes twice that per run, emptying on every `process`. The count is
-        // kept as a guard against either capacity moving, not because a
-        // refusal can happen today.
+        // Preview admission reserves the whole ordinary MIDI buffer in the
+        // instrument's run queue. Count a refusal if those capacities drift.
         if !queued {
             diagnostics.record_scheduler_event_buffer_overflow(1);
         }
@@ -2152,10 +2261,16 @@ impl GrandBouleBody {
             CC_UNA_CORDA_PEDAL => self
                 .instance
                 .set_una_corda(event.value >= MIDI_SWITCH_THRESHOLD),
-            CC_ALL_SOUND_OFF | CC_ALL_NOTES_OFF => self.instance.all_notes_off(),
+            CC_ALL_SOUND_OFF | CC_ALL_NOTES_OFF => self.all_notes_off(),
             CC_RESET_ALL_CONTROLLERS => self.reset_controllers(),
             _ => {}
         }
+    }
+
+    fn all_notes_off(&mut self) {
+        self.instance.all_notes_off();
+        self.held_preview_count = 0;
+        self.pending_preview_count = 0;
     }
 
     /// Lift all three pedals.
@@ -2223,7 +2338,7 @@ impl GrandBouleBody {
         if !self.holds_released_keys() {
             return false;
         }
-        self.instance.all_notes_off();
+        self.all_notes_off();
         true
     }
 
@@ -2236,6 +2351,7 @@ impl GrandBouleBody {
         // an earlier shared borrow of that buffer. Derived afterwards, both
         // pointers stay valid until the next mutation of the instance.
         let rendered_left = self.instance.process(frames as u32);
+        self.pending_preview_count = 0;
         let rendered_right = self.instance.get_right_ptr();
         // SAFETY: both pointers were derived after the render and name the
         // instrument's own channel buffers, which `GrandBouleInstance::new`
@@ -2277,7 +2393,10 @@ impl GrandBouleBody {
     /// counterpart here to obey.
     fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
         for (name, value) in patch {
-            self.set_param(name.as_str(), *value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, *value);
         }
     }
 }
@@ -2397,7 +2516,10 @@ impl GlutenBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Gluten.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -2543,7 +2665,10 @@ impl CrustBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Crust.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -2707,7 +2832,10 @@ impl GrinderBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Grinder.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -3030,7 +3158,10 @@ impl BacteriaBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Bacteria.patch_precedence(),
         ) {
-            self.engine.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.engine.set_param(name, value);
         }
     }
 
@@ -3338,10 +3469,13 @@ impl ProofBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Proof.patch_precedence(),
         ) {
-            if PROOF_RECORD_REFUSED.contains(&name.as_str()) {
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            if PROOF_RECORD_REFUSED.contains(&name) {
                 continue;
             }
-            self.set_param(name.as_str(), value);
+            self.set_param(name, value);
         }
     }
 
@@ -3553,7 +3687,10 @@ impl DutchOvenBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::DutchOven.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -3908,7 +4045,10 @@ impl ToasterBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Toaster.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -4278,7 +4418,10 @@ impl LevainBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Levain.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -4495,10 +4638,13 @@ impl ScoringBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Scoring.patch_precedence(),
         ) {
-            if SCORING_NATIVE_REFUSED.contains(&name.as_str()) {
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            if SCORING_NATIVE_REFUSED.contains(&name) {
                 continue;
             }
-            self.engine.set_param(name.as_str(), value);
+            self.engine.set_param(name, value);
         }
     }
 
@@ -4563,7 +4709,8 @@ fn take_cleared_grinder_model(
     let DeviceParam::BuiltinNamed(name) = param else {
         return None;
     };
-    if name.as_str() != "neuralModelSlot" && !(name.as_str() == "neuralModelMode" && value <= 0.5) {
+    let name = name.as_str();
+    if name != Some("neuralModelSlot") && !(name == Some("neuralModelMode") && value <= 0.5) {
         return None;
     }
     let PluginCore::Grinder(body) = instance else {
@@ -4590,50 +4737,59 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             engine.set_formant_preserve(value != 0.0);
             true
         }
-        (PluginCore::Fermenter(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        // A carrier with no str view names nothing any body answers to, so it
+        // is refused like a name the body does not hold.
+        (instance, DeviceParam::BuiltinNamed(name)) => match name.as_str() {
+            Some(name) => apply_builtin_named_param(instance, name, value),
+            None => false,
+        },
+        _ => false,
+    }
+}
+
+/// [`apply_builtin_param`] for a name in a built-in body's own vocabulary.
+fn apply_builtin_named_param(instance: &mut PluginCore, name: &str, value: f32) -> bool {
+    match instance {
+        PluginCore::Fermenter(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::GrandBoule(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Gluten(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Gluten(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Crust(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Crust(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Grinder(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Grinder(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Bacteria(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Bacteria(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::DutchOven(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::DutchOven(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Toaster(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Toaster(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Levain(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Levain(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value)
-        }
-        (PluginCore::TransientShaper(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value)
-        }
-        (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Proof(body) => body.set_param(name, value),
+        PluginCore::TransientShaper(body) => body.set_param(name, value),
+        PluginCore::Scoring(body) => {
+            body.set_param(name, value);
             true
         }
         _ => false,
@@ -6832,6 +6988,22 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::SendGrandBoulePreview(id, event) => {
+                    let slot = self.effect_index.lookup(id)?;
+                    let effect = &mut self.effects[slot];
+                    if matches!(event, GrandBoulePreviewEvent::Attack { .. })
+                        && effect.receives_no_block()
+                    {
+                        return None;
+                    }
+                    // An admitted strike is owned by this body. Its release
+                    // waits in the body's queue if bypass or detachment
+                    // prevents the next render.
+                    if let PluginCore::GrandBoule(body) = &mut effect.instance {
+                        body.enqueue_preview(event, &mut self.midi_rt_diagnostics);
+                    }
+                    None
+                }
                 GraphCommand::SendMidiControl(id, event) => {
                     // Nothing is queued: a controller is a state write on the
                     // instance, not a frame-stamped event, so it applies here,
@@ -6877,21 +7049,8 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SetTransport(state) => {
-                    // Stopping holds every mixer parameter where it stands and
-                    // drops what it had queued. A ramp is stamped in timeline
-                    // frames, and a stopped timeline never reaches the frame it
-                    // was aimed at, so without this the mix keeps gliding after
-                    // playback ends.
-                    if self.transport.is_playing && !state.is_playing {
-                        self.timeline.hold_automation(self.playhead_frames);
-                        // A stopped playhead never reaches the frame a
-                        // sounding note's note-off was written for, so the
-                        // note is released here or it is held for good. A live
-                        // key goes with it: a stop is where a player expects
-                        // the instrument to fall silent. The release is
-                        // recorded here and paid at the end of the drain —
-                        // see `Self::owe_all_releases`.
-                        self.owe_all_releases();
+                    if !state.is_playing {
+                        self.stop_playback();
                     }
                     self.transport = state;
                     None
@@ -6908,9 +7067,8 @@ impl AudioScheduler {
                     // the 120 BPM engine default. Beats re-derive from the
                     // retained tempo so plugins keep a consistent
                     // (seconds, beats) pair.
-                    if self.transport.is_playing && !is_playing {
-                        self.timeline.hold_automation(self.playhead_frames);
-                        self.owe_all_releases();
+                    if !is_playing {
+                        self.stop_playback();
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -7909,6 +8067,25 @@ impl AudioScheduler {
                 &mut self.midi_rt_diagnostics,
             ) {
                 self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    fn stop_playback(&mut self) {
+        if self.transport.is_playing {
+            // A stopped playhead never reaches a ramp's target or a
+            // scheduled release. Hold the automation and settle the ordinary
+            // notes after the drain, when placement and bypass are final.
+            self.timeline.hold_automation(self.playhead_frames);
+            self.owe_all_releases();
+        }
+
+        // A graph transport park can retire its frontend handle without
+        // retiring the DSP, even if playback was already stopped. Settle
+        // the admitted preview strikes in command order at this boundary.
+        for effect in &mut self.effects {
+            if let PluginCore::GrandBoule(body) = &mut effect.instance {
+                body.release_held_previews(&mut self.midi_rt_diagnostics);
             }
         }
     }
@@ -12558,7 +12735,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &writes {
-                    body.set_param(name.as_str(), *value);
+                    body.set_param(name.as_str().unwrap(), *value);
                 }
                 body.process(&mut left, &mut right);
             });
@@ -12740,7 +12917,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &refused {
-                    written.set_param(name.as_str(), *value);
+                    written.set_param(name.as_str().unwrap(), *value);
                 }
                 written.process(&mut written_left, &mut written_right);
                 untouched.process(&mut untouched_left, &mut untouched_right);
@@ -12820,7 +12997,7 @@ mod tests {
 
                 assert_no_alloc(|| {
                     for (name, value) in &choice {
-                        picked.set_param(name.as_str(), *value);
+                        picked.set_param(name.as_str().unwrap(), *value);
                     }
                     picked.process(&mut picked_left, &mut picked_right);
                 });
@@ -13035,7 +13212,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &writes {
-                    body.set_param(name.as_str(), *value);
+                    body.set_param(name.as_str().unwrap(), *value);
                 }
                 assert!(!body.set_param("eq_band0Xfreq", 800.0));
                 assert!(!body.set_param("input_gain", f32::NAN));
@@ -21283,9 +21460,9 @@ mod timeline_tests {
 
     /// The name a `&str` patch entry carries, for [`precedence_first`]'s own
     /// unit spec below — a plain function pointer rather than a closure,
-    /// because the signature it takes is `fn(&T) -> &str`.
-    fn plain_str_name<'a>(name: &'a &'a str) -> &'a str {
-        name
+    /// because the signature it takes is `fn(&T) -> Option<&str>`.
+    fn plain_str_name<'a>(name: &'a &'a str) -> Option<&'a str> {
+        Some(name)
     }
 
     /// [`precedence_first`] yields every entry naming a law key, in law
@@ -21336,15 +21513,19 @@ mod timeline_tests {
     fn track_with_grand_boule(harness: &mut Harness, track_id: usize, effect_id: usize) {
         for command in [
             GraphCommand::AddTrack(TimelineTrack::new(track_id)),
-            GraphCommand::AddDetachedEffect(
-                effect_id,
-                PluginCore::grand_boule_with_patch(GRAND_BOULE_RATE, &[]),
-                Some(MidiNoteStore::new()),
-            ),
+            register_grand_boule(effect_id),
             insert_track_device(track_id, generator(effect_id), 0),
         ] {
             harness.send(command);
         }
+    }
+
+    fn register_grand_boule(effect_id: usize) -> GraphCommand {
+        GraphCommand::AddDetachedEffect(
+            effect_id,
+            PluginCore::grand_boule_with_patch(GRAND_BOULE_RATE, &[]),
+            Some(MidiNoteStore::new()),
+        )
     }
 
     /// Render `runs` runs of a reference instance, calling `deliver` with the
@@ -21400,6 +21581,383 @@ mod timeline_tests {
             right.extend(block_right);
         }
         (left, right)
+    }
+
+    fn grand_boule_preview_attack(id: usize, strike: u32, note: u8) -> GraphCommand {
+        GraphCommand::SendGrandBoulePreview(
+            id,
+            GrandBoulePreviewEvent::Attack {
+                strike_id: NonZeroU32::new(strike).unwrap(),
+                note,
+                velocity: 0.6,
+            },
+        )
+    }
+
+    fn grand_boule_preview_release(id: usize, strike: u32) -> GraphCommand {
+        GraphCommand::SendGrandBoulePreview(
+            id,
+            GrandBoulePreviewEvent::Release {
+                strike_id: NonZeroU32::new(strike).unwrap(),
+            },
+        )
+    }
+
+    #[test]
+    fn grand_boule_preview_and_midi_c4_release_independently_in_both_orders() {
+        const ID: usize = 7;
+        const STRIKE: u32 = 1;
+        const C4: u8 = 60;
+        const F5: u8 = 77;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+        const BLOCKS: usize = 24;
+
+        for preview_first in [true, false] {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, 1, ID);
+            let midi_release = if preview_first { 12 } else { 4 };
+            let preview_release = if preview_first { 4 } else { 12 };
+            let actual =
+                render_master_at_callback_heads(&mut harness, RUN, BLOCKS, |block, graph| {
+                    match block {
+                        0 => {
+                            graph.send_in_one_drain([
+                                GraphCommand::SendMidiNote(ID, note_on(C4)),
+                                GraphCommand::SendMidiNote(ID, note_on(F5)),
+                            ]);
+                        }
+                        2 => {
+                            graph.send(grand_boule_preview_attack(ID, STRIKE, C4));
+                        }
+                        block if block == preview_release => {
+                            graph.send(grand_boule_preview_release(ID, STRIKE));
+                        }
+                        block if block == midi_release => {
+                            graph.send(GraphCommand::SendMidiNote(ID, grand_boule_release(C4)));
+                        }
+                        _ => {}
+                    }
+                });
+            let expected = render_grand_boule_reference(BLOCKS, |block, piano| match block {
+                0 => {
+                    assert!(piano.push_note_on(C4, grand_boule_velocity(), 0, 0));
+                    assert!(piano.push_note_on(F5, grand_boule_velocity(), 0, 0));
+                }
+                2 => assert!(piano.push_preview_note_on(STRIKE, C4, 0.6, 0)),
+                block if block == preview_release => {
+                    assert!(piano.push_preview_note_off(STRIKE, 0));
+                }
+                block if block == midi_release => {
+                    assert!(piano.push_note_off_on_channel(C4, 0, 0));
+                }
+                _ => {}
+            });
+
+            assert!(expected.0[12 * RUN..].iter().any(|sample| *sample != 0.0));
+            assert_eq!(actual, expected, "preview releases first: {preview_first}");
+        }
+    }
+
+    #[test]
+    fn grand_boule_preview_retired_target_and_strike_cannot_touch_its_replacement() {
+        const RETIRED_ID: usize = 7;
+        const CURRENT_ID: usize = 8;
+        const RETIRED_STRIKE: u32 = 1;
+        const CURRENT_STRIKE: u32 = 2;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, RETIRED_ID);
+        harness.send(grand_boule_preview_attack(RETIRED_ID, RETIRED_STRIKE, 60));
+        assert!(harness.render(RUN).0.iter().any(|sample| *sample != 0.0));
+        harness.send_in_one_drain([
+            GraphCommand::RemoveTrackDeviceRetired {
+                track_id: 1,
+                effect_id: RETIRED_ID,
+            },
+            register_grand_boule(CURRENT_ID),
+            insert_track_device(1, generator(CURRENT_ID), 0),
+        ]);
+
+        let actual =
+            render_master_at_callback_heads(&mut harness, RUN, 8, |block, graph| match block {
+                0 => {
+                    graph.send(grand_boule_preview_attack(CURRENT_ID, CURRENT_STRIKE, 60));
+                }
+                2 => {
+                    graph.send_in_one_drain([
+                        grand_boule_preview_attack(RETIRED_ID, 3, 77),
+                        grand_boule_preview_release(RETIRED_ID, CURRENT_STRIKE),
+                        grand_boule_preview_release(CURRENT_ID, RETIRED_STRIKE),
+                    ]);
+                }
+                4 => {
+                    graph.send(grand_boule_preview_release(CURRENT_ID, CURRENT_STRIKE));
+                }
+                _ => {}
+            });
+        let expected = render_grand_boule_reference(8, |block, piano| match block {
+            0 => assert!(piano.push_preview_note_on(CURRENT_STRIKE, 60, 0.6, 0)),
+            4 => assert!(piano.push_preview_note_off(CURRENT_STRIKE, 0)),
+            _ => {}
+        });
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn grand_boule_preview_rejects_unplaced_and_bypassed_attacks_but_keeps_an_admitted_release() {
+        const ID: usize = 7;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+
+        for render_before_bypass in [true, false] {
+            let mut harness = Harness::new(32);
+            harness.send_in_one_drain([
+                GraphCommand::AddTrack(TimelineTrack::new(1)),
+                register_grand_boule(ID),
+                grand_boule_preview_attack(ID, 1, 77),
+                insert_track_device(1, generator(ID), 0),
+            ]);
+            let rendered_before_bypass = usize::from(render_before_bypass);
+            let (mut left, mut right) = if render_before_bypass {
+                harness.send(grand_boule_preview_attack(ID, 2, 60));
+                let audible = harness.render(RUN);
+                assert!(audible.0.iter().any(|sample| *sample != 0.0));
+                audible
+            } else {
+                harness.send_in_one_drain([
+                    grand_boule_preview_attack(ID, 2, 60),
+                    GraphCommand::SetBypass(ID, true),
+                ]);
+                (Vec::new(), Vec::new())
+            };
+            harness.send_in_one_drain([
+                GraphCommand::SetBypass(ID, true),
+                grand_boule_preview_attack(ID, 3, 77),
+                grand_boule_preview_release(ID, 2),
+            ]);
+            let muted = harness.render(RUN);
+            assert!(muted.0.iter().chain(&muted.1).all(|sample| *sample == 0.0));
+            harness.send(GraphCommand::SetBypass(ID, false));
+
+            let resumed = render_master(&mut harness, RUN, 8);
+            left.extend(resumed.0);
+            right.extend(resumed.1);
+            let expected =
+                render_grand_boule_reference(8 + rendered_before_bypass, |block, piano| {
+                    if block == 0 {
+                        assert!(piano.push_preview_note_on(2, 60, 0.6, 0));
+                    }
+                    if block == rendered_before_bypass {
+                        assert!(piano.push_preview_note_off(2, 0));
+                    }
+                });
+
+            assert_eq!(
+                (left, right),
+                expected,
+                "render before bypass: {render_before_bypass}"
+            );
+        }
+    }
+
+    #[test]
+    fn grand_boule_preview_park_releases_prior_strikes_and_preserves_midi_stop_law() {
+        const ID: usize = 7;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+        const F5: u8 = 77;
+
+        for rolling in [true, false] {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, 1, ID);
+            if rolling {
+                harness.playing();
+            }
+            let actual =
+                render_master_at_callback_heads(
+                    &mut harness,
+                    RUN,
+                    12,
+                    |block, graph| match block {
+                        0 => {
+                            graph.send_in_one_drain([
+                                GraphCommand::SendMidiNote(ID, note_on(F5)),
+                                grand_boule_preview_attack(ID, 1, 60),
+                            ]);
+                        }
+                        2 => {
+                            graph.send_in_one_drain([
+                                GraphCommand::SetTransportPlayback {
+                                    is_playing: false,
+                                    song_pos_seconds: 0.0,
+                                },
+                                grand_boule_preview_attack(ID, 2, 64),
+                            ]);
+                        }
+                        4 => {
+                            graph.send(grand_boule_preview_release(ID, 1));
+                        }
+                        6 => {
+                            graph.send(grand_boule_preview_release(ID, 2));
+                        }
+                        _ => {}
+                    },
+                );
+            let expected = render_grand_boule_reference(12, |block, piano| match block {
+                0 => {
+                    assert!(piano.push_preview_note_on(1, 60, 0.6, 0));
+                    assert!(piano.push_note_on(F5, grand_boule_velocity(), 0, 0));
+                }
+                2 => {
+                    assert!(piano.push_preview_note_off(1, 0));
+                    assert!(piano.push_preview_note_on(2, 64, 0.6, 0));
+                    if rolling {
+                        assert!(piano.push_note_off_on_channel(F5, 0, 0));
+                    }
+                }
+                6 => assert!(piano.push_preview_note_off(2, 0)),
+                _ => {}
+            });
+
+            assert_eq!(actual, expected, "rolling before park: {rolling}");
+        }
+    }
+
+    #[test]
+    fn grand_boule_preview_reserves_admitted_releases_and_keeps_all_128_midi_slots() {
+        const ID: usize = 7;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+        const PRESSURE_STRIKES: std::ops::Range<u32> = 10..73;
+        const A0: u8 = 21;
+        const F5: u8 = 77;
+        // Outside the piano's pitches, so only the final MIDI event makes sound.
+        const EMPTY_NOTE: u8 = 0;
+
+        let mut harness = Harness::new(512);
+        track_with_grand_boule(&mut harness, 1, ID);
+        let actual = render_master_at_callback_heads(&mut harness, RUN, 12, |block, graph| {
+            match block {
+                0 => {
+                    graph.send_in_one_drain([
+                        grand_boule_preview_attack(ID, 1, 60),
+                        grand_boule_preview_attack(ID, 2, 64),
+                    ]);
+                }
+                1 => {
+                    // 126 queued events and two held strikes exhaust the preview
+                    // budget. The refused attack cannot spend either release's slot.
+                    let preview_burst = PRESSURE_STRIKES.flat_map(|strike| {
+                        [
+                            grand_boule_preview_attack(ID, strike, A0),
+                            grand_boule_preview_release(ID, strike),
+                        ]
+                    });
+                    graph.send_in_one_drain(
+                        preview_burst
+                            .chain([
+                                grand_boule_preview_attack(ID, 100, 84),
+                                grand_boule_preview_release(ID, 1),
+                                grand_boule_preview_release(ID, 2),
+                            ])
+                            .chain(
+                                (0..127)
+                                    .map(|_| GraphCommand::SendMidiNote(ID, note_on(EMPTY_NOTE))),
+                            )
+                            .chain([GraphCommand::SendMidiNote(ID, note_on(F5))]),
+                    );
+                }
+                _ => {}
+            }
+        });
+        let expected = render_grand_boule_reference(12, |block, piano| match block {
+            0 => {
+                assert!(piano.push_preview_note_on(1, 60, 0.6, 0));
+                assert!(piano.push_preview_note_on(2, 64, 0.6, 0));
+            }
+            1 => {
+                for strike in PRESSURE_STRIKES {
+                    assert!(piano.push_preview_note_on(strike, A0, 0.6, 0));
+                    assert!(piano.push_preview_note_off(strike, 0));
+                }
+                assert!(piano.push_preview_note_off(1, 0));
+                assert!(piano.push_preview_note_off(2, 0));
+                assert!(piano.push_note_on(F5, grand_boule_velocity(), 0, 0));
+            }
+            _ => {}
+        });
+
+        assert_eq!(
+            midi_diagnostics(&harness).scheduler_event_buffer_overflows,
+            1
+        );
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn grand_boule_preview_panic_clears_queued_attacks_and_release_reservations() {
+        const ID: usize = 7;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+        let mut harness = Harness::new(256);
+        track_with_grand_boule(&mut harness, 1, ID);
+
+        harness.send_in_one_drain(
+            (1..=64)
+                .map(|strike| grand_boule_preview_attack(ID, strike, 60))
+                .chain([GraphCommand::SendMidiControl(
+                    ID,
+                    MidiControlEvent {
+                        controller: 120, // All Sound Off
+                        value: 0,
+                        channel: 0,
+                    },
+                )])
+                // Spend the full budget again. The last pair must sound
+                // even though no block rendered between the bursts.
+                .chain((65..128).flat_map(|strike| {
+                    [
+                        grand_boule_preview_attack(ID, strike, 0),
+                        grand_boule_preview_release(ID, strike),
+                    ]
+                }))
+                .chain([grand_boule_preview_attack(ID, 128, 77)]),
+        );
+        let actual = render_master(&mut harness, RUN, 4);
+        let expected = render_grand_boule_reference(4, |block, piano| {
+            if block == 0 {
+                piano.all_notes_off();
+                assert!(piano.push_preview_note_on(128, 77, 0.6, 0));
+            }
+        });
+
+        assert_eq!(
+            midi_diagnostics(&harness).scheduler_event_buffer_overflows,
+            0
+        );
+        assert_eq!(actual, expected);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn grand_boule_preview_callback_drains_and_renders_without_allocating() {
+        const ID: usize = 7;
+        const RUN: usize = GRAND_BOULE_RUN_FRAMES;
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, ID);
+        let (mut left, mut right) = ([0.0; RUN], [0.0; RUN]);
+
+        for command in [
+            grand_boule_preview_attack(ID, 1, 60),
+            grand_boule_preview_release(ID, 1),
+        ] {
+            harness.command_tx.push(command).unwrap();
+            left.fill(0.0);
+            right.fill(0.0);
+            assert_no_alloc::assert_no_alloc(|| {
+                harness.scheduler.update_graph();
+                harness.scheduler.process_block(&mut left, &mut right, RUN);
+            });
+            assert!(left.iter().any(|sample| *sample != 0.0));
+        }
     }
 
     /// The instance buffers exactly the frames the host's slices are bounded
@@ -26422,7 +26980,7 @@ mod timeline_tests {
         let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
         let mut body = DutchOvenBody::new(DUTCH_OVEN_RATE);
         for (name, value) in &value_writes {
-            body.set_param(name.as_str(), *value);
+            body.set_param(name.as_str().unwrap(), *value);
         }
         let mut left = material_left.clone();
         let mut right = material_right.clone();

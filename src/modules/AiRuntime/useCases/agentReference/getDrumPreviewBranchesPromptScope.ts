@@ -1,6 +1,6 @@
 import { captureActiveBranchReference } from '#/modules/CrdtDocument/useCases';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import { type DrumPreviewBranchesCapability } from '../../models/DrumPreviewBranchesCapability';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';

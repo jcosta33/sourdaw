@@ -10,8 +10,7 @@ vi.mock('../../hooks/usePresence', () => ({
 
 const defaultProps = {
     beatToX: (beat: number) => beat * 10,
-    trackIdToY: (_id: string) => 100,
-    trackHeight: 80,
+    trackIdToCenterY: (_id: string) => 140,
 };
 
 describe('PresenceOverlay', () => {
@@ -102,5 +101,26 @@ describe('PresenceOverlay', () => {
         // beatToX(15) = 150 → label positioned at left + offset = 152
         const label = screen.getByText('Eve');
         expect(label.getAttribute('style')).toContain('left: 152px');
+    });
+
+    it('places the focus dot at the visible row center and hides it when the row is absent', () => {
+        vi.mocked(usePresence).mockReturnValue([
+            {
+                peerId: 'peer-1',
+                name: 'Alice',
+                color: '#ff0000',
+                playheadBeat: null,
+                cursorBeat: 15,
+                cursorTrackId: 'short-track',
+            },
+        ]);
+        const { container, rerender } = render(
+            <PresenceOverlay {...defaultProps} trackIdToCenterY={(id) => (id === 'short-track' ? 53 : null)} />
+        );
+        expect(container.querySelector('.rounded-full')).toHaveStyle({ top: '50px' });
+
+        rerender(<PresenceOverlay {...defaultProps} trackIdToCenterY={() => null} />);
+
+        expect(container.querySelector('.rounded-full')).toBeNull();
     });
 });

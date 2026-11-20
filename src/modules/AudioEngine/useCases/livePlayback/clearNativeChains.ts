@@ -10,4 +10,5 @@ import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 export function clearNativeChains(): void {
     nativeLiveGraphSession.nativeChainByStripId = new Map();
+    nativeLiveGraphSession.grandBoulePreviewTargetsByStripId = new Map();
 }

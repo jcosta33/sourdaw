@@ -1,5 +1,5 @@
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { withoutDeferredTempoRecordingSources } from '#/utils/deferredTempoRecordingSources';
+import { withoutDeferredTempoRecordingSources } from '#/modules/Transport/stores';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 

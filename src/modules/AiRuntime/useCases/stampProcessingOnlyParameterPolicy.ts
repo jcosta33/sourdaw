@@ -1,4 +1,5 @@
-import { type AppAction, type AppActionType, type AutomationRecordingPolicy } from '#/utils/handlerContract';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 type Stamp = { readonly [Type in AppActionType]: (action: ActionOf<Type>) => AppAction };
@@ -119,7 +120,11 @@ const stampByActionType: Stamp = {
     setExternalPluginState: leaveUnstamped,
     setDeviceState: leaveUnstamped,
     setFermenterPatch: leaveUnstamped,
+    setLevainIdentity: leaveUnstamped,
     setGrandBouleDeviceState: leaveUnstamped,
+    setToasterFactoryKit: leaveUnstamped,
+    setBacteriaFactoryPatch: leaveUnstamped,
+    setGlutenFactoryPreset: leaveUnstamped,
     createBus: leaveUnstamped,
     createFolder: leaveUnstamped,
     setSend: leaveUnstamped,
@@ -172,6 +177,7 @@ const stampByActionType: Stamp = {
     removeAutomationLane: leaveUnstamped,
     setAutomationLaneEnabled: leaveUnstamped,
     addAutomationPoint: leaveUnstamped,
+    insertAutomationLanePoints: leaveUnstamped,
     quantizeNotes: leaveUnstamped,
     removeShortMidiOverlaps: leaveUnstamped,
     createDrumPreviewBranches: leaveUnstamped,
@@ -195,6 +201,7 @@ const stampByActionType: Stamp = {
     setClipFade: leaveUnstamped,
     importMidiFile: leaveUnstamped,
     normalizeClip: leaveUnstamped,
+    relinkClipAudioSources: leaveUnstamped,
     reverseClip: leaveUnstamped,
     restoreReversedClip: leaveUnstamped,
     glueClips: leaveUnstamped,

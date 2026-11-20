@@ -198,6 +198,32 @@ describe('persistPromptActionConfirmation', () => {
         clearHandlerRegistry();
     });
 
+    it('does not show an unbound run reading on a legacy confirmation', () => {
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
+        mocks.getRun.mockReturnValueOnce(null).mockReturnValueOnce({
+            plan: {
+                applicationToolReceipts: [
+                    {
+                        toolName: 'selectCreativeInterpretation',
+                        status: 'success',
+                        data: {
+                            kind: 'metric-intent',
+                            authorityId: 'authority',
+                            creativeInterpretation: 'A small vintage receiver',
+                        },
+                    },
+                ],
+            },
+        } as ReturnType<typeof agentRunLifecycle.get>);
+        persistPromptActionConfirmation(createInput());
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            'assistant-confirmation',
+            expect.objectContaining({
+                content: expect.not.stringContaining('Interpretation: A small vintage receiver'),
+            })
+        );
+    });
+
     it('does not transfer ownership if lease construction fails', () => {
         const acquired = vi.fn();
         mocks.createResourceLease.mockImplementation(() => {
@@ -241,7 +267,7 @@ describe('persistPromptActionConfirmation', () => {
     it('settles the canonical lease if a retained proposal cannot enter waiting-for-approval', () => {
         const release = vi.fn();
         mocks.createResourceLease.mockReturnValue({ bytes: 64, release });
-        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
         mocks.getConfirmation.mockReturnValue({ id: 'retained-confirmation' });
         mocks.transitionPhase.mockImplementation(() => {
             throw new Error('Phase persistence failed');
@@ -321,7 +347,7 @@ describe('persistPromptActionConfirmation', () => {
         });
         mocks.proposeConfirmation.mockImplementation(() => {
             ordering.push('proposal-retained');
-            return { id: 'retained-confirmation' };
+            return { id: 'retained-confirmation', approvalSnapshot: {} };
         });
         mocks.updateChatMessage.mockImplementation(() => ordering.push('proposed-chat'));
         mocks.transitionPhase.mockImplementation(() => ordering.push('waiting-for-approval'));
@@ -377,7 +403,7 @@ describe('persistPromptActionConfirmation', () => {
 
     // Red when the stored proposal carries no semantic diff, or one whose recoveries ignore the registry.
     it('stores a semantic diff keyed by the envelope group ids with registry-derived recoveries', () => {
-        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
         clearHandlerRegistry();
         registerHandlerMap({
             setTrackGain: {
@@ -402,7 +428,7 @@ describe('persistPromptActionConfirmation', () => {
 
     // Red when a handler that cannot describe its action aborts the proposal instead of degrading the diff.
     it('degrades a destructive change to irreversible and warns when the batch cannot be described', () => {
-        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
         const removeInput = createRemoveTrackInput();
         clearHandlerRegistry();
         registerHandlerMap({

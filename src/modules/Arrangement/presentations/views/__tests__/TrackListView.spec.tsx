@@ -4,9 +4,12 @@ import { act, render, screen, fireEvent, waitFor, createEvent, within } from '@t
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { normalizeTrack } from '../../../models/Track';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
@@ -131,7 +134,8 @@ vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Preferences/useCases', () => ({
+vi.mock('#/modules/Preferences/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Preferences/useCases')>()),
     defaultPreferences: { trackHeight: 'normal' },
     onSoloModePreferenceApplied: vi.fn(),
     setTrackHeight: vi.fn(),
@@ -187,6 +191,74 @@ describe('TrackListView', () => {
         renderWithTooltip(<TrackListView />);
         expect(screen.getByTestId('track-t1')).toBeInTheDocument();
         expect(screen.getByTestId('track-t2')).toBeInTheDocument();
+    });
+
+    it('toggles only existing track automation labels after variations without issuing an edit', () => {
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    height: 44,
+                    showVariationLanes: true,
+                    alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+                }),
+                normalizeTrack({ id: 't2', name: 'Track 2', kind: 'midi', height: 56 }),
+            ],
+            selectedTrackId: 't2',
+        });
+        const lane: AutomationLane = {
+            id: 'pan',
+            trackId: 't1',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        const source = {
+            lanes: [
+                lane,
+                { ...lane, id: 'clip-pan', clipId: 'clip' },
+                { ...lane, id: 'stale-pan', trackId: 'removed' },
+                { ...lane, id: 'hidden-pan', visible: false },
+            ],
+        };
+        automationStore.set(source);
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            renderWithTooltip(<TrackListView />);
+            const button = screen.getByRole('button', { name: 'Inline automation' });
+            expect(button).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('inline-automation-lane-row')).toBeNull();
+
+            fireEvent.click(button);
+            expect(button).toHaveAttribute('aria-pressed', 'true');
+            const row = screen.getByTestId('inline-automation-lane-row');
+            expect(row).toHaveTextContent('Pan');
+            expect(row).toHaveAttribute('data-automation-lane-id', 'pan');
+            expect(row).toHaveStyle({ height: '40px' });
+            expect(
+                screen.getByText('Alternative 1').compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING
+            ).toBeTruthy();
+            expect(
+                row.compareDocumentPosition(screen.getByTestId('track-t2')) & Node.DOCUMENT_POSITION_FOLLOWING
+            ).toBeTruthy();
+
+            fireEvent.click(button);
+            expect(button).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('inline-automation-lane-row')).toBeNull();
+            expect(automationStore.value).toEqual(source);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            automationStore.set({ lanes: [] });
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
     });
 
     it('should render master spectrum in header', () => {
@@ -587,6 +659,31 @@ describe('TrackListView', () => {
 
         expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
         expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+    });
+
+    it('leaves a click on empty list space unfocused, so Enter and Delete still reach the window shortcut layer', async () => {
+        // A focusable grid would take focus on that click and claim Enter (clip mode
+        // instead of stop) and Delete (the track confirm instead of the clips).
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        const grid = screen.getByRole('grid');
+
+        fireEvent.mouseDown(grid);
+        grid.focus();
+        fireEvent.click(grid);
+        const focused = document.activeElement ?? document.body;
+        fireEvent.keyDown(focused, { key: 'Enter' });
+        fireEvent.keyDown(focused, { key: 'Delete' });
+
+        expect(grid.hasAttribute('tabindex')).toBe(false);
+        expect(focused).not.toBe(grid);
+        expect(setWorkspaceMode).not.toHaveBeenCalled();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(windowKeyDown).toHaveBeenCalledTimes(2);
         window.removeEventListener('keydown', windowKeyDown);
     });
 

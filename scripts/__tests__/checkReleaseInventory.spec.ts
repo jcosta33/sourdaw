@@ -80,7 +80,9 @@ import {
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
-import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
+import { licenceInputDigest, licenceInputProjectionKind } from '../dependencyLicenseInputProjection';
+import { DEPENDENCY_LICENSE_PROOFS_PATH, DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
+import { LICENCE_PROJECTED_SNAPSHOT_PATHS } from '../releaseInventoryLicenceSnapshots';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
@@ -1335,7 +1337,11 @@ function inventory(): ReleaseInventory {
                 obligations: ['Preserve attribution.'],
             },
         ],
-        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => ({ path, sha256: fixtureDigest })),
+        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) =>
+            LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(path)
+                ? { path, projection: licenceInputProjectionKind(path), sha256: fixtureDigest }
+                : { path, sha256: fixtureDigest }
+        ),
         externalReferences: [{ surface: 'runtime', file: 'src/provider.ts', value: 'https://provider.example/v1' }],
         marks: [],
     };
@@ -1346,6 +1352,9 @@ function snapshot(): RepositorySnapshot {
         releaseFiles: [...new Set([...REQUIRED_SNAPSHOT_PATHS, 'public/icon.png', 'src/provider.ts'])],
         externalReferences: [{ file: 'src/provider.ts', value: 'https://provider.example/v1' }],
         fileDigests: Object.fromEntries(REQUIRED_SNAPSHOT_PATHS.map((path) => [path, fixtureDigest])),
+        snapshotProjectionDigests: Object.fromEntries(
+            LICENCE_PROJECTED_SNAPSHOT_PATHS.map((path) => [path, fixtureDigest])
+        ),
         markPaths: {},
     };
 }
@@ -2920,31 +2929,32 @@ describe('release inventory', () => {
 
     // The admitted DSP source and its admission record stay content-pinned (ADR 0036).
     // Setting `pinsAdmittedBytes` false on either boundary turns this red.
-    it('moves only the pinned digest when an admitted Grand Boule byte changes (ADR 0036)', () => {
+    // Measured 0.7-0.8 s per run with one shared fixture (1.1-1.5 s with four); the timeout keeps load from failing it.
+    it('moves only the pinned digest when an admitted Grand Boule byte changes (ADR 0036)', { timeout: 15_000 }, () => {
         const cases = [
             { path: 'crates/daw-dsp/src/grand_boule/engine.rs', label: 'grand-boule-native-rust' },
             { path: '.agents/decisions/0036-readmit-grand-boule.md', label: 'grand-boule-admission-decision' },
         ];
-        for (const { path, label } of cases) {
-            const base = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-pinned-digests-'));
-            const first = join(base, 'first');
-            const second = join(base, 'second');
-            try {
-                writeGrandBouleReleaseFixture(first);
-                writeGrandBouleReleaseFixture(second);
-                writeFileSync(join(second, path), `${readFileSync(join(second, path), 'utf8')}\n// edited`);
-
-                const firstDigests = grandBouleReleaseInventoryContract(first).digests;
-                const secondDigests = grandBouleReleaseInventoryContract(second).digests;
+        // One fixture serves both cases: the digest reads working-tree bytes of tracked files, so each
+        // edit is measured against the unedited baseline and restored before the next.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-pinned-digests-'));
+        try {
+            writeGrandBouleReleaseFixture(root);
+            const firstDigests = grandBouleReleaseInventoryContract(root).digests;
+            for (const { path, label } of cases) {
+                const original = readFileSync(join(root, path), 'utf8');
+                writeFileSync(join(root, path), `${original}\n// edited`);
+                const secondDigests = grandBouleReleaseInventoryContract(root).digests;
+                writeFileSync(join(root, path), original);
                 expect(
                     secondDigests.flatMap((digest, index) =>
                         digest === firstDigests[index] ? [] : [digestLabelFromEntry(digest)]
                     )
                 ).toEqual([label]);
                 expect(findDigestByLabel(secondDigests, label)).toMatch(/^tracked-set-sha256:[0-9a-f]{64}:/u);
-            } finally {
-                removeTemporaryDirectory(base);
             }
+        } finally {
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -4562,6 +4572,147 @@ describe('release inventory', () => {
         ).toThrow('project license distribution release inventory digests does not match provenance');
     });
 
+    describe('licence-projected snapshots and curated proof evidence', () => {
+        const projectedFixturePaths = ['package.json', 'Cargo.toml', 'Cargo.lock'] as const;
+
+        function withProjectedFixture(edit: (root: string) => void): string[] {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-projection-'));
+            try {
+                for (const path of projectedFixturePaths) {
+                    writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
+                }
+                const value = inventory();
+                value.snapshots = projectedFixturePaths.map((path) => {
+                    const { projection, sha256: digest } = licenceInputDigest(path, readFileSync(join(root, path)));
+                    return projection === 'whole-file'
+                        ? { path, sha256: digest }
+                        : { path, projection, sha256: digest };
+                });
+                edit(root);
+                return validateReleaseInventory(
+                    value,
+                    loadRepositorySnapshot(root, value, [...projectedFixturePaths])
+                ).filter((error) => projectedFixturePaths.some((path) => error.startsWith(`${path}: snapshot`)));
+            } finally {
+                removeTemporaryDirectory(root);
+            }
+        }
+
+        function replaceIn(root: string, path: string, before: string, after: string): void {
+            const contents = readFileSync(join(root, path), 'utf8');
+            expect(contents).toContain(before);
+            writeFileSync(join(root, path), contents.replace(before, after));
+        }
+
+        it('accepts the projected fixture unedited', () => {
+            expect(withProjectedFixture(() => undefined)).toEqual([]);
+        });
+
+        it.each([
+            ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
+            ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
+            ['package.json', ' --config electron-builder.yml', ''],
+            ['package.json', '"private": true,', '"private": true,\n    "build": { "files": ["node_modules/**/*"] },'],
+            ['Cargo.toml', 'windows = "0.62.2"', 'windows = "0.63.0"'],
+            ['Cargo.toml', '[workspace.dependencies]\n', '[workspace.dependencies]\nlibc = "0.2"\n'],
+            ['Cargo.toml', '"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n'],
+            ['Cargo.toml', 'license = "Apache-2.0"', 'license = "MIT"'],
+            ['Cargo.lock', 'version = 4', 'version = 3'],
+        ])('reports %s licence-input drift as a drifted snapshot', (path, before, after) => {
+            expect(withProjectedFixture((root) => replaceIn(root, path, before, after))).toEqual([
+                `${path}: snapshot drifted`,
+            ]);
+        });
+
+        it.each([
+            ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
+            ['package.json', '"version": "', '"version": "9'],
+            ['package.json', '"desktop:dev": "', '"desktop:dev": "true && '],
+            ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],
+            ['Cargo.toml', 'lto = true', 'lto = false'],
+            ['Cargo.toml', '[workspace.package]\n', '# Inherited by every member.\n[workspace.package]\n'],
+        ])('accepts licence-irrelevant drift in %s without a restamp', (path, before, after) => {
+            expect(withProjectedFixture((root) => replaceIn(root, path, before, after))).toEqual([]);
+        });
+
+        it('refuses a projected snapshot recorded without its projection, and a whole-file one with one', () => {
+            const value = inventory();
+            const packageJson = value.snapshots.find((entry) => entry.path === 'package.json');
+            const cargoLock = value.snapshots.find((entry) => entry.path === 'Cargo.lock');
+            delete packageJson!.projection;
+            cargoLock!.projection = 'cargo-manifest-licence-graph';
+            expect(validateReleaseInventory(value, snapshot())).toEqual(
+                expect.arrayContaining([
+                    'package.json: snapshot must pin the package-json-packaging projection',
+                    'Cargo.lock: snapshot must pin the whole file',
+                ])
+            );
+        });
+
+        function curatedDigestAfter(edit: (manifest: Record<string, unknown>) => void): string | undefined {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-curated-proofs-'));
+            try {
+                for (const path of [
+                    'LICENSE',
+                    'NOTICE',
+                    DEPENDENCY_LICENSE_REPORT_PATH,
+                    DEPENDENCY_LICENSE_PROOFS_PATH,
+                ]) {
+                    mkdirSync(dirname(join(root, path)), { recursive: true });
+                    writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
+                }
+                const proofsPath = join(root, DEPENDENCY_LICENSE_PROOFS_PATH);
+                const manifest = JSON.parse(readFileSync(proofsPath, 'utf8')) as Record<string, unknown>;
+                edit(manifest);
+                writeFileSync(proofsPath, `${JSON.stringify(manifest, null, 4)}\n`);
+                return projectLicenseDistributionReleaseInventoryContract(root).digests.find((digest) =>
+                    digest.endsWith(`:@curated-packages:${DEPENDENCY_LICENSE_PROOFS_PATH}`)
+                );
+            } finally {
+                removeTemporaryDirectory(root);
+            }
+        }
+
+        type ProofPackages = Record<string, { assembled?: { licenses: string[] }; files?: Array<{ sha256: string }> }>;
+
+        function firstProof(manifest: Record<string, unknown>, kind: 'assembled' | 'files') {
+            const packages = manifest.packages as ProofPackages;
+            const entry = Object.values(packages).find((proof) => proof[kind] !== undefined);
+            if (entry === undefined) {
+                throw new Error(`the live proof manifest has no ${kind} proof`);
+            }
+            return entry;
+        }
+
+        it.each([
+            [
+                'a curated licence election',
+                (manifest: Record<string, unknown>) => {
+                    firstProof(manifest, 'assembled').assembled!.licenses = ['Zlib'];
+                },
+            ],
+            [
+                'a curated legal file entry',
+                (manifest: Record<string, unknown>) => {
+                    firstProof(manifest, 'files').files![0]!.sha256 = '0'.repeat(64);
+                },
+            ],
+        ])('moves the curated proof digest on %s', (_change, edit) => {
+            const baseline = curatedDigestAfter(() => undefined);
+            expect(baseline).toMatch(/^sha256:[0-9a-f]{64}:@curated-packages:/u);
+            expect(curatedDigestAfter(edit)).not.toBe(baseline);
+        });
+
+        it('leaves the generated Cargo runtime inventory to the live licence preflight', () => {
+            const baseline = curatedDigestAfter(() => undefined);
+            expect(
+                curatedDigestAfter((manifest) => {
+                    (manifest.cargoRuntimeInventory as { cargoLockSha256: string }).cargoLockSha256 = '0'.repeat(64);
+                })
+            ).toBe(baseline);
+        });
+    });
+
     it('rejects a new release file without a classification', () => {
         expect(
             validateReleaseInventory(inventory(), {
@@ -4708,6 +4859,37 @@ describe('release inventory', () => {
         value.surfaces[0]!.paths.push('missing/**');
 
         expect(validateReleaseInventory(value, snapshot())).toContain('runtime: path is not tracked: missing/**');
+    });
+
+    it('includes a tracked snapshot beyond the default Git stdout buffer', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        const trackedPath = 'z-release-entry.txt';
+        const content = 'This tracked file follows more than a mebibyte of indexed paths.\n';
+        const defaultBuffer = 1024 * 1024;
+        try {
+            execFileSync('git', ['init', '--quiet'], { cwd: root });
+            writeFileSync(join(root, trackedPath), content);
+            const blob = execFileSync('git', ['hash-object', '-w', '--', trackedPath], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const indexEntry = (path: string): string => `100644 ${blob}\t${path}\n`;
+            const padding = 'x'.repeat(220);
+            const entries = Array.from({ length: 5000 }, (_, index) => indexEntry(`padding-${index}-${padding}.txt`));
+            entries.push(indexEntry(trackedPath));
+            execFileSync('git', ['update-index', '--index-info'], { cwd: root, input: entries.join('') });
+            const listing = execFileSync('git', ['ls-files'], { cwd: root, maxBuffer: 2 * defaultBuffer });
+            expect(listing.indexOf(`${trackedPath}\n`)).toBeGreaterThan(defaultBuffer);
+
+            const result = loadRepositorySnapshot(root, {
+                snapshots: [{ path: trackedPath, sha256: sha256(content) }],
+                marks: [],
+            });
+            expect(result.releaseFiles).toEqual([trackedPath]);
+            expect(result.fileDigests).toEqual({ [trackedPath]: sha256(content) });
+        } finally {
+            removeTemporaryDirectory(root);
+        }
     });
 
     it('discovers shipped assets and non-HTTP production endpoints', () => {

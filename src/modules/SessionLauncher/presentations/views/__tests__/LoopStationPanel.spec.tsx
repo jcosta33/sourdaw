@@ -69,6 +69,12 @@ vi.mock('#/modules/Transport/stores', () => ({
     playheadPositionRef: { current: 0 },
     readBarStartBeat: vi.fn(),
     readBarAtBeat: vi.fn(() => ({ bar: 1, opensBar: true })),
+    captureTempoSourceOwnerValue: vi.fn(),
+    normalizeTempoSourceClockContext: vi.fn(),
+    normalizeTempoSourceOwnerContext: vi.fn(),
+    readTempoSourceClockValue: vi.fn(),
+    tempoAudioSourceCoverageMatches: vi.fn(),
+    withoutDeferredTempoRecordingSources: vi.fn(),
 }));
 
 // Wrap (not replace) the real formatLoopProgress so the rest of the suite
@@ -125,6 +131,18 @@ describe('LoopStationPanel', () => {
         };
         mocks.trackState = { tracks: [] };
         mocks.transportState = { playheadPosition: 0, timeSignatureNumerator: 4 };
+    });
+
+    it('waits for composition to finish before committing the loop length with Enter', () => {
+        renderPanel();
+        const input = screen.getByRole('spinbutton', { name: 'Fixed loop length in beats (0 = auto)' });
+        fireEvent.change(input, { target: { value: '8' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(mocks.setFixedLoopLength).not.toHaveBeenCalled();
+        expect(input).toHaveValue(8);
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(mocks.setFixedLoopLength).toHaveBeenCalledExactlyOnceWith(8);
     });
 
     it('should render without crashing', () => {

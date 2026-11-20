@@ -45,6 +45,7 @@
                 ".gitleaks.toml",
                 ".node-version",
                 ".oxlint-plugins.json",
+                ".oxlint-quality.json",
                 ".oxlintrc.json",
                 ".prettierignore",
                 ".prettierrc",
@@ -67,8 +68,7 @@
                 "eslint.size-baseline.mjs",
                 "index.html",
                 "knip.json",
-                "oxlint.craft-baseline.d.mts",
-                "oxlint.craft-baseline.mjs",
+                "oxlint-quality-baseline.json",
                 "package.json",
                 "playwright.config.ts",
                 "pnpm-lock.yaml",
@@ -171,8 +171,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:7f9dd20648c3a30a2c146084238fe452e75184d9285bc66bafbdc6753a5aa798:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:4cbff9ffeba39063edfd71f6ccf2d768e07ee7d3af6e59b8be7a6b7714615f03:release/dependency-license-proofs.json"
+                "sha256:4fb7c9faa1986b00506e60efdb519d416966c2371f27f9737fee79c6429e2c28:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:7ff0851fcf10cc371cc0df9dd416354a4d7682392110397a5641e58ee8eb6b07:@curated-packages:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -298,7 +298,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102",
+                "sha256:ca5fd521c71f3d0d03611d5b2a87f2d7ee55b606050ecf3b6bbff1a63bbf8193",
                 "sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
@@ -1244,7 +1244,7 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:e5d22ea017ba20b5e6a2d0e7a75218e65b8535080500fd0ab34fed07b05c6d90:grand-boule-native-rust",
+                "tracked-set-sha256:0fb8c31bbe782dd290ab752862f659823dca41ac50c286d5145025bac84db3ef:grand-boule-native-rust",
                 "tracked-set-sha256:782dcc9a77a2453d9f440c9c39e3f14823caebb1c10b652afca92b6fb586698e:grand-boule-admission-decision",
                 "tracked-set:grand-boule-discovery-catalog",
                 "tracked-set:grand-boule-factory-admission",
@@ -1399,13 +1399,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:98bf444ba662e2ec155b4c623844adf04425d36f3647ced6b42eddd3d0fbdaba",
-                "daw-wasm-decoder sha256:79f8fddfa46d63b9143d54b0c7e6d74a3f0274d4f3acb3e267b5e2c72dae6479",
-                "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
-                "scoring sha256:c5ab364d143ac65396c34872a9b85d575cc3bde7d8464349448a8d3fa1658735"
+                "daw-dsp sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90",
+                "daw-wasm-decoder sha256:8480178847a2baf751289eb5bfefb43097f250958f0f6393d645962ea4620e5b",
+                "proof-chamber sha256:117a4259878c1a4e1c303c0ad32eb1f40b1ec9628da1ec97842534721e26a774",
+                "scoring sha256:1167a1cdbc1226b494ddf5ccd309e9cc05a64e463e7b460ea13c4c4bc30fadde"
             ],
             "digests": [
-                "sha256:3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109:public/wasm/manifest.json"
+                "sha256:76fc7ad290b37e796ab2b3716b5899c1ed7b542af6b8da24dd10720b0af00bce:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1477,7 +1477,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:dd1a7b1ec591d45a4a23b354a565b0f9c21a31b2fb2d263ccd4f8dce553deccc:public/themePrepaint.js"
+                "sha256:a6c90c62675f2ae94810be1eebd6d5061a9baa9d11ff2d5fb57068c3999a2405:public/themePrepaint.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1729,6 +1729,7 @@
             "sources": [
                 "https://github.com/jcosta33/sourdaw",
                 "https://github.com/jcosta33/sourdaw/discussions",
+                "https://github.com/jcosta33/sourdaw/discussions/categories/general",
                 "https://github.com/jcosta33/sourdaw/issues",
                 "https://sourdaw.app"
             ],
@@ -1911,7 +1912,8 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
+            "sha256": "8705f5690374b9cb9286454b534041be248e9934d7a46d00ec6f3bb4059388ca",
+            "projection": "package-json-packaging"
         },
         {
             "path": "server/package.json",
@@ -1923,11 +1925,12 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102"
+            "sha256": "ca5fd521c71f3d0d03611d5b2a87f2d7ee55b606050ecf3b6bbff1a63bbf8193"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
+            "sha256": "4fe1542d8a6ecc23132c556f222fe0ac0843c602e9bd151cb7e218f4a795cd7c",
+            "projection": "cargo-manifest-licence-graph"
         },
         {
             "path": "Cargo.lock",
@@ -1939,7 +1942,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109"
+            "sha256": "76fc7ad290b37e796ab2b3716b5899c1ed7b542af6b8da24dd10720b0af00bce"
         }
     ],
     "externalReferences": [
@@ -1992,6 +1995,11 @@
             "surface": "community-links",
             "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
             "value": "https://github.com/jcosta33/sourdaw/discussions"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/discussions/categories/general"
         },
         {
             "surface": "community-links",

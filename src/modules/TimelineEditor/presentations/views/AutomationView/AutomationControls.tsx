@@ -104,6 +104,7 @@ export const AutomationModeControl = ({
                             menuPositionClassName
                         )}
                         role="menu"
+                        tabIndex={-1}
                         onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         {AUTOMATION_MODE_OPTIONS.map((option) => {
@@ -162,12 +163,11 @@ export const AutomationAddLaneControl = ({
     const [open, setOpen] = useState(false);
 
     return (
-        <div className={cn('relative', className)}>
+        <div className={cn('relative flex items-center gap-2', className)}>
             <Button
-                variant="bare"
-                size="bare"
+                variant="ghost"
+                size="xs"
                 type="button"
-                className="flex w-full items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => setOpen((current) => !current)}
                 onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                 aria-haspopup="menu"
@@ -175,10 +175,10 @@ export const AutomationAddLaneControl = ({
             >
                 <Plus className="size-3" />
                 Add Lane
-                {showAvailableCount && params.length > 0 ? (
-                    <span className="ml-auto text-[8px] text-muted-foreground">{params.length} available</span>
-                ) : null}
             </Button>
+            {showAvailableCount && params.length > 0 ? (
+                <span className="ml-auto text-[9px] text-muted-foreground">{params.length} available</span>
+            ) : null}
 
             {open ? (
                 <>
@@ -186,6 +186,7 @@ export const AutomationAddLaneControl = ({
                     <div
                         className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[300px] min-w-[200px] overflow-y-auto rounded-md py-1"
                         role="menu"
+                        tabIndex={-1}
                         onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         <DawEyebrowLabel className="block px-2 py-1 text-[8px]">Add parameter</DawEyebrowLabel>

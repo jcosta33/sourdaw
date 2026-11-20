@@ -1,5 +1,5 @@
+import { type TempoScalarTransition } from '#/modules/Transport/stores';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
-import { type TempoScalarTransition } from '#/utils/tempoAudioSourcePromotion';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -100,7 +100,11 @@ const tempoScalarTransitionByActionType: {
     setExternalPluginState: notATempoAction,
     setDeviceState: notATempoAction,
     setFermenterPatch: notATempoAction,
+    setLevainIdentity: notATempoAction,
     setGrandBouleDeviceState: notATempoAction,
+    setToasterFactoryKit: notATempoAction,
+    setBacteriaFactoryPatch: notATempoAction,
+    setGlutenFactoryPreset: notATempoAction,
     createBus: notATempoAction,
     createFolder: notATempoAction,
     setSend: notATempoAction,
@@ -153,6 +157,7 @@ const tempoScalarTransitionByActionType: {
     removeAutomationLane: notATempoAction,
     setAutomationLaneEnabled: notATempoAction,
     addAutomationPoint: notATempoAction,
+    insertAutomationLanePoints: notATempoAction,
     quantizeNotes: notATempoAction,
     removeShortMidiOverlaps: notATempoAction,
     createDrumPreviewBranches: notATempoAction,
@@ -176,6 +181,7 @@ const tempoScalarTransitionByActionType: {
     setClipFade: notATempoAction,
     importMidiFile: notATempoAction,
     normalizeClip: notATempoAction,
+    relinkClipAudioSources: notATempoAction,
     reverseClip: notATempoAction,
     restoreReversedClip: notATempoAction,
     glueClips: notATempoAction,

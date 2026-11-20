@@ -253,8 +253,16 @@ vi.mock('../projectPersistence/saveProject/captureExternalPluginStates', () => (
 // The snapshot serializer needs a hydrated arrangement to produce anything, and
 // since ADR 0013 saveProject reports failure when it produces nothing. Stub it
 // so this suite exercises the persistence sequencing rather than serialization.
-vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
-    buildProjectData: mocks.buildProjectData,
+vi.mock('../projectPersistence/saveProject/buildPreparedProjectSaveData', () => ({
+    buildPreparedProjectSaveData: async () => {
+        const project = mocks.projectStoreValue.value;
+        mocks.projectStoreSet({ ...project, updatedAt: Date.now(), dirty: true });
+        const built = await mocks.buildProjectData();
+        if (!built) {
+            throw new Error('Project snapshot could not be built');
+        }
+        return { built, settledTakesAtSnapshot: 0 };
+    },
 }));
 
 /**

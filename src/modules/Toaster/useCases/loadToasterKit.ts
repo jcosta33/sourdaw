@@ -5,6 +5,7 @@ import { loadKit } from '../stores/toasterStore';
 
 import { getToasterControls } from './getToasterControls';
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
+import { cancelPendingToasterKitParams } from './toasterParamBridge/cancelPendingToasterKitParams';
 import { cancelPendingToasterPadParams } from './toasterParamBridge/cancelPendingToasterPadParams';
 import { writeToasterParamsNatively } from './writeToasterParamsNatively';
 
@@ -14,32 +15,23 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
         return;
     }
 
-    // A pad-param edit made just before the load has already written the store
-    // but may still be sitting in the rAF coalescing queue. Left alone, that
-    // frame fires *after* the projection below and posts the stale pre-preset
-    // value to the engine — the panel then shows the preset while the engine
-    // plays the old kit's mute/volume/pan. Teardown already cancels the queue
-    // (disposeToasterDevice); a preset load replaces the kit just as totally.
+    // A queued frame holds values from the replaced kit and would overwrite the engine below.
     cancelPendingToasterPadParams(deviceId);
+    cancelPendingToasterKitParams(deviceId);
 
-    // Update the UI store first
     loadKit(deviceId, kit);
 
-    // Forward to the WASM engine
     const controls = getToasterControls(deviceId);
-    if (!controls) {
-        return;
-    }
-
     // The same projection the device-load subscriber and the offline render use.
-    // This used to be a third hand-maintained copy of it.
     const messages = projectToasterKitToEngineMessages({ kit });
-    for (const message of messages) {
-        if (message.type === 'param') {
-            controls.setParam(message.name, message.value);
-            continue;
+    if (controls) {
+        for (const message of messages) {
+            if (message.type === 'param') {
+                controls.setParam(message.name, message.value);
+                continue;
+            }
+            controls.setPadParam(message.pad, message.name, message.value);
         }
-        controls.setPadParam(message.pad, message.name, message.value);
     }
 
     // A preset replaces the whole kit, so the native session needs the whole

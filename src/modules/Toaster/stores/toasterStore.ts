@@ -46,6 +46,10 @@ export const toasterStore = createStore<ToasterInstances>({
 // persistence records it as an edit rather than first sight.
 const pendingKitUpdates = new Map<string, Partial<ToasterKit>>();
 
+export function discardPendingToasterKitUpdates(deviceId: string): void {
+    pendingKitUpdates.delete(deviceId);
+}
+
 // Pad selections made while the device is still loading, by device id. A store
 // rather than a plain map because the panel renders in that window and must show
 // the pressed pad at once: it reads this through `getToasterViewState`, and
@@ -231,7 +235,8 @@ export function loadKit(deviceId: string, kit: ToasterKit): void {
     if (!state) {
         return;
     }
-    toasterStore.set({ ...instances, [deviceId]: { ...state, kit, selectedPadIndex: 0 } });
+    const selectedPadIndex = kit.pads[state.selectedPadIndex] ? state.selectedPadIndex : 0;
+    toasterStore.set({ ...instances, [deviceId]: { ...state, kit, selectedPadIndex } });
 }
 
 export function updateKit(deviceId: string, updates: Partial<ToasterKit>): void {

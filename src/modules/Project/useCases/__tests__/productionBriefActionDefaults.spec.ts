@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
@@ -62,6 +63,30 @@ describe('production brief admission of an action no scope rule singles out', ()
         ).toBe(true);
     });
 
+    it.each([
+        { clipId: 'clip-locked', allowed: false },
+        { clipId: 'clip-free', allowed: true },
+    ])('scope-checks the nested relink alias $clipId', ({ clipId, allowed }) => {
+        const action: AppAction = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: [
+                    {
+                        trackId: 'track-guitar',
+                        trackKind: 'audio',
+                        activeAlternativeId: 'active',
+                        alternativeId: null,
+                        clipId,
+                        before: { audioBufferId: 'missing' },
+                        after: { audioBufferId: 'replacement' },
+                    },
+                ],
+            },
+        };
+
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(allowed);
+    });
+
     it('is refused when its type is unknown and its payload names a clip inside the locked range', () => {
         // A persisted batch is untrusted data: JSON.parse yields an untyped value, so no cast is needed.
         const actions: AppAction[] = JSON.parse('[{"type":"noSuchAction","payload":{"clipId":"clip-locked"}}]');
@@ -100,5 +125,32 @@ describe('production brief admission of an action no scope rule singles out', ()
         const actions: AppAction[] = JSON.parse('[{"type":"toString","payload":{}}]');
 
         expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+    });
+
+    describe('with an automation lane that holds a point inside the locked range', () => {
+        beforeEach(() => {
+            addAutomationLane('track-guitar', 'gain', 'Gain', 'lane-guitar-gain');
+            addAutomationPoint('lane-guitar-gain', {
+                id: 'point-locked',
+                beat: 55,
+                value: 0.5,
+                curve: 'linear',
+                tension: 0,
+            });
+        });
+
+        it('is allowed when its type is an inherited object name and its payload names nothing', () => {
+            const actions: AppAction[] = JSON.parse('[{"type":"constructor","payload":{}}]');
+
+            expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+        });
+
+        it('is refused when its type is unknown and its payload names the lane that holds the locked point', () => {
+            const actions: AppAction[] = JSON.parse(
+                '[{"type":"noSuchAction","payload":{"laneId":"lane-guitar-gain"}}]'
+            );
+
+            expect(doesProductionBriefAllowActionBatch(actions)).toBe(false);
+        });
     });
 });

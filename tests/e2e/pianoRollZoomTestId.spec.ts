@@ -15,7 +15,7 @@ async function openPianoRoll(page: import('@playwright/test').Page): Promise<voi
     await expect(page.locator('[aria-label="Piano roll editor"]')).toBeVisible();
 }
 
-test.describe('Piano roll zoom & snap — test-id targeted', () => {
+test.describe('Horizontal zoom & snap — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -32,7 +32,7 @@ test.describe('Piano roll zoom & snap — test-id targeted', () => {
         await snap32.click();
         await expect(snap32).toHaveAttribute('aria-pressed', 'true');
         await expect(snap16).toHaveAttribute('aria-pressed', 'false');
-        await expect(page.getByRole('slider', { name: 'Piano roll zoom' })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'Horizontal zoom' })).toBeVisible();
         await snap16.click();
         await expect(snap16).toHaveAttribute('aria-pressed', 'true');
         await expect(snap32).toHaveAttribute('aria-pressed', 'false');

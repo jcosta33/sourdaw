@@ -96,13 +96,13 @@ describe('BacteriaPanel K-knob write routing', () => {
         vi.clearAllMocks();
     });
 
-    it('routes a global knob (Play-mode Input) to the global write and never the band write', () => {
+    it('routes a global knob (Play-mode Output) to the global write and never the band write', () => {
         bacteriaStore.set({ 'dev-1': makeState({ uiLevel: 1 }) });
         render(<BacteriaPanel deviceId="dev-1" />);
 
-        clickKnobByLabel('Input');
+        clickKnobByLabel('Output');
 
-        expect(setBacteriaParamWithAudio).toHaveBeenCalledWith('dev-1', 'inputGain', SENTINEL_VALUE);
+        expect(setBacteriaParamWithAudio).toHaveBeenCalledWith('dev-1', 'outputGain', SENTINEL_VALUE);
         expect(setBacteriaBandParamWithAudio).not.toHaveBeenCalled();
     });
 

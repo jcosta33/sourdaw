@@ -23,7 +23,7 @@ type CapturedTake = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
-    midiSource?: import('../../src/utils/handlerContract').MidiTakeSourceSnapshot;
+    midiSource?: import('../../src/modules/MIDI/events').MidiTakeSourceSnapshot;
 };
 type OscillatorStart = {
     frequency: number;
@@ -524,6 +524,8 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 { startBeat: LOOP_START, endBeat: finalPass.endBeat, takeId: finalPass.id },
                 { startBeat: finalPass.endBeat, endBeat: LOOP_END, takeId: recorded.regions[0].takeId },
             ]);
+        const dirtyIndicator = page.getByTitle('Unsaved changes');
+        await expect(dirtyIndicator).toBeVisible();
         await page.keyboard.press(`${MODIFIER}+k`);
         await expect(page.getByTestId('command-palette-input')).toBeVisible();
         await page.getByTestId('command-palette-input').fill('Save Project');
@@ -531,9 +533,40 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             .getByRole('option')
             .filter({ has: page.getByText('Save Project', { exact: true }) })
             .click();
-        await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
+        await expect(dirtyIndicator).toHaveCount(0, { timeout: 30_000 });
         const saved = await capture(page, recordedTrackId);
         expect(saved.rawMatchesProjection).toBe(true);
+        const namedLane = await page.evaluate(
+            async ({ trackId, projectId }) => {
+                const [
+                    { projectStore },
+                    { getProjectSnapshotKey },
+                    { readNamedProjectJson },
+                    { isHydratableProjectData },
+                ] = await Promise.all([
+                    import('/src/modules/Project/stores/index.ts'),
+                    import('/src/modules/Project/useCases/index.ts'),
+                    import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
+                    import('/src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts'),
+                ]);
+                const project = projectStore.value;
+                if (!project || project.projectId !== projectId) {
+                    throw new Error('The saved project is no longer active');
+                }
+                const raw = await readNamedProjectJson(getProjectSnapshotKey(project.createdAt));
+                if (!raw) {
+                    throw new Error('Named project JSON is missing after Save');
+                }
+                const data: unknown = JSON.parse(raw);
+                if (!isHydratableProjectData(data)) {
+                    throw new Error('Named project JSON after Save is not hydratable');
+                }
+                return data.takeLanes?.lanes.find((lane) => lane.trackId === trackId);
+            },
+            { trackId: recordedTrackId, projectId: saved.projectId }
+        );
+        expect(namedLane?.takes).toEqual(saved.takes);
+        expect(namedLane?.activeCompRegions).toEqual(saved.regions);
         await page.close();
         page = await acceptanceContext.newPage();
         await installSynthObserver(page);
@@ -593,8 +626,9 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(followingInterval).not.toContain(64);
         expect(followingInterval).not.toContain(67);
     });
-    test('frozen selected MIDI source survives named save, recent load, and malformed import refusal', async ({}, testInfo) => {
+    test('frozen selected MIDI source survives named save, recent load, and malformed import refusal', async () => {
         test.setTimeout(120_000);
+        const testInfo = test.info();
         const page = acceptancePage;
         const recorded = await capture(page, recordedTrackId);
         const secondPass = recorded.takes.find((take) => take.recordingPassIndex === 1);

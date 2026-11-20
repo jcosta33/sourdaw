@@ -1,4 +1,5 @@
 import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { planDevicePatchWrite } from '../../models/DevicePatchWritePlan';
 import { readPlannedDeviceOwnerSource } from '../../models/PlannedDeviceOwnerSource';
@@ -28,6 +29,53 @@ function fermenterPatchStep(action: ActionOf<'setFermenterPatch'>): PlannedDevic
         expectedTrackFrozen: action.payload.expectedTrackFrozen,
         expected: action.payload.expectedProject,
         after: action.payload.afterProject,
+    };
+}
+
+function levainIdentityStep(action: ActionOf<'setLevainIdentity'>): PlannedDeviceWriteStep {
+    const { trackId, deviceId, deviceIds, before, after, missingDeviceState } = action.payload;
+    return {
+        kind: 'patch',
+        trackId,
+        deviceId,
+        expectedDeviceIds: deviceIds,
+        expectedTrackFrozen: false,
+        expectedDeviceType: DEVICE_TYPE_IDS.levain,
+        expected: before,
+        after,
+        preservedMetadata: {
+            field: 'disclosureTier',
+            allowedValues: ['basic', 'expert'],
+            missingChunk: missingDeviceState,
+        },
+    };
+}
+
+function toasterKitStep(action: ActionOf<'setToasterFactoryKit'>): PlannedDeviceWriteStep {
+    const { trackId, deviceId, deviceIds, before, after } = action.payload;
+    return {
+        kind: 'patch',
+        trackId,
+        deviceId,
+        expectedDeviceIds: deviceIds,
+        expectedTrackFrozen: false,
+        expectedDeviceType: DEVICE_TYPE_IDS.toaster,
+        expected: { deviceState: before, parameterValues: {} },
+        after: { deviceState: after, parameterValues: {} },
+    };
+}
+
+function bacteriaFactoryPatchStep(action: ActionOf<'setBacteriaFactoryPatch'>): PlannedDeviceWriteStep {
+    const { trackId, deviceId, deviceIds, before, after } = action.payload;
+    return {
+        kind: 'patch',
+        trackId,
+        deviceId,
+        expectedDeviceIds: deviceIds,
+        expectedTrackFrozen: false,
+        expectedDeviceType: DEVICE_TYPE_IDS.bacteria,
+        expected: before,
+        after,
     };
 }
 
@@ -137,7 +185,11 @@ export const plannedDeviceWriteStepByActionType: {
     setExternalPluginState: commandStep,
     setDeviceState: commandStep,
     setFermenterPatch: fermenterPatchStep,
+    setGlutenFactoryPreset: commandStep,
+    setLevainIdentity: levainIdentityStep,
     setGrandBouleDeviceState: commandStep,
+    setToasterFactoryKit: toasterKitStep,
+    setBacteriaFactoryPatch: bacteriaFactoryPatchStep,
     createBus: createdBusStep,
     createFolder: commandStep,
     setSend: commandStep,
@@ -190,6 +242,7 @@ export const plannedDeviceWriteStepByActionType: {
     removeAutomationLane: commandStep,
     setAutomationLaneEnabled: commandStep,
     addAutomationPoint: commandStep,
+    insertAutomationLanePoints: commandStep,
     quantizeNotes: commandStep,
     removeShortMidiOverlaps: commandStep,
     createDrumPreviewBranches: commandStep,
@@ -213,6 +266,7 @@ export const plannedDeviceWriteStepByActionType: {
     setClipFade: commandStep,
     importMidiFile: commandStep,
     normalizeClip: commandStep,
+    relinkClipAudioSources: commandStep,
     reverseClip: commandStep,
     restoreReversedClip: commandStep,
     glueClips: commandStep,

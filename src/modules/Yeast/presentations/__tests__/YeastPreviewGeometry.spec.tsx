@@ -116,6 +116,89 @@ describe('Yeast preview geometry', () => {
         );
     });
 
+    it.each([
+        { scenario: 'before the first sample', acknowledgedEpoch: 2, resetEpoch: 3, renderAcknowledgedEpoch: false },
+        { scenario: 'with an existing frame', acknowledgedEpoch: 2, resetEpoch: 3, renderAcknowledgedEpoch: true },
+        {
+            scenario: 'across capture epoch wrap',
+            acknowledgedEpoch: Number.MAX_SAFE_INTEGER,
+            resetEpoch: 1,
+            renderAcknowledgedEpoch: true,
+        },
+    ])(
+        'renders an authoritative capture reset $scenario',
+        ({ acknowledgedEpoch, resetEpoch, renderAcknowledgedEpoch }) => {
+            const canvas = document.createElement('canvas');
+            const fillRect = vi.fn();
+            Object.defineProperty(canvas, 'getContext', {
+                value: () => ({
+                    clearRect: vi.fn(),
+                    save: vi.fn(),
+                    scale: vi.fn(),
+                    fillRect,
+                    beginPath: vi.fn(),
+                    moveTo: vi.fn(),
+                    lineTo: vi.fn(),
+                    stroke: vi.fn(),
+                    restore: vi.fn(),
+                }),
+            });
+            const frames: FrameRequestCallback[] = [];
+            const feedback = vi.fn();
+            const presenter = createYeastPreviewPresenter({
+                renderer: createYeastPreviewCanvasRenderer(canvas)!,
+                requestFrame: (callback) => frames.push(callback),
+                cancelFrame: vi.fn(),
+                setTimer: vi.fn(() => 1),
+                clearTimer: vi.fn(),
+                now: () => 0,
+                readPlayheadBeat: () => 0,
+                onFeedback: feedback,
+            });
+            function expectFrame(noteCount: number, summary: string): void {
+                expect(frames).toHaveLength(1);
+                fillRect.mockClear();
+                frames.shift()!(16);
+                expect(fillRect).toHaveBeenCalledTimes(noteCount + 1);
+                expect(feedback).toHaveBeenLastCalledWith(
+                    expect.objectContaining({ visibleEvents: noteCount, summary })
+                );
+            }
+            const reset = createPreviewSnapshot([createPreviewEvent({ eventId: 2, pitch: 60 })], {
+                captureEpoch: resetEpoch,
+                reset: true,
+            });
+
+            presenter.beginProcessorRevision(1);
+            expectFrame(0, '0 upcoming events');
+            presenter.acceptSnapshot(reset);
+            expect(frames).toHaveLength(0);
+            presenter.acknowledgeProcessorRevision(1, acknowledgedEpoch);
+
+            if (renderAcknowledgedEpoch) {
+                presenter.acceptSnapshot(
+                    createPreviewSnapshot([createPreviewEvent({ eventId: 1, pitch: 48 })], {
+                        captureEpoch: acknowledgedEpoch,
+                    })
+                );
+                expectFrame(1, '1 upcoming event; pitches 48 to 48');
+            }
+            presenter.acceptSnapshot({ ...reset, captureEpoch: acknowledgedEpoch - 1 });
+            expect(frames).toHaveLength(0);
+            presenter.acceptSnapshot({ ...reset, reset: false });
+            expect(frames).toHaveLength(0);
+
+            presenter.acceptSnapshot(reset);
+            expectFrame(1, '1 upcoming event; pitches 60 to 60');
+            presenter.acceptSnapshot({ ...reset, captureEpoch: acknowledgedEpoch });
+            expect(frames).toHaveLength(0);
+            presenter.acceptSnapshot(
+                createPreviewSnapshot([createPreviewEvent({ eventId: 3, pitch: 67 })], { captureEpoch: resetEpoch })
+            );
+            expectFrame(2, '2 upcoming events; pitches 60 to 67');
+        }
+    );
+
     it('reports only realized events whose window contains the playhead as sounding pitches', () => {
         // KeyboardSplit's note-activity display (Yeast panel Route/Lab decks)
         // is fed by this field. It must exclude events that haven't started

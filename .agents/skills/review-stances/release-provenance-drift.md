@@ -22,9 +22,22 @@ limitation, never as passed.
    has a missing file, or has an unsafe (symlink, non-regular, or outside-repository) file; probe by emptying
    one pathspec or replacing a tracked file with a symlink and confirming `pnpm test:release-inventory`
    names it.
-2. **A `package.json` edit moves the Cargo source pin (#5642).** `scripts/dependencyLicenseReport.ts` digests
-   `package.json` into its Cargo source pin, so every `package.json` edit must move the dependency restamp
-   artifacts under `release/` in the same diff. Read the diff for both; one without the other is the finding.
+2. **A licence-input edit leaves the dependency restamp stale, or an irrelevant edit moves it (#5642).** The
+   proof's `sourceInputs` and the inventory's `package.json` and `Cargo.toml` snapshots pin each manifest by
+   the projection `scripts/dependencyLicenseInputProjection.ts` names: every Cargo dependency table,
+   `[features]`, `[patch*]`, `[replace]`, `[workspace]` members/exclude/default-members/resolver and the
+   licence keys, with any other `*dependencies` key failing closed outside `metadata` and `lints` tables (a
+   `unused_crate_dependencies` lint must project, not throw); every `package.json` key but `version`, with `scripts` cut to the packaging closure (`build`,
+   `desktop:build`, npm and pnpm lifecycle hooks including `pnpm:devPreinstall`, their `pre`/`post` hooks, and
+   every script whose name is any word of a kept command, so no runner or flag form can hide one), because
+   electron-builder and npm read `build`, `main`, `files` and dependencies too; every other input,
+   `electron-builder.yml` included (its ordered `files` patterns can re-include `node_modules` after the
+   exclusion), is pinned whole. An edit to any of those must move the restamp artifacts under `release/` in the same diff
+   (`pnpm release:restamp`); an edit to anything else in those files (a script outside the packaging closure, the
+   `package.json` or crate `version`, `[lints]`, a comment) must leave them untouched. Probe a packaging escape by
+   moving electron-builder's config into a top-level `package.json` `build` key and confirming the pin moves. The inventory pins the proof file only by its curated `packages`;
+   the generated Cargo runtime inventory is checked live by the licence preflight. A diff that narrows a
+   projection must show a still-fail spec row for every field it drops.
 3. **A new URL literal lacks its external-reference assignment (#3127, #5625).** Runs: CI; the reviewer reads the
    Release inventory step on the head. Every new URL literal needs an external-reference assignment in the
    `externalReferences` list of `release/open-source-inventory.json`; the reviewer lists URL literals the diff adds and checks each has one at
@@ -38,6 +51,14 @@ limitation, never as passed.
    inventory step on the merge head. When resolving shared inventory, keep the union of curated external-reference
    assignments: compare the resolved file's assignments with both merge parents (`git show <parent>:<path>`) and
    require every assignment either side carried to survive, and the census to pass against the merged tree.
+6. **A shared filename blocks independent deterministic updates (#4997).** The review checked for collisions
+   and caught an allowance that admitted measured pins. It missed a probe for independent generated fields.
+   Before regeneration, trace a dependency-license input change and an ADR 0036 edit to their inventory
+   fields. They may proceed in separate lanes when both the inputs and fields are independent. Then check
+   two input edits feeding the same digest before its file moves, and edits to a curated record or measured
+   baseline in the shared file. Those require sequencing or a stack with a real dependency. If independent
+   updates conflict, check the regenerated fields against the merged inputs and verify the curated evidence
+   survives.
 
 ## Relocated
 

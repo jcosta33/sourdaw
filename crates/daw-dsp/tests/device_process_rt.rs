@@ -22,7 +22,11 @@
 //! the interceptor is installed rather than assumed.
 
 #![cfg(debug_assertions)]
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 
@@ -530,6 +534,46 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
         "the guarded note_on loop left no voice sounding, so it never reached \
          the voice path it claims to guard"
     );
+}
+
+#[test]
+fn crumbs_pad_audition_attack_and_release_do_not_allocate() {
+    use std::sync::Arc;
+
+    use daw_dsp::crumbs::engine::CrumbsEngine;
+    use daw_dsp::crumbs::sample::SampleData;
+    use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode};
+
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    let sample = Arc::new(SampleData::from_mono(
+        vec![0.5_f32; 8 * BLOCK],
+        SAMPLE_RATE as u32,
+    ));
+    let sample_id = engine.add_sample(sample);
+    engine.set_active_sample(sample_id);
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+
+    let mut attack_left = [0.0_f32; BLOCK];
+    let mut release_left = [0.0_f32; 2 * BLOCK];
+    let mut settled_left = [0.0_f32; BLOCK];
+    let mut right = [0.0_f32; 2 * BLOCK];
+    assert_no_alloc(|| {
+        engine.handle_command(CrumbsCommand::PadAuditionOn {
+            note: 36,
+            velocity: 127,
+            audition_id: 1,
+        });
+        engine.process_block(&mut attack_left, &mut right[..BLOCK]);
+        engine.handle_command(CrumbsCommand::PadAuditionOff { audition_id: 1 });
+        right.fill(0.0);
+        engine.process_block(&mut release_left, &mut right);
+        right.fill(0.0);
+        engine.process_block(&mut settled_left, &mut right[..BLOCK]);
+    });
+
+    assert!(peak(&attack_left) > 0.3, "guarded audition never sounded");
+    assert!(peak(&release_left) > 0.3, "guarded de-click never sounded");
+    assert_eq!(peak(&settled_left), 0.0, "guarded audition did not release");
 }
 
 /// `CrumbsCommand::AddSample` is drained inside the process callback — the

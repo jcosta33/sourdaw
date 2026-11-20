@@ -1,11 +1,16 @@
-import { type AutomationMode } from '#/modules/Automation/events';
-import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
+import { type AutomationMode, type AutomationRecordingPolicy } from '#/modules/Automation/events';
+import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
 
 import {
     type ClipSnapshot,
     type GeneratedMidiStateGuard,
     type StemImportTrackSnapshot,
 } from './arrangementClipSnapshots';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSatelliteEntrySnapshot,
+    type CompTakeLaneSnapshot,
+} from './arrangementClipStateSnapshots';
 import {
     type FreezeStateSnapshot,
     type RestoreTrackPayloadSnapshot,
@@ -14,10 +19,43 @@ import {
 
 export type TrackGroupMembershipSnapshot = { readonly trackId: string; readonly groupId: string | null };
 export type TrackHeightSnapshot = { readonly trackId: string; readonly height: number };
+/** A clip-scoped automation lane and the automation-store index it held when captured. */
+export type PositionedClipAutomationLaneSnapshot = {
+    readonly index: number;
+    readonly lane: ClipAutomationLaneSnapshot;
+};
+
+/** A take lane and the take-lane-store index it held when captured. */
+export type PositionedTakeLaneSnapshot = {
+    readonly laneIndex: number;
+    readonly lane: CompTakeLaneSnapshot;
+};
+
+/**
+ * What the clips a deleted alternative held carry outside the track: their MIDI
+ * rows, gain envelope and warp state, clip-scoped automation lanes, and their
+ * takes. Both sides of one restore name the same `clipIds` and `takeLaneIds`;
+ * the side before the delete holds the captured rows, the side after it holds
+ * none. `takeLanes` is each named take lane as that side holds it, whole, and a
+ * lane the side does not hold is absent from it.
+ */
+export type TrackAlternativeRetiredClipsSnapshot = {
+    readonly clipIds: readonly string[];
+    readonly midiNotesByClipId: Readonly<Record<string, MidiNotesSnapshot>>;
+    readonly midiCcByClipId: Readonly<Record<string, MidiCcSnapshot>>;
+    readonly midiPitchBendByClipId: Readonly<Record<string, MidiPitchBendSnapshot>>;
+    readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
+    readonly clipAutomationLanes: readonly PositionedClipAutomationLaneSnapshot[];
+    readonly takeLaneIds: readonly string[];
+    readonly takeLanes: readonly PositionedTakeLaneSnapshot[];
+};
+
 export type TrackAlternativeStateSnapshot = {
     readonly alternatives: readonly { readonly id: string }[];
     readonly activeAlternativeId: string | null;
     readonly clips: readonly ClipSnapshot[];
+    /** Absent from entries recorded before deletes retired clip data. */
+    readonly retiredClips?: TrackAlternativeRetiredClipsSnapshot;
 };
 
 type LegacyVcaGroupSnapshot = {

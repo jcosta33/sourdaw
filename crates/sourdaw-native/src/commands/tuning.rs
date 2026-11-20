@@ -27,7 +27,8 @@ pub fn parse_scl(
         Ok(scale) => scale,
         Err(error) => return Ok(SclParseResponse::Invalid { error }),
     };
-    let table = TuningTable::from_scale(&scale, root_note, root_freq)?;
+    let table =
+        TuningTable::from_scale(&scale, root_note, root_freq).map_err(|error| error.to_string())?;
 
     Ok(SclParseResponse::Parsed(SclParseResult {
         name: scale.name,

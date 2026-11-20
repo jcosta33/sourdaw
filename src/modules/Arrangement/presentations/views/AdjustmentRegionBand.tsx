@@ -44,23 +44,21 @@ export const AdjustmentRegionBand = ({
     onEdgeKeyDown,
 }: AdjustmentRegionBandProps): ReactElement => {
     const rangeLabel = `${liveRegion.startBeat.toFixed(2)} to ${liveRegion.endBeat.toFixed(2)}`;
+    const { borderColor, ...cellStyle } = style;
     return (
-        <div
-            role="gridcell"
-            className="absolute top-0 bottom-0 rounded-sm border"
-            style={style}
-            // The cell owns the region's menu and inspector for its body, edges and fades alike.
-            onContextMenu={onContextMenu}
-            onDoubleClick={onDoubleClick}
-        >
-            {/* The band body is the region's focus target; the edges and fades sit above it. */}
+        <div role="gridcell" className="absolute top-0 bottom-0 rounded-sm" style={cellStyle}>
+            {/* The band body, edges and fades each open the region's menu and inspector. The cell is handler-free
+                so a click on it focuses the layer row, and so owns no border box that those elements do not cover. */}
             <Button
                 variant="bare"
                 size="bare"
                 type="button"
                 aria-label={`Adjustment region, beats ${rangeLabel}`}
                 aria-keyshortcuts="Enter ArrowLeft ArrowRight Delete ContextMenu Shift+F10"
-                className="absolute inset-0 cursor-grab rounded-sm active:cursor-grabbing"
+                className="absolute inset-0 cursor-grab rounded-sm border active:cursor-grabbing"
+                style={{ borderColor }}
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onDragStart(e, 'move')}
                 onKeyDown={onKeyDown}
             />
@@ -74,6 +72,8 @@ export const AdjustmentRegionBand = ({
                 aria-valuemax={liveRegion.endBeat - MIN_REGION_BEATS}
                 aria-valuetext={`Beat ${liveRegion.startBeat.toFixed(2)}`}
                 className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onDragStart(e, 'resizeStart')}
                 onKeyDown={(e) => onEdgeKeyDown(e, 'start')}
             />
@@ -86,6 +86,8 @@ export const AdjustmentRegionBand = ({
                 aria-valuemin={liveRegion.startBeat + MIN_REGION_BEATS}
                 aria-valuetext={`Beat ${liveRegion.endBeat.toFixed(2)}`}
                 className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onDragStart(e, 'resizeEnd')}
                 onKeyDown={(e) => onEdgeKeyDown(e, 'end')}
             />
@@ -94,6 +96,8 @@ export const AdjustmentRegionBand = ({
                 pixelsPerBeat={pixelsPerBeat}
                 width={width}
                 fadePreview={fadePreview}
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onFadeDragStart={onFadeDragStart}
             />
         </div>
@@ -105,6 +109,8 @@ type FadeTrianglesProps = {
     pixelsPerBeat: number;
     width: number;
     fadePreview: FadePreview | null;
+    onContextMenu: (e: ReactMouseEvent) => void;
+    onDoubleClick: (e: ReactMouseEvent) => void;
     onFadeDragStart: (e: ReactMouseEvent, kind: 'fadeIn' | 'fadeOut') => void;
 };
 
@@ -126,6 +132,8 @@ const FadeTriangles = ({
     pixelsPerBeat,
     width,
     fadePreview,
+    onContextMenu,
+    onDoubleClick,
     onFadeDragStart,
 }: FadeTrianglesProps): ReactElement => {
     const liveFade = readLiveFade(region, fadePreview);
@@ -171,6 +179,8 @@ const FadeTriangles = ({
                     height: FADE_HANDLE_SIZE,
                     clipPath: 'polygon(0 0, 100% 0, 100% 100%)',
                 }}
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onFadeDragStart(e, 'fadeIn')}
             />
             <div
@@ -185,6 +195,8 @@ const FadeTriangles = ({
                     height: FADE_HANDLE_SIZE,
                     clipPath: 'polygon(0 0, 100% 0, 0 100%)',
                 }}
+                onContextMenu={onContextMenu}
+                onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onFadeDragStart(e, 'fadeOut')}
             />
         </>

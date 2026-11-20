@@ -1,5 +1,9 @@
 import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation';
-import { type CreativeInterpretationCatalog, type CreativeRequestAuthority } from '../models/CreativeInterpretation';
+import {
+    isPublicCreativeInterpretation,
+    type CreativeInterpretationCatalog,
+    type CreativeRequestAuthority,
+} from '../models/CreativeInterpretation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
@@ -51,6 +55,12 @@ function admitLiteralInterpretation(
         return {
             status: 'rejected' as const,
             reason: 'Literal metric intake cannot grant creative authority.',
+        };
+    }
+    if (input.metric.unaccountedQualityWord !== null) {
+        return {
+            status: 'rejected' as const,
+            reason: `The request names "${input.metric.unaccountedQualityWord}", a perceptual quality, so it is not a literal request. Interpret it as a perceptual or comparative goal instead.`,
         };
     }
     const admitted = admitMetricIntent({
@@ -179,8 +189,33 @@ function admitJointAnswerInterpretation(input: PlanningInterpretationInput, answ
     return result.status === 'admitted' ? { ...result, kind: 'answer' as const } : result;
 }
 
+function admitCreativeOrLiteralInterpretation(
+    input: PlanningInterpretationInput,
+    legacyArguments: ToolCallResult['arguments'],
+    metricIntent: unknown,
+    creativeInterpretation: string | undefined
+) {
+    if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
+        return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };
+    }
+    if (legacyArguments.modeId === 'literal') {
+        return admitLiteralInterpretation(input, legacyArguments, metricIntent);
+    }
+    const result = admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
+    if (result.status === 'admitted' && creativeInterpretation !== undefined) {
+        return { ...result, creativeInterpretation };
+    }
+    return result;
+}
+
 export function admitPlanningInterpretation(input: PlanningInterpretationInput) {
-    const { answer, metricIntent, ...legacyArguments } = input.call.arguments;
+    const { answer, metricIntent, creativeInterpretation, ...legacyArguments } = input.call.arguments;
+    if (creativeInterpretation !== undefined && !isPublicCreativeInterpretation(creativeInterpretation)) {
+        return {
+            status: 'rejected' as const,
+            reason: 'Public creative interpretation must be nonempty and at most 512 UTF-8 bytes.',
+        };
+    }
     if (
         metricIntent !== undefined &&
         metricIntent !== null &&
@@ -196,13 +231,7 @@ export function admitPlanningInterpretation(input: PlanningInterpretationInput) 
         };
     }
     if (answer === undefined || answer === null) {
-        if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
-            return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };
-        }
-        if (legacyArguments.modeId === 'literal') {
-            return admitLiteralInterpretation(input, legacyArguments, metricIntent);
-        }
-        return admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
+        return admitCreativeOrLiteralInterpretation(input, legacyArguments, metricIntent, creativeInterpretation);
     }
     return admitJointAnswerInterpretation(input, answer, metricIntent);
 }

@@ -9,7 +9,7 @@ import {
     useLayoutEffect,
 } from 'react';
 
-import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
+import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2, Spline } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -27,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptDraft } from '#/modules/AiRuntime/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
@@ -34,9 +35,17 @@ import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCas
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
-import { getVariationLaneCount, getVariationLaneExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
+import { getInlineAutomationRows } from '../../models/InlineAutomationRows';
+import {
+    AUTOMATION_SUB_LANE_HEIGHT,
+    getVariationLaneCount,
+    getVariationLaneExtent,
+    VARIATION_LANE_HEIGHT,
+} from '../../models/TimelineTrackExtent';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
+import { toggleInlineAutomation } from '../../useCases/timelineEditing/toggleInlineAutomation';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
@@ -77,6 +86,11 @@ export const TrackListView = ({
     const scrollRafRef = useRef<number | null>(null);
     const prefs = useStore(preferencesStore, defaultPreferences);
     const currentHeight = prefs.trackHeight;
+    const editing = useStoreSelector(timelineEditingStore, (state) => state);
+    const inlineAutomationVisible = editing?.automationVisibility === 'overlay';
+    const automationLanes = useStoreSelector(automationStore, (state) =>
+        inlineAutomationVisible ? state?.lanes : undefined
+    );
 
     // Subscribe to scrollY alone — reading the whole TimelineViewState would
     // re-render this non-virtualised header tree on every pixelsPerBeat /
@@ -146,17 +160,12 @@ export const TrackListView = ({
     }, []);
 
     const collapsedFolders = new Set(
-        tracks.filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id)
+        tracks.filter((track) => track.kind === 'folder' && track.collapsed).map((track) => track.id)
     );
-    const visibleTracks = tracks.filter((time) => {
-        if (time.kind === 'master') {
-            return false;
-        }
-        if (!time.parentId) {
-            return true;
-        }
-        return !collapsedFolders.has(time.parentId);
-    });
+    const visibleTracks = tracks.filter(
+        (track) => track.kind !== 'master' && !collapsedFolders.has(track.parentId ?? '')
+    );
+    const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
 
     const handleDragStart = (trackId: string) => {
         dragTrackIdRef.current = trackId;
@@ -297,6 +306,22 @@ export const TrackListView = ({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label="Inline automation"
+                                    aria-pressed={inlineAutomationVisible}
+                                    className="aria-pressed:bg-surface-well aria-pressed:text-[var(--color-accent-lavender)]"
+                                    onClick={toggleInlineAutomation}
+                                >
+                                    <Spline className="size-3" aria-hidden="true" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Inline automation</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
                                     variant="ghost"
                                     size="icon-xs"
                                     aria-label={`Track height: ${HEIGHT_LABELS[currentHeight]}`}
@@ -356,12 +381,16 @@ export const TrackListView = ({
             >
                 <MiniMasterSpectrum />
             </DawHeaderBand>
+            {/* The handlers sit on this wrapper, not the grid: a focusable grid would take focus from a click on empty space and claim keys meant for the window shortcut layer. */}
             <div
                 ref={scrollRef}
+                role="presentation"
                 className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
+                onKeyDown={handleKeyDown}
+                onClick={handleRowClick}
             >
-                <div role="grid" aria-label="Track list" onKeyDown={handleKeyDown} onClick={handleRowClick}>
+                <div role="grid" aria-label="Track list">
                     {visibleTracks.map((track, index) => {
                         return (
                             <div
@@ -410,6 +439,18 @@ export const TrackListView = ({
                                         ))}
                                     </div>
                                 ) : null}
+                                {automationRows.get(track.id)?.map((lane) => (
+                                    <div
+                                        key={lane.id}
+                                        role="gridcell"
+                                        data-testid="inline-automation-lane-row"
+                                        data-automation-lane-id={lane.id}
+                                        className="box-border flex items-center overflow-hidden border-t border-border/20 bg-surface-well px-3 text-[10px] text-muted-foreground"
+                                        style={{ height: AUTOMATION_SUB_LANE_HEIGHT }}
+                                    >
+                                        <span className="truncate">{lane.parameterName}</span>
+                                    </div>
+                                ))}
                             </div>
                         );
                     })}

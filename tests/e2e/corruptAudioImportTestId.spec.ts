@@ -52,10 +52,13 @@ test.describe('Corrupt audio import — rejected with error toast, no clip', () 
         });
 
         // The error toast renders naming the file and the corrupt-format reason.
-        const toast = page.getByRole('alert');
+        const toast = page.getByTestId('notification-toast');
         await expect(toast).toBeVisible({ timeout: 10_000 });
         await expect(toast).toContainText(/corrupt\.wav/i);
         await expect(toast).toContainText(/unsupported format or corrupt file/i);
+
+        await expect(toast.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+        await expect(page.getByRole('alert')).toContainText(/corrupt\.wav.*unsupported format or corrupt file/i);
 
         // No clip was added by the failed import.
         await expect(page.getByTestId('selected-track-clip-count')).toContainText(/0 clips/i);

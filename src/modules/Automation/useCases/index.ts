@@ -27,6 +27,7 @@ export { prepareAutomationTimeStateRestore } from './automation/prepareAutomatio
 export { prepareClipAutomationShiftTransaction } from './automation/prepareClipAutomationShiftTransaction';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
+export { restoreAutomationLanesAtPositions } from './automation/restoreAutomationLanesAtPositions';
 export { isExactAutomationLaneSnapshots } from './automation/isExactAutomationLaneSnapshots';
 export { isExactClipAutomationMoveSnapshots } from './automation/isExactClipAutomationMoveSnapshots';
 export { restoreClipAutomationMoveState } from './automation/restoreClipAutomationMoveState';
@@ -66,7 +67,6 @@ export { getAutomationLanes } from './getAutomationLanes';
 export { getAutomationStoreState } from './getAutomationStoreState';
 export { getAutomationHandlers } from './getAutomationHandlers';
 
-export { insertAutomationShape } from './automationShapes';
 export { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints';
 export { getSelectionBounds } from './automationSelection/getSelectionBounds';
 export { adjustYZoom } from './automationZoom/adjustYZoom';
@@ -74,6 +74,7 @@ export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
 
 // Helper for playheadScheduler
 export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat';
+export { insertAutomationLanePoints } from './automation/insertAutomationLanePoints';
 export { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
 export { isLinearGainAutomationLane } from './automation/isLinearGainAutomationLane';
 export { isRecordingAutomation } from './automationRecording/isRecordingAutomation';

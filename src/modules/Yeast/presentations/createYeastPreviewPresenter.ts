@@ -36,6 +36,16 @@ type YeastPreviewPresenter = {
 const SILENCE_THRESHOLD_MS = 500;
 const LATENCY_SAMPLE_CAPACITY = 64;
 
+function isNewerCaptureEpoch(candidate: number, current: number): boolean {
+    if (!Number.isSafeInteger(candidate) || candidate < 1) {
+        return false;
+    }
+    // The tap shares its epoch counter across routes and wraps it back to 1.
+    const difference = candidate - current;
+    const forwardDistance = difference < 0 ? difference + Number.MAX_SAFE_INTEGER : difference;
+    return forwardDistance > 0 && forwardDistance <= Math.floor(Number.MAX_SAFE_INTEGER / 2);
+}
+
 function percentile95(values: readonly number[]): number | null {
     if (values.length === 0) {
         return null;
@@ -270,7 +280,11 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             return;
         }
         if (expectedCaptureEpoch !== null && snapshot.captureEpoch !== expectedCaptureEpoch) {
-            return;
+            // Transport can reset the subscribed capture after a processor revision has been acknowledged.
+            if (!snapshot.reset || !isNewerCaptureEpoch(snapshot.captureEpoch, expectedCaptureEpoch)) {
+                return;
+            }
+            expectedCaptureEpoch = snapshot.captureEpoch;
         }
         hasSample = true;
         latestSampleAt = sampledAt;

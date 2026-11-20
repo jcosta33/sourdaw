@@ -1,6 +1,7 @@
 export { compileToasterTrackStackActions } from './compileToasterTrackStackActions';
 export { disposeEveryToasterDevice } from './disposeEveryToasterDevice';
 export { getDefaultPadNames } from './getDefaultPadNames';
+export { getToasterHandlers } from './getToasterHandlers';
 export { getToasterPresetDeviceState } from './getToasterPresetDeviceState';
 export { listToasterPatternsOutsideArrangement } from './listToasterPatternsOutsideArrangement';
 export { prepareOfflineToaster } from './prepareOfflineToaster';

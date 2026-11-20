@@ -126,7 +126,7 @@ describe('captureExternalPluginStates', () => {
         });
     });
 
-    it.each(['not-loaded', 'empty', 'read-failed', 'restore-pending'] as const)(
+    it.each(['not-loaded', 'empty', 'restore-pending'] as const)(
         'preserves without dispatch for %s',
         async (reason) => {
             setTrackDevices([device({ externalStateChunk: 'original' })]);
@@ -139,6 +139,23 @@ describe('captureExternalPluginStates', () => {
             expect(mocks.notifyUser).not.toHaveBeenCalled();
         }
     );
+
+    // #6558: a loaded plugin whose read failed may hold edits the stored chunk lacks.
+    it('reports a loaded plugin whose state could not be read, once per native generation', async () => {
+        setTrackDevices([device({ externalStateChunk: 'original', externalPluginId: 'serum' })]);
+        mocks.readExternalPluginStateForCapture.mockResolvedValue({
+            status: 'unreadable',
+            authorityToken: tokens.alpha,
+        });
+
+        await expect(captureExternalPluginStates()).resolves.toEqual({ rejectedPlugins: ['serum'] });
+        await expect(captureExternalPluginStates()).resolves.toEqual({ rejectedPlugins: ['serum'] });
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(capturedNativePluginStateCache).toHaveLength(0);
+        expect(mocks.notifyUser).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('serum'), 'warning');
+    });
 
     it('warns once per restore-failure episode and never dispatches defaults', async () => {
         setTrackDevices([device({ externalStateChunk: 'original', externalPluginId: 'serum' })]);

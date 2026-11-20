@@ -1,13 +1,14 @@
 import { type IncomingModulationMappingSnapshot, type ModulatorSnapshot } from '#/modules/Automation/events';
 import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
+
+import { type DeviceSnapshot } from '../models/DeviceSnapshot';
+
 import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
     type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
-
-import { type DeviceSnapshot } from '../models/DeviceSnapshot';
+} from './arrangementClipStateSnapshots';
 
 export type DeviceChainTopologySnapshot = {
     readonly id: string;

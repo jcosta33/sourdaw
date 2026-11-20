@@ -99,7 +99,11 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setExternalPluginState: anyArguments,
     setDeviceState: anyArguments,
     setFermenterPatch: anyArguments,
+    setLevainIdentity: anyArguments,
     setGrandBouleDeviceState: anyArguments,
+    setToasterFactoryKit: anyArguments,
+    setBacteriaFactoryPatch: anyArguments,
+    setGlutenFactoryPreset: anyArguments,
     createBus: (value) =>
         isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId) && isNonEmptyString(value.color),
     createFolder: anyArguments,
@@ -153,6 +157,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     removeAutomationLane: anyArguments,
     setAutomationLaneEnabled: anyArguments,
     addAutomationPoint: anyArguments,
+    insertAutomationLanePoints: anyArguments,
     quantizeNotes: anyArguments,
     removeShortMidiOverlaps: anyArguments,
     createDrumPreviewBranches: anyArguments,
@@ -176,6 +181,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setClipFade: anyArguments,
     importMidiFile: anyArguments,
     normalizeClip: anyArguments,
+    relinkClipAudioSources: anyArguments,
     reverseClip: anyArguments,
     restoreReversedClip: anyArguments,
     glueClips: anyArguments,
@@ -411,5 +417,9 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
 };
 
 export function hasDeterministicSerializedArguments(operation: AppActionType, value: Record<string, unknown>): boolean {
+    // `operation` comes from a parsed envelope, so an inherited name such as `constructor` must not select a check.
+    if (!Object.hasOwn(SERIALIZED_ARGUMENTS_CHECKS, operation)) {
+        return true;
+    }
     return SERIALIZED_ARGUMENTS_CHECKS[operation]?.(value) ?? true;
 }

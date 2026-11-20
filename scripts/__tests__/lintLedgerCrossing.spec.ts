@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +8,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     DEPENDENCY_BOUNDARY_BASELINE_FILES,
+    REACHABILITY_CRUISE_EXCLUDE,
+    REACHABILITY_CRUISE_ROOT,
+    REACHABILITY_RESOLVER_INPUTS,
+    TRANSITIVE_BOUNDARY_BASELINE_FILES,
     lintLedgerCrossingPaths,
     lintLedgerCrossingRefusal,
     readLintLedgerCrossing,
@@ -18,6 +23,7 @@ import {
 const SUP = 'eslint-suppressions.json';
 const OXC = '.oxlintrc.json';
 const CRAFT = 'oxlint.craft-baseline.mjs';
+const QUALITY = 'oxlint-quality-baseline.json';
 const SIZE = 'eslint.size-baseline.mjs';
 const CEIL = 'scripts/lintSizeCeilings.json';
 const PLG = '.oxlint-plugins.json';
@@ -155,6 +161,15 @@ describe('lint ledger crossing decision', () => {
             name: 'a suppression count lowered',
             base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
             edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 } } }) },
+        },
+        {
+            name: 'a quality violation count lowered',
+            base: {
+                [QUALITY]: JSON.stringify({ 'src/x.ts': { 'sourdaw-craft/no-invalid-vitest-expect': { count: 2 } } }),
+            },
+            edited: {
+                [QUALITY]: JSON.stringify({ 'src/x.ts': { 'sourdaw-craft/no-invalid-vitest-expect': { count: 1 } } }),
+            },
         },
         {
             name: 'one of two rules suppressed at the same figure removed',
@@ -470,13 +485,17 @@ describe('dependency-boundary baseline crossing', () => {
         }
     );
 
-    it.each(BASELINES)('%s: main changing a row does not cross a pull request editing a file no row names', (name) => {
-        const base = { [name]: WITH_ROW };
-        const deleted = { [name]: WITHOUT_ROW };
-        expect(
-            lintLedgerCrossingPaths([name], ['src/modules/Example/free.ts'], { base, main: deleted, head: base })
-        ).toEqual([]);
-    });
+    // The reachability baseline is transitive and binds its whole cruised scope; see the next describe.
+    it.each(BASELINES.filter((name) => !TRANSITIVE_BOUNDARY_BASELINE_FILES.includes(name)))(
+        '%s: main changing a row does not cross a pull request editing a file no row names',
+        (name) => {
+            const base = { [name]: WITH_ROW };
+            const deleted = { [name]: WITHOUT_ROW };
+            expect(
+                lintLedgerCrossingPaths([name], ['src/modules/Example/free.ts'], { base, main: deleted, head: base })
+            ).toEqual([]);
+        }
+    );
 
     it('does not bind the `to` file of a row', () => {
         const base = { [DEPENDENCY_BOUNDARY_BASELINE_FILES[0]]: WITH_ROW };
@@ -492,6 +511,98 @@ describe('dependency-boundary baseline crossing', () => {
                 name
             );
         }
+    });
+});
+
+describe('transitive reachability baseline crossing', () => {
+    const REACH = '.dependency-cruiser-known-violations-reachability.json';
+    const CONTRACT = '.dependency-cruiser-known-violations-contract-reexports.json';
+    const PANEL = 'src/components/Panel.tsx';
+    const row = (from: string): Record<string, unknown> => ({
+        type: 'reachability-causal',
+        from,
+        to: 'src/modules/Example/useCases/run.ts',
+        rule: { severity: 'error', name: 'components-no-usecase-transitively' },
+    });
+    const WITH_ROW = JSON.stringify([row(PANEL)]);
+    const repositoryFile = (name: string): string => join(import.meta.dirname, '..', '..', name);
+
+    it('crosses a pull request file the deleted row never named, when main deletes the row', () => {
+        const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: '[]' }, head: { [REACH]: WITH_ROW } };
+        expect(lintLedgerCrossingPaths([REACH, 'src/modules/Example/hooks/M.ts'], ['src/hooks/Q.ts'], trees)).toEqual([
+            'src/hooks/Q.ts',
+        ]);
+    });
+
+    it('crosses a file the pull request changes even when main changed no file in the scope', () => {
+        const trees = { base: { [REACH]: '[]' }, main: { [REACH]: WITH_ROW }, head: { [REACH]: '[]' } };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], trees)).toEqual(['src/hooks/Q.ts']);
+    });
+
+    it.each(['tsconfig.json', '.dependency-cruiser.reachability.cjs'])(
+        'crosses a pull request edit to the resolver input %s when main changed the baseline',
+        (input) => {
+            const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: '[]' }, head: { [REACH]: WITH_ROW } };
+            expect(lintLedgerCrossingPaths([REACH], [input], trees)).toEqual([input]);
+        }
+    );
+
+    it('does not count a reformat or key reorder of the same rows as a baseline change', () => {
+        const reordered = `[\n  {"rule": {"name": "components-no-usecase-transitively", "severity": "error"},\n "to": "src/modules/Example/useCases/run.ts", "from": "${PANEL}", "type": "reachability-causal"}\n]\n`;
+        const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: reordered }, head: { [REACH]: WITH_ROW } };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], trees)).toEqual([]);
+    });
+
+    it('counts main deleting the baseline file, or creating it, as a change', () => {
+        const deleted = { base: { [REACH]: WITH_ROW }, main: {}, head: { [REACH]: WITH_ROW } };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], deleted)).toEqual(['src/hooks/Q.ts']);
+        const created = { base: {}, main: { [REACH]: WITH_ROW }, head: {} };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], created)).toEqual(['src/hooks/Q.ts']);
+    });
+
+    it('does not cross pull request files outside the cruised scope', () => {
+        const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: '[]' }, head: { [REACH]: WITH_ROW } };
+        const outside = [
+            'docs/x.md',
+            'scripts/y.ts',
+            'srcx/z.ts',
+            'src/modules/Example/hooks/Q.spec.ts',
+            'src/Q.test.tsx',
+        ];
+        expect(lintLedgerCrossingPaths([REACH], outside, trees)).toEqual([]);
+    });
+
+    it('does not cross in-scope pull request files when main left the reachability baseline unchanged', () => {
+        const trees = unchanged({ [REACH]: WITH_ROW });
+        expect(lintLedgerCrossingPaths(['src/modules/Example/hooks/M.ts'], ['src/hooks/Q.ts'], trees)).toEqual([]);
+    });
+
+    it('keeps from-only binding for a non-transitive baseline changed on main', () => {
+        const row0 = JSON.stringify([
+            { type: 'contract-reexport', from: 'src/a.ts', to: 'src/b.ts', rule: { severity: 'error', name: 'r' } },
+        ]);
+        const trees = { base: { [CONTRACT]: row0 }, main: { [CONTRACT]: '[]' }, head: { [CONTRACT]: row0 } };
+        expect(lintLedgerCrossingPaths([CONTRACT], ['src/hooks/Q.ts'], trees)).toEqual([]);
+    });
+
+    it('names why in the refusal only when main changed the reachability baseline', () => {
+        const plain = { mergeBase: 'abc', paths: ['src/a.ts'] };
+        expect(lintLedgerCrossingRefusal(7, plain)).not.toContain('reachability');
+        expect(lintLedgerCrossingRefusal(7, { ...plain, transitiveBaselineChangedOnMain: true })).toContain(
+            'main changed the reachability baseline'
+        );
+    });
+
+    it('spells the cruised scope the reachability gate uses', () => {
+        const gate = readFileSync(repositoryFile('scripts/check-dependency-boundaries.mjs'), 'utf8');
+        expect(gate).toContain(`const args = ['${REACHABILITY_CRUISE_ROOT.replace('/', '')}'];`);
+        const config: { options: { exclude: { path: string }; tsConfig: { fileName: string } } } = createRequire(
+            import.meta.url
+        )(repositoryFile('.dependency-cruiser.reachability.cjs'));
+        expect(REACHABILITY_CRUISE_EXCLUDE.source).toBe(config.options.exclude.path);
+        expect(REACHABILITY_RESOLVER_INPUTS).toContain(config.options.tsConfig.fileName);
+        const tsconfig = readFileSync(repositoryFile(config.options.tsConfig.fileName), 'utf8');
+        expect(tsconfig).not.toMatch(/"extends"/u);
     });
 });
 
@@ -570,6 +681,7 @@ describe('lint ledger crossing over a real repository', () => {
             content: "export const craftBaselineFiles = {\n    'r': [\n        'x.ts',\n    ],\n};\n",
         },
         { ledger: 'eslint.size-baseline.mjs', content: "export const sizeBaselineFiles = [\n    'x.ts',\n];\n" },
+        { ledger: QUALITY, content: JSON.stringify({ 'x.ts': { 'sourdaw-craft/no-silent-catch': { count: 1 } } }) },
         { ledger: 'scripts/lintSizeCeilings.json', content: JSON.stringify({ 'x.ts': 700 }) },
     ])('reads $ledger from the repository and reports a file only it binds', ({ ledger, content }) => {
         const { git, write } = scratchRepository();

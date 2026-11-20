@@ -1,16 +1,14 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
-import {
-    type AutomationRecordingPolicy,
-    type HandlerSessionActionEntry,
-    type HandlerValidationContext,
-} from '#/utils/handlerContract';
+import { type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue, findDeviceParameterDefault } from '../../models/DeviceParameterLaw';
+import { type Device } from '../../models/Track';
 import { getPlannedDevicePatchState } from '../../useCases/device/getPlannedDevicePatchState';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -42,10 +40,15 @@ function resolveDeviceTarget(
     context?: HandlerValidationContext
 ) {
     if (context) {
+        const { paramId } = action.payload;
+        const parameterIds = paramId ? [paramId] : [];
+        if (paramId === 'masterGain') {
+            parameterIds.push('master_gain');
+        }
         const planned = getPlannedDevicePatchState({
             deviceId: action.payload.deviceId,
             trackId: action.payload.expectedTrackId,
-            parameterIds: action.payload.paramId ? [action.payload.paramId] : [],
+            parameterIds,
             context,
         });
         if (!planned) {
@@ -67,6 +70,18 @@ function resolveDeviceTarget(
     );
     const owner = owners.length === 1 ? owners[0] : undefined;
     return { owner, device: owner?.devices.find((device) => device.id === action.payload.deviceId) };
+}
+
+function valueWhenParameterIsAbsent(
+    device: Pick<Device, 'type' | 'parameterValues'>,
+    paramId: string
+): number | undefined {
+    const legacyMaster =
+        device.type === 'levain' && paramId === 'masterGain' ? device.parameterValues.master_gain : undefined;
+    if (legacyMaster !== undefined && Number.isFinite(legacyMaster)) {
+        return clampDeviceParameterValue({ deviceType: device.type, paramId, value: legacyMaster });
+    }
+    return findDeviceParameterDefault({ deviceType: device.type, paramId });
 }
 
 function nativeUnitMatches(
@@ -158,6 +173,21 @@ function runtimeAuthorityForParameter(
         : undefined;
 }
 
+function valueForParameterWrite(action: {
+    payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean };
+}): number {
+    const { paramId, value, deleteParameter } = action.payload;
+    if (!deleteParameter || paramId !== 'masterGain' || !Number.isFinite(value)) {
+        return value;
+    }
+    const { device } = resolveDeviceTarget(action);
+    if (device?.type !== 'levain') {
+        return value;
+    }
+    // Deleting the canonical key exposes the alias the live device still holds.
+    return valueWhenParameterIsAbsent(device, paramId) ?? value;
+}
+
 function handleGuardedSetDeviceParameter(
     action: {
         payload: {
@@ -175,14 +205,19 @@ function handleGuardedSetDeviceParameter(
         return { status: 'conflict' as const };
     }
     const runtimeAuthority = runtimeAuthorityForParameter(action, context);
-    const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
-        ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
-        ...(context?.executionMode === 'isolated-preview' || (runtimeAuthority && !runtimeAuthority.isCurrent())
-            ? { projectOnly: true }
-            : {}),
-        ...(runtimeAuthority ? { runtimeOwner: runtimeAuthority.owner } : {}),
-        automationRecordingPolicy: action.payload.automationRecordingPolicy,
-    });
+    const didWrite = setDeviceParameter(
+        action.payload.deviceId,
+        action.payload.paramId,
+        valueForParameterWrite(action),
+        {
+            ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
+            ...(context?.executionMode === 'isolated-preview' || (runtimeAuthority && !runtimeAuthority.isCurrent())
+                ? { projectOnly: true }
+                : {}),
+            ...(runtimeAuthority ? { runtimeOwner: runtimeAuthority.owner } : {}),
+            automationRecordingPolicy: action.payload.automationRecordingPolicy,
+        }
+    );
     return toHandlerExecutionResult(didWrite);
 }
 
@@ -249,13 +284,9 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const owner = getTrackStoreState()?.tracks.find((track) =>
             track.devices.some((device) => device.id === action.payload.deviceId)
         );
-        const previousValue = owner?.devices.find((device) => device.id === action.payload.deviceId)?.parameterValues[
-            action.payload.paramId
-        ];
-        const deviceType = owner?.devices.find((device) => device.id === action.payload.deviceId)?.type;
-        const defaultValue = deviceType
-            ? findDeviceParameterDefault({ deviceType, paramId: action.payload.paramId })
-            : undefined;
+        const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+        const previousValue = device?.parameterValues[action.payload.paramId];
+        const defaultValue = device ? valueWhenParameterIsAbsent(device, action.payload.paramId) : undefined;
         return () => {
             const effects: Array<() => void> = rollbackAutomationRecording ? [rollbackAutomationRecording] : [];
             const runtimeRollbackValue = previousValue ?? defaultValue;
@@ -300,9 +331,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const { owner, device: prev } = resolveDeviceTarget(alpha, context);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
         const previousValuePresent = prev ? Object.hasOwn(prev.parameterValues, alpha.payload.paramId) : false;
-        const defaultValue = prev
-            ? findDeviceParameterDefault({ deviceType: prev.type, paramId: alpha.payload.paramId })
-            : undefined;
+        const defaultValue = prev ? valueWhenParameterIsAbsent(prev, alpha.payload.paramId) : undefined;
         const exactLabel = describeParameterOutcome(alpha.payload);
         const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? defaultValue;
         const expectedPreviousValuePresent =

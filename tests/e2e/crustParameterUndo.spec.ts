@@ -14,9 +14,7 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const ENTRY = isBuiltE2eShardRun(env) ? '/e2e/persisted-hydration.js' : '/tests/e2e/persistedHydrationEntry.ts';
 
 declare global {
-    interface Window {
-        crustParameterEvidence?: { deviceId: string; calls: { name: string; value: number }[] };
-    }
+    var crustParameterEvidence: { deviceId: string; calls: { name: string; value: number }[] } | undefined;
 }
 
 async function capture(page: Page) {
@@ -63,11 +61,12 @@ async function capture(page: Page) {
                 .filter((device) => device.type === 'crust')
                 .map((device) => ({ trackId: track.id, ...device }))
         );
+        const tracksJson = JSON.stringify(tracks);
         return {
             raw: JSON.stringify(encode(root)),
             projected: JSON.stringify(encode(tracks)),
             // The storage adapter's toDocSafe JSON boundary omits undefined optional leaves.
-            persistedProjection: JSON.stringify(encode(JSON.parse(JSON.stringify(tracks)))),
+            persistedProjection: JSON.stringify(encode(JSON.parse(tracksJson))),
             rawTracks: JSON.stringify(encode(root.tracks.tracks)),
             revision: crdt.captureProjectRevision(),
             selectedTrackId: arrangement.trackStore.value?.selectedTrackId,

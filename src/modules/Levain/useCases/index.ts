@@ -5,11 +5,10 @@ export { createLevainTemplateDeviceState } from './createLevainTemplateDeviceSta
 export { getDecodedBankDiagnostics } from './getDecodedBankDiagnostics';
 export { getLevainArticulationId } from './getLevainArticulationId';
 export { getLevainEngineParameterName } from './getLevainEngineParameterName';
+export { getLevainHandlers } from './getLevainHandlers';
 export { nativeBankKeyForLevainDeviceState } from './levainNativeBankKey';
 export { projectLevainDeviceStateToNativePatch } from './projectLevainDeviceStateToNativePatch';
-export { commitLevainDeviceState } from './commitLevainDeviceState';
 export { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
-export { initLevainDeviceStatePersistence } from './initLevainDeviceStatePersistence';
 export { reconcileLevainDeviceStatesFromProject } from './reconcileLevainDeviceStatesFromProject';
 export { prepareOfflineLevain } from './prepareOfflineLevain';
 export { registerLevainDevice } from './levainParamBridge/registerLevainDevice';

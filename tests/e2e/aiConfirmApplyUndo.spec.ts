@@ -63,6 +63,18 @@ async function projectSaveState(page: Page): Promise<{ updatedAt: number; dirty:
     });
 }
 
+async function readyProjectIdentity(page: Page): Promise<string | null> {
+    return page.evaluate(async () => {
+        const { captureProjectIdentity } = await import('/src/modules/CrdtDocument/useCases/index.ts');
+        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+        const project = projectStore.value;
+        if (!project?.initialized || project.loading) {
+            return null;
+        }
+        return captureProjectIdentity();
+    });
+}
+
 function trackArmButtons(page: Page) {
     return page
         .getByRole('grid', { name: /Track list/i })
@@ -419,10 +431,21 @@ test.describe('a Prompt Bar answer opened in the chat', () => {
 
     test('does not add an answer from the previous project to a new project chat', async ({ page }) => {
         const answer = await askInPromptBar(page);
+        const previousIdentity = await readyProjectIdentity(page);
+        expect(previousIdentity).not.toBeNull();
 
         await page.getByRole('button', { name: 'Project menu', exact: true }).click();
         await page.getByRole('menuitem', { name: 'New Project', exact: true }).click();
-        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+        // Playback controls can still belong to the outgoing project.
+        await expect
+            .poll(
+                async () => {
+                    const identity = await readyProjectIdentity(page);
+                    return identity !== null && identity !== previousIdentity;
+                },
+                { message: 'New Project installed a different, initialized project', timeout: 15_000 }
+            )
+            .toBe(true);
         await page.getByRole('button', { name: 'Open in chat' }).click();
 
         await expect(

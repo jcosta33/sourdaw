@@ -1,4 +1,6 @@
-import { type AppAction, type AppActionType, type ClipSatelliteEntrySnapshot } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+
+import { type ClipSatelliteEntrySnapshot } from '../events/arrangementClipStateSnapshots';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -87,7 +89,11 @@ export const clipSatelliteReplacementByActionType: {
     setExternalPluginState: noReplacements,
     setDeviceState: noReplacements,
     setFermenterPatch: noReplacements,
+    setLevainIdentity: noReplacements,
     setGrandBouleDeviceState: noReplacements,
+    setToasterFactoryKit: noReplacements,
+    setBacteriaFactoryPatch: noReplacements,
+    setGlutenFactoryPreset: noReplacements,
     createBus: noReplacements,
     createFolder: noReplacements,
     setSend: noReplacements,
@@ -140,6 +146,7 @@ export const clipSatelliteReplacementByActionType: {
     removeAutomationLane: noReplacements,
     setAutomationLaneEnabled: noReplacements,
     addAutomationPoint: noReplacements,
+    insertAutomationLanePoints: noReplacements,
     quantizeNotes: noReplacements,
     removeShortMidiOverlaps: noReplacements,
     createDrumPreviewBranches: noReplacements,
@@ -163,6 +170,7 @@ export const clipSatelliteReplacementByActionType: {
     setClipFade: noReplacements,
     importMidiFile: noReplacements,
     normalizeClip: noReplacements,
+    relinkClipAudioSources: noReplacements,
     reverseClip: noReplacements,
     restoreReversedClip: noReplacements,
     glueClips: noReplacements,

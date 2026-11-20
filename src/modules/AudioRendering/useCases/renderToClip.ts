@@ -1,3 +1,4 @@
+import { type RetiredTakeLaneSnapshot } from '#/modules/Arrangement/events';
 import {
     addClip,
     addTrack,
@@ -10,7 +11,6 @@ import {
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { readBeatAtSamples, readSecondsAtBeat } from '#/modules/Transport/stores';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 export type RenderToClipInput = {
     /** Target track id, or the literal 'new' to create a fresh audio track. */

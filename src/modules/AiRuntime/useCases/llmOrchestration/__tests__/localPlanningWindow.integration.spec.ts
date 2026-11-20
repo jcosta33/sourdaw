@@ -8,8 +8,9 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectPianoRollTakeNotes, setPianoRollSelection } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { querySemanticProject } from '#/modules/Project/useCases';
+import { captureMusicalContentBinding, querySemanticProject } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import {
@@ -27,6 +28,7 @@ import { advertisedAnswerIntake, structuralAnswerArguments } from '../../__tests
 import {
     configureMetricGoalProject,
     literalMetricIntakeTurn,
+    nonAcousticMetricIntakeTurn,
     metricGoalAudioBuffer,
     resetMetricGoalProject,
 } from '../../__tests__/metricGoalWorkflowFixture';
@@ -310,8 +312,87 @@ afterEach(() => {
     capabilityStore.set({ phase: 'idle' });
 });
 
+it('sends actual contrasting MIDI query receipts to the local provider within its composed budget', async () => {
+    const track = createTrack({ id: 'phrase-track', name: 'Phrase', kind: 'midi' });
+    const clip = {
+        id: 'phrase-clip',
+        trackId: track.id,
+        name: 'Phrase',
+        type: 'midi' as const,
+        startBeat: 0,
+        endBeat: 4,
+        muted: false,
+        locked: false,
+        color: '',
+        gain: 1,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+    };
+    track.clips = [clip];
+    trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, track] });
+    clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
+    async function readPhrase(pitch: number) {
+        completion.mockReset();
+        const note = { id: 'phrase-note', pitch, startBeat: 0, duration: 1, velocity: 90 };
+        midiStore.set({ ...midiStore.value!, notesByClipId: { ...midiStore.value!.notesByClipId, [clip.id]: [note] } });
+        const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+        setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+        const musicalContentBinding = captureMusicalContentBinding();
+        const attempts: ProviderAttemptAdmission[] = [];
+        completion.mockImplementation(async (system: string, user: string) => {
+            if (completion.mock.calls.length === 1) {
+                return JSON.stringify(
+                    nonAcousticMetricIntakeTurn({
+                        modeId: 'edit',
+                        targetObjectIds: [clip.id],
+                        dimensions: ['midi-content'],
+                    })(user, system)
+                );
+            }
+            if (completion.mock.calls.length === 2) {
+                return JSON.stringify([
+                    {
+                        id: 'phrase',
+                        name: 'project.query',
+                        arguments: {
+                            type: 'musical-content',
+                            filters: { stableId: clip.id, startBeat: 0, endBeat: 4 },
+                            page: { limit: 10 },
+                        },
+                    },
+                ]);
+            }
+            return JSON.stringify(clarification);
+        });
+        const result = await parsePromptToActions({
+            prompt: 'Revise the selected MIDI phrase and retain its opening motif',
+            context: getProjectContext(),
+            projectRevision: captureProjectRevision(),
+            musicalContentBinding,
+            onProviderAttempt: (attempt) => {
+                attempts.push(attempt);
+                return { status: 'admitted' };
+            },
+        });
+        expect(result.applicationToolReceipts).toEqual(
+            expect.arrayContaining([expect.objectContaining({ callId: 'phrase', status: 'success' })])
+        );
+        expect(attempts).toHaveLength(3);
+        assertSentWindow(attempts, `midi-${String(pitch)}`);
+        const message = attempts[2]!.request.messages.find((entry) => entry.role === 'user')!.content;
+        const summary = readReceiptSummary(message);
+        expect(summary.truncated).toBe(false);
+        return JSON.stringify(decodeReceiptContext(summary.value));
+    }
+    const first = await readPhrase(67);
+    const second = await readPhrase(70);
+    expect(first).toContain('"pitch":67');
+    expect(second).toContain('"pitch":70');
+    expect(first).not.toEqual(second);
+});
+
 it('fits the production planning turn with live authority, resume, receipts and a full bounded thread', async () => {
-    const prompt = 'make the chorus wider and tame the harshness on the lead vocal';
+    const prompt = 'pan the chorus track to 20 left and mute the lead vocal track';
     const context = getProjectContext();
     expect(querySemanticProject({ type: 'project-summary' }).items).not.toHaveLength(0);
     const projectRevision = captureProjectRevision();

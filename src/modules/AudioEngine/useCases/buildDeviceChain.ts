@@ -372,10 +372,11 @@ function releaseBuiltStrategies(
  *   actually plays, worst of all on freeze, where the resulting dry render
  *   replaces the audible track. A plugin loaded while the transport is parked
  *   has not attached yet but sounds on the very next Play, so the refusal
- *   keys on the load, not the narrower attach state. The native offline path
- *   cannot host a plugin instance either (it maps against an empty instance
- *   table by design), so there is no render to build toward yet; refusing
- *   until a bounce through the live engine exists is the honest behaviour.
+ *   keys on the load, not the narrower attach state. A desktop export reaches
+ *   a loaded hosted effect through the native render instead, which prints it
+ *   from an offline instance of its own (#4592); every render that still runs
+ *   here — freeze, bounce, stems, a declined native export, a hosted
+ *   instrument — refuses it.
  *
  *   The load state is the whole test, not the device type: a duplicated
  *   track, a track template and a browser-build project (whose `loadPlugin`

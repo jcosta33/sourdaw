@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
+
 import { createTrack, type Track } from '../../models/Track';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
 import { setScrollY, setTimelineViewportHeight, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { initTimelineScrollClamp } from '../initTimelineScrollClamp';
+import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
 
 function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'kind'>): Track {
     return {
@@ -35,6 +41,8 @@ describe('initTimelineScrollClamp', () => {
 
     afterEach(() => {
         stop();
+        timelineEditingStore.set(defaultTimelineEditingState);
+        automationStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null });
     });
 
@@ -70,6 +78,39 @@ describe('initTimelineScrollClamp', () => {
         expect(timelineViewStore.value?.scrollY).toBe(0);
     });
 
+    it('re-clamps after hiding inline rows or removing a live lane', () => {
+        trackStore.set({ tracks: [makeTrack({ id: 'a', kind: 'audio', height: 100 })], selectedTrackId: 'a' });
+        const lane: AutomationLane = {
+            id: 'pan',
+            trackId: 'a',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        automationStore.set({ lanes: [lane] });
+        setTimelineViewportHeight(80);
+
+        toggleInlineAutomation();
+        setScrollY(1000);
+        expect(timelineViewStore.value?.scrollY).toBe(60);
+
+        automationStore.set({ lanes: [] });
+        expect(timelineViewStore.value?.scrollY).toBe(20);
+
+        automationStore.set({ lanes: [lane] });
+        setScrollY(1000);
+        expect(timelineViewStore.value?.scrollY).toBe(60);
+
+        toggleInlineAutomation();
+        expect(timelineViewStore.value?.scrollY).toBe(20);
+    });
+
     it('leaves an in-range scrollY alone when tracks change', () => {
         const tracks = ['a', 'b', 'c'].map((id) => makeTrack({ id, kind: 'audio', height: 100 }));
         trackStore.set({ tracks, selectedTrackId: null });
@@ -82,6 +123,25 @@ describe('initTimelineScrollClamp', () => {
         });
 
         expect(timelineViewStore.value?.scrollY).toBe(30);
+    });
+
+    it('re-clamps the current vertical scroll when local row heights shrink', () => {
+        const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        const tracks = ['a', 'b', 'c'].map((id) => makeTrack({ id, kind: 'audio', height: 80 }));
+        try {
+            setTrackHeight('normal');
+            trackStore.set({ tracks, selectedTrackId: null });
+            setTimelineViewportHeight(100);
+            setScrollY(1000);
+            expect(timelineViewStore.value?.scrollY).toBe(140);
+
+            setTrackHeight('compact');
+
+            expect(timelineViewStore.value?.scrollY).toBe(50);
+            expect(trackStore.value?.tracks).toBe(tracks);
+        } finally {
+            setTrackHeight(previousMode);
+        }
     });
 
     it('stops clamping once unsubscribed', () => {

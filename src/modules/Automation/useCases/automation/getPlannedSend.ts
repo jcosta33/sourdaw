@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { resolveSendLevelFields, SEND_LEVEL_LAW } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
@@ -59,6 +59,103 @@ function afterRemoveSend(
     return send;
 }
 
+function afterTrackRemoved(
+    action: ActionOf<'removeTrack' | 'discardCreatedTrack'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (action.payload.trackId === trackId || action.payload.trackId === busId) {
+        return undefined;
+    }
+    return send;
+}
+
+function afterTracksDiscarded(
+    action: ActionOf<'discardCreatedTracks'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (action.payload.trackIds.some((id) => id === trackId || id === busId)) {
+        return undefined;
+    }
+    return send;
+}
+
+function afterAllTracksRemoved(): undefined {
+    return undefined;
+}
+
+function afterStemSetDiscarded(
+    action: ActionOf<'discardImportedStemSet'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    const removedIds = [...action.payload.stemTrackIds, action.payload.folderId];
+    if (removedIds.some((id) => id === trackId || id === busId)) {
+        return undefined;
+    }
+    return send;
+}
+
+type RestoreTrackPayload = ActionOf<'restoreTrack'>['payload'];
+
+function findPlannedSend(
+    sends: readonly { readonly busId: string; readonly level: number; readonly preFader: boolean }[] | undefined,
+    busId: string
+): PlannedSend | undefined {
+    const found = sends?.find((candidate) => candidate.busId === busId);
+    return found ? { busId, level: found.level, preFader: found.preFader } : undefined;
+}
+
+// Mirrors handleRestoreTrack: the restored row returns with its own sends, and a
+// surviving track that is not itself restored in the batch takes its patch's
+// replacement sends.
+function sendAfterRestore(
+    payload: RestoreTrackPayload,
+    batchTrackIds: ReadonlySet<string>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (payload.trackId === trackId) {
+        const row = sanitizeTrackSnapshot({ tracks: [payload.trackSnapshot], selectedTrackId: null }).tracks[0];
+        return row ? findPlannedSend(row.sends, busId) : send;
+    }
+    const patch = payload.routingPatches.find((candidate) => candidate.trackId === trackId);
+    if (patch && !batchTrackIds.has(trackId)) {
+        return findPlannedSend(patch.replacement.sends, busId);
+    }
+    return send;
+}
+
+function afterTrackRestored(
+    action: ActionOf<'restoreTrack'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    const batchTrackIds = new Set((action.payload.batchRestoreTracks ?? []).map((track) => track.trackId));
+    return sendAfterRestore(action.payload, batchTrackIds, trackId, busId, send);
+}
+
+function afterTracksRestored(
+    action: ActionOf<'restoreTracks'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    // The handler restores ascending by the index each track held.
+    const ordered = [...action.payload.restores].sort((first, second) => first.trackIndex - second.trackIndex);
+    const batchTrackIds = new Set(ordered.map((restore) => restore.trackId));
+    return ordered.reduce<PlannedSend | undefined>(
+        (planned, restore) => sendAfterRestore(restore, batchTrackIds, trackId, busId, planned),
+        send
+    );
+}
+
 // Every action type states how it changes the planned send: a new action does not compile until it does.
 const plannedSendByActionType: {
     readonly [Type in AppActionType]: (
@@ -69,14 +166,14 @@ const plannedSendByActionType: {
     ) => PlannedSend | undefined;
 } = {
     importStemSet: unchangedSend,
-    discardImportedStemSet: unchangedSend,
+    discardImportedStemSet: afterStemSetDiscarded,
     addTrack: unchangedSend,
-    removeTrack: unchangedSend,
-    discardCreatedTrack: unchangedSend,
-    restoreTrack: unchangedSend,
+    removeTrack: afterTrackRemoved,
+    discardCreatedTrack: afterTrackRemoved,
+    restoreTrack: afterTrackRestored,
     restoreClip: unchangedSend,
     discardDuplicatedClip: unchangedSend,
-    removeAllTracks: unchangedSend,
+    removeAllTracks: afterAllTracksRemoved,
     renameTrack: unchangedSend,
     createTrackAlternative: unchangedSend,
     switchTrackAlternative: unchangedSend,
@@ -146,7 +243,11 @@ const plannedSendByActionType: {
     setExternalPluginState: unchangedSend,
     setDeviceState: unchangedSend,
     setFermenterPatch: unchangedSend,
+    setLevainIdentity: unchangedSend,
     setGrandBouleDeviceState: unchangedSend,
+    setToasterFactoryKit: unchangedSend,
+    setBacteriaFactoryPatch: unchangedSend,
+    setGlutenFactoryPreset: unchangedSend,
     createBus: unchangedSend,
     createFolder: unchangedSend,
     setSend: afterSetSend,
@@ -199,6 +300,7 @@ const plannedSendByActionType: {
     removeAutomationLane: unchangedSend,
     setAutomationLaneEnabled: unchangedSend,
     addAutomationPoint: unchangedSend,
+    insertAutomationLanePoints: unchangedSend,
     quantizeNotes: unchangedSend,
     removeShortMidiOverlaps: unchangedSend,
     createDrumPreviewBranches: unchangedSend,
@@ -222,6 +324,7 @@ const plannedSendByActionType: {
     setClipFade: unchangedSend,
     importMidiFile: unchangedSend,
     normalizeClip: unchangedSend,
+    relinkClipAudioSources: unchangedSend,
     reverseClip: unchangedSend,
     restoreReversedClip: unchangedSend,
     glueClips: unchangedSend,
@@ -324,9 +427,9 @@ const plannedSendByActionType: {
     restoreTimeOperationState: unchangedSend,
     restoreTrackHeights: unchangedSend,
     restoreTrackGroupMemberships: unchangedSend,
-    restoreTracks: unchangedSend,
+    restoreTracks: afterTracksRestored,
     restoreTrackClipStates: unchangedSend,
-    discardCreatedTracks: unchangedSend,
+    discardCreatedTracks: afterTracksDiscarded,
     discardCreatedCompGroup: unchangedSend,
     restoreTrackAlternativeState: unchangedSend,
     restoreScratchPadState: unchangedSend,

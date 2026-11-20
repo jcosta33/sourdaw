@@ -1,4 +1,5 @@
-import { type AppAction, type AppActionType, type AutomationRecordingPolicy } from '#/utils/handlerContract';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -93,7 +94,11 @@ export const automationRecordingPolicyByActionType: {
     setExternalPluginState: noPolicy,
     setDeviceState: noPolicy,
     setFermenterPatch: noPolicy,
+    setLevainIdentity: noPolicy,
     setGrandBouleDeviceState: noPolicy,
+    setToasterFactoryKit: noPolicy,
+    setBacteriaFactoryPatch: noPolicy,
+    setGlutenFactoryPreset: noPolicy,
     createBus: noPolicy,
     createFolder: noPolicy,
     setSend: noPolicy,
@@ -146,6 +151,7 @@ export const automationRecordingPolicyByActionType: {
     removeAutomationLane: noPolicy,
     setAutomationLaneEnabled: noPolicy,
     addAutomationPoint: noPolicy,
+    insertAutomationLanePoints: noPolicy,
     quantizeNotes: noPolicy,
     removeShortMidiOverlaps: noPolicy,
     createDrumPreviewBranches: noPolicy,
@@ -169,6 +175,7 @@ export const automationRecordingPolicyByActionType: {
     setClipFade: noPolicy,
     importMidiFile: noPolicy,
     normalizeClip: noPolicy,
+    relinkClipAudioSources: noPolicy,
     reverseClip: noPolicy,
     restoreReversedClip: noPolicy,
     glueClips: noPolicy,

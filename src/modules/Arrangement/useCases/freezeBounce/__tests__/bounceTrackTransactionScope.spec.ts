@@ -43,6 +43,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('../renderOffline', () => ({

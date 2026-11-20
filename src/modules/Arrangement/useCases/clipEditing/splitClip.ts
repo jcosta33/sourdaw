@@ -1,9 +1,9 @@
 import { restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 import { continuesLoopingMidiPhase } from '#/utils/clipLoopOrigin';
-import { type ClipStateSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type ClipStateSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';

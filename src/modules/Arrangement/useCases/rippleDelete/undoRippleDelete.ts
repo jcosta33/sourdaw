@@ -1,7 +1,7 @@
 import { type getAutomationLanes, restoreAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
 import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';

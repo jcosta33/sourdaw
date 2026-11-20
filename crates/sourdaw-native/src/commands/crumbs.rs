@@ -124,7 +124,7 @@ fn new_crumbs_rings() -> (CrumbsInstanceEnds, CrumbsSlotEnds) {
     let lifetime = Arc::new(CrumbsSlotLifetime::default());
     (
         CrumbsInstanceEnds {
-            command_tx: CrumbsCommandSender(command_tx),
+            command_tx: CrumbsCommandSender::new(command_tx),
             commit_rx,
             recycle_tx,
             retired_take_rx,
@@ -185,7 +185,7 @@ impl CrumbsInstanceData {
             CrumbsEngineSlot::Dormant(writes) => &mut writes.recording,
         }
     }
-    /// The one route from a command handler to the engine.
+    /// Send an ordinary engine command or a parked parameter write.
     ///
     /// Attached, that is the command ring. Dormant, it is the parked-write
     /// table: the engine reads this state on the slot's first pass, so a
@@ -512,7 +512,7 @@ fn register_crumbs_slot(
             GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
         ])
         .map_err(|error| match error {
-            GraphBatchError::Refused(reason) => reason,
+            GraphBatchError::Refused(reason) => reason.to_string(),
             // Unreachable by construction, and deliberately not unwound:
             // the only route to the audio thread is the ring that just
             // failed, so a removal command would have nowhere to go.
@@ -1052,7 +1052,9 @@ pub async fn destroy_crumbs(
         // and off the callback's input bus with the slot it belongs to, so an
         // unregister here would be a second release of a consumer that is
         // already gone.
-        engine_handle.remove_plugin(plugin_id)?;
+        engine_handle
+            .remove_plugin(plugin_id)
+            .map_err(|error| error.to_string())?;
     }
 
     // Once queued, scheduler retirement is inevitable. No fallible work may
@@ -1106,7 +1108,7 @@ pub async fn load_sample(
     let file_path = file_path.to_string_lossy().to_string();
 
     // Decode the audio file.
-    let decoded = daw_io::decode_audio_file(&file_path)?;
+    let decoded = daw_io::decode_audio_file(&file_path).map_err(|error| error.to_string())?;
 
     let sample_rate = decoded.sample_rate;
     let channels = decoded.channels;
@@ -1176,13 +1178,13 @@ pub async fn load_sample(
     })
 }
 
-/// Trigger a note on the crumbs engine.
-pub async fn crumbs_note_on(
+/// Start a pad audition and return the receipt that owns its release.
+pub async fn crumbs_pad_audition_on(
     instance_id: String,
     note: u8,
     velocity: u8,
     state: &CrumbsState,
-) -> Result<(), String> {
+) -> Result<u32, String> {
     let mut instances = state
         .instances
         .lock()
@@ -1191,26 +1193,31 @@ pub async fn crumbs_note_on(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::NoteOn { note, velocity })?;
-    Ok(())
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return Err("Native engine not running".to_string());
+    };
+    ends.command_tx.start_pad_audition(note, velocity)
 }
 
-/// Release a note on the crumbs engine.
-pub async fn crumbs_note_off(
+/// Release the audition if the attached slot still owns its receipt.
+pub async fn crumbs_pad_audition_off(
     instance_id: String,
-    note: u8,
+    audition_id: u32,
     state: &CrumbsState,
 ) -> Result<(), String> {
     let mut instances = state
         .instances
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
-    let instance = instances
-        .get_mut(&instance_id)
-        .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
-
-    instance.send(CrumbsCommand::NoteOff { note })?;
-    Ok(())
+    let Some(instance) = instances.get_mut(&instance_id) else {
+        return Ok(());
+    };
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return Ok(());
+    };
+    ends.command_tx
+        .release_pad_audition(audition_id)
+        .map_err(|error| error.to_string())
 }
 
 /// Set a crumbs parameter.
@@ -1641,23 +1648,25 @@ pub async fn arm_recording(
     let engine = engine_guard
         .as_mut()
         .ok_or_else(|| "Native engine is not running".to_string())?;
-    engine.adopt_capture_completion_service(Box::new(NativeTakeCompletion {
-        instances: Arc::downgrade(&state.instances),
-        engine: Arc::downgrade(&app_state.engine),
-        plugin_id,
-        take: Arc::clone(&take),
-        retired_reference: None,
-        prepared: None,
-        recycle: None,
-        last_emitted: 0,
-    }))?;
+    engine
+        .adopt_capture_completion_service(Box::new(NativeTakeCompletion {
+            instances: Arc::downgrade(&state.instances),
+            engine: Arc::downgrade(&app_state.engine),
+            plugin_id,
+            take: Arc::clone(&take),
+            retired_reference: None,
+            prepared: None,
+            recycle: None,
+            last_emitted: 0,
+        }))
+        .map_err(|error| error.to_string())?;
     ends.recording.take = Some(Arc::clone(&take));
     let preparation = match engine.prepare_capture_consumer_registration(plugin_id) {
         Ok(preparation) => preparation,
         Err(error) => {
             take.valid.store(false, Ordering::Release);
             take.failure.store(3, Ordering::Release);
-            return Err(error);
+            return Err(error.to_string());
         }
     };
     let _ = take.period.set(preparation.period().clone());
@@ -1680,7 +1689,7 @@ pub async fn arm_recording(
         take.valid.store(false, Ordering::Release);
         take.cancel_requested.store(true, Ordering::Release);
         take.failure.store(3, Ordering::Release);
-        return Err(error);
+        return Err(error.to_string());
     }
     take.admitted.store(true, Ordering::Release);
     Ok(ArmRecordingResult {
@@ -2221,7 +2230,7 @@ pub(crate) mod tests {
         f.driver.service_owner_commands();
         assert_eq!(
             f.driver.deliver_input(&[0.0; 1024], 2),
-            Err("Fixture input is not open".to_string()),
+            Err(daw_engine::audio_thread::CaptureFixtureError::InputNotOpen),
             "reattaching an idle sampler must not acquire input"
         );
 
@@ -2253,7 +2262,7 @@ pub(crate) mod tests {
         assert!(f.period(instance_id).snapshot().closed);
         assert_eq!(
             f.driver.deliver_input(&[0.0; 1024], 2),
-            Err("Fixture input is not open".to_string()),
+            Err(daw_engine::audio_thread::CaptureFixtureError::InputNotOpen),
             "the replacement must close input after its last take holder"
         );
         assert!(instance_is_attached(&f.state, instance_id));
@@ -2850,7 +2859,7 @@ pub(crate) mod tests {
             engine_slot: CrumbsEngineSlot::Attached {
                 plugin_id: 0,
                 ends: CrumbsInstanceEnds {
-                    command_tx: CrumbsCommandSender(command_tx),
+                    command_tx: CrumbsCommandSender::new(command_tx),
                     commit_rx,
                     recycle_tx,
                     retired_take_rx,
@@ -2869,6 +2878,273 @@ pub(crate) mod tests {
     /// refused push does.
     fn fill_command_ring(instance: &mut CrumbsInstanceData) {
         while instance.send(CrumbsCommand::AllNotesOff).is_ok() {}
+    }
+
+    #[test]
+    fn pad_audition_release_reaches_a_full_command_ring() {
+        let state = CrumbsState::default();
+        let (instance, _, _, mut commands) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("sampler".into(), instance);
+
+        let audition_id =
+            crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &state))
+                .expect("the empty queue admits a pad attack");
+        {
+            let mut instances = state.instances.lock().unwrap();
+            let instance = instances.get_mut("sampler").unwrap();
+            fill_command_ring(instance);
+            let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+                panic!("the sampler is attached");
+            };
+            assert_eq!(
+                ends.command_tx
+                    .push_native(NativeCrumbsCommand::StopTake { take_id: 0 }),
+                Err(crate::host::native_bridge::CrumbsCommandQueueFull),
+                "native recording commands also respect the release reservation"
+            );
+        }
+        assert!(matches!(
+            commands.pop(),
+            Ok(CrumbsCommand::PadAuditionOn { note: 60, velocity: 100, audition_id: id })
+                if id == audition_id
+        ));
+        assert_eq!(
+            crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 61, 100, &state)),
+            Err("Command queue full".to_string()),
+            "one unreserved slot cannot admit both a new attack and its release"
+        );
+        {
+            let mut instances = state.instances.lock().unwrap();
+            let CrumbsEngineSlot::Attached { ends, .. } =
+                &mut instances.get_mut("sampler").unwrap().engine_slot
+            else {
+                panic!("the sampler is attached");
+            };
+            ends.command_tx
+                .push_native(NativeCrumbsCommand::StopTake { take_id: 0 })
+                .unwrap();
+        }
+        let release = || {
+            crate::block_on_test(crumbs_pad_audition_off(
+                "sampler".into(),
+                audition_id,
+                &state,
+            ))
+        };
+        release().expect("an accepted pad attack guarantees room for its release");
+        release().expect("duplicate release adds nothing to the full ring");
+        for _ in 0..6 {
+            assert!(matches!(commands.pop(), Ok(CrumbsCommand::AllNotesOff)));
+        }
+        assert!(matches!(
+            commands.0.pop(),
+            Ok(NativeCrumbsCommand::StopTake { take_id: 0 })
+        ));
+        assert!(matches!(
+            commands.pop(),
+            Ok(CrumbsCommand::PadAuditionOff { audition_id: id }) if id == audition_id
+        ));
+        assert!(commands.pop().is_err());
+    }
+
+    #[test]
+    fn pad_audition_receipts_do_not_cross_runtime_replacement() {
+        let state = CrumbsState::default();
+        let app = AppState::default();
+        let (engine, _graph_commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
+        *app.engine.lock().unwrap() = Some(engine);
+        let start =
+            || crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &state));
+        let release =
+            |id| crate::block_on_test(crumbs_pad_audition_off("sampler".into(), id, &state));
+        let queued = || {
+            let instances = state.instances.lock().unwrap();
+            let CrumbsEngineSlot::Attached { ends, .. } = &instances["sampler"].engine_slot else {
+                panic!("the sampler is attached");
+            };
+            ends.command_tx.capacity() - ends.command_tx.slots()
+        };
+
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let original = start().unwrap();
+        crate::block_on_test(destroy_crumbs("sampler".into(), &state, &app)).unwrap();
+        release(original).unwrap();
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let replacement = start().unwrap();
+        assert_ne!(original, replacement);
+        assert_eq!(queued(), 1);
+
+        release(original).unwrap();
+        assert_eq!(
+            queued(),
+            1,
+            "the replacement never receives the old release"
+        );
+        release(replacement).unwrap();
+        assert_eq!(
+            queued(),
+            2,
+            "only the replacement receipt releases its hold"
+        );
+        release(replacement).unwrap();
+        assert_eq!(queued(), 2, "a duplicate never reaches the FIFO");
+    }
+
+    #[test]
+    fn pad_audition_release_preserves_equal_pitch_voices_in_the_native_mix() {
+        use daw_engine::offline::{OfflineRenderer, OFFLINE_BLOCK_FRAMES};
+        use daw_engine::plugin_slot::MidiNoteEvent;
+        use daw_engine::timeline::{ChainEntry, DeviceKind, TimelineTrack};
+
+        let state = CrumbsState::default();
+        let app = AppState::default();
+        let (engine, mut graph_commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
+        *app.engine.lock().unwrap() = Some(engine);
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let plugin_id = attached_plugin_id(&state, "sampler");
+        let mut renderer = OfflineRenderer::new(48_000.0, 16);
+        while let Ok(command) = graph_commands.pop() {
+            renderer.push(command).unwrap();
+        }
+        renderer
+            .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+            .unwrap();
+        let entry = ChainEntry {
+            effect_id: plugin_id,
+            kind: DeviceKind::Generator,
+        };
+        renderer
+            .push(GraphCommand::InsertTrackDevice {
+                track_id: 1,
+                entry,
+                index: 0,
+                hold: entry.input_hold(),
+            })
+            .unwrap();
+        let metering = {
+            let mut instances = state.instances.lock().unwrap();
+            let instance = instances.get_mut("sampler").unwrap();
+            instance
+                .send(CrumbsCommand::AddSample {
+                    id: 1,
+                    data: Arc::new(SampleData::from_mono(vec![0.1; 48_000], 48_000)),
+                })
+                .unwrap();
+            instance.send(CrumbsCommand::SetActiveSample(1)).unwrap();
+            for (param, value) in [
+                (CrumbsParam::Attack, 0.0),
+                (CrumbsParam::Decay, 0.0),
+                (CrumbsParam::Sustain, 1.0),
+                (CrumbsParam::Release, 0.0),
+            ] {
+                instance
+                    .send(CrumbsCommand::SetParam { param, value })
+                    .unwrap();
+            }
+            Arc::clone(&instance.metering)
+        };
+        let start = |velocity| {
+            crate::block_on_test(crumbs_pad_audition_on(
+                "sampler".into(),
+                60,
+                velocity,
+                &state,
+            ))
+            .unwrap()
+        };
+        let release = |id| {
+            crate::block_on_test(crumbs_pad_audition_off("sampler".into(), id, &state)).unwrap()
+        };
+        let peak = |renderer: &mut OfflineRenderer| {
+            let (left, right) = renderer.render(OFFLINE_BLOCK_FRAMES);
+            left.into_iter()
+                .chain(right)
+                .map(f32::abs)
+                .fold(0.0, f32::max)
+        };
+        let voices = || metering.active_voice_count.load(Ordering::Relaxed);
+        let loud = start(127);
+        let loud_peak = peak(&mut renderer);
+        assert!(loud_peak > 0.01);
+        assert_eq!(voices(), 1);
+
+        let quiet = start(24);
+        let ordinary_note = MidiNoteEvent {
+            note: 60,
+            velocity: 100,
+            channel: 0,
+            is_note_on: true,
+            frame_offset: 0,
+            probability_cutoff: u64::from(u32::MAX) + 1,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
+            articulation_id: None,
+        };
+        renderer
+            .push(GraphCommand::SendMidiNote(plugin_id, ordinary_note))
+            .unwrap();
+        let different_pitch = MidiNoteEvent {
+            note: 67,
+            velocity: 16,
+            ..ordinary_note
+        };
+        renderer
+            .push(GraphCommand::SendMidiNote(plugin_id, different_pitch))
+            .unwrap();
+        assert!(peak(&mut renderer) > loud_peak);
+        assert_eq!(voices(), 4);
+
+        release(quiet);
+        assert!(peak(&mut renderer) > loud_peak * 0.9);
+        assert_eq!(
+            voices(),
+            3,
+            "pad up leaves both ordinary voices and the other pad voice"
+        );
+        renderer
+            .push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    is_note_on: false,
+                    velocity: 0,
+                    ..ordinary_note
+                },
+            ))
+            .unwrap();
+        assert!(
+            peak(&mut renderer) > loud_peak * 0.9,
+            "the loud pad survives both releases"
+        );
+        assert_eq!(voices(), 2, "ordinary note off does not release a pad hold");
+
+        release(loud);
+        let different_pitch_peak = peak(&mut renderer);
+        assert!(different_pitch_peak > loud_peak * 0.05 && different_pitch_peak < loud_peak * 0.5);
+        assert_eq!(
+            voices(),
+            1,
+            "the different-pitch MIDI voice is still audible"
+        );
+        renderer
+            .push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    is_note_on: false,
+                    velocity: 0,
+                    ..different_pitch
+                },
+            ))
+            .unwrap();
+        assert_eq!(peak(&mut renderer), 0.0);
+        assert_eq!(voices(), 0);
     }
 
     /// Whether the instance is still waiting for an engine to attach to.
@@ -3244,7 +3520,7 @@ pub(crate) mod tests {
                 .expect("the sentinel must fill the final scheduler position");
             assert_eq!(
                 engine.set_bypass(original_engine_plugin_id, false),
-                Err("Audio command queue full".to_string()),
+                Err(daw_engine::CommandError::QueueFull),
                 "a second sentinel independently proves admission is full"
             );
         }
@@ -3714,7 +3990,7 @@ pub(crate) mod tests {
                 .unwrap();
             instance.send(CrumbsCommand::SetActiveSample(1)).unwrap();
         }
-        crate::block_on_test(crumbs_note_on("sampler".into(), 60, 100, &f.state)).unwrap();
+        crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &f.state)).unwrap();
         f.driver.render(128).unwrap();
         let token = f.arm("sampler", 0.0, 1.0);
         f.driver.service_owner_commands();
@@ -3832,7 +4108,12 @@ pub(crate) mod tests {
             "an arm with no slot rendering it would capture silence and say nothing"
         );
         assert_eq!(
-            crate::block_on_test(crumbs_note_on(INSTANCE_ID.to_string(), 60, 100, &state)),
+            crate::block_on_test(crumbs_pad_audition_on(
+                INSTANCE_ID.to_string(),
+                60,
+                100,
+                &state
+            )),
             Err("Native engine not running".to_string()),
             "a note with no slot rendering it would sound nothing and say nothing"
         );
@@ -4350,8 +4631,13 @@ pub(crate) mod tests {
                 max_duration_secs: 1.0,
             })
             .expect("the DSP arm should reach the ring");
-        crate::block_on_test(crumbs_note_on(instance_id.to_string(), 60, 100, &state))
-            .expect("the note should reach the ring");
+        crate::block_on_test(crumbs_pad_audition_on(
+            instance_id.to_string(),
+            60,
+            100,
+            &state,
+        ))
+        .expect("the note should reach the ring");
 
         let (left, right) = renderer.render(OFFLINE_BLOCK_FRAMES);
 

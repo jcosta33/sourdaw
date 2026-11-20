@@ -11,7 +11,11 @@
 //! neutering the read, the rate calculation, the gain chain or the pool lookup
 //! turns one of them red rather than merely lowering a level.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::crumbs::CrumbsInstance;
 

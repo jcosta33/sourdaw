@@ -204,7 +204,7 @@
     "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx": 600,
     "src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx": 600,
     "src/modules/AudioEngine/repositories/audioRecorder/recording.ts": 600,
-    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 2955,
+    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 2056,
     "src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts": 600,
     "src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts": 1323,
     "src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts": 692,
@@ -253,7 +253,6 @@
     "src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx": 600,
     "src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx": 600,
     "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx": 1991,
-    "src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts": 600,
     "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx": 600,
     "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx": 600,
     "src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts": 600,
@@ -502,7 +501,7 @@
     "src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts": 600,
     "src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts": 600,
     "src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts": 600,
-    "src/modules/WorkspaceShell/presentations/views/AppShell.tsx": 1297,
+    "src/modules/WorkspaceShell/presentations/views/AppShell.tsx": 1129,
     "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx": 664,
     "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx": 600,
     "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx": 600,
@@ -529,6 +528,5 @@
     "src/modules/Yeast/workers/processors/ChordGenerator.ts": 600,
     "src/modules/Yeast/workers/processors/GrooveModule.ts": 600,
     "src/modules/Yeast/workers/yeastWorker.ts": 600,
-    "src/utils/automationCurve.ts": 600,
-    "src/utils/handlerContract.ts": 766
+    "src/utils/automationCurve.ts": 600
 }
