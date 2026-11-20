@@ -22,6 +22,7 @@ import { agentProjectRepairStateStore, captureProjectIdentity } from '#/modules/
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -163,12 +164,13 @@ function startDrag(knob: HTMLElement): void {
     fireEvent.pointerMove(knob, { pointerId: 1, clientY: 75 });
 }
 
-async function whileSnapshotHeld(run: () => void): Promise<void> {
+async function whileSnapshotHeld(run: () => void, beforeUnlock?: (transaction: object) => void): Promise<void> {
     const entered = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    const snapshot = transactSnapshot(async () => {
+    const snapshot = transactSnapshot(async (transaction) => {
         entered.resolve();
         await resume.promise;
+        beforeUnlock?.(transaction);
     });
     await entered.promise;
     try {
@@ -179,6 +181,33 @@ async function whileSnapshotHeld(run: () => void): Promise<void> {
             await snapshot;
         });
     }
+}
+
+function publishPeerInput(transaction: object, value: number): void {
+    mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+        id: 'root',
+        snapshotTransaction: transaction,
+        changeFn: (doc) => {
+            const device = doc.tracks.tracks
+                .find((track) => track.id === TRACK_ID)
+                ?.devices.find((entry) => entry.id === DEVICE_ID);
+            if (!device) {
+                throw new Error('Expected the Bacteria device before the peer write');
+            }
+            device.parameterValues[INPUT] = value;
+        },
+    });
+    trackStore.hydrate({ keepLocalRuntimeState: true });
+}
+
+function queueKeyboardThenRelease(knob: HTMLElement): void {
+    fireEvent.keyDown(knob, { key: 'ArrowUp' });
+    startDrag(knob);
+    fireEvent.pointerUp(knob, { pointerId: 1 });
+    expect(knob).toHaveAttribute('aria-valuenow', '8.5');
+    expect(inputWrites()).toEqual([]);
+    expect(projectedParameterValues()).not.toHaveProperty(INPUT);
+    expect(undoDepth()).toBe(0);
 }
 
 describe('Bacteria Play Input gain', () => {
@@ -441,6 +470,48 @@ describe('Bacteria Play Input gain', () => {
         await act(undo);
         expect(rawParameterValues()).not.toHaveProperty(INPUT);
         expect(knob).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    it('commits a keyboard edit and a released drag in order when both wait for admission', async () => {
+        render(<BacteriaPanel deviceId={DEVICE_ID} />);
+        const knob = inputKnob();
+        await whileSnapshotHeld(() => queueKeyboardThenRelease(knob));
+
+        await waitFor(() => expect(undoDepth()).toBe(2));
+        expect(inputWrites()).toEqual([0.5, 8.5]);
+        expect(projectedParameterValues()).toHaveProperty(INPUT, 8.5);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 8.5);
+
+        await act(undo);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(knob).toHaveAttribute('aria-valuenow', '0.5');
+        await act(undo);
+        expect(rawParameterValues()).not.toHaveProperty(INPUT);
+        expect(knob).toHaveAttribute('aria-valuenow', '0');
+
+        await act(redo);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(knob).toHaveAttribute('aria-valuenow', '0.5');
+        await act(redo);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 8.5);
+        expect(knob).toHaveAttribute('aria-valuenow', '8.5');
+        expect(inputWrites()).toEqual([0.5, 8.5, 0.5, 0, 0.5, 8.5]);
+    });
+
+    it('drops a queued drag when a peer supplies its expected baseline without the keyboard edit committing', async () => {
+        render(<BacteriaPanel deviceId={DEVICE_ID} />);
+        const knob = inputKnob();
+        expect(rawParameterValues()).not.toHaveProperty(INPUT);
+        await whileSnapshotHeld(
+            () => queueKeyboardThenRelease(knob),
+            (transaction) => publishPeerInput(transaction, 0.5)
+        );
+
+        await waitFor(() => expect(knob).toHaveAttribute('aria-valuenow', '0.5'));
+        expect(projectedParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(rawParameterValues()).toHaveProperty(INPUT, 0.5);
+        expect(inputWrites()).toEqual([]);
+        expect(undoDepth()).toBe(0);
     });
 
     it.each(['release', 'keyboard', 'keyboard with a new held drag'] as const)(
