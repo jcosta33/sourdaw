@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
 import { driveDesktopEditorWorkspace } from '../desktopEditorWorkspaceDrive.ts';
 import {
+    pausePreservesProgress,
     renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     WORKSPACE_STAGES,
@@ -454,6 +455,43 @@ describe('packaged editor workspace proof', () => {
     ] as const)('reads the rendered musical display %s', (text, expected) => {
         expect(renderedPlayheadBeat(text)).toBe(expected);
     });
+
+    it.each([
+        { paused: 0, verdict: 'failed' },
+        { paused: 7, verdict: 'failed' },
+        { paused: 8 - 2 / 480, verdict: 'failed' },
+        { paused: 8 - 1 / 480, verdict: 'proven' },
+        { paused: 8, verdict: 'proven' },
+        { paused: 8.25, verdict: 'proven' },
+        { paused: 16, verdict: 'proven' },
+    ] as const)(
+        'requires Pause at $paused to retain the last advancing display before proof can be $verdict',
+        async ({ paused, verdict }) => {
+            const { options, env } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(binary, observations) {
+                    await completeWorkspaceDrive(binary, observations);
+                    const row = observations.stages.find(({ stage }) => stage === 'timeline-transport');
+                    if (!row) {
+                        throw new Error('missing fixture stage');
+                    }
+                    row.outcome = 'failed';
+                    row.values.push({ before: 0, sought: 7, advancing: 7.5, advanced: 8, paused });
+                    if (!pausePreservesProgress(8, paused)) {
+                        throw new Error('Pause rewound the advancing playhead');
+                    }
+                    row.outcome = 'passed';
+                },
+            });
+            expect(record.verdict).toBe(verdict);
+            expect(record.failureCode).toBe(verdict === 'failed' ? 'driver-failed' : null);
+            expect(record.observations.stages.find(({ stage }) => stage === 'timeline-transport')).toMatchObject({
+                outcome: verdict === 'failed' ? 'failed' : 'passed',
+                values: [{ before: 0, sought: 7, advancing: 7.5, advanced: 8, paused }],
+            });
+        }
+    );
 
     it('reports launch-unavailable without teardown credit when all three isolated sessions refuse launch', async () => {
         const { options, env } = fixture();

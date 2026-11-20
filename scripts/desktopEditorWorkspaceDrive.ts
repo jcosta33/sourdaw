@@ -12,6 +12,7 @@ import {
     observeProofInstance,
 } from './desktopEditorFamilyDrive.ts';
 import {
+    pausePreservesProgress,
     renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     type Rectangle,
@@ -370,6 +371,7 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     await exactButton(playback, 'Play').waitFor({ state: 'visible' });
     const paused = await playhead(page);
     samples.paused = paused;
+    assert(pausePreservesProgress(advanced, paused), 'Pause rewound the advancing playhead');
     await heldPlayhead(page, paused);
     await exactButton(playback, 'Stop').click();
     await until(read, (value) => value === 0);

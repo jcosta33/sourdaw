@@ -64,3 +64,8 @@ export function renderedPlayheadBeat(text: string): number | null {
     }
     return (bar - 1) * 4 + beat - 1 + tick / 480;
 }
+
+/** The rendered musical display quantizes position to 480 ticks per beat. */
+export function pausePreservesProgress(advanced: number, paused: number): boolean {
+    return Number.isFinite(advanced) && Number.isFinite(paused) && paused >= advanced - 1 / 480;
+}
