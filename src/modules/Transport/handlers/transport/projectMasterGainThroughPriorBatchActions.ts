@@ -189,6 +189,7 @@ export const masterGainProjectionByActionType: {
     setClipFade: keepMasterPercent,
     importMidiFile: keepMasterPercent,
     normalizeClip: keepMasterPercent,
+    relinkClipAudioSources: keepMasterPercent,
     reverseClip: keepMasterPercent,
     restoreReversedClip: keepMasterPercent,
     glueClips: keepMasterPercent,

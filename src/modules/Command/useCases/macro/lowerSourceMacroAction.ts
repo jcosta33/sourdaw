@@ -218,6 +218,7 @@ const lowerByActionType: {
     setClipFade: cloneForReplay,
     importMidiFile: cloneForReplay,
     normalizeClip: cloneForReplay,
+    relinkClipAudioSources: cloneForReplay,
     reverseClip: cloneForReplay,
     restoreReversedClip: cloneForReplay,
     glueClips: cloneForReplay,

@@ -173,6 +173,7 @@ const restoredMidiOwnerIdsByActionType: {
     setClipFade: noOwnerIds,
     importMidiFile: noOwnerIds,
     normalizeClip: noOwnerIds,
+    relinkClipAudioSources: noOwnerIds,
     reverseClip: noOwnerIds,
     restoreReversedClip: noOwnerIds,
     glueClips: noOwnerIds,

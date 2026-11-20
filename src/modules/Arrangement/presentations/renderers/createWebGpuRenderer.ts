@@ -8,7 +8,11 @@ import {
     resolveMidiPitchWindow,
 } from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import { type AutomationSubLaneRenderModel, type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import {
+    type AutomationSubLaneRenderModel,
+    type TimelineRenderModel,
+    type TrackRenderModel,
+} from '../../models/TimelineRenderModel';
 import {
     AUTOMATION_SUB_LANE_HEIGHT,
     getAutomationSubLaneTop,
@@ -20,6 +24,25 @@ import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './au
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
 import { forEachInlineAutomationSegment, inlineAutomationColor } from './inlineAutomationEnvelope';
+
+type ClipRow = Pick<TrackRenderModel, 'color' | 'clips'> & { top: number; height: number };
+
+function* getClipRows(model: TimelineRenderModel, dpr: number): Generator<ClipRow> {
+    let top = -model.scrollY * dpr;
+    for (const track of model.tracks) {
+        const height = track.height * dpr;
+        yield { top, height, color: track.color, clips: track.clips };
+        for (const [index, lane] of (track.variationLanes ?? []).entries()) {
+            yield {
+                top: top + height + index * VARIATION_LANE_HEIGHT * dpr,
+                height: VARIATION_LANE_HEIGHT * dpr,
+                color: track.color,
+                clips: lane.clips,
+            };
+        }
+        top += getRenderedTrackExtent(track) * dpr;
+    }
+}
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -472,9 +495,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             }
 
             // 2. Clips
-            trackY = -scrollY * dpr;
-            for (const track of model.tracks) {
-                const th = track.height * dpr;
+            for (const track of getClipRows(model, dpr)) {
+                trackY = track.top;
+                const th = track.height;
                 const clipTop = trackY + 2 * dpr;
                 const clipBottom = trackY + th - 2 * dpr;
 
@@ -603,7 +626,6 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     // also uses, so switching backends loses no information.
                     addClipLabel(clip.name, cx1, cx2, trackY);
                 }
-                trackY += getRenderedTrackExtent(track) * dpr;
             }
 
             // 3. Bar / beat grid lines

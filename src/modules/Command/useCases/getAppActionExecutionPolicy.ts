@@ -224,6 +224,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     setClipFade: defaultPolicy,
     importMidiFile: defaultPolicy,
     normalizeClip: destructivePolicy,
+    relinkClipAudioSources: defaultPolicy,
     reverseClip: destructivePolicy,
     restoreReversedClip: defaultPolicy,
     glueClips: defaultPolicy,

@@ -208,6 +208,7 @@ const extraTargetsByActionType: {
     setClipFade: noExtraTargets,
     importMidiFile: noExtraTargets,
     normalizeClip: noExtraTargets,
+    relinkClipAudioSources: noExtraTargets,
     reverseClip: noExtraTargets,
     restoreReversedClip: noExtraTargets,
     glueClips: noExtraTargets,

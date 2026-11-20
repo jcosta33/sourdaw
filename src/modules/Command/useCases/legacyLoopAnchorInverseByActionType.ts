@@ -176,6 +176,7 @@ export const legacyLoopAnchorInverseByActionType: {
     setClipFade: keepAction,
     importMidiFile: keepAction,
     normalizeClip: keepAction,
+    relinkClipAudioSources: keepAction,
     reverseClip: keepAction,
     restoreReversedClip: keepAction,
     glueClips: keepAction,

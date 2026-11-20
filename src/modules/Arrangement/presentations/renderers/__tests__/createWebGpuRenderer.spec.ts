@@ -433,6 +433,58 @@ describe('createWebGpuRenderer clip name labels', () => {
         expect(handles.setBindGroup).toHaveBeenCalled();
     });
 
+    it('draws variation clips, inline automation, and following clips in separate rows', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 128;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        const base = create_test_model();
+        const track = base.tracks[0]!;
+        const clip = { ...track.clips[0]!, name: 'Variation Clip' };
+
+        renderer.render({
+            ...base,
+            scrollY: 8,
+            tracks: [
+                {
+                    ...track,
+                    clips: [],
+                    variationLanes: [{ id: 'variation-1', name: 'Variation 1', clips: [clip] }],
+                    automationLanes: [
+                        {
+                            id: 'pan',
+                            trackId: track.id,
+                            parameterId: 'pan',
+                            parameterName: 'Pan',
+                            minValue: -1,
+                            maxValue: 1,
+                            valueAtBeat: () => 0,
+                        },
+                    ],
+                },
+                {
+                    ...track,
+                    id: 'following-track',
+                    index: 1,
+                    height: 24,
+                    clips: [{ ...clip, id: 'following-clip', name: 'Following Clip' }],
+                },
+            ],
+        });
+
+        expect(handles.labelFillText).toHaveBeenCalledWith('Variation Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
+        expect(handles.labelFillText).toHaveBeenCalledWith('Following Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
+        const rects = decode_rects(handles, canvas);
+        expect(rects).toContainEqual(expect.objectContaining({ x1: 50, y1: 42, x2: 150, y2: 62 }));
+        expect(rects.find((rect) => rect.x1 === 0 && rect.y1 === 83 && rect.y2 === 85)?.x2).toBeCloseTo(4);
+        expect(rects).toContainEqual(expect.objectContaining({ x1: 50, y1: 106, x2: 150, y2: 126 }));
+    });
+
     it('skips the label when the clip is too narrow to hold any text', async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 400;

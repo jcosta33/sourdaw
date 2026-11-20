@@ -170,6 +170,7 @@ export const recordingHostEffectByActionType: {
     setClipFade: leaveHosts,
     importMidiFile: leaveHosts,
     normalizeClip: leaveHosts,
+    relinkClipAudioSources: leaveHosts,
     reverseClip: leaveHosts,
     restoreReversedClip: leaveHosts,
     glueClips: leaveHosts,

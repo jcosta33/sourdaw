@@ -229,6 +229,7 @@ const midiSnapshotByActionType: {
     setClipFade: unchangedSnapshot,
     importMidiFile: unchangedSnapshot,
     normalizeClip: unchangedSnapshot,
+    relinkClipAudioSources: unchangedSnapshot,
     reverseClip: unchangedSnapshot,
     restoreReversedClip: unchangedSnapshot,
     glueClips: unchangedSnapshot,
