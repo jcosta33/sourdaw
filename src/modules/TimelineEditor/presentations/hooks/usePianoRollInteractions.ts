@@ -68,6 +68,7 @@ import {
     getPianoRollRowAtY,
     getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
+import { movePianoRollTakeRows } from '../helpers/pianoRollTakeRowActions';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
@@ -1291,18 +1292,19 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     // R-A12: snap final pitch to scale when constrain is active
                     pitch: snapToScalePitch(clampMidiData7(param.pitch + preview.pitchDelta)),
                 }));
-                const editedOriginalRows = new Set<string>();
-                const editedBaseRows = new Set<string>();
-                const basePositions: typeof newPositions = [];
-                for (const param of newPositions) {
-                    const owner = projectionForViewId(param.viewId)?.ownersByViewId.get(param.viewId);
-                    if (owner) {
-                        const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
-                        if (!editedOriginalRows.has(key)) {
-                            editedOriginalRows.add(key);
-                            editFrozen(param.viewId, { pitch: param.pitch, startBeat: param.displayBeat });
-                        }
-                    } else {
+                if (newPositions.some((param) => projectionForViewId(param.viewId))) {
+                    const positions = newPositions.map((param) => ({
+                        ...param,
+                        owner: projectionForViewId(param.viewId)?.ownersByViewId.get(param.viewId),
+                        row: baseGapOwnerForViewId(param.viewId)?.row ?? allNotesMap2.get(param.viewId),
+                    }));
+                    void movePianoRollTakeRows(positions).catch((error) =>
+                        logger.warn('Could not move selected MIDI take rows', error)
+                    );
+                } else {
+                    const editedBaseRows = new Set<string>();
+                    const basePositions: typeof newPositions = [];
+                    for (const param of newPositions) {
                         const key = JSON.stringify([param.clipId, param.id]);
                         if (editedBaseRows.has(key)) {
                             continue;
@@ -1311,23 +1313,23 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
                         basePositions.push(param);
                     }
-                }
-                if (basePositions.length > 0) {
-                    pushUndoEntry(
-                        `Move ${basePositions.length} note${basePositions.length > 1 ? 's' : ''}`,
-                        () => {
-                            for (const param of origPositions.filter((original) =>
-                                basePositions.some((base) => base.id === original.id)
-                            )) {
-                                moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
+                    if (basePositions.length > 0) {
+                        pushUndoEntry(
+                            `Move ${basePositions.length} note${basePositions.length > 1 ? 's' : ''}`,
+                            () => {
+                                for (const param of origPositions.filter((original) =>
+                                    basePositions.some((base) => base.id === original.id)
+                                )) {
+                                    moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
+                                }
+                            },
+                            () => {
+                                for (const param of basePositions) {
+                                    moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
+                                }
                             }
-                        },
-                        () => {
-                            for (const param of basePositions) {
-                                moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
-                            }
-                        }
-                    );
+                        );
+                    }
                 }
             } else if (mode === 'resize-left' && preview?.beatOverride?.has(noteId)) {
                 const override = preview.beatOverride.get(noteId)!;

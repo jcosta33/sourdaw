@@ -1,5 +1,4 @@
 import { copyPianoRollNotes, getCopiedPianoRollNotes } from '#/modules/Arrangement/useCases';
-import { executeAppActionBatch } from '#/modules/Command/useCases';
 import {
     getMidiClipNotesSnapshot,
     isValidMidiNoteSnapshot,
@@ -7,16 +6,15 @@ import {
     type projectPianoRollTakeNotes,
     sliceMidiTakeNoteForEdit,
 } from '#/modules/MIDI/useCases';
-import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
+import { baseRowAction, executeRows, rowAction, type RowAction, type BaseRowAction } from './pianoRollTakeRowActions';
+
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 type FrozenPianoRollNoteOwner = NonNullable<ReturnType<PianoRollTakeNotes['ownersByViewId']['get']>>;
 
-type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
-type BaseRowAction = Extract<AppAction, { type: 'replaceOriginalMidiBaseRow' }>;
 type SelectedOccurrence = { display: MidiNote; owner: FrozenPianoRollNoteOwner };
 
 function originalKey(owner: FrozenPianoRollNoteOwner): string {
@@ -39,44 +37,6 @@ function uniqueOccurrences(projection: PianoRollTakeNotes, selectedNoteIds: Read
         seen.add(key);
         return [{ display, owner }];
     });
-}
-
-function rowAction(owner: FrozenPianoRollNoteOwner, replacement: MidiNote | null): RowAction {
-    return {
-        type: 'replaceOriginalMidiTakeRow',
-        payload: {
-            laneId: owner.laneId,
-            takeId: owner.takeId,
-            sourceClipId: owner.sourceClipId,
-            rowId: owner.row.id,
-            rowKind: 'note',
-            copyScope: 'capture',
-            expected: owner.row,
-            replacement,
-            expectedSlotPresent: true,
-            replacementSlotPresent: true,
-        },
-    };
-}
-
-function baseRowAction(
-    clipId: string,
-    row: MidiNote | null,
-    replacement: MidiNote | null,
-    rowId = row?.id ?? replacement?.id ?? '',
-    expectedSlotPresent = true
-): BaseRowAction {
-    return {
-        type: 'replaceOriginalMidiBaseRow',
-        payload: {
-            clipId,
-            rowId,
-            expected: row,
-            replacement,
-            expectedSlotPresent,
-            replacementSlotPresent: true,
-        },
-    };
 }
 
 function uniqueBaseRows(projection: PianoRollTakeNotes, selectedNoteIds: ReadonlySet<string>): MidiNote[] {
@@ -102,18 +62,6 @@ function everySelectedOwnerIsKnown(projection: PianoRollTakeNotes, selectedNoteI
     return [...selectedNoteIds].every(
         (id) => projection.ownersByViewId.has(id) || projection.baseOwnersByViewId.has(id)
     );
-}
-
-async function executeRows(
-    actions: readonly (RowAction | BaseRowAction)[],
-    label: string,
-    groupId = crypto.randomUUID()
-): Promise<boolean> {
-    if (actions.length === 0) {
-        return true;
-    }
-    const result = await executeAppActionBatch(actions, { groupId, groupLabel: label });
-    return result.status === 'committed' || result.status === 'committed-with-warning' || result.status === 'no-op';
 }
 
 function editedSourceRow(owner: FrozenPianoRollNoteOwner, transformed: MidiNote): MidiNote {
@@ -272,8 +220,7 @@ async function insertOccurrences(
                     clipId,
                     null,
                     { ...fields, id: crypto.randomUUID(), startBeat: sourceBeat },
-                    undefined,
-                    baseAlreadyInserted || getMidiClipNotesSnapshot(clipId) !== null
+                    { expectedSlotPresent: baseAlreadyInserted || getMidiClipNotesSnapshot(clipId) !== null }
                 )
             );
             continue;
