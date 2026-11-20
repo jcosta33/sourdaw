@@ -48,7 +48,7 @@ import { setGrandBouleSympatheticSend } from '../../useCases/setGrandBouleSympat
 import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperament';
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
-import { startGrandBoulePreviewNote } from '../../useCases/triggerGrandBouleNote';
+import { startGrandBoulePreviewNote } from '../../useCases/startGrandBoulePreviewNote';
 import { GrandBouleVisualizations, type GrandBouleVisualization } from '../components/GrandBouleVisualizations';
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
