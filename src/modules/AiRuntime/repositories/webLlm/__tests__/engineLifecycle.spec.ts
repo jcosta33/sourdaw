@@ -445,7 +445,10 @@ describe('WebLLM engineLifecycle injectables', () => {
                     availableBytes: 1_000,
                 })
             );
-            await expect(initWebLlmEngine('model-y', { downloadConsent: true })).rejects.toBeDefined();
+            await expect(initWebLlmEngine('model-y', { downloadConsent: true })).rejects.toMatchObject({
+                name: 'LocalModelRefusalError',
+                refusal: { reason: 'insufficient-storage', modelId: 'model-y' },
+            });
             await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('error'));
 
             await expect(initWebLlmEngine(undefined)).resolves.toBe(loaded);
@@ -518,6 +521,66 @@ describe('WebLLM engineLifecycle injectables', () => {
             expect(engineState.engine).toBe(loaded);
             expect(engineState.activeModelId).toBe(LOADED_MODEL);
             expect(terminateWorkerMock).not.toHaveBeenCalled();
+        });
+
+        function holdAdmission() {
+            const held = { release: () => undefined as void };
+            artifactAdmissionMock.mockImplementationOnce(
+                async (modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                    await new Promise<void>((resolve) => {
+                        held.release = resolve;
+                    });
+                    const admission = {
+                        appConfig: { cacheBackend: 'cache', model_list: [] },
+                        artifactSetDigest: `digest:${modelId}`,
+                    };
+                    await options?.consume?.(admission);
+                    return admission;
+                }
+            );
+            return held;
+        }
+
+        it('joins the load of another model in flight when no model is named', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await loadModelX();
+            const held = holdAdmission();
+            const switching = initWebLlmEngine('model-y');
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+            const switchSignal = engineState.initSignal;
+
+            const joined = initWebLlmEngine(undefined);
+
+            expect(switchSignal?.aborted).toBe(false);
+            held.release();
+            const [switched, joinedEngine] = await Promise.all([switching, joined]);
+            expect(joinedEngine).toBe(switched);
+            expect(engineState.engine).toBe(switched);
+            expect(engineState.activeModelId).toBe('model-y');
+        });
+
+        it('leaves the kept engine worker running when a third model supersedes a load in flight', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await loadModelX();
+            const keptWorker = engineState.worker;
+            const heldY = holdAdmission();
+            const superseded = initWebLlmEngine('model-y');
+            const supersededRejection = expect(superseded).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+            holdAdmission();
+            const controller = new AbortController();
+
+            const replacement = initWebLlmEngine('model-z', { signal: controller.signal });
+            const replacementRejection = expect(replacement).rejects.toMatchObject({ name: 'AbortError' });
+
+            await vi.waitFor(() => expect(artifactAdmissionMock).toHaveBeenCalledTimes(3));
+            expect(terminateWorkerMock).not.toHaveBeenCalled();
+            expect(engineState.worker).toBe(keptWorker);
+            expect(engineState.engine).not.toBeNull();
+
+            controller.abort();
+            heldY.release();
+            await Promise.all([supersededRejection, replacementRejection]);
         });
     });
 });

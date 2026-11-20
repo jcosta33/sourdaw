@@ -24,7 +24,10 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             if (!MODEL_RELEASE_ADMISSION.webLlm) {
                 return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
             }
-            const targetModel = modelId ?? engineState.activeModelId;
+            // A request that names no model asks for whatever is loading or loaded, so it joins a
+            // switch in flight rather than cancelling it by naming the model being replaced.
+            const inFlightModel = engineState.initSignal?.aborted ? null : engineState.initModelId;
+            const targetModel = modelId ?? inFlightModel ?? engineState.activeModelId;
             let targetArtifactSetDigest: string;
             try {
                 targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
