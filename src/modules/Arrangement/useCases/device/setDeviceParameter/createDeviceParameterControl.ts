@@ -1,4 +1,4 @@
-import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
+import { type captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { projectTransitionEpoch } from '#/modules/Project/stores';
@@ -16,6 +16,7 @@ type Parameter = {
     defaultValue: number;
     failureMessage: string;
     cancelQueuedWrite: () => void;
+    captureRuntimeAuthority: typeof captureDeviceParameterRuntimeWriteAuthority;
 };
 
 function readParameterOwner(deviceId: string, parameter: Parameter) {
@@ -160,7 +161,7 @@ function acquireGesture(control: ParameterControl): number {
     const predecessor = pending && sameOwner(pending.owner, owner) ? pending : undefined;
     const runtime =
         predecessor?.runtime ??
-        captureDeviceParameterRuntimeWriteAuthority(owner.trackId, owner.deviceId, owner.parameter.id);
+        owner.parameter.captureRuntimeAuthority(owner.trackId, owner.deviceId, owner.parameter.id);
     control.gesture = { owner, token: control.token, hasEditAuthority: authority.isCurrent, runtime, predecessor };
     return control.token;
 }

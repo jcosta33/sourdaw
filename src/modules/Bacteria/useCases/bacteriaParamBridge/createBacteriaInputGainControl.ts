@@ -1,4 +1,5 @@
 import { createDeviceParameterControl } from '#/modules/Arrangement/useCases';
+import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH } from '../../models/BacteriaPatch';
 
@@ -11,6 +12,7 @@ export function createBacteriaInputGainControl(deviceId: string, show: (value: n
             deviceType: 'bacteria',
             id: 'inputGain',
             defaultValue: DEFAULT_PATCH.inputGain,
+            captureRuntimeAuthority: captureDeviceParameterRuntimeWriteAuthority,
             failureMessage: 'Unable to change Bacteria Input gain',
             cancelQueuedWrite: () => paramBatcher.cancel(`${deviceId}:inputGain`),
         },
