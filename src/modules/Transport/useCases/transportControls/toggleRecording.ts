@@ -5,7 +5,6 @@ import {
     audioEngine,
     resumeEngine,
     getAudioContext,
-    scheduleClick,
     startAudioRecording,
     stopAudioRecording,
     getCompensationDelay,
@@ -32,6 +31,8 @@ import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
+import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
+import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
@@ -714,31 +715,6 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
     recordingLifecycle.setCountInTimerId(wakeTimerId);
 }
 
-type CountIn = {
-    beats: number;
-    beatsPerBar: number;
-    secondsPerBeat: number;
-    volume: number;
-    boundaryBeat: number;
-};
-
-function startCountIn(countIn: CountIn): void {
-    const ctx = getAudioContext();
-    // The clicks and the boundary they count to sit on the same audio clock,
-    // so capture both from one read: the take must open when *this* clock
-    // reaches the boundary, never when the JS timer wheel gets around to it.
-    const countInStartTime = ctx.currentTime;
-    const countInDurationSec = countIn.beats * countIn.secondsPerBeat;
-    for (let index = 0; index < countIn.beats; index++) {
-        scheduleClick(
-            countInStartTime + index * countIn.secondsPerBeat,
-            index % countIn.beatsPerBar === 0,
-            countIn.volume
-        );
-    }
-    armCountInRecordingStart(countInStartTime + countInDurationSec, countInDurationSec, countIn.boundaryBeat);
-}
-
 export function toggleRecording(): void {
     const preview = audioEngine.beginAudioPreviewIntent();
     preview.release();
@@ -830,26 +806,11 @@ export function toggleRecording(): void {
             beatsPerBar: numerator,
             secondsPerBeat: secondsPerCountInBeat,
             volume: state.metronomeVolume ?? 0.5,
-            boundaryBeat: state.playheadPosition,
         };
-        // A preview that owned the output reopens it asynchronously, and a click scheduled
-        // before that is silent. Hold the count-in until the output is back; the clock is
-        // read afterwards so the clicks and the boundary they count to start there.
-        if (preview.ready === undefined) {
-            startCountIn(countIn);
-            return;
-        }
-        const startToken = recordingLifecycle.beginPendingRecordingStart();
-        void preview.ready
-            .catch((error: unknown) => {
-                logger.warn(new Error('Preview output was not restored before the count-in', { cause: error }));
-            })
-            .then(() => {
-                if (recordingLifecycle.completePendingRecordingStart(startToken)) {
-                    startCountIn(countIn);
-                }
-                return null;
-            });
+        runAfterPreviewOutputRestored(preview.ready, () => {
+            const { endTimeSec, durationSec } = scheduleCountInClicks(countIn);
+            armCountInRecordingStart(endTimeSec, durationSec, state.playheadPosition);
+        });
         return;
     }
 
