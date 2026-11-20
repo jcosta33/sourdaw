@@ -427,6 +427,52 @@ describe('planWholeProjectVibeRun tracks recipe.expand refuses', () => {
     });
 });
 
+describe('planWholeProjectVibeRun drum parts', () => {
+    // Red when the planner matches drum recipes by the drums role alone: the thin low shelf and
+    // low-mid bell then land on the hi-hat and the overheads beside the kick and snare.
+    it('plans the thin rebuild on the shells and leaves the hi-hat and the overheads out', () => {
+        const context = projectContext([
+            contextTrack('t-kick', 'Kick', 'kick'),
+            contextTrack('t-snare', 'Snare', 'snare'),
+            contextTrack('t-hat', 'Hi-Hat', 'hi-hat'),
+            contextTrack('t-overheads', 'Overheads', 'overhead'),
+        ]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['thin'],
+            recipes: CATALOG_RECIPES,
+            measurements: [],
+        });
+
+        expect(result.batches[0]?.objective.role).toBe('drums');
+        expect(result.batches[0]?.targets).toEqual([
+            expect.objectContaining({ targetId: 't-kick', recipeIds: ['drums-thin'] }),
+            expect.objectContaining({ targetId: 't-snare', recipeIds: ['drums-thin'] }),
+        ]);
+        expect(result.excludedTargets).toEqual([
+            { targetId: 't-hat', reason: 'no-applicable-recipe' },
+            { targetId: 't-overheads', reason: 'no-applicable-recipe' },
+        ]);
+    });
+
+    it('still plans a recipe serving every drum part on the hi-hat and the overheads', () => {
+        const context = projectContext([
+            contextTrack('t-hat', 'Hi-Hat', 'hi-hat'),
+            contextTrack('t-overheads', 'Overheads', 'overhead'),
+        ]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['bright'],
+            recipes: [catalogRecipe('drums-bright')],
+            measurements: [],
+        });
+
+        expect(plannedTargetIds(result)).toEqual(['t-hat', 't-overheads']);
+    });
+});
+
 describe('planWholeProjectVibeRun baselines', () => {
     const tracks = [
         contextTrack('t-kick', 'Kick', 'kick'),
