@@ -4,6 +4,8 @@ import { type renderOffline, type renderTrackSubgraphOffline } from '#/modules/A
 
 import { metricGoalAudioBuffer } from '../useCases/__tests__/metricGoalWorkflowFixture';
 
+import { compress } from './acceptanceRenderLawCompressor';
+
 type TrackRenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
 type MixdownRenderInput = Parameters<typeof renderOffline>[0];
 type Stereo = { left: Float64Array; right: Float64Array };
@@ -41,11 +43,11 @@ const STRIKE_RISE_SECONDS = 0.005;
  *
  * Devices, in chain order, bypassed ones skipped, each parameter its stored value or the value the
  * device starts with:
- * - `builtin-eq`: the Web Audio low shelf, peaking band and high shelf its nodes are, by the Audio EQ
- *   Cookbook formulas Web Audio specifies (shelves at slope 1).
- * - `builtin-compressor`: a stereo-linked peak detector with its attack and release, a soft-knee
- *   static curve at its threshold, ratio and knee, then its makeup gain — so a slow attack lets each
- *   strike through and clamps the sustain (crest rises) and a fast one clamps the strike (crest falls).
+ * - `builtin-eq`: the three Web Audio peaking bands its nodes are (`createEq`: low, mid and high, each
+ *   with its own frequency, gain and Q), by the Audio EQ Cookbook bell Web Audio specifies.
+ * - `builtin-compressor`: the Web Audio `DynamicsCompressorNode` it is (`acceptanceRenderLawCompressor`):
+ *   a stereo-linked peak read 6 ms ahead, Blink's static curve at its threshold, ratio and knee, the
+ *   node's automatic makeup, then the device's own makeup gain.
  * - `builtin-gain`: its level in decibels.
  * - `builtin-stereo-widener`: the mid scaled by its mid level, the side by its width and side level,
  *   with the side below its mono-bass frequency removed.
@@ -117,19 +119,23 @@ export function createAcceptanceRenderLaw(input: {
         switch (device.type) {
             case 'builtin-eq':
                 return filterStereo(signal, [
-                    shelf('low', read('eq-low-freq'), read('eq-low-gain')),
+                    peaking(read('eq-low-freq'), read('eq-low-gain'), read('eq-low-q')),
                     peaking(read('eq-mid-freq'), read('eq-mid-gain'), read('eq-mid-q')),
-                    shelf('high', read('eq-high-freq'), read('eq-high-gain')),
+                    peaking(read('eq-high-freq'), read('eq-high-gain'), read('eq-high-q')),
                 ]);
             case 'builtin-compressor':
-                return compress(signal, {
-                    thresholdDb: read('comp-threshold'),
-                    ratio: read('comp-ratio'),
-                    kneeDb: read('comp-knee'),
-                    attackMs: read('comp-attack'),
-                    releaseMs: read('comp-release'),
-                    makeupDb: read('comp-makeup'),
-                });
+                return compress(
+                    signal,
+                    {
+                        thresholdDb: read('comp-threshold'),
+                        ratio: read('comp-ratio'),
+                        kneeDb: read('comp-knee'),
+                        attackMs: read('comp-attack'),
+                        releaseMs: read('comp-release'),
+                        makeupDb: read('comp-makeup'),
+                    },
+                    SAMPLE_RATE
+                );
             case 'builtin-gain':
                 return scale(signal, 10 ** (read('gain-level') / 20));
             case 'builtin-stereo-widener':
@@ -233,24 +239,6 @@ function normalise(b0: number, b1: number, b2: number, a0: number, a1: number, a
     return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
 }
 
-/** The Web Audio `lowshelf` and `highshelf` responses: Audio EQ Cookbook shelves at slope 1. */
-function shelf(kind: 'low' | 'high', frequency: number, gainDb: number): Biquad {
-    const a = 10 ** (gainDb / 40);
-    const omega = (2 * Math.PI * frequency) / SAMPLE_RATE;
-    const cos = Math.cos(omega);
-    const alpha = Math.sin(omega) / Math.SQRT2;
-    const root = 2 * Math.sqrt(a) * alpha;
-    const sign = kind === 'low' ? 1 : -1;
-    return normalise(
-        a * (a + 1 - sign * (a - 1) * cos + root),
-        sign * 2 * a * (a - 1 - sign * (a + 1) * cos),
-        a * (a + 1 - sign * (a - 1) * cos - root),
-        a + 1 + sign * (a - 1) * cos + root,
-        -sign * 2 * (a - 1 + sign * (a + 1) * cos),
-        a + 1 + sign * (a - 1) * cos - root
-    );
-}
-
 /** The Web Audio `peaking` response: the Audio EQ Cookbook bell. */
 function peaking(frequency: number, gainDb: number, q: number): Biquad {
     const a = 10 ** (gainDb / 40);
@@ -290,49 +278,6 @@ function filter(samples: Float64Array, filters: readonly Biquad[]): Float64Array
 
 function filterStereo(signal: Stereo, filters: readonly Biquad[]): Stereo {
     return { left: filter(signal.left, filters), right: filter(signal.right, filters) };
-}
-
-function compress(
-    signal: Stereo,
-    settings: {
-        thresholdDb: number;
-        ratio: number;
-        kneeDb: number;
-        attackMs: number;
-        releaseMs: number;
-        makeupDb: number;
-    }
-): Stereo {
-    const attack = Math.exp(-1 / ((settings.attackMs / 1000) * SAMPLE_RATE));
-    const release = Math.exp(-1 / ((settings.releaseMs / 1000) * SAMPLE_RATE));
-    const makeup = 10 ** (settings.makeupDb / 20);
-    const left = new Float64Array(signal.left.length);
-    const right = new Float64Array(signal.right.length);
-    let envelope = 0;
-    for (let frame = 0; frame < left.length; frame++) {
-        const peak = Math.max(Math.abs(signal.left[frame]!), Math.abs(signal.right[frame]!));
-        const coefficient = peak > envelope ? attack : release;
-        envelope = coefficient * envelope + (1 - coefficient) * peak;
-        const gain = makeup * 10 ** (-gainReductionDb(envelope, settings) / 20);
-        left[frame] = signal.left[frame]! * gain;
-        right[frame] = signal.right[frame]! * gain;
-    }
-    return { left, right };
-}
-
-/** The soft-knee static curve: no reduction below the knee, `1 - 1/ratio` of the overshoot above it. */
-function gainReductionDb(envelope: number, settings: { thresholdDb: number; ratio: number; kneeDb: number }): number {
-    const levelDb = 20 * Math.log10(Math.max(envelope, 1e-9));
-    const overshoot = levelDb - settings.thresholdDb;
-    const slope = 1 - 1 / settings.ratio;
-    const halfKnee = settings.kneeDb / 2;
-    if (overshoot <= -halfKnee) {
-        return 0;
-    }
-    if (overshoot >= halfKnee || settings.kneeDb === 0) {
-        return slope * overshoot;
-    }
-    return (slope * (overshoot + halfKnee) ** 2) / (2 * settings.kneeDb);
 }
 
 function widen(signal: Stereo, settings: { width: number; midDb: number; sideDb: number; monoBassHz: number }): Stereo {
