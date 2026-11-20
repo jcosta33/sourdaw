@@ -70,6 +70,23 @@ describe('MacrosPanel', () => {
         });
     });
 
+    it('waits for composition to finish before committing a rename with Enter', () => {
+        render(<MacrosPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Rename macro Macro One' }));
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: 'Renamed' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(screen.getByRole('textbox')).toHaveValue('Renamed');
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'renameMacro',
+            payload: { macroId: 'macro-1', name: 'Renamed' },
+        });
+    });
+
     it('commits a rename through the user dispatch wrapper', () => {
         render(<MacrosPanel />);
 

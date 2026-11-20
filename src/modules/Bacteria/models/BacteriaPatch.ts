@@ -139,10 +139,8 @@ export type BacteriaModAssignment = {
 /**
  * A stored corner of the XY morph pad.
  *
- * Like {@link BacteriaModAssignment}, this is deliberately UI/persistence-only
- * metadata: morphing is resolved in the UI (XYMorphPad) and its results reach
- * the engine through the ordinary scalar params it interpolates — `snapshots`
- * itself is never pushed by `loadBacteriaPatchWithAudio`.
+ * Morphing resolves in the XYMorphPad and only sends the scalar parameters
+ * it interpolates to the engine. The snapshot itself is UI metadata.
  */
 export type BacteriaSnapshot = {
     id: 'A' | 'B' | 'C' | 'D';
@@ -192,9 +190,8 @@ export type BacteriaPatch = {
     morphY: number; // 0 – 1
 
     // Modulation assignments (stored as array).
-    // Structured engine routing, not a scalar param: never pushed through the
-    // scalar door — `loadBacteriaPatchWithAudio` and the dock's gestures send
-    // the whole table through the patch door instead. See BacteriaModAssignment.
+    // Factory presets and routing gestures send the whole table through the
+    // patch carrier. See BacteriaModAssignment.
     modAssignments: BacteriaModAssignment[];
 
     // Snapshots for XY morphing.

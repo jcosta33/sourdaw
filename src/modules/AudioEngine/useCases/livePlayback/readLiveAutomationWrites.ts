@@ -60,103 +60,22 @@ import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { DEFAULT_TEMPO_BPM, defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
-import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
-import {
-    REFUSE_DEVICE_AUTOMATION,
-    type StripAutomationDeviceEntry,
-} from '../offlineRender/projectStripAutomationWrites';
+import { type StripAutomationDeviceEntry } from '../offlineRender/projectStripAutomationWrites';
 
 import { engineHostedStripIds } from './engineHostedStripIds';
 import { isDeviceCarriedByNativeSession } from './isDeviceCarriedByNativeSession';
 import { nativeBuiltinAutomation } from './nativeBuiltinAutomation';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
+import { nativeDeviceParameterLaw } from './nativeDeviceParameterLaw';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { projectLiveAutomationWrites, type LiveAutomationWrites } from './projectLiveAutomationWrites';
 import { type StripCarrier } from './stripCarriers';
 
 /** What a session with no clock to place automation on holds. */
 const NO_AUTOMATION: LiveAutomationWrites = { entries: [], exclusions: [] };
-
-/** The instance's own published law, for the devices that have one. */
-type HostedParameterHalf = Readonly<{
-    accepts: (externalInstanceId: string, parameterId: string) => boolean;
-    clamp: (input: { externalInstanceId: string; parameterId: string; value: number }) => number;
-}>;
-
-/** The hosted plugin instance behind each device on these strips, by device id. */
-function instanceIdByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string, string> {
-    const instances = new Map<string, string>();
-    for (const track of stripTracks) {
-        for (const device of track.devices) {
-            if (device.externalInstanceId !== undefined) {
-                instances.set(device.id, device.externalInstanceId);
-            }
-        }
-    }
-    return instances;
-}
-
-/**
- * The two halves of the seam, and the one law the projection is held to.
- *
- * `quantiseValue` is the declared *type* law and belongs to both halves: it is
- * asked of the device type, which every family has. Without it neither family
- * can be admitted, because the value stamped would be one nothing had held to
- * the parameter's declared grain.
- */
-function liveDeviceParameterLaw(
-    stripTracks: readonly Track[],
-    builtin: OfflineDeviceAutomationLaw | null
-): {
-    law: OfflineDeviceAutomationLaw;
-    hosted: HostedParameterHalf | null;
-} {
-    const { acceptsExternalPluginParameter, clampExternalPluginValue, quantiseValue } = offlineDeviceParameterLawState;
-    const refused = { law: REFUSE_DEVICE_AUTOMATION, hosted: null };
-    if (!quantiseValue) {
-        return refused;
-    }
-    const hosted: HostedParameterHalf | null =
-        acceptsExternalPluginParameter && clampExternalPluginValue
-            ? { accepts: acceptsExternalPluginParameter, clamp: clampExternalPluginValue }
-            : null;
-    if (!hosted && !builtin) {
-        return refused;
-    }
-
-    const instances = instanceIdByDeviceId(stripTracks);
-    return {
-        hosted,
-        law: {
-            // Which family answers is decided by what the device is, exactly as
-            // the engine's own mapper decides it: a device that resolves to an
-            // instance is the plugin's to speak for, and anything else is a
-            // built-in, held to `nativeBuiltinAutomation`'s law.
-            acceptsAutomation: (candidate) => {
-                const externalInstanceId = instances.get(candidate.deviceId);
-                if (externalInstanceId !== undefined) {
-                    return hosted !== null && hosted.accepts(externalInstanceId, candidate.parameterId);
-                }
-                return builtin !== null && builtin.acceptsAutomation(candidate);
-            },
-            clampValue: (candidate) => {
-                const { deviceId, paramId, value } = candidate;
-                const externalInstanceId = instances.get(deviceId);
-                if (externalInstanceId !== undefined) {
-                    return hosted === null ? value : hosted.clamp({ externalInstanceId, parameterId: paramId, value });
-                }
-                return builtin === null ? value : builtin.clampValue(candidate);
-            },
-            // Identity for `external-plugin` today, and read from the seam rather
-            // than assumed so a declared type law arriving for the family reaches
-            // the stamped value the same tick it reaches the tick path's.
-            quantiseValue: ({ deviceType, paramId, value }) => quantiseValue({ deviceType, paramId, value }),
-        },
-    };
-}
 
 /** The hosted devices the engine is sounding on one strip, in that strip's chain order. */
 function carriedHostedDevices(track: Track): readonly StripAutomationDeviceEntry[] {
@@ -229,7 +148,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
 
     const builtinAutomation = nativeBuiltinAutomation({ source: offlineDeviceParameterLawState, stripTracks });
     const builtin = builtinAutomation.law;
-    const { law, hosted } = liveDeviceParameterLaw(stripTracks, builtin);
+    const { law, hosted } = nativeDeviceParameterLaw({ source: offlineDeviceParameterLawState, stripTracks, builtin });
     const trackById = new Map(stripTracks.map((track): [string, Track] => [track.id, track]));
     const hostedStripIds = engineHostedStripIdsOfCarriedSession(stripTracks);
 

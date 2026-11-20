@@ -2253,7 +2253,11 @@ test('source-render UI Reverse refuses cyclic material and preserves lawful repl
     const refused = await readRenderAdmission(page);
     expect(refused.raw[0]).toMatchObject({ loopEnabled: true, loopLength: 4, endBeat: 5 });
     await reverseAdmissionMenu(page);
-    await expect(page.getByText('Bounce this looped clip to audio before reversing.', { exact: true })).toBeVisible();
+    await expect(
+        page
+            .getByTestId('notification-toast')
+            .getByText('Bounce this looped clip to audio before reversing.', { exact: true })
+    ).toBeVisible();
     expect(await readRenderAdmission(page)).toEqual(refused);
     await trimAdmissionEnd(page, 4);
     await page.evaluate(async (clipId) => {
@@ -2314,7 +2318,9 @@ test('source-render UI Consolidate refuses a newer Inspector source edit after a
     expect(edited.past.length).toBeGreaterThan(before.past.length);
     await releaseGenuineOfflineRender(page);
     await expect(
-        page.getByText('Bounce cancelled because its source changed during rendering.', { exact: true })
+        page
+            .getByTestId('notification-toast')
+            .getByText('Bounce cancelled because its source changed during rendering.', { exact: true })
     ).toBeVisible();
     expect(await readRenderAdmission(page)).toEqual(edited);
     const sourceId = edited.raw[0].audioBufferId;

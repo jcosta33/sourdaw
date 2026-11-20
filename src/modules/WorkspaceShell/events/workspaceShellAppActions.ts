@@ -16,7 +16,7 @@ export type WorkspaceShellAppAction =
     | { type: 'zoomToFit'; payload?: undefined }
     | { type: 'zoomToSelection'; payload?: undefined }
     | { type: 'exportProject'; payload?: undefined }
-    | { type: 'saveProject'; payload?: undefined }
+    | { type: 'saveProject'; payload?: { intent?: 'prepareSnapshot' } }
     | { type: 'newProject'; payload?: undefined }
     | { type: 'importAudioFile'; payload?: undefined }
     | { type: 'toggleScratchPad'; payload?: undefined }

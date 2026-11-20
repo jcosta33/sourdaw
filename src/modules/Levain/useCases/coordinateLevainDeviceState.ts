@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
@@ -9,12 +9,11 @@ import type { toLevainDeviceState } from '../models/LevainDeviceState';
 import type { LevainDeviceStateProjectAccess } from '../stores/levainDeviceStateProjectAccess';
 
 type DeviceState = ReturnType<typeof toLevainDeviceState>;
-type Facet = 'identity' | 'tier';
 type PendingDevice = {
     projectIdentity: string;
     ownerId: string;
     expectedState: string;
-    latest: Partial<Record<Facet, symbol>>;
+    latest?: symbol;
     tail?: Promise<void>;
     projectAccess: LevainDeviceStateProjectAccess;
     retired: boolean;
@@ -41,7 +40,6 @@ function createPendingDevice(
         projectIdentity,
         ownerId,
         expectedState,
-        latest: {},
         projectAccess,
         retired: false,
         retire: () => {
@@ -82,10 +80,9 @@ function createPendingDevice(
     return pending;
 }
 
-/** Serialize local facets before creating actions; only our own commit advances the witness. */
+/** Serialize layout choices before dispatch. Only the committing action advances its witness. */
 export function coordinateLevainDeviceState(
     deviceId: string,
-    facet: Facet,
     createState: (prior: DeviceState | undefined) => DeviceState | undefined,
     onStale?: () => void
 ): Promise<void> {
@@ -121,7 +118,7 @@ export function coordinateLevainDeviceState(
     }
     const entry = pending;
     const request = Symbol();
-    entry.latest[facet] = request;
+    entry.latest = request;
     const currentDevice = () =>
         trackStore.value?.tracks
             .find((track) => track.id === entry.ownerId)
@@ -133,7 +130,7 @@ export function coordinateLevainDeviceState(
         currentDevice() !== undefined &&
         canonicalJson(currentDevice()?.deviceState ?? null) === expected;
     const run = async (): Promise<void> => {
-        if (entry.latest[facet] !== request) {
+        if (entry.latest !== request) {
             return;
         }
         const capturedState = entry.expectedState;
@@ -146,13 +143,12 @@ export function coordinateLevainDeviceState(
             return;
         }
         const committedState = canonicalJson(state);
-        const execute = facet === 'tier' ? executeUserAppAction : executeAppAction;
-        await execute(
+        await executeUserAppAction(
             { type: 'setDeviceState', payload: { deviceId, state } },
             {
                 skipMacroRecording: true,
                 shouldExecute: () => {
-                    if (entry.latest[facet] !== request) {
+                    if (entry.latest !== request) {
                         return false;
                     }
                     if (isCurrent(capturedState)) {

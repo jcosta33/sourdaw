@@ -635,6 +635,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function createResult(): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),
@@ -648,6 +649,25 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: Promise.resolve({}),
             };
         }
+
+        it('offers pad audition only after the Crumbs worklet is ready', async () => {
+            const release = vi.fn();
+            const startPadAudition = vi.fn(() => release);
+            factoryMocks.createCrumbsNode.mockResolvedValue({ ...createResult(), startPadAudition });
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice: vi.fn().mockResolvedValue('ready') });
+            const deps = createDeps({ deviceType: 'builtin-crumbs' });
+
+            const { placeholder, loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            expect(placeholder.crumbsControls?.ready).toBe(false);
+            expect(placeholder.crumbsControls?.startPadAudition(36, 90)).toBeUndefined();
+            expect(startPadAudition).not.toHaveBeenCalled();
+
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.crumbsControls?.ready).toBe(true);
+            expect(loaded.crumbsControls?.startPadAudition(36, 90)).toBe(release);
+            expect(startPadAudition).toHaveBeenCalledExactlyOnceWith(36, 90);
+        });
 
         it('settles content readiness only after project sample preparation completes', async () => {
             const preparation = Promise.withResolvers<DeviceContentLoadOutcome>();
@@ -1309,6 +1329,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeCrumbsResult(ready: Promise<Record<string, unknown>>): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),
@@ -1623,6 +1644,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeGrandBouleResult(): GrandBouleNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPreviewNote: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 noteExpression: vi.fn(),
@@ -1642,6 +1664,18 @@ describe('wasmDeviceRegistry descriptors', () => {
             };
         }
 
+        it('exposes preview only on the ready Grand Boule controls', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-1' });
+            const { placeholder, loadPromise } = requireDescriptor('grand-boule').create(deps);
+            expect(placeholder.grandBouleControls?.startPreviewNote(60, 1)).toBeUndefined();
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.grandBouleControls?.startPreviewNote).toBe(result.startPreviewNote);
+            expect(loaded.controller).not.toHaveProperty('startPreviewNote');
+        });
+
         it('replays queued params and announces the loaded device', async () => {
             const result = makeGrandBouleResult();
             factoryMocks.createGrandBouleNode.mockResolvedValue(result);
@@ -1659,6 +1693,13 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
             expect(loaded.workerInstances).toBe(1);
+            const retirement = loaded.grandBouleControls?.retirement;
+            expect(retirement?.aborted).toBe(false);
+            const onRetired = vi.fn(() => expect(loaded.grandBouleControls?.ready).toBe(false));
+            retirement?.addEventListener('abort', onRetired);
+            loaded.controller?.destroy?.();
+            expect(onRetired).toHaveBeenCalledOnce();
+            expect(result.destroy).toHaveBeenCalledOnce();
         });
 
         it("hands the loaded node the engine result's own discardStoredPedals, so stored moves can be dropped", async () => {
@@ -1698,6 +1739,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workerInstances: loaded.workerInstances,
             }).toEqual({ controllerReady: false, deviceReady: false, workerInstances: 0 });
             expect(result.destroy).toHaveBeenCalledOnce();
+            expect(loaded.grandBouleControls?.retirement?.aborted).toBe(true);
             // The demoted stand-in stays on the track: the device has not left the project.
             expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });

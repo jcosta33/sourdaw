@@ -153,6 +153,7 @@ export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSess
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+export { startNativeGrandBoulePreviewNote } from './livePlayback/startNativeGrandBoulePreviewNote';
 // Published because the composition root decides which of the Tuner's two carriers publishes a reading.
 export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.

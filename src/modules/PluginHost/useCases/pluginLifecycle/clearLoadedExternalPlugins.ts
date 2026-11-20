@@ -7,6 +7,7 @@ import {
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '../../stores/externalPluginTailStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -17,6 +18,7 @@ import {
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
+import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 
 /**
  * Drop every live-instance activation guard. Called when the audio graph is torn
@@ -42,4 +44,7 @@ export function clearLoadedExternalPlugins(): void {
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
     clearExternalPluginParameterReadState();
+    // So do the tails they reported.
+    externalPluginTailStore.set(defaultExternalPluginTailState);
+    tailRevisionsDuringLoad.clear();
 }

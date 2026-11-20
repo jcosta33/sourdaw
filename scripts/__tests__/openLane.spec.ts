@@ -7,6 +7,7 @@ import {
     readdirSync,
     realpathSync,
     rmSync,
+    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -117,6 +118,7 @@ function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => 
         },
         nodeModulesLinkTarget: nodeModulesLinkTarget ?? (() => undefined),
         lock: (path) => calls.push(`lock:${path}`),
+        guidanceWarning: () => undefined,
         log: (message) => logs.push(message),
     };
     return { port, calls, logs };
@@ -152,7 +154,12 @@ function creationFixture(
         }).trim();
     const git = (...args: string[]) => gitAt(root, args);
     git('init', '-b', 'main');
-    writeFileSync(join(root, '.gitignore'), '.agents/\n');
+    writeFileSync(join(root, '.gitignore'), '.agents/worktrees/\n.agents/lane-stacks/\n');
+    writeFileSync(join(root, 'AGENTS.md'), 'Root guidance.\n');
+    mkdirSync(join(root, 'module'));
+    writeFileSync(join(root, 'module', 'AGENTS.md'), 'Module guidance.\n');
+    mkdirSync(join(root, '.agents', 'skills', 'example'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'example', 'SKILL.md'), 'Skill guidance.\n');
     git('add', '.');
     git('commit', '-m', 'chore: base');
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');
@@ -181,6 +188,119 @@ function creationFixture(
     port.log = () => undefined;
     return { root, git, gitAt, parentPath, head, port, writes };
 }
+
+describe('guidance at lane opening', () => {
+    function captureLogs(port: OpenLanePort): string[] {
+        const logs: string[] = [];
+        port.log = (line) => logs.push(line);
+        return logs;
+    }
+
+    it('keeps equal guidance quiet despite unrelated committed and local changes', () => {
+        const f = creationFixture();
+        const logs = captureLogs(f.port);
+        f.git('update-ref', 'refs/remotes/origin/main', f.head);
+        writeFileSync(join(f.root, 'unrelated.txt'), 'Local work.\n');
+
+        const lane = openLane('fix', undefined, 'quiet', 'glm-5.3', f.port);
+
+        expect(f.git('rev-parse', 'fix/quiet')).toBe(f.head);
+        expect(logs).toEqual(['authoring model: glm-5.3', lane]);
+    });
+
+    it('keeps equal CRLF checkouts quiet even though the committed blobs use LF', () => {
+        const f = creationFixture();
+        const logs = captureLogs(f.port);
+        f.git('config', 'core.autocrlf', 'true');
+        for (const path of ['AGENTS.md', 'module/AGENTS.md', '.agents/skills/example/SKILL.md']) {
+            const file = join(f.root, path);
+            writeFileSync(file, readFileSync(file, 'utf8').replaceAll('\n', '\r\n'));
+        }
+
+        const lane = openLane('fix', undefined, 'crlf', 'glm-5.3', f.port);
+
+        expect(readFileSync(join(lane, 'AGENTS.md'), 'utf8')).toBe('Root guidance.\r\n');
+        expect(logs).toEqual(['authoring model: glm-5.3', lane]);
+    });
+
+    it('warns when fetched main has new guidance even with a clean primary', () => {
+        const f = creationFixture();
+        const logs = captureLogs(f.port);
+        const path = '.agents/skills/example/reference notes.md';
+        writeFileSync(join(f.parentPath, path), 'Additional private fixture guidance.\n');
+        f.gitAt(f.parentPath, ['add', path]);
+        f.gitAt(f.parentPath, ['commit', '-m', 'docs: add guidance reference']);
+        const head = f.gitAt(f.parentPath, ['rev-parse', 'HEAD']);
+        f.git('update-ref', 'refs/remotes/origin/main', head);
+        expect(f.git('status', '--porcelain')).toBe('');
+
+        const lane = openLane('fix', 12, 'ahead', 'glm-5.3', f.port);
+
+        expect(logs).toEqual([
+            'authoring model: glm-5.3',
+            expect.stringContaining(
+                `differs from the opened lane at ${JSON.stringify(path)}. Read AGENTS.md and applicable nested AGENTS.md and .agents/skills Markdown at ${head} in ${JSON.stringify(lane)}`
+            ),
+            'claim the issue before starting work: pnpm issue:claim 12',
+            lane,
+        ]);
+        expect(logs.join('\n')).not.toContain('Additional private fixture guidance.');
+    });
+
+    it.each(['modified', 'missing', 'removed from lane'])('warns about %s tracked primary guidance', (change) => {
+        const f = creationFixture();
+        const logs = captureLogs(f.port);
+        const path = 'module/AGENTS.md';
+        if (change === 'modified') {
+            writeFileSync(join(f.root, path), 'Edited guidance.\n');
+            f.git('update-index', '--assume-unchanged', path);
+        } else if (change === 'missing') {
+            rmSync(join(f.root, path));
+        } else {
+            f.gitAt(f.parentPath, ['rm', path]);
+            f.gitAt(f.parentPath, ['commit', '-m', 'docs: remove module guidance']);
+            f.git('update-ref', 'refs/remotes/origin/main', f.gitAt(f.parentPath, ['rev-parse', 'HEAD']));
+        }
+
+        const lane = openLane('fix', undefined, 'changed', 'glm-5.3', f.port);
+
+        expect(logs).toContainEqual(expect.stringContaining(`differs from the opened lane at ${JSON.stringify(path)}`));
+        expect(logs.at(-1)).toBe(lane);
+    });
+
+    it('compares a stacked child to its exact parent head even when origin/main matches the primary', () => {
+        const f = creationFixture();
+        const logs = captureLogs(f.port);
+        const path = 'AGENTS.md';
+        writeFileSync(join(f.parentPath, path), 'Parent-specific guidance.\n');
+        f.gitAt(f.parentPath, ['add', path]);
+        f.gitAt(f.parentPath, ['commit', '-m', 'docs: change guidance in parent']);
+        const head = f.gitAt(f.parentPath, ['rev-parse', 'HEAD']);
+        expect(f.git('rev-parse', 'origin/main')).toBe(f.git('rev-parse', 'HEAD'));
+
+        const lane = openLane('fix', undefined, 'stacked', 'glm-5.3', f.port, f.parentPath);
+
+        expect(f.gitAt(lane, ['rev-parse', 'HEAD'])).toBe(head);
+        expect(logs).toContainEqual(expect.stringContaining(`at ${head} in ${JSON.stringify(lane)}`));
+    });
+
+    it.each(['AGENTS.md', 'module'])(
+        'advises reading lane guidance without following a primary symlink at %s',
+        (path) => {
+            const f = creationFixture();
+            const logs = captureLogs(f.port);
+            const primaryPath = join(f.root, path);
+            rmSync(primaryPath, { recursive: true });
+            symlinkSync(join(f.parentPath, path), primaryPath);
+
+            const lane = openLane('fix', undefined, 'symlink', 'glm-5.3', f.port);
+
+            expect(logs).toContainEqual(expect.stringContaining('could not compare agent guidance'));
+            expect(logs).toContainEqual(expect.stringContaining(`in ${JSON.stringify(lane)}`));
+            expect(logs.at(-1)).toBe(lane);
+        }
+    );
+});
 
 describe('real Git stack creation reservation', () => {
     it('leaves an existing foreign branch and its metadata untouched', () => {
