@@ -1,12 +1,23 @@
 import { type parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
+import { type AgentRunGrants } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AgentRunPlanBoundRefusal } from '../stores/readAgentRunPlanBoundRefusal';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
-import { type compileAgentActionExecution } from './compileAgentActionExecution';
 
-type CompiledAuthority = ReturnType<typeof compileAgentActionExecution>['commandBatch']['authority'];
+type BeatRange = { readonly startBeat: number; readonly endBeat: number };
+
+/** The compiled batch's scope and grants, which the run's plan copies. */
+type PlanAuthority = {
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: readonly BeatRange[];
+        protectedTargetIds: readonly string[];
+        protectedRanges: readonly BeatRange[];
+    };
+    grants: Omit<AgentRunGrants, 'allowedOperationPrefixes'> & { allowedOperationPrefixes: readonly string[] };
+};
 type ParsedEnvelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
 
 /**
@@ -19,7 +30,7 @@ export function recordPromptBarRunPlan(input: {
     metricGoalState: string | undefined;
     receipts: ApplicationToolReceipt[] | undefined;
     envelope: ParsedEnvelope;
-    authority: CompiledAuthority;
+    authority: PlanAuthority;
     revision: string;
 }): AgentRunPlanBoundRefusal | null {
     const run = agentRunLifecycle.get(input.runId);
