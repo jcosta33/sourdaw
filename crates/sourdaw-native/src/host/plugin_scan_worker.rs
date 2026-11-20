@@ -1098,7 +1098,7 @@ const TREE_SUPERVISOR_DEADLINE: Duration = Duration::from_secs(HELPER_DEADLINE.a
 /// kernel cannot kill yet, such as one in uninterruptible sleep, holds the
 /// sweep no longer than this: it has already been sent `SIGKILL`, and dies
 /// when it wakes.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const TREE_SWEEP_BOUND: Duration = Duration::from_secs(1);
 
 /// How long the application waits, after releasing a tree supervisor at the
@@ -1109,20 +1109,42 @@ const TREE_SWEEP_BOUND: Duration = Duration::from_secs(1);
 const TREE_RELEASE_GRACE: Duration = Duration::from_millis(1500);
 
 /// The tree supervisor's report to the application, written on the socket
-/// they share: [`TREE_REPORT_STARTED`] once the helper runs, then at most one
-/// [`TREE_REPORT_UNOBSERVABLE`]; or [`TREE_REPORT_SPAWN_REFUSED`] alone. Only
-/// the supervisor holds its end: the helper's standard input is null, so no
-/// plugin process inherits it. The report lets the application tell its own
-/// refusals, which never quarantine, from a helper's exit, which the
-/// supervisor relays unchanged.
+/// they share as one record per line, each a kind byte and its text:
+///
+/// - [`TREE_REPORT_SPAWNING`], before the helper is spawned. From here on
+///   plugin code may run, so a supervisor that dies with no further record
+///   is a process failure, as a helper dying on its own always was.
+/// - [`TREE_REPORT_SPAWN_REFUSED`] with the reason, when the spawn failed.
+/// - [`TREE_REPORT_STARTED`] with the helper's pid, once it runs.
+/// - [`TREE_REPORT_UNOBSERVABLE`] with the reason, when the supervisor lost
+///   track of its helper.
+/// - [`TREE_REPORT_DONE`], after the supervisor's own end path has killed
+///   the tree; it is missing only when the supervisor died outside it.
+///
+/// Only the supervisor holds its end: the helper's standard input is null,
+/// so no plugin process inherits it. The report lets the application tell
+/// its own refusals, which never quarantine, from a helper's exit, which the
+/// supervisor relays unchanged, and tells it when the tree is its to end
+/// ([`kill_orphaned_helper_group`]).
 #[cfg(unix)]
-const TREE_REPORT_STARTED: u8 = b'R';
+const TREE_REPORT_SPAWNING: u8 = b'P';
 #[cfg(unix)]
 const TREE_REPORT_SPAWN_REFUSED: u8 = b'F';
 #[cfg(unix)]
+const TREE_REPORT_STARTED: u8 = b'R';
+#[cfg(unix)]
 const TREE_REPORT_UNOBSERVABLE: u8 = b'U';
 #[cfg(unix)]
+const TREE_REPORT_DONE: u8 = b'D';
+#[cfg(unix)]
 const TREE_REPORT_MAX_BYTES: usize = 1024;
+
+/// Test builds only: a tree supervisor whose environment names this dies of
+/// `SIGKILL` right after spawning its helper, before it reports the start —
+/// the death a plugin can cause by killing its parent.
+#[cfg(test)]
+const TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN_ENV: &str =
+    "SOURDAW_TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN";
 
 /// Test builds only: the helper's command line for this test binary's tree
 /// supervisor entry, as JSON, because the test harness refuses the
@@ -1162,6 +1184,10 @@ enum TreeEnd {
 ///   recorded while the helper ran ([`RecordedDescendants`]).
 /// - The helper's exit status is relayed exactly: its code, or death by its
 ///   signal ([`relay_exit_status`]).
+/// - Every step is reported to the application ([`TREE_REPORT_SPAWNING`]),
+///   so a supervisor that dies outside this path still quarantines a plugin
+///   that may have killed it ([`tree_report_refusal`]), and leaves the
+///   helper's group to the application ([`kill_orphaned_helper_group`]).
 #[cfg(unix)]
 fn supervise_helper_tree(helper: &[OsString]) -> i32 {
     use std::os::unix::process::CommandExt;
@@ -1184,6 +1210,7 @@ fn supervise_helper_tree(helper: &[OsString]) -> i32 {
     command.env_remove(TEST_TREE_SUPERVISOR_ARGV_ENV);
     #[cfg(target_os = "linux")]
     tie_to_spawner_death(&mut command);
+    report_to_spawner(&mut spawner, TREE_REPORT_SPAWNING, "");
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
@@ -1191,7 +1218,10 @@ fn supervise_helper_tree(helper: &[OsString]) -> i32 {
             return 2;
         }
     };
-    let _ = spawner.write_all(&[TREE_REPORT_STARTED]);
+    #[cfg(test)]
+    if std::env::var_os(TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN_ENV).is_some() {
+        die_by_signal(libc::SIGKILL);
+    }
     let Ok(helper) = libc::pid_t::try_from(child.id()) else {
         report_to_spawner(
             &mut spawner,
@@ -1202,9 +1232,24 @@ fn supervise_helper_tree(helper: &[OsString]) -> i32 {
         let _ = child.wait();
         return 2;
     };
-    let mut recorded = RecordedDescendants::default();
+    report_to_spawner(&mut spawner, TREE_REPORT_STARTED, &helper.to_string());
+    let mut recorded = RecordedDescendants::new();
     let end = watch_helper_tree(&mut spawner, child.id(), helper, &mut recorded);
-    end_helper_tree(&mut spawner, &mut child, helper, end, &mut recorded)
+    let exit = end_helper_tree(&mut spawner, &mut child, helper, end, &mut recorded);
+    report_to_spawner(&mut spawner, TREE_REPORT_DONE, "");
+    match exit {
+        TreeExit::Code(code) => code,
+        TreeExit::Relay(status) => relay_exit_status(status),
+    }
+}
+
+/// How the tree supervisor ends once its tree is gone.
+#[cfg(unix)]
+enum TreeExit {
+    /// With its own code.
+    Code(i32),
+    /// The way the helper ended ([`relay_exit_status`]).
+    Relay(ExitStatus),
 }
 
 #[cfg(not(unix))]
@@ -1225,11 +1270,19 @@ fn spawner_socket() -> Option<std::os::unix::net::UnixStream> {
     Some(socket)
 }
 
+/// Write one report record. Its text is cut short and kept on one line.
 #[cfg(unix)]
-fn report_to_spawner(spawner: &mut std::os::unix::net::UnixStream, kind: u8, reason: &str) {
-    let mut report = vec![kind];
-    report.extend(reason.bytes().take(TREE_REPORT_MAX_BYTES / 2));
-    let _ = spawner.write_all(&report);
+fn report_to_spawner(spawner: &mut std::os::unix::net::UnixStream, kind: u8, text: &str) {
+    let mut record = vec![kind];
+    record.extend(text.bytes().take(TREE_REPORT_MAX_BYTES / 4).map(|byte| {
+        if byte == b'\n' {
+            b' '
+        } else {
+            byte
+        }
+    }));
+    record.push(b'\n');
+    let _ = spawner.write_all(&record);
 }
 
 /// Watch until the helper exits, the application goes, or the supervisor's
@@ -1275,8 +1328,8 @@ fn spawner_is_gone(spawner: &mut std::os::unix::net::UnixStream) -> bool {
     }
 }
 
-/// End the helper's tree the way `end` calls for, and return the code this
-/// supervisor ends with.
+/// End the helper's tree the way `end` calls for, and say how this
+/// supervisor ends.
 #[cfg(unix)]
 fn end_helper_tree(
     spawner: &mut std::os::unix::net::UnixStream,
@@ -1284,7 +1337,7 @@ fn end_helper_tree(
     helper: libc::pid_t,
     end: TreeEnd,
     recorded: &mut RecordedDescendants,
-) -> i32 {
+) -> TreeExit {
     if matches!(end, TreeEnd::HelperExited) {
         // The helper is an unreaped zombie: its pid, and with it its
         // group's id, cannot name another process yet.
@@ -1293,10 +1346,10 @@ fn end_helper_tree(
         let status = child.wait();
         reap_adopted_tree();
         return match status {
-            Ok(status) => relay_exit_status(status),
+            Ok(status) => TreeExit::Relay(status),
             Err(error) => {
                 report_to_spawner(spawner, TREE_REPORT_UNOBSERVABLE, &error.to_string());
-                1
+                TreeExit::Code(1)
             }
         };
     }
@@ -1310,14 +1363,14 @@ fn end_helper_tree(
     let _ = child.kill();
     let _ = child.wait();
     reap_adopted_tree();
-    match end {
+    TreeExit::Code(match end {
         TreeEnd::Deadline => HELPER_DEADLINE_EXIT_CODE,
         TreeEnd::Unobservable(error) => {
             report_to_spawner(spawner, TREE_REPORT_UNOBSERVABLE, &error.to_string());
             1
         }
         TreeEnd::HelperExited | TreeEnd::SpawnerGone => HELPER_PARENT_GONE_EXIT_CODE,
-    }
+    })
 }
 
 /// Kill and reap every process this supervisor adopted, until it has no
@@ -1431,11 +1484,14 @@ type ProcessStart = (u64, u64);
 /// pid is reused, between the start-time check and the signal: a window of
 /// microseconds against macOS's sequential pid allocation.
 #[cfg(target_os = "macos")]
-#[derive(Default)]
 struct RecordedDescendants(BTreeMap<libc::pid_t, ProcessStart>);
 
 #[cfg(target_os = "macos")]
 impl RecordedDescendants {
+    fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
     fn walk(&mut self, root: libc::pid_t) {
         let mut visited = BTreeSet::from([root]);
         let mut pending = vec![root];
@@ -1482,11 +1538,14 @@ impl RecordedDescendants {
 /// orphan stays its descendant ([`reap_adopted_tree`]). Elsewhere there is
 /// no child listing to record from.
 #[cfg(all(unix, not(target_os = "macos")))]
-#[derive(Default)]
 struct RecordedDescendants;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 impl RecordedDescendants {
+    fn new() -> Self {
+        Self
+    }
+
     fn walk(&mut self, _root: libc::pid_t) {}
 
     fn kill(&self) {}
@@ -2232,14 +2291,15 @@ impl TreeTie {
         false
     }
 
-    /// The refusal the exited supervisor reported in place of its helper's
-    /// exit, if any. Read without blocking: the supervisor has exited, and
-    /// nothing else holds its end.
+    /// What the exited supervisor reported. Read without blocking: the
+    /// supervisor has exited, and nothing else holds its end.
     #[cfg(unix)]
-    fn refusal(&mut self) -> Option<ScanFailure> {
-        let socket = self.socket.as_mut()?;
+    fn report(&mut self) -> TreeReport {
+        let Some(socket) = self.socket.as_mut() else {
+            return TreeReport::default();
+        };
         if socket.set_nonblocking(true).is_err() {
-            return tree_report_refusal(&[]);
+            return TreeReport::default();
         }
         let mut report = Vec::new();
         let mut buffer = [0_u8; 256];
@@ -2251,32 +2311,107 @@ impl TreeTie {
                 Err(_) => break,
             }
         }
-        tree_report_refusal(&report)
+        parse_tree_report(&report)
     }
 }
 
-/// What a tree supervisor's report says about the exit the application
-/// observed: nothing when the helper ran and the exit is its own, or the
-/// refusal that replaces it. A supervisor that ended before saying it started
-/// a helper is a refusal too, never a process failure: no plugin code ran.
+/// A tree supervisor's report, as the application read it after the
+/// supervisor exited. See [`TREE_REPORT_SPAWNING`] for the records.
 #[cfg(unix)]
-fn tree_report_refusal(report: &[u8]) -> Option<ScanFailure> {
-    let reason = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
-    match report.split_first() {
-        Some((&TREE_REPORT_STARTED, [])) => None,
-        Some((&TREE_REPORT_STARTED, [TREE_REPORT_UNOBSERVABLE, detail @ ..])) => {
-            Some(ScanFailure::Refused(format!(
-                "Cannot observe plugin scan helper: {}",
-                reason(detail)
-            )))
+#[derive(Debug, Default, PartialEq, Eq)]
+struct TreeReport {
+    spawning: bool,
+    spawn_refused: Option<String>,
+    helper: Option<libc::pid_t>,
+    unobservable: Option<String>,
+    done: bool,
+}
+
+#[cfg(unix)]
+fn parse_tree_report(bytes: &[u8]) -> TreeReport {
+    let mut report = TreeReport::default();
+    for record in bytes.split(|byte| *byte == b'\n') {
+        let Some((&kind, text)) = record.split_first() else {
+            continue;
+        };
+        match kind {
+            TREE_REPORT_SPAWNING => report.spawning = true,
+            TREE_REPORT_SPAWN_REFUSED => {
+                report.spawn_refused = Some(String::from_utf8_lossy(text).into_owned());
+            }
+            TREE_REPORT_STARTED => {
+                report.helper = std::str::from_utf8(text)
+                    .ok()
+                    .and_then(|pid| pid.parse().ok())
+                    .filter(|pid| *pid > 1);
+            }
+            TREE_REPORT_UNOBSERVABLE => {
+                report.unobservable = Some(String::from_utf8_lossy(text).into_owned());
+            }
+            TREE_REPORT_DONE => report.done = true,
+            _ => {}
         }
-        Some((&TREE_REPORT_SPAWN_REFUSED, detail)) => Some(ScanFailure::Refused(format!(
-            "Cannot start plugin scan helper: {}",
-            reason(detail)
-        ))),
-        _ => Some(ScanFailure::Refused(
-            "Plugin scan tree supervisor ended without a readable report".to_string(),
-        )),
+    }
+    report
+}
+
+/// What a tree supervisor's report says about the exit the application
+/// observed: nothing when the exit stands as the helper's, or the refusal
+/// that replaces it.
+///
+/// Only a supervisor that never reached its helper's spawn is a refusal:
+/// a failed spawn, or a supervisor that ended before saying it was about to
+/// spawn. No plugin code can have run then. Once the spawning record is
+/// written, a supervisor that dies before or after reporting the start — a
+/// plugin killing its parent, say — leaves its own signal death as the exit,
+/// which reads as the process failure a helper dying on its own always did,
+/// and quarantines.
+#[cfg(unix)]
+fn tree_report_refusal(report: &TreeReport) -> Option<ScanFailure> {
+    if let Some(reason) = &report.spawn_refused {
+        return Some(ScanFailure::Refused(format!(
+            "Cannot start plugin scan helper: {reason}"
+        )));
+    }
+    if let Some(reason) = &report.unobservable {
+        return Some(ScanFailure::Refused(format!(
+            "Cannot observe plugin scan helper: {reason}"
+        )));
+    }
+    if !report.spawning {
+        return Some(ScanFailure::Refused(
+            "Plugin scan tree supervisor ended before it started a helper".to_string(),
+        ));
+    }
+    None
+}
+
+/// End the group of a helper whose tree supervisor died outside its own end
+/// path, which is what the report's missing done record says. The helper
+/// itself dies with the supervisor on Linux (`PR_SET_PDEATHSIG`) and by its
+/// parent watch on macOS, but neither reaches the rest of its group, and
+/// before supervision the application killed that group itself.
+///
+/// The helper leads its group, so the group's id is the helper's pid, and
+/// that id stays allocated while any member of the group lives: neither
+/// Linux nor macOS hands out a pid that is still a live group's id. So
+/// while the group has members, `kill(-pid)` reaches exactly the helper's
+/// group, and an empty group leaves nothing to kill. The one case it could
+/// miss is the group emptying, its id being handed to a new process, and
+/// that process leading a group of its own, all between the supervisor's
+/// reap and this call: a window of microseconds against a pid space that
+/// must wrap around first.
+///
+/// Residual limit: a descendant that left the group with `setsid` is out of
+/// reach. Its parent chain ran through the dead supervisor, so it has
+/// reparented to init or launchd, and no walk from the application finds it.
+#[cfg(unix)]
+fn kill_orphaned_helper_group(report: &TreeReport) {
+    if report.done {
+        return;
+    }
+    if let Some(helper) = report.helper {
+        send_group_signal(helper, libc::SIGKILL);
     }
 }
 
@@ -2313,7 +2448,9 @@ fn run_bounded_in(
         socket: Some(application_end),
     };
     let status = wait_bounded(registry, &mut child, timeout, &mut tie)?;
-    match tie.refusal() {
+    let report = tie.report();
+    kill_orphaned_helper_group(&report);
+    match tree_report_refusal(&report) {
         Some(refusal) => Err(refusal),
         None => Ok(status),
     }
@@ -2343,9 +2480,13 @@ fn run_bounded_in(
 /// fork and exec.
 ///
 /// The signal reaches the helper alone, not its group, and only the
-/// supervisor's own death fires it, which only the application's stop or
-/// its kill at the scan's bound brings about; both kill the helper's group
-/// and its live tree themselves ([`kill_helper_tree`]). The application's
+/// supervisor's death fires it. The application's stop and its kill at the
+/// scan's bound kill the helper's group and live tree themselves
+/// ([`kill_helper_tree`]). Any other death of the supervisor — an outside
+/// `SIGKILL`, the OOM killer, a plugin killing its parent — leaves no done
+/// record in its report, and the application kills the helper's group when
+/// it reaps the supervisor ([`kill_orphaned_helper_group`]); a `setsid`
+/// descendant of such a tree is the residual named there. The application's
 /// own death is the supervisor's socket end-of-file, after which the
 /// supervisor ends the whole tree ([`supervise_helper_tree`]).
 #[cfg(target_os = "linux")]
@@ -3325,8 +3466,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// spawner's bound and the helper's own deadline, so neither of those can
     /// end the helper inside it. What does is the tree supervisor's socket,
     /// pinned on its own by `a_killed_spawner_takes_a_plain_helper_with_it`;
-    /// the helper's ties to the supervisor are pinned by
-    /// `a_killed_tree_supervisor_takes_a_plain_helper_with_it_on_linux`.
+    /// the supervisor's own death is pinned by
+    /// `a_killed_tree_supervisor_takes_its_helpers_group_with_it`.
     #[cfg(unix)]
     #[test]
     fn a_helper_does_not_outlive_its_killed_spawner() {
@@ -3647,32 +3788,79 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
     #[cfg(unix)]
     #[test]
-    fn only_a_started_report_lets_the_helpers_exit_through() {
-        assert_eq!(tree_report_refusal(b"R"), None);
-        let cases: [(&[u8], &str); 5] = [
+    fn only_a_supervisor_that_never_reached_its_spawn_refuses() {
+        for report in [&b"P\n"[..], b"P\nR4242\n", b"P\nR4242\nD\n"] {
+            assert_eq!(
+                tree_report_refusal(&parse_tree_report(report)),
+                None,
+                "{}",
+                String::from_utf8_lossy(report)
+            );
+        }
+        let cases: [(&[u8], &str); 4] = [
             (
                 b"",
-                "Plugin scan tree supervisor ended without a readable report",
+                "Plugin scan tree supervisor ended before it started a helper",
             ),
             (
-                b"Fno such file",
+                b"X\n",
+                "Plugin scan tree supervisor ended before it started a helper",
+            ),
+            (
+                b"P\nFno such file\n",
                 "Cannot start plugin scan helper: no such file",
             ),
-            (b"RUgone", "Cannot observe plugin scan helper: gone"),
             (
-                b"RX",
-                "Plugin scan tree supervisor ended without a readable report",
-            ),
-            (
-                b"X",
-                "Plugin scan tree supervisor ended without a readable report",
+                b"P\nR4242\nUgone\nD\n",
+                "Cannot observe plugin scan helper: gone",
             ),
         ];
         for (report, message) in cases {
-            let refusal = tree_report_refusal(report).expect("only R alone passes");
+            let refusal = tree_report_refusal(&parse_tree_report(report))
+                .expect("a supervisor that never reached its spawn refuses");
             assert_eq!(refusal.to_string(), message);
             assert!(!refusal.is_process_failure(), "{message}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_report_names_its_helper_and_whether_the_supervisor_finished() {
+        assert_eq!(
+            parse_tree_report(b"P\nR4242\n"),
+            TreeReport {
+                spawning: true,
+                helper: Some(4242),
+                ..TreeReport::default()
+            }
+        );
+        assert!(parse_tree_report(b"P\nR4242\nD\n").done);
+        assert_eq!(parse_tree_report(b"P\nR1\n").helper, None);
+        assert_eq!(parse_tree_report(b"P\nRx\n").helper, None);
+    }
+
+    /// A plugin that kills its tree supervisor before the supervisor reports
+    /// the start must still quarantine, as a helper killed on its own always
+    /// did: the supervisor's death after its spawning record is the plugin's
+    /// process failure, never the application's refusal.
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_killed_right_after_its_spawn_quarantines() {
+        let env = BTreeMap::from([(
+            TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN_ENV.to_string(),
+            "1".to_string(),
+        )]);
+        let error = scan_descriptor_through(
+            real_worker_launcher(env),
+            Path::new("/nonexistent/sourdaw-killed-supervisor.clap"),
+        )
+        .expect_err("a scan whose supervisor died cannot answer");
+
+        assert!(
+            matches!(error, ScanFailure::ExitedUnsuccessfully { .. }),
+            "{error}"
+        );
+        assert!(error.is_process_failure());
     }
 
     /// A plugin forks a child, the child leaves the helper's group with
@@ -3828,24 +4016,42 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(!marker.exists(), "the setsid child ran to completion");
     }
 
-    /// The helper's ties to the tree supervisor: a plain helper runs no
-    /// watchdog and the application kills nothing it cannot reach through
-    /// the dead supervisor, so only `PR_SET_PDEATHSIG` ends it in the window.
-    #[cfg(target_os = "linux")]
+    /// A tree supervisor killed from outside the application's control — an
+    /// outside `SIGKILL`, the OOM killer, a plugin killing its parent — takes
+    /// the helper's whole group with it: the helper runs no watchdog, and
+    /// the child it forked into its group is reached only by the
+    /// application's group kill on reaping a supervisor that never finished
+    /// ([`kill_orphaned_helper_group`]). A `setsid` child of such a tree is
+    /// the residual named there.
+    #[cfg(unix)]
     #[test]
-    fn a_killed_tree_supervisor_takes_a_plain_helper_with_it_on_linux() {
+    fn a_killed_tree_supervisor_takes_its_helpers_group_with_it() {
         let scratch =
             std::env::temp_dir().join(format!("sourdaw-killed-tree-{}", uuid::Uuid::new_v4()));
         let parent_file = scratch.with_extension("parent");
         let helper_file = scratch.with_extension("helper");
-        let mut stragglers = Stragglers::cleaning(vec![parent_file.clone(), helper_file.clone()]);
-        let (parent_path, helper_path) = (parent_file.clone(), helper_file.clone());
+        let grouped_file = scratch.with_extension("grouped");
+        let mut stragglers = Stragglers::cleaning(vec![
+            parent_file.clone(),
+            helper_file.clone(),
+            grouped_file.clone(),
+        ]);
+        let (parent_path, helper_path, grouped_path) = (
+            parent_file.clone(),
+            helper_file.clone(),
+            grouped_file.clone(),
+        );
         std::thread::spawn(move || {
             let mut command = Command::new("sh");
             command
-                .args(["-c", "echo $PPID > \"$0\"; echo $$ > \"$1\"; exec sleep 30"])
+                .args([
+                    "-c",
+                    "sleep 30 & echo $! > \"$2\"; echo $PPID > \"$0\"; echo $$ > \"$1\"; \
+                     exec sleep 30",
+                ])
                 .arg(&parent_path)
-                .arg(&helper_path);
+                .arg(&helper_path)
+                .arg(&grouped_path);
             let _ = run_bounded_in(
                 &HelperRegistry::new(),
                 &TreeSupervisorLaunch::TestEntry,
@@ -3856,13 +4062,20 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let helper = read_pid_within(&helper_file, Duration::from_secs(10))
             .expect("the plain helper should start and write its pid");
         stragglers.pids.push(helper);
+        let grouped = read_pid_within(&grouped_file, Duration::from_secs(1))
+            .expect("the plain helper writes its grouped child's pid first");
+        stragglers.pids.push(grouped);
         let supervisor = read_pid_within(&parent_file, Duration::from_secs(1))
-            .expect("the plain helper writes its parent's pid first");
+            .expect("the plain helper writes its parent's pid before its own");
 
         // SAFETY: kill takes plain values; the supervisor is this test's
         // child, unreaped until the scan thread reaps it.
         assert_eq!(unsafe { libc::kill(supervisor, libc::SIGKILL) }, 0);
 
+        assert!(
+            process_has_exited_within(grouped, Duration::from_secs(3)),
+            "the helper's grouped child {grouped} outlived its killed tree supervisor"
+        );
         assert!(
             process_has_exited_within(helper, Duration::from_secs(3)),
             "plain helper {helper} outlived its killed tree supervisor"
