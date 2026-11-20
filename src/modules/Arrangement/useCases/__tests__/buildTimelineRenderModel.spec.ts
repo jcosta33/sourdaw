@@ -9,8 +9,8 @@ import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/Timeli
 import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
-import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
 import { hitTestClip } from '../timelineInteractions/hitTestClip/hitTestClip';

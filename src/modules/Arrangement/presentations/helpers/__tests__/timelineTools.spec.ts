@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
-import { type CommitInlineAutomationPaintInput } from '../../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { splitClipWithUndo } from '../../../useCases/clipEditing/splitClipWithUndo';
+import { type CommitInlineAutomationPaintInput } from '../../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { commitInlineMidiNoteCreate } from '../../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
 import { getGridSnap } from '../../../useCases/timelineInteractions/getGridSnap';

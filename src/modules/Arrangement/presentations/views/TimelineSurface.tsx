@@ -14,8 +14,8 @@ import { getRenderedTrackExtent, getRenderedTrackTops } from '../../models/Timel
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
-import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import {
     setAutoScroll,
     setScrollX,
