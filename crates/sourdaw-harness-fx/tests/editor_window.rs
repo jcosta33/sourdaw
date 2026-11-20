@@ -13,23 +13,19 @@
     reason = "tests assert by unwrapping"
 )]
 
-use std::env;
-use std::fs;
-use std::path::PathBuf;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
 use daw_plugin_host::{
     AudioPlugin, ClapWrapper, EditorClosed, EditorVisibility, EditorWindowHost,
-    HostParameterUpdate, SharedEditorWindow,
+    HostParameterUpdate, ProcessMode, SharedEditorWindow,
 };
 use sourdaw_harness_fx::state::{decode_gui, GuiCall, GuiRecord};
 use sourdaw_harness_fx::{GuiCommand, CLAP_EDITOR_PLUGIN_ID, COMMAND_PARAM_ID};
 
 mod support;
-use support::built_cdylib_path;
+use support::InstalledPlugin;
 
-const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 64;
 
 /// One call the host made on the editor's window.
@@ -79,52 +75,14 @@ impl EditorWindowHost for RecordingWindow {
     }
 }
 
-/// The dylib installed as a `.clap` file in a fresh temp directory, torn down
-/// on drop.
-struct InstalledClap {
-    root: PathBuf,
-    path: PathBuf,
-}
-
-impl InstalledClap {
-    fn create(test_name: &str) -> Self {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the system clock should be after the unix epoch")
-            .as_nanos();
-        let root = fs::canonicalize(env::temp_dir())
-            .expect("the temp directory should resolve")
-            .join(format!(
-                "sourdaw-harness-fx-editor-{test_name}-{}-{unique}",
-                std::process::id()
-            ));
-        fs::create_dir_all(&root).expect("the temp root should be created");
-        let source = built_cdylib_path();
-        assert!(source.exists(), "the cdylib must be built: {source:?}");
-        let path = root.join("HarnessFx.clap");
-        fs::copy(&source, &path).expect("the cdylib should copy into the .clap path");
-        Self { root, path }
-    }
-
-    /// An editor-class instance the host took into its engine: its request
-    /// wake installed, as the native engine installs one on every instance
-    /// it hosts.
-    fn editor_instance(&self) -> ClapWrapper {
-        let wrapper = ClapWrapper::new(
-            self.path.to_str().expect("the path should be utf8"),
-            CLAP_EDITOR_PLUGIN_ID,
-            SAMPLE_RATE,
-        )
+/// An editor-class instance the host took into its engine: its request wake
+/// installed, as the native engine installs one on every instance it hosts.
+fn editor_instance(plugin: &InstalledPlugin) -> ClapWrapper {
+    let wrapper = plugin
+        .clap(CLAP_EDITOR_PLUGIN_ID, ProcessMode::Realtime)
         .expect("the editor class should load and activate");
-        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
-        wrapper
-    }
-}
-
-impl Drop for InstalledClap {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
+    assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+    wrapper
 }
 
 /// Open the editor into `window`, installed the way the host installs one.
@@ -170,8 +128,8 @@ fn gui_record(wrapper: &ClapWrapper) -> GuiRecord {
 
 #[test]
 fn an_editor_the_plugin_destroyed_is_acknowledged_once_and_opens_again() {
-    let plugin = InstalledClap::create("closed");
-    let mut wrapper = plugin.editor_instance();
+    let plugin = InstalledPlugin::create("editor-closed");
+    let mut wrapper = editor_instance(&plugin);
     let window = Arc::new(RecordingWindow::default());
     open_into(&mut wrapper, &window);
 
@@ -219,8 +177,8 @@ fn an_editor_the_plugin_destroyed_is_acknowledged_once_and_opens_again() {
 
 #[test]
 fn the_window_follows_the_plugins_resizability_each_time_its_hints_change() {
-    let plugin = InstalledClap::create("hints");
-    let mut wrapper = plugin.editor_instance();
+    let plugin = InstalledPlugin::create("editor-hints");
+    let mut wrapper = editor_instance(&plugin);
     let window = Arc::new(RecordingWindow::default());
     open_into(&mut wrapper, &window);
     assert!(!wrapper.editor_can_resize());
@@ -244,8 +202,8 @@ fn the_window_follows_the_plugins_resizability_each_time_its_hints_change() {
 
 #[test]
 fn a_hide_then_a_show_reach_the_editor_and_then_its_window() {
-    let plugin = InstalledClap::create("visibility");
-    let mut wrapper = plugin.editor_instance();
+    let plugin = InstalledPlugin::create("editor-visibility");
+    let mut wrapper = editor_instance(&plugin);
     let window = Arc::new(RecordingWindow::default());
     open_into(&mut wrapper, &window);
 
@@ -270,8 +228,8 @@ fn a_hide_then_a_show_reach_the_editor_and_then_its_window() {
 
 #[test]
 fn a_hide_or_show_is_refused_while_no_window_is_installed() {
-    let plugin = InstalledClap::create("no-window");
-    let mut wrapper = plugin.editor_instance();
+    let plugin = InstalledPlugin::create("editor-no-window");
+    let mut wrapper = editor_instance(&plugin);
     wrapper
         .open_gui(ptr::null_mut())
         .expect("the editor class should open its editor");

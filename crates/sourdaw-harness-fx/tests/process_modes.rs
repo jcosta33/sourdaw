@@ -8,9 +8,7 @@
     reason = "tests assert by unwrapping"
 )]
 
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+mod support;
 
 use clap_sys::ext::render::CLAP_RENDER_OFFLINE;
 use daw_plugin_host::clap_wrapper::{ClapError, MIN_PROCESS_FRAMES};
@@ -23,126 +21,15 @@ use sourdaw_harness_fx::{
     CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, ECHO_FRAMES, GAIN_DEFAULT, GAIN_PARAM_ID,
     LATENCY_FRAMES, VST3_CLASS_ID,
 };
+use support::{InstalledPlugin, SAMPLE_RATE};
 use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::ProcessModes_;
 
-mod support;
-use support::built_cdylib_path;
-
-const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 128;
 /// Enough whole blocks to carry the impulse, its echo, and silence after both.
 const BLOCKS: usize = (LATENCY_FRAMES + ECHO_FRAMES) / BLOCK_FRAMES + 2;
 const VST3_REALTIME: int32 = ProcessModes_::kRealtime as int32;
 const VST3_OFFLINE: int32 = ProcessModes_::kOffline as int32;
-
-/// A fresh temp directory holding the dylib as a `.clap` file and as a `.vst3`
-/// bundle, torn down on drop.
-struct InstalledPlugin {
-    root: PathBuf,
-    clap_path: PathBuf,
-    vst3_bundle: PathBuf,
-}
-
-impl InstalledPlugin {
-    fn create(test_name: &str) -> Self {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the system clock should be after the unix epoch")
-            .as_nanos();
-        let root = fs::canonicalize(env::temp_dir())
-            .expect("the temp directory should resolve")
-            .join(format!(
-                "sourdaw-harness-fx-{test_name}-{}-{unique}",
-                std::process::id()
-            ));
-        fs::create_dir_all(&root).expect("the temp root should be created");
-
-        let source = built_cdylib_path();
-        assert!(source.exists(), "the cdylib must be built: {source:?}");
-
-        let clap_path = root.join("HarnessFx.clap");
-        fs::copy(&source, &clap_path).expect("the cdylib should copy into the .clap path");
-
-        let vst3_bundle = root.join("HarnessFx.vst3");
-        install_vst3_module(&source, &vst3_bundle);
-
-        Self {
-            root,
-            clap_path,
-            vst3_bundle,
-        }
-    }
-
-    fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
-        let path = self.clap_path.to_str().expect("the path should be utf8");
-        ClapWrapper::new_with_mode(path, plugin_id, SAMPLE_RATE, mode)
-    }
-
-    fn vst3(&self, mode: ProcessMode) -> Vst3Wrapper {
-        Vst3Wrapper::new_with_mode(
-            &self.vst3_bundle,
-            &format_class_id(&VST3_CLASS_ID),
-            SAMPLE_RATE,
-            mode,
-        )
-        .expect("the VST3 class should load and activate")
-    }
-}
-
-impl Drop for InstalledPlugin {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
-}
-
-/// Place the module where `Vst3Instance::open` looks for it on this platform:
-/// a CFBundle executable on macOS, `Contents/<machine>-linux/<name>.so` on
-/// Linux, `Contents/<arch>-win/<name>.vst3` on Windows. The VST3 cases run on
-/// all three, the platforms that loader supports.
-fn install_vst3_module(source: &Path, bundle: &Path) {
-    let module = vst3_module_path(bundle);
-    fs::create_dir_all(module.parent().expect("the module path has a parent"))
-        .expect("the bundle directories should be created");
-    fs::copy(source, &module).expect("the cdylib should copy into the bundle");
-    if cfg!(target_os = "macos") {
-        fs::write(bundle.join("Contents").join("Info.plist"), INFO_PLIST)
-            .expect("the bundle's Info.plist should be written");
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::macos_executable_path(bundle).unwrap()
-}
-
-#[cfg(target_os = "windows")]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::windows_module_paths(bundle, env::consts::ARCH)
-        .unwrap()
-        .remove(0)
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::linux_module_path(bundle, env::consts::ARCH)
-        .unwrap()
-        .expect("the VST3 layout names this architecture")
-}
-
-/// The keys CoreFoundation needs to load the bundle's executable.
-const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>HarnessFx</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.sourdaw.harness-fx</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
-</dict>
-</plist>
-"#;
 
 /// Render a unit impulse at frame zero through `BLOCKS` blocks, with
 /// `updates` delivered in the first block, and return both output channels.

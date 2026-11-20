@@ -1583,6 +1583,17 @@ describe('reading measured holds and bounds', () => {
             unsupported: [],
         });
     });
+
+    it('reads no clause from a quality word inside a section name', () => {
+        const context = {
+            ...grammarContext(),
+            sections: [{ id: 'section-louder', name: "Don't Make It Louder", startBeat: 0, endBeat: 16 }],
+        };
+        expect(compilePerceptualConstraints("Lift the trim but don't make it louder", context)).toEqual({
+            constraints: [],
+            unsupported: [],
+        });
+    });
 });
 
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';
