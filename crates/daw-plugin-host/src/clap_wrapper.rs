@@ -6866,6 +6866,10 @@ mod tests {
             "got: {refusal}"
         );
         assert_eq!(
+            refusal.to_string(),
+            "Plugin 'stub' has no resizable open editor"
+        );
+        assert_eq!(
             editor_steps(),
             Vec::<String>::new(),
             "neither the plugin nor the window may move for a refused resize"

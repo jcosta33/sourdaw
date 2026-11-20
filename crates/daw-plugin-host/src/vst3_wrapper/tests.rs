@@ -2741,6 +2741,10 @@ fn a_processor_that_will_not_report_its_state_is_an_error_not_an_empty_save() {
         ),
         "{error}"
     );
+    assert_eq!(
+        error.to_string(),
+        "[VST3] 'Fake Plugin' refused to report its processor state"
+    );
 }
 
 /// A split plugin's controller boots on its parameter defaults while the
@@ -2797,6 +2801,10 @@ fn a_blob_shorter_than_its_header_declares_is_refused() {
     let error = decode_state(&truncated).expect_err("a short blob");
 
     assert!(matches!(error, Vst3Error::StateTruncated), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "VST3 state is shorter than its own header declares"
+    );
 }
 
 #[test]
@@ -3025,6 +3033,11 @@ fn a_plugin_that_refuses_every_arrangement_the_host_can_feed_is_refused_at_load(
                 if name == "Fake Plugin"
         ),
         "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[VST3] 'Fake Plugin' refused every main audio bus arrangement this host can feed: \
+         its main output bus runs 6 channels, and the host carries mono or stereo"
     );
     assert!(
         state.arrangement_requests.load(Ordering::Acquire) > 0,
@@ -3349,6 +3362,10 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
         ),
         "got: {refusal}"
     );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' has an editor, but not one this platform can embed"
+    );
     assert!(
         editor.position_of("attached").is_none(),
         "a refused platform must not be attached, got: {:?}",
@@ -3463,6 +3480,7 @@ fn a_plugin_whose_create_view_answers_null_has_no_editor_and_refuses_to_open_one
         ),
         "got: {refusal}"
     );
+    assert_eq!(refusal.to_string(), "[VST3] 'Fake Plugin' offers no editor");
 }
 
 /// The other side of the same question: a plugin that does answer with a view
@@ -3592,6 +3610,7 @@ fn a_fixed_size_editor_is_never_asked_to_change_size() {
         .expect_err("a fixed-size editor must refuse");
 
     assert_eq!(refusal, EditorError::FixedSize);
+    assert_eq!(refusal.to_string(), "[VST3] this editor is a fixed size");
     assert!(
         editor.position_of("checkSizeConstraint").is_none(),
         "a fixed-size editor must not be asked to constrain a size, got: {:?}",
@@ -3626,6 +3645,10 @@ fn a_size_the_view_refuses_outright_stops_the_host_resize() {
         .expect_err("a refused size must not be applied");
 
     assert_eq!(refusal, EditorError::SizeRefused);
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] this editor refused the requested size"
+    );
     assert!(
         editor.position_of("checkSizeConstraint").is_some(),
         "the host must have asked before giving up, got: {:?}",
@@ -3689,6 +3712,10 @@ fn the_seam_answers_resizability_from_the_open_editors_own_can_resize() {
     assert!(
         matches!(refusal, PluginError::Vst3(Vst3Error::NoOpenEditor { .. })),
         "got: {refusal}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' has no open editor to address"
     );
 
     wrapper
@@ -3881,6 +3908,10 @@ fn a_host_initiated_resize_the_view_refuses_puts_the_window_back() {
 
     assert_eq!(refusal, EditorError::ConstrainedSizeRefused);
     assert_eq!(
+        refusal.to_string(),
+        "[VST3] this editor refused to move to the constrained size"
+    );
+    assert_eq!(
         editor.calls_since(opened),
         [
             "checkSizeConstraint",
@@ -3959,6 +3990,10 @@ fn a_view_that_never_states_a_size_is_detached_before_the_open_fails() {
             PluginError::Vst3(Vst3Error::Editor(EditorError::NoStatedSize { .. }))
         ),
         "got: {refusal}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' would not state a size for its editor"
     );
     let calls = editor.calls();
     let attached = editor
@@ -4070,7 +4105,12 @@ fn a_wayland_session_refuses_before_the_plugin_is_asked_for_a_view() {
         text.contains("IWaylandHost") && text.contains("IWaylandFrame"),
         "the refusal must name the host interfaces that are missing, got: {text}"
     );
-    assert!(text.ends_with(" ('Fake Plugin')"), "got: {text}");
+    assert_eq!(
+        text,
+        "[VST3] this is a Wayland session with no X server behind it, and Sourdaw's editor \
+         host implements neither IWaylandHost nor IWaylandFrame, so a VST3 editor cannot be \
+         embedded ('Fake Plugin')"
+    );
     assert_eq!(
         editor.create_view_calls.load(Ordering::Acquire),
         0,

@@ -349,6 +349,11 @@ fn a_clap_plugin_with_a_hard_realtime_requirement_is_refused_offline_by_name() {
         matches!(&error, ClapError::RequiresRealtime { name } if name == "Sourdaw Harness Fx Hard Realtime"),
         "{error}"
     );
+    assert_eq!(
+        error.to_string(),
+        "[CLAP] 'Sourdaw Harness Fx Hard Realtime' requires real-time rendering and cannot \
+         render offline"
+    );
     assert!(plugin
         .clap(CLAP_HARD_REALTIME_PLUGIN_ID, ProcessMode::Realtime)
         .is_ok());
