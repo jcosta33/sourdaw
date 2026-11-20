@@ -87,6 +87,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     setExternalPluginState: noApplicationIdRule,
     setDeviceState: noApplicationIdRule,
     setFermenterPatch: noApplicationIdRule,
+    setLevainIdentity: noApplicationIdRule,
     setGrandBouleDeviceState: noApplicationIdRule,
     setToasterFactoryKit: noApplicationIdRule,
     createBus: { argument: 'busId', prefix: 'bus-command-' },

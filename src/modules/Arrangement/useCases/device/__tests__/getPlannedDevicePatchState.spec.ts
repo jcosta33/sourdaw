@@ -119,6 +119,7 @@ describe('plannedDeviceWriteStepByActionType', () => {
 
     it('plans a Levain identity patch bound to its owner and captured state', () => {
         const trackIds = new Set<string>();
+        const missingDeviceState = { version: 1, data: { instrumentId: 'violin-1' } };
         const before = { deviceState: null, parameterValues: { gain: null } };
         const after = { deviceState: { version: 1, data: { instrumentId: 'bank' } }, parameterValues: { gain: 0.4 } };
         const action = {
@@ -129,6 +130,7 @@ describe('plannedDeviceWriteStepByActionType', () => {
                 deviceId: 'device-1',
                 deviceIds: ['device-1', 'device-2'],
                 label: 'Load instrument',
+                missingDeviceState,
                 before,
                 after,
             },
@@ -143,6 +145,11 @@ describe('plannedDeviceWriteStepByActionType', () => {
             expectedDeviceType: DEVICE_TYPE_IDS.levain,
             expected: before,
             after,
+            preservedMetadata: {
+                field: 'disclosureTier',
+                allowedValues: ['basic', 'expert'],
+                missingChunk: missingDeviceState,
+            },
         });
         expect(trackIds.size).toBe(0);
     });

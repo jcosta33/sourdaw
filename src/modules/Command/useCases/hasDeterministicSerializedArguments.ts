@@ -99,6 +99,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setExternalPluginState: anyArguments,
     setDeviceState: anyArguments,
     setFermenterPatch: anyArguments,
+    setLevainIdentity: anyArguments,
     setGrandBouleDeviceState: anyArguments,
     setToasterFactoryKit: anyArguments,
     createBus: (value) =>

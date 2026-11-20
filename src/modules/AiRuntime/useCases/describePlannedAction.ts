@@ -199,6 +199,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setExternalPluginState: describeFromRegistry,
     setDeviceState: describeFromRegistry,
     setFermenterPatch: describeFromRegistry,
+    setLevainIdentity: describeFromRegistry,
     setGrandBouleDeviceState: describeFromRegistry,
     setToasterFactoryKit: describeFromRegistry,
     createBus: describeFromRegistry,

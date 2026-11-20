@@ -141,6 +141,7 @@ const lowerByActionType: {
     setExternalPluginState: cloneForReplay,
     setDeviceState: cloneForReplay,
     setFermenterPatch: cloneForReplay,
+    setLevainIdentity: cloneForReplay,
     setGrandBouleDeviceState: cloneForReplay,
     setToasterFactoryKit: cloneForReplay,
     createBus: cloneForReplay,

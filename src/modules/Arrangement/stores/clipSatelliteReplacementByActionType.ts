@@ -89,6 +89,7 @@ export const clipSatelliteReplacementByActionType: {
     setExternalPluginState: noReplacements,
     setDeviceState: noReplacements,
     setFermenterPatch: noReplacements,
+    setLevainIdentity: noReplacements,
     setGrandBouleDeviceState: noReplacements,
     setToasterFactoryKit: noReplacements,
     createBus: noReplacements,

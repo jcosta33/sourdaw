@@ -152,6 +152,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     setExternalPluginState: describeAsPlanned,
     setDeviceState: describeAsPlanned,
     setFermenterPatch: describeAsPlanned,
+    setLevainIdentity: describeAsPlanned,
     setGrandBouleDeviceState: describeAsPlanned,
     setToasterFactoryKit: describeAsPlanned,
     createBus: (action, context) => describeExactBus(action) ?? describeAsPlanned(action, context),

@@ -93,6 +93,7 @@ export const recordingHostEffectByActionType: {
     setExternalPluginState: leaveHosts,
     setDeviceState: leaveHosts,
     setFermenterPatch: leaveHosts,
+    setLevainIdentity: leaveHosts,
     setGrandBouleDeviceState: leaveHosts,
     setToasterFactoryKit: leaveHosts,
     createBus: leaveHosts,

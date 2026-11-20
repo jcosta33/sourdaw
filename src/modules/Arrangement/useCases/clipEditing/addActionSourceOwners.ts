@@ -256,6 +256,7 @@ const addActionSourceOwnersByActionType: {
     setExternalPluginState: addNoOwners,
     setDeviceState: addNoOwners,
     setFermenterPatch: addNoOwners,
+    setLevainIdentity: addNoOwners,
     setGrandBouleDeviceState: addNoOwners,
     setToasterFactoryKit: addNoOwners,
     createBus: addNoOwners,

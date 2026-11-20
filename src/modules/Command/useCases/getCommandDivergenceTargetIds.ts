@@ -131,6 +131,7 @@ const extraTargetsByActionType: {
     setExternalPluginState: noExtraTargets,
     setDeviceState: noExtraTargets,
     setFermenterPatch: noExtraTargets,
+    setLevainIdentity: noExtraTargets,
     setGrandBouleDeviceState: noExtraTargets,
     setToasterFactoryKit: noExtraTargets,
     createBus: noExtraTargets,

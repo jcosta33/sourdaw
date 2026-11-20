@@ -111,6 +111,7 @@ describe('projectsDeviceChainByActionType', () => {
                 deviceId: 'levain',
                 deviceIds: ['levain', 'neighbor'],
                 label: 'Load instrument',
+                missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
                 before: { deviceState: beforeChunk, parameterValues: { removed: 0.2, added: null } },
                 after: { deviceState: afterChunk, parameterValues: { removed: null, added: 0.5 } },
             },
@@ -124,6 +125,14 @@ describe('projectsDeviceChainByActionType', () => {
         ]);
         expect(projectDeviceChainAction('other-owner', source, action, [])).toBeNull();
         expect(source).toEqual(original);
+        const expertSource = [
+            { ...levain, deviceState: { ...beforeChunk, data: { ...beforeChunk.data, disclosureTier: 'expert' } } },
+            neighbor,
+        ];
+        expect(projectDeviceChainAction('track-1', expertSource, action, [])?.[0]?.deviceState).toEqual({
+            ...afterChunk,
+            data: { ...afterChunk.data, disclosureTier: 'expert' },
+        });
 
         const staleChains: Device[][] = [
             [neighbor],

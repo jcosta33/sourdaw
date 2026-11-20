@@ -99,6 +99,7 @@ export const legacyLoopAnchorInverseByActionType: {
     setExternalPluginState: keepAction,
     setDeviceState: keepAction,
     setFermenterPatch: keepAction,
+    setLevainIdentity: keepAction,
     setGrandBouleDeviceState: keepAction,
     setToasterFactoryKit: keepAction,
     createBus: keepAction,

@@ -752,9 +752,95 @@ function createToasterConflictFixture(): DivergedFixture {
     };
 }
 
+function createLevainConflictFixture(): DivergedFixture {
+    type LevainRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setLevainIdentity refuses after a validated articulation source diverges',
+        actionType: 'setLevainIdentity',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Levain registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const deviceId = 'levain-conflict';
+            const trackId = 'levain-owner';
+            const rawDevice = () => getCrdtDoc<LevainRoot>('root')?.tracks.tracks[0]?.devices[0];
+            const before = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } };
+            const after = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
+            const peer = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'legato' } };
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Levain', kind: 'midi', withoutDefaultDevice: true }),
+                        devices: [
+                            {
+                                id: deviceId,
+                                name: 'Levain',
+                                type: 'levain',
+                                bypassed: false,
+                                parameterValues: {},
+                                deviceState: before,
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.deviceState).toEqual(before);
+
+            const inverse = {
+                type: 'setLevainIdentity',
+                payload: {
+                    kind: 'articulation',
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    label: 'Select staccato',
+                    missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+                    before: { deviceState: before, parameterValues: {} },
+                    after: { deviceState: after, parameterValues: {} },
+                },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<LevainRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected the Levain before the peer write');
+                    }
+                    device.deviceState = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.deviceState).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.deviceState).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Levain fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
     createToasterConflictFixture(),
+    createLevainConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
         actionType: 'relinkClipAudioSources',

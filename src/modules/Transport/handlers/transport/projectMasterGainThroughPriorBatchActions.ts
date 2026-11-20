@@ -112,6 +112,7 @@ export const masterGainProjectionByActionType: {
     setExternalPluginState: keepMasterPercent,
     setDeviceState: keepMasterPercent,
     setFermenterPatch: keepMasterPercent,
+    setLevainIdentity: keepMasterPercent,
     setGrandBouleDeviceState: keepMasterPercent,
     setToasterFactoryKit: keepMasterPercent,
     createBus: keepMasterPercent,

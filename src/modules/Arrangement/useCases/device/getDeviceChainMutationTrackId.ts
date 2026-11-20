@@ -101,6 +101,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setExternalPluginState: noMutatedTrack,
     setDeviceState: noMutatedTrack,
     setFermenterPatch: noMutatedTrack,
+    setLevainIdentity: payloadTrackId,
     setGrandBouleDeviceState: noMutatedTrack,
     setToasterFactoryKit: noMutatedTrack,
     createBus: noMutatedTrack,

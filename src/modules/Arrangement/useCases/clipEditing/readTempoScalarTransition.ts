@@ -100,6 +100,7 @@ const tempoScalarTransitionByActionType: {
     setExternalPluginState: notATempoAction,
     setDeviceState: notATempoAction,
     setFermenterPatch: notATempoAction,
+    setLevainIdentity: notATempoAction,
     setGrandBouleDeviceState: notATempoAction,
     setToasterFactoryKit: notATempoAction,
     createBus: notATempoAction,

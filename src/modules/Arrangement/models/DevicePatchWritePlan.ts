@@ -1,6 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { projectDeviceChainAction } from './DeviceChainActionProjection';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { type DevicePatchState } from './DevicePatchState';
@@ -118,7 +118,9 @@ function projectCapturedStep(
     ) {
         return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
     }
-    const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
+    const device = step.preservedMetadata
+        ? projectCapturedDevicePatchWithMetadata(target.device, step.expected, step.after, step.preservedMetadata)
+        : projectCapturedDevicePatch(target.device, step.expected, step.after);
     if (!device) {
         return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
     }
@@ -176,7 +178,11 @@ function projectCommandOwners(
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (action.type === 'setFermenterPatch' || action.type === 'setToasterFactoryKit') {
+    if (
+        action.type === 'setFermenterPatch' ||
+        action.type === 'setLevainIdentity' ||
+        action.type === 'setToasterFactoryKit'
+    ) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

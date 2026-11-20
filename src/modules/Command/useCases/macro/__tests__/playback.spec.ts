@@ -68,6 +68,38 @@ describe('playMacro', () => {
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
     });
 
+    it('refuses a saved macro containing a Levain identity edit before dispatching any step', async () => {
+        const saved: Macro = {
+            ...macro,
+            actions: [
+                ...macro.actions,
+                {
+                    type: 'setLevainIdentity',
+                    payload: {
+                        kind: 'articulation',
+                        trackId: 'owner',
+                        deviceId: 'levain',
+                        deviceIds: ['levain'],
+                        label: 'Select staccato',
+                        missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+                        before: { deviceState: null, parameterValues: {} },
+                        after: {
+                            deviceState: {
+                                version: 1,
+                                data: { instrumentId: 'violin-1', currentArticulation: 'staccato' },
+                            },
+                            parameterValues: {},
+                        },
+                    },
+                },
+            ],
+        };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Levain identity changes are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
     it('propagates settlement failure before dispatching any macro step', async () => {
         const failure = new Error('Controlled preceding history settlement failure');
         vi.mocked(storageWrites.flushAutomergeStorageWrites).mockImplementationOnce(() => {

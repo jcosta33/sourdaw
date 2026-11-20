@@ -160,6 +160,10 @@ export async function playMacro(macroId: string): Promise<void> {
         throw new AppActionConflictError('playMacro', 'Automation lane insertions are local edits.');
     }
 
+    if (macro.actions.some((action) => action.type === 'setLevainIdentity')) {
+        throw new AppActionConflictError('playMacro', 'Levain identity changes are local edits.');
+    }
+
     // Singleton-marked actions (domain-singleton handlers such as drawClip and
     // moveClips) replay through this same per-action loop — the individual
     // dispatch path they are defined for — instead of being refused. The kernel

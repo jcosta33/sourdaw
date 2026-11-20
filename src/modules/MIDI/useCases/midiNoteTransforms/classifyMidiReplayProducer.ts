@@ -102,6 +102,7 @@ const midiReplayProducerByActionType: {
     setExternalPluginState: producesNothing,
     setDeviceState: producesNothing,
     setFermenterPatch: producesNothing,
+    setLevainIdentity: producesNothing,
     setGrandBouleDeviceState: producesNothing,
     setToasterFactoryKit: producesNothing,
     createBus: producesNothing,

@@ -11,6 +11,7 @@ const EXPECTED = new Set<string>([
     'deleteMacro',
     'renameMacro',
     'insertAutomationLanePoints',
+    'setLevainIdentity',
     'setToasterFactoryKit',
 ]);
 

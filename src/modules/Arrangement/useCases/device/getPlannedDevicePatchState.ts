@@ -32,6 +32,25 @@ function fermenterPatchStep(action: ActionOf<'setFermenterPatch'>): PlannedDevic
     };
 }
 
+function levainIdentityStep(action: ActionOf<'setLevainIdentity'>): PlannedDeviceWriteStep {
+    const { trackId, deviceId, deviceIds, before, after, missingDeviceState } = action.payload;
+    return {
+        kind: 'patch',
+        trackId,
+        deviceId,
+        expectedDeviceIds: deviceIds,
+        expectedTrackFrozen: false,
+        expectedDeviceType: DEVICE_TYPE_IDS.levain,
+        expected: before,
+        after,
+        preservedMetadata: {
+            field: 'disclosureTier',
+            allowedValues: ['basic', 'expert'],
+            missingChunk: missingDeviceState,
+        },
+    };
+}
+
 function toasterKitStep(action: ActionOf<'setToasterFactoryKit'>): PlannedDeviceWriteStep {
     const { trackId, deviceId, deviceIds, before, after } = action.payload;
     return {
@@ -152,6 +171,7 @@ export const plannedDeviceWriteStepByActionType: {
     setExternalPluginState: commandStep,
     setDeviceState: commandStep,
     setFermenterPatch: fermenterPatchStep,
+    setLevainIdentity: levainIdentityStep,
     setGrandBouleDeviceState: commandStep,
     setToasterFactoryKit: toasterKitStep,
     createBus: createdBusStep,

@@ -133,6 +133,7 @@ const projectClipActionByActionType: {
     setExternalPluginState: keepState,
     setDeviceState: keepState,
     setFermenterPatch: keepState,
+    setLevainIdentity: keepState,
     setGrandBouleDeviceState: keepState,
     setToasterFactoryKit: keepState,
     createBus: keepState,

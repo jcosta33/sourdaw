@@ -94,6 +94,7 @@ export const automationRecordingPolicyByActionType: {
     setExternalPluginState: noPolicy,
     setDeviceState: noPolicy,
     setFermenterPatch: noPolicy,
+    setLevainIdentity: noPolicy,
     setGrandBouleDeviceState: noPolicy,
     setToasterFactoryKit: noPolicy,
     createBus: noPolicy,

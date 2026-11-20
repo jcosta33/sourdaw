@@ -2,7 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
@@ -67,7 +67,7 @@ function projectLevainIdentity(
     devices: Device[],
     action: Extract<AppAction, { type: 'setLevainIdentity' }>
 ): Device[] | null {
-    const { deviceId, deviceIds, before, after } = action.payload;
+    const { deviceId, deviceIds, before, after, missingDeviceState } = action.payload;
     const index = devices.findIndex((device) => device.id === deviceId);
     const current = devices[index];
     if (
@@ -79,7 +79,11 @@ function projectLevainIdentity(
     ) {
         return null;
     }
-    const next = projectCapturedDevicePatch(current, before, after);
+    const next = projectCapturedDevicePatchWithMetadata(current, before, after, {
+        field: 'disclosureTier',
+        allowedValues: ['basic', 'expert'],
+        missingChunk: missingDeviceState,
+    });
     if (!next) {
         return null;
     }
