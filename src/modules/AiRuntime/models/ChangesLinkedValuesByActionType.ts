@@ -86,6 +86,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setDeviceState: true,
     setFermenterPatch: true,
     setGrandBouleDeviceState: true,
+    setToasterFactoryKit: true,
     createBus: true,
     createFolder: true,
     setSend: true,

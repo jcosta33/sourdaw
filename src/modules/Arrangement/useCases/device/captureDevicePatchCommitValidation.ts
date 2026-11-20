@@ -11,7 +11,12 @@ import { projectCapturedDevicePatch } from '../../models/CapturedDevicePatchProj
 import { type DevicePatchState } from '../../models/DevicePatchState';
 import { trackStore } from '../../stores/trackStore';
 
-type Input = { trackId: string; deviceId: string; parameterIds: readonly string[] };
+type Input = {
+    trackId: string;
+    deviceId: string;
+    parameterIds: readonly string[];
+    requireCurrentProjection?: boolean;
+};
 type Located = { trackId: string; device: Record<string, unknown> };
 type Snapshot = {
     value: { track: unknown; owners: unknown[] };
@@ -177,6 +182,14 @@ export function captureDevicePatchCommitValidation(input: Input) {
         return null;
     }
     const fingerprint = JSON.stringify(before.value);
+    if (input.requireCurrentProjection) {
+        // An exact capture planned from a stale projection must not overwrite a
+        // newer published owner, even if publication stands still during the write.
+        const projected = read({ ...root, tracks: trackStore.value }, input);
+        if (!projected || !matchesJsonFingerprint(projected.value, fingerprint)) {
+            return null;
+        }
+    }
     const trackIdentity = before.track ? getObjectId(before.track) : undefined;
     const deviceIdentity = before.owners[0] ? getObjectId(before.owners[0].device) : undefined;
     const transition = projectTransitionEpoch.captureEditAuthority();

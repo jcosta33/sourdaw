@@ -741,6 +741,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     const real = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
 
     return {
+        getToasterHandlers: sentinelHandlers('Toaster'),
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
@@ -971,6 +972,7 @@ describe('bootstrap', () => {
         'CvGate',
         'Fermenter',
         'GrandBoule',
+        'Toaster',
         'NodeView',
         'WebMidiInput',
         'Rave',

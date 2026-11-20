@@ -127,6 +127,7 @@ const controllerRestoresByActionType: {
     setDeviceState: noControllerRestores,
     setFermenterPatch: noControllerRestores,
     setGrandBouleDeviceState: noControllerRestores,
+    setToasterFactoryKit: noControllerRestores,
     createBus: noControllerRestores,
     createFolder: noControllerRestores,
     setSend: noControllerRestores,

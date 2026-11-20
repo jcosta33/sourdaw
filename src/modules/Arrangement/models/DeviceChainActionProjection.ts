@@ -1,4 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
@@ -72,6 +74,30 @@ export function projectDeviceChainAction(
         if (next) {
             devices[index] = next;
         }
+        return devices;
+    }
+    if (action.type === 'setToasterFactoryKit') {
+        const { deviceId, deviceIds, before, after } = action.payload;
+        const index = devices.findIndex((device) => device.id === deviceId);
+        const current = devices[index];
+        if (
+            current?.type !== DEVICE_TYPE_IDS.toaster ||
+            !valuesEqual(
+                devices.map((device) => device.id),
+                deviceIds
+            )
+        ) {
+            return null;
+        }
+        const next = projectCapturedDevicePatch(
+            current,
+            { deviceState: before, parameterValues: {} },
+            { deviceState: after, parameterValues: {} }
+        );
+        if (!next) {
+            return null;
+        }
+        devices[index] = next;
         return devices;
     }
     if (action.type === 'addDevice') {

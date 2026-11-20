@@ -30,6 +30,7 @@ import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSampleLibraryHandlers } from '#/modules/SampleLibrary/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers } from '#/modules/Setlist/useCases';
+import { getToasterHandlers } from '#/modules/Toaster/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/WorkspaceShell/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -69,6 +70,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getCvGateHandlers(),
         getFermenterHandlers(),
         getGrandBouleHandlers(),
+        getToasterHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

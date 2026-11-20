@@ -57,6 +57,15 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
+        {
+            actionType: 'setToasterFactoryKit',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('setToasterFactoryKit', payload) &&
+                getHandlerByType('setToasterFactoryKit')?.validateSessionActionArguments?.(payload) === true,
+            validateEntry: (entry) => getHandlerByType('setToasterFactoryKit')?.validateSessionEntry?.(entry) === true,
+        },
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

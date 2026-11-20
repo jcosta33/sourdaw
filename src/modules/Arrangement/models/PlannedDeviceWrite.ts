@@ -16,6 +16,7 @@ export type CapturedDevicePatchStep = {
     deviceId: string;
     expectedDeviceIds: readonly string[];
     expectedTrackFrozen: boolean;
+    expectedDeviceType?: string;
     expected: DevicePatchState;
     after: DevicePatchState;
 };

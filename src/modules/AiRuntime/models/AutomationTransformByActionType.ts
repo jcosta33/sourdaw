@@ -81,6 +81,7 @@ export const automationTransformByActionType: { readonly [Type in AppActionType]
     setDeviceState: false,
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
+    setToasterFactoryKit: false,
     createBus: false,
     createFolder: false,
     setSend: false,

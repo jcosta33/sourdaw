@@ -18,6 +18,7 @@ describe('projectsDeviceChainByActionType', () => {
                 'setDeviceParameter',
                 'setDeviceState',
                 'setFermenterPatch',
+                'setToasterFactoryKit',
             ].sort()
         );
     });

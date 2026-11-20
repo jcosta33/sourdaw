@@ -813,12 +813,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
-        // Count provenance (#3471, #3476): measured 7 — 2 from `loadToasterKitPreset`
-        // (import and preset load call) plus 5 from `setPadParamImmediate`
+        // Count provenance (#3471, #3476): 5 from `setPadParamImmediate`
         // (2 lexical from import identifier and module path, 3 runtime immediate
         // parameter writes for 16-levels note repeat auditioning on tune, decay,
         // and filterCutoff).
-        'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 7,
+        'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 5,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to the sibling offline compiler
         // `compileAutomationEvents` from the AU-1 shared curve kernel (#747) —
@@ -1112,6 +1111,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // The Toaster before and after records declare empty scalar footprints
+        // while projecting a captured chunk into a detached device chain.
+        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 2,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
@@ -1189,6 +1191,9 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 1 — devices in the sole updateTrack
         // publication, after eligible-owner/frozen guards and all scalar laws.
         'src/modules/Arrangement/useCases/device/applyDevicePatchState.ts': 1,
+        // The two Toaster patch snapshots declare the same empty scalar
+        // footprint when adapting a prior batch action into the owner plan.
+        'src/modules/Arrangement/useCases/device/getPlannedDevicePatchState.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
