@@ -69,6 +69,15 @@ const MAX_PARAMETER_GESTURES: usize = 64;
 /// control path to deliver.
 const MAX_DEFERRED_MESSAGES: usize = 32;
 
+/// The `restartComponent` flags answered by deactivating the component,
+/// re-reading what the flag names and activating it again. `kIoChanged` names
+/// the buses; `kReloadComponent` asks for the plugin to be unloaded and
+/// reloaded, which this host answers with the same cycle plus a re-read of the
+/// parameter list — the instance's identity is held by the engine, the editor
+/// and the project's automation, and a real unload would release all three.
+pub const COMPONENT_RESTART_FLAGS: int32 =
+    RestartFlags_::kIoChanged | RestartFlags_::kReloadComponent;
+
 const SLOT_EMPTY: u8 = 0;
 const SLOT_WRITING: u8 = 1;
 const SLOT_READY: u8 = 2;
@@ -208,6 +217,69 @@ impl ParameterGestureQueue {
         out[..count].sort_unstable_by_key(|update| update.param_id);
         count
     }
+
+    /// Copy every waiting value into `out`, in ascending parameter id, and
+    /// leave each one waiting. Pair with [`settle`](Self::settle) once the
+    /// processor has taken them. **Control path only, under the exclusive
+    /// access seam.**
+    ///
+    /// Read without claiming the slot: a claimed slot is invisible to a
+    /// concurrent [`record`](Self::record) for the same parameter, which would
+    /// then open a second slot for it. With the audio thread excluded nothing
+    /// drains or re-labels a ready slot, so its id is stable while it is read,
+    /// and its value is whichever one the last overwrite left.
+    fn peek(&self, out: &mut [HostParameterUpdate]) -> usize {
+        let mut count = 0;
+        for slot in &self.slots {
+            if count >= out.len() {
+                break;
+            }
+            if slot.state.load(Ordering::Acquire) != SLOT_READY {
+                continue;
+            }
+            out[count] = HostParameterUpdate {
+                param_id: slot.param_id.load(Ordering::Relaxed),
+                value: f64::from_bits(slot.value_bits.load(Ordering::Acquire)),
+            };
+            count += 1;
+        }
+        out[..count].sort_unstable_by_key(|update| update.param_id);
+        count
+    }
+
+    /// Clear the value waiting for `param_id` if it is still `value`, the one
+    /// the processor was just handed. A newer value recorded since the peek
+    /// stays waiting, so it is never lost to an older delivery.
+    fn settle(&self, param_id: ParamID, value: ParamValue) {
+        let delivered = value.to_bits();
+        for slot in &self.slots {
+            if slot.state.load(Ordering::Acquire) != SLOT_READY
+                || slot.param_id.load(Ordering::Relaxed) != param_id
+            {
+                continue;
+            }
+            if slot
+                .state
+                .compare_exchange(
+                    SLOT_READY,
+                    SLOT_WRITING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                continue;
+            }
+            let still_waiting = slot.value_bits.load(Ordering::Relaxed) == delivered;
+            let next = if still_waiting {
+                SLOT_EMPTY
+            } else {
+                SLOT_READY
+            };
+            slot.state.store(next, Ordering::Release);
+            return;
+        }
+    }
 }
 
 // ── Deferred connection-point messages ──────────────────────────────────
@@ -260,6 +332,14 @@ pub struct Vst3HostState {
     latency_dirty: AtomicBool,
     parameter_values_dirty: AtomicBool,
     parameter_titles_dirty: AtomicBool,
+    /// Whether the plugin's parameter list or values changed in a way the
+    /// host's copy of the list does not yet reflect. Raised by
+    /// `kParamValuesChanged`, `kParamTitlesChanged` and a completed
+    /// `kReloadComponent` cycle; read and cleared by the parameter rescan.
+    parameters_rescan: AtomicBool,
+    /// The `restartComponent` flags that need a deactivate/reactivate cycle
+    /// this host has not yet run: `kIoChanged` and `kReloadComponent`.
+    component_restart: AtomicI32,
     /// Every `restartComponent` flag this host does not act on, accumulated.
     ///
     /// Recorded rather than ignored: a flag nobody handles and nobody counted is
@@ -290,6 +370,8 @@ impl Default for Vst3HostState {
             latency_dirty: AtomicBool::new(false),
             parameter_values_dirty: AtomicBool::new(false),
             parameter_titles_dirty: AtomicBool::new(false),
+            parameters_rescan: AtomicBool::new(false),
+            component_restart: AtomicI32::new(0),
             unhandled_restart_flags: AtomicI32::new(0),
             state_dirty: AtomicBool::new(false),
             latency_notifier: OnceLock::new(),
@@ -353,6 +435,25 @@ impl Vst3HostState {
         self.parameter_titles_dirty.swap(false, Ordering::AcqRel)
     }
 
+    /// Read and clear the request to re-enumerate the parameter list.
+    pub fn take_parameters_rescan(&self) -> bool {
+        self.parameters_rescan.swap(false, Ordering::AcqRel)
+    }
+
+    /// Ask for the parameter list to be re-enumerated, and wake the observer
+    /// that does it. Control path, or the controller's UI thread.
+    pub fn request_parameters_rescan(&self) {
+        self.parameters_rescan.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::ParametersRescan);
+        }
+    }
+
+    /// Read and clear the restart flags that need a reactivation cycle.
+    pub fn take_component_restart(&self) -> int32 {
+        self.component_restart.swap(0, Ordering::AcqRel)
+    }
+
     /// The restart flags this host has been asked for and does not act on.
     pub fn unhandled_restart_flags(&self) -> i32 {
         self.unhandled_restart_flags.load(Ordering::Acquire)
@@ -406,6 +507,20 @@ impl Vst3HostState {
         self.gestures.drain(out)
     }
 
+    /// Copy waiting gestures into `out` and leave them waiting. **Control
+    /// path**, for a delivery that may not be taken.
+    pub fn peek_parameter_edits(&self, out: &mut [HostParameterUpdate]) -> usize {
+        self.gestures.peek(out)
+    }
+
+    /// Clear each peeked value the processor took, unless a newer one has
+    /// replaced it since.
+    pub fn settle_parameter_edits(&self, delivered: &[HostParameterUpdate]) {
+        for update in delivered {
+            self.gestures.settle(update.param_id, update.value);
+        }
+    }
+
     /// Record what `restartComponent` asked for.
     ///
     /// Split from the handler so the flag rules can be read, and tested, without
@@ -421,10 +536,16 @@ impl Vst3HostState {
         if flags & RestartFlags_::kParamTitlesChanged != 0 {
             self.parameter_titles_dirty.store(true, Ordering::Release);
         }
+        let reactivating = flags & COMPONENT_RESTART_FLAGS;
+        if reactivating != 0 {
+            self.component_restart
+                .fetch_or(reactivating, Ordering::AcqRel);
+        }
 
         let handled = RestartFlags_::kLatencyChanged
             | RestartFlags_::kParamValuesChanged
-            | RestartFlags_::kParamTitlesChanged;
+            | RestartFlags_::kParamTitlesChanged
+            | COMPONENT_RESTART_FLAGS;
         self.unhandled_restart_flags
             .fetch_or(flags & !handled, Ordering::AcqRel);
 
@@ -439,6 +560,14 @@ impl Vst3HostState {
         if flags & RestartFlags_::kLatencyChanged != 0 {
             if let Some(notify) = self.latency_notifier.get() {
                 notify();
+            }
+        }
+        if flags & (RestartFlags_::kParamValuesChanged | RestartFlags_::kParamTitlesChanged) != 0 {
+            self.request_parameters_rescan();
+        }
+        if reactivating != 0 {
+            if let Some(notify) = self.request_notifier.get() {
+                notify(PluginHostRequest::ComponentRestart);
             }
         }
     }
@@ -1062,6 +1191,44 @@ mod tests {
     use vst3::com_scrape_types::Unknown;
     use vst3::Steinberg::kNoInterface;
 
+    fn waiting(queue: &ParameterGestureQueue) -> Vec<(ParamID, ParamValue)> {
+        let mut out = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        let count = queue.peek(&mut out);
+        out[..count]
+            .iter()
+            .map(|update| (update.param_id, update.value))
+            .collect()
+    }
+
+    #[test]
+    fn a_peek_leaves_every_value_waiting_and_a_settle_clears_what_was_delivered() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(7, 0.25);
+        queue.record(3, 0.5);
+
+        assert_eq!(waiting(&queue), [(3, 0.5), (7, 0.25)]);
+        assert_eq!(
+            waiting(&queue),
+            [(3, 0.5), (7, 0.25)],
+            "a peek takes nothing"
+        );
+
+        queue.settle(7, 0.25);
+        assert_eq!(waiting(&queue), [(3, 0.5)]);
+    }
+
+    #[test]
+    fn a_settle_keeps_a_value_recorded_after_the_peek() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(7, 0.25);
+        let _ = waiting(&queue);
+
+        queue.record(7, 0.8);
+        queue.settle(7, 0.25);
+
+        assert_eq!(waiting(&queue), [(7, 0.8)], "the newer edit is not lost");
+    }
+
     thread_local! {
         static ATTRIBUTE_LIST_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
@@ -1249,22 +1416,79 @@ mod tests {
         assert!(!state.take_latency_dirty(), "take clears the flag");
     }
 
-    /// Two flags this host acts on and one it does not. The unhandled one is
+    /// Flags this host acts on and one it does not. The unhandled one is
     /// recorded rather than dropped, so "we do not handle that" is a fact with
     /// evidence instead of a silent difference in behaviour.
     #[test]
     fn restart_flags_are_split_into_handled_and_recorded_unhandled() {
         let state = Vst3HostState::default();
-        let unhandled = RestartFlags_::kIoChanged;
+        let unhandled = RestartFlags_::kMidiCCAssignmentChanged;
 
         state.record_restart(
-            RestartFlags_::kParamValuesChanged | RestartFlags_::kParamTitlesChanged | unhandled,
+            RestartFlags_::kParamValuesChanged
+                | RestartFlags_::kParamTitlesChanged
+                | RestartFlags_::kIoChanged
+                | unhandled,
         );
 
         assert!(state.take_parameter_values_dirty());
         assert!(state.take_parameter_titles_dirty());
         assert!(!state.take_latency_dirty());
+        assert_eq!(state.take_component_restart(), RestartFlags_::kIoChanged);
         assert_eq!(state.unhandled_restart_flags(), unhandled);
+    }
+
+    /// `kIoChanged` and `kReloadComponent` need a reactivation cycle the
+    /// handler may not run itself, so they are recorded together and the
+    /// control path is woken for them once per call.
+    #[test]
+    fn a_bus_or_reload_restart_is_recorded_and_wakes_the_control_path_once() {
+        let (context, requests) = context_with_request_log();
+
+        context
+            .state
+            .record_restart(RestartFlags_::kIoChanged | RestartFlags_::kReloadComponent);
+
+        assert_eq!(
+            *requests.lock().expect("request log"),
+            [PluginHostRequest::ComponentRestart]
+        );
+        assert_eq!(
+            context.state.take_component_restart(),
+            RestartFlags_::kIoChanged | RestartFlags_::kReloadComponent
+        );
+        assert_eq!(context.state.take_component_restart(), 0, "take clears");
+        assert_eq!(context.state.unhandled_restart_flags(), 0);
+    }
+
+    /// A program change inside the plugin changes values the host's copy of
+    /// the list still holds, so the host is woken to re-read it.
+    #[test]
+    fn a_parameter_values_restart_asks_for_a_rescan() {
+        let (context, requests) = context_with_request_log();
+
+        context
+            .state
+            .record_restart(RestartFlags_::kParamValuesChanged);
+
+        assert_eq!(
+            *requests.lock().expect("request log"),
+            [PluginHostRequest::ParametersRescan]
+        );
+        assert!(context.state.take_parameters_rescan());
+        assert!(!context.state.take_parameters_rescan(), "take clears");
+    }
+
+    /// A latency restart is the latency watcher's alone: it neither asks for a
+    /// reactivation cycle here nor wakes the request watcher.
+    #[test]
+    fn a_latency_restart_asks_for_no_component_restart() {
+        let (context, requests) = context_with_request_log();
+
+        context.state.record_restart(RestartFlags_::kLatencyChanged);
+
+        assert!(requests.lock().expect("request log").is_empty());
+        assert_eq!(context.state.take_component_restart(), 0);
     }
 
     #[test]

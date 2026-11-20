@@ -795,7 +795,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 ));
             }
 
-            plugin.get_state()
+            plugin.get_state().map_err(|error| error.to_string())
         })
     }
 
@@ -808,7 +808,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
-            plugin.set_state(plugin_state)?;
+            plugin
+                .set_state(plugin_state)
+                .map_err(|error| error.to_string())?;
             self.pending_parameters.clear();
             Ok(plugin.get_parameters())
         })
@@ -847,7 +849,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub(crate) fn refresh_latency_change(
         plugin: &mut Runtime,
     ) -> Result<Option<LatencyChange>, String> {
-        match plugin.poll_latency_change()? {
+        match plugin
+            .poll_latency_change()
+            .map_err(|error| error.to_string())?
+        {
             Some(_) => Ok(Some(LatencyChange {
                 latency_ms: plugin.latency_ms(),
                 latency_frames: plugin.latency_samples() as usize,
@@ -1513,7 +1518,7 @@ mod tests {
     // The engine's own figure, not the bridge's alias for it: the point of
     // these specs is that the two agree.
     use daw_engine::midi_fx::{MidiEventBuffer, MIDI_EVENT_BUFFER_CAPACITY};
-    use daw_plugin_host::{AudioPlugin, ClapWrapper};
+    use daw_plugin_host::{AudioPlugin, ClapWrapper, PluginError};
 
     /// A backend that records only what the runtime owner asked of its editor.
     ///
@@ -1541,11 +1546,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1593,7 +1598,7 @@ mod tests {
                 .push((param_id, value));
         }
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -1712,11 +1717,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1761,7 +1766,7 @@ mod tests {
 
         fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -3299,11 +3304,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -3358,7 +3363,7 @@ mod tests {
 
         fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -3772,6 +3777,7 @@ mod tests {
     /// the loss must be counted, never silent.
     #[test]
     fn events_a_full_retention_queue_cannot_hold_are_counted_as_dropped() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (mut slot, shared, notes) = seam_recording_slot();
         let first = full_block_of_held_notes(1);
         let overflow = [

@@ -19,7 +19,7 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
@@ -287,6 +287,14 @@ pub struct AppState {
     /// the scheduler has released its own `Arc` — see that method for the
     /// invariant.
     pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedHostedPlugin>>>>,
+    /// Runtimes a sweep has taken out of `retired_engine_plugins` whose release
+    /// on the UI thread has not finished. Nothing but a plain counter, so its
+    /// position among the fields reorders no teardown.
+    ///
+    /// Such a runtime is in neither the vec nor any running code until the hop
+    /// lands, so the quit cascade reads this alongside the vec — see
+    /// [`AppState::unreclaimed_retirement_count`].
+    pub retired_releases_in_flight: AtomicUsize,
     /// Decoded timeline material, keyed by the app's stable source id.
     ///
     /// This is the native realisation of `AudioGraphClipSource.sourceId`
@@ -696,6 +704,7 @@ impl Default for AppState {
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
+            retired_releases_in_flight: AtomicUsize::new(0),
             timeline_samples: Arc::new(Mutex::new(TimelineSamplePool::default())),
             levain_banks: Arc::new(Mutex::new(
                 crate::commands::levain::LevainBankStore::default(),
@@ -845,13 +854,22 @@ fn take_released_retired_runtimes<Runtime>(
 /// thread. A sweep whose hop never lands puts the runtimes back, so the next
 /// sweep tries again; tearing them down here instead would make the plugin's
 /// teardown the crash a Qt-based plugin turns an off-thread call into.
-fn sweep_retired_runtimes<Runtime, Ui>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>, ui: &Ui)
-where
+fn sweep_retired_runtimes<Runtime, Ui>(
+    retired_runtimes: &Mutex<Vec<Arc<Runtime>>>,
+    releases_in_flight: &AtomicUsize,
+    ui: &Ui,
+) where
     Runtime: Send + Sync + 'static,
     Ui: UiThread + ?Sized,
 {
-    let released_runtimes =
-        take_released_retired_runtimes(&mut locked_or_poisoned(retired_runtimes));
+    // The in-flight count rises under the same lock that takes the runtimes
+    // out, so a reader holding that lock never sees them in neither place.
+    let (released_runtimes, _in_flight) = {
+        let mut retired_runtimes = locked_or_poisoned(retired_runtimes);
+        let released_runtimes = take_released_retired_runtimes(&mut retired_runtimes);
+        let in_flight = InFlightReleases::begin(releases_in_flight, released_runtimes.len());
+        (released_runtimes, in_flight)
+    };
     if released_runtimes.is_empty() {
         return;
     }
@@ -866,6 +884,32 @@ where
         for runtime in unreleased {
             retain_runtime_once(&mut retired_runtimes, runtime);
         }
+    }
+    // `_in_flight` falls last, after the put-back above, so a reader never
+    // sees the runtimes in neither the vec nor the count.
+}
+
+/// Runtimes a sweep has taken out of the retirement vec and not yet finished
+/// releasing, counted for exactly as long as this guard lives.
+///
+/// A guard rather than a pair of calls so no exit path from the sweep — the
+/// hop landing, the put-back, a panic in a plugin's teardown — can leave the
+/// count raised and the quit cascade waiting for a release that is over.
+struct InFlightReleases<'count> {
+    count: &'count AtomicUsize,
+    runtimes: usize,
+}
+
+impl<'count> InFlightReleases<'count> {
+    fn begin(count: &'count AtomicUsize, runtimes: usize) -> Self {
+        count.fetch_add(runtimes, Ordering::SeqCst);
+        Self { count, runtimes }
+    }
+}
+
+impl Drop for InFlightReleases<'_> {
+    fn drop(&mut self) {
+        self.count.fetch_sub(self.runtimes, Ordering::SeqCst);
     }
 }
 
@@ -992,7 +1036,23 @@ impl AppState {
     ///
     /// `ui` is the thread that teardown runs on; see `sweep_retired_runtimes`.
     pub fn sweep_retired_engine_plugins<Ui: UiThread + ?Sized>(&self, ui: &Ui) {
-        sweep_retired_runtimes(&self.retired_engine_plugins, ui);
+        sweep_retired_runtimes(
+            &self.retired_engine_plugins,
+            &self.retired_releases_in_flight,
+            ui,
+        );
+    }
+
+    /// Retired runtimes whose teardown has not run: the ones in the retirement
+    /// vec, plus the ones a sweep took out and is still releasing on the UI
+    /// thread.
+    ///
+    /// Both are read under the retirement lock, which is also where a sweep
+    /// moves a runtime from one to the other, so none is ever counted in
+    /// neither.
+    pub fn unreclaimed_retirement_count(&self) -> usize {
+        let retired = locked_or_poisoned(&self.retired_engine_plugins);
+        retired.len() + self.retired_releases_in_flight.load(Ordering::SeqCst)
     }
 }
 
@@ -1000,6 +1060,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::host::plugin_window::NoWindowHost;
+    use daw_plugin_host::PluginError;
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
@@ -1021,11 +1082,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1037,7 +1098,7 @@ mod tests {
             true
         }
 
-        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), PluginError> {
             self.editor_open
                 .store(true, std::sync::atomic::Ordering::SeqCst);
             Ok((640, 480))
@@ -1067,11 +1128,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1084,13 +1145,14 @@ mod tests {
             self.resize = Some(resize);
         }
 
-        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), PluginError> {
             self.calls.lock().expect("call log").push("open");
             // What a view does while it lays itself out against its new parent.
             let resize = self
                 .resize
                 .as_ref()
-                .ok_or_else(|| "the host installed no resizer before the open".to_string())?;
+                // No resizer means the host opened against no window at all.
+                .ok_or(PluginError::GuiUnsupported)?;
             resize(1024, 768);
             Ok((1024, 768))
         }
@@ -1151,11 +1213,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
     }
@@ -1173,8 +1235,10 @@ mod tests {
             "a backend that reports an editor must be believed"
         );
         assert_eq!(
-            plugin.open_gui(std::ptr::null_mut()),
-            Ok((640, 480)),
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .expect("the backend's editor opens"),
+            (640, 480),
             "the editor size must come from the plugin, not from a downcast that missed"
         );
         assert!(
@@ -1202,6 +1266,8 @@ mod tests {
         let refusal = plugin
             .open_gui(std::ptr::null_mut())
             .expect_err("a plugin with no editor cannot open one");
+        assert!(matches!(refusal, PluginError::GuiUnsupported), "{refusal}");
+        let refusal = refusal.to_string();
         assert_eq!(refusal, "Plugin does not support GUI");
         assert!(
             !refusal.contains("CLAP"),
@@ -1353,7 +1419,7 @@ mod tests {
                 retirement_lock_was_free: Arc::clone(&retirement_lock_was_free),
             }));
 
-        sweep_retired_runtimes(&retired_runtimes, &NoWindowHost);
+        sweep_retired_runtimes(&retired_runtimes, &AtomicUsize::new(0), &NoWindowHost);
 
         assert!(
             retirement_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
@@ -1557,6 +1623,64 @@ mod tests {
 
         state.sweep_retired_engine_plugins(&NoWindowHost);
         assert_eq!(torn_down_on.lock().expect("teardown log").len(), 1);
+    }
+
+    /// A sweep's runtimes are in neither the vec nor running code while the hop
+    /// is out, so the count the quit cascade reads has to cover them for exactly
+    /// that long: raised across the hop, and back down once the runtimes are
+    /// back in the vec (the put-back path) or torn down (the Ok path).
+    #[test]
+    fn a_runtime_in_a_sweeps_hop_is_counted_until_it_is_back_or_gone() {
+        struct ReadsTheCountDuringTheHop<'state> {
+            state: &'state AppState,
+            seen_during_hop: Mutex<Vec<(usize, usize)>>,
+            outcome: Result<(), String>,
+        }
+        impl UiThread for ReadsTheCountDuringTheHop<'_> {
+            fn is_ui_thread(&self) -> bool {
+                false
+            }
+            fn run_on_ui_thread(
+                &self,
+                task: &Arc<crate::host::ui_thread::UiThreadTask>,
+            ) -> Result<(), String> {
+                self.seen_during_hop.lock().expect("hop log").push((
+                    self.state.unreclaimed_retirement_count(),
+                    self.state.retired_engine_plugins.lock().expect("vec").len(),
+                ));
+                if self.outcome.is_ok() {
+                    task.run();
+                }
+                self.outcome.clone()
+            }
+        }
+
+        for outcome in [Err("the shell is wedged".to_string()), Ok(())] {
+            let state = AppState::default();
+            let torn_down_on = retired_runtime_recording_teardown(&state);
+            let ui = ReadsTheCountDuringTheHop {
+                state: &state,
+                seen_during_hop: Mutex::new(Vec::new()),
+                outcome: outcome.clone(),
+            };
+
+            state.sweep_retired_engine_plugins(&ui);
+
+            assert_eq!(
+                *ui.seen_during_hop.lock().expect("hop log"),
+                [(1, 0)],
+                "mid-hop the runtime is out of the vec and still counted"
+            );
+            let kept = usize::from(outcome.is_err());
+            assert_eq!(
+                state.unreclaimed_retirement_count(),
+                kept,
+                "after the hop the runtime is counted once, in the vec, or not at all"
+            );
+            assert_eq!(state.retired_releases_in_flight.load(Ordering::SeqCst), 0);
+            let torn_down = torn_down_on.lock().expect("teardown log").len();
+            assert_eq!(torn_down, 1 - kept);
+        }
     }
 
     /// Load/unload cycling is what accumulates retirements, so the sweep has to

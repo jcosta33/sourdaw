@@ -1,5 +1,6 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { getBestAgentReferenceNameRanges } from '../agentReference/getBestAgentReferenceNameRanges';
+import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 
 /** Words a list of track names may hold besides the names themselves. */
 const TARGET_LIST_WORDS: ReadonlySet<string> = new Set(['the', 'and', '&', 'both', 'track', 'tracks']);
@@ -34,10 +35,6 @@ export const ORDINAL_WORDS: readonly string[] = [
 
 type ListedTrack = { id: string; name: string };
 
-function escapeRegExp(text: string): string {
-    return text.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-}
-
 function sameName(left: string, right: string): boolean {
     return left.toLowerCase() === right.toLowerCase();
 }
@@ -47,16 +44,21 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
     return tracks.filter((candidate) => sameName(candidate.name, track.name)).findIndex((c) => c.id === track.id) + 1;
 }
 
-type OrdinalReading =
-    | { status: 'read'; ranges: NamedRange[] }
+type Span = { start: number; end: number };
+
+type OrdinalAsk =
     | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
-    | { status: 'collision'; text: string; name: string; start: number; end: number };
+    | { status: 'collision'; text: string; name: string };
+
+/** The order references read, every order phrase the text holds, and the first phrase that must be asked about. */
+type OrdinalReading = { ranges: NamedRange[]; phrases: Span[]; ask: OrdinalAsk | undefined };
 
 /**
  * The "[the] second Lead" references of the text, each the k-th track of that whole name. A phrase
  * whose words also name another track is no order reference: for a name one track holds it is left to
  * the name reading, and for a shared name it is a collision the caller must ask about. An ordinal past
- * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which.
+ * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which. Every
+ * phrase is read, past the first ask too, so the caller can check the whole text as one list.
  */
 function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): OrdinalReading {
     const names = [...new Set(tracks.map((track) => track.name.toLowerCase()))].toSorted(
@@ -67,8 +69,10 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
         return sameName(tracks.find((track) => track.id === range.id)?.name ?? '', name);
     }
     const ranges: NamedRange[] = [];
+    const phrases: Span[] = [];
+    let ask: OrdinalAsk | undefined;
     function taken(start: number, end: number): boolean {
-        return ranges.some((range) => range.start < end && range.end > start);
+        return phrases.some((phrase) => phrase.start < end && phrase.end > start);
     }
     for (const name of names) {
         const pattern = new RegExp(
@@ -91,18 +95,21 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
             }
             if (crossing.length > 0) {
                 if (sharing.length >= 2) {
-                    return { status: 'collision', text: match[0], name: sharing[0]!.name, start, end };
+                    phrases.push({ start, end });
+                    ask ??= { status: 'collision', text: match[0], name: sharing[0]!.name };
                 }
                 continue;
             }
+            phrases.push({ start, end });
             const target = sharing[ORDINAL_WORDS.indexOf(match[1]!.toLowerCase())];
             if (target === undefined) {
-                return { status: 'beyond-the-tracks', text: match[0], sharing };
+                ask ??= { status: 'beyond-the-tracks', text: match[0], sharing };
+                continue;
             }
             ranges.push({ id: target.id, start, end });
         }
     }
-    return { status: 'read', ranges };
+    return { ranges, phrases, ask };
 }
 
 function blank(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): string {
@@ -120,13 +127,49 @@ function joinsEveryName(text: string, ranges: ReadonlyArray<{ start: number; end
     });
 }
 
-/** Whether the text is nothing but the ranges, the list's own words and a joiner between every two ranges. */
-function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
-    const words = blank(text, ranges)
+/** Whether every word outside the ranges is one of the list's own words. */
+function holdsOnlyListWords(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
+    return blank(text, ranges)
         .toLowerCase()
         .split(/[\s,]+/u)
-        .filter((word) => word.length > 0);
-    return ranges.length > 0 && words.every((word) => TARGET_LIST_WORDS.has(word)) && joinsEveryName(text, ranges);
+        .filter((word) => word.length > 0)
+        .every((word) => TARGET_LIST_WORDS.has(word));
+}
+
+/** Whether the text is nothing but the ranges, the list's own words and a joiner between every two ranges. */
+function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
+    return ranges.length > 0 && holdsOnlyListWords(text, ranges) && joinsEveryName(text, ranges);
+}
+
+/** Every order phrase beside every other name the text reads, in text order, as one list to check. */
+function listWithPhrases(text: string, phrases: readonly Span[], tracks: readonly ListedTrack[]): Span[] {
+    const others = getBestAgentReferenceNameRanges(blank(text, phrases), tracks, 'with-number-forms');
+    return [...others, ...phrases].toSorted((left, right) => left.start - right.start || left.end - right.end);
+}
+
+/** What an order phrase the text must be asked about reads as; every ask is a verdict about a list. */
+function readOrdinalAsk(
+    text: string,
+    ask: OrdinalAsk,
+    phrases: readonly Span[],
+    tracks: readonly ListedTrack[]
+): NamedTracks {
+    // Text that is otherwise no list stays unread, as it does without ordinals.
+    if (!readsAsList(text, listWithPhrases(text, phrases, tracks))) {
+        return { status: 'unread' };
+    }
+    if (ask.status === 'collision') {
+        return { status: 'collision', text: ask.text, name: ask.name };
+    }
+    // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
+    if (ask.sharing.length < 2) {
+        return { status: 'unread' };
+    }
+    return {
+        status: 'ambiguous',
+        text: ask.text,
+        candidates: ask.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
+    };
 }
 
 /**
@@ -138,26 +181,8 @@ function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: n
 export function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
-    if (ordinal.status === 'collision') {
-        // A collision is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
-        const phrase = { start: ordinal.start, end: ordinal.end };
-        const others = getBestAgentReferenceNameRanges(blank(text, [phrase]), tracks, 'with-number-forms');
-        const listed = [...others, phrase].toSorted((left, right) => left.start - right.start || left.end - right.end);
-        if (!readsAsList(text, listed)) {
-            return { status: 'unread' };
-        }
-        return { status: 'collision', text: ordinal.text, name: ordinal.name };
-    }
-    if (ordinal.status === 'beyond-the-tracks') {
-        // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
-        if (ordinal.sharing.length < 2) {
-            return { status: 'unread' };
-        }
-        return {
-            status: 'ambiguous',
-            text: ordinal.text,
-            candidates: ordinal.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
-        };
+    if (ordinal.ask !== undefined) {
+        return readOrdinalAsk(text, ordinal.ask, ordinal.phrases, tracks);
     }
     const ranges = [
         ...getBestAgentReferenceNameRanges(blank(text, ordinal.ranges), tracks, 'with-number-forms'),
@@ -166,6 +191,9 @@ export function readNamedTracks(text: string, context: ProjectContext): NamedTra
     for (const [index, range] of ranges.entries()) {
         const next = ranges[index + 1];
         if (next !== undefined && next.start < range.end) {
+            if (!holdsOnlyListWords(text, ranges)) {
+                return { status: 'unread' };
+            }
             const shared = ranges.filter((candidate) => candidate.start < range.end && candidate.end > range.start);
             const ids = new Set(shared.map((candidate) => candidate.id));
             return {

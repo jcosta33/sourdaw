@@ -50,13 +50,32 @@ use std::time::Duration;
 /// still inside a borrow the closure was lent.
 pub struct UiThreadTask {
     work: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    release: bool,
 }
 
 impl UiThreadTask {
     pub fn new(work: impl FnOnce() + Send + 'static) -> Arc<Self> {
         Arc::new(Self {
             work: Mutex::new(Some(Box::new(work))),
+            release: false,
         })
+    }
+
+    /// A task whose whole work is dropping a runtime on the UI thread.
+    ///
+    /// The mark is what lets a holder of the UI thread run releases and nothing
+    /// else — see [`UiThread::run_posted_releases`]. Any other task may call into
+    /// third-party code under a worker's control claim, with no bound the
+    /// holder could charge it to.
+    pub fn new_release(work: impl FnOnce() + Send + 'static) -> Arc<Self> {
+        Arc::new(Self {
+            work: Mutex::new(Some(Box::new(work))),
+            release: true,
+        })
+    }
+
+    pub fn is_release(&self) -> bool {
+        self.release
     }
 
     /// Run the work, unless it was already withdrawn. Called on the UI thread.
@@ -112,6 +131,21 @@ pub trait UiThread: Send + Sync {
         task.run();
         Ok(())
     }
+
+    /// Run, now, the runtime releases other threads have already posted to this
+    /// UI thread and that its loop has not yet reached. Call it only on the UI
+    /// thread. Every other posted task stays queued for the loop.
+    ///
+    /// For code that holds the UI thread for a long stretch and waits there for
+    /// a worker whose own progress is a release hop onto it: the quit cascade
+    /// runs synchronously on the UI thread, so the loop that would drain a
+    /// worker's posted teardown cannot turn until the cascade returns. Releases
+    /// only, because any other posted task is an editor call a worker made
+    /// under its control claim, which the cascade has already closed the editors
+    /// ahead of and cannot bound once running; its own deadline withdraws it.
+    /// A host whose work runs inline, or which has no queue, has nothing posted
+    /// and keeps this default.
+    fn run_posted_releases(&self) {}
 }
 
 /// A UI thread reached by posting work to a queue that an external pump drains.
@@ -153,6 +187,23 @@ impl PostedUiThread {
         }
     }
 
+    /// Run the posted releases and leave every other task queued, in its
+    /// original order, for the pump. Called on the UI thread by a holder of it
+    /// that cannot wait for the pump; see [`UiThread::run_posted_releases`].
+    pub fn drain_releases(&self) {
+        let releases: Vec<Arc<UiThreadTask>> = {
+            let mut queued = self.lock();
+            let (releases, others) = std::mem::take(&mut *queued)
+                .into_iter()
+                .partition(|task| task.is_release());
+            *queued = others;
+            releases
+        };
+        for task in releases {
+            task.run();
+        }
+    }
+
     /// Post `task`, wake the pump with `wake`, and wait until the task has run.
     pub fn post_and_wait(
         &self,
@@ -161,10 +212,16 @@ impl PostedUiThread {
     ) -> Result<(), String> {
         let (ran, waited) = mpsc::sync_channel(1);
         let inner = Arc::clone(task);
-        let posted = UiThreadTask::new(move || {
+        let work = move || {
             inner.run();
             let _ = ran.send(());
-        });
+        };
+        // The wrapper is what the queue holds, so it carries the task's mark.
+        let posted = if task.is_release() {
+            UiThreadTask::new_release(work)
+        } else {
+            UiThreadTask::new(work)
+        };
         self.lock().push(Arc::clone(&posted));
 
         if let Err(unreachable) = wake() {
@@ -212,14 +269,22 @@ pub fn call_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     ui: &Ui,
     work: impl FnOnce() -> Produced + Send + 'static,
 ) -> Result<Produced, String> {
+    call_marked_on_ui_thread(ui, UiThreadTask::new, work)
+}
+
+fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
+    ui: &Ui,
+    make_task: fn(Box<dyn FnOnce() + Send>) -> Arc<UiThreadTask>,
+    work: impl FnOnce() -> Produced + Send + 'static,
+) -> Result<Produced, String> {
     if ui.is_ui_thread() {
         return Ok(work());
     }
 
     let (answer, answered) = mpsc::sync_channel(1);
-    let task = UiThreadTask::new(move || {
+    let task = make_task(Box::new(move || {
         let _ = answer.send(work());
-    });
+    }));
     ui.run_on_ui_thread(&task)?;
 
     answered
@@ -244,7 +309,7 @@ where
 {
     let slot = Arc::new(Mutex::new(Some(value)));
     let released = Arc::clone(&slot);
-    let outcome = call_on_ui_thread(ui, move || {
+    let outcome = call_marked_on_ui_thread(ui, release_task, move || {
         let value = take_slot(&released);
         drop(value);
     });
@@ -254,6 +319,10 @@ where
         // whatever the hop reported about its own wait.
         _ => Ok(()),
     }
+}
+
+fn release_task(work: Box<dyn FnOnce() + Send>) -> Arc<UiThreadTask> {
+    UiThreadTask::new_release(work)
 }
 
 /// Empty the slot, ignoring poison: a panic inside the value's own drop has
@@ -393,6 +462,52 @@ mod tests {
                 .recv()
                 .map_err(|_| "the UI thread never answered".to_string())
         }
+    }
+
+    /// The releases-only drain runs what is a release and leaves every other
+    /// task queued, in the order it was posted, for the pump.
+    #[test]
+    fn draining_releases_leaves_other_tasks_queued_in_order() {
+        let posted = Arc::new(PostedUiThread::new(Duration::from_secs(10)));
+        let log = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+
+        thread::scope(|scope| {
+            // Posted one at a time, so the queue order is the order named.
+            for (name, release) in [
+                ("first-call", false),
+                ("release", true),
+                ("second-call", false),
+            ] {
+                let (queued, was_queued) = mpsc::channel();
+                let entry = Arc::clone(&log);
+                let work = move || entry.lock().expect("log").push(name);
+                let task = if release {
+                    UiThreadTask::new_release(work)
+                } else {
+                    UiThreadTask::new(work)
+                };
+                let queue = Arc::clone(&posted);
+                scope.spawn(move || {
+                    let _ = queue.post_and_wait(&task, || {
+                        queued.send(()).expect("announce the post");
+                        Ok(())
+                    });
+                });
+                was_queued
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("the task must be queued");
+            }
+
+            posted.drain_releases();
+            assert_eq!(*log.lock().expect("log"), ["release"]);
+
+            posted.drain();
+            assert_eq!(
+                *log.lock().expect("log"),
+                ["release", "first-call", "second-call"],
+                "the tasks the releases-only drain skipped keep their order"
+            );
+        });
     }
 
     /// The whole point of the seam: a call made on a worker runs somewhere else.
