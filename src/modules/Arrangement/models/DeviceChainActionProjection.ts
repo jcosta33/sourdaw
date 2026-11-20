@@ -5,6 +5,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { type PluginDescriptor } from './DeviceParameterTypes';
+import { type DevicePatchState } from './DevicePatchState';
 import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
 import { projectsDeviceChainByActionType } from './ProjectsDeviceChainByActionType';
 import { type Device } from './Track';
@@ -63,15 +64,22 @@ function projectFermenterPatch(devices: Device[], action: Extract<AppAction, { t
     return devices;
 }
 
-function projectToasterFactoryKit(
+type FactoryPatchProjection = {
+    deviceId: string;
+    deviceIds: readonly string[];
+    deviceType: string;
+    before: DevicePatchState;
+    after: DevicePatchState;
+};
+
+function projectFactoryPatch(
     devices: Device[],
-    action: Extract<AppAction, { type: 'setToasterFactoryKit' }>
+    { deviceId, deviceIds, deviceType, before, after }: FactoryPatchProjection
 ): Device[] | null {
-    const { deviceId, deviceIds, before, after } = action.payload;
     const index = devices.findIndex((device) => device.id === deviceId);
     const current = devices[index];
     if (
-        current?.type !== DEVICE_TYPE_IDS.toaster ||
+        current?.type !== deviceType ||
         !valuesEqual(
             devices.map((device) => device.id),
             deviceIds
@@ -79,16 +87,26 @@ function projectToasterFactoryKit(
     ) {
         return null;
     }
-    const next = projectCapturedDevicePatch(
-        current,
-        { deviceState: before, parameterValues: {} },
-        { deviceState: after, parameterValues: {} }
-    );
+    const next = projectCapturedDevicePatch(current, before, after);
     if (!next) {
         return null;
     }
     devices[index] = next;
     return devices;
+}
+
+function projectToasterFactoryKit(
+    devices: Device[],
+    action: Extract<AppAction, { type: 'setToasterFactoryKit' }>
+): Device[] | null {
+    const { deviceId, deviceIds, before, after } = action.payload;
+    return projectFactoryPatch(devices, {
+        deviceId,
+        deviceIds,
+        deviceType: DEVICE_TYPE_IDS.toaster,
+        before: { deviceState: before, parameterValues: {} },
+        after: { deviceState: after, parameterValues: {} },
+    });
 }
 
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
@@ -110,6 +128,9 @@ export function projectDeviceChainAction(
     }
     if (action.type === 'setToasterFactoryKit') {
         return projectToasterFactoryKit(devices, action);
+    }
+    if (action.type === 'setBacteriaFactoryPatch') {
+        return projectFactoryPatch(devices, { ...action.payload, deviceType: DEVICE_TYPE_IDS.bacteria });
     }
     if (action.type === 'addDevice') {
         return projectAddedDevice(devices, action, plugins);

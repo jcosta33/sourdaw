@@ -12,7 +12,14 @@ describe('plannedDeviceWriteStepByActionType', () => {
         );
         const special = specialEntries.map(([type]) => type).sort();
         expect(special).toEqual(
-            ['addTrack', 'createBus', 'setFermenterPatch', 'setToasterFactoryKit', 'restoreTrack'].sort()
+            [
+                'addTrack',
+                'createBus',
+                'setFermenterPatch',
+                'setToasterFactoryKit',
+                'setBacteriaFactoryPatch',
+                'restoreTrack',
+            ].sort()
         );
     });
 

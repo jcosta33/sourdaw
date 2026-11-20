@@ -46,6 +46,20 @@ function toasterKitStep(action: ActionOf<'setToasterFactoryKit'>): PlannedDevice
     };
 }
 
+function bacteriaFactoryPatchStep(action: ActionOf<'setBacteriaFactoryPatch'>): PlannedDeviceWriteStep {
+    const { trackId, deviceId, deviceIds, before, after } = action.payload;
+    return {
+        kind: 'patch',
+        trackId,
+        deviceId,
+        expectedDeviceIds: deviceIds,
+        expectedTrackFrozen: false,
+        expectedDeviceType: DEVICE_TYPE_IDS.bacteria,
+        expected: before,
+        after,
+    };
+}
+
 function restoredTrackStep(action: ActionOf<'restoreTrack'>, trackIds: Set<string>): PlannedDeviceWriteStep | null {
     const owner = readPlannedDeviceOwnerSource(action.payload.trackSnapshot);
     if (!owner || owner.id !== action.payload.trackId) {
@@ -154,6 +168,7 @@ export const plannedDeviceWriteStepByActionType: {
     setFermenterPatch: fermenterPatchStep,
     setGrandBouleDeviceState: commandStep,
     setToasterFactoryKit: toasterKitStep,
+    setBacteriaFactoryPatch: bacteriaFactoryPatchStep,
     createBus: createdBusStep,
     createFolder: commandStep,
     setSend: commandStep,

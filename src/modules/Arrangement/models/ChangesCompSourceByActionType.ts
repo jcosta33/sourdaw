@@ -82,6 +82,7 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setBacteriaFactoryPatch: false,
     createBus: false,
     createFolder: false,
     setSend: false,

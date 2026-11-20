@@ -176,7 +176,11 @@ function projectCommandOwners(
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (action.type === 'setFermenterPatch' || action.type === 'setToasterFactoryKit') {
+    if (
+        action.type === 'setFermenterPatch' ||
+        action.type === 'setToasterFactoryKit' ||
+        action.type === 'setBacteriaFactoryPatch'
+    ) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

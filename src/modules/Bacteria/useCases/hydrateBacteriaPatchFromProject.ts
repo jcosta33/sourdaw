@@ -8,12 +8,14 @@ import {
     type BacteriaDistortionMode,
     type BacteriaFilterMode,
     type BacteriaGrainWindow,
+    type BacteriaModAssignment,
     type BacteriaPatch,
     type BacteriaRoutingMode,
     DEFAULT_PATCH,
 } from '../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../stores/bacteriaStore';
 
+import { bacteriaFactoryPatchPublication } from './bacteriaParamBridge/bacteriaFactoryPatchPublication';
 import {
     CROSSOVER_MODE_INDEX,
     DISTORTION_MODE_INDEX,
@@ -166,12 +168,35 @@ function hydrateNumericGlobalFields(patch: BacteriaPatch, parameters: Record<str
  * complexity under the project ceiling; the two decision points here (a null
  * decode, an already-equal table) are one self-contained projection.
  */
-function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): BacteriaPatch {
-    const decoded = fromBacteriaModAssignmentsState(deviceState);
+function projectRoutingTable(
+    patch: BacteriaPatch,
+    deviceState: unknown,
+    replacement?: BacteriaModAssignment[]
+): BacteriaPatch {
+    const decoded = replacement ?? fromBacteriaModAssignmentsState(deviceState);
     if (decoded === null || rowsEqual(decoded, patch.modAssignments)) {
         return patch;
     }
     return { ...patch, modAssignments: decoded };
+}
+
+type FactoryProjection = {
+    name: string;
+    parameterValues: Record<string, number>;
+    modAssignments: BacteriaModAssignment[];
+};
+
+function hydrateGlobalModes(patch: BacteriaPatch, parameterValues: Record<string, number>): BacteriaPatch {
+    let next = patch;
+    const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
+    if (crossoverMode !== null && next.crossoverMode !== crossoverMode) {
+        next = { ...next, crossoverMode: crossoverMode as BacteriaCrossoverMode };
+    }
+    const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
+    if (globalRouting !== null && next.globalRouting !== globalRouting) {
+        next = { ...next, globalRouting: globalRouting as BacteriaRoutingMode };
+    }
+    return next;
 }
 
 /**
@@ -204,7 +229,7 @@ function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): Bacter
  * projection; a foreign change with no panel mounted still reaches nothing
  * live (#4764).
  */
-export function hydrateBacteriaPatchFromProject(deviceId: string): void {
+export function hydrateBacteriaPatchFromProject(deviceId: string, factory?: FactoryProjection): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
@@ -214,19 +239,27 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     if (!device || device.type !== 'bacteria') {
         return;
     }
+    if (!factory && bacteriaFactoryPatchPublication.matches(device)) {
+        // The published factory action applies its scalars and routing table together.
+        return;
+    }
 
-    let patch = getBacteriaState(deviceId).patch;
-    let changed = false;
+    const current = getBacteriaState(deviceId).patch;
+    let patch = factory && factory.name !== current.name ? { ...current, name: factory.name } : current;
+    let changed = patch !== current;
     let routingChanged = false;
 
-    const routed = projectRoutingTable(patch, device.deviceState);
+    const routed = projectRoutingTable(patch, device.deviceState, factory?.modAssignments);
     if (routed !== patch) {
         patch = routed;
         changed = true;
-        routingChanged = true;
+        routingChanged = factory === undefined;
     }
 
-    const parameterValues = device.parameterValues;
+    let parameterValues = device.parameterValues;
+    if (factory) {
+        parameterValues = { ...parameterValues, ...factory.parameterValues };
+    }
     if (parameterValues) {
         const globals = hydrateNumericGlobalFields(patch, parameterValues);
         changed ||= globals !== patch;
@@ -251,17 +284,9 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
             }
         }
 
-        const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
-        if (crossoverMode !== null && patch.crossoverMode !== crossoverMode) {
-            patch = { ...patch, crossoverMode: crossoverMode as BacteriaCrossoverMode };
-            changed = true;
-        }
-
-        const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
-        if (globalRouting !== null && patch.globalRouting !== globalRouting) {
-            patch = { ...patch, globalRouting: globalRouting as BacteriaRoutingMode };
-            changed = true;
-        }
+        const modes = hydrateGlobalModes(patch, parameterValues);
+        changed ||= modes !== patch;
+        patch = modes;
     }
 
     commitHydratedPatch(deviceId, patch, changed, routingChanged);

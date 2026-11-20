@@ -238,6 +238,7 @@ const applicationIdMaterializerByActionType: {
     setFermenterPatch: materializeByIdRule,
     setGrandBouleDeviceState: materializeByIdRule,
     setToasterFactoryKit: materializeByIdRule,
+    setBacteriaFactoryPatch: materializeByIdRule,
     createBus: materializeBusCreationIds,
     createFolder: materializeByIdRule,
     setSend: materializeByIdRule,

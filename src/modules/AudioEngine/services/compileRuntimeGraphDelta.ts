@@ -1,3 +1,6 @@
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+
+import { isWithinBacteriaRuntimeParameterNamespace } from '../models/BacteriaRuntimeControl';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeviceChainDelta,
@@ -55,7 +58,11 @@ function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
     if (!isBoundedId(value.id) || !isBoundedId(value.type)) {
         return 'Runtime graph device id or type is invalid';
     }
-    if (!isUnknownArray(value.parameterIds) || value.parameterIds.length > MAX_PARAMETER_ID_COUNT) {
+    if (
+        !isUnknownArray(value.parameterIds) ||
+        (value.parameterIds.length > MAX_PARAMETER_ID_COUNT &&
+            (value.type !== DEVICE_TYPE_IDS.bacteria || !isWithinBacteriaRuntimeParameterNamespace(value.parameterIds)))
+    ) {
         return 'Runtime graph device parameter ids exceed the bounded contract';
     }
     if (!value.parameterIds.every(isBoundedId) || !isStrictlySortedUniqueIds(value.parameterIds)) {

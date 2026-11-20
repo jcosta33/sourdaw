@@ -152,6 +152,7 @@ export const trackNameProjectionByActionType: {
     setFermenterPatch: keepTrackNames,
     setGrandBouleDeviceState: keepTrackNames,
     setToasterFactoryKit: keepTrackNames,
+    setBacteriaFactoryPatch: keepTrackNames,
     createBus: projectCreatedBusName,
     createFolder: keepTrackNames,
     setSend: keepTrackNames,

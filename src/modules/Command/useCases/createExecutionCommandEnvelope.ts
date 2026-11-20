@@ -124,6 +124,7 @@ const seedMaterializerByActionType: {
     setFermenterPatch: leaveSeedUnminted,
     setGrandBouleDeviceState: leaveSeedUnminted,
     setToasterFactoryKit: leaveSeedUnminted,
+    setBacteriaFactoryPatch: leaveSeedUnminted,
     createBus: leaveSeedUnminted,
     createFolder: leaveSeedUnminted,
     setSend: leaveSeedUnminted,

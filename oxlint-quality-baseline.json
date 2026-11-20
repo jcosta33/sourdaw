@@ -10998,17 +10998,7 @@
             "count": 1
         }
     },
-    "src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 4
-        }
-    },
     "src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
-    "src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts": {
         "eslint/complexity": {
             "count": 1
         }

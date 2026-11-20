@@ -606,6 +606,11 @@ vi.mock('#/modules/DawInterchange/useCases', () => ({
     getDawProjectHandlers: sentinelHandlers('DawProject'),
 }));
 
+vi.mock('#/modules/Bacteria/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Bacteria/useCases')>()),
+    getBacteriaHandlers: sentinelHandlers('Bacteria'),
+}));
+
 vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
 
 vi.mock('#/modules/Fermenter/useCases', () => ({
@@ -974,6 +979,7 @@ describe('bootstrap', () => {
         'DawProject',
         'FinalFeature',
         'CvGate',
+        'Bacteria',
         'Fermenter',
         'GrandBoule',
         'Toaster',

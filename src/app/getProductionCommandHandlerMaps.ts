@@ -5,6 +5,7 @@ import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getBacteriaHandlers } from '#/modules/Bacteria/useCases';
 import { getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { getMacroHandlers, getUndoRedoHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
@@ -68,6 +69,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getDawProjectHandlers(),
         getFinalFeatureHandlers(),
         getCvGateHandlers(),
+        getBacteriaHandlers(),
         getFermenterHandlers(),
         getGrandBouleHandlers(),
         getToasterHandlers(),

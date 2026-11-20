@@ -22,6 +22,7 @@ describe('projectsDeviceChainByActionType', () => {
                 'setDeviceState',
                 'setFermenterPatch',
                 'setToasterFactoryKit',
+                'setBacteriaFactoryPatch',
             ].sort()
         );
     });
@@ -124,5 +125,44 @@ describe('projectsDeviceChainByActionType', () => {
             expect(projectDeviceChainAction('track-1', source, action, [])).toBeNull();
             expect(source).toEqual(original);
         }
+    });
+
+    it('projects only the captured Bacteria leaves and chunk with their exact presence', () => {
+        const state = { version: 1, data: { modAssignments: [] } };
+        const device: Device = {
+            id: 'bacteria',
+            type: DEVICE_TYPE_IDS.bacteria,
+            name: 'Bacteria',
+            bypassed: false,
+            parameterValues: { band2_bitDepth: 4, bitDepth: 11, crossoverFreq4: 7100 },
+            deviceState: state,
+        };
+        const action = {
+            type: 'setBacteriaFactoryPatch',
+            payload: {
+                trackId: 'track-1',
+                deviceId: device.id,
+                deviceIds: [device.id],
+                label: 'Load Bitcrush Cascade',
+                before: { name: 'Bitcrush Cascade', deviceState: state, parameterValues: { band2_bitDepth: 4 } },
+                after: { name: 'Init', deviceState: null, parameterValues: { band2_bitDepth: null } },
+            },
+        } satisfies AppAction;
+
+        expect(projectDeviceChainAction('track-1', [device], action, [])).toEqual([
+            {
+                id: device.id,
+                type: device.type,
+                name: device.name,
+                bypassed: false,
+                parameterValues: {
+                    bitDepth: 11,
+                    crossoverFreq4: 7100,
+                },
+            },
+        ]);
+        expect(projectDeviceChainAction('track-1', [{ ...device, type: 'other' }], action, [])).toBeNull();
+        const peer = { ...device, parameterValues: { ...device.parameterValues, band2_bitDepth: 9 } };
+        expect(projectDeviceChainAction('track-1', [peer], action, [])).toBeNull();
     });
 });

@@ -98,6 +98,7 @@ const restoredMidiOwnerIdsByActionType: {
     setFermenterPatch: noOwnerIds,
     setGrandBouleDeviceState: noOwnerIds,
     setToasterFactoryKit: noOwnerIds,
+    setBacteriaFactoryPatch: noOwnerIds,
     createBus: noOwnerIds,
     createFolder: noOwnerIds,
     setSend: noOwnerIds,

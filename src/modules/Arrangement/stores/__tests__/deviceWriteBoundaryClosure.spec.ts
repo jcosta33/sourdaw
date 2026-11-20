@@ -194,7 +194,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // touches a store directly.
         'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 6,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
+        // The committed factory reconcile sends one patch batch to the runtime.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
         // Count provenance: 0 in code, was 1 — #4756 extracted the engine half
@@ -733,8 +734,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
-        'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         // Event contract and subscription re-apply the persisted modulation
         // routing to a freshly loaded Bacteria worklet; neither writes project truth.
         'src/modules/Bacteria/useCases/bacteriaSubscriber.ts': 2,
@@ -1111,9 +1110,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
-        // The Fermenter and Toaster helpers accept detached device chains. The
-        // two Toaster snapshots use empty scalar footprints for the kit chunk.
-        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 4,
+        // The patch helpers operate on detached device chains. Bacteria reuses
+        // the factory projection with a numeric footprint as well as a chunk.
+        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 5,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
@@ -1371,7 +1370,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts',
     'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/createFlushParam.ts',
-    'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts',
+    'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',

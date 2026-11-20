@@ -23,7 +23,7 @@ import {
 import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/applyBacteriaMorph';
 import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
 import { chooseBacteriaBodyWithAudio } from '../../useCases/bacteriaParamBridge/chooseBacteriaBodyWithAudio';
-import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
+import { selectBacteriaFactoryPreset } from '../../useCases/bacteriaParamBridge/selectBacteriaFactoryPreset';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaModAssignmentsWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
@@ -423,7 +423,7 @@ const PresetRail = ({
                                     className={`bacteria-window w-full px-3 py-2 text-left wrap-anywhere ${
                                         active ? 'border-[var(--color-accent-mint-bright)]/35' : ''
                                     }`}
-                                    onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
+                                    onClick={() => selectBacteriaFactoryPreset(deviceId, preset.id)}
                                 >
                                     <span className="text-compact font-medium text-foreground">{preset.name}</span>
                                     <span className="text-micro uppercase tracking-[0.22em] text-muted-foreground">

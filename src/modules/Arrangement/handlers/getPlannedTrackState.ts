@@ -172,6 +172,7 @@ export const plannedTrackByActionType: {
     setFermenterPatch: noPlannedTrack,
     setGrandBouleDeviceState: noPlannedTrack,
     setToasterFactoryKit: noPlannedTrack,
+    setBacteriaFactoryPatch: noPlannedTrack,
     createBus: planCreatedBus,
     createFolder: noPlannedTrack,
     setSend: noPlannedTrack,

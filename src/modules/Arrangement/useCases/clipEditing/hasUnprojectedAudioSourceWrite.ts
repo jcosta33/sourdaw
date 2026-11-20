@@ -142,6 +142,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setFermenterPatch: noUnprojectedWrite,
     setGrandBouleDeviceState: noUnprojectedWrite,
     setToasterFactoryKit: noUnprojectedWrite,
+    setBacteriaFactoryPatch: noUnprojectedWrite,
     createBus: noUnprojectedWrite,
     createFolder: noUnprojectedWrite,
     setSend: noUnprojectedWrite,

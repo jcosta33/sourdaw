@@ -90,6 +90,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     setFermenterPatch: ownControl,
     setGrandBouleDeviceState: ownControl,
     setToasterFactoryKit: ownControl,
+    setBacteriaFactoryPatch: ownControl,
     createBus: ownControl,
     createFolder: ownControl,
     setSend: ownControl,

@@ -752,9 +752,74 @@ function createToasterConflictFixture(): DivergedFixture {
     };
 }
 
+function createBacteriaConflictFixture(): DivergedFixture {
+    type BacteriaRoot = { tracks: { tracks: Track[] } };
+    const deviceId = 'bacteria-conflict';
+    const trackId = 'bacteria-owner';
+    const rawDevice = () => getCrdtDoc<BacteriaRoot>('root')?.tracks.tracks[0]?.devices[0];
+    return {
+        title: 'setBacteriaFactoryPatch refuses after a validated leaf source diverges',
+        actionType: 'setBacteriaFactoryPatch',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Bacteria registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const owner = createTrack({ id: trackId, name: 'Bacteria', kind: 'audio' });
+            const device = {
+                id: deviceId,
+                name: 'Bacteria',
+                type: 'bacteria',
+                bypassed: false,
+                parameterValues: { band2_bitDepth: 4 },
+            };
+            setTrackStoreState({ ...defaultTrackState, tracks: [{ ...owner, devices: [device] }] });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()).toEqual(device);
+
+            const inverse = {
+                type: 'setBacteriaFactoryPatch',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    label: 'Load Bitcrush Cascade',
+                    before: { name: 'Bitcrush Cascade', deviceState: null, parameterValues: { band2_bitDepth: 4 } },
+                    after: { name: 'Init', deviceState: null, parameterValues: { band2_bitDepth: null } },
+                },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<BacteriaRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const target = document.tracks.tracks[0]?.devices[0];
+                    if (!target) {
+                        throw new Error('Expected the Bacteria device before the peer write');
+                    }
+                    target.parameterValues.band2_bitDepth = 9;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.parameterValues).toEqual({ band2_bitDepth: 9 });
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            expect(rawDevice()?.parameterValues).toEqual({ band2_bitDepth: 9 });
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+        },
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
     createToasterConflictFixture(),
+    createBacteriaConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
         actionType: 'relinkClipAudioSources',

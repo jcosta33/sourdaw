@@ -32,15 +32,19 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
-const toasterFactoryKitReplayContract: SessionActionContract = {
-    actionType: 'setToasterFactoryKit',
-    operationVersion: 1,
-    role: 'forward',
-    validateArguments: (payload: unknown) =>
-        validateVersionedCommandArguments('setToasterFactoryKit', payload) &&
-        getHandlerByType('setToasterFactoryKit')?.validateSessionActionArguments?.(payload) === true,
-    validateEntry: (entry) => getHandlerByType('setToasterFactoryKit')?.validateSessionEntry?.(entry) === true,
-};
+function createFactoryPatchReplayContract(
+    actionType: 'setToasterFactoryKit' | 'setBacteriaFactoryPatch'
+): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) =>
+            validateVersionedCommandArguments(actionType, payload) &&
+            getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
 
 /**
  * Local actions and internal inverse actions are replayable session state, not
@@ -67,7 +71,8 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
-        toasterFactoryKitReplayContract,
+        createFactoryPatchReplayContract('setToasterFactoryKit'),
+        createFactoryPatchReplayContract('setBacteriaFactoryPatch'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {
