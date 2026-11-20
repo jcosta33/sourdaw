@@ -8,12 +8,18 @@ import {
     resolveMidiPitchWindow,
 } from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
-import { getRenderedTrackExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
+import { type AutomationSubLaneRenderModel, type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import {
+    AUTOMATION_SUB_LANE_HEIGHT,
+    getAutomationSubLaneTop,
+    getRenderedTrackExtent,
+    VARIATION_LANE_HEIGHT,
+} from '../../models/TimelineTrackExtent';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
+import { forEachInlineAutomationSegment, inlineAutomationColor } from './inlineAutomationEnvelope';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -141,13 +147,15 @@ function pushRect(
     buffer: number,
     alpha: number,
     w: number,
-    h: number
+    h: number,
+    rightEdgeYOffset = 0
 ): number {
     // Convert pixel coords → NDC (WebGPU: Y+ is up)
     const nx1 = (x1 / w) * 2 - 1;
     const nx2 = (x2 / w) * 2 - 1;
     const ny1 = 1 - (y1 / h) * 2;
     const ny2 = 1 - (y2 / h) * 2;
+    const rightOffset = (rightEdgeYOffset / h) * 2;
 
     // Triangle 1: top-left, top-right, bottom-left
     // Triangle 2: top-right, bottom-right, bottom-left
@@ -159,7 +167,7 @@ function pushRect(
         buffer,
         alpha,
         nx2,
-        ny1,
+        ny1 - rightOffset,
         r,
         gain,
         buffer,
@@ -171,13 +179,13 @@ function pushRect(
         buffer,
         alpha,
         nx2,
-        ny1,
+        ny1 - rightOffset,
         r,
         gain,
         buffer,
         alpha,
         nx2,
-        ny2,
+        ny2 - rightOffset,
         r,
         gain,
         buffer,
@@ -435,6 +443,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             }
 
             // 1. Track background rows
+            const automationRows: { lane: AutomationSubLaneRenderModel; top: number }[] = [];
             let trackY = -scrollY * dpr;
             for (const track of model.tracks) {
                 const th = track.height * dpr;
@@ -451,6 +460,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const laneTop = trackY + th + lane * VARIATION_LANE_HEIGHT * dpr;
                     addRect(0, laneTop, w, laneTop + VARIATION_LANE_HEIGHT * dpr, '#000000', 0.15);
                 }
+                track.automationLanes?.forEach((lane, laneIndex) => {
+                    const laneTop = trackY + getAutomationSubLaneTop(track.height, laneCount, laneIndex) * dpr;
+                    const laneBottom = laneTop + AUTOMATION_SUB_LANE_HEIGHT * dpr;
+                    if (laneBottom <= 0 || laneTop >= h) {
+                        return;
+                    }
+                    automationRows.push({ lane, top: laneTop });
+                });
                 trackY += getRenderedTrackExtent(track) * dpr;
             }
 
@@ -600,6 +617,45 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     continue;
                 }
                 addRect(gx, 0, gx + dpr, h, '#ffffff', bar % 4 === 0 ? 0.08 : 0.04);
+            }
+
+            // Preserve clip/grid geometry and reserve two quads for the playhead.
+            if (automationRows.length > 0) {
+                const rowBudget = Math.floor((MAX_RECTS - rectCount - 2) / automationRows.length);
+                const maxSegments = rowBudget - 2;
+                for (const { lane, top } of automationRows) {
+                    if (maxSegments <= 0) {
+                        break;
+                    }
+                    addRect(0, top, w, top + AUTOMATION_SUB_LANE_HEIGHT * dpr, '#000000', 0.25);
+                    addRect(0, top, w, top + dpr, '#ffffff', 0.08);
+                    const [red, green, blue] = colorToRgba(inlineAutomationColor(lane), 1);
+                    forEachInlineAutomationSegment(
+                        lane,
+                        model,
+                        w / dpr,
+                        (from, to) => {
+                            const y = top + from.y * dpr;
+                            offset = pushRect(
+                                cpuBuf,
+                                offset,
+                                from.x * dpr,
+                                y - dpr,
+                                to.x * dpr,
+                                y + dpr,
+                                red,
+                                green,
+                                blue,
+                                1,
+                                w,
+                                h,
+                                (to.y - from.y) * dpr
+                            );
+                            rectCount++;
+                        },
+                        maxSegments
+                    );
+                }
             }
 
             // 4. Playhead

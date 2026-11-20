@@ -1,4 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
@@ -17,6 +19,7 @@ import {
     secondsBetweenBeats,
 } from '#/modules/Transport/useCases';
 
+import { getInlineAutomationRows } from '../models/InlineAutomationRows';
 import { type TempoTimeline } from '../models/TempoTimeline';
 import {
     type TimelineRenderModel,
@@ -31,6 +34,7 @@ import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { timelineEditingStore, type TimelineEditingState } from '../stores/timelineEditingStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
@@ -165,6 +169,8 @@ const renderCache: {
     timeSig: unknown;
     tempoMap: unknown;
     takeLane: unknown;
+    automation: unknown;
+    automationSubLanes: unknown;
 } = {
     model: null,
     track: null,
@@ -176,6 +182,8 @@ const renderCache: {
     timeSig: null,
     tempoMap: null,
     takeLane: null,
+    automation: null,
+    automationSubLanes: null,
 };
 
 // The cached render model consumes one render-affecting transport field
@@ -236,7 +244,12 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     return { ...cachedModel, tracks, dataDirty: true };
 }
 
-export function buildTimelineRenderModel(): TimelineRenderModel {
+type InlineAutomationSnapshot = {
+    editing: TimelineEditingState | null;
+    lanes: AutomationStoreState['lanes'] | null;
+};
+
+export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnapshot): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
     const transportState = transportStore.value;
@@ -246,6 +259,14 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
+    const editing = inlineAutomation ? inlineAutomation.editing : timelineEditingStore.value;
+    const inlineAutomationVisible = editing?.automationVisibility === 'overlay';
+    const automation = inlineAutomationVisible
+        ? inlineAutomation
+            ? inlineAutomation.lanes
+            : automationStore.value?.lanes
+        : null;
+    const automationSubLanes = inlineAutomationVisible ? editing.automationSubLanes : null;
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -258,7 +279,9 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig ||
         tempoMapState !== renderCache.tempoMap ||
-        takeLaneState !== renderCache.takeLane;
+        takeLaneState !== renderCache.takeLane ||
+        automation !== renderCache.automation ||
+        automationSubLanes !== renderCache.automationSubLanes;
 
     if (dataChanged) {
         renderCache.track = trackState;
@@ -270,6 +293,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.timeSig = timeSigState;
         renderCache.tempoMap = tempoMapState;
         renderCache.takeLane = takeLaneState;
+        renderCache.automation = automation;
+        renderCache.automationSubLanes = automationSubLanes;
 
         const timeline = captureWaveformTimeline(
             transportState?.tempo ?? DEFAULT_TEMPO_BPM,
@@ -281,6 +306,9 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
         const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
+        const automationSnapshot = automation ?? [];
+        const automationRows = getInlineAutomationRows(visibleTracks, automationSnapshot, editing);
+        const visitedLaneIds = new Set<string>();
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
             const baseHeight = getTimelineTrackHeight(track);
@@ -387,6 +415,17 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 height: baseHeight,
                 automationMode: track.automationMode,
                 clips: mappedClips,
+                automationLanes: automationRows.get(track.id)?.map((lane) => ({
+                    id: lane.id,
+                    trackId: lane.trackId,
+                    parameterId: lane.parameterId,
+                    parameterName: lane.parameterName,
+                    minValue: lane.minValue,
+                    maxValue: getAutomationLaneCeiling(lane),
+                    color: lane.color,
+                    linkedLaneId: lane.linkedLaneId,
+                    valueAtBeat: (beat) => getAutomationValueAtBeat(lane.id, beat, visitedLaneIds, automationSnapshot),
+                })),
                 variationLanes:
                     getVariationLaneCount(track) > 0
                         ? track.alternatives.map((alt) => ({

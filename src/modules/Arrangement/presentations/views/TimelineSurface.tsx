@@ -2,6 +2,8 @@ import { type ReactElement, useRef, useEffect, useLayoutEffect, lazy, Suspense }
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { automationStore } from '#/modules/Automation/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/WorkspaceShell/useCases';
@@ -12,6 +14,7 @@ import { getRenderedTrackExtent, getRenderedTrackTops } from '../../models/Timel
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import {
     setAutoScroll,
@@ -49,6 +52,11 @@ export const TimelineSurface = (): ReactElement => {
         autoScrollEnabled: true,
     });
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const inlineEditing = useStoreSelector(timelineEditingStore, (state) =>
+        state?.automationVisibility === 'overlay' ? state : null
+    );
+    const inlineLanes = useStoreSelector(automationStore, (state) => (inlineEditing ? (state?.lanes ?? null) : null));
+    const inlineAutomation = { editing: inlineEditing, lanes: inlineLanes };
     const viewportMeasurementRevision = currentViewStore.viewportMeasurementRevision ?? 0;
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -98,10 +106,8 @@ export const TimelineSurface = (): ReactElement => {
         const left = Math.max(0, marqueeSelection.startBeat * pixelsPerBeat - scrollX);
         const width = (marqueeSelection.endBeat - marqueeSelection.startBeat) * pixelsPerBeat;
 
-        // Rows as laid out on the canvas: visible tracks only, each with its
-        // variation lanes. The marquee spans from its first row's top to its
-        // last row's bottom.
-        const rows = buildTimelineRenderModel().tracks;
+        // The marquee spans the same rendered rows as the canvas.
+        const rows = buildTimelineRenderModel(inlineAutomation).tracks;
         const tops = getRenderedTrackTops(rows);
         let topRow = -1;
         let bottomRow = -1;
@@ -255,6 +261,12 @@ export const TimelineSurface = (): ReactElement => {
         const unsubTempoMap = tempoMapStore.subscribe(markDirty);
         const unsubTimeSigMap = timeSignatureMapStore.subscribe(markDirty);
         const unsubTakeLanes = takeLaneStore.subscribe(markDirty);
+        const unsubEditing = timelineEditingStore.subscribe(markDirty);
+        const unsubAutomation = automationStore.subscribe(() => {
+            if (timelineEditingStore.value?.automationVisibility === 'overlay') {
+                markDirty();
+            }
+        });
 
         const initRenderer = async () => {
             const renderer = await createTimelineRenderer(canvas);
@@ -366,6 +378,8 @@ export const TimelineSurface = (): ReactElement => {
             unsubTempoMap();
             unsubTimeSigMap();
             unsubTakeLanes();
+            unsubEditing();
+            unsubAutomation();
         };
     }, []);
 
@@ -446,18 +460,16 @@ export const TimelineSurface = (): ReactElement => {
                         return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
                     }}
                     trackIdToY={(trackId) => {
-                        const model = buildTimelineRenderModel();
                         const view = timelineViewStore.value;
-                        if (!model || !view) {
+                        if (!view) {
                             return null;
                         }
-                        const scrollY = view.scrollY ?? 0;
-                        let y = 0;
-                        for (const track of model.tracks) {
+                        let top = -view.scrollY;
+                        for (const track of buildTimelineRenderModel(inlineAutomation).tracks) {
                             if (track.id === trackId) {
-                                return y - scrollY;
+                                return top;
                             }
-                            y += track.height;
+                            top += getRenderedTrackExtent(track);
                         }
                         return null;
                     }}

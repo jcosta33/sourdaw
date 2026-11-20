@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
@@ -8,8 +9,10 @@ import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/Timeli
 import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
 import { hitTestClip } from '../timelineInteractions/hitTestClip/hitTestClip';
 
 import type { MidiStoreState } from '#/modules/MIDI/stores';
@@ -971,6 +974,56 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
         expect(tracks[0]!.variationLanes?.map((lane) => lane.name)).toEqual(['upper A', 'upper B']);
         expect(tracks[1]!.variationLanes).toBeUndefined();
         expect(getRenderedTrackTops(tracks)).toEqual([0, 64 + 2 * VARIATION_LANE_HEIGHT]);
+    });
+
+    it('keeps clip and variation geometry while a live automation curve moves the following track', () => {
+        seedStores({
+            tracks: [
+                laneTrack('upper', 'audio', true),
+                laneTrack('folder', 'folder', false),
+                laneTrack('lower', 'audio', false),
+            ],
+        });
+        const pan: AutomationLane = {
+            id: 'pan',
+            trackId: 'upper',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [{ beat: 3, value: -0.75, curve: 'linear', tension: 0 }],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        automationStore.set({ lanes: [pan, { ...pan, id: 'folder-pan', trackId: 'folder' }] });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            const hidden = buildTimelineRenderModel();
+            expect(hidden.tracks[0]?.automationLanes).toBeUndefined();
+            expect(getRenderedTrackTops(hidden.tracks)).toEqual([0, 112, 138]);
+
+            toggleInlineAutomation();
+            const shown = buildTimelineRenderModel();
+            expect(shown.tracks[0]?.height).toBe(64);
+            expect(shown.tracks[0]?.variationLanes).toEqual(hidden.tracks[0]?.variationLanes);
+            expect(shown.tracks[0]?.automationLanes?.map((lane) => lane.id)).toEqual(['pan']);
+            expect(shown.tracks[1]?.automationLanes).toBeUndefined();
+            expect(getRenderedTrackTops(shown.tracks)).toEqual([0, 152, 178]);
+            const readPan = shown.tracks[0]?.automationLanes?.[0]?.valueAtBeat;
+            expect(readPan?.(3)).toBe(-0.75);
+
+            automationStore.set({
+                lanes: [{ ...pan, points: [{ beat: 3, value: 0.75, curve: 'linear', tension: 0 }] }],
+            });
+            const edited = buildTimelineRenderModel();
+            expect(edited.tracks[0]?.automationLanes?.[0]?.valueAtBeat(3)).toBe(0.75);
+            expect(readPan?.(3)).toBe(-0.75);
+        } finally {
+            automationStore.set({ lanes: [] });
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
     });
 
     it('gives a folder row no lanes even when its toggle is on', () => {

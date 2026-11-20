@@ -2,10 +2,16 @@ import { transportStore, timeSignatureMapStore } from '#/modules/Transport/store
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
-import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
+import {
+    AUTOMATION_SUB_LANE_HEIGHT,
+    getAutomationSubLaneTop,
+    getRenderedTrackTops,
+    VARIATION_LANE_HEIGHT,
+} from '../../models/TimelineTrackExtent';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { drawClip } from './clipDrawing';
+import { forEachInlineAutomationSegment, inlineAutomationColor } from './inlineAutomationEnvelope';
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRenderer {
     const ctx = canvas.getContext('2d')!;
@@ -27,6 +33,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
         drawLoopRegion(ctx, model, contentHeight + model.scrollY);
         drawGrid(ctx, model, width, contentHeight + model.scrollY);
         drawTracks(ctx, model, width);
+        drawInlineAutomation(ctx, model, width, contentHeight);
         drawTakeLanes(ctx, model);
         drawPlayhead(ctx, model, contentHeight + model.scrollY);
         ctx.restore();
@@ -240,6 +247,37 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             }
         }
     }
+}
+
+function drawInlineAutomation(
+    ctx: CanvasRenderingContext2D,
+    model: TimelineRenderModel,
+    width: number,
+    viewportHeight: number
+): void {
+    const tops = getRenderedTrackTops(model.tracks);
+    model.tracks.forEach((track, index) => {
+        track.automationLanes?.forEach((lane, laneIndex) => {
+            const top =
+                tops[index]! + getAutomationSubLaneTop(track.height, track.variationLanes?.length ?? 0, laneIndex);
+            const bottom = top + AUTOMATION_SUB_LANE_HEIGHT;
+            if (bottom <= model.scrollY || top >= model.scrollY + viewportHeight) {
+                return;
+            }
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.fillRect(0, top, width, AUTOMATION_SUB_LANE_HEIGHT);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.fillRect(0, top, width, 1);
+            ctx.strokeStyle = inlineAutomationColor(lane);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            forEachInlineAutomationSegment(lane, model, width, (from, to) => {
+                ctx.moveTo(from.x, top + from.y);
+                ctx.lineTo(to.x, top + to.y);
+            });
+            ctx.stroke();
+        });
+    });
 }
 
 function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, height: number): void {
