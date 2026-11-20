@@ -6,6 +6,7 @@
  */
 
 import { type Store } from '#/infra/store/types';
+
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../stores/grandBouleStore';
 

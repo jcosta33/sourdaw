@@ -10071,7 +10071,7 @@
     },
     "src/modules/AudioEngine/worklets/grandBouleEngineCore.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts": {

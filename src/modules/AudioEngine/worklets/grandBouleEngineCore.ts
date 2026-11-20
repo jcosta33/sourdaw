@@ -284,12 +284,17 @@ function dispatchNote(instance: GrandBouleInstance, msg: GrandBouleNoteMsg, offs
             // (`push_note_off(midi_note, offset)`) does not yet consume it; it is
             // forwarded as part of the typed message so the release dynamic is no
             // longer dropped at the control boundary.
-            // Without a channel every voice at the pitch is released — the
+            // Without a channel every MIDI voice at the pitch is released — the
             // historical behaviour channel-unaware callers rely on.
             if (msg.channel === undefined) {
                 return instance.push_note_off(msg.midiNote, offset);
             }
             return instance.push_note_off_on_channel(msg.midiNote, msg.channel, offset);
+        default: {
+            const exhaustive: never = msg;
+            void exhaustive;
+            return true;
+        }
     }
 }
 

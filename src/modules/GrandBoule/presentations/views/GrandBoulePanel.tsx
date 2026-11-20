@@ -161,6 +161,17 @@ const MICROPHONE_POSITIONS = [
     { value: 2, label: 'Room' },
 ] as const;
 
+function mergeDisplayNotes(
+    externalNotes: ReadonlyMap<number, number>,
+    previewNotes: ReadonlyMap<object, { midiNote: number; velocity: number }>
+): ReadonlyMap<number, number> {
+    const activeNotes = new Map(externalNotes);
+    for (const { midiNote, velocity } of previewNotes.values()) {
+        activeNotes.set(midiNote, velocity);
+    }
+    return activeNotes;
+}
+
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
@@ -178,10 +189,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const [previewNotes, setPreviewNotes] = useState<ReadonlyMap<object, { midiNote: number; velocity: number }>>(
         () => new Map()
     );
-    const activeNotes = new Map(externalNotes);
-    for (const { midiNote, velocity } of previewNotes.values()) {
-        activeNotes.set(midiNote, velocity);
-    }
+    const activeNotes = mergeDisplayNotes(externalNotes, previewNotes);
     const [lastVelocity, setLastVelocity] = useState(0);
     const [openVisualizations, setOpenVisualizations] = useState<GrandBouleVisualization[]>([]);
     const [pianoPreviewHeld, setPianoPreviewHeld] = useState(false);
