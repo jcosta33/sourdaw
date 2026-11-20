@@ -1049,6 +1049,26 @@ describe('usePianoRollInteractions', () => {
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
 
+        it.each([8, 32])('preserves a held lasso when row height changes to %i', (rowHeight) => {
+            const args = buildArgs({ lassoMode: true });
+            const { rerender } = render(<Harness args={args} />);
+            const canvas = screen.getByLabelText('piano-roll-test-surface');
+            const above = yForPitch(61);
+            const below = yForPitch(59);
+            fireEvent.mouseDown(canvas, { clientX: 60, clientY: above });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: above });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: below });
+            fireEvent.mouseMove(canvas, { clientX: 60, clientY: below });
+            const original = args.lassoPathRef.current!.map((point) => ({ ...point }));
+            rerender(<Harness args={{ ...args, rowHeight }} />);
+            expect(args.lassoPathRef.current).toEqual(
+                original.map((point) => ({ x: point.x, y: (point.y * rowHeight) / ROW_HEIGHT }))
+            );
+            fireEvent.mouseUp(canvas, { clientX: 60, clientY: RULER + ((above - RULER) * rowHeight) / ROW_HEIGHT });
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set(['n1']));
+            expect(args.lassoPathRef.current).toBeNull();
+        });
+
         it('clears a lasso released before it has enough points to enclose an area', () => {
             const { canvas, args } = renderRoll({ lassoMode: true });
             fireEvent.mouseDown(canvas, { clientX: 60, clientY: yForPitch(61) });
