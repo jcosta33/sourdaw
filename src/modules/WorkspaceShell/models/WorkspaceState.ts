@@ -43,19 +43,6 @@ export type WorkspaceState = {
      */
     timelineMinimapPreviewHeight: number | null;
     aiPanelWidth: number;
-    fermenterHeight: number;
-    toasterHeight: number;
-    levainHeight: number;
-    glutenHeight: number;
-    bacteriaHeight: number;
-    grinderHeight: number;
-    proofChamberHeight: number;
-    proofHeight: number;
-    scoringHeight: number;
-    yeastHeight: number;
-    crustHeight: number;
-    samplerHeight: number;
-    grandBouleHeight: number;
     virtualKeyboardOpen: boolean;
     virtualKeyboardOctave: number;
     virtualKeyboardHeight: number;
@@ -91,19 +78,6 @@ export const defaultWorkspaceState: WorkspaceState = {
     scratchPadCollapsed: false,
     timelineMinimapPreviewHeight: null,
     aiPanelWidth: 340,
-    fermenterHeight: 320,
-    toasterHeight: 420,
-    levainHeight: 340,
-    glutenHeight: 300,
-    bacteriaHeight: 400,
-    grinderHeight: 380,
-    proofChamberHeight: 380,
-    proofHeight: 340,
-    scoringHeight: 300,
-    yeastHeight: 300,
-    crustHeight: 360,
-    samplerHeight: 400,
-    grandBouleHeight: 420,
     virtualKeyboardOpen: false,
     virtualKeyboardOctave: 4,
     virtualKeyboardHeight: 128,

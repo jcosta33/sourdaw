@@ -27,6 +27,9 @@ the separate hardware admission job; an unowned browser-AI proof stays selected 
 
 Direct edits to a collected E2E spec select that spec, alongside any browser work selected for other
 changed paths. Documentation and recognized review tooling keep their existing no-browser route.
+The Playwright server launcher, its crash evidence helper, and the WebGPU admission crash collector
+stay on the product route because the browser jobs execute them. The exact paths are listed in
+`scripts/repositoryToolingPaths.ts`.
 Every other path under `scripts/` (including `scripts/__tests__/`), `.agents/`, top-level
 `release/*.json`, Markdown outside `src/`, `public/`, and `tests/`, and per-vendor agent guidance
 (`AGENTS.md` and its vendor copies) under `src/` and `tests/` selects no browser suite but
@@ -46,8 +49,8 @@ it, and the lint and boundary jobs are where it can fail. Tailwind takes class n
 nor any other tooling path reaches the stylesheet. Other TypeScript projects, Vite, Playwright, and
 `.gitignore`, which filters Tailwind's scan of those sources, stay on the product route. Generator and
 build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
-select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
-nightly full train. Vitest-collected spec files under `src/` likewise select no browser suite and
+select browser coverage there. The nightly full train covers other harness helpers the browser
+imports from `scripts/`. Vitest-collected spec files under `src/` likewise select no browser suite and
 keep the broad non-browser profile: the production dependency graph excludes them and no browser
 harness loads them. They are not product paths, so a feature presentation edited with its colocated
 spec can still narrow. Non-spec scripts under `__tests__/` take the test-side route below, and other

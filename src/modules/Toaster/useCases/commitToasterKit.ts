@@ -7,8 +7,8 @@ import { toasterStore } from '../stores/toasterStore';
  * Mirror a device's live kit into project truth.
  *
  * `toasterStore` is the session store the panel and the worklet share; it is not
- * project truth and is wiped on every project load. This is the one place the kit
- * crosses into the document, and it goes through `executeAppAction` so it rides the
+ * project truth and is wiped on every project load. Ordinary session edits go
+ * through `executeAppAction` so they ride the
  * same CRDT transaction, persistence and collaboration sync as every other project
  * edit — rather than being captured only at save time, which would lose a kit to any
  * reload the user did not explicitly save first.
@@ -32,6 +32,6 @@ export function commitToasterKit(
     void episodes.execute(
         deviceId,
         { type: 'setDeviceState', payload: { deviceId, state: toToasterKitState(kit) } },
-        { skipMacroRecording: true }
+        { skipMacroRecording: true, shouldExecute: () => toasterStore.value?.[deviceId]?.kit === kit }
     );
 }

@@ -30,17 +30,19 @@ export function ImportedNeuralLibraryCard({
                     : 'border-white/8 bg-bg-well'
             }`}
         >
-            <Row align="start" justify="between" gap={3}>
+            <Row align="start" justify="between" wrap gap={2}>
                 <Button
                     variant="bare"
                     size="bare"
                     type="button"
                     aria-pressed={selected}
-                    className="min-w-0 flex-1 text-left"
+                    className="min-w-0 max-w-full grow basis-36 text-left whitespace-normal"
                     onClick={() => on_select(entry)}
                 >
-                    <Row justify="between" gap={3}>
-                        <span className="text-sm font-medium text-text-primary">{entry.name}</span>
+                    <Row justify="between" wrap gap={2}>
+                        <span className="min-w-0 text-sm font-medium wrap-anywhere text-text-primary">
+                            {entry.name}
+                        </span>
                         <span className="text-dense uppercase tracking-[0.18em] text-text-primary">
                             {entry.profile.sourceSampleRate} Hz
                         </span>
@@ -48,7 +50,7 @@ export function ImportedNeuralLibraryCard({
                     <div className="mt-1 text-xs text-text-primary">{entry.family}</div>
                     <div className="mt-2 text-compact text-text-primary">{entry.description}</div>
                 </Button>
-                <Row align="stretch" gap={2} shrink={false}>
+                <Row align="stretch" wrap gap={2} shrink={false}>
                     {has_library_source ? (
                         <>
                             <Button

@@ -38,13 +38,14 @@ import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { type projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
-import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 type MidiLaneStoreState = {
     notesByClipId: Record<string, MidiNote[]>;

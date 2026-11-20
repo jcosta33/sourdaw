@@ -38,6 +38,9 @@ function handleSearchKeyDown(options: KeyboardOptions, event: KeyboardEvent<HTML
         return;
     }
     event.stopPropagation();
+    if (event.nativeEvent.isComposing) {
+        return;
+    }
     event.preventDefault();
     if (event.key === 'Enter') {
         options.commitActive();

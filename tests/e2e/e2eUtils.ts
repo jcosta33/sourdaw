@@ -243,7 +243,7 @@ type OpenBrowserInstrumentInput = {
  * on the panel-mounted contract instead of a fixed sleep.
  *
  * Clicking an instrument card creates the track + device and mounts the
- * InstrumentBottomPanel. Under full-suite worker contention that mount can take
+ * floating device editor. Under full-suite worker contention that mount can take
  * several seconds, so a hard `waitForTimeout` before asserting the panel's inner
  * controls flakes (the panel is not up yet at the fixed deadline). The card label
  * doubles as the panel label, so the panel's `Close <instrument>` control is a

@@ -474,7 +474,7 @@ describe('useTimelineInteractions', () => {
         mocks.workspaceStoreValue.value = {
             activeTool: 'select',
             selectedClipIds: [],
-            automationVisibility: 'visible',
+            automationVisibility: 'overlay',
         };
         mocks.tryPaintSubLane.mockImplementation((_, __, ref) => {
             ref.current = draft;
@@ -716,14 +716,13 @@ describe('useTimelineInteractions', () => {
         expect(mocks.handleAutomationTool).not.toHaveBeenCalled();
     });
 
-    it('paints via the automation tool when the lane is visible', () => {
+    it('does not fall back to a clip-row gain lane when inline automation misses', () => {
         mocks.workspaceStoreValue.value = {
             activeTool: 'automation',
             selectedClipIds: [],
-            automationVisibility: 'visible',
+            automationVisibility: 'overlay',
         };
-        // Sub-lane paint runs first when the lane is visible; make it miss so the
-        // automation tool dispatch is reached.
+        // The pointer is over a clip row, so no visible automation lane was hit.
         mocks.tryPaintSubLane.mockReturnValue(false);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
@@ -731,7 +730,9 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseDown({ button: 0, clientX: 30, clientY: 30 } as any);
         });
 
-        expect(mocks.handleAutomationTool).toHaveBeenCalledWith(30, 30, 0.3, 0, expect.any(Object));
+        expect(mocks.tryPaintSubLane).toHaveBeenCalledWith(30, 30, expect.any(Object));
+        expect(mocks.handleAutomationTool).not.toHaveBeenCalled();
+        expect(mocks.commitInlineAutomationPaint).not.toHaveBeenCalled();
     });
 
     it('returns the tool-specific cursor for each active tool', () => {

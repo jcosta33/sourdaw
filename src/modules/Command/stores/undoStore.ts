@@ -107,12 +107,9 @@ export function reconcileUndoStoreForProject(projectId: string | undefined, capt
 
 /**
  * Drops the live stacks' project/document tag without touching the stacks
- * themselves. Every in-session project transition (`clearUndoHistory`) calls
- * this alongside emptying the stacks, so a mirror flush after that
- * transition carries no identity at all and the next boot always clears —
- * accepted as fail-safe, at the cost of an in-session switch always forfeit-
- * ing undo history across the following reload, even back to the project it
- * left, because nothing re-tags it.
+ * themselves. Project transitions clear the old stacks and their owner
+ * together. A successful fresh-project activation binds its empty history
+ * explicitly so the first edits can be witnessed on Save.
  */
 export function clearUndoStoreOwner(): void {
     pendingSessionRestore = undefined;

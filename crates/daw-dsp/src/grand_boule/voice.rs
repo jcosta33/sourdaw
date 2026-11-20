@@ -5,6 +5,8 @@
 //! configures the coupled-string assembly; `process` runs the hammer at an
 //! oversampled rate and drives every active unison through their bridge.
 
+use core::num::NonZeroU32;
+
 use super::coupled_strings::CoupledStringAssembly;
 use super::duplex::DuplexBank;
 use super::hammer::{contact_lowpass_alpha, HammerParams, HammerState};
@@ -90,9 +92,11 @@ pub struct PianoVoice {
     /// under MPE each note owns its own member channel, so two voices
     /// at one pitch are told apart by it.
     channel: u8,
-    /// True only while the physical key remains down. Sustain and sostenuto
-    /// may keep a key-up voice sounding without retaining per-note expression
-    /// ownership.
+    /// Preview identity stays with the voice through its release tail so MIDI
+    /// cannot address it. Only a held voice accepts a release for this strike.
+    preview_strike_id: Option<NonZeroU32>,
+    /// Sustain and sostenuto can keep a key-up voice sounding after its owner
+    /// has released it.
     held: bool,
     /// Latched only for this exact voice when sostenuto engages. A later voice
     /// at the same pitch must not inherit the capture.
@@ -147,6 +151,7 @@ impl PianoVoice {
         Self {
             stage: VoiceStage::Idle,
             channel: 0,
+            preview_strike_id: None,
             held: false,
             sostenuto_captured: false,
             expr_bend_ratio: 1.0,
@@ -234,6 +239,7 @@ impl PianoVoice {
             return;
         }
         self.held = false;
+        self.preview_strike_id = None;
         self.sostenuto_captured = false;
         self.stage = VoiceStage::Stealing;
         let fade_samples = (STEAL_FADE_SECONDS * self.sample_rate).round().max(1.0);
@@ -273,6 +279,7 @@ impl PianoVoice {
         } = start;
         self.midi_note = midi_note;
         self.channel = channel;
+        self.preview_strike_id = None;
         self.held = true;
         self.sostenuto_captured = false;
         // A fresh strike starts from neutral bend; the controller's
@@ -368,6 +375,19 @@ impl PianoVoice {
         self.hammer.strike(0.8 + 4.0 * self.velocity);
     }
 
+    pub(super) fn note_on_preview(&mut self, start: PianoVoiceStart, strike_id: NonZeroU32) {
+        self.note_on(start);
+        self.preview_strike_id = Some(strike_id);
+    }
+
+    pub(super) fn preview_strike_id(&self) -> Option<NonZeroU32> {
+        self.preview_strike_id
+    }
+
+    pub(super) fn matches_midi_note(&self, midi_note: u8) -> bool {
+        !self.is_idle() && self.preview_strike_id.is_none() && self.midi_note == midi_note
+    }
+
     /// Begin the release phase. The voice keeps ringing but its amplitude
     /// decays exponentially toward zero.
     pub fn note_off(&mut self) {
@@ -414,6 +434,7 @@ impl PianoVoice {
     /// Force the voice back to idle immediately.
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
+        self.preview_strike_id = None;
         self.held = false;
         self.sostenuto_captured = false;
         self.expr_bend_ratio = 1.0;

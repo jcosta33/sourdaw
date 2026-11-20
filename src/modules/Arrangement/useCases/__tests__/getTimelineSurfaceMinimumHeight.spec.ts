@@ -24,6 +24,8 @@ describe('getTimelineSurfaceMinimumHeight', () => {
         ];
 
         expect(getTimelineSurfaceMinimumHeight(tracks, 'selected')).toBe(96);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'selected', 'large')).toBe(144);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'selected', 'compact')).toBe(60);
     });
 
     it('falls back to a visible non-folder when the selected child is collapsed in folder', () => {

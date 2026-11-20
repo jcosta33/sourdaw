@@ -228,6 +228,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },

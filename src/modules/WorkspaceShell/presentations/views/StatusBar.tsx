@@ -359,7 +359,7 @@ export const StatusBar = (): ReactElement => {
                         </a>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                        <a href={PROJECT_LINKS.issues} target="_blank" rel="noopener noreferrer">
+                        <a href={PROJECT_LINKS.bugReport} target="_blank" rel="noopener noreferrer">
                             <Bug aria-hidden="true" />
                             Report a bug
                         </a>
