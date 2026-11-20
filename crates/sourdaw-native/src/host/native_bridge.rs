@@ -90,7 +90,8 @@ const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
 const PLUGIN_LIFECYCLE_UNLOADING: u8 = 1;
 const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 /// How long a control call waits for another control call on the same
-/// instance to let go of its control gate before treating that holder as hung.
+/// instance to let go of its control gate before treating the instance as
+/// unresponsive.
 ///
 /// The holder is third-party code of unbounded duration, so no figure separates
 /// a slow call from a hung one; this one is chosen to sit well clear of every
@@ -99,8 +100,9 @@ const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 /// and 2 s on the editor's UI-thread hop (`EDITOR_UI_THREAD_DEADLINE`), and the
 /// host gives a whole plugin instantiation plus its full capability query 10 s
 /// in the scan worker (`WORKER_TIMEOUT`) and one shell window round trip 10 s
-/// (`WINDOW_HOST_DEADLINE`). A gate held longer than the longest of those is
-/// treated as a hang. TypeScript's rebuild fence waits longer than this
+/// (`WINDOW_HOST_DEADLINE`). A gate held longer than the longest of those makes
+/// the instance unresponsive until the holder lets go — a slow call recovers,
+/// a hung one never does. TypeScript's rebuild fence waits longer than this
 /// (`LIFECYCLE_SETTLEMENT_DEADLINE_MS`), so a call queued natively behind a
 /// hung one answers before the fence gives up on it.
 const CONTROL_GATE_DEADLINE: Duration = Duration::from_secs(10);
@@ -384,10 +386,11 @@ fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
 
 struct PluginRuntimeLifecycle {
     state: AtomicU8,
-    /// Set once a control call gave up on the instance's control gate, and
-    /// never cleared. Separate from `state` because unload and retire still
-    /// move `state` along, and the verdict must outlive both: the call that
-    /// hung may still be executing inside the plugin.
+    /// Set when a control call gave up on the instance's control gate, and
+    /// cleared by the next control call that finds the gate free again.
+    /// Separate from `state` because unload and retire still move `state`
+    /// along while the call that outlived the deadline may still be executing
+    /// inside the plugin.
     unresponsive: AtomicBool,
 }
 
@@ -404,8 +407,17 @@ impl PluginRuntimeLifecycle {
         !self.unresponsive.swap(true, Ordering::AcqRel)
     }
 
+    /// Withdraw the verdict; `true` only when there was one to withdraw.
+    fn clear_unresponsive(&self) -> bool {
+        self.unresponsive.swap(false, Ordering::AcqRel)
+    }
+
     fn is_unresponsive(&self) -> bool {
         self.unresponsive.load(Ordering::Acquire)
+    }
+
+    fn is_active(&self) -> bool {
+        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE
     }
 
     fn begin_unload(&self) {
@@ -432,13 +444,10 @@ impl PluginRuntimeLifecycle {
     }
 
     fn allows_process(&self) -> bool {
-        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE && !self.is_unresponsive()
+        self.is_active() && !self.is_unresponsive()
     }
 
     fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), String> {
-        if self.is_unresponsive() {
-            return Err(unresponsive_control_error(plugin_name));
-        }
         match self.state.load(Ordering::Acquire) {
             PLUGIN_LIFECYCLE_ACTIVE => Ok(()),
             PLUGIN_LIFECYCLE_UNLOADING => Err(format!(
@@ -482,7 +491,8 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     /// How long a control call waits for this instance's control gate before
-    /// it treats the holder as hung. [`CONTROL_GATE_DEADLINE`] in production.
+    /// it treats the instance as unresponsive. [`CONTROL_GATE_DEADLINE`] in
+    /// production.
     control_gate_deadline: Duration,
     activated: bool,
     /// Whether the plugin takes note events, read from it once at load.
@@ -971,27 +981,25 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// off — the guard comes back to the caller — which is sound because
     /// `block_in_place` runs its closure on the calling thread.
     ///
-    /// A holder still inside the plugin at the deadline is treated as hung, and
-    /// the instance as unresponsive for good: it stops processing, and every
-    /// later control call refuses at once instead of queueing behind it. The
-    /// holder is not interrupted — nothing can stop a vendor call from outside —
-    /// so the instance stays allocated for as long as that call holds its
-    /// reference; see [`Self::mark_unresponsive`].
-    ///
-    /// A poisoned gate is taken, as [`Self::try_lock_non_rt_control`] takes it.
+    /// A holder still inside the plugin at the deadline is treated as
+    /// unresponsive: the instance stops processing, and while that holder keeps
+    /// the gate every later control call refuses at once instead of queueing
+    /// behind it. The holder is not interrupted — nothing can stop a vendor call
+    /// from outside — so the instance stays allocated for as long as that call
+    /// holds its reference; see [`Self::mark_unresponsive`]. A call that was
+    /// only slow lets go of the gate eventually, and the next control call to
+    /// take it withdraws the verdict ([`Self::try_take_gate`]).
     fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
-        self.refuse_if_unresponsive()?;
         without_stalling_async_worker(|| {
             let deadline = Instant::now() + self.control_gate_deadline;
             loop {
-                match self.non_rt_control_lock.try_lock() {
-                    Ok(guard) => return Ok(guard),
-                    Err(TryLockError::Poisoned(poisoned)) => return Ok(poisoned.into_inner()),
-                    Err(TryLockError::WouldBlock) => {}
+                if let Some(guard) = self.try_take_gate() {
+                    return Ok(guard);
                 }
 
-                // Another waiter already gave up on this holder: waiting out a
-                // deadline of its own would only add a hang the verdict settled.
+                // The gate is still held by the call some waiter already gave
+                // up on: waiting out a deadline of its own would only add a
+                // hang the verdict settled.
                 self.refuse_if_unresponsive()?;
 
                 if Instant::now() >= deadline {
@@ -1011,19 +1019,59 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         Ok(())
     }
 
+    /// Take the control gate if it is free right now, withdrawing an
+    /// unresponsive verdict on the way.
+    ///
+    /// A free gate is the proof the verdict was waiting for: the call that held
+    /// it past the deadline has returned, so the plugin answers again. The
+    /// intent to process is restored before the verdict is withdrawn, so the
+    /// audio thread never meets a processable instance that is still asked to
+    /// stop — and only for an instance whose lifecycle is still active, since an
+    /// unloading or retired one must not start again.
+    ///
+    /// A poisoned gate is taken rather than refused — the panic that poisoned
+    /// it happened inside some earlier operation's body, the gate itself is
+    /// free, and refusing forever would both silence this instance for the life
+    /// of the process and have a caller that retries spin on every tick.
+    fn try_take_gate(&self) -> Option<MutexGuard<'_, ()>> {
+        let guard = match self.non_rt_control_lock.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return None,
+        };
+        self.recover_if_unresponsive();
+        Some(guard)
+    }
+
+    fn recover_if_unresponsive(&self) {
+        if !self.lifecycle.is_unresponsive() {
+            return;
+        }
+        if self.lifecycle.is_active() {
+            self.processing.request_start();
+        }
+        if self.lifecycle.clear_unresponsive() {
+            eprintln!(
+                "[Plugin] '{}' answers again; its control gate is free",
+                self.name
+            );
+        }
+    }
+
     /// Record that this instance's control gate outlived its deadline.
     ///
     /// The verdict withdraws the intent to process, so the audio thread — which
-    /// already skips the instance while the hung call holds the RT seam — leaves
-    /// the processing state on its own thread if that call ever returns, and
-    /// never processes the instance again.
+    /// already skips the instance while the late call holds the RT seam — leaves
+    /// the processing state on its own thread once that call returns, and
+    /// processes the instance again only after a control call has found the
+    /// gate free and withdrawn the verdict.
     ///
-    /// Nothing here frees anything, and nothing may: the hung call may still be
+    /// Nothing here frees anything, and nothing may: the late call may still be
     /// executing inside the plugin's code. An unload of an unresponsive instance
     /// detaches it from the scheduler and the instance map as any unload does,
     /// then hands its runtime to the retirement vec, whose sweep frees only a
     /// runtime nothing else references (`take_released_retired_runtimes`). The
-    /// hung call reached this owner through an `Arc` clone of its own, so the
+    /// late call reached this owner through an `Arc` clone of its own, so the
     /// runtime — wrapper, plugin and library — stays allocated until that call
     /// returns, or for the rest of the process if it never does.
     fn mark_unresponsive(&self) {
@@ -1039,20 +1087,17 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Take the control gate without waiting for it.
     ///
     /// No async hand-off, because there is nothing to hand off: this never
-    /// blocks. A poisoned gate is taken rather than refused — the panic that
-    /// poisoned it happened inside some earlier operation's body, the gate itself
-    /// is free, and refusing forever would both silence this instance for the
-    /// life of the process and have a caller that retries spin on every tick.
+    /// blocks. A held gate answers busy, or the unresponsive refusal when the
+    /// holder is the call a waiter already gave up on.
     fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
-        self.refuse_if_unresponsive()?;
-        match self.non_rt_control_lock.try_lock() {
-            Ok(guard) => Ok(guard),
-            Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
-            Err(TryLockError::WouldBlock) => Err(format!(
-                "Plugin non-RT control path for '{}' is busy",
-                self.name
-            )),
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
         }
+        self.refuse_if_unresponsive()?;
+        Err(format!(
+            "Plugin non-RT control path for '{}' is busy",
+            self.name
+        ))
     }
 
     fn ensure_active_lifecycle(&self) -> Result<(), String> {
@@ -2478,17 +2523,67 @@ mod tests {
         );
         assert!(
             shared.with_process(|_, _| ()).is_none(),
-            "an unresponsive instance must never be processed again, even once its hung call returns"
+            "an unresponsive instance must not be processed once its late call returns, until a control call withdraws the verdict"
         );
         assert!(
             shared.processing_gate().has_stopped(),
             "the audio thread must leave the processing state of an instance found unresponsive"
         );
+    }
+
+    /// A call that outlived the gate deadline but did return was slow, not
+    /// hung: the next control call that finds the gate free withdraws the
+    /// verdict, and the instance processes again.
+    #[test]
+    fn an_instance_found_unresponsive_recovers_once_its_slow_call_returns() {
+        let gate_deadline = Duration::from_millis(100);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared =
+            Arc::new(SharedHostedPlugin::new(wrapper).with_control_gate_deadline(gate_deadline));
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let waiting = Arc::clone(&shared);
+        let gave_up = answer_within(Duration::from_secs(5), move || {
+            waiting.with_unload_control(Duration::from_secs(2), |_| Ok(()))
+        });
+        let _ = release.send(());
+        let Some((gave_up, _)) = gave_up else {
+            panic!("a waiter behind a slow control call never answered");
+        };
         assert!(
-            shared
-                .with_control(Duration::from_secs(2), |_| Ok(()))
-                .is_err(),
-            "the unresponsive verdict must outlive the hung call"
+            gave_up.is_err_and(|error| error.starts_with("plugin-unresponsive:")),
+            "the waiter must give up at the deadline while the slow call holds the gate"
+        );
+        assert!(shared.lifecycle.is_unresponsive());
+        assert_eq!(
+            holder.join().expect("the holding thread must not panic"),
+            Ok(())
+        );
+
+        let recovering = Arc::clone(&shared);
+        let recovered = answer_within(Duration::from_secs(5), move || {
+            recovering.with_control(Duration::from_secs(2), |_| Ok(()))
+        });
+        let Some((recovered, _)) = recovered else {
+            panic!("a control call on a free gate never answered");
+        };
+
+        assert_eq!(
+            recovered,
+            Ok(()),
+            "the first control call to find the gate free must run"
+        );
+        assert!(
+            !shared.lifecycle.is_unresponsive(),
+            "taking the free gate must withdraw the unresponsive verdict"
+        );
+        assert!(
+            shared.processing_gate().wants_processing(),
+            "a recovered active instance must be asked to process again"
+        );
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "a recovered instance must be processed again"
         );
     }
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     defaultExternalPluginActivationState,
@@ -12,6 +12,7 @@ import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExter
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { readPluginState } from '../readPluginState';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
+import { LIFECYCLE_SETTLEMENT_DEADLINE_MS } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../../../repositories/pluginBridge/types';
@@ -37,6 +38,7 @@ vi.mock('../../../repositories/pluginBridge/onPluginLatencyChanged', () => ({
     onPluginLatencyChanged: mocks.subscribe,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 /**
  * The handler the single live subscription installed. Captured rather than
@@ -282,8 +284,35 @@ describe('activateExternalPlugin', () => {
 
         expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
             status: 'error',
-            message: 'compressor stopped responding and no longer processes audio.',
+            message: 'compressor stopped responding; it is silent until it answers again or is reloaded.',
         });
+    });
+
+    it('lets a restore that answers after a rebuild gave up on it write nothing onto the next generation', async () => {
+        const lateRestore = Promise.withResolvers<void>();
+        // Answer at last however the case ends, so the held turn cannot leak into later cases.
+        onTestFinished(() => lateRestore.resolve());
+        mocks.setPluginStateRepo.mockReturnValueOnce(lateRestore.promise);
+        const abandoned = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledOnce());
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+        await rebuild;
+
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toEqual({ status: 'active' });
+        lateRestore.reject(new Error('state chunk rejected'));
+        await abandoned;
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
     });
 
     // Issue 3693: a plugin that rejects its saved chunk holds its own defaults,
