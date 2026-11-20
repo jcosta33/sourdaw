@@ -236,6 +236,7 @@ const applicationIdMaterializerByActionType: {
     setExternalPluginState: materializeByIdRule,
     setDeviceState: materializeByIdRule,
     setFermenterPatch: materializeByIdRule,
+    setLevainIdentity: materializeByIdRule,
     setGrandBouleDeviceState: materializeByIdRule,
     setToasterFactoryKit: materializeByIdRule,
     setGlutenFactoryPreset: materializeByIdRule,

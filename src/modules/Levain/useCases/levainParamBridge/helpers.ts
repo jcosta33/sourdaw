@@ -251,7 +251,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         return pendingKeysByDevice.get(deviceId)?.has(`${deviceId}:master_gain`) ?? false;
     }
 
-    function captureMasterRegistration(deviceId: string): () => boolean {
+    function captureRegistration(deviceId: string): () => boolean {
         const device = activeDevices.get(deviceId);
         const port = activePorts.get(deviceId);
         return () =>
@@ -577,21 +577,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
     }
 
-    /**
-     * Push a whole patch to the engine, the way registration and offline render do.
-     *
-     * Loading an instrument replaces every patch field at once, and forwarding a
-     * hand-listed subset is what let the engine keep the previous instrument's mic
-     * mix and articulation while the panel showed the new instrument's defaults.
-     * Sharing `projectLevainPatchToEngineParameters` with the other two paths means
-     * a field added to the patch cannot be forgotten by only one of them.
-     *
-     * Unlike registration this persists, because it is a user edit rather than a
-     * replay of what was already saved. `current_articulation` is the exception:
-     * articulation identity rides `Device.deviceState` (committed by
-     * `initLevainDeviceStatePersistence`), so persisting the engine id here would
-     * write a second, competing source of truth for the same choice.
-     */
+    /** Reflect an accepted patch without writing it back or discarding unrelated queued edits. */
     function applyPatchToEngine(deviceId: string, patch: LevainPatch): void {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
@@ -599,11 +585,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
 
         for (const { name, value } of projectLevainPatchToEngineParameters(patch)) {
-            if (name === 'current_articulation') {
-                setRuntimeParam(target, name, value);
-                continue;
-            }
-            queueParam(deviceId, name, value);
+            const key = `${deviceId}:${name}`;
+            paramBatcher.cancel(key);
+            pendingKeysByDevice.get(deviceId)?.delete(key);
+            setRuntimeParam(target, name, value);
         }
     }
 
@@ -637,7 +622,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         setMacroWithAudio,
         sendMicParamToEngine,
         isMasterGainQueued,
-        captureMasterRegistration,
+        captureRegistration,
         applyPatchToEngine,
         readRegistrySizes,
     };

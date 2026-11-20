@@ -1,6 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { projectDeviceChainAction } from './DeviceChainActionProjection';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { type DevicePatchState } from './DevicePatchState';
@@ -102,6 +102,13 @@ function parameterSourceMatches(
     );
 }
 
+function projectPlannedPatch(device: Device, step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>): Device | null {
+    if (step.preservedMetadata) {
+        return projectCapturedDevicePatchWithMetadata(device, step.expected, step.after, step.preservedMetadata);
+    }
+    return projectCapturedDevicePatch(device, step.expected, step.after);
+}
+
 function projectCapturedStep(
     owners: Owner[],
     step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>
@@ -118,7 +125,7 @@ function projectCapturedStep(
     ) {
         return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
     }
-    const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
+    const device = projectPlannedPatch(target.device, step);
     if (!device) {
         return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
     }
@@ -171,16 +178,21 @@ function projectMaterializedTrack(
     return { status: 'projected', owners };
 }
 
+function requiresCapturedPatchStep(action: AppAction): boolean {
+    return (
+        action.type === 'setFermenterPatch' ||
+        action.type === 'setGlutenFactoryPreset' ||
+        action.type === 'setLevainIdentity' ||
+        action.type === 'setToasterFactoryKit'
+    );
+}
+
 function projectCommandOwners(
     owners: Owner[],
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (
-        action.type === 'setFermenterPatch' ||
-        action.type === 'setGlutenFactoryPreset' ||
-        action.type === 'setToasterFactoryKit'
-    ) {
+    if (requiresCapturedPatchStep(action)) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

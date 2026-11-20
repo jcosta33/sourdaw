@@ -120,6 +120,7 @@ const stampByActionType: Stamp = {
     setExternalPluginState: leaveUnstamped,
     setDeviceState: leaveUnstamped,
     setFermenterPatch: leaveUnstamped,
+    setLevainIdentity: leaveUnstamped,
     setGrandBouleDeviceState: leaveUnstamped,
     setToasterFactoryKit: leaveUnstamped,
     setGlutenFactoryPreset: leaveUnstamped,

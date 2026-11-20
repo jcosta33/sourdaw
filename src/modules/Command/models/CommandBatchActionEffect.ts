@@ -136,6 +136,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setExternalPluginState: NONE,
     setDeviceState: NONE,
     setFermenterPatch: NONE,
+    setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
     setGlutenFactoryPreset: NONE,

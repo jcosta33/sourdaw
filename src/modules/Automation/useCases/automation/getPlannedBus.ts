@@ -165,6 +165,7 @@ const plannedBusByActionType: {
     setExternalPluginState: unchangedBus,
     setDeviceState: unchangedBus,
     setFermenterPatch: unchangedBus,
+    setLevainIdentity: unchangedBus,
     setGrandBouleDeviceState: unchangedBus,
     setToasterFactoryKit: unchangedBus,
     setGlutenFactoryPreset: unchangedBus,

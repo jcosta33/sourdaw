@@ -116,6 +116,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     setExternalPluginState: ruleDrivenArguments,
     setDeviceState: ruleDrivenArguments,
     setFermenterPatch: ruleDrivenArguments,
+    setLevainIdentity: ruleDrivenArguments,
     setGrandBouleDeviceState: ruleDrivenArguments,
     setToasterFactoryKit: ruleDrivenArguments,
     setGlutenFactoryPreset: ruleDrivenArguments,

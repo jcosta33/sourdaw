@@ -85,6 +85,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     setExternalPluginState: 'none',
     setDeviceState: 'none',
     setFermenterPatch: 'none',
+    setLevainIdentity: 'none',
     setGrandBouleDeviceState: 'none',
     setToasterFactoryKit: 'none',
     setGlutenFactoryPreset: 'none',

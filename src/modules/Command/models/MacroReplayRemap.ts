@@ -221,6 +221,7 @@ export const macroReplayRemapByActionType: {
     setExternalPluginState: leaveReferencesUnmapped,
     setDeviceState: leaveReferencesUnmapped,
     setFermenterPatch: leaveReferencesUnmapped,
+    setLevainIdentity: leaveReferencesUnmapped,
     setGrandBouleDeviceState: leaveReferencesUnmapped,
     setToasterFactoryKit: leaveReferencesUnmapped,
     setGlutenFactoryPreset: leaveReferencesUnmapped,

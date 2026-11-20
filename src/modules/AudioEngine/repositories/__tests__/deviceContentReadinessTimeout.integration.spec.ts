@@ -54,6 +54,7 @@ function createCrumbsGeneration(): CrumbsGeneration {
     const destroy = vi.fn();
     const result: CrumbsNodeResult = {
         workletNode: asWorkletNode(workletNode),
+        startPadAudition: vi.fn(),
         noteOn: vi.fn(),
         noteOff: vi.fn(),
         allNotesOff: vi.fn(),

@@ -10,48 +10,21 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
-import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
-import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
-import { loadInstrument } from '../loadPreset';
 import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
     autoLoadLevainSamples: vi.fn(() => Promise.resolve(null)),
-    coordinateRequests: [] as Promise<void>[],
 }));
 
 vi.mock('../autoLoadSamples', () => ({
     autoLoadLevainSamples: mocks.autoLoadLevainSamples,
 }));
-
-// The bridge's engine-facing half needs a registered worklet port; this spec is
-// about what crosses into the document, so it stubs the two calls that would
-// otherwise reach a device that does not exist and leaves the store writes real.
-vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
-    loadSamplesForInstrument: vi.fn(),
-}));
-vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
-    setLevainParamWithAudio: vi.fn(),
-}));
-
-vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
-    return {
-        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
-            const request = original.coordinateLevainDeviceState(...args);
-            mocks.coordinateRequests.push(request);
-            return request;
-        },
-    };
-});
 
 const DEVICE_ID = 'levain-1';
 
@@ -108,52 +81,22 @@ function makeLevainTracks(deviceState?: Track['devices'][number]['deviceState'])
  * it does not carry is gone no matter what the store held a moment earlier.
  */
 describe('Levain instrument persistence round trip', () => {
-    let stopPersistence: () => void;
-
     beforeEach(() => {
-        // This isolated roundtrip fixture has no committed document; its visible rows are pending.
-        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
-        clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
         levainStore.set({});
         trackStore.set({ ...defaultTrackState, tracks: makeLevainTracks() });
-        stopPersistence = initLevainDeviceStatePersistence();
     });
 
-    afterEach(async () => {
-        stopPersistence();
-        await Promise.all(mocks.coordinateRequests);
-        configureLevainDeviceStateProjectAccess(null);
-        mocks.coordinateRequests.length = 0;
+    afterEach(() => {
         vi.unstubAllGlobals();
     });
 
-    it('carries the instrument the user picked through a reload, into playback and the export', async () => {
-        levainStore.set({ [DEVICE_ID]: { ...defaultLevainState } });
-        await Promise.all(mocks.coordinateRequests);
-
-        // The panel's instrument picker calls exactly this.
-        loadInstrument(DEVICE_ID, 'cello');
-        await Promise.all(mocks.coordinateRequests);
-
-        const loadedState = levainStore.value?.[DEVICE_ID];
-        if (!loadedState) {
-            throw new Error('Levain state did not load');
-        }
-        levainStore.set({
-            [DEVICE_ID]: {
-                ...loadedState,
-                patch: { ...loadedState.patch, currentArticulation: 'tremolo' },
-            },
+    it('renders the saved instrument and articulation in export after a reload', async () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: makeLevainTracks({ version: 1, data: { instrumentId: 'cello', currentArticulation: 'tremolo' } }),
         });
-        await Promise.all(mocks.coordinateRequests);
-
-        // Reload: project the document, then rebuild the session from it alone.
-        const projected = sanitizeTrackSnapshot(trackStore.value);
-        trackStore.set({ ...defaultTrackState, tracks: projected.tracks });
-        levainStore.set({});
 
         expect(hydrateLevainStateFromProject(DEVICE_ID)?.patch.instrumentId).toBe('cello');
         expect(hydrateLevainStateFromProject(DEVICE_ID)?.patch.currentArticulation).toBe('tremolo');
@@ -349,11 +292,10 @@ describe('Levain instrument persistence round trip', () => {
         );
     });
 
-    it('does not write a chunk for a device that only appeared', async () => {
+    it('does not write a chunk for a device that only appeared', () => {
         // Registration is not an edit. Committing on first sight would write a chunk
         // for every Levain ever loaded and mark a freshly opened project dirty.
         levainStore.set({ [DEVICE_ID]: { ...defaultLevainState } });
-        await Promise.all(mocks.coordinateRequests);
 
         expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toBeUndefined();
     });

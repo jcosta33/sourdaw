@@ -356,6 +356,7 @@ export type BuiltinDeviceNode = {
      */
     crumbsControls?: {
         ready: boolean;
+        startPadAudition: (note: number, velocity: number) => (() => void) | undefined;
         noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
         noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
         allNotesOff: () => void;

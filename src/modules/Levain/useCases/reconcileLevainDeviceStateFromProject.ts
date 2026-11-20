@@ -1,97 +1,87 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, type Device } from '#/modules/Arrangement/stores';
 
 import { fromLevainDeviceState } from '../models/LevainDeviceState';
-import {
-    defaultLevainState,
-    levainStore,
-    setCurrentArticulation,
-    setLevainParam,
-    type LevainState,
-} from '../stores/levainStore';
+import { defaultLevainState, levainStore, setLevainParam, type LevainState } from '../stores/levainStore';
 
+import { hydrateLevainStateFromDevice } from './hydrateLevainStateFromDevice';
+import { applyPatchToEngine } from './levainParamBridge/applyPatchToEngine';
 import { levainBridge } from './levainParamBridge/levainBridge';
+import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
 import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
-import { loadInstrument } from './loadPreset';
 import { readLevainMasterGain } from './readLevainMasterGain';
 
-/**
- * Apply authoritative project identity state to a loaded Levain session
- * (#4764).
- *
- * The inbound half of `initLevainDeviceStatePersistence`: the peer's commit
- * landed in the document without any local trigger firing, so this re-applies
- * the identity through the same doors a panel pick uses. An instrument change
- * rides `loadInstrument` — default patch, engine parameters, sample bank, the
- * whole route, because the peer's own pick produced exactly that — and an
- * articulation change rides `setCurrentArticulation` plus the live param door,
- * which is what `setLevainParamWithAudio` itself does. The store write leads
- * the door so the panel holds the reconciled identity even where the engine
- * door refuses (no port, torn-down node).
- *
- * A device with no session record is skipped: nothing live holds a stale
- * identity, and registration rehydrates from the document anyway.
- *
- * Tier projection precedes the identity gate so peer layout choices never touch
- * samples or DSP parameters. The identity mirror checks project truth before
- * committing, suppressing an echo of an already authoritative identity.
- */
-export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return;
+function projectInstrumentPatch(device: Device, state: LevainState, bankChanged: boolean): void {
+    const projected = hydrateLevainStateFromDevice(device);
+    const instances = levainStore.value ?? {};
+    levainStore.set({
+        ...instances,
+        [device.id]: {
+            ...state,
+            patch: projected.patch,
+            uiLevel: projected.uiLevel,
+            currentArticulationDisplay: projected.currentArticulationDisplay,
+        },
+    });
+    applyPatchToEngine(device.id, projected.patch);
+    if (bankChanged) {
+        loadSamplesForInstrument(device.id, projected.patch.instrumentId);
     }
-
-    const device = tracks
-        .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-    if (!device) {
-        return;
-    }
-
-    const state = levainStore.value?.[deviceId];
-    if (!state) {
-        return;
-    }
-
-    const identity = fromLevainDeviceState(device.deviceState);
-    if (identity) {
-        reconcileIdentity(deviceId, state, identity);
-    }
-    projectMasterGain(deviceId, device.parameterValues);
 }
 
-function reconcileIdentity(
+function projectMasterGain(device: Device): void {
+    const gain = readLevainMasterGain(device.parameterValues, defaultLevainState.patch.masterGain);
+    if (levainStore.value?.[device.id]?.patch.masterGain !== gain && !levainBridge().isMasterGainQueued(device.id)) {
+        setLevainParam(device.id, 'masterGain', gain);
+    }
+}
+
+function projectSameBankIdentity(
     deviceId: string,
     state: LevainState,
-    identity: NonNullable<ReturnType<typeof fromLevainDeviceState>>
+    identity: ReturnType<typeof fromLevainDeviceState>
 ): void {
-    const uiLevel = identity.disclosureTier === 'expert' ? 6 : 1;
+    const uiLevel = identity?.disclosureTier === 'expert' ? 6 : 1;
     if (state.uiLevel !== uiLevel) {
-        const instances = levainStore.value ?? {};
-        levainStore.set({ ...instances, [deviceId]: { ...state, uiLevel } });
+        levainStore.set({ ...levainStore.value, [deviceId]: { ...state, uiLevel } });
     }
-
-    if (
-        state.patch.instrumentId === identity.instrumentId &&
-        state.patch.currentArticulation === identity.currentArticulation
-    ) {
-        return;
-    }
-
-    if (state.patch.instrumentId !== identity.instrumentId) {
-        loadInstrument(deviceId, identity.instrumentId);
-    }
-
-    if (levainStore.value?.[deviceId]?.patch.currentArticulation !== identity.currentArticulation) {
-        setCurrentArticulation(deviceId, identity.currentArticulation);
-        setLevainParamWithAudio(deviceId, 'currentArticulation', identity.currentArticulation);
+    const articulation = identity?.currentArticulation ?? defaultLevainState.patch.currentArticulation;
+    if (state.patch.currentArticulation !== articulation) {
+        setLevainParamWithAudio(deviceId, 'currentArticulation', articulation);
     }
 }
 
-function projectMasterGain(deviceId: string, values: Readonly<Record<string, number>>): void {
-    const gain = readLevainMasterGain(values, defaultLevainState.patch.masterGain);
-    // Leave the synchronous patch intact until its own queued instrument reset publishes.
-    if (levainStore.value?.[deviceId]?.patch.masterGain !== gain && !levainBridge().isMasterGainQueued(deviceId)) {
-        setLevainParam(deviceId, 'masterGain', gain);
+function readRegisteredLevain(deviceId: string): { device: Device; state: LevainState } | null {
+    const owner = trackStore.value?.tracks.find(({ devices }) => devices.some(({ id }) => id === deviceId));
+    if (!owner || owner.frozen) {
+        return null;
     }
+    const device = owner.devices.find(({ id }) => id === deviceId);
+    const state = levainStore.value?.[deviceId];
+    if (device?.type !== 'levain' || !state) {
+        return null;
+    }
+    return { device, state };
+}
+
+/** Reflect committed identity in the registered session. Only a Browse edit resets the stored settings. */
+export function reconcileLevainDeviceStateFromProject(deviceId: string, { projectPatch = false } = {}): void {
+    const registered = readRegisteredLevain(deviceId);
+    if (!registered) {
+        return;
+    }
+    const { device, state } = registered;
+    const identity = fromLevainDeviceState(device.deviceState);
+    if (!identity && device.deviceState !== undefined) {
+        projectMasterGain(device);
+        return;
+    }
+
+    const bankChanged = state.patch.instrumentId !== (identity?.instrumentId ?? defaultLevainState.patch.instrumentId);
+    if (projectPatch || bankChanged) {
+        projectInstrumentPatch(device, state, bankChanged);
+        return;
+    }
+
+    projectSameBankIdentity(deviceId, state, identity);
+    projectMasterGain(device);
 }

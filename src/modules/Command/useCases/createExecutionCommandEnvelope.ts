@@ -122,6 +122,7 @@ const seedMaterializerByActionType: {
     setExternalPluginState: leaveSeedUnminted,
     setDeviceState: leaveSeedUnminted,
     setFermenterPatch: leaveSeedUnminted,
+    setLevainIdentity: leaveSeedUnminted,
     setGrandBouleDeviceState: leaveSeedUnminted,
     setToasterFactoryKit: leaveSeedUnminted,
     setGlutenFactoryPreset: leaveSeedUnminted,

@@ -97,6 +97,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     setExternalPluginState: noFallbackScope,
     setDeviceState: noFallbackScope,
     setFermenterPatch: noFallbackScope,
+    setLevainIdentity: noFallbackScope,
     setGrandBouleDeviceState: noFallbackScope,
     setToasterFactoryKit: noFallbackScope,
     setGlutenFactoryPreset: noFallbackScope,

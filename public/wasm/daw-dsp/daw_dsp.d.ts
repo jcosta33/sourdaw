@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:78f8d77986b1a83ece25ba7b6a9ecff18e8d90697445b01032b3fd10a9b5f8b1
+// @wasm-bindgen-dts crate-source: sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90
 /* tslint:disable */
 /* eslint-disable */
 
@@ -152,13 +152,21 @@ export class CrumbsInstance {
     get_right_ptr(): number;
     constructor(sample_rate: number);
     /**
-     * Release every voice sounding at `note`.
+     * Release ordinary held voices sounding at `note`.
      */
     note_off(note: number): void;
     /**
      * Trigger a note. Pitch is derived from the active sample's root note.
      */
     note_on(note: number, velocity: number): void;
+    /**
+     * Release voices created by this pad audition.
+     */
+    pad_audition_off(audition_id: number): void;
+    /**
+     * Trigger a pad audition whose voices can be released together by id.
+     */
+    pad_audition_on(note: number, velocity: number, audition_id: number): void;
     /**
      * Render a block. Returns a pointer to the left channel; the right channel
      * is at `get_right_ptr()`.
@@ -1206,6 +1214,8 @@ export interface InitOutput {
     readonly crumbsinstance_new: (a: number) => number;
     readonly crumbsinstance_note_off: (a: number, b: number) => void;
     readonly crumbsinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly crumbsinstance_pad_audition_off: (a: number, b: number) => void;
+    readonly crumbsinstance_pad_audition_on: (a: number, b: number, c: number, d: number) => void;
     readonly crumbsinstance_process: (a: number, b: number) => number;
     readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
     readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;

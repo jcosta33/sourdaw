@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { createTrack } from '../../../models/Track';
 import {
     deviceChainMutationTrackIdByActionType,
@@ -27,6 +29,7 @@ describe('getDeviceChainMutationTrackId', () => {
                 'restorePresetDeviceChain',
                 'removeDevice',
                 'loadExternalPlugin',
+                'setLevainIdentity',
             ].sort()
         );
     });
@@ -109,6 +112,54 @@ describe('getDeviceChainMutationTrackId', () => {
                 track
             )
         ).toBe('track-9');
+    });
+
+    it('names the Levain owner only when a captured numeric key appears or disappears', () => {
+        type LevainAction = Extract<AppAction, { type: 'setLevainIdentity' }>;
+        const missingDeviceState = { version: 1, data: { instrumentId: 'violin-1' } };
+        const instrument = {
+            type: 'setLevainIdentity',
+            payload: {
+                kind: 'instrument',
+                trackId: 'track-9',
+                deviceId: 'levain-1',
+                deviceIds: ['levain-1'],
+                label: 'Load Cello',
+                missingDeviceState,
+                before: { deviceState: missingDeviceState, parameterValues: { masterGain: null } },
+                after: {
+                    deviceState: { version: 1, data: { instrumentId: 'cello' } },
+                    parameterValues: { masterGain: 0.7 },
+                },
+            },
+        } satisfies LevainAction;
+        const { before, after } = instrument.payload;
+        const inverse: LevainAction = {
+            ...instrument,
+            payload: { ...instrument.payload, before: after, after: before, restore: true },
+        };
+        const changedValue: LevainAction = {
+            ...instrument,
+            payload: { ...instrument.payload, before: { ...before, parameterValues: { masterGain: 0.2 } } },
+        };
+        const articulation: LevainAction = {
+            ...instrument,
+            payload: {
+                ...instrument.payload,
+                kind: 'articulation',
+                label: 'Select Staccato',
+                before: { deviceState: missingDeviceState, parameterValues: {} },
+                after: {
+                    deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } },
+                    parameterValues: {},
+                },
+            },
+        };
+
+        expect(getDeviceChainMutationTrackId(instrument, track)).toBe('track-9');
+        expect(getDeviceChainMutationTrackId(inverse, track)).toBe('track-9');
+        expect(getDeviceChainMutationTrackId(changedValue, track)).toBeUndefined();
+        expect(getDeviceChainMutationTrackId(articulation, track)).toBeUndefined();
     });
 
     it('names no track for an action outside the device chain', () => {

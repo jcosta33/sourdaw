@@ -32,36 +32,19 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
-const grandBouleDeviceStateReplayContract: SessionActionContract = {
-    actionType: 'setGrandBouleDeviceState',
-    operationVersion: 1,
-    role: 'forward',
-    validateArguments: (payload: unknown) =>
-        validateVersionedCommandArguments('setGrandBouleDeviceState', payload) &&
-        getHandlerByType('setGrandBouleDeviceState')?.validateSessionActionArguments?.(payload) === true,
-    validateEntry: (entry) => getHandlerByType('setGrandBouleDeviceState')?.validateSessionEntry?.(entry) === true,
-};
-
-const toasterFactoryKitReplayContract: SessionActionContract = {
-    actionType: 'setToasterFactoryKit',
-    operationVersion: 1,
-    role: 'forward',
-    validateArguments: (payload: unknown) =>
-        validateVersionedCommandArguments('setToasterFactoryKit', payload) &&
-        getHandlerByType('setToasterFactoryKit')?.validateSessionActionArguments?.(payload) === true,
-    validateEntry: (entry) => getHandlerByType('setToasterFactoryKit')?.validateSessionEntry?.(entry) === true,
-};
-
-const glutenFactoryPresetReplayContract: SessionActionContract = {
-    actionType: 'setGlutenFactoryPreset',
-    operationVersion: 1,
-    role: 'forward',
-    validateArguments: (payload: unknown) =>
-        validateVersionedCommandArguments('setGlutenFactoryPreset', payload) &&
-        getHandlerByType('setGlutenFactoryPreset')?.validateSessionActionArguments?.(payload) === true,
-    validateEntry: (entry) => getHandlerByType('setGlutenFactoryPreset')?.validateSessionEntry?.(entry) === true,
-};
-
+function createCapturedDeviceReplayContract(
+    actionType: 'setGlutenFactoryPreset' | 'setGrandBouleDeviceState' | 'setLevainIdentity' | 'setToasterFactoryKit'
+): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) =>
+            validateVersionedCommandArguments(actionType, payload) &&
+            getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
 /**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
@@ -87,9 +70,10 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
-        grandBouleDeviceStateReplayContract,
-        toasterFactoryKitReplayContract,
-        glutenFactoryPresetReplayContract,
+        createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
+        createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {
