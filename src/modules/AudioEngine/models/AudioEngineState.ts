@@ -304,6 +304,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */
     grandBouleControls?: {
         ready: boolean;
+        /** Aborted when this particular live body is retired. */
+        retirement?: AbortSignal;
         noteOn: (midiNote: number, velocity: number, sampleFrame?: number, channel?: number) => void;
         /**
          * Release the note. `releaseVelocity` is the normalized (0..1) MIDI

@@ -1672,6 +1672,13 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
             expect(loaded.workerInstances).toBe(1);
+            const retirement = loaded.grandBouleControls?.retirement;
+            expect(retirement?.aborted).toBe(false);
+            const onRetired = vi.fn(() => expect(loaded.grandBouleControls?.ready).toBe(false));
+            retirement?.addEventListener('abort', onRetired);
+            loaded.controller?.destroy?.();
+            expect(onRetired).toHaveBeenCalledOnce();
+            expect(result.destroy).toHaveBeenCalledOnce();
         });
 
         it("hands the loaded node the engine result's own discardStoredPedals, so stored moves can be dropped", async () => {
@@ -1711,6 +1718,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workerInstances: loaded.workerInstances,
             }).toEqual({ controllerReady: false, deviceReady: false, workerInstances: 0 });
             expect(result.destroy).toHaveBeenCalledOnce();
+            expect(loaded.grandBouleControls?.retirement?.aborted).toBe(true);
             // The demoted stand-in stays on the track: the device has not left the project.
             expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
