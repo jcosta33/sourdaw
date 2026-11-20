@@ -6,15 +6,27 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, sanitizeTrackSnapshot, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { audioEngine, initEngineDeviceCollaborators, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import {
+    captureUndoHistory,
+    clearUndoHistory,
+    executeAppAction,
+    redo,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
@@ -182,5 +194,178 @@ describe('Grinder disclosure in project truth', () => {
             trackStore.set({ ...defaultTrackState, tracks });
         });
         expect(screen.getByRole('slider', { name: 'Gain' })).toHaveAttribute('aria-valuenow', '8');
+    });
+
+    describe('Gain in the mounted editor', () => {
+        const writes = vi.fn<(trackId: string, deviceId: string, paramId: string, value: number) => void>();
+
+        function rawValues(deviceId: string): Record<string, number> {
+            flushAutomergeStorageWrites();
+            const device = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root')?.tracks.tracks[0]?.devices.find(
+                (candidate) => candidate.id === deviceId
+            );
+            if (!device) {
+                throw new Error('Grinder is missing from the raw project');
+            }
+            return device.parameterValues;
+        }
+
+        function gainKnob(): HTMLElement {
+            const knob = screen.getByRole('slider', { name: /^Gain$/ });
+            Object.defineProperties(knob, {
+                setPointerCapture: { configurable: true, value: vi.fn() },
+                releasePointerCapture: { configurable: true, value: vi.fn() },
+            });
+            return knob;
+        }
+
+        function dragGain(knob: HTMLElement): void {
+            fireEvent.pointerDown(knob, { button: 0, pointerId: 1, clientY: 100 });
+            fireEvent.pointerMove(knob, { pointerId: 1, clientY: 85 });
+        }
+
+        beforeEach(async () => {
+            clearUndoHistory();
+            resetActionReplayAuthority();
+            setActionHistoryMetadataPort({
+                record: () => [],
+                markReverted: () => ({ status: 'unavailable' }),
+                clear: () => undefined,
+            });
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            writes.mockClear();
+            const wire = vi.spyOn(audioEngine, 'setUseCaseDeviceCollaborators');
+            initEngineDeviceCollaborators();
+            const collaborators = wire.mock.calls[0]?.[0];
+            if (!collaborators) {
+                throw new Error('Missing AudioEngine parameter receipt wiring');
+            }
+            vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation((trackId, deviceId, paramId, value) => {
+                const complete = collaborators.captureParameterWriteReceipt(trackId, deviceId, paramId).begin();
+                writes(trackId, deviceId, paramId, value);
+                complete();
+            });
+        });
+
+        afterEach(() => {
+            cleanup();
+            clearUndoHistory();
+            resetActionReplayAuthority();
+            audioEngine.setUseCaseDeviceCollaborators(null);
+            vi.restoreAllMocks();
+        });
+
+        it('previews without writing, appends one release edit, and undoes to the absent key', async () => {
+            await executeAppAction(
+                {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'a', paramId: 'gain', value: 5, deleteParameter: true },
+                },
+                { skipUndo: true }
+            );
+            await executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'b', paramId: 'gain', value: 3 },
+            });
+            const original = captureUndoHistory().past;
+            const raw = rawValues('a');
+            expect(Object.hasOwn(raw, 'gain')).toBe(false);
+            writes.mockClear();
+            render(<GrinderPanel deviceId="a" />);
+            const knob = gainKnob();
+
+            dragGain(knob);
+            expect(knob).toHaveAttribute('aria-valuenow', '6');
+            expect(writes.mock.calls).toEqual([['track', 'a', 'gain', 6]]);
+            expect(rawValues('a')).toEqual(raw);
+            expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual(raw);
+            expect(captureUndoHistory().past).toEqual(original);
+
+            fireEvent.pointerMove(knob, { pointerId: 1, clientY: 70 });
+            fireEvent.pointerUp(knob, { pointerId: 1 });
+            await waitFor(() => expect(undoStore.value?.past).toHaveLength(original.length + 1));
+            const released = captureUndoHistory().past.at(-1);
+            expect(released).toMatchObject({
+                kind: 'action',
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'a', paramId: 'gain', value: 7 },
+                },
+            });
+            expect(captureUndoHistory().past.slice(0, -1)).toEqual(original);
+            expect(rawValues('a')).toEqual({ ...raw, gain: 7 });
+            expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 7);
+
+            await act(undo);
+            expect(captureUndoHistory().past).toEqual(original);
+            expect(captureUndoHistory().future.map((entry) => entry.id)).toEqual([released?.id]);
+            const restored = rawValues('a');
+            expect(Object.hasOwn(restored, 'gain')).toBe(false);
+            expect(restored).toEqual(raw);
+            expect(knob).toHaveAttribute('aria-valuenow', '5');
+            expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 5);
+
+            await act(redo);
+            expect(rawValues('a')).toEqual({ ...raw, gain: 7 });
+            expect(knob).toHaveAttribute('aria-valuenow', '7');
+            expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 7);
+            expect(rawValues('b')).toEqual({ gain: 3 });
+            expect(writes.mock.calls.every(([, deviceId]) => deviceId === 'a')).toBe(true);
+        });
+
+        it('cannot release Gain to a removed device or edit a replacement of another type', async () => {
+            render(<GrinderPanel deviceId="a" />);
+            const knob = gainKnob();
+            const original = trackStore.value!;
+            const track = original.tracks[0]!;
+            const [owner, sentinel] = track.devices;
+            if (!owner || !sentinel) {
+                throw new Error('Expected both fixture devices');
+            }
+            const previousSentinel = rawValues(sentinel.id);
+
+            dragGain(knob);
+            expect(writes.mock.calls).toEqual([['track', 'a', 'gain', 9]]);
+            act(() => trackStore.set({ ...original, tracks: [{ ...track, devices: [sentinel] }] }));
+            await act(async () => {
+                fireEvent.pointerUp(knob, { pointerId: 1 });
+            });
+            expect(trackStore.value?.tracks[0]?.devices.map(({ id }) => id)).toEqual([sentinel.id]);
+            expect(rawValues(sentinel.id)).toEqual(previousSentinel);
+
+            const replacement = { ...owner, type: 'bacteria', parameterValues: { inputGain: -3 } };
+            act(() => trackStore.set({ ...original, tracks: [{ ...track, devices: [replacement, sentinel] }] }));
+            await act(async () => {
+                fireEvent.keyDown(knob, { key: 'ArrowUp' });
+            });
+
+            expect(rawValues('a')).toEqual(replacement.parameterValues);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toMatchObject(replacement);
+            expect(writes.mock.calls).toEqual([['track', 'a', 'gain', 9]]);
+            expect(captureUndoHistory().past).toHaveLength(0);
+        });
+
+        it('restores owned preview on pointer cancellation and cannot overwrite a competing runtime write', async () => {
+            render(<GrinderPanel deviceId="a" />);
+            const knob = gainKnob();
+            dragGain(knob);
+            expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 9);
+            fireEvent.pointerCancel(knob, { pointerId: 1 });
+            expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 8);
+            expect(knob).toHaveAttribute('aria-valuenow', '8');
+
+            dragGain(knob);
+            act(() => updateDeviceParam('track', 'a', 'gain', 4));
+            await act(async () => {
+                fireEvent.pointerUp(knob, { pointerId: 1 });
+            });
+            expect(writes.mock.calls.map(([, , , value]) => value)).toEqual([9, 8, 9, 4]);
+            expect(rawValues('a')).toHaveProperty('gain', 8);
+            expect(knob).toHaveAttribute('aria-valuenow', '8');
+            expect(undoStore.value?.past).toHaveLength(0);
+        });
     });
 });
