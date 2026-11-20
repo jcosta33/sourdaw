@@ -212,17 +212,30 @@ describe('GrandBoulePanel', () => {
         expect(projectTrackState.current.tracks).toBe(tracks);
         expect(executeAppAction).not.toHaveBeenCalled();
         view.unmount();
+        const reopenedRetirement = new AbortController();
+        runtime.nodes = [
+            {
+                deviceId: 'dev-1',
+                grandBouleControls: { ...replacement, ready: true, retirement: reopenedRetirement.signal },
+            },
+        ];
+        const reopened = render(<GrandBoulePanel deviceId="dev-1" />);
+        expect(screen.getByText('ready')).toBeInTheDocument();
+        reopened.unmount();
+        runtime.read.mockClear();
+        act(() => reopenedRetirement.abort());
+        expect(runtime.read).not.toHaveBeenCalled();
         runtime.nodes = [
             {
                 deviceId: 'dev-1',
                 grandBouleControls: { ...replacement, ready: true, retirement: new AbortController().signal },
             },
         ];
-        const reopened = render(<GrandBoulePanel deviceId="dev-1" />);
+        const switched = render(<GrandBoulePanel deviceId="dev-1" />);
         expect(screen.getByText('ready')).toBeInTheDocument();
-        reopened.rerender(<GrandBoulePanel deviceId="another-device" />);
+        switched.rerender(<GrandBoulePanel deviceId="another-device" />);
         expect(screen.getByText('idle')).toBeInTheDocument();
-        reopened.unmount();
+        switched.unmount();
         runtime.read.mockClear();
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
         expect(runtime.read).not.toHaveBeenCalled();
