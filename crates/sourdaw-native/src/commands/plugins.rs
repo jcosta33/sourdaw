@@ -671,7 +671,8 @@ fn validated_bundle(
     answer: Result<Vec<ScannedDescriptor>, ScanFailure>,
 ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
     let bundle = answer?;
-    scanner::validate_scanned_bundle(format, &bundle).map_err(ScanFailure::Refused)?;
+    scanner::validate_scanned_bundle(format, &bundle)
+        .map_err(|error| ScanFailure::Refused(error.to_string()))?;
     Ok(bundle)
 }
 
@@ -681,7 +682,8 @@ fn validated_instance(
     answer: Result<ScannedInstance, ScanFailure>,
 ) -> Result<ScannedInstance, ScanFailure> {
     let instance = answer?;
-    scanner::validate_scanned_instance(format, &instance).map_err(ScanFailure::Refused)?;
+    scanner::validate_scanned_instance(format, &instance)
+        .map_err(|error| ScanFailure::Refused(error.to_string()))?;
     Ok(instance)
 }
 
@@ -1750,7 +1752,8 @@ fn rescanned_row(
     plugin_id: &str,
     last_known_descriptor_id: &str,
 ) -> Result<ScannedPlugin, RescanFailure> {
-    scanner::validate_scanned_bundle(format, &bundle).map_err(RescanFailure::Verdict)?;
+    scanner::validate_scanned_bundle(format, &bundle)
+        .map_err(|error| RescanFailure::Verdict(error.to_string()))?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -1967,10 +1970,12 @@ pub(crate) fn create_hosted_runtime(
 ) -> Result<HostedRuntime, String> {
     match backend {
         HostBackend::Clap => ClapWrapper::new_with_mode(path, descriptor_id, sample_rate, mode)
-            .map(HostedRuntime::from),
+            .map(HostedRuntime::from)
+            .map_err(|error| error.to_string()),
         HostBackend::Vst3 => {
             Vst3Wrapper::new_with_mode(Path::new(path), descriptor_id, sample_rate, mode)
                 .map(HostedRuntime::from)
+                .map_err(|error| error.to_string())
         }
     }
 }
@@ -3587,7 +3592,10 @@ pub(crate) fn read_plugin_state_chunk(
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get(instance_id) {
-            return instance.plugin.get_state();
+            return instance
+                .plugin
+                .get_state()
+                .map_err(|error| error.to_string());
         }
     }
 
@@ -3623,7 +3631,10 @@ fn write_plugin_state_chunk(
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get_mut(instance_id) {
-            instance.plugin.set_state(plugin_state)?;
+            instance
+                .plugin
+                .set_state(plugin_state)
+                .map_err(|error| error.to_string())?;
             return Ok(());
         }
     }
@@ -3791,6 +3802,7 @@ mod tests {
     use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
+    use daw_plugin_host::PluginError;
     use std::path::Path;
 
     /// The rate `daw_engine::engine_handle_for_command_capture`'s fixture
@@ -4151,7 +4163,9 @@ mod tests {
         // changed and the host wrote nothing.
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4390,7 +4404,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-restore");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4467,7 +4483,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-poll");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4556,7 +4574,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-late-write");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -6002,10 +6022,10 @@ mod tests {
         fn get_parameters(&self) -> Vec<PluginParameter> {
             Vec::new()
         }
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
     }
