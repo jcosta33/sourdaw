@@ -1,3 +1,5 @@
+import { type ReactElement, useState } from 'react';
+
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -346,6 +348,13 @@ describe('PianoRoll', () => {
                 },
             ]
         );
+        const canvas = screen.getByLabelText('Piano roll editor');
+        expect(screen.queryByRole('listbox', { name: 'Piano roll notes' })).not.toBeInTheDocument();
+        expect(canvas).toHaveFocus();
+
+        const canvasKeyDown = vi.mocked(usePianoRollInteractions).mock.results.at(-1)?.value.handleKeyDown;
+        fireEvent.keyDown(canvas, { key: 'ArrowRight' });
+        expect(canvasKeyDown).toHaveBeenCalledWith(expect.objectContaining({ key: 'ArrowRight' }));
     });
 
     it('keeps note navigation bounded and active identity valid across edits', () => {
@@ -408,9 +417,140 @@ describe('PianoRoll', () => {
         const replacement = screen.getByRole('option', { name: /C4, starts at clip beat 6,/ });
         expect(list).toHaveAttribute('aria-activedescendant', replacement.id);
         expect(replacement).toHaveAttribute('aria-setsize', '20');
+
+        pianoRollStoreState.midi.notesByClipId = {};
+        rerender(<PianoRoll {...props} />);
+        expect(screen.queryByRole('option')).not.toBeInTheDocument();
+        expect(list).not.toHaveAttribute('aria-activedescendant');
+        expect(screen.getByRole('status')).toHaveTextContent('No notes in the piano roll');
+
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': primary };
+        rerender(<PianoRoll {...props} />);
+        const first = screen.getByRole('option', { name: /C4, starts at clip beat 0,/ });
+        expect(list).toHaveAttribute('aria-activedescendant', first.id);
+
         fireEvent.keyDown(list, { key: 'Escape' });
         expect(trigger).toHaveFocus();
         expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    });
+
+    it('toggles notes with Space and a click and announces the controlled selection', () => {
+        pianoRollStoreState.midi.notesByClipId = {
+            'clip-1': [
+                { id: 'first', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                { id: 'second', pitch: 62, startBeat: 2, duration: 0.5, velocity: 80 },
+            ],
+        };
+
+        function ControlledPianoRoll(): ReactElement {
+            const [selection, setSelection] = useState(() => new Set<string>());
+            return <PianoRoll {...defaultProps} selectedNoteIds={selection} onSelectedNoteIdsChange={setSelection} />;
+        }
+
+        render(<ControlledPianoRoll />);
+        fireEvent.click(screen.getByRole('button', { name: 'Note navigator' }));
+        const list = screen.getByRole('listbox', { name: 'Piano roll notes' });
+        const first = screen.getByRole('option', { name: 'C4, starts at clip beat 0, duration 1 beat' });
+        const second = screen.getByRole('option', { name: 'D4, starts at clip beat 2, duration 0.5 beats' });
+        const status = screen.getByRole('status');
+        expect(status).toHaveTextContent('No notes selected');
+
+        fireEvent.keyDown(list, { key: ' ' });
+        expect(first).toHaveAttribute('aria-selected', 'true');
+        expect(second).toHaveAttribute('aria-selected', 'false');
+        expect(status).toHaveTextContent('Selected C4, starts at clip beat 0, duration 1 beat');
+
+        fireEvent.click(second);
+        expect(list).toHaveAttribute('aria-activedescendant', second.id);
+        expect(first).toHaveAttribute('aria-selected', 'true');
+        expect(second).toHaveAttribute('aria-selected', 'true');
+        expect(status).toHaveTextContent('2 notes selected');
+
+        fireEvent.keyDown(list, { key: ' ' });
+        expect(first).toHaveAttribute('aria-selected', 'true');
+        expect(second).toHaveAttribute('aria-selected', 'false');
+        expect(status).toHaveTextContent('Selected C4, starts at clip beat 0, duration 1 beat');
+    });
+
+    it('reveals the active note on navigation and resize while preserving manual scrolling at the same size', () => {
+        pianoRollStoreState.midi.notesByClipId = {
+            'clip-1': Array.from({ length: 6 }, (_, index) => ({
+                id: `note-${index}`,
+                pitch: 60,
+                startBeat: index,
+                duration: 1,
+                velocity: 100,
+            })),
+        };
+        const deliveries = new Map<Element, () => void>();
+        class TestResizeObserver {
+            private target: Element | undefined;
+
+            constructor(private readonly callback: ResizeObserverCallback) {}
+
+            observe(target: Element): void {
+                this.target = target;
+                deliveries.set(target, () => this.callback([], this));
+            }
+
+            unobserve(target: Element): void {
+                deliveries.delete(target);
+            }
+
+            disconnect(): void {
+                if (this.target) {
+                    this.unobserve(this.target);
+                }
+            }
+        }
+
+        let viewportHeight = 90;
+        vi.stubGlobal('ResizeObserver', TestResizeObserver);
+        const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(() => viewportHeight);
+
+        try {
+            render(<PianoRoll {...defaultProps} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Note navigator' }));
+            const list = screen.getByRole('listbox', { name: 'Piano roll notes' });
+            const options = screen.getAllByRole('option');
+            for (const [index, option] of options.entries()) {
+                Object.defineProperties(option, {
+                    offsetTop: { value: index * 30 },
+                    offsetHeight: { value: 30 },
+                });
+            }
+
+            function deliverResize(): void {
+                const deliver = deliveries.get(list);
+                if (!deliver) {
+                    throw new Error('Expected a resize observer for the note list');
+                }
+                act(deliver);
+            }
+
+            list.scrollTop = 30;
+            deliverResize();
+            expect(list.scrollTop).toBe(30);
+
+            fireEvent.keyDown(list, { key: 'End' });
+            expect(list).toHaveAttribute('aria-activedescendant', options[5]?.id);
+            expect(list.scrollTop).toBe(90);
+
+            viewportHeight = 60;
+            deliverResize();
+            expect(list.scrollTop).toBe(120);
+
+            list.scrollTop = 60;
+            deliverResize();
+            expect(list.scrollTop).toBe(60);
+
+            fireEvent.keyDown(list, { key: 'Home' });
+            expect(list).toHaveAttribute('aria-activedescendant', options[0]?.id);
+            expect(list.scrollTop).toBe(0);
+        } finally {
+            height.mockRestore();
+            vi.unstubAllGlobals();
+        }
     });
 
     it('keeps base-gap context actions addressed to the original base row', () => {
