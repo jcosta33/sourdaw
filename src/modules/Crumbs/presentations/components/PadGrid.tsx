@@ -26,13 +26,17 @@ type PadHold = { padId: number; index: number; release: () => void };
 
 function releaseHold(holds: Map<string, PadHold>, key: string): void {
     const owner = holds.get(key);
-    if (!owner) return;
+    if (!owner) {
+        return;
+    }
     holds.delete(key);
     owner.release();
 }
 
 function releaseAllHolds(holds: Map<string, PadHold>): void {
-    for (const key of holds.keys()) releaseHold(holds, key);
+    for (const key of holds.keys()) {
+        releaseHold(holds, key);
+    }
 }
 
 export const PadGrid = ({
@@ -55,7 +59,9 @@ export const PadGrid = ({
     const held = useRef(new Map<string, PadHold>());
 
     function releasePad(key: string, padId: number): void {
-        if (held.current.get(key)?.padId === padId) releaseHold(held.current, key);
+        if (held.current.get(key)?.padId === padId) {
+            releaseHold(held.current, key);
+        }
     }
 
     useEffect(() => {
@@ -89,7 +95,9 @@ export const PadGrid = ({
     useEffect(() => {
         const liveIds = new Set(pads.map((pad) => pad.id));
         for (const [key, owner] of held.current) {
-            if (pads[owner.index]?.id !== owner.padId) releaseHold(held.current, key);
+            if (pads[owner.index]?.id !== owner.padId) {
+                releaseHold(held.current, key);
+            }
         }
         for (const key of Object.keys(flashTimers.current)) {
             const id = Number(key);
@@ -101,9 +109,13 @@ export const PadGrid = ({
     }, [pads]);
 
     function handleTrigger(index: number, padId: number, key: string): void {
-        if (held.current.has(key)) return;
+        if (held.current.has(key)) {
+            return;
+        }
         const stop = onTriggerPad(index);
-        if (stop) held.current.set(key, { padId, index, release: stop });
+        if (stop) {
+            held.current.set(key, { padId, index, release: stop });
+        }
 
         flashSequence.current += 1;
         const flashId = flashSequence.current;
@@ -165,14 +177,18 @@ export const PadGrid = ({
                         onClick={() => onSelectPad(index)}
                         onMouseDown={(e) => e.preventDefault()}
                         onPointerDown={(e) => {
-                            if (!e.isPrimary || e.button !== 0) return;
+                            if (!e.isPrimary || e.button !== 0) {
+                                return;
+                            }
                             handleTrigger(index, pad.id, `pointer:${e.pointerId}`);
                         }}
                         onPointerLeave={(e) => releasePad(`pointer:${e.pointerId}`, pad.id)}
                         onLostPointerCapture={(e) => releasePad(`pointer:${e.pointerId}`, pad.id)}
                         onBlur={() => {
                             for (const [key, owner] of held.current) {
-                                if (owner.padId === pad.id) releaseHold(held.current, key);
+                                if (owner.padId === pad.id) {
+                                    releaseHold(held.current, key);
+                                }
                             }
                         }}
                         onKeyDown={(e) => {

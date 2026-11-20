@@ -17,7 +17,9 @@ function clampVelocity(velocity: number): number {
 /** Acquire both carriers and retain their original release targets. */
 export function triggerPadOn(instanceId: string, padIndex: number, velocity: number = 100): (() => void) | undefined {
     const pad = padStore.value?.[instanceId]?.pads[padIndex];
-    if (!pad) return undefined;
+    if (!pad) {
+        return undefined;
+    }
 
     const clamped = clampVelocity(velocity);
     const releaseWeb = resolveCrumbsPadControls(instanceId)?.startPadAudition(pad.midiNote, clamped);
@@ -27,12 +29,17 @@ export function triggerPadOn(instanceId: string, padIndex: number, velocity: num
     });
     let released = false;
     return () => {
-        if (released) return;
+        if (released) {
+            return;
+        }
         released = true;
         releaseWeb?.();
         void receipt
             .then((id) => {
-                if (id !== undefined) return crumbsNoteOff(instanceId, id);
+                if (id !== undefined) {
+                    return crumbsNoteOff(instanceId, id);
+                }
+                return undefined;
             })
             .catch((error: unknown) => logger.warn('Note release failed:', error));
     };
