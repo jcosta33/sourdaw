@@ -277,6 +277,32 @@ describe('usePianoRollRenderer', () => {
         expect(roundRect).not.toHaveBeenCalledWith(30_001, rowY(60) + 1, 18, 14, 2);
     });
 
+    it('paints the visible overhang of short primary and opened notes while culling offscreen notes', () => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const primary = [
+            { id: 'primary', pitch: 60, startBeat: 30, duration: 0.125, velocity: 100 },
+            { id: 'offscreen', pitch: 61, startBeat: 29, duration: 0.125, velocity: 100 },
+        ];
+        const secondary = [{ id: 'secondary', pitch: 65, startBeat: 30, duration: 0.125, velocity: 100 }];
+        mocks.trackState = {
+            tracks: [
+                { id: 'track-1', kind: 'midi', color: 'blue', clips: [{ id: 'clip-2', type: 'midi', color: 'red' }] },
+            ],
+        };
+        const deps = buildDeps({
+            notes: primary,
+            openedClipIds: ['clip-2'],
+            openedClipNotes: { 'clip-2': secondary },
+            scrollRef: scrollContainer(303),
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+
+        expect(roundRect).toHaveBeenCalledWith(301, rowY(60) + 1, 4, 14, 2);
+        expect(roundRect).toHaveBeenCalledWith(301, rowY(65) + 1, 4, 14, 2);
+        expect(roundRect).not.toHaveBeenCalledWith(291, rowY(61) + 1, 4, 14, 2);
+    });
+
     // A viewport-relative canvas that does not treat the scroll offset as a
     // repaint trigger freezes the whole picture while scrolling — the dirty
     // check would see identical notes, identical stores and an unchanged grid

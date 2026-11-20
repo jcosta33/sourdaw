@@ -91,8 +91,9 @@ type ViewportRange = { leftPx: number; rightPx: number };
 
 /** True when a note's painted span overlaps the visible slice at all. */
 function isSpanVisible(startBeat: number, duration: number, beatWidth: number, view: ViewportRange): boolean {
-    const startPx = startBeat * beatWidth;
-    return startPx <= view.rightPx && startPx + duration * beatWidth >= view.leftPx;
+    const startPx = startBeat * beatWidth + NOTE_INSET_X;
+    const width = getPaintedNoteWidth(duration * beatWidth);
+    return startPx <= view.rightPx && startPx + width >= view.leftPx;
 }
 
 type RendererDeps = {
@@ -657,7 +658,7 @@ function drawGhostNote(
 
     ctx.fillStyle = colorWithAlpha(color, fillAlpha);
     ctx.beginPath();
-    ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+    ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
     ctx.fill();
 
     ctx.strokeStyle = colorWithAlpha(color, strokeAlpha);
