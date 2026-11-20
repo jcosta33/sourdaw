@@ -1,13 +1,16 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
+/** `true` names a clip or track source change whose payload says which owners it touches. `'track-lifecycle'` marks the track removal and restoration actions, which a replay projection applies to its track list directly. */
+export type CompSourceChange = boolean | 'track-lifecycle';
+
 /** Whether an action can change the audio source of a comp take or the clips that carry it. Every action type answers, so a new action does not compile until it does. */
-export const changesCompSourceByActionType: { readonly [Type in AppActionType]: boolean } = {
+export const changesCompSourceByActionType: { readonly [Type in AppActionType]: CompSourceChange } = {
     importStemSet: false,
     discardImportedStemSet: false,
     addTrack: false,
-    removeTrack: true,
+    removeTrack: 'track-lifecycle',
     discardCreatedTrack: false,
-    restoreTrack: true,
+    restoreTrack: 'track-lifecycle',
     restoreClip: true,
     discardDuplicatedClip: true,
     removeAllTracks: false,
@@ -400,6 +403,10 @@ function isActionType(type: string): type is AppActionType {
     return Object.hasOwn(changesCompSourceByActionType, type);
 }
 
-export function changesCompSource(type: string): boolean {
+export function compSourceChange(type: string): CompSourceChange {
     return isActionType(type) && changesCompSourceByActionType[type];
+}
+
+export function changesCompSource(type: string): boolean {
+    return compSourceChange(type) !== false;
 }

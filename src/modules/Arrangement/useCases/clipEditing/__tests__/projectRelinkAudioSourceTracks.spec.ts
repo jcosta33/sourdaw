@@ -110,4 +110,49 @@ describe('relink source and owner prefix projection', () => {
         const foreign = TrackDummy.create({ id: 'other', clips: [{ ...clip, trackId: 'other' }] });
         expect(projectRelinkAudioSourceTracks([{ ...track, clips: [] }, foreign], [restore])).toBeNull();
     });
+
+    it('drops a removed track and restores it from its snapshot', () => {
+        const removal = { type: 'removeTrack', payload: { trackId: track.id } } satisfies AppAction;
+        const restoration: AppAction = {
+            type: 'restoreTrack',
+            payload: {
+                trackId: track.id,
+                trackSnapshot: track,
+                trackName: track.name,
+                trackKind: track.kind,
+                trackGain: track.gain,
+                trackParentId: null,
+                trackIndex: 0,
+                wasSelected: false,
+                routingPatches: [],
+                automationLaneSnapshots: [],
+                clipSatellites: [],
+                midiNotesByClipId: {},
+                midiCcByClipId: {},
+                midiPitchBendByClipId: {},
+                takeLaneSnapshots: [],
+                sidechainRouteSnapshots: [],
+                ownedModulatorSnapshots: [],
+                incomingModulationMappingSnapshots: [],
+            },
+        };
+        expect(projectRelinkAudioSourceTracks([track], [removal])).toEqual([]);
+        expect(projectRelinkAudioSourceTracks([track], [removal, restoration])?.map((item) => item.id)).toEqual([
+            track.id,
+        ]);
+        expect(projectRelinkAudioSourceTracks([track], [restoration])).toBeNull();
+    });
+
+    it.each([
+        ['removeClip', { type: 'removeClip', payload: { clipId: clip.id } }],
+        ['discardDuplicatedClip', { type: 'discardDuplicatedClip', payload: { clipId: clip.id } }],
+    ] satisfies [string, AppAction][])('removes the clip a %s names and refuses an unknown clip', (_type, action) => {
+        expect(projectRelinkAudioSourceTracks([track], [action])?.[0]?.clips).toEqual([]);
+        expect(projectRelinkAudioSourceTracks([{ ...track, clips: [] }], [action])).toBeNull();
+    });
+
+    it('keeps the tracks for an action that carries no source or owner change', () => {
+        const rename = { type: 'renameClip', payload: { clipId: clip.id, name: 'Other' } } satisfies AppAction;
+        expect(projectRelinkAudioSourceTracks([track], [rename])).toEqual([track]);
+    });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
-import { changesCompSource, changesCompSourceByActionType } from '../ChangesCompSourceByActionType';
+import { changesCompSource, changesCompSourceByActionType, compSourceChange } from '../ChangesCompSourceByActionType';
 
 describe('changesCompSourceByActionType', () => {
     it('marks exactly the actions that can change a comp take source', () => {
@@ -58,6 +58,17 @@ describe('changesCompSourceByActionType', () => {
             'trimClipStart',
             'unfreezeTrack',
         ]);
+    });
+
+    it('marks exactly the track removal and restoration as track lifecycle changes', () => {
+        const lifecycle = Object.entries(changesCompSourceByActionType)
+            .filter(([, value]) => value === 'track-lifecycle')
+            .map(([type]) => type);
+
+        expect(lifecycle.toSorted()).toEqual(['removeTrack', 'restoreTrack']);
+        expect(compSourceChange('removeTrack')).toBe('track-lifecycle');
+        expect(compSourceChange('splitClip')).toBe(true);
+        expect(compSourceChange('renameTrack')).toBe(false);
     });
 
     it('answers false for an inherited name read from untrusted JSON', () => {

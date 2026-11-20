@@ -393,6 +393,30 @@ describe('compRegionInterval', () => {
         ).toBeNull();
     });
 
+    it('projects a comp removal and its restoration through the validation prefix', () => {
+        const region = { startBeat: 0, endBeat: 4, takeId: 'b' };
+        const lane = { id: 'lane-1', trackId: 'track-1', takes, activeCompRegions: [region] };
+        const patch = { laneId: lane.id, trackId: 'track-1', startBeat: 0, endBeat: 4 };
+        const remove = {
+            type: 'removeCompRegion',
+            payload: { ...patch, expected: [region], replacement: [] },
+        } satisfies AppAction;
+        const restore = {
+            type: 'restoreCompRegionInterval',
+            payload: { ...patch, expected: [], replacement: [region] },
+        } satisfies AppAction;
+        const project = (actions: AppAction[], initial: typeof lane) =>
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+                { lanes: [initial] },
+                { actions, actionIndex: actions.length }
+            );
+
+        expect(project([remove], lane)?.lanes[0]?.activeCompRegions).toEqual([]);
+        expect(project([remove, restore], lane)?.lanes[0]?.activeCompRegions).toEqual([region]);
+        expect(project([restore], { ...lane, activeCompRegions: [] })?.lanes[0]?.activeCompRegions).toEqual([region]);
+        expect(project([restore], lane)).toBeNull();
+    });
+
     describe('capturing an audio comp interval after a prefix', () => {
         const input = { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'b' };
         const setCompRegion: AppAction = { type: 'setCompRegion', payload: input };
