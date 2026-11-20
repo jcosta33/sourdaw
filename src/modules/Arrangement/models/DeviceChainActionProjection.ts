@@ -63,6 +63,30 @@ function projectFermenterPatch(devices: Device[], action: Extract<AppAction, { t
     return devices;
 }
 
+function projectLevainIdentity(
+    devices: Device[],
+    action: Extract<AppAction, { type: 'setLevainIdentity' }>
+): Device[] | null {
+    const { deviceId, deviceIds, before, after } = action.payload;
+    const index = devices.findIndex((device) => device.id === deviceId);
+    const current = devices[index];
+    if (
+        current?.type !== DEVICE_TYPE_IDS.levain ||
+        !valuesEqual(
+            devices.map((device) => device.id),
+            deviceIds
+        )
+    ) {
+        return null;
+    }
+    const next = projectCapturedDevicePatch(current, before, after);
+    if (!next) {
+        return null;
+    }
+    devices[index] = next;
+    return devices;
+}
+
 function projectToasterFactoryKit(
     devices: Device[],
     action: Extract<AppAction, { type: 'setToasterFactoryKit' }>
@@ -107,6 +131,9 @@ export function projectDeviceChainAction(
     const devices = source.map((device) => structuredClone(device));
     if (action.type === 'setFermenterPatch') {
         return projectFermenterPatch(devices, action);
+    }
+    if (action.type === 'setLevainIdentity') {
+        return projectLevainIdentity(devices, action);
     }
     if (action.type === 'setToasterFactoryKit') {
         return projectToasterFactoryKit(devices, action);

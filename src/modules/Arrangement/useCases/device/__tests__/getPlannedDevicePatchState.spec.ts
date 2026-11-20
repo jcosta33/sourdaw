@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { plannedDeviceWriteStepByActionType } from '../getPlannedDevicePatchState';
 
@@ -12,7 +13,14 @@ describe('plannedDeviceWriteStepByActionType', () => {
         );
         const special = specialEntries.map(([type]) => type).sort();
         expect(special).toEqual(
-            ['addTrack', 'createBus', 'setFermenterPatch', 'setToasterFactoryKit', 'restoreTrack'].sort()
+            [
+                'addTrack',
+                'createBus',
+                'setFermenterPatch',
+                'setLevainIdentity',
+                'setToasterFactoryKit',
+                'restoreTrack',
+            ].sort()
         );
     });
 
@@ -105,6 +113,36 @@ describe('plannedDeviceWriteStepByActionType', () => {
             expectedTrackFrozen: true,
             expected: { deviceState: chunk, parameterValues: { mix: 0.1 } },
             after: { deviceState: { version: 1, data: { patch: 'after' } }, parameterValues: { mix: 0.9 } },
+        });
+        expect(trackIds.size).toBe(0);
+    });
+
+    it('plans a Levain identity patch bound to its owner and captured state', () => {
+        const trackIds = new Set<string>();
+        const before = { deviceState: null, parameterValues: { gain: null } };
+        const after = { deviceState: { version: 1, data: { instrumentId: 'bank' } }, parameterValues: { gain: 0.4 } };
+        const action = {
+            type: 'setLevainIdentity',
+            payload: {
+                kind: 'instrument',
+                trackId: 'track-7',
+                deviceId: 'device-1',
+                deviceIds: ['device-1', 'device-2'],
+                label: 'Load instrument',
+                before,
+                after,
+            },
+        } satisfies AppAction;
+
+        expect(plannedDeviceWriteStepByActionType.setLevainIdentity(action, trackIds)).toEqual({
+            kind: 'patch',
+            trackId: 'track-7',
+            deviceId: 'device-1',
+            expectedDeviceIds: ['device-1', 'device-2'],
+            expectedTrackFrozen: false,
+            expectedDeviceType: DEVICE_TYPE_IDS.levain,
+            expected: before,
+            after,
         });
         expect(trackIds.size).toBe(0);
     });

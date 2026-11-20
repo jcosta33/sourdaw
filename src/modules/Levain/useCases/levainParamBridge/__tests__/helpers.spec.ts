@@ -894,7 +894,7 @@ describe('createLevainBridge', () => {
     });
 
     describe('applyPatchToEngine', () => {
-        it('applies the whole projection and persists everything but the articulation id', () => {
+        it('reflects the complete accepted patch without writing it back', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
@@ -911,10 +911,7 @@ describe('createLevainBridge', () => {
             for (const { name, value } of projectLevainPatchToEngineParameters(patch)) {
                 expect(device.setParam).toHaveBeenCalledWith(name, value);
             }
-            // Articulation identity rides `Device.deviceState`; persisting the engine
-            // id here would create a second, competing source of truth for it.
-            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'currentArticulation', expect.anything());
-            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'mic0Volume', 0.8);
+            expect(deps.persistDeviceParam).not.toHaveBeenCalled();
         });
 
         it.each(['missing', 'ineligible'] as const)(

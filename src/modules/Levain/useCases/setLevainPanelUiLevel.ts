@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { toLevainDeviceState } from '../models/LevainDeviceState';
+import { LEVAIN_MISSING_DEVICE_STATE } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
 
 import { coordinateLevainDeviceState } from './coordinateLevainDeviceState';
@@ -21,15 +21,13 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
     }
     await coordinateLevainDeviceState(
         deviceId,
-        'tier',
-        (prior) => ({
-            version: 1,
-            data: {
-                ...toLevainDeviceState(state.patch).data,
-                ...prior?.data,
-                disclosureTier: level === 6 ? 'expert' : 'basic',
-            },
-        }),
+        (prior) => {
+            const chunk = prior ?? LEVAIN_MISSING_DEVICE_STATE;
+            return {
+                ...chunk,
+                data: { ...chunk.data, disclosureTier: level === 6 ? 'expert' : 'basic' },
+            };
+        },
         () => {
             notifyUser('This Levain device changed before the control layout could be saved. Try again.', 'warning');
         }

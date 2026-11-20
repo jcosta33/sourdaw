@@ -18,6 +18,7 @@ import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicPa
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../useCases/levainParamBridge/setMacroWithAudio';
 import { loadInstrument } from '../../useCases/loadPreset';
+import { selectLevainArticulation } from '../../useCases/selectLevainArticulation';
 import { setLevainPanelUiLevel } from '../../useCases/setLevainPanelUiLevel';
 import { ArticulationList } from '../components/ArticulationList';
 import { ExpressionPanel } from '../components/ExpressionPanel';
@@ -215,7 +216,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
-                                        onClick={() => loadInstrument(deviceId, instrument.id)}
+                                        onClick={() => void loadInstrument(deviceId, instrument.id, instrument.label)}
                                     >
                                         <Row justify="between" wrap gap={1} className="w-full">
                                             <span className="wrap-anywhere text-compact font-medium text-foreground">
@@ -239,7 +240,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <ArticulationList
                                 articulations={patch.articulations}
                                 current={patch.currentArticulation}
-                                onSelect={(type) => setLevainParamWithAudio(deviceId, 'currentArticulation', type)}
+                                onSelect={(type) => void selectLevainArticulation(deviceId, type)}
                             />
                         </section>
                     ) : null}
