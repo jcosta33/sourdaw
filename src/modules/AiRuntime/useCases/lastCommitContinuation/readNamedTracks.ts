@@ -147,6 +147,31 @@ function listWithPhrases(text: string, phrases: readonly Span[], tracks: readonl
     return [...others, ...phrases].toSorted((left, right) => left.start - right.start || left.end - right.end);
 }
 
+/** What an order phrase the text must be asked about reads as; every ask is a verdict about a list. */
+function readOrdinalAsk(
+    text: string,
+    ask: OrdinalAsk,
+    phrases: readonly Span[],
+    tracks: readonly ListedTrack[]
+): NamedTracks {
+    // Text that is otherwise no list stays unread, as it does without ordinals.
+    if (!readsAsList(text, listWithPhrases(text, phrases, tracks))) {
+        return { status: 'unread' };
+    }
+    if (ask.status === 'collision') {
+        return { status: 'collision', text: ask.text, name: ask.name };
+    }
+    // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
+    if (ask.sharing.length < 2) {
+        return { status: 'unread' };
+    }
+    return {
+        status: 'ambiguous',
+        text: ask.text,
+        candidates: ask.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
+    };
+}
+
 /**
  * The tracks the text names by whole name, in either grammatical number, through the shared
  * resolver's own reading, and nothing else: any word besides the names and the list's own joiners,
@@ -156,24 +181,8 @@ function listWithPhrases(text: string, phrases: readonly Span[], tracks: readonl
 export function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
-    const { ask } = ordinal;
-    // Every ask is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
-    if (ask !== undefined && !readsAsList(text, listWithPhrases(text, ordinal.phrases, tracks))) {
-        return { status: 'unread' };
-    }
-    if (ask?.status === 'collision') {
-        return { status: 'collision', text: ask.text, name: ask.name };
-    }
-    if (ask?.status === 'beyond-the-tracks') {
-        // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
-        if (ask.sharing.length < 2) {
-            return { status: 'unread' };
-        }
-        return {
-            status: 'ambiguous',
-            text: ask.text,
-            candidates: ask.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
-        };
+    if (ordinal.ask !== undefined) {
+        return readOrdinalAsk(text, ordinal.ask, ordinal.phrases, tracks);
     }
     const ranges = [
         ...getBestAgentReferenceNameRanges(blank(text, ordinal.ranges), tracks, 'with-number-forms'),
