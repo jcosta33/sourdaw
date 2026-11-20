@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
+import { ROW_HEIGHT } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => {
@@ -237,6 +238,7 @@ const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
     trackId: 'track-1',
     notes: [makeNote('n1', 60, 2, 2)],
     beatWidth: BEAT_W,
+    rowHeight: ROW_HEIGHT,
     gridSnap: 1,
     scaleType: 'chromatic',
     scaleRoot: 0,

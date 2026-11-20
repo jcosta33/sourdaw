@@ -2,7 +2,7 @@
  * PianoRoll toolbar — snap, scale, fold, step input, ghost notes,
  * chord mode, paint mode, lasso mode, and zoom controls.
  */
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useId, useRef } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
@@ -97,8 +97,8 @@ type PianoRollToolbarProps = {
     onToggleNotePreview: () => void;
     zoom: number;
     onZoomChange: (v: number) => void;
-    rowHeight?: number;
-    onRowHeightChange?: (v: number) => void;
+    rowHeight: number;
+    onRowHeightChange: (v: number) => void;
     /** A9: when multiple clips are open, show a selector for which clip receives new notes */
     openedClips?: ClipOption[];
     focusedClipId?: string;
@@ -238,7 +238,7 @@ export const PianoRollToolbar = ({
     onToggleNotePreview,
     zoom,
     onZoomChange,
-    rowHeight = 16,
+    rowHeight,
     onRowHeightChange,
     openedClips,
     focusedClipId,
@@ -248,251 +248,260 @@ export const PianoRollToolbar = ({
     activeExpressionLane,
     onActiveExpressionLaneChange,
     mpeExpressionLanes = [],
-}: PianoRollToolbarProps): ReactElement => (
-    <DawControlStrip>
-        <span className="text-[10px] text-muted-foreground">Snap:</span>
-        {[1, 0.5, 0.25, 0.125].map((value) => (
-            <Button
-                key={value}
-                variant={gridSnap === value ? 'secondary' : 'ghost'}
-                size="icon-xs"
-                onClick={() => onGridSnapChange(value)}
-                className="text-[9px] w-6 h-5"
-                aria-pressed={gridSnap === value}
-            >
-                {snapValueLabel(value)}
-            </Button>
-        ))}
-
-        <ToolbarDivider />
-
-        <span className="text-[10px] text-muted-foreground">Scale:</span>
-        <DawCompactSelect
-            value={scaleRoot}
-            onChange={(event) => onScaleRootChange(Number(event.target.value))}
-            size="micro"
-            aria-label="Scale root note"
-            data-testid="toolbar-scale-root"
-        >
-            {SCALE_ROOT_LABELS.map((label, index) => (
-                <option key={label} value={index}>
-                    {label}
-                </option>
+}: PianoRollToolbarProps): ReactElement => {
+    const horizontalZoomId = useId();
+    const verticalZoomId = useId();
+    return (
+        <DawControlStrip>
+            <span className="text-[10px] text-muted-foreground">Snap:</span>
+            {[1, 0.5, 0.25, 0.125].map((value) => (
+                <Button
+                    key={value}
+                    variant={gridSnap === value ? 'secondary' : 'ghost'}
+                    size="icon-xs"
+                    onClick={() => onGridSnapChange(value)}
+                    className="text-[9px] w-6 h-5"
+                    aria-pressed={gridSnap === value}
+                >
+                    {snapValueLabel(value)}
+                </Button>
             ))}
-        </DawCompactSelect>
-        <DawCompactSelect
-            value={scaleType}
-            onChange={(event) => onScaleTypeChange(event.target.value)}
-            size="micro"
-            aria-label="Scale type"
-            data-testid="toolbar-scale-type"
-        >
-            {Object.keys(SCALES).map((key) => (
-                <option key={key} value={key}>
-                    {getScaleLabel(key)}
-                </option>
-            ))}
-        </DawCompactSelect>
 
-        <Button
-            variant={isFolded ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleFolded}
-            className={cn(
-                'text-[10px] px-2',
-                isFolded && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
-            )}
-            aria-pressed={isFolded}
-            aria-label="Toggle fold to scale"
-            data-testid="toolbar-fold-to-scale"
-        >
-            Fold
-        </Button>
+            <ToolbarDivider />
 
-        <Button
-            variant={constrainToScale ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleConstrainToScale}
-            className={cn(
-                'text-[10px] px-2',
-                constrainToScale && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
-            )}
-            aria-pressed={constrainToScale}
-            aria-label="Constrain notes to scale"
-            data-testid="toolbar-constrain"
-        >
-            Constrain
-        </Button>
-
-        <ToolbarDivider />
-
-        <Button
-            variant={stepInput ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleStepInput}
-            className={cn(
-                'text-[10px] px-2',
-                stepInput && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
-            )}
-            aria-pressed={stepInput}
-            aria-label="Toggle step input mode"
-            data-testid="toolbar-step-input"
-        >
-            Step
-        </Button>
-
-        <ToolbarDivider />
-
-        <Button
-            variant={showGhostNotes ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleGhostNotes}
-            className={cn(
-                'text-[10px] px-2',
-                showGhostNotes && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
-            )}
-            aria-pressed={showGhostNotes}
-            aria-label="Toggle ghost notes"
-            data-testid="toolbar-ghost"
-        >
-            Ghost
-        </Button>
-
-        <Button
-            variant={notePreviewEnabled ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleNotePreview}
-            className={cn(
-                'text-[10px] px-2',
-                notePreviewEnabled && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
-            )}
-            aria-pressed={notePreviewEnabled}
-            aria-label="Toggle note hover preview"
-        >
-            Preview
-        </Button>
-
-        <Button
-            variant={chordMode ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleChordMode}
-            className={cn(
-                'text-[10px] px-2',
-                chordMode && 'text-[var(--color-accent-mint)] border-[var(--color-accent-mint)]/30'
-            )}
-            aria-pressed={chordMode}
-            aria-label="Toggle chord stamp mode"
-            data-testid="toolbar-chord"
-        >
-            Chord
-        </Button>
-
-        {chordMode ? (
+            <span className="text-[10px] text-muted-foreground">Scale:</span>
             <DawCompactSelect
-                value={chordType}
-                onChange={(event) => onChordTypeChange(event.target.value as PianoRollChordType)}
+                value={scaleRoot}
+                onChange={(event) => onScaleRootChange(Number(event.target.value))}
                 size="micro"
-                aria-label="Chord type"
-                data-testid="toolbar-chord-type"
+                aria-label="Scale root note"
+                data-testid="toolbar-scale-root"
             >
-                {CHORD_TYPE_KEYS.map((key) => (
-                    <option key={key} value={key}>
-                        {key}
+                {SCALE_ROOT_LABELS.map((label, index) => (
+                    <option key={label} value={index}>
+                        {label}
                     </option>
                 ))}
             </DawCompactSelect>
-        ) : null}
+            <DawCompactSelect
+                value={scaleType}
+                onChange={(event) => onScaleTypeChange(event.target.value)}
+                size="micro"
+                aria-label="Scale type"
+                data-testid="toolbar-scale-type"
+            >
+                {Object.keys(SCALES).map((key) => (
+                    <option key={key} value={key}>
+                        {getScaleLabel(key)}
+                    </option>
+                ))}
+            </DawCompactSelect>
 
-        <Button
-            variant={paintMode ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onTogglePaintMode}
-            className={cn(
-                'text-[10px] px-2',
-                paintMode && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30'
-            )}
-            aria-pressed={paintMode}
-            aria-label="Toggle paint mode"
-            data-testid="toolbar-paint"
-        >
-            Paint
-        </Button>
+            <Button
+                variant={isFolded ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleFolded}
+                className={cn(
+                    'text-[10px] px-2',
+                    isFolded && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+                )}
+                aria-pressed={isFolded}
+                aria-label="Toggle fold to scale"
+                data-testid="toolbar-fold-to-scale"
+            >
+                Fold
+            </Button>
 
-        <Button
-            variant={lassoMode ? 'secondary' : 'ghost'}
-            size="xs"
-            onClick={onToggleLassoMode}
-            className={cn(
-                'text-[10px] px-2',
-                lassoMode && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
-            )}
-            aria-pressed={lassoMode}
-            aria-label="Toggle magic lasso selection"
-        >
-            Lasso
-        </Button>
+            <Button
+                variant={constrainToScale ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleConstrainToScale}
+                className={cn(
+                    'text-[10px] px-2',
+                    constrainToScale && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+                )}
+                aria-pressed={constrainToScale}
+                aria-label="Constrain notes to scale"
+                data-testid="toolbar-constrain"
+            >
+                Constrain
+            </Button>
 
-        <ToolbarDivider />
+            <ToolbarDivider />
 
-        <ExpressionControl
-            showExpressionView={showExpressionView}
-            onToggleExpressionView={onToggleExpressionView}
-            activeExpressionLane={activeExpressionLane}
-            onActiveExpressionLaneChange={onActiveExpressionLaneChange}
-            mpeExpressionLanes={mpeExpressionLanes}
-        />
+            <Button
+                variant={stepInput ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleStepInput}
+                className={cn(
+                    'text-[10px] px-2',
+                    stepInput && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+                )}
+                aria-pressed={stepInput}
+                aria-label="Toggle step input mode"
+                data-testid="toolbar-step-input"
+            >
+                Step
+            </Button>
 
-        {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
-            <>
-                <ToolbarDivider />
-                <span className="text-[10px] text-muted-foreground">Edit:</span>
+            <ToolbarDivider />
+
+            <Button
+                variant={showGhostNotes ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleGhostNotes}
+                className={cn(
+                    'text-[10px] px-2',
+                    showGhostNotes && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+                )}
+                aria-pressed={showGhostNotes}
+                aria-label="Toggle ghost notes"
+                data-testid="toolbar-ghost"
+            >
+                Ghost
+            </Button>
+
+            <Button
+                variant={notePreviewEnabled ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleNotePreview}
+                className={cn(
+                    'text-[10px] px-2',
+                    notePreviewEnabled && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+                )}
+                aria-pressed={notePreviewEnabled}
+                aria-label="Toggle note hover preview"
+            >
+                Preview
+            </Button>
+
+            <Button
+                variant={chordMode ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleChordMode}
+                className={cn(
+                    'text-[10px] px-2',
+                    chordMode && 'text-[var(--color-accent-mint)] border-[var(--color-accent-mint)]/30'
+                )}
+                aria-pressed={chordMode}
+                aria-label="Toggle chord stamp mode"
+                data-testid="toolbar-chord"
+            >
+                Chord
+            </Button>
+
+            {chordMode ? (
                 <DawCompactSelect
-                    value={focusedClipId}
-                    onChange={(event) => onFocusedClipIdChange(event.target.value)}
+                    value={chordType}
+                    onChange={(event) => onChordTypeChange(event.target.value as PianoRollChordType)}
                     size="micro"
-                    aria-label="Focused clip for note input"
+                    aria-label="Chord type"
+                    data-testid="toolbar-chord-type"
                 >
-                    {openedClips.map((clip) => (
-                        <option key={clip.id} value={clip.id}>
-                            {clip.name}
+                    {CHORD_TYPE_KEYS.map((key) => (
+                        <option key={key} value={key}>
+                            {key}
                         </option>
                     ))}
                 </DawCompactSelect>
-            </>
-        ) : null}
+            ) : null}
 
-        <div className="flex-1" />
-        <span id="piano-roll-horizontal-zoom" className="text-[10px] text-muted-foreground">
-            Horizontal zoom
-        </span>
-        <Slider
-            value={[zoom * 100]}
-            onValueChange={([value]) => {
-                if (value !== undefined) {
-                    onZoomChange(value / 100);
-                }
-            }}
-            min={25}
-            max={400}
-            step={25}
-            className="w-20 shrink-0"
-            aria-labelledby="piano-roll-horizontal-zoom"
-            data-testid="toolbar-zoom"
-        />
-        <span id="piano-roll-vertical-zoom" className="text-[10px] text-muted-foreground">
-            Vertical zoom
-        </span>
-        <Slider
-            value={[rowHeight]}
-            onValueChange={([value]) => {
-                if (value !== undefined) onRowHeightChange?.(value);
-            }}
-            min={8}
-            max={32}
-            step={1}
-            className="w-20 shrink-0"
-            aria-labelledby="piano-roll-vertical-zoom"
-            data-testid="toolbar-vertical-zoom"
-        />
-    </DawControlStrip>
-);
+            <Button
+                variant={paintMode ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onTogglePaintMode}
+                className={cn(
+                    'text-[10px] px-2',
+                    paintMode && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30'
+                )}
+                aria-pressed={paintMode}
+                aria-label="Toggle paint mode"
+                data-testid="toolbar-paint"
+            >
+                Paint
+            </Button>
+
+            <Button
+                variant={lassoMode ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={onToggleLassoMode}
+                className={cn(
+                    'text-[10px] px-2',
+                    lassoMode && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+                )}
+                aria-pressed={lassoMode}
+                aria-label="Toggle magic lasso selection"
+            >
+                Lasso
+            </Button>
+
+            <ToolbarDivider />
+
+            <ExpressionControl
+                showExpressionView={showExpressionView}
+                onToggleExpressionView={onToggleExpressionView}
+                activeExpressionLane={activeExpressionLane}
+                onActiveExpressionLaneChange={onActiveExpressionLaneChange}
+                mpeExpressionLanes={mpeExpressionLanes}
+            />
+
+            {openedClips &&
+            openedClips.length > 1 &&
+            focusedClipId !== undefined &&
+            onFocusedClipIdChange !== undefined ? (
+                <>
+                    <ToolbarDivider />
+                    <span className="text-[10px] text-muted-foreground">Edit:</span>
+                    <DawCompactSelect
+                        value={focusedClipId}
+                        onChange={(event) => onFocusedClipIdChange(event.target.value)}
+                        size="micro"
+                        aria-label="Focused clip for note input"
+                    >
+                        {openedClips.map((clip) => (
+                            <option key={clip.id} value={clip.id}>
+                                {clip.name}
+                            </option>
+                        ))}
+                    </DawCompactSelect>
+                </>
+            ) : null}
+
+            <div className="flex-1" />
+            <span id={horizontalZoomId} className="text-[10px] text-muted-foreground">
+                Horizontal zoom
+            </span>
+            <Slider
+                value={[zoom * 100]}
+                onValueChange={([value]) => {
+                    if (value !== undefined) {
+                        onZoomChange(value / 100);
+                    }
+                }}
+                min={25}
+                max={400}
+                step={25}
+                className="w-20 shrink-0"
+                aria-labelledby={horizontalZoomId}
+                data-testid="toolbar-zoom"
+            />
+            <span id={verticalZoomId} className="text-[10px] text-muted-foreground">
+                Vertical zoom
+            </span>
+            <Slider
+                value={[rowHeight]}
+                onValueChange={([value]) => {
+                    if (value !== undefined) {
+                        onRowHeightChange(value);
+                    }
+                }}
+                min={8}
+                max={32}
+                step={1}
+                className="w-20 shrink-0"
+                aria-labelledby={verticalZoomId}
+                data-testid="toolbar-vertical-zoom"
+            />
+        </DawControlStrip>
+    );
+};

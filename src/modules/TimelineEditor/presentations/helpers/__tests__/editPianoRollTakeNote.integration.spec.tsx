@@ -41,6 +41,7 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
+import { ROW_HEIGHT } from '../pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
 import {
@@ -224,6 +225,7 @@ function SelectedNoteEditor({
         notes: projection.notes,
         takeProjections: new Map([['clip', projection]]),
         beatWidth: 40,
+        rowHeight: ROW_HEIGHT,
         gridSnap: 0.5,
         scaleType: 'chromatic',
         scaleRoot: 0,

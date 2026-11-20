@@ -56,7 +56,6 @@ import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { readClipPlayheadBeat } from '../helpers/clipPlayheadBeat';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editPianoRollTakeNote';
 import {
-    ROW_HEIGHT,
     RULER_HEIGHT,
     NOTE_INSET_X,
     getPaintedNoteWidth,
@@ -247,7 +246,7 @@ type InteractionArgs = {
     /** A9: which clip receives newly drawn notes */
     focusedClipId?: string;
     beatWidth: number;
-    rowHeight?: number;
+    rowHeight: number;
     gridSnap: number;
     scaleType: string;
     scaleRoot: number;
@@ -302,7 +301,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         takeProjections,
         focusedClipId,
         beatWidth,
-        rowHeight = ROW_HEIGHT,
+        rowHeight,
         gridSnap,
         scaleType,
         scaleRoot,

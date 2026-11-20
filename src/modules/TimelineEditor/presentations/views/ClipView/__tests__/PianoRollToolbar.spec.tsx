@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
@@ -10,14 +11,12 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
         children,
         size,
         'aria-label': ariaLabel,
-        'aria-labelledby': ariaLabelledBy,
     }: {
         value: string | number;
         onChange: (e: { target: { value: string } }) => void;
         children: React.ReactNode;
         size: string;
         'aria-label'?: string;
-        'aria-labelledby'?: string;
     }) => (
         <select value={value} onChange={onChange} data-size={size} aria-label={ariaLabel}>
             {children}
@@ -116,7 +115,8 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('../../../helpers/pianoRollConstants', () => ({
+vi.mock('../../../helpers/pianoRollConstants', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../helpers/pianoRollConstants')>()),
     SCALES: {
         chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         major: [0, 2, 4, 5, 7, 9, 11],
@@ -154,6 +154,8 @@ describe('PianoRollToolbar', () => {
         onToggleLassoMode: vi.fn(),
         zoom: 1,
         onZoomChange: vi.fn(),
+        rowHeight: ROW_HEIGHT,
+        onRowHeightChange: vi.fn(),
         constrainToScale: false,
         onToggleConstrainToScale: vi.fn(),
         notePreviewEnabled: false,

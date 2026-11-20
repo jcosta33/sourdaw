@@ -12,6 +12,7 @@ import {
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
+import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
 // Quantize-grid label contract shared by all three surfaces (#4801): gridSize
@@ -296,6 +297,8 @@ describe('quantize grid labels', () => {
                 onToggleNotePreview={vi.fn()}
                 zoom={1}
                 onZoomChange={vi.fn()}
+                rowHeight={ROW_HEIGHT}
+                onRowHeightChange={vi.fn()}
             />
         );
 

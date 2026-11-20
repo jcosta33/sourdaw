@@ -64,7 +64,6 @@ import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { type ClipPlacement, resolveAudibleNoteWindow } from '../helpers/audibleNoteWindow';
 import {
     NOTE_NAMES,
-    ROW_HEIGHT,
     RULER_HEIGHT,
     NOTE_INSET_X,
     getPaintedNoteWidth,
@@ -111,7 +110,7 @@ type RendererDeps = {
     clipId: string;
     trackId: string;
     beatWidth: number;
-    rowHeight?: number;
+    rowHeight: number;
     gridSnap: number;
     scaleType: string;
     scaleRoot: number;
@@ -143,7 +142,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     const notesRef = useRef(deps.notes);
     const openedClipNotesRef = useRef(deps.openedClipNotes);
     const beatWidthRef = useRef(deps.beatWidth);
-    const rowHeightRef = useRef(deps.rowHeight ?? ROW_HEIGHT);
+    const rowHeightRef = useRef(deps.rowHeight);
     const gridSnapRef = useRef(deps.gridSnap);
     const scaleTypeRef = useRef(deps.scaleType);
     const scaleRootRef = useRef(deps.scaleRoot);
@@ -164,7 +163,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
         notesRef.current = deps.notes;
         openedClipNotesRef.current = deps.openedClipNotes;
         beatWidthRef.current = deps.beatWidth;
-        rowHeightRef.current = deps.rowHeight ?? ROW_HEIGHT;
+        rowHeightRef.current = deps.rowHeight;
         gridSnapRef.current = deps.gridSnap;
         scaleTypeRef.current = deps.scaleType;
         scaleRootRef.current = deps.scaleRoot;

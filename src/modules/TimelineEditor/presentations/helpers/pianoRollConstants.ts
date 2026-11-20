@@ -48,6 +48,7 @@ export const RULER_HEIGHT = 22;
  * flex-shrinkable labels compresses once the dock is shorter than the roll
  * and drifts off the canvas rows.
  */
+// The default preserves the standard initial geometry for pure helper callers.
 export const getPianoRollContentHeight = (rowCount: number, rowHeight = ROW_HEIGHT): number =>
     RULER_HEIGHT + rowCount * rowHeight;
 

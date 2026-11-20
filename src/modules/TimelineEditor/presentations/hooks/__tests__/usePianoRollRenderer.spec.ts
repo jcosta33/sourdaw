@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
+import { ROW_HEIGHT, getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -111,6 +111,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     clipId: 'clip-1',
     trackId: 'track-1',
     beatWidth: BEAT_W,
+    rowHeight: ROW_HEIGHT,
     gridSnap: 1,
     scaleType: 'chromatic',
     scaleRoot: 0,

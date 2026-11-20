@@ -3,13 +3,14 @@ import { useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
 function ControlledToolbar() {
     const [snap, setSnap] = useState(0.25);
     const [root, setRoot] = useState(0);
     const [scale, setScale] = useState('chromatic');
-    const [rowHeight, setRowHeight] = useState(16);
+    const [rowHeight, setRowHeight] = useState(ROW_HEIGHT);
     return (
         <PianoRollToolbar
             gridSnap={snap}

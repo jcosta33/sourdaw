@@ -21,6 +21,7 @@ type OpeningScrollInput = {
     viewportWidth: number;
     scrollLeft: number;
     beatWidth: number;
+    /** Omitted by existing pure callers to use the standard initial scale. */
     rowHeight?: number;
 };
 
