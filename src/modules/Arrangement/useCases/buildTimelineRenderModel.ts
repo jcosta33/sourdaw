@@ -1,6 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
-import { getAutomationLaneCeiling, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
@@ -12,74 +10,34 @@ import {
     timeSignatureMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
-import {
-    createSamplePositionProjector,
-    getTimeSignatureAtBeat,
-    resolveTempoAtBeat,
-    secondsBetweenBeats,
-} from '#/modules/Transport/useCases';
+import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 
-import { getInlineAutomationRows } from '../models/InlineAutomationRows';
-import { type TempoTimeline } from '../models/TempoTimeline';
 import {
     type TimelineRenderModel,
     type TrackRenderModel,
     type ClipRenderModel,
     type AudioWaveformProgrammePart,
-    type AutomationSubLaneRenderModel,
 } from '../models/TimelineRenderModel';
 import { getVariationLaneCount } from '../models/TimelineTrackExtent';
-import { type Track } from '../models/Track';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
-import { timelineEditingStore, type TimelineEditingState } from '../stores/timelineEditingStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
+import { audioProgrammePart } from './audioProgrammePart';
+import { captureWaveformTimeline } from './captureWaveformTimeline';
 import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
+import { projectInlineAutomationLanes } from './projectInlineAutomationLanes';
+import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
-}
-
-function captureWaveformTimeline(tempo: number, changes: Parameters<typeof secondsBetweenBeats>[0]): TempoTimeline {
-    const capturedChanges = structuredClone(changes);
-    const projectSamples = createSamplePositionProjector({
-        transport: { tempo },
-        tempoMap: { changes: [...capturedChanges] },
-    });
-    return {
-        secondsAtBeat: (beat) => secondsBetweenBeats(capturedChanges, 0, beat, tempo),
-        beatAtSeconds: (seconds) => projectSamples({ samples: seconds, sampleRate: 1 }),
-        tempoAtBeat: (beat) => resolveTempoAtBeat({ changes: capturedChanges, beat, defaultTempo: tempo }),
-    };
-}
-
-function audioProgrammePart(
-    clip: ReturnType<typeof resolveCompingProgramme>[number],
-    timeline: TempoTimeline
-): AudioWaveformProgrammePart {
-    return {
-        startBeat: clip.startBeat,
-        endBeat: clip.endBeat,
-        audioOffsetBeats: clip.audioOffsetBeats,
-        audioOffsetSeconds: clip.audioOffsetSeconds,
-        audioLoopStartSeconds: clip.audioLoopStartSeconds,
-        audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
-        audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
-        stretchRatio: clip.stretchRatio,
-        stretchMode: clip.stretchMode,
-        loopEnabled: clip.loopEnabled,
-        loopLength: clip.loopLength,
-    };
 }
 
 // §143.1 — During recording, buildTimelineRenderModel is called on every
@@ -246,21 +204,7 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     return { ...cachedModel, tracks, dataDirty: true };
 }
 
-type InlineAutomationSnapshot = {
-    editing: TimelineEditingState | null;
-    lanes: AutomationStoreState['lanes'] | null;
-};
-
-function readInlineAutomationSnapshot(supplied: InlineAutomationSnapshot | undefined): InlineAutomationSnapshot {
-    const editing = supplied ? supplied.editing : timelineEditingStore.value;
-    if (editing?.automationVisibility !== 'overlay') {
-        return { editing: null, lanes: null };
-    }
-    if (supplied) {
-        return supplied;
-    }
-    return { editing, lanes: automationStore.value?.lanes ?? null };
-}
+type InlineAutomationSnapshot = ReturnType<typeof readInlineAutomationSnapshot>;
 
 function updateLaneRenderCache(
     takeLaneState: typeof takeLaneStore.value,
@@ -275,32 +219,6 @@ function updateLaneRenderCache(
     renderCache.automation = lanes;
     renderCache.automationSubLanes = automationSubLanes;
     return changed;
-}
-
-function projectInlineAutomationLanes(
-    tracks: readonly Track[],
-    { editing, lanes }: InlineAutomationSnapshot
-): ReadonlyMap<string, readonly AutomationSubLaneRenderModel[]> {
-    const snapshot = lanes ?? [];
-    const visitedLaneIds = new Set<string>();
-    const rows = new Map<string, readonly AutomationSubLaneRenderModel[]>();
-    for (const [trackId, trackLanes] of getInlineAutomationRows(tracks, snapshot, editing)) {
-        rows.set(
-            trackId,
-            trackLanes.map((lane) => ({
-                id: lane.id,
-                trackId: lane.trackId,
-                parameterId: lane.parameterId,
-                parameterName: lane.parameterName,
-                minValue: lane.minValue,
-                maxValue: getAutomationLaneCeiling(lane),
-                color: lane.color,
-                linkedLaneId: lane.linkedLaneId,
-                valueAtBeat: (beat) => getAutomationValueAtBeat(lane.id, beat, visitedLaneIds, snapshot),
-            }))
-        );
-    }
-    return rows;
 }
 
 export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnapshot): TimelineRenderModel {

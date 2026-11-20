@@ -8,22 +8,13 @@ import {
     resolveMidiPitchWindow,
 } from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import {
-    type AutomationSubLaneRenderModel,
-    type TimelineRenderModel,
-    type TrackRenderModel,
-} from '../../models/TimelineRenderModel';
-import {
-    AUTOMATION_SUB_LANE_HEIGHT,
-    getAutomationSubLaneTop,
-    getRenderedTrackExtent,
-    VARIATION_LANE_HEIGHT,
-} from '../../models/TimelineTrackExtent';
+import { type TimelineRenderModel, type TrackRenderModel } from '../../models/TimelineRenderModel';
+import { getRenderedTrackExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
-import { forEachInlineAutomationSegment, inlineAutomationColor } from './inlineAutomationEnvelope';
+import { createWebGpuInlineAutomationPass } from './createWebGpuInlineAutomationPass';
 
 type ClipRow = Pick<TrackRenderModel, 'color' | 'clips'> & { top: number; height: number };
 
@@ -456,17 +447,35 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 labelBindGroups.push(label.bindGroup);
             }
 
-            function addRect(x1: number, y1: number, x2: number, y2: number, color: string, alpha = 1): void {
+            function addRect(
+                x1: number,
+                y1: number,
+                x2: number,
+                y2: number,
+                color: string | ReturnType<typeof colorToRgba>,
+                alpha = 1,
+                rightEdgeYOffset = 0
+            ): void {
                 if (rectCount >= MAX_RECTS) {
                     return;
                 }
-                const [r, gain, buffer1] = colorToRgba(color, alpha);
-                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, r, gain, buffer1, alpha, w, h);
+                const [red, green, blue] = typeof color === 'string' ? colorToRgba(color, alpha) : color;
+                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, red, green, blue, alpha, w, h, rightEdgeYOffset);
                 rectCount++;
             }
 
+            const automation = createWebGpuInlineAutomationPass(
+                model,
+                { width: w, height: h, dpr },
+                {
+                    addRect({ left, top, right, bottom, rightEdgeYOffset }, color, alpha) {
+                        addRect(left, top, right, bottom, color, alpha, rightEdgeYOffset);
+                    },
+                    colorToRgba,
+                }
+            );
+
             // 1. Track background rows
-            const automationRows: { lane: AutomationSubLaneRenderModel; top: number }[] = [];
             let trackY = -scrollY * dpr;
             for (const track of model.tracks) {
                 const th = track.height * dpr;
@@ -483,14 +492,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const laneTop = trackY + th + lane * VARIATION_LANE_HEIGHT * dpr;
                     addRect(0, laneTop, w, laneTop + VARIATION_LANE_HEIGHT * dpr, '#000000', 0.15);
                 }
-                for (const [laneIndex, lane] of (track.automationLanes ?? []).entries()) {
-                    const laneTop = trackY + getAutomationSubLaneTop(track.height, laneCount, laneIndex) * dpr;
-                    const laneBottom = laneTop + AUTOMATION_SUB_LANE_HEIGHT * dpr;
-                    if (laneBottom <= 0 || laneTop >= h) {
-                        continue;
-                    }
-                    automationRows.push({ lane, top: laneTop });
-                }
+                automation.collectTrackRows(track, trackY);
                 trackY += getRenderedTrackExtent(track) * dpr;
             }
 
@@ -635,15 +637,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             // Keep the existing clip, grid and playhead geometry ahead of the automation budget.
             // The backing is emitted before the grid so the bar lines remain visible through the row.
             const remainingAfterGridAndPlayhead = MAX_RECTS - rectCount - (lastBar - firstBar + 1) - 2;
-            const maxAutomationSegments =
-                automationRows.length > 0 ? Math.floor(remainingAfterGridAndPlayhead / automationRows.length) - 2 : 0;
-            if (maxAutomationSegments > 0) {
-                const backing = resolveToken('--color-bg-well', '#0e0c0b');
-                for (const { top } of automationRows) {
-                    addRect(0, top, w, top + AUTOMATION_SUB_LANE_HEIGHT * dpr, backing);
-                    addRect(0, top, w, top + dpr, '#ffffff', 0.08);
-                }
-            }
+            const maxAutomationSegments = automation.drawBackings(remainingAfterGridAndPlayhead);
 
             // 3. Bar / beat grid lines
             for (let bar = firstBar; bar <= lastBar; bar++) {
@@ -655,35 +649,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 addRect(gx, 0, gx + dpr, h, '#ffffff', bar % 4 === 0 ? 0.08 : 0.04);
             }
 
-            if (maxAutomationSegments > 0) {
-                for (const { lane, top } of automationRows) {
-                    const [red, green, blue] = colorToRgba(inlineAutomationColor(lane), 1);
-                    forEachInlineAutomationSegment(
-                        lane,
-                        model,
-                        { width: w / dpr, maxSegments: maxAutomationSegments },
-                        (from, to) => {
-                            const y = top + from.y * dpr;
-                            offset = pushRect(
-                                cpuBuf,
-                                offset,
-                                from.x * dpr,
-                                y - dpr,
-                                to.x * dpr,
-                                y + dpr,
-                                red,
-                                green,
-                                blue,
-                                1,
-                                w,
-                                h,
-                                (to.y - from.y) * dpr
-                            );
-                            rectCount++;
-                        }
-                    );
-                }
-            }
+            automation.drawEnvelopes(maxAutomationSegments);
 
             // 4. Playhead
             const phX = beatToX(playheadPosition);
