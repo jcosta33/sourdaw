@@ -19,6 +19,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
+import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
@@ -201,6 +202,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         });
         if (silentBake.silentBake) {
             throw new Error(silentBake.message);
+        }
+
+        await assertFreezeSourceUnchanged(trackId, hash);
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            return false;
         }
 
         const renderedAt = Date.now();
