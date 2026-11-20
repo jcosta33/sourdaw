@@ -1065,7 +1065,7 @@ describe('usePianoRollInteractions', () => {
             expect(args.dragPreviewRef.current?.beatOverride?.get('short')).toEqual({ beat: 0, duration: 0.1875 });
         });
 
-        it.each([0.0625, 0.1].flatMap((duration) => ['left', 'right'].map((edge) => ({ duration, edge }))))(
+        it.each([0.0625, 0.1].flatMap((duration) => (['left', 'right'] as const).map((edge) => ({ duration, edge }))))(
             'leaves a $duration-beat note unchanged on a sub-snap $edge drag',
             ({ duration, edge }) => {
                 const note = makeNote('short', 60, 1, duration);
@@ -1073,11 +1073,12 @@ describe('usePianoRollInteractions', () => {
                 const x = edge === 'left' ? 41.25 : 44.75;
                 fireEvent.mouseDown(canvas, { clientX: x, clientY: yForPitch(60) });
                 fireEvent.mouseMove(canvas, { clientX: x + 1, clientY: yForPitch(60) });
-                if (edge === 'left') {
-                    expect(args.dragPreviewRef.current?.beatOverride?.get('short')).toEqual({ beat: 1, duration });
-                } else {
-                    expect(args.dragPreviewRef.current?.durationOverride?.get('short')).toBe(duration);
-                }
+                const actual = {
+                    left: args.dragPreviewRef.current?.beatOverride?.get('short'),
+                    right: args.dragPreviewRef.current?.durationOverride?.get('short'),
+                };
+                const expected = { left: { beat: 1, duration }, right: duration };
+                expect(actual[edge]).toEqual(expected[edge]);
                 fireEvent.mouseUp(canvas, { clientX: x + 1, clientY: yForPitch(60) });
                 expect(mocks.resizeMidiNote).not.toHaveBeenCalled();
                 expect(mocks.pushUndoEntry).not.toHaveBeenCalled();

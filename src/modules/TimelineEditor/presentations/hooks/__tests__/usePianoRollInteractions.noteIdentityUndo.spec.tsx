@@ -488,7 +488,10 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
                     'clip-2': owner === 'clip-2' ? [note] : [],
                 });
                 const { canvas } = renderRoll({ gridSnap: 0.25, openedClipIds: ['clip-2'] });
-                const expected = (edited: typeof note) => (owner === 'clip-1' ? [edited, peer] : [edited]);
+                const expectOwners = (edited: typeof note): void => {
+                    expect(getNotesForClip('clip-1')).toEqual(owner === 'clip-1' ? [edited, peer] : [peer]);
+                    expect(getNotesForClip('clip-2')).toEqual(owner === 'clip-2' ? [edited] : []);
+                };
                 const gestures = [
                     { x: 87, dx: 10, dy: -16, edited: { ...note, startBeat: 2.25, pitch: 61 } },
                     { x: 81.5, dx: -10, dy: 0, edited: { ...note, startBeat: 1.75, duration: 0.625 } },
@@ -498,14 +501,11 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
                     fireEvent.mouseDown(canvas, { clientX: x, clientY: yForPitch(60) });
                     fireEvent.mouseMove(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
                     fireEvent.mouseUp(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
-                    expect(getNotesForClip(owner)).toEqual(expected(edited));
-                    if (owner === 'clip-2') {
-                        expect(getNotesForClip('clip-1')).toEqual([peer]);
-                    }
+                    expectOwners(edited);
                     await undoSync();
-                    expect(getNotesForClip(owner)).toEqual(expected(note));
+                    expectOwners(note);
                     await redoSync();
-                    expect(getNotesForClip(owner)).toEqual(expected(edited));
+                    expectOwners(edited);
                     await undoSync();
                 }
             }
