@@ -22,6 +22,7 @@ import { persistCrdtProject } from '../persistCrdtProject';
 import { prepareExternalProjectDocument } from '../prepareExternalProjectDocument';
 import { runCrdtPersistenceLoad } from '../runCrdtPersistenceLoad';
 import { encodeSdawFile } from '../sdawFileFormat/encodeSdawFile';
+import { whenBranchStateSettled } from '../whenBranchStateSettled';
 
 type VersionedQueueState = {
     version: number;
@@ -335,9 +336,12 @@ describe('persistCrdtProject', () => {
         (await persistence.waitForTransaction('readwrite', 1)).complete();
         await compact;
         automergeRepository.reset();
+        await whenBranchStateSettled();
+        const main = createDefaultBranchStoreState();
         branchStore.set({
             activeBranchId: 'other',
             branches: [
+                ...main.branches,
                 {
                     branchId: 'other',
                     name: 'Other',
