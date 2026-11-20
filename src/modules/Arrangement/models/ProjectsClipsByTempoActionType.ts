@@ -82,6 +82,7 @@ export const projectsClipsByTempoActionType: { readonly [Type in AppActionType]:
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,
     setSend: false,

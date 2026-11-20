@@ -12,6 +12,7 @@ const EXPECTED = new Set<string>([
     'renameMacro',
     'insertAutomationLanePoints',
     'setToasterFactoryKit',
+    'setGlutenFactoryPreset',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {

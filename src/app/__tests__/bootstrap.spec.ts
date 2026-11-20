@@ -614,6 +614,10 @@ vi.mock('#/modules/Fermenter/useCases', () => ({
     setFermenterDependencies: noop,
 }));
 
+vi.mock('#/modules/Gluten/useCases', () => ({
+    getGlutenHandlers: sentinelHandlers('Gluten'),
+}));
+
 vi.mock('#/modules/Gluten/stores', () => ({
     updateGlutenMeters: noop,
     deleteGlutenMeters: noop,
@@ -977,6 +981,7 @@ describe('bootstrap', () => {
         'Fermenter',
         'GrandBoule',
         'Toaster',
+        'Gluten',
         'NodeView',
         'WebMidiInput',
         'Rave',

@@ -149,6 +149,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     setFermenterPatch: defaultPolicy,
     setGrandBouleDeviceState: defaultPolicy,
     setToasterFactoryKit: defaultPolicy,
+    setGlutenFactoryPreset: defaultPolicy,
     createBus: defaultPolicy,
     createFolder: boundedPolicy,
     setSend: defaultPolicy,

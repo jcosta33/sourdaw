@@ -223,6 +223,7 @@ export const macroReplayRemapByActionType: {
     setFermenterPatch: leaveReferencesUnmapped,
     setGrandBouleDeviceState: leaveReferencesUnmapped,
     setToasterFactoryKit: leaveReferencesUnmapped,
+    setGlutenFactoryPreset: leaveReferencesUnmapped,
     createBus: leaveReferencesUnmapped,
     createFolder: leaveReferencesUnmapped,
     setSend: leaveReferencesUnmapped,

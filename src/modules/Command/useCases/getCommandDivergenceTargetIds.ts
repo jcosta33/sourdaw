@@ -133,6 +133,7 @@ const extraTargetsByActionType: {
     setFermenterPatch: noExtraTargets,
     setGrandBouleDeviceState: noExtraTargets,
     setToasterFactoryKit: noExtraTargets,
+    setGlutenFactoryPreset: noExtraTargets,
     createBus: noExtraTargets,
     createFolder: noExtraTargets,
     setSend: noExtraTargets,
