@@ -46,6 +46,15 @@ function resolveTemplateId(action: ExtractGrooveAction): string {
     );
 }
 
+/** A proposal that is the very template the pool holds, pinned because the resolver reused that version. */
+function pinsExistingVersion(
+    existing: ExtractedGrooveTemplate | undefined,
+    proposal: ExtractedGrooveTemplate,
+    extracted: ExtractedGrooveTemplate
+): boolean {
+    return existing !== undefined && templatesEqual(existing, proposal) && hasSameGrooveContent(existing, extracted);
+}
+
 function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     const result = prepareGrooveExtraction({
         clipId: action.payload.clipId,
@@ -80,15 +89,27 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     if (result.status === 'straight') {
         return { outcome: 'straight' };
     }
-    if (action.payload.proposal && !templatesEqual(result.template, action.payload.proposal)) {
+    const proposal = action.payload.proposal;
+    const existingForResult = getGrooveTemplate(result.template.id);
+    if (
+        proposal &&
+        !templatesEqual(result.template, proposal) &&
+        !pinsExistingVersion(existingForResult, proposal, result.template)
+    ) {
         return { outcome: 'diverged', code: 'proposal-mismatch' };
     }
-    const template = action.payload.proposal ?? result.template;
+    const template = proposal ?? result.template;
     const existing = getGrooveTemplate(template.id);
     if (!existing) {
         return { outcome: 'create', template };
     }
-    if (hasSameGrooveContent(existing, template)) {
+    if (templatesEqual(existing, template)) {
+        return { outcome: 'identical' };
+    }
+    // Only an id the resolver chose may differ in name: the name is derived from the pool, so it moves
+    // when another template is deleted. An explicit or pinned id holding the same notes under another
+    // name is a collaborator's template and stays a conflict.
+    if (action.payload.templateId === undefined && proposal === undefined && hasSameGrooveContent(existing, template)) {
         return { outcome: 'identical' };
     }
     return { outcome: 'diverged', code: 'template-identity-conflict' };
@@ -113,10 +134,12 @@ function pinExtraction(action: ExtractGrooveAction): void {
     if (result.status !== 'extracted') {
         return;
     }
+    const resolvedExisting = action.payload.templateId === undefined ? getGrooveTemplate(templateId) : undefined;
+    const reused = resolvedExisting && hasSameGrooveContent(resolvedExisting, result.template);
     action.payload = {
         ...action.payload,
         templateId,
-        proposal: result.template,
+        proposal: reused ? structuredClone(resolvedExisting) : result.template,
         sourceRevision: result.sourceRevision,
     };
 }

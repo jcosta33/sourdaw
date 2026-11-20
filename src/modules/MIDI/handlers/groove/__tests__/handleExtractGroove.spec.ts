@@ -384,6 +384,52 @@ describe('handleExtractGroove', () => {
             expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v3']);
         });
 
+        it('still refuses an explicit or pinned id that holds the same slots under another name', () => {
+            extractIdLess();
+            const state = grooveTemplateStore.value;
+            if (!state) {
+                throw new Error('Expected groove template state');
+            }
+            grooveTemplateStore.set({
+                ...state,
+                templates: state.templates.map((template) =>
+                    template.id === 'groove-clip-source-v1' ? { ...template, name: 'Collaborator name' } : template
+                ),
+            });
+
+            const explicit = createAction('groove-clip-source-v1');
+            expect(handleExtractGroove.isNoop?.(explicit)).toBe(false);
+            expect(handleExtractGroove.execute(explicit)).toEqual({
+                status: 'conflict',
+                reason: 'template-identity-conflict',
+            });
+
+            const pinned = createAction('groove-clip-source-v1');
+            pinned.payload = {
+                ...pinned.payload,
+                proposal: { ...getExtractedTemplate().template, id: 'groove-clip-source-v1' },
+                sourceRevision: getExtractedTemplate().sourceRevision,
+            };
+            expect(handleExtractGroove.execute(pinned)).toMatchObject({ status: 'conflict' });
+        });
+
+        it('keeps a pinned reuse of an existing version a no-write on redo', () => {
+            for (const startBeat of [0.02, 0.06, 0.1]) {
+                mocks.notes = [{ id: 'note', startBeat, velocity: 96 }];
+                extractIdLess();
+            }
+            void handleDeleteGrooveTemplate.execute({
+                type: 'deleteGrooveTemplate',
+                payload: { templateId: 'groove-clip-source-v2' },
+            });
+            const again = idLessAction();
+            expect(handleExtractGroove.describe(again).inverseAction).toBeNull();
+
+            expect(again.payload.templateId).toBe('groove-clip-source-v3');
+            expect(handleExtractGroove.execute(again)).toEqual({ status: 'no-write' });
+            expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v3']);
+        });
+
         it('still refuses an explicit id that holds other content', () => {
             extractIdLess();
             mocks.notes = [{ id: 'note', startBeat: 0.06, velocity: 96 }];
