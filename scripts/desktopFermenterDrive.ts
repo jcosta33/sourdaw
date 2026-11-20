@@ -15,7 +15,7 @@ import {
 } from './desktopLatencyLaunch.ts';
 import { launchPackagedApp, removeProfileDir, step, STEP_TIMEOUT_MS, type PackagedApp } from './packagedAppSession.ts';
 
-async function readyWorkspace(page: Page, browser: Locator, playback: Locator): Promise<void> {
+export async function readyWorkspace(page: Page, browser: Locator, playback: Locator): Promise<void> {
     const startedAt = await waitForWorkspaceOrLaunchScreen(page, STEP_TIMEOUT_MS);
     if (startedAt === 'launch-screen') {
         await openNewProjectFromLaunchScreen(page, STEP_TIMEOUT_MS);
@@ -72,7 +72,7 @@ async function observe(
     }
 }
 
-async function launch(binary: string): Promise<PackagedApp> {
+export async function launchEditorSession(binary: string): Promise<PackagedApp> {
     let profile: string | undefined;
     try {
         profile = mkdtempSync(join(tmpdir(), 'sourdaw-fermenter-'));
@@ -85,7 +85,7 @@ async function launch(binary: string): Promise<PackagedApp> {
     }
 }
 
-async function quit(app: PackagedApp): Promise<void> {
+export async function quitEditorSession(app: PackagedApp): Promise<void> {
     try {
         await app.quit();
     } catch {
@@ -94,7 +94,7 @@ async function quit(app: PackagedApp): Promise<void> {
 }
 
 export const driveDesktopFermenter: FermenterDrive = async (binary, report) => {
-    const app = await launch(binary);
+    const app = await launchEditorSession(binary);
     try {
         const { page } = app;
         page.setDefaultTimeout(STEP_TIMEOUT_MS);
@@ -112,7 +112,7 @@ export const driveDesktopFermenter: FermenterDrive = async (binary, report) => {
         await observe('dialog-close-failed', () => closeFermenter(card, editor), 3 * STEP_TIMEOUT_MS);
         report('dialog-closed-and-opener-focused');
     } finally {
-        await quit(app);
+        await quitEditorSession(app);
     }
     report('app-quit');
 };
