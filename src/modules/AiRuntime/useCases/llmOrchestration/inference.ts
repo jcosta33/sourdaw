@@ -450,7 +450,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         return getCloudProviderInfo()?.provider ?? 'openai-compatible';
     }
 
-    return async function generateToolPlanningOutcome(
+    async function planToolsOnTurn(
+        answeringTurn: AnsweringTurn,
         systemPrompt: string,
         userMessage: string,
         toolSchemas: readonly ToolSchema[],
@@ -492,7 +493,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             throw new NoAiBackendError();
         }
 
-        const answeringTurn = answeringStatus.openTurn();
         const settleReady = (backend: RunnableAiBackend): void => {
             answeringStatus.settle(answeringTurn, { state: 'ready', backend, modelId: getBackendModelId(backend) });
         };
@@ -508,545 +508,547 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
-        try {
-            for (const backend of chain) {
-                answeringStatus.publish(answeringTurn, readAnsweringStatus(backend));
-                let admittedAttempt: AdmittedProviderAttempt | null = null;
-                let providerSession: ModelProviderSession | null = null;
-                let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
-                let providerSessionSettled = false;
-                let cloudToolPlan: HostedToolPlan | null = null;
-                try {
-                    if (signal?.aborted) {
-                        throw createToolPlanningAbortError();
-                    }
-                    if (backend === 'webllm' && hostedTurn?.localReceiptContextComplete === false) {
-                        throw createProviderAttemptAdmissionError(
-                            'Application tool receipts exceeded the bounded text context budget.'
-                        );
-                    }
-                    const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
-                    let providerTools = strictHostedProposalWire
-                        ? toolSchemas.map(getHostedProposalWireToolSchema)
-                        : toolSchemas;
-                    if (backend === 'webllm') {
-                        const workflowOffer = readLocalWorkflowOffer(localWorkflowGrounding);
-                        const workflowSelectionTools = toolSchemas.flatMap((tool) => {
-                            if (tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME) {
-                                return [];
-                            }
-                            const narrowed = narrowWebLlmWorkflowSelector(tool, workflowOffer.selectableCapabilityIds);
-                            return narrowed === null ? [] : [narrowed];
-                        });
-                        const applicationTools = toolSchemas.filter(
-                            (tool) =>
-                                WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) ||
-                                tool.function.name === BRIEF_COMPILE_TOOL_NAME
-                        );
-                        // The brief compiler is in the request only when it offered it, and is then mandatory
-                        // beside the application tools. The reference comparison is never offered locally.
-                        const actionTools = toolSchemas.filter(
-                            (tool) =>
-                                tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
-                                !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
-                                tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
-                                tool.function.name !== BRIEF_COMPILE_TOOL_NAME &&
-                                tool.function.name !== ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
-                        );
-                        const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
-                            toolSchemas: actionTools,
-                            prompt: toolSelectionPrompt,
-                        });
-                        const workflowActionTools =
-                            workflowSelectionTools.length > 0 && workflowOffer.offersWorkflowActions
-                                ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
-                                : [];
-                        const mandatoryToolNames = new Set(
-                            [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
-                                (tool) => tool.function.name
-                            )
-                        );
-                        const discoveredOnsetTool =
-                            hostedTurn?.transientOnsetsDiscovered === true
-                                ? toolSchemas.find(
-                                      (tool) => tool.function.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
-                                  )
-                                : undefined;
-                        const promptActionTools = [
-                            ...(discoveredOnsetTool === undefined ? [] : [discoveredOnsetTool]),
-                            ...selectedActionTools,
-                        ].filter((tool) => !mandatoryToolNames.has(tool.function.name));
-                        const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
-                        providerTools = [
-                            ...mandatoryTools,
-                            ...promptActionTools.slice(
-                                0,
-                                Math.min(1, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length))
-                            ),
-                        ];
-                        logger.info(
-                            `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
-                        );
-                    }
-                    const providerName = getProviderName(backend);
-                    const providerProtocol = createModelProviderProtocol({
-                        provider: providerName,
-                        model: getBackendModelId(backend),
-                    });
-                    const correlationId = `tool-planning-${crypto.randomUUID()}`;
-                    const requestId = streamIdentity?.requestId ?? correlationId;
-                    const declaredDataCategories = declareHostedTurnDataCategories(
-                        hostedTurn?.history,
-                        hostedTurn?.messageDataCategories
+        for (const backend of chain) {
+            answeringStatus.publish(answeringTurn, readAnsweringStatus(backend));
+            let admittedAttempt: AdmittedProviderAttempt | null = null;
+            let providerSession: ModelProviderSession | null = null;
+            let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
+            let providerSessionSettled = false;
+            let cloudToolPlan: HostedToolPlan | null = null;
+            try {
+                if (signal?.aborted) {
+                    throw createToolPlanningAbortError();
+                }
+                if (backend === 'webllm' && hostedTurn?.localReceiptContextComplete === false) {
+                    throw createProviderAttemptAdmissionError(
+                        'Application tool receipts exceeded the bounded text context budget.'
                     );
-                    const remoteDisclosure =
-                        backend === 'cloud'
-                            ? remoteTransmissionDisclosure.prepare({
-                                  categories: declaredDataCategories,
-                                  correlationId,
-                                  requestId,
-                              })
+                }
+                const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
+                let providerTools = strictHostedProposalWire
+                    ? toolSchemas.map(getHostedProposalWireToolSchema)
+                    : toolSchemas;
+                if (backend === 'webllm') {
+                    const workflowOffer = readLocalWorkflowOffer(localWorkflowGrounding);
+                    const workflowSelectionTools = toolSchemas.flatMap((tool) => {
+                        if (tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME) {
+                            return [];
+                        }
+                        const narrowed = narrowWebLlmWorkflowSelector(tool, workflowOffer.selectableCapabilityIds);
+                        return narrowed === null ? [] : [narrowed];
+                    });
+                    const applicationTools = toolSchemas.filter(
+                        (tool) =>
+                            WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) ||
+                            tool.function.name === BRIEF_COMPILE_TOOL_NAME
+                    );
+                    // The brief compiler is in the request only when it offered it, and is then mandatory
+                    // beside the application tools. The reference comparison is never offered locally.
+                    const actionTools = toolSchemas.filter(
+                        (tool) =>
+                            tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
+                            !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
+                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
+                            tool.function.name !== BRIEF_COMPILE_TOOL_NAME &&
+                            tool.function.name !== ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
+                    );
+                    const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
+                        toolSchemas: actionTools,
+                        prompt: toolSelectionPrompt,
+                    });
+                    const workflowActionTools =
+                        workflowSelectionTools.length > 0 && workflowOffer.offersWorkflowActions
+                            ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
+                            : [];
+                    const mandatoryToolNames = new Set(
+                        [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
+                            (tool) => tool.function.name
+                        )
+                    );
+                    const discoveredOnsetTool =
+                        hostedTurn?.transientOnsetsDiscovered === true
+                            ? toolSchemas.find((tool) => tool.function.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME)
                             : undefined;
-                    const configuredMaxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
-                    const maxOutputTokens = Math.min(
-                        configuredMaxOutputTokens,
-                        hostedTurn?.maxOutputTokens ?? configuredMaxOutputTokens
+                    const promptActionTools = [
+                        ...(discoveredOnsetTool === undefined ? [] : [discoveredOnsetTool]),
+                        ...selectedActionTools,
+                    ].filter((tool) => !mandatoryToolNames.has(tool.function.name));
+                    const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
+                    providerTools = [
+                        ...mandatoryTools,
+                        ...promptActionTools.slice(
+                            0,
+                            Math.min(1, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length))
+                        ),
+                    ];
+                    logger.info(
+                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
                     );
-                    // Native replay starts at the first recorded turn, which every hosted turn now
-                    // becomes: in practice only the run's opening turn arrives with an empty history.
-                    // Before that first record there is nothing to hand back, and the composed user
-                    // message is the only place the run's receipts exist, so replacing it with the
-                    // first message there would send a turn carrying no evidence at all.
-                    const replayedTurn =
-                        hostedTurn !== undefined && hostedTurn.history.length > 0 ? hostedTurn : undefined;
-                    const compiledRequest = providerProtocol.compileRequest({
-                        correlationId,
-                        ...(streamIdentity ?? {}),
-                        operation: 'tools',
-                        modality: 'text',
-                        messages:
-                            backend === 'cloud' && replayedTurn !== undefined
-                                ? buildHostedTurnMessages(systemPrompt, replayedTurn)
-                                : [
-                                      { role: 'system', content: systemPrompt },
-                                      { role: 'user', content: backend === 'webllm' ? localUserMessage : userMessage },
-                                  ],
-                        tools: providerTools.map((tool) => ({
-                            name: tool.function.name,
-                            description: tool.function.description ?? '',
-                            parameters: tool.function.parameters,
-                        })),
-                        stream: false,
-                        limits: { maxOutputTokens },
-                        controls: { cache: 'provider-default', reasoning: 'provider-default' },
-                        budget: {
-                            maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
-                            maxOutputTokens,
-                            maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + maxOutputTokens,
+                }
+                const providerName = getProviderName(backend);
+                const providerProtocol = createModelProviderProtocol({
+                    provider: providerName,
+                    model: getBackendModelId(backend),
+                });
+                const correlationId = `tool-planning-${crypto.randomUUID()}`;
+                const requestId = streamIdentity?.requestId ?? correlationId;
+                const declaredDataCategories = declareHostedTurnDataCategories(
+                    hostedTurn?.history,
+                    hostedTurn?.messageDataCategories
+                );
+                const remoteDisclosure =
+                    backend === 'cloud'
+                        ? remoteTransmissionDisclosure.prepare({
+                              categories: declaredDataCategories,
+                              correlationId,
+                              requestId,
+                          })
+                        : undefined;
+                const configuredMaxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                const maxOutputTokens = Math.min(
+                    configuredMaxOutputTokens,
+                    hostedTurn?.maxOutputTokens ?? configuredMaxOutputTokens
+                );
+                // Native replay starts at the first recorded turn, which every hosted turn now
+                // becomes: in practice only the run's opening turn arrives with an empty history.
+                // Before that first record there is nothing to hand back, and the composed user
+                // message is the only place the run's receipts exist, so replacing it with the
+                // first message there would send a turn carrying no evidence at all.
+                const replayedTurn = hostedTurn !== undefined && hostedTurn.history.length > 0 ? hostedTurn : undefined;
+                const compiledRequest = providerProtocol.compileRequest({
+                    correlationId,
+                    ...(streamIdentity ?? {}),
+                    operation: 'tools',
+                    modality: 'text',
+                    messages:
+                        backend === 'cloud' && replayedTurn !== undefined
+                            ? buildHostedTurnMessages(systemPrompt, replayedTurn)
+                            : [
+                                  { role: 'system', content: systemPrompt },
+                                  { role: 'user', content: backend === 'webllm' ? localUserMessage : userMessage },
+                              ],
+                    tools: providerTools.map((tool) => ({
+                        name: tool.function.name,
+                        description: tool.function.description ?? '',
+                        parameters: tool.function.parameters,
+                    })),
+                    stream: false,
+                    limits: { maxOutputTokens },
+                    controls: { cache: 'provider-default', reasoning: 'provider-default' },
+                    budget: {
+                        maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
+                        maxOutputTokens,
+                        maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + maxOutputTokens,
+                    },
+                    dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+                    ...(remoteDisclosure === undefined
+                        ? {}
+                        : {
+                              dataCategories: declaredDataCategories,
+                              remoteDisclosure,
+                          }),
+                });
+                if (compiledRequest.status !== 'ready') {
+                    settleRefusedAttempt(backend);
+                    return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
+                }
+                const providerRequest = compiledRequest.request;
+                const estimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
+                const admission = onProviderAttempt?.({
+                    backend,
+                    provider: providerName,
+                    correlationId: providerRequest.correlationId,
+                    request: providerRequest,
+                    estimatedTotalTokens: estimate.totalTokenCeiling,
+                    estimate,
+                });
+                if (admission?.status === 'rejected') {
+                    throw createProviderAttemptAdmissionError(admission.reason);
+                }
+                admittedAttempt = {
+                    provider: providerName,
+                    model: getBackendModelId(backend),
+                    request: providerRequest,
+                    disclosurePublished: false,
+                };
+                if (
+                    remoteDisclosure !== undefined &&
+                    !remoteTransmissionDisclosure.publish({
+                        evidence: remoteDisclosure,
+                        ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
+                        provider: providerName,
+                    })
+                ) {
+                    throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+                }
+                if (remoteDisclosure !== undefined) {
+                    admittedAttempt.disclosurePublished = true;
+                }
+                providerSession = providerProtocol.start(providerRequest);
+                providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
+                const providerSystemPrompt = providerRequest.messages.find(
+                    (message) => message.role === 'system'
+                )?.content;
+                const providerUserMessage = providerRequest.messages.find(
+                    (message) => message.role === 'user'
+                )?.content;
+                if (providerSystemPrompt === undefined || providerUserMessage === undefined) {
+                    providerSource.finish({
+                        reason: 'error',
+                        failure: {
+                            code: 'invalid-provider-request',
+                            retryable: false,
+                            safeMessage: 'The model provider request is missing required messages.',
                         },
-                        dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-                        ...(remoteDisclosure === undefined
-                            ? {}
-                            : {
-                                  dataCategories: declaredDataCategories,
-                                  remoteDisclosure,
-                              }),
                     });
-                    if (compiledRequest.status !== 'ready') {
-                        settleRefusedAttempt(backend);
-                        return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
-                    }
-                    const providerRequest = compiledRequest.request;
-                    const estimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
-                    const admission = onProviderAttempt?.({
-                        backend,
-                        provider: providerName,
-                        correlationId: providerRequest.correlationId,
-                        request: providerRequest,
-                        estimatedTotalTokens: estimate.totalTokenCeiling,
-                        estimate,
-                    });
-                    if (admission?.status === 'rejected') {
-                        throw createProviderAttemptAdmissionError(admission.reason);
-                    }
-                    admittedAttempt = {
-                        provider: providerName,
-                        model: getBackendModelId(backend),
-                        request: providerRequest,
-                        disclosurePublished: false,
+                    providerSessionSettled = true;
+                    settleRefusedAttempt(backend);
+                    return {
+                        status: 'rejected',
+                        reason: 'The model provider request is missing required messages.',
                     };
-                    if (
-                        remoteDisclosure !== undefined &&
-                        !remoteTransmissionDisclosure.publish({
-                            evidence: remoteDisclosure,
-                            ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
-                            provider: providerName,
-                        })
-                    ) {
-                        throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+                }
+                let outcome: ToolPlanningOutcome;
+
+                if (backend === 'cloud') {
+                    let cloudInference: Promise<HostedToolPlan>;
+                    if (signal === undefined) {
+                        cloudInference = generateCloudToolCalls(
+                            providerSystemPrompt,
+                            providerUserMessage,
+                            providerTools,
+                            providerRequest.limits.maxOutputTokens,
+                            directive,
+                            undefined,
+                            replayedTurn
+                        );
+                    } else {
+                        cloudInference = generateCloudToolCalls(
+                            providerSystemPrompt,
+                            providerUserMessage,
+                            providerTools,
+                            providerRequest.limits.maxOutputTokens,
+                            directive,
+                            signal,
+                            replayedTurn
+                        );
                     }
-                    if (remoteDisclosure !== undefined) {
-                        admittedAttempt.disclosurePublished = true;
-                    }
-                    providerSession = providerProtocol.start(providerRequest);
-                    providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
-                    const providerSystemPrompt = providerRequest.messages.find(
-                        (message) => message.role === 'system'
-                    )?.content;
-                    const providerUserMessage = providerRequest.messages.find(
-                        (message) => message.role === 'user'
-                    )?.content;
-                    if (providerSystemPrompt === undefined || providerUserMessage === undefined) {
-                        providerSource.finish({
+                    const plan = await waitForInference(cloudInference, signal);
+                    cloudToolPlan = plan;
+                    const toolCalls = plan.calls;
+                    outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
+                } else if (backend === 'webllm') {
+                    const local = await generateLocalToolPlanningOutcome({
+                        systemPrompt: providerSystemPrompt,
+                        userMessage: providerUserMessage,
+                        tools: providerTools,
+                        configuredMaxOutputTokens: providerRequest.limits.maxOutputTokens,
+                        answeringTurn,
+                        signal,
+                    });
+                    if (local.status !== 'generated') {
+                        const refusal =
+                            local.status === 'exceeded'
+                                ? {
+                                      code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                                      reason: describeLocalContextWindowShortfall(
+                                          local.shortfall,
+                                          findLocalModelHolding(local.shortfall)
+                                      ),
+                                  }
+                                : { code: LOCAL_PLANNER_REQUIRED_FAILURE_CODE, reason: local.reason };
+                        const { reason } = refusal;
+                        const refusedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
-                                code: 'invalid-provider-request',
+                                code: refusal.code,
                                 retryable: false,
-                                safeMessage: 'The model provider request is missing required messages.',
+                                safeMessage: reason,
                             },
                         });
                         providerSessionSettled = true;
+                        reportProviderResult(refusedResult);
+                        logger.warn(`[AI Engine] (webllm) tool planning refused: ${reason}`);
                         settleRefusedAttempt(backend);
-                        return {
+                        return { status: 'rejected', reason };
+                    }
+                    outcome = normalizeGeneratedToolPlanningOutcome(local.outcome);
+                } else {
+                    throw createAiRuntimeError('No supported AI backend is available.');
+                }
+
+                if (backend === 'webllm' && outcome.status === 'complete') {
+                    const advertisedToolNames = new Set(providerTools.map((tool) => tool.function.name));
+                    if (outcome.toolCalls.some((call) => !advertisedToolNames.has(call.name))) {
+                        outcome = {
                             status: 'rejected',
-                            reason: 'The model provider request is missing required messages.',
+                            reason: 'Provider requested a tool that was not advertised for this request.',
                         };
                     }
-                    let outcome: ToolPlanningOutcome;
+                }
 
-                    if (backend === 'cloud') {
-                        let cloudInference: Promise<HostedToolPlan>;
-                        if (signal === undefined) {
-                            cloudInference = generateCloudToolCalls(
-                                providerSystemPrompt,
-                                providerUserMessage,
-                                providerTools,
-                                providerRequest.limits.maxOutputTokens,
-                                directive,
-                                undefined,
-                                replayedTurn
-                            );
-                        } else {
-                            cloudInference = generateCloudToolCalls(
-                                providerSystemPrompt,
-                                providerUserMessage,
-                                providerTools,
-                                providerRequest.limits.maxOutputTokens,
-                                directive,
-                                signal,
-                                replayedTurn
-                            );
-                        }
-                        const plan = await waitForInference(cloudInference, signal);
-                        cloudToolPlan = plan;
-                        const toolCalls = plan.calls;
-                        outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
-                    } else if (backend === 'webllm') {
-                        const local = await generateLocalToolPlanningOutcome({
-                            systemPrompt: providerSystemPrompt,
-                            userMessage: providerUserMessage,
-                            tools: providerTools,
-                            configuredMaxOutputTokens: providerRequest.limits.maxOutputTokens,
-                            answeringTurn,
-                            signal,
+                if (outcome.status === 'complete') {
+                    const providerCallIds = outcome.toolCalls.map((call) => call.id);
+                    if (cloudToolPlan?.usage) {
+                        providerSource.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: cloudToolPlan.usage.inputTokens,
+                                outputTokens: cloudToolPlan.usage.outputTokens,
+                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
+                                cacheWriteInputTokens: cloudToolPlan.usage.cacheWriteInputTokens,
+                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
+                            },
+                            provenance: 'provider-reported',
                         });
-                        if (local.status !== 'generated') {
-                            const refusal =
-                                local.status === 'exceeded'
-                                    ? {
-                                          code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
-                                          reason: describeLocalContextWindowShortfall(
-                                              local.shortfall,
-                                              findLocalModelHolding(local.shortfall)
-                                          ),
-                                      }
-                                    : { code: LOCAL_PLANNER_REQUIRED_FAILURE_CODE, reason: local.reason };
-                            const { reason } = refusal;
-                            const refusedResult = providerSource.finish({
-                                reason: 'error',
-                                failure: {
-                                    code: refusal.code,
-                                    retryable: false,
-                                    safeMessage: reason,
-                                },
-                            });
-                            providerSessionSettled = true;
-                            reportProviderResult(refusedResult);
-                            logger.warn(`[AI Engine] (webllm) tool planning refused: ${reason}`);
-                            settleRefusedAttempt(backend);
-                            return { status: 'rejected', reason };
-                        }
-                        outcome = normalizeGeneratedToolPlanningOutcome(local.outcome);
-                    } else {
-                        throw createAiRuntimeError('No supported AI backend is available.');
                     }
-
-                    if (backend === 'webllm' && outcome.status === 'complete') {
-                        const advertisedToolNames = new Set(providerTools.map((tool) => tool.function.name));
-                        if (outcome.toolCalls.some((call) => !advertisedToolNames.has(call.name))) {
-                            outcome = {
-                                status: 'rejected',
-                                reason: 'Provider requested a tool that was not advertised for this request.',
-                            };
+                    for (const [index, call] of outcome.toolCalls.entries()) {
+                        const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
+                        providerSource.push({
+                            type: 'tool-call',
+                            call: {
+                                id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
+                                name: call.name,
+                                arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
+                            },
+                            schemaMismatch: toolCallSchemaMismatch({
+                                backend,
+                                cloudToolPlan,
+                                toolName: call.name,
+                                answersSchemaInvalidCalls: hostedTurn?.answersSchemaInvalidCalls === true,
+                            }),
+                        });
+                    }
+                    const normalizedResult = providerSource.finish({ reason: 'stop' });
+                    providerSessionSettled = true;
+                    const reportedResult: ModelProviderResult = cloudToolPlan
+                        ? {
+                              ...normalizedResult,
+                              strictToolSchemas: cloudToolPlan.strictToolSchemas,
+                              cacheWriteInputTokens: cloudToolPlan.usage?.cacheWriteInputTokens ?? null,
+                          }
+                        : normalizedResult;
+                    reportProviderResult(reportedResult);
+                    logger.info(
+                        `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
+                    );
+                    const normalizedToolCalls: ToolCallResult[] = normalizedResult.output.toolCalls.map(
+                        (call, index) => ({
+                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
+                            name: call.name,
+                            arguments: call.arguments,
+                            ...(call.argumentSchemaViolation === undefined
+                                ? {}
+                                : { argumentSchemaViolation: call.argumentSchemaViolation }),
+                        })
+                    );
+                    if (strictHostedProposalWire) {
+                        for (const [index, call] of normalizedToolCalls.entries()) {
+                            // A call that misses its wire schema keeps the arguments it was refused for.
+                            if (
+                                call.argumentSchemaViolation !== undefined ||
+                                (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                    call.name !== ANALYSIS_MEASURE_TOOL_NAME)
+                            ) {
+                                continue;
+                            }
+                            const canonicalSchema = toolSchemas.find((tool) => tool.function.name === call.name);
+                            const decoded =
+                                canonicalSchema === undefined
+                                    ? null
+                                    : decodeHostedProposalWireCall(call, canonicalSchema);
+                            if (decoded === null) {
+                                settleReady(backend);
+                                return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };
+                            }
+                            normalizedToolCalls[index] = decoded;
                         }
                     }
+                    const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
+                    // Every hosted turn is reported, so the run's evidence survives in the history
+                    // whatever the provider named its calls. The items themselves are replayed
+                    // verbatim only when the provider identified every call of the turn: the
+                    // receipts answering them correlate by the identifier the loop resolved, and
+                    // items naming an identifier no receipt can answer are rejected by every
+                    // hosted dialect. A turn that left a call unidentified reports null items and
+                    // is restated from its calls under the loop's own identifiers.
+                    const providerIdentifiedEveryCall = providerCallIds.every(
+                        (callId) => callId !== undefined && callId.length > 0
+                    );
+                    outcome = {
+                        status: 'complete',
+                        toolCalls: normalizedToolCalls,
+                        proposal: extractAgentPlanProposal(
+                            normalizedToolCalls.filter((call) => call.argumentSchemaViolation === undefined)
+                        ),
+                        ...(cloudToolPlan === null || hostedProvider === undefined
+                            ? {}
+                            : {
+                                  providerTurn: {
+                                      provider: hostedProvider,
+                                      assistantItems: providerIdentifiedEveryCall ? cloudToolPlan.assistantItems : null,
+                                  },
+                              }),
+                    };
+                } else {
+                    const rejectedResult = providerSource.finish({
+                        reason: 'error',
+                        failure: {
+                            code: 'tool-planning-rejected',
+                            retryable: false,
+                            safeMessage: outcome.reason,
+                        },
+                    });
+                    providerSessionSettled = true;
+                    reportProviderResult(rejectedResult);
+                    logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
+                }
 
-                    if (outcome.status === 'complete') {
-                        const providerCallIds = outcome.toolCalls.map((call) => call.id);
-                        if (cloudToolPlan?.usage) {
+                settleReady(backend);
+                return outcome;
+            } catch (error) {
+                const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isAdmissionRejection = isProviderAttemptAdmissionError(error);
+                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                const protocolUsage = isHostedToolCallingProtocolError(error) ? error.usage : null;
+                const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
+                let normalizedAttemptError: Error | null = null;
+                if (providerSession !== null && providerSource !== null && !providerSessionSettled) {
+                    let failedResult: ModelProviderResult;
+                    if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
+                        failedResult = providerSource.finish({ reason: 'cancelled' });
+                    } else if (isTerminalModelRejection) {
+                        // A rejected turn can still be a provider answer the provider billed for
+                        // (a refusal, prose with no tool call); attribute that usage the same way
+                        // a completed turn does, before the terminal `finish` closes the stream.
+                        if (error.usage) {
                             providerSource.push({
                                 type: 'usage',
                                 mode: 'final',
                                 usage: {
-                                    inputTokens: cloudToolPlan.usage.inputTokens,
-                                    outputTokens: cloudToolPlan.usage.outputTokens,
-                                    cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
-                                    cacheWriteInputTokens: cloudToolPlan.usage.cacheWriteInputTokens,
-                                    reasoningTokens: cloudToolPlan.usage.reasoningTokens,
+                                    inputTokens: error.usage.inputTokens,
+                                    outputTokens: error.usage.outputTokens,
+                                    cachedInputTokens: error.usage.cacheReadInputTokens,
+                                    cacheWriteInputTokens: error.usage.cacheWriteInputTokens,
+                                    reasoningTokens: error.usage.reasoningTokens,
                                 },
                                 provenance: 'provider-reported',
                             });
                         }
-                        for (const [index, call] of outcome.toolCalls.entries()) {
-                            const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
-                            providerSource.push({
-                                type: 'tool-call',
-                                call: {
-                                    id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
-                                    name: call.name,
-                                    arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
-                                },
-                                schemaMismatch: toolCallSchemaMismatch({
-                                    backend,
-                                    cloudToolPlan,
-                                    toolName: call.name,
-                                    answersSchemaInvalidCalls: hostedTurn?.answersSchemaInvalidCalls === true,
-                                }),
-                            });
-                        }
-                        const normalizedResult = providerSource.finish({ reason: 'stop' });
-                        providerSessionSettled = true;
-                        const reportedResult: ModelProviderResult = cloudToolPlan
-                            ? {
-                                  ...normalizedResult,
-                                  strictToolSchemas: cloudToolPlan.strictToolSchemas,
-                                  cacheWriteInputTokens: cloudToolPlan.usage?.cacheWriteInputTokens ?? null,
-                              }
-                            : normalizedResult;
-                        reportProviderResult(reportedResult);
-                        logger.info(
-                            `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
-                        );
-                        const normalizedToolCalls: ToolCallResult[] = normalizedResult.output.toolCalls.map(
-                            (call, index) => ({
-                                ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
-                                name: call.name,
-                                arguments: call.arguments,
-                                ...(call.argumentSchemaViolation === undefined
-                                    ? {}
-                                    : { argumentSchemaViolation: call.argumentSchemaViolation }),
-                            })
-                        );
-                        if (strictHostedProposalWire) {
-                            for (const [index, call] of normalizedToolCalls.entries()) {
-                                // A call that misses its wire schema keeps the arguments it was refused for.
-                                if (
-                                    call.argumentSchemaViolation !== undefined ||
-                                    (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
-                                        call.name !== ANALYSIS_MEASURE_TOOL_NAME)
-                                ) {
-                                    continue;
-                                }
-                                const canonicalSchema = toolSchemas.find((tool) => tool.function.name === call.name);
-                                const decoded =
-                                    canonicalSchema === undefined
-                                        ? null
-                                        : decodeHostedProposalWireCall(call, canonicalSchema);
-                                if (decoded === null) {
-                                    settleReady(backend);
-                                    return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };
-                                }
-                                normalizedToolCalls[index] = decoded;
-                            }
-                        }
-                        const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
-                        // Every hosted turn is reported, so the run's evidence survives in the history
-                        // whatever the provider named its calls. The items themselves are replayed
-                        // verbatim only when the provider identified every call of the turn: the
-                        // receipts answering them correlate by the identifier the loop resolved, and
-                        // items naming an identifier no receipt can answer are rejected by every
-                        // hosted dialect. A turn that left a call unidentified reports null items and
-                        // is restated from its calls under the loop's own identifiers.
-                        const providerIdentifiedEveryCall = providerCallIds.every(
-                            (callId) => callId !== undefined && callId.length > 0
-                        );
-                        outcome = {
-                            status: 'complete',
-                            toolCalls: normalizedToolCalls,
-                            proposal: extractAgentPlanProposal(
-                                normalizedToolCalls.filter((call) => call.argumentSchemaViolation === undefined)
-                            ),
-                            ...(cloudToolPlan === null || hostedProvider === undefined
-                                ? {}
-                                : {
-                                      providerTurn: {
-                                          provider: hostedProvider,
-                                          assistantItems: providerIdentifiedEveryCall
-                                              ? cloudToolPlan.assistantItems
-                                              : null,
-                                      },
-                                  }),
-                        };
-                    } else {
-                        const rejectedResult = providerSource.finish({
+                        failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
                                 code: 'tool-planning-rejected',
                                 retryable: false,
-                                safeMessage: outcome.reason,
+                                safeMessage: 'The model provider rejected tool planning.',
                             },
                         });
-                        providerSessionSettled = true;
-                        reportProviderResult(rejectedResult);
-                        logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
-                    }
-
-                    settleReady(backend);
-                    return outcome;
-                } catch (error) {
-                    const isTerminalModelRejection = isToolPlanningRejectedError(error);
-                    const isAdmissionRejection = isProviderAttemptAdmissionError(error);
-                    const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
-                    const protocolUsage = isHostedToolCallingProtocolError(error) ? error.usage : null;
-                    const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
-                    let normalizedAttemptError: Error | null = null;
-                    if (providerSession !== null && providerSource !== null && !providerSessionSettled) {
-                        let failedResult: ModelProviderResult;
-                        if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
-                            failedResult = providerSource.finish({ reason: 'cancelled' });
-                        } else if (isTerminalModelRejection) {
-                            // A rejected turn can still be a provider answer the provider billed for
-                            // (a refusal, prose with no tool call); attribute that usage the same way
-                            // a completed turn does, before the terminal `finish` closes the stream.
-                            if (error.usage) {
-                                providerSource.push({
-                                    type: 'usage',
-                                    mode: 'final',
-                                    usage: {
-                                        inputTokens: error.usage.inputTokens,
-                                        outputTokens: error.usage.outputTokens,
-                                        cachedInputTokens: error.usage.cacheReadInputTokens,
-                                        cacheWriteInputTokens: error.usage.cacheWriteInputTokens,
-                                        reasoningTokens: error.usage.reasoningTokens,
-                                    },
-                                    provenance: 'provider-reported',
-                                });
-                            }
+                    } else {
+                        if (protocolUsage !== null) {
+                            providerSource.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: protocolUsage.inputTokens,
+                                    outputTokens: protocolUsage.outputTokens,
+                                    cachedInputTokens: protocolUsage.cacheReadInputTokens,
+                                    cacheWriteInputTokens: protocolUsage.cacheWriteInputTokens,
+                                    reasoningTokens: protocolUsage.reasoningTokens,
+                                },
+                                provenance: 'provider-reported',
+                            });
+                        }
+                        if (normalizedProviderFailure !== null) {
                             failedResult = providerSource.finish({
                                 reason: 'error',
                                 failure: {
-                                    code: 'tool-planning-rejected',
-                                    retryable: false,
-                                    safeMessage: 'The model provider rejected tool planning.',
+                                    code: normalizedProviderFailure.code,
+                                    retryable: normalizedProviderFailure.retryable,
+                                    safeMessage: normalizedProviderFailure.message,
                                 },
                             });
                         } else {
-                            if (protocolUsage !== null) {
-                                providerSource.push({
-                                    type: 'usage',
-                                    mode: 'final',
-                                    usage: {
-                                        inputTokens: protocolUsage.inputTokens,
-                                        outputTokens: protocolUsage.outputTokens,
-                                        cachedInputTokens: protocolUsage.cacheReadInputTokens,
-                                        cacheWriteInputTokens: protocolUsage.cacheWriteInputTokens,
-                                        reasoningTokens: protocolUsage.reasoningTokens,
-                                    },
-                                    provenance: 'provider-reported',
+                            const httpStatus = snapshotHostedAiHttpStatus(error);
+                            if (httpStatus !== null) {
+                                failedResult = providerSource.finish({
+                                    reason: 'error',
+                                    failure: hostedAiHttpFailure(httpStatus),
                                 });
-                            }
-                            if (normalizedProviderFailure !== null) {
+                            } else {
                                 failedResult = providerSource.finish({
                                     reason: 'error',
                                     failure: {
-                                        code: normalizedProviderFailure.code,
-                                        retryable: normalizedProviderFailure.retryable,
-                                        safeMessage: normalizedProviderFailure.message,
+                                        code: 'provider-attempt-failed',
+                                        retryable: true,
+                                        safeMessage: 'The model provider request failed.',
                                     },
                                 });
-                            } else {
-                                const httpStatus = snapshotHostedAiHttpStatus(error);
-                                if (httpStatus !== null) {
-                                    failedResult = providerSource.finish({
-                                        reason: 'error',
-                                        failure: hostedAiHttpFailure(httpStatus),
-                                    });
-                                } else {
-                                    failedResult = providerSource.finish({
-                                        reason: 'error',
-                                        failure: {
-                                            code: 'provider-attempt-failed',
-                                            retryable: true,
-                                            safeMessage: 'The model provider request failed.',
-                                        },
-                                    });
-                                }
                             }
                         }
-                        reportProviderResult(failedResult);
-                        if (failedResult.failure !== null) {
-                            normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
-                        }
-                    } else if (admittedAttempt !== null) {
-                        const failedResult = preSessionProviderResult({
-                            attempt: admittedAttempt,
-                            error,
-                            cancelled: isExplicitAbort || signal?.aborted === true,
-                        });
-                        reportProviderResult(failedResult);
-                        if (failedResult.failure !== null) {
-                            normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
-                        }
                     }
-                    if (isAiRuntimeConfigurationChangedError(error)) {
-                        answeringStatus.settle(answeringTurn, { state: 'idle' });
-                        throw error;
+                    reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
                     }
-                    if (!isTerminalModelRejection && !isExplicitAbort) {
-                        failedBackends.add(backend);
+                } else if (admittedAttempt !== null) {
+                    const failedResult = preSessionProviderResult({
+                        attempt: admittedAttempt,
+                        error,
+                        cancelled: isExplicitAbort || signal?.aborted === true,
+                    });
+                    reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
                     }
-                    if (signal?.aborted) {
-                        // The engine as it settled outside any answering attempt, never another turn's answer.
-                        const engineStatus = answeringStatus.readSettled();
-                        const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
-                        const engineBackendFailed =
-                            engineStatus?.state === 'ready' && failedBackends.has(engineStatus.backend);
-                        const preferenceChangedBackend =
-                            currentPreference !== 'auto' &&
-                            engineStatus?.state === 'ready' &&
-                            engineStatus.backend !== currentPreference;
-                        answeringStatus.settle(
-                            answeringTurn,
-                            engineBackendFailed || preferenceChangedBackend ? { state: 'idle' } : engineStatus
-                        );
-                        throw createToolPlanningAbortError();
-                    }
-                    if (isTerminalModelRejection || isAdmissionRejection) {
-                        settleReady(backend);
-                        return { status: 'rejected', reason: error.message };
-                    }
-                    lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
-                    logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
                 }
+                if (isAiRuntimeConfigurationChangedError(error)) {
+                    answeringStatus.settle(answeringTurn, { state: 'idle' });
+                    throw error;
+                }
+                if (!isTerminalModelRejection && !isExplicitAbort) {
+                    failedBackends.add(backend);
+                }
+                if (signal?.aborted) {
+                    // The engine as it settled outside any answering attempt, never another turn's answer.
+                    const engineStatus = answeringStatus.readSettled();
+                    const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
+                    const engineBackendFailed =
+                        engineStatus?.state === 'ready' && failedBackends.has(engineStatus.backend);
+                    const preferenceChangedBackend =
+                        currentPreference !== 'auto' &&
+                        engineStatus?.state === 'ready' &&
+                        engineStatus.backend !== currentPreference;
+                    answeringStatus.settle(
+                        answeringTurn,
+                        engineBackendFailed || preferenceChangedBackend ? { state: 'idle' } : engineStatus
+                    );
+                    throw createToolPlanningAbortError();
+                }
+                if (isTerminalModelRejection || isAdmissionRejection) {
+                    settleReady(backend);
+                    return { status: 'rejected', reason: error.message };
+                }
+                lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
+                logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }
+        }
 
-            answeringStatus.settle(answeringTurn, {
-                state: 'error',
-                message: lastError?.message ?? 'All backends failed',
-            });
-            throw lastError ?? new Error('All AI backends failed');
+        answeringStatus.settle(answeringTurn, {
+            state: 'error',
+            message: lastError?.message ?? 'All backends failed',
+        });
+        throw lastError ?? new Error('All AI backends failed');
+    }
+
+    type ToolPlanningArgs = Parameters<typeof planToolsOnTurn> extends [unknown, ...infer Rest] ? Rest : never;
+
+    return async function generateToolPlanningOutcome(...args: ToolPlanningArgs): Promise<ToolPlanningOutcome> {
+        const answeringTurn = answeringStatus.openTurn();
+        try {
+            return await planToolsOnTurn(answeringTurn, ...args);
         } finally {
-            // Every exit settles its turn above; an unexpected throw leaves the engine as it was.
+            // Every exit settles its turn inside; an unexpected throw leaves the engine as it was.
             answeringStatus.settle(answeringTurn, answeringStatus.readSettled());
         }
     };
