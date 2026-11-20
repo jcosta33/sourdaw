@@ -45,11 +45,15 @@ it.each(['check', '--fix'])(
                 ...writeFixtureProject(productDirectory, ['product.ts', 'product.spec.ts']),
                 ...writeFixtureProject(scriptDirectory, ['tooling.ts']),
             ];
-            const result = spawnSync(
-                resolve(root, 'node_modules/.bin/oxlint'),
-                [...buildQualityLintArgv(targets).slice(2), ...(mode === '--fix' ? [mode] : [])],
-                { cwd: root, encoding: 'utf8', timeout: 30_000 }
-            );
+            const argv = buildQualityLintArgv(targets).slice(2);
+            if (mode === '--fix') {
+                argv.push(mode);
+            }
+            const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), argv, {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 30_000,
+            });
             expect(result.error).toBeUndefined();
             const report = parseQualityReport(result.stdout, root);
             expect(report.fileCount).toBe(targets.length);
