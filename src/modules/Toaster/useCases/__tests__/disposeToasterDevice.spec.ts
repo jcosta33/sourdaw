@@ -212,6 +212,24 @@ describe('disposeToasterDevice', () => {
         expect(triggerToasterPad).not.toHaveBeenCalled();
     });
 
+    it('cancels only the disposed device’s queued kit write', () => {
+        placeDevicesOnTrack(SUCCESSOR_TRACK);
+        registerToasterDevice(DEVICE);
+        registerToasterDevice(PENDING_ONLY_DEVICE);
+        setToasterKitParam(PENDING_ONLY_DEVICE, 'masterGain', 0.75);
+        setToasterKitParam(DEVICE, 'masterGain', 0.123);
+
+        disposeToasterDevice(DEVICE);
+        vi.advanceTimersToNextFrame();
+
+        expect(toasterStore.value?.[DEVICE]).toBeUndefined();
+        expect(toasterStore.value?.[PENDING_ONLY_DEVICE]?.kit.masterGain).toBe(0.75);
+        expect(setSuccessorParam).toHaveBeenCalledExactlyOnceWith('master_gain', 0.75);
+        expect(writeNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith(SUCCESSOR_TRACK, PENDING_ONLY_DEVICE, {
+            master_gain: 0.75,
+        });
+    });
+
     // Bug #3: a pad-param flush already queued on rAF could fire post-destroy,
     // writing to a detached worklet. Teardown must cancel the queued frame.
     it('cancels a queued rAF pad-param flush so it never reaches the worklet', () => {

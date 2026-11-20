@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     applyEuclideanToTrack: vi.fn(),
+    selectToasterFactoryKit:
+        vi.fn<typeof import('../../../useCases/selectToasterFactoryKit').selectToasterFactoryKit>(),
     assignToasterPatternGroove: vi.fn<() => Promise<void>>(),
     exportPatternToTimeline: vi.fn(),
     enter16Levels: vi.fn(),
@@ -23,6 +25,9 @@ import { ToasterPanel } from '../ToasterPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => defaultValue),
+}));
+vi.mock('../../../useCases/selectToasterFactoryKit', () => ({
+    selectToasterFactoryKit: mocks.selectToasterFactoryKit,
 }));
 vi.mock('../../../useCases/applyEuclidean', () => ({
     applyEuclideanToTrack: mocks.applyEuclideanToTrack,
@@ -99,6 +104,16 @@ describe('ToasterPanel', () => {
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('loads the selected named factory kit for this device', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Load kit Sourdough 808' }));
+
+        expect(mocks.selectToasterFactoryKit).toHaveBeenCalledOnce();
+        expect(mocks.selectToasterFactoryKit).toHaveBeenCalledWith('toaster-test', '808-classic');
     });
 
     it('keeps Toast a one-shot peach action without pressed state', () => {
