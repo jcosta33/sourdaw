@@ -365,6 +365,25 @@ describe('handleExtractGroove', () => {
             expect(resolve()).toBe('groove-clip-source-v2');
         });
 
+        it('reuses the version that holds the same content when a lower version was deleted', () => {
+            for (const startBeat of [0.02, 0.06, 0.1]) {
+                mocks.notes = [{ id: 'note', startBeat, velocity: 96 }];
+                extractIdLess();
+            }
+            expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v2', 'groove-clip-source-v3']);
+            void handleDeleteGrooveTemplate.execute({
+                type: 'deleteGrooveTemplate',
+                payload: { templateId: 'groove-clip-source-v2' },
+            });
+
+            const again = idLessAction();
+            expect(handleExtractGroove.isNoop?.(again)).toBe(true);
+            handleExtractGroove.describe(again);
+            expect(again.payload.templateId).toBe('groove-clip-source-v3');
+            expect(handleExtractGroove.execute(again)).toEqual({ status: 'no-write' });
+            expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v3']);
+        });
+
         it('still refuses an explicit id that holds other content', () => {
             extractIdLess();
             mocks.notes = [{ id: 'note', startBeat: 0.06, velocity: 96 }];

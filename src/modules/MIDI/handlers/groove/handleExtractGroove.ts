@@ -6,6 +6,7 @@ import { GrooveExtractionActionError } from '../../errors/GrooveExtractionAction
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
 import { getGrooveSourceClipName } from '../../useCases/grooveTemplates/getGrooveSourceClipName';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
+import { hasSameGrooveContent } from '../../useCases/grooveTemplates/hasSameGrooveContent';
 import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
 import { resolveGrooveExtractionTemplateId } from '../../useCases/grooveTemplates/resolveGrooveExtractionTemplateId';
@@ -87,7 +88,7 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     if (!existing) {
         return { outcome: 'create', template };
     }
-    if (templatesEqual(existing, template)) {
+    if (hasSameGrooveContent(existing, template)) {
         return { outcome: 'identical' };
     }
     return { outcome: 'diverged', code: 'template-identity-conflict' };
