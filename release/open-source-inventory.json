@@ -1244,7 +1244,7 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:e5d22ea017ba20b5e6a2d0e7a75218e65b8535080500fd0ab34fed07b05c6d90:grand-boule-native-rust",
+                "tracked-set-sha256:0fb8c31bbe782dd290ab752862f659823dca41ac50c286d5145025bac84db3ef:grand-boule-native-rust",
                 "tracked-set-sha256:782dcc9a77a2453d9f440c9c39e3f14823caebb1c10b652afca92b6fb586698e:grand-boule-admission-decision",
                 "tracked-set:grand-boule-discovery-catalog",
                 "tracked-set:grand-boule-factory-admission",
@@ -1399,13 +1399,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:ac7fe727782a8172b5bd11de0b6075992ee370ab6a08a3abecdea73b4f7d5ee6",
+                "daw-dsp sha256:78f8d77986b1a83ece25ba7b6a9ecff18e8d90697445b01032b3fd10a9b5f8b1",
                 "daw-wasm-decoder sha256:8480178847a2baf751289eb5bfefb43097f250958f0f6393d645962ea4620e5b",
                 "proof-chamber sha256:117a4259878c1a4e1c303c0ad32eb1f40b1ec9628da1ec97842534721e26a774",
-                "scoring sha256:fc79ac83908c08be7eb6440a4b4f45b2b01e8e2786ae51c7c3f26501f953ab9f"
+                "scoring sha256:d275183e4486371750e09aa6df5a18070c6409ede919dd4fdd9d795d6d5f5915"
             ],
             "digests": [
-                "sha256:fa4f3a14b65d41fdbe93ed7a59bcd28928c35d20b63c2dec110b64aae232ce39:public/wasm/manifest.json"
+                "sha256:7b07a43466e0831eac26e48a4404327b734b8478e0bcee3893efb2a5f76be453:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1942,7 +1942,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "fa4f3a14b65d41fdbe93ed7a59bcd28928c35d20b63c2dec110b64aae232ce39"
+            "sha256": "7b07a43466e0831eac26e48a4404327b734b8478e0bcee3893efb2a5f76be453"
         }
     ],
     "externalReferences": [
