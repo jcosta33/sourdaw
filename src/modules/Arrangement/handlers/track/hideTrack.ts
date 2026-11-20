@@ -50,14 +50,17 @@ export const handleHideTrack = createHandler<'hideTrack'>({
         if (!prev && context) {
             throw new Error(describeMissingTrack(trackId));
         }
+        const label = hidden ? 'Hide track' : 'Show track';
+        if (!prev) {
+            return { label, inverseAction: null };
+        }
         return {
-            label: hidden ? 'Hide track' : 'Show track',
-            inverseAction: prev
-                ? { type: 'hideTrack', payload: { trackId: prev.id, hidden: prev.hidden, expectedHidden: hidden } }
-                : null,
-            redoAction: prev
-                ? { type: 'hideTrack', payload: { trackId: prev.id, hidden, expectedHidden: prev.hidden } }
-                : undefined,
+            label,
+            inverseAction: {
+                type: 'hideTrack',
+                payload: { trackId: prev.id, hidden: prev.hidden, expectedHidden: hidden },
+            },
+            redoAction: { type: 'hideTrack', payload: { trackId: prev.id, hidden, expectedHidden: prev.hidden } },
         };
     },
     undoable: true,

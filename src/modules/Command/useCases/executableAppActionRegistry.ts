@@ -9,13 +9,14 @@ import {
     TRACK_FADER_LAW,
     VCA_LEVEL_LAW,
 } from '#/utils/audioLevelLaw';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import {
     type ExecutableAppActionDescriptor,
     type ExecutableAppActionMutationIdentityRule,
+    type ExecutableAppActionParentTrackTargetCapability,
     type ExecutableAppActionTargetRule,
     existingTrackTargetRules,
     SINGLETON_MUTATION_IDENTITY,

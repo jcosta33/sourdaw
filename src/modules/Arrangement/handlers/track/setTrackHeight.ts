@@ -36,7 +36,10 @@ export const handleSetTrackHeight = createHandler<'setTrackHeight'>({
     validationRefusalReason: findRefusal,
     isNoop: (action) => {
         const height = readLiveHeight(action.payload.trackId);
-        return height === clampTrackHeight(action.payload.height, 0) && (action.payload.expectedHeight ?? height) === height;
+        return (
+            height === clampTrackHeight(action.payload.height, 0) &&
+            (action.payload.expectedHeight ?? height) === height
+        );
     },
     execute: (action) => {
         const { trackId, height, expectedHeight } = action.payload;

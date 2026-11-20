@@ -47,6 +47,11 @@ const projectContext: ProjectContext = {
     ],
 };
 
+const folderContext: ProjectContext = {
+    ...projectContext,
+    tracks: [...projectContext.tracks, { ...projectContext.tracks[0]!, id: 'track-drums-folder', kind: 'folder' }],
+};
+
 const foreignCall = { name: 'addMarker', arguments: { beat: 0, name: 'Intro' } };
 
 describe('trackStrategy', () => {
@@ -93,6 +98,45 @@ describe('trackStrategy', () => {
                 reason: 'Expected an optional safe name and one of audio, midi, or folder',
             });
         }
+    });
+
+    describe('display edits', () => {
+        const bridge = (name: string, args: Record<string, unknown>, context = folderContext) =>
+            bridgeTrackToolCall({ call: { name, arguments: args }, context, index: 0 });
+
+        it('bridges hide, fold, height and zoom to their payloads', () => {
+            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toEqual({
+                type: 'hideTrack',
+                payload: { trackId: 'track-vox', hidden: true },
+            });
+            expect(bridge('foldTrack', { trackId: 'track-drums-folder', folded: true })).toEqual({
+                type: 'foldTrack',
+                payload: { trackId: 'track-drums-folder', folded: true },
+            });
+            expect(bridge('setTrackHeight', { trackId: 'track-vox', height: 120 })).toEqual({
+                type: 'setTrackHeight',
+                payload: { trackId: 'track-vox', height: 120 },
+            });
+            expect(bridge('zoomTracksVertical', { delta: -20 })).toEqual({
+                type: 'zoomTracksVertical',
+                payload: { delta: -20 },
+            });
+        });
+
+        it.each([
+            ['hideTrack', { trackId: 'ghost', hidden: true }],
+            ['hideTrack', { trackId: 'track-vox', hidden: 'yes' }],
+            ['foldTrack', { trackId: 'track-vox', folded: true }],
+            ['foldTrack', { trackId: 'ghost', folded: true }],
+            ['setTrackHeight', { trackId: 'track-vox', height: 29 }],
+            ['setTrackHeight', { trackId: 'track-vox', height: 301 }],
+            ['setTrackHeight', { trackId: 'ghost', height: 100 }],
+            ['zoomTracksVertical', { delta: 0 }],
+            ['zoomTracksVertical', { delta: 271 }],
+            ['zoomTracksVertical', { delta: Number.NaN }],
+        ])('rejects %s with %j', (name, args) => {
+            expect(bridge(name, args)).toMatchObject({ index: 0, name, reason: expect.any(String) });
+        });
     });
 });
 

@@ -166,9 +166,9 @@ describe('handleZoomTracksVertical', () => {
         const action = { type: 'zoomTracksVertical', payload: { delta } } as const;
 
         expect(handleZoomTracksVertical.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
-        expect(handleZoomTracksVertical.validationRefusalReason?.(action, { actions: [action], actionIndex: 0 })).toContain(
-            `A vertical zoom of ${delta} pixels moves no track`
-        );
+        expect(
+            handleZoomTracksVertical.validationRefusalReason?.(action, { actions: [action], actionIndex: 0 })
+        ).toContain(`A vertical zoom of ${delta} pixels moves no track`);
     });
 
     it('accepts a nonzero delta up to the height range either way', () => {

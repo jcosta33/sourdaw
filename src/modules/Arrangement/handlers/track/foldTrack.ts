@@ -54,14 +54,17 @@ export const handleFoldTrack = createHandler<'foldTrack'>({
         if (!prev && context) {
             throw new Error(describeMissingTrack(trackId));
         }
+        const label = folded ? 'Fold track' : 'Unfold track';
+        if (!prev) {
+            return { label, inverseAction: null };
+        }
         return {
-            label: folded ? 'Fold track' : 'Unfold track',
-            inverseAction: prev
-                ? { type: 'foldTrack', payload: { trackId: prev.id, folded: prev.collapsed, expectedFolded: folded } }
-                : null,
-            redoAction: prev
-                ? { type: 'foldTrack', payload: { trackId: prev.id, folded, expectedFolded: prev.collapsed } }
-                : undefined,
+            label,
+            inverseAction: {
+                type: 'foldTrack',
+                payload: { trackId: prev.id, folded: prev.collapsed, expectedFolded: folded },
+            },
+            redoAction: { type: 'foldTrack', payload: { trackId: prev.id, folded, expectedFolded: prev.collapsed } },
         };
     },
     undoable: true,
