@@ -54,6 +54,7 @@ import {
     RULER_HEIGHT,
     EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
+    type PianoRollLassoPath,
     getVisiblePitches,
     getPianoRollExtentBeats,
     getPianoRollContentHeight,
@@ -356,6 +357,7 @@ export const PianoRoll = ({
     // ── Refs shared with interactions ────────────────────────────────
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
     const rubberBandRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+    const lassoPathRef = useRef<PianoRollLassoPath | null>(null);
     const dragPreviewRef = useRef<{
         noteIds: Set<string>;
         beatDelta: number;
@@ -385,6 +387,7 @@ export const PianoRoll = ({
         showGhostNotes,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
     });
 
@@ -393,6 +396,8 @@ export const PianoRoll = ({
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
+        cancelLasso,
         handleDoubleClick,
         handleKeyDown,
         handleContextMenu,
@@ -426,6 +431,7 @@ export const PianoRoll = ({
         draw,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
         constrainToScale,
         notePreviewEnabled,
@@ -609,7 +615,9 @@ export const PianoRoll = ({
                             }}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
+                            onMouseLeave={handleMouseLeave}
+                            onPointerCancel={cancelLasso}
+                            onBlur={cancelLasso}
                             onDoubleClick={handleDoubleClick}
                             onKeyDown={(event) => {
                                 openingScroll.settle();
