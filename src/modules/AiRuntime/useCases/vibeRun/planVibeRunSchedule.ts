@@ -28,6 +28,7 @@ import { objectiveMetricProjection } from '../objectiveMetricProjection';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
 
+import { PLAN_NO_LONGER_PLANNED } from './briefReadingRefusals';
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
@@ -55,8 +56,7 @@ export type PlannedVibeRunSchedule =
 /** The brief is one `setProductionBrief`. */
 const BRIEF_COMMAND_COUNT = 1;
 
-const PLAN_NO_LONGER_HOLDS =
-    'No batches were scheduled after the brief: the project no longer plans this reading as offered.';
+const PLAN_NO_LONGER_HOLDS = `No batches were scheduled after the brief: the project ${PLAN_NO_LONGER_PLANNED}.`;
 
 const EXCLUSION_REASONS: Readonly<Record<VibeRunExcludedTargetReason, string>> = {
     protected: 'the request or brief protects it',

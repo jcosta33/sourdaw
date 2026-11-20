@@ -7,10 +7,9 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { readBriefMixIntent } from '../readBriefMixIntent';
 
+import { MIX_CATALOGUE_CHANGED } from './briefReadingRefusals';
 import { readRetainedPlanDigestDrift } from './readRetainedPlanDigestDrift';
 import { readRetainedPlanReferenceDrift } from './readRetainedPlanReferenceDrift';
-
-const CATALOGUE_CHANGED = 'The mix catalogue changed since this card was made, so its readings no longer apply.';
 
 type BriefAction = Extract<PendingAppActionConfirmation['actions'][number], { type: 'setProductionBrief' }>;
 
@@ -27,11 +26,19 @@ function readCardStaleness(confirmation: PendingAppActionConfirmation, briefActi
     return null;
 }
 
+type ChosenReadingDrift =
+    | { status: 'drifted'; reason: string }
+    | { status: 'unchanged'; mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>> };
+
+function drifted(reason: string): ChosenReadingDrift {
+    return { status: 'drifted', reason };
+}
+
 /**
- * Why the chosen reading can no longer be planned as the card offered it, or `null` while it can: a
- * recipe or track its retained plan names is gone, the brief or project moved since the card, or
- * preparing the reading again, before anything is measured, yields another plan. Read synchronously,
- * so the caller can plan in the same turn without the project moving in between.
+ * Whether the chosen reading can still be planned as the card offered it: a recipe or track its
+ * retained plan names is gone, the brief or project moved since the card, the catalogue changed, or
+ * preparing the reading again, before anything is measured, yields another plan. Read
+ * synchronously, so the caller can plan in the same turn without the project moving in between.
  */
 export function readChosenReadingDrift(input: {
     confirmation: PendingAppActionConfirmation;
@@ -39,32 +46,36 @@ export function readChosenReadingDrift(input: {
     reading: BriefReading;
     run: AgentRun;
     context: ProjectContext;
-}): string | null {
+}): ChosenReadingDrift {
     const { confirmation, offer, reading, run, context } = input;
     const briefAction = confirmation.actions.find(
         (action): action is BriefAction => action.type === 'setProductionBrief'
     );
     if (briefAction === undefined) {
-        return 'The card no longer holds a brief to plan readings for.';
+        return drifted('The card no longer holds a brief to plan readings for.');
     }
     const missing = readRetainedPlanReferenceDrift(reading, context);
     if (missing !== null) {
-        return missing;
+        return drifted(missing);
     }
     const stale = readCardStaleness(confirmation, briefAction);
     if (stale !== null) {
-        return stale;
+        return drifted(stale);
     }
     const mixIntent = readBriefMixIntent({ catalogId: offer.catalogId, requestedDescriptors: reading.descriptors });
     if (mixIntent === null) {
-        return CATALOGUE_CHANGED;
+        return drifted(MIX_CATALOGUE_CHANGED);
     }
-    return readRetainedPlanDigestDrift({
-        reading,
-        run,
+    const changedPlan = readRetainedPlanDigestDrift(reading, {
         prompt: run.request,
         context,
         brief: offer.brief,
         mixIntent,
+        runId: run.runId,
+        priorReceipts: run.plan?.applicationToolReceipts ?? [],
     });
+    if (changedPlan !== null) {
+        return drifted(changedPlan);
+    }
+    return { status: 'unchanged', mixIntent };
 }

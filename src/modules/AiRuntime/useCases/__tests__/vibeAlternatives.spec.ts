@@ -34,6 +34,7 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { pendingActionResourceSettlement } from '../agentRequestOrchestration/pendingActionResourceSettlement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
@@ -531,9 +532,10 @@ describe('choosing one reading of the brief card', () => {
             if (schedule?.kind !== 'vibe-run' || retained === undefined) {
                 throw new TypeError('Expected the chosen reading to schedule a vibe run');
             }
-            const scheduled: { batches: PlanBatchShape[] } = JSON.parse(schedule.serializedPlan);
+            const scheduled = readScheduledVibeRunPlan(schedule.serializedPlan);
+            expect(scheduled).not.toBeNull();
             expect(retained.batches.length).toBeGreaterThan(0);
-            expect(planShape(scheduled.batches)).toEqual(planShape(retained.batches));
+            expect(planShape(scheduled?.batches ?? [])).toEqual(planShape(retained.batches));
             expect(providerTurns()).toBe(turnsBefore);
         }
     );

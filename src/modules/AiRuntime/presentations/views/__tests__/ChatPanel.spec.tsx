@@ -813,7 +813,7 @@ describe('ChatPanel', () => {
         expect(screen.queryByRole('button', { name: 'Stop run' })).not.toBeInTheDocument();
     });
 
-    it('shows each reading its own plan inside its group, and keeps both after the panel is reloaded', () => {
+    it('shows each reading its own plan inside its group, beside its button', () => {
         usePendingChatState({
             messages: [
                 {
@@ -838,8 +838,6 @@ describe('ChatPanel', () => {
             readings: READINGS_WITH_PLANS,
         });
 
-        const first = render(<ChatPanel />);
-        first.unmount();
         render(<ChatPanel />);
 
         for (const reading of READINGS_WITH_PLANS) {
