@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -251,14 +251,66 @@ describe('AdjustmentLayerStrip', () => {
         return call[0];
     };
 
-    it('creates an adjustment layer of the selected effect type from the add menu', () => {
-        renderStrip();
-        fireEvent.click(screen.getByRole('button', { name: /add adjustment layer/i }));
-        fireEvent.click(screen.getByText('Eq'));
-        expect(findCall('createAdjustmentLayer')).toMatchObject({
+    it.each([0, 3])('opens the full Add menu outside the clipped strip with %i existing layers', (layerCount) => {
+        mocks.layers = Array.from({ length: layerCount }, (_, index) => ({
+            ...layerWithRegion(),
+            id: `layer-${index}`,
+            name: `Layer ${index}`,
+            regions: [],
+        }));
+        render(
+            <div style={{ overflow: 'hidden' }}>
+                <AdjustmentLayerStrip pixelsPerBeat={20} scrollX={0} />
+            </div>
+        );
+        const strip = screen.getByRole('region', { name: 'Adjustment layers' });
+        const addButton = screen.getByRole('button', { name: 'Add adjustment layer' });
+        vi.spyOn(addButton, 'getBoundingClientRect').mockReturnValue(new DOMRect(760, window.innerHeight - 44, 20, 22));
+        addButton.focus();
+        fireEvent.click(addButton);
+
+        const menu = screen.getByRole('menu');
+        expect(strip.parentElement).not.toContainElement(menu);
+        expect(menu.style.bottom).not.toBe('');
+        expect(menu).toHaveFocus();
+        expect(within(menu).getAllByRole('menuitem')).toHaveLength(9);
+
+        const effect = within(menu).getByRole('menuitem', { name: 'Pan' });
+        fireEvent.keyDown(menu, { key: 'ArrowUp' });
+        expect(effect).toHaveFocus();
+        fireEvent.click(effect);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
             type: 'createAdjustmentLayer',
-            payload: { name: 'Eq Layer', effectType: 'eq' },
+            payload: { name: 'Pan Layer', effectType: 'pan' },
         });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(addButton).toHaveFocus();
+
+        fireEvent.click(addButton);
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(addButton).toHaveFocus();
+    });
+
+    it('dismisses the Add menu on an outside press and when clicking the trigger again', () => {
+        render(
+            <>
+                <button type="button">Outside</button>
+                <AdjustmentLayerStrip pixelsPerBeat={20} scrollX={0} />
+            </>
+        );
+        const addButton = screen.getByRole('button', { name: 'Add adjustment layer' });
+        fireEvent.click(addButton);
+        fireEvent.mouseDown(screen.getByRole('button', { name: 'Outside' }));
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+        fireEvent.click(addButton);
+        if (fireEvent.mouseDown(addButton)) {
+            act(() => addButton.focus());
+        }
+        fireEvent.click(addButton);
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(addButton).toHaveFocus();
     });
 
     it('toggles a layer enabled from the row power button', () => {

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:ac7fe727782a8172b5bd11de0b6075992ee370ab6a08a3abecdea73b4f7d5ee6
+// @wasm-bindgen-dts crate-source: sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -42,6 +42,8 @@ export const crumbsinstance_get_right_ptr: (a: number) => number;
 export const crumbsinstance_new: (a: number) => number;
 export const crumbsinstance_note_off: (a: number, b: number) => void;
 export const crumbsinstance_note_on: (a: number, b: number, c: number) => void;
+export const crumbsinstance_pad_audition_off: (a: number, b: number) => void;
+export const crumbsinstance_pad_audition_on: (a: number, b: number, c: number, d: number) => void;
 export const crumbsinstance_process: (a: number, b: number) => number;
 export const crumbsinstance_set_active_sample: (a: number, b: number) => void;
 export const crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
@@ -100,6 +102,7 @@ export const gluteninstance_set_param: (a: number, b: number, c: number, d: numb
 export const grandbouleinstance_active_voices: (a: number) => number;
 export const grandbouleinstance_all_notes_off: (a: number) => void;
 export const grandbouleinstance_get_nan_flush_count: (a: number) => number;
+export const grandbouleinstance_get_preview_voice_refusal_count: (a: number) => number;
 export const grandbouleinstance_get_right_ptr: (a: number) => number;
 export const grandbouleinstance_lifecycle_state: (a: number) => number;
 export const grandbouleinstance_new: (a: number, b: number) => number;
@@ -114,6 +117,8 @@ export const grandbouleinstance_push_note_expression: (a: number, b: number, c: 
 export const grandbouleinstance_push_note_off: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
 export const grandbouleinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
+export const grandbouleinstance_push_preview_note_off: (a: number, b: number, c: number) => number;
+export const grandbouleinstance_push_preview_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
 export const grandbouleinstance_push_sostenuto: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_sustain: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;

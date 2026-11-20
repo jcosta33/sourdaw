@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Device, trackStore } from '#/modules/Arrangement/stores';
 
 import { decodeBacteriaBody, NO_BODY_INDEX } from '../models/BacteriaBodyIndex';
 import { fromBacteriaModAssignmentsState, rowsEqual } from '../models/BacteriaModAssignmentsState';
@@ -8,11 +8,14 @@ import {
     type BacteriaDistortionMode,
     type BacteriaFilterMode,
     type BacteriaGrainWindow,
+    type BacteriaModAssignment,
     type BacteriaPatch,
     type BacteriaRoutingMode,
+    DEFAULT_PATCH,
 } from '../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../stores/bacteriaStore';
 
+import { bacteriaFactoryPatchPublication } from './bacteriaParamBridge/bacteriaFactoryPatchPublication';
 import {
     CROSSOVER_MODE_INDEX,
     DISTORTION_MODE_INDEX,
@@ -144,20 +147,91 @@ function isStoredTrue(stored: number): boolean {
     return stored > 0.5;
 }
 
+function hydrateNumericGlobalFields(patch: BacteriaPatch, parameters: Record<string, number>): BacteriaPatch {
+    let next = patch;
+    for (const field of NUMERIC_GLOBAL_FIELDS) {
+        // The Input action removes a formerly absent parameter on Undo.
+        const fallback = field === 'inputGain' ? DEFAULT_PATCH.inputGain : undefined;
+        const stored = parameters[field] ?? fallback;
+        if (isFiniteNumber(stored) && !Object.is(next[field], stored)) {
+            next = { ...next, [field]: stored };
+        }
+    }
+    return next;
+}
+
 /**
  * The patch with its routing table replaced by the device's decoded chunk, or
  * the same patch reference when there is nothing to project.
- *
- * Split out of `hydrateBacteriaPatchFromProject` to keep that function's
- * complexity under the project ceiling; the two decision points here (a null
- * decode, an already-equal table) are one self-contained projection.
  */
-function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): BacteriaPatch {
-    const decoded = fromBacteriaModAssignmentsState(deviceState);
+function projectRoutingTable(
+    patch: BacteriaPatch,
+    deviceState: unknown,
+    replacement?: BacteriaModAssignment[]
+): BacteriaPatch {
+    const decoded = replacement ?? fromBacteriaModAssignmentsState(deviceState);
     if (decoded === null || rowsEqual(decoded, patch.modAssignments)) {
         return patch;
     }
     return { ...patch, modAssignments: decoded };
+}
+
+type FactoryProjection = {
+    name: string;
+    parameterValues: Record<string, number>;
+    modAssignments: BacteriaModAssignment[];
+};
+
+function hydrateGlobalModes(patch: BacteriaPatch, parameterValues: Record<string, number>): BacteriaPatch {
+    let next = patch;
+    const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
+    if (crossoverMode !== null && next.crossoverMode !== crossoverMode) {
+        next = { ...next, crossoverMode: crossoverMode as BacteriaCrossoverMode };
+    }
+    const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
+    if (globalRouting !== null && next.globalRouting !== globalRouting) {
+        next = { ...next, globalRouting: globalRouting as BacteriaRoutingMode };
+    }
+    return next;
+}
+
+function projectPatchParameters(patch: BacteriaPatch, parameterValues: Record<string, number>): BacteriaPatch {
+    let next = hydrateNumericGlobalFields(patch, parameterValues);
+    for (const field of BOOLEAN_GLOBAL_FIELDS) {
+        const stored = parameterValues[field];
+        if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
+            next = { ...next, [field]: isStoredTrue(stored) };
+        }
+    }
+
+    for (let bandIndex = 0; bandIndex < next.bands.length; bandIndex++) {
+        const hydrated = hydrateBandFromProject(next.bands[bandIndex]!, bandIndex, parameterValues);
+        if (hydrated !== next.bands[bandIndex]) {
+            next = {
+                ...next,
+                bands: next.bands.map((band, index) => (index === bandIndex ? hydrated : band)),
+            };
+        }
+    }
+    return hydrateGlobalModes(next, parameterValues);
+}
+
+function projectDevicePatch(
+    current: BacteriaPatch,
+    device: Device,
+    factory?: FactoryProjection
+): { patch: BacteriaPatch; routingChanged: boolean } {
+    const named = factory && factory.name !== current.name ? { ...current, name: factory.name } : current;
+    const routed = projectRoutingTable(named, device.deviceState, factory?.modAssignments);
+    let patch = routed;
+    let parameterValues = device.parameterValues;
+    if (factory) {
+        parameterValues = { ...parameterValues, ...factory.parameterValues };
+    }
+    if (parameterValues) {
+        patch = projectPatchParameters(routed, parameterValues);
+    }
+    return { patch, routingChanged: factory === undefined && routed !== named };
 }
 
 /**
@@ -190,7 +264,7 @@ function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): Bacter
  * projection; a foreign change with no panel mounted still reaches nothing
  * live (#4764).
  */
-export function hydrateBacteriaPatchFromProject(deviceId: string): void {
+export function hydrateBacteriaPatchFromProject(deviceId: string, factory?: FactoryProjection): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
@@ -200,71 +274,14 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     if (!device || device.type !== 'bacteria') {
         return;
     }
-
-    let patch = getBacteriaState(deviceId).patch;
-    let changed = false;
-    let routingChanged = false;
-
-    const routed = projectRoutingTable(patch, device.deviceState);
-    if (routed !== patch) {
-        patch = routed;
-        changed = true;
-        routingChanged = true;
+    if (!factory && bacteriaFactoryPatchPublication.matches(device)) {
+        // The published factory action applies its scalars and routing table together.
+        return;
     }
 
-    const parameterValues = device.parameterValues;
-    if (parameterValues) {
-        for (const field of NUMERIC_GLOBAL_FIELDS) {
-            const stored = parameterValues[field];
-            if (isFiniteNumber(stored) && !Object.is(patch[field], stored)) {
-                patch = { ...patch, [field]: stored };
-                changed = true;
-            }
-        }
-
-        for (const field of BOOLEAN_GLOBAL_FIELDS) {
-            const stored = parameterValues[field];
-            if (isFiniteNumber(stored) && !Object.is(patch[field], isStoredTrue(stored))) {
-                patch = { ...patch, [field]: isStoredTrue(stored) };
-                changed = true;
-            }
-        }
-
-        for (let bandIndex = 0; bandIndex < patch.bands.length; bandIndex++) {
-            const hydrated = hydrateBandFromProject(patch.bands[bandIndex]!, bandIndex, parameterValues);
-            if (hydrated !== patch.bands[bandIndex]) {
-                patch = {
-                    ...patch,
-                    bands: patch.bands.map((band, index) => (index === bandIndex ? hydrated : band)),
-                };
-                changed = true;
-            }
-        }
-
-        const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
-        if (crossoverMode !== null && patch.crossoverMode !== crossoverMode) {
-            patch = { ...patch, crossoverMode: crossoverMode as BacteriaCrossoverMode };
-            changed = true;
-        }
-
-        const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
-        if (globalRouting !== null && patch.globalRouting !== globalRouting) {
-            patch = { ...patch, globalRouting: globalRouting as BacteriaRoutingMode };
-            changed = true;
-        }
-    }
-
-    commitHydratedPatch(deviceId, patch, changed, routingChanged);
-}
-
-/**
- * Store-only unless the routing projection itself changed: an ineligible
- * target must still take the projected rows so a later edit builds on them
- * (#4756), but only a table the projection actually changed is worth a push —
- * an equal or absent chunk pushes nothing new to the engine.
- */
-function commitHydratedPatch(deviceId: string, patch: BacteriaPatch, changed: boolean, routingChanged: boolean): void {
-    if (changed) {
+    const current = getBacteriaState(deviceId).patch;
+    const { patch, routingChanged } = projectDevicePatch(current, device, factory);
+    if (patch !== current) {
         loadBacteriaPatch(deviceId, patch);
     }
     if (routingChanged) {

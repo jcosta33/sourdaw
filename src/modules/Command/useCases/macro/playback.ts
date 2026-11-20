@@ -1,6 +1,7 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { macroGeneratedIdByActionType, noGeneratedId } from '../../models/MacroGeneratedId';
 import {
     type MacroReplayCreate,
@@ -154,6 +155,13 @@ export async function playMacro(macroId: string): Promise<void> {
     const macro = state.macros.find((message) => message.id === macroId);
     if (!macro) {
         return;
+    }
+    if (macro.actions.some((action) => action.type === 'insertAutomationLanePoints')) {
+        throw new AppActionConflictError('playMacro', 'Automation lane insertions are local edits.');
+    }
+
+    if (macro.actions.some((action) => action.type === 'setLevainIdentity')) {
+        throw new AppActionConflictError('playMacro', 'Levain identity changes are local edits.');
     }
 
     // Singleton-marked actions (domain-singleton handlers such as drawClip and

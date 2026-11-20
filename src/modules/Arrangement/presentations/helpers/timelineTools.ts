@@ -13,6 +13,7 @@ import { type InlineMidiTimingClip, resolveInlineNoteBeat } from '../../models/I
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
+import { type CommitInlineAutomationPaintInput } from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { commitInlineMidiNoteCreate } from '../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
 import { floorToGridCell } from '../../useCases/timelineInteractions/floorToGridCell';
@@ -24,13 +25,7 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 
-type AutoDragRef = RefObject<{
-    laneId?: string;
-    trackId: string;
-    parameterId: string;
-    parameterName: string;
-    points: AutomationPoint[];
-} | null>;
+type AutoDragRef = RefObject<CommitInlineAutomationPaintInput | null>;
 type DrawDragRef = RefObject<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>;
 
 // ── Cut tool ─────────────────────────────────────────────────────────────────
@@ -105,28 +100,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
 
 // ── Automation tool ───────────────────────────────────────────────────────────
 
-export const handleAutomationTool = (
-    x: number,
-    y: number,
-    beat: number,
-    scrollY: number,
-    autoDragRef: AutoDragRef
-): boolean => {
-    // Sub-lane hit (paint directly onto drawn sub-lane)
-    const subLaneHit = hitTestAutomationSubLane(x, y);
-    if (subLaneHit) {
-        const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
-        autoDragRef.current = {
-            laneId: subLaneHit.laneId,
-            trackId: subLaneHit.trackId,
-            parameterId: 'gain',
-            parameterName: 'Gain',
-            points: [point],
-        };
-        selectTrack(subLaneHit.trackId);
-        return true;
-    }
-
+export const handleAutomationTool = (y: number, beat: number, scrollY: number, autoDragRef: AutoDragRef): boolean => {
     const trackId = hitTestTrack(y);
     if (!trackId) {
         return true;
@@ -157,15 +131,15 @@ export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef):
     if (!subLaneHit) {
         return false;
     }
-    const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
-    autoDragRef.current = {
-        laneId: subLaneHit.laneId,
-        trackId: subLaneHit.trackId,
-        parameterId: 'gain',
-        parameterName: 'Gain',
-        points: [point],
-    };
-    selectTrack(subLaneHit.trackId);
+    const { lane, beat, value } = subLaneHit;
+    if (lane.linkedLaneId === undefined) {
+        const { id, trackId, parameterId } = lane;
+        autoDragRef.current = {
+            inlineLane: { id, trackId, parameterId },
+            points: [{ beat, value, curve: 'linear', tension: 0 }],
+        };
+    }
+    selectTrack(lane.trackId);
     return true;
 };
 
@@ -176,6 +150,19 @@ export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDr
     if (!ref) {
         return;
     }
+    if ('inlineLane' in ref) {
+        const hit = hitTestAutomationSubLane(x, y);
+        if (
+            hit &&
+            hit.lane.id === ref.inlineLane.id &&
+            hit.lane.trackId === ref.inlineLane.trackId &&
+            hit.lane.parameterId === ref.inlineLane.parameterId &&
+            hit.lane.linkedLaneId === undefined
+        ) {
+            appendAutoDragPoint(ref.points, hit.beat, hit.value);
+        }
+        return;
+    }
     const view = timelineViewStore.value;
     if (!view) {
         return;
@@ -184,9 +171,13 @@ export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDr
     const contentY = getContentY(y, scrollY);
     const trackHit = resolveTrackAtY(contentY);
     const value = trackHit ? valueAtTrackY(contentY, trackHit.offset, trackHit.height) : 0.5;
-    const lastPoint = ref.points[ref.points.length - 1];
+    appendAutoDragPoint(ref.points, beat, value);
+};
+
+function appendAutoDragPoint(points: AutomationPoint[], beat: number, value: number): void {
+    const lastPoint = points[points.length - 1];
     if (!lastPoint || Math.abs(beat - lastPoint.beat) >= 0.1) {
         const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-        ref.points.push(point);
+        points.push(point);
     }
-};
+}

@@ -353,6 +353,26 @@ describe('SetlistPanel', () => {
     });
 
     describe('setlist name editing', () => {
+        it('stops composing Enter from propagating and waits to commit the name', () => {
+            seed({ name: 'Tour 2026' });
+            const onKeyDown = vi.fn();
+            render(
+                <div onKeyDown={onKeyDown}>
+                    <SetlistPanel />
+                </div>
+            );
+            fireEvent.click(screen.getByRole('button', { name: 'Tour 2026' }));
+            const input = screen.getByRole('textbox');
+            fireEvent.change(input, { target: { value: 'Encore' } });
+            fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+            expect(renameSetlist).not.toHaveBeenCalled();
+            expect(onKeyDown).not.toHaveBeenCalled();
+            expect(screen.getByRole('textbox')).toHaveValue('Encore');
+
+            fireEvent.keyDown(input, { key: 'Enter' });
+            expect(renameSetlist).toHaveBeenCalledExactlyOnceWith('Encore');
+        });
+
         it('renders the setlist name as a button and enters edit mode on click', () => {
             seed({ name: 'Tour 2026' });
             render(<SetlistPanel />);

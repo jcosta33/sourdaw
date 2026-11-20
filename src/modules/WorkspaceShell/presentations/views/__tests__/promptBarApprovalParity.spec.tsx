@@ -53,7 +53,7 @@ function Surface({ showPrompt = true }: { showPrompt?: boolean }) {
 }
 
 function submit(route: 'text' | 'preset') {
-    const input = screen.getByRole('textbox', { name: 'Prompt command input' });
+    const input = screen.getByRole('combobox', { name: 'Prompt command input' });
     if (route === 'preset') {
         fireEvent.focus(input);
         fireEvent.change(input, { target: { value: 'Delete Track' } });

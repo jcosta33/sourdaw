@@ -9,9 +9,9 @@
  * both directions by `offlineDeviceCoverage.spec.ts`, and `external-plugin` is
  * not a catalog id — it is the device family whose real implementation lives
  * entirely on the native side. The offline `OfflineAudioContext` cannot host a
- * plugin instance (the native offline path maps against an empty instance
- * table by design), so there is no render path to build toward yet; refusing
- * is the honest behaviour until a bounce through the live engine exists.
+ * plugin instance, so the Web Audio render refuses a loaded one; the desktop
+ * export's native render prints a loaded hosted effect through an offline
+ * instance of its own (`nativeOfflineHostedDevice`, #4592).
  *
  * This is only the type half of that refusal. Whether a *given* device sounds
  * live is whether its instance is loaded on the desktop runtime, not its

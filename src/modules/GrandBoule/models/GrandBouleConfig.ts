@@ -6,8 +6,6 @@
 export type GrandBouleConfig = {
     /** Master output gain (0.0 - 1.0, 1.0 = the engine safety ceiling). */
     masterGain: number;
-    /** Currently loaded preset id, or null if default. */
-    activePresetId: string | null;
     /** Soundboard send amount (0.0 – 1.0). */
     soundboardSend: number;
     /** Sympathetic-resonance send amount (0.0 – 1.0). */
@@ -33,7 +31,6 @@ export type GrandBouleConfig = {
 export function createDefaultGrandBouleConfig(): GrandBouleConfig {
     return {
         masterGain: 0.1,
-        activePresetId: null,
         soundboardSend: 0.6,
         sympatheticSend: 0.25,
         lidPosition: 1.0,

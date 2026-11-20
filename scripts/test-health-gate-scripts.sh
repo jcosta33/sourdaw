@@ -434,6 +434,7 @@ const expectedValidationJobs = [
     'lint',
     'boundaries',
     'unit',
+    'unit-coverage',
     'tooling-unit',
     'smoke',
     'build',
@@ -1024,7 +1025,7 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
+    unitRun === 'node scripts/runIsolatedUnitShard.ts coverage-shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
     'unit shard must delegate its exact matrix shard through the isolated account context'
 );
 // Exercise the producer rather than searching source: helper metadata must never
@@ -1106,7 +1107,7 @@ expect(
     'required end-to-end jobs must run only the selected validated spec groups'
 );
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun.replace('coverage-shard', 'shard'),
     'nightly unit shard must delegate its exact matrix shard through the same isolated account as the required unit suite'
 );
 expect(
@@ -1148,19 +1149,29 @@ expect(
 // proved, and one on any step reports that step green whatever it ran. The
 // pins above each cover one named job or step; this sweep covers every job in
 // every file, because a softened leg reports a failing proof as a passing
-// summary wherever it lands. The single exception is the first changed-paths
-// filter attempt: its softening only hands the question to its retry step and
+// summary wherever it lands. The first changed-paths filter attempt hands
+// the question to its retry step and
 // to the Resolve scope verdict guard, which fail the job when neither attempt
 // produced verdicts. The other exception class is the package-manager cache
 // restore: a setup-node step with a `cache` only speeds the install up, so a
 // refused or stalled restore must fall through to the uncached install instead
 // of hanging the job (#5929). The healthGatesWorkflow spec pins its step cap and
-// the unsoftened Node install before it; here only that step shape may soften.
+// the unsoftened Node install before it. The scheduled packaged editor observations
+// report their own verdict and do not decide the Nightly job result.
 expect(
     stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
     'the first changed-paths filter attempt must continue on error so its retry can absorb a transient API failure'
 );
-const continueOnErrorStepPins = new Set(['validation.ymldecideFilter changed paths']);
+const continueOnErrorStepPins = new Set([
+    'validation.ymldecideFilter changed paths',
+    'nightly.ymldesktop-measureCapture the Fermenter build receipt',
+    'nightly.ymldesktop-measureProve Fermenter in the packaged app',
+    'nightly.ymldesktop-measureUpload the Fermenter proof record',
+    'nightly.ymldesktop-measureProve premium editor mounts in the packaged app',
+    'nightly.ymldesktop-measureUpload the premium editor proof record',
+    'nightly.ymldesktop-measureProve premium editor workspace in the packaged app',
+    'nightly.ymldesktop-measureUpload the premium editor workspace proof record',
+]);
 const isSetupNodeCacheStep = (step) =>
     typeof step?.uses === 'string' &&
     step.uses.startsWith('actions/setup-node@') &&
@@ -1286,7 +1297,7 @@ for (const [file, parsed] of Object.entries(workflowsByFile)) {
     }
 }
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun.replace('coverage-shard', 'shard'),
     'nightly unit Run shard must reach the test:run wrapper that applies the census exclusion through the isolated account'
 );
 expect(
