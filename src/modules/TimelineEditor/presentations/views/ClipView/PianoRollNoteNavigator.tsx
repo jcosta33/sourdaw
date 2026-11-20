@@ -295,6 +295,15 @@ function useNoteListbox({ id, entries, selectedNoteIds, setSelectedNoteIds, onEs
     return { active, activeId, firstIndex, visible, optionId, handleKeyDown, handleClick };
 }
 
+function revealNoteOption(list: HTMLDivElement, option: HTMLElement): void {
+    const end = option.offsetTop + option.offsetHeight;
+    if (option.offsetTop < list.scrollTop) {
+        list.scrollTop = option.offsetTop;
+    } else if (end > list.scrollTop + list.clientHeight) {
+        list.scrollTop = end - list.clientHeight;
+    }
+}
+
 function useFocusedNoteListbox(activeId: string | undefined, firstIndex: number): RefObject<HTMLDivElement | null> {
     const listboxRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -304,14 +313,21 @@ function useFocusedNoteListbox(activeId: string | undefined, firstIndex: number)
         const list = listboxRef.current;
         const option = activeId ? document.getElementById(activeId) : null;
         if (!list || !option) {
-            return;
+            return undefined;
         }
-        const end = option.offsetTop + option.offsetHeight;
-        if (option.offsetTop < list.scrollTop) {
-            list.scrollTop = option.offsetTop;
-        } else if (end > list.scrollTop + list.clientHeight) {
-            list.scrollTop = end - list.clientHeight;
-        }
+        revealNoteOption(list, option);
+        // The observer delivers the initial size too. Only a resize should override manual scrolling.
+        let { clientWidth, clientHeight } = list;
+        const observer = new ResizeObserver(() => {
+            if (list.clientWidth === clientWidth && list.clientHeight === clientHeight) {
+                return;
+            }
+            clientWidth = list.clientWidth;
+            clientHeight = list.clientHeight;
+            revealNoteOption(list, option);
+        });
+        observer.observe(list);
+        return () => observer.disconnect();
     }, [activeId, firstIndex]);
     return listboxRef;
 }
