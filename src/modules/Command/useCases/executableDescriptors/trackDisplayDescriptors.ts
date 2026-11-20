@@ -1,8 +1,7 @@
-import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import {
     existingTrackTargetRules,
-    SINGLETON_MUTATION_IDENTITY,
     TRACK_MUTATION_IDENTITY,
     type ExecutableAppActionDescriptor,
     type ExecutableAppActionTargetRule,
@@ -65,38 +64,15 @@ export const trackDisplayDescriptors = [
             required: ['trackId', 'height'],
         },
     },
-    {
-        actionType: 'zoomTracksVertical',
-        risk: 'broad-reversible',
-        description: `Make every track row taller or shorter by one pixel delta, keeping each between ${MIN_TRACK_HEIGHT} and ${MAX_TRACK_HEIGHT}.`,
-        intentPhrases: ['zoom tracks vertically', 'zoom tracks vertical'],
-        targetRules: [],
-        valueRules: [
-            { argument: 'delta', kind: 'number-if-present', requiredInPrompt: true, direction: 'vertical-zoom' },
-        ],
-        parameters: {
-            properties: {
-                delta: {
-                    type: 'number',
-                    minimum: -MAX_TRACK_ZOOM_DELTA,
-                    maximum: MAX_TRACK_ZOOM_DELTA,
-                    description: 'Signed pixels added to every row: positive = taller, negative = shorter. Never zero',
-                },
-            },
-            required: ['delta'],
-        },
-    },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
 export const trackDisplayMutationIdentityRulesByType = {
     foldTrack: TRACK_MUTATION_IDENTITY,
     setTrackHeight: TRACK_MUTATION_IDENTITY,
-    zoomTracksVertical: SINGLETON_MUTATION_IDENTITY,
 } as const;
 
 /** Whether applying the same command twice leaves the state one application leaves. */
 export const trackDisplayMutationIdempotenceByType = {
     foldTrack: true,
     setTrackHeight: true,
-    zoomTracksVertical: false,
 } as const;

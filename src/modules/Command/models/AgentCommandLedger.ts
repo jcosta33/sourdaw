@@ -139,7 +139,6 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setTrackColor', 'track', 'Arrangement'],
     ['foldTrack', 'track', 'Arrangement'],
     ['setTrackHeight', 'track', 'Arrangement'],
-    ['zoomTracksVertical', 'track', 'Arrangement'],
     ['clearSolos', 'track', 'Arrangement'],
     ['selectTake', 'track', 'Arrangement'],
     ['setCompRegion', 'track', 'Arrangement'],
@@ -381,6 +380,13 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         packet: RUNTIME_ACTION_PACKET,
         reason: 'Track.hidden is saved but no arrangement or mixer view reads it, so a hide has no visible effect; the command is registered once hidden tracks leave the arrangement.',
         actionTypes: ['hideTrack'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'track',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: "A vertical zoom's sign must follow the user's words, and no grounding rule yet tells a shrink from a grow reliably in ordinary prompts, so the command is registered once a direction rule is proven.",
+        actionTypes: ['zoomTracksVertical'],
     },
     {
         kind: 'interim-unsupported',

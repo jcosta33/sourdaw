@@ -72,6 +72,23 @@ describe('getPlannedTrackState', () => {
         expect(plan([remove, restore, remove], 'gone')).toBeNull();
     });
 
+    it('keeps a duplicate at the height its source held before an edit that follows the duplicate', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 'source', name: 'Source', kind: 'audio', gain: 0.5 }), height: 120 }],
+        });
+
+        const planned = plan(
+            [
+                { type: 'duplicateTrack', payload: { trackId: 'source', targetTrackId: 'copy' } },
+                { type: 'setTrackHeight', payload: { trackId: 'source', height: 150 } },
+            ],
+            'copy'
+        );
+
+        expect(planned?.height).toBe(120);
+    });
+
     it('does not plan a restore for another track', () => {
         trackStore.set({
             ...defaultTrackState,

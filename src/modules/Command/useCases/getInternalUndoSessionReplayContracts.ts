@@ -47,6 +47,23 @@ function createCapturedDeviceReplayContract(
 }
 
 /**
+ * Not an agent command, but a person's vertical zoom is undoable and its undo survives a reload. The
+ * inverse restores the heights the zoom clamped from, and the zoom's own entry validator binds it.
+ */
+function createVerticalZoomReplayContracts(): readonly SessionActionContract[] {
+    return [
+        {
+            actionType: 'zoomTracksVertical',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('zoomTracksVertical', payload),
+            validateEntry: (entry) => getHandlerByType('zoomTracksVertical')?.validateSessionEntry?.(entry) === true,
+        },
+        createInternalReplayContract('restoreTrackHeights'),
+    ];
+}
+
+/**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
  * while injecting them into the store-owned mirror at production registration.
@@ -104,6 +121,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
+        ...createVerticalZoomReplayContracts(),
         createInternalReplayContract('discardCreatedTrack'),
         createInternalReplayContract('discardDuplicatedClip'),
         createInternalReplayContract('discardDrawnClip'),
@@ -130,7 +148,5 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('deleteGrooveTemplate'),
         // The guarded inverse of applyGroove; the application's own entry validator binds it.
         createInternalReplayContract('restoreGrooveAssignment'),
-        // The guarded inverse of zoomTracksVertical; the zoom's own entry validator binds it.
-        createInternalReplayContract('restoreTrackHeights'),
     ];
 }

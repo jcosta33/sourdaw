@@ -1,6 +1,6 @@
 import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
-import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -50,7 +50,6 @@ export const trackActionNames = [
     'setTrackOutput',
     'foldTrack',
     'setTrackHeight',
-    'zoomTracksVertical',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
 
 export type TrackCallName = (typeof trackActionNames)[number];
@@ -348,25 +347,6 @@ const trackStrategyDefinitions = [
                 );
             }
             return { type: 'setTrackHeight', payload: { trackId: args.trackId, height: args.height } };
-        },
-    },
-    {
-        name: 'zoomTracksVertical',
-        transform: ({ call, index }) => {
-            const args = call.arguments;
-            if (
-                !hasExactKeys(args, ['delta']) ||
-                !isFiniteNumber(args.delta) ||
-                args.delta === 0 ||
-                Math.abs(args.delta) > MAX_TRACK_ZOOM_DELTA
-            ) {
-                return rejection(
-                    index,
-                    call.name,
-                    `Expected a nonzero delta within ${MAX_TRACK_ZOOM_DELTA} pixels either way`
-                );
-            }
-            return { type: 'zoomTracksVertical', payload: { delta: args.delta } };
         },
     },
 ] as const satisfies readonly TrackStrategyDefinition<TrackCallName>[];

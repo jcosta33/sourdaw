@@ -2259,13 +2259,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             flushAutomergeStorageWrites();
         }
 
-        /** What an agent batch runs: preflight validation of the whole batch and guarded compensation. */
-        function runAsAgent(actions: ExecutableCommandAction[], requireCompensation = true) {
-            for (const action of actions) {
-                getExecutableCommandRegistrations()
-                    .find((candidate) => candidate.actionType === action.type)
-                    ?.materializeCommandArguments?.(action);
-            }
+        /** One compensated batch, as an agent batch runs. */
+        function runAsAgent(actions: AppAction[], requireCompensation = true) {
             return executeAppActionBatch(actions, { groupId: 'agent-display', requireCompensation });
         }
 
@@ -2546,13 +2541,18 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         it.each([
             [{ type: 'duplicateTrack', payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' } }, 'duplicateTrack'],
             [{ type: 'createFolder', payload: { name: 'Folder', folderTrackId: 'folder-created' } }, 'createFolder'],
-        ] as const)('keeps %j out of any batch with a zoom', async (create, name) => {
-            const result = await executeAppActionBatch(
+        ] as const)('runs %j only as a batch of its own, which commits', async (create, name) => {
+            const zoomed = await executeAppActionBatch(
                 [structuredClone(create), { type: 'zoomTracksVertical', payload: { delta: 40 } }],
                 { groupId: 'agent-display' }
             );
+            const alone = await executeAppActionBatch([structuredClone(create)], { groupId: 'agent-display' });
 
-            expect(result).toMatchObject({ status: 'rejected', reason: expect.stringContaining(name) });
+            expect(zoomed).toMatchObject({
+                status: 'rejected',
+                reason: `Action must execute as a singleton batch: ${name}`,
+            });
+            expect(alone).toMatchObject({ status: 'committed' });
         });
 
         it('refuses a zoom after an action that creates a track the planner cannot know, naming it', async () => {

@@ -304,10 +304,6 @@ export const executableAppActionEffectsByType = {
         dimensions: ['cosmetic'],
         scope: 'target',
     },
-    zoomTracksVertical: {
-        dimensions: ['cosmetic'],
-        scope: 'project',
-    },
     setTempo: {
         dimensions: ['project-timing', 'arrangement', 'clip-audio'],
         scope: 'project',

@@ -104,7 +104,7 @@ describe('trackStrategy', () => {
         const bridge = (name: string, args: Record<string, unknown>, context = folderContext) =>
             bridgeTrackToolCall({ call: { name, arguments: args }, context, index: 0 });
 
-        it('bridges fold, height and zoom to their payloads', () => {
+        it('bridges fold and height to their payloads', () => {
             expect(bridge('foldTrack', { trackId: 'track-drums-folder', folded: true })).toEqual({
                 type: 'foldTrack',
                 payload: { trackId: 'track-drums-folder', folded: true },
@@ -113,14 +113,13 @@ describe('trackStrategy', () => {
                 type: 'setTrackHeight',
                 payload: { trackId: 'track-vox', height: 120 },
             });
-            expect(bridge('zoomTracksVertical', { delta: -20 })).toEqual({
-                type: 'zoomTracksVertical',
-                payload: { delta: -20 },
-            });
         });
 
-        it('leaves hideTrack to no provider route while a hide has no visible effect', () => {
-            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toBeNull();
+        it.each([
+            ['hideTrack', { trackId: 'track-vox', hidden: true }],
+            ['zoomTracksVertical', { delta: -20 }],
+        ])('leaves %s to no provider route while it is withdrawn from agent commands', (name, args) => {
+            expect(bridge(name, args)).toBeNull();
         });
 
         it.each([
@@ -129,9 +128,6 @@ describe('trackStrategy', () => {
             ['setTrackHeight', { trackId: 'track-vox', height: 29 }],
             ['setTrackHeight', { trackId: 'track-vox', height: 301 }],
             ['setTrackHeight', { trackId: 'ghost', height: 100 }],
-            ['zoomTracksVertical', { delta: 0 }],
-            ['zoomTracksVertical', { delta: 271 }],
-            ['zoomTracksVertical', { delta: Number.NaN }],
         ])('rejects %s with %j', (name, args) => {
             expect(bridge(name, args)).toMatchObject({ index: 0, name, reason: expect.any(String) });
         });

@@ -113,7 +113,6 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
-import { applyVerticalZoomDirection } from './groundingStrategies/applyVerticalZoomDirection';
 import {
     bindDecibelFiguresToReferences,
     type PromptReferenceSpan,
@@ -2828,9 +2827,6 @@ function normalizePromptNumber(
     const rawWithoutPercentage = isPercentage ? number.raw.slice(0, -1) : number.raw;
     const rawValue = parsePromptNumberValue(rawWithoutPercentage) ?? Number.NaN;
     const value = scalePromptNumber(rawValue, isPercentage, valueRule, automationLane);
-    if (valueRule.direction === 'vertical-zoom') {
-        return applyVerticalZoomDirection(value, number, actionScope.masked);
-    }
     if (valueRule.direction !== 'pan') {
         return value;
     }

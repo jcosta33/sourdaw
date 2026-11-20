@@ -1666,21 +1666,6 @@ const EXPECTED_COMMANDS = [
         'bounded-reversible',
         false
     ),
-    expectedCommand(
-        'zoomTracksVertical',
-        'Make every track row taller or shorter by one pixel delta, keeping each between 30 and 300.',
-        {
-            delta: {
-                type: 'number',
-                minimum: -270,
-                maximum: 270,
-                description: 'Signed pixels added to every row: positive = taller, negative = shorter. Never zero',
-            },
-        },
-        ['delta'],
-        'broad-reversible',
-        true
-    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -3080,14 +3065,6 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['track height', 'row height', 'resize track'],
         targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
         valueRules: [{ argument: 'height', kind: 'number-if-present', requiredInPrompt: true }],
-    },
-    {
-        actionType: 'zoomTracksVertical',
-        intentPhrases: ['zoom tracks vertically', 'zoom tracks vertical'],
-        targetRules: [],
-        valueRules: [
-            { argument: 'delta', kind: 'number-if-present', requiredInPrompt: true, direction: 'vertical-zoom' },
-        ],
     },
 ] as const;
 
