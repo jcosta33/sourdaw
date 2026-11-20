@@ -1649,6 +1649,7 @@
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/AudioEngine/models/DeviceRolesByDeviceType.ts",
                 "src/modules/AudioEngine/models/LiveNoteControlsByDeviceType.ts",
                 "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
@@ -2802,6 +2803,7 @@
             "value": "Mellotron",
             "paths": [
                 "src/modules/Arrangement/models/DeviceParameter.ts",
+                "src/modules/AudioEngine/models/DeviceRolesByDeviceType.ts",
                 "src/modules/AudioEngine/models/LiveNoteControlsByDeviceType.ts",
                 "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
