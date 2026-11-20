@@ -152,6 +152,7 @@ const midiSnapshotByActionType: {
     setExternalPluginState: unchangedSnapshot,
     setDeviceState: unchangedSnapshot,
     setFermenterPatch: unchangedSnapshot,
+    setLevainIdentity: unchangedSnapshot,
     setGrandBouleDeviceState: unchangedSnapshot,
     setToasterFactoryKit: unchangedSnapshot,
     setGlutenFactoryPreset: unchangedSnapshot,

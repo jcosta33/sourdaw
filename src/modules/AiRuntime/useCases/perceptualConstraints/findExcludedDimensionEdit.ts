@@ -261,6 +261,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setExternalPluginState: readEffectDeclaredEdits,
     setDeviceState: readEffectDeclaredEdits,
     setFermenterPatch: readEffectDeclaredEdits,
+    setLevainIdentity: readEffectDeclaredEdits,
     setGrandBouleDeviceState: readEffectDeclaredEdits,
     setToasterFactoryKit: readEffectDeclaredEdits,
     setGlutenFactoryPreset: readEffectDeclaredEdits,

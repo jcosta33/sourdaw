@@ -93,6 +93,7 @@ export const rangeOverlapByActionType: {
     setExternalPluginState: rangeOverlapRules.none,
     setDeviceState: rangeOverlapRules.none,
     setFermenterPatch: rangeOverlapRules.none,
+    setLevainIdentity: rangeOverlapRules.none,
     setGrandBouleDeviceState: rangeOverlapRules.none,
     setToasterFactoryKit: rangeOverlapRules.none,
     setGlutenFactoryPreset: rangeOverlapRules.none,

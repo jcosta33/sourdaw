@@ -80,6 +80,7 @@ export const projectsDeviceChainByActionType: { readonly [Type in AppActionType]
     setExternalPluginState: false,
     setDeviceState: true,
     setFermenterPatch: true,
+    setLevainIdentity: true,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: true,
     setGlutenFactoryPreset: false,

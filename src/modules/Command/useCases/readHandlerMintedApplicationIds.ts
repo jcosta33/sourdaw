@@ -143,6 +143,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     setExternalPluginState: noHandlerMintedIds,
     setDeviceState: noHandlerMintedIds,
     setFermenterPatch: noHandlerMintedIds,
+    setLevainIdentity: noHandlerMintedIds,
     setGrandBouleDeviceState: noHandlerMintedIds,
     setToasterFactoryKit: noHandlerMintedIds,
     setGlutenFactoryPreset: noHandlerMintedIds,

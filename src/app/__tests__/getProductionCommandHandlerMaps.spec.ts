@@ -4,6 +4,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
+import { getLevainHandlers } from '#/modules/Levain/useCases';
 import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
@@ -79,7 +80,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(40);
+        expect(handlerMaps).toHaveLength(41);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -98,6 +99,9 @@ describe('getProductionCommandHandlerMaps', () => {
         ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
             { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setLevainIdentity')).toEqual([
+            { actionType: 'setLevainIdentity', handler: getLevainHandlers().setLevainIdentity },
         ]);
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)
@@ -119,6 +123,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setLevainIdentity');
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);
         expect(
             registrations

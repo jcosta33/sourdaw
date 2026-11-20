@@ -126,6 +126,7 @@ const controllerRestoresByActionType: {
     setExternalPluginState: noControllerRestores,
     setDeviceState: noControllerRestores,
     setFermenterPatch: noControllerRestores,
+    setLevainIdentity: noControllerRestores,
     setGrandBouleDeviceState: noControllerRestores,
     setToasterFactoryKit: noControllerRestores,
     setGlutenFactoryPreset: noControllerRestores,

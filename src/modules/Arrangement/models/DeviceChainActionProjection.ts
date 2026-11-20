@@ -2,7 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
@@ -63,6 +63,34 @@ function projectFermenterPatch(devices: Device[], action: Extract<AppAction, { t
     return devices;
 }
 
+function projectLevainIdentity(
+    devices: Device[],
+    action: Extract<AppAction, { type: 'setLevainIdentity' }>
+): Device[] | null {
+    const { deviceId, deviceIds, before, after, missingDeviceState } = action.payload;
+    const index = devices.findIndex((device) => device.id === deviceId);
+    const current = devices[index];
+    if (
+        current?.type !== DEVICE_TYPE_IDS.levain ||
+        !valuesEqual(
+            devices.map((device) => device.id),
+            deviceIds
+        )
+    ) {
+        return null;
+    }
+    const next = projectCapturedDevicePatchWithMetadata(current, before, after, {
+        field: 'disclosureTier',
+        allowedValues: ['basic', 'expert'],
+        missingChunk: missingDeviceState,
+    });
+    if (!next) {
+        return null;
+    }
+    devices[index] = next;
+    return devices;
+}
+
 function projectToasterFactoryKit(
     devices: Device[],
     action: Extract<AppAction, { type: 'setToasterFactoryKit' }>
@@ -91,6 +119,25 @@ function projectToasterFactoryKit(
     return devices;
 }
 
+function projectDeviceParameter(
+    devices: Device[],
+    action: Extract<AppAction, { type: 'setDeviceParameter' }>
+): Device[] {
+    const device = devices.find((candidate) => candidate.id === action.payload.deviceId);
+    if (device) {
+        if (action.payload.deleteParameter) {
+            delete device.parameterValues[action.payload.paramId];
+        } else {
+            device.parameterValues[action.payload.paramId] = clampDeviceParameterValue({
+                deviceType: device.type,
+                paramId: action.payload.paramId,
+                value: action.payload.value,
+            });
+        }
+    }
+    return devices;
+}
+
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
 export function projectDeviceChainAction(
     trackId: string,
@@ -107,6 +154,9 @@ export function projectDeviceChainAction(
     const devices = source.map((device) => structuredClone(device));
     if (action.type === 'setFermenterPatch') {
         return projectFermenterPatch(devices, action);
+    }
+    if (action.type === 'setLevainIdentity') {
+        return projectLevainIdentity(devices, action);
     }
     if (action.type === 'setToasterFactoryKit') {
         return projectToasterFactoryKit(devices, action);
@@ -128,19 +178,7 @@ export function projectDeviceChainAction(
         return devices;
     }
     if (action.type === 'setDeviceParameter') {
-        const device = devices.find((candidate) => candidate.id === action.payload.deviceId);
-        if (device) {
-            if (action.payload.deleteParameter) {
-                delete device.parameterValues[action.payload.paramId];
-            } else {
-                device.parameterValues[action.payload.paramId] = clampDeviceParameterValue({
-                    deviceType: device.type,
-                    paramId: action.payload.paramId,
-                    value: action.payload.value,
-                });
-            }
-        }
-        return devices;
+        return projectDeviceParameter(devices, action);
     }
     if (action.type === 'setDeviceState') {
         const device = devices.find((candidate) => candidate.id === action.payload.deviceId);

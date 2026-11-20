@@ -21,6 +21,7 @@ describe('projectsDeviceChainByActionType', () => {
                 'setDeviceParameter',
                 'setDeviceState',
                 'setFermenterPatch',
+                'setLevainIdentity',
                 'setToasterFactoryKit',
             ].sort()
         );
@@ -82,6 +83,70 @@ describe('projectsDeviceChainByActionType', () => {
             original[1],
         ]);
         expect(source).toEqual(original);
+    });
+
+    it('projects Levain identity only for the captured owner, chain, and prior state', () => {
+        const beforeChunk = { version: 1, data: { instrumentId: 'before' } };
+        const afterChunk = { version: 1, data: { instrumentId: 'after' } };
+        const levain: Device = {
+            id: 'levain',
+            name: 'Levain',
+            type: DEVICE_TYPE_IDS.levain,
+            bypassed: false,
+            deviceState: beforeChunk,
+            parameterValues: { removed: 0.2, untouched: 0.7 },
+        };
+        const neighbor: Device = {
+            id: 'neighbor',
+            name: 'Neighbor',
+            type: 'other',
+            bypassed: true,
+            parameterValues: { gain: 0.4 },
+        };
+        const action = {
+            type: 'setLevainIdentity',
+            payload: {
+                kind: 'instrument',
+                trackId: 'track-1',
+                deviceId: 'levain',
+                deviceIds: ['levain', 'neighbor'],
+                label: 'Load instrument',
+                missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+                before: { deviceState: beforeChunk, parameterValues: { removed: 0.2, added: null } },
+                after: { deviceState: afterChunk, parameterValues: { removed: null, added: 0.5 } },
+            },
+        } satisfies AppAction;
+        const source = [levain, neighbor];
+        const original = structuredClone(source);
+
+        expect(projectDeviceChainAction('track-1', source, action, [])).toEqual([
+            { ...levain, deviceState: afterChunk, parameterValues: { added: 0.5, untouched: 0.7 } },
+            neighbor,
+        ]);
+        expect(projectDeviceChainAction('other-owner', source, action, [])).toBeNull();
+        expect(source).toEqual(original);
+        const expertSource = [
+            { ...levain, deviceState: { ...beforeChunk, data: { ...beforeChunk.data, disclosureTier: 'expert' } } },
+            neighbor,
+        ];
+        expect(projectDeviceChainAction('track-1', expertSource, action, [])?.[0]?.deviceState).toEqual({
+            ...afterChunk,
+            data: { ...afterChunk.data, disclosureTier: 'expert' },
+        });
+
+        const staleChains: Device[][] = [
+            [neighbor],
+            [neighbor, levain],
+            [{ ...levain, type: 'other' }, neighbor],
+            [{ ...levain, deviceState: afterChunk }, neighbor],
+            [{ ...levain, parameterValues: { ...levain.parameterValues, removed: 0.4 } }, neighbor],
+            [{ ...levain, parameterValues: { ...levain.parameterValues, added: 0.5 } }, neighbor],
+        ];
+        for (const chain of staleChains) {
+            const originalChain = structuredClone(chain);
+            expect(projectDeviceChainAction('track-1', chain, action, [])).toBeNull();
+            expect(chain).toEqual(originalChain);
+        }
     });
 
     it('rejects a Toaster kit when the device type, chain order, or prior kit is stale', () => {

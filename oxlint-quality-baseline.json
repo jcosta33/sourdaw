@@ -14316,13 +14316,10 @@
     },
     "src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts": {
-        "vitest/expect-expect": {
-            "count": 1
-        },
         "vitest/no-conditional-expect": {
             "count": 4
         }

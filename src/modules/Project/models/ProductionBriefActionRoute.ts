@@ -85,6 +85,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setExternalPluginState: 'content',
     setDeviceState: 'content',
     setFermenterPatch: 'content',
+    setLevainIdentity: 'content',
     setGrandBouleDeviceState: 'content',
     setToasterFactoryKit: 'content',
     setGlutenFactoryPreset: 'content',

@@ -150,6 +150,7 @@ export const trackNameProjectionByActionType: {
     setExternalPluginState: keepTrackNames,
     setDeviceState: keepTrackNames,
     setFermenterPatch: keepTrackNames,
+    setLevainIdentity: keepTrackNames,
     setGrandBouleDeviceState: keepTrackNames,
     setToasterFactoryKit: keepTrackNames,
     setGlutenFactoryPreset: keepTrackNames,
