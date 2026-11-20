@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
         projectStoreValue: { value: null as ProjectStoreState | null },
         projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
         persistCrdtProject: vi.fn<() => Promise<void>>(),
+        captureProjectIdentity: vi.fn<() => string>(),
         captureProjectRevision: vi.fn<() => string>(),
         addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
         loggerWarn: vi.fn<(...args: unknown[]) => void>(),
@@ -92,7 +93,7 @@ vi.mock('../buildPreparedProjectSaveData', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectIdentity: () => 'project-identity',
+    captureProjectIdentity: mocks.captureProjectIdentity,
     exportSdawFile: vi.fn(() => {
         throw new Error('Unexpected directory document export in this fixture');
     }),
@@ -201,6 +202,7 @@ describe('saveProject', () => {
         installFakeIndexedDb();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.captureProjectIdentity.mockReturnValue('project-identity');
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mockBuiltProjectData();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
@@ -313,6 +315,52 @@ describe('saveProject', () => {
         finishMigration?.();
         await expect(saving).resolves.toBe(true);
         expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('does not start an ordinary Save while a project replacement is loading', async () => {
+        mocks.projectStoreValue.value = { ...makeProject(), loading: true };
+
+        await expect(saveProject()).resolves.toBe(false);
+        expect(mocks.migrateActiveProjectIdentity).not.toHaveBeenCalled();
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+    });
+
+    it('does not build a snapshot for the successor document when identity moves during migration', async () => {
+        const migration = Promise.withResolvers<boolean>();
+        mocks.migrateActiveProjectIdentity.mockReturnValue(migration.promise);
+
+        const saving = saveProject();
+        expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledOnce();
+        // The metadata can still name the old project while document authority has switched.
+        mocks.captureProjectIdentity.mockReturnValue('successor-document');
+        migration.resolve(true);
+
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+    });
+
+    it('keeps the successor untouched when document identity changes after snapshot before PCM admission', async () => {
+        const release = vi.fn();
+        const preflight = Promise.withResolvers<Awaited<ReturnType<typeof ensureCachedAudioBuffersDurable>>>();
+        mocks.ensureCachedAudioBuffersDurable.mockReturnValueOnce(preflight.promise);
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce());
+        mocks.captureProjectIdentity.mockReturnValue('successor-document');
+        preflight.resolve({ status: 'durable', isCurrent: () => true, release });
+
+        await expect(saving).resolves.toBe(false);
+        expect(release).toHaveBeenCalledOnce();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
     it('revalidates snapshot authority after waiting for the storage lock', async () => {

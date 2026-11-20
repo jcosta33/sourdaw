@@ -744,6 +744,50 @@ describe('project directory save and cold Recent open', () => {
         expect(await readNamedProjectJson(recentKey)).toBe(namedBefore);
     }, 70_000);
 
+    it('preserves both saved snapshots when native and displayed project identities disagree', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const { logger } = await import('#/infra/logger/appLogger');
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const { readNamedProjectJson } = await import('../../../../repositories/project/readNamedProjectJson');
+        const { getProjectSnapshotKey } = await import('../../getProjectSnapshotKey');
+        const { projectStore } = runtime.projectStores;
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected the saved project');
+        }
+        const recentKey = getProjectSnapshotKey(project.createdAt);
+        const previousNamed = await readNamedProjectJson(recentKey);
+        expect(typeof previousNamed).toBe('string');
+        const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
+
+        type NativeProjectRoot = { projectMeta?: { projectId?: string } };
+        const rootId = runtime.crdt.DOC_PREFIX_ROOT;
+        const differentProjectId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+        runtime.crdt.mutateCrdtDoc<NativeProjectRoot>({
+            id: rootId,
+            changeFn: (draft) => {
+                if (!draft.projectMeta) {
+                    throw new Error('Expected native project metadata');
+                }
+                draft.projectMeta.projectId = differentProjectId;
+            },
+        });
+        expect(runtime.crdt.getCrdtDoc<NativeProjectRoot>(rootId)?.projectMeta?.projectId).toBe(differentProjectId);
+        expect(projectStore.value?.projectId).toBe(runtime.projectId);
+        const witness = runtime.crdt.captureDurableDocumentWitness();
+        const warn = vi.spyOn(logger, 'warn');
+
+        await expect(runtime.project.saveProject()).resolves.toBe(false);
+
+        expect(warn).toHaveBeenCalledWith(
+            '[saveProject] Project persistence failed:',
+            expect.objectContaining({ message: 'Project identity changed during Save preparation' })
+        );
+        expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
+        expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
+        expect(await projectDirectory.read(runtime.directory, runtime.projectId)).toEqual(previousDirectory);
+    }, 70_000);
+
     it('initializes a legacy arrangement shell and publishes no Save if its Worker loses authority', async () => {
         const runtime = await createSavedDirectoryProject();
         const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');

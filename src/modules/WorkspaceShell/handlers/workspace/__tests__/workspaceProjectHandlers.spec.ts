@@ -5,6 +5,7 @@ import {
     captureProjectTransitionAuthority,
     newProject,
     pendingProjectReplacements,
+    prepareProjectSaveSnapshot,
     saveProject,
     saveProjectBeforeReplacement,
     exportProjectFile,
@@ -151,6 +152,16 @@ describe('Workspace Project Handlers', () => {
     it('handleSaveProject should delegate to saveProject', () => {
         void handleSaveProject.execute({ type: 'saveProject' });
         expect(saveProject).toHaveBeenCalled();
+    });
+
+    it('rejects an unknown Save payload without preparing or opening the folder picker', () => {
+        const payload = Object.defineProperty({}, 'unknown', { value: true });
+
+        expect(() => handleSaveProject.execute({ type: 'saveProject', payload })).toThrow(
+            'Invalid Save project payload'
+        );
+        expect(prepareProjectSaveSnapshot).not.toHaveBeenCalled();
+        expect(saveProject).not.toHaveBeenCalled();
     });
 
     it('handleImportAudioFile should pick files and import', async () => {
