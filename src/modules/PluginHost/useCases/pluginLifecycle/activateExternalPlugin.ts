@@ -25,6 +25,7 @@ import { loadedExternalInstancePluginIds, loadedExternalInstances } from './load
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
 import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from './pendingUnloadWaitTimeout';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -129,6 +130,43 @@ function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPlugi
     }
 }
 
+type PendingUnloadWait = 'settled' | 'timed-out';
+
+/**
+ * Ordering only: the unload's own outcome stays its caller's, so a rejection
+ * counts as settled here. Bounded, because the native unload is not.
+ */
+function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnloadWait> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = pendingUnload.then(
+        (): PendingUnloadWait => 'settled',
+        (): PendingUnloadWait => 'settled'
+    );
+    const deadline = new Promise<PendingUnloadWait>((resolve) => {
+        timer = setTimeout(() => resolve('timed-out'), PENDING_UNLOAD_WAIT_TIMEOUT_MS);
+    });
+    return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Activate once the queued unload of the same instance settles, so the
+ * activation reflects the instance the unload leaves. An unload still pending
+ * at the deadline keeps the instance and its pending entry; a later activation
+ * waits again.
+ */
+async function activateAfterPendingUnload(
+    input: ActivateExternalPluginInput,
+    pendingUnload: Promise<void>
+): Promise<ExternalPluginActivationResult> {
+    if ((await waitForPendingUnload(pendingUnload)) === 'settled') {
+        return activateExternalPlugin(input);
+    }
+    const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
+    setActivationStatus(input.instanceId, 'error', reason);
+    logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
+    return { status: 'failed', stage: 'load', reason };
+}
+
 /**
  * Instantiate a native plugin in the live audio graph and restore its persisted
  * state chunk — exactly once per graph generation. This is the single activation
@@ -163,17 +201,7 @@ export function activateExternalPlugin({
     }
     const pendingUnload = pendingKeyedUnloads.get(instanceId);
     if (pendingUnload) {
-        // Ordering only: activate after the queued unload settles, whatever its
-        // outcome, so the activation reflects the instance the unload leaves.
-        function activateAfterUnload(): Promise<ExternalPluginActivationResult> {
-            return activateExternalPlugin({
-                pluginId,
-                instanceId,
-                stateChunk,
-                onLatencyMs,
-            });
-        }
-        return pendingUnload.then(activateAfterUnload, activateAfterUnload);
+        return activateAfterPendingUnload({ pluginId, instanceId, stateChunk, onLatencyMs }, pendingUnload);
     }
     const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);

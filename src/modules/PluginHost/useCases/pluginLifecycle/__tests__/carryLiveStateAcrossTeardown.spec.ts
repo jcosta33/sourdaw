@@ -941,6 +941,31 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState).not.toHaveBeenCalled();
         });
 
+        it('fails the activation without loading when the pending removal unload never answers', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const heldUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(heldUnload.promise);
+            // Release the held unload however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] }));
+
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(INSTANCE_ID));
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            const reactivation = activate(SAVED_CHUNK);
+            await vi.advanceTimersByTimeAsync(15_000);
+
+            const reason = `${PLUGIN_ID} is still unloading and did not finish; it was not reactivated.`;
+            await expect(reactivation).resolves.toEqual({ status: 'failed', stage: 'load', reason });
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]).toEqual({
+                status: 'error',
+                message: reason,
+            });
+            expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+            vi.useRealTimers();
+            heldUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await removal;
+        });
+
         it('leaves no carry once a carried restore settles, so a later plain unload restores the project chunk', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);
