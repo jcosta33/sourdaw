@@ -80,9 +80,7 @@ function readCensusEntry<Value>(
 function readCensus<Owner>(census: ObjectNameCensus<Owner>, owner: Owner, context: ProjectContext): string[] {
     // The census type names exactly these keys, which `Object.keys` cannot state.
     const keys = Object.keys(census) as ArrayKeyOf<Owner>[];
-    return keys.flatMap(<Key extends ArrayKeyOf<Owner>>(key: Key) =>
-        readCensusEntry(census[key], owner[key], context)
-    );
+    return keys.flatMap((key) => readCensusEntry(census[key], owner[key], context));
 }
 
 const TRACK_OBJECT_NAMES: ObjectNameCensus<ProjectContextTrack> = {
