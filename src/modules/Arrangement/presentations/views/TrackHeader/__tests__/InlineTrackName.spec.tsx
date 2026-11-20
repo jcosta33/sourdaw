@@ -54,6 +54,30 @@ describe('InlineTrackName', () => {
         expect(executeUserAppAction).toHaveBeenCalled();
     });
 
+    it('retains the draft on composing Enter and commits it on plain Enter', () => {
+        const onParentKeyDown = vi.fn();
+        render(
+            <div onKeyDown={onParentKeyDown}>
+                <InlineTrackName track={mockTrack} />
+            </div>
+        );
+        fireEvent.doubleClick(screen.getByText('Test Track'));
+        const input = screen.getByLabelText('Rename track Test Track');
+        fireEvent.change(input, { target: { value: 'New Name' } });
+
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(onParentKeyDown).not.toHaveBeenCalled();
+        expect(input).toHaveValue('New Name');
+        expect(input).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track1', name: 'New Name' },
+        });
+    });
+
     it('should cancel rename on Escape key', () => {
         render(<InlineTrackName track={mockTrack} />);
         const name = screen.getByText('Test Track');

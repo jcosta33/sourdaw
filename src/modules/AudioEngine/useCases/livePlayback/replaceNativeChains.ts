@@ -18,8 +18,10 @@
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
 
-import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { clearNativeChains } from './clearNativeChains';
+import { recordNativeChains } from './recordNativeChains';
 
 export function replaceNativeChains(reports: readonly AudioGraphStripReport[]): void {
-    nativeLiveGraphSession.nativeChainByStripId = new Map(reports.map((report) => [report.id, report.deviceIds]));
+    clearNativeChains();
+    recordNativeChains(reports);
 }

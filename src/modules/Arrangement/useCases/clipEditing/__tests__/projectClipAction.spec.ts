@@ -12,10 +12,11 @@ import { projectClipReplayPrefix } from '../projectClipReplayPrefix';
 
 const allActionTypes = Object.keys(changesTempoByActionType);
 
-// The entries that move, drop or restore clip geometry; every other action type is keepState.
-const shiftingActionTypes = [
+// The entries that project clip geometry or source references; every other action type is keepState.
+const projectingActionTypes = [
     'discardDuplicatedClip',
     'duplicateClipAt',
+    'relinkClipAudioSources',
     'removeClip',
     'restoreClip',
     'restoreClipSplitState',
@@ -56,16 +57,16 @@ function projectsAsKeepState(type: string): boolean {
 }
 
 describe('projectClipAction', () => {
-    it('projects exactly the shifting action types as something other than keepState', () => {
+    it('projects exactly the geometry and source action types as something other than keepState', () => {
         const notKeepState = allActionTypes.filter((type) => !projectsAsKeepState(type));
 
-        expect(notKeepState.toSorted()).toEqual(shiftingActionTypes);
+        expect(notKeepState.toSorted()).toEqual(projectingActionTypes);
     });
 
-    it('leaves a clip and its lanes untouched for every action type outside the shifting entries', () => {
-        const keepState = allActionTypes.filter((type) => !shiftingActionTypes.includes(type));
+    it('leaves a clip and its lanes untouched for every action type outside the projecting entries', () => {
+        const keepState = allActionTypes.filter((type) => !projectingActionTypes.includes(type));
 
-        expect(keepState.length).toBeGreaterThan(shiftingActionTypes.length);
+        expect(keepState.length).toBeGreaterThan(projectingActionTypes.length);
         expect(keepState.filter((type) => !projectsAsKeepState(type))).toEqual([]);
     });
 });

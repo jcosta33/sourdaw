@@ -73,7 +73,7 @@ file updates its line in the same change.
 - [correctness.md](correctness.md): a generic behavior or invariant break; the baseline every reviewer holds, never dispatched by name.
 - [guard-reclamation-proof.md](guard-reclamation-proof.md): the guard deletes or retains storage, or settles processes, on partial, stale or denied OS observations.
 - [input-monitoring-ownership.md](input-monitoring-ownership.md): capture and monitor owners outlive or lose committed intent, or unproving signals certify recording frames.
-- [keyboard-action-accessibility.md](keyboard-action-accessibility.md): a row's main action is pointer-only, sibling actions trigger it, or keyboard focus paints invisibly.
+- [keyboard-action-accessibility.md](keyboard-action-accessibility.md): a row's main action is pointer-only, sibling actions trigger it, keyboard focus paints invisibly, or an editor's entry-focus effect steals the draft selection or caret.
 - [maintained-e2e-specs.md](maintained-e2e-specs.md): a browser spec loses its locator or precondition, or runs against a foreign server, origin or build.
 - [meter-reading-ownership.md](meter-reading-ownership.md): a destructive meter read lets one consumer drain, borrow or invent another's measurement.
 - [moving-coordinate-inverses.md](moving-coordinate-inverses.md): an inverse, Redo, macro or reader recomputes coordinates against a basis the edit moved.

@@ -4,6 +4,7 @@ import { getAutomationLanes } from '#/modules/Automation/useCases';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { splitClipWithUndo } from '../../../useCases/clipEditing/splitClipWithUndo';
+import { type CommitInlineAutomationPaintInput } from '../../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { commitInlineMidiNoteCreate } from '../../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
 import { getGridSnap } from '../../../useCases/timelineInteractions/getGridSnap';
@@ -126,26 +127,6 @@ describe('timelineTools', () => {
         });
     });
 
-    describe('handleAutomationTool', () => {
-        it('should stage an automation point if sub-lane is hit', () => {
-            const hit = { laneId: 'l1', trackId: 't1', beat: 4, value: 0.5 };
-            vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
-            const ref = { current: null };
-
-            const result = handleAutomationTool(10, 10, 4, 0, ref);
-
-            expect(result).toBe(true);
-            expect(ref.current).toEqual({
-                laneId: 'l1',
-                trackId: 't1',
-                parameterId: 'gain',
-                parameterName: 'Gain',
-                points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }],
-            });
-            expect(selectTrack).toHaveBeenCalledWith('t1');
-        });
-    });
-
     describe('tryPaintSubLane', () => {
         it('should return false if no sub-lane hit', () => {
             vi.mocked(hitTestAutomationSubLane).mockReturnValue(null);
@@ -153,21 +134,37 @@ describe('timelineTools', () => {
             expect(result).toBe(false);
         });
 
-        it('should stage and return true if sub-lane hit', () => {
-            const hit = { laneId: 'l1', trackId: 't1', beat: 2, value: 0.8 };
-            vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
-            const ref = { current: null };
-
-            const result = tryPaintSubLane(10, 10, ref);
-
-            expect(result).toBe(true);
-            expect(ref.current).toEqual({
-                laneId: 'l1',
+        it('keeps the stroke on the pressed lane and uses that row’s value conversion', () => {
+            const lane = {
+                id: 'pan-1',
                 trackId: 't1',
-                parameterId: 'gain',
-                parameterName: 'Gain',
-                points: [{ beat: 2, value: 0.8, curve: 'linear', tension: 0 }],
+                parameterId: 'pan',
+                parameterName: 'Pan',
+                minValue: -1,
+                maxValue: 1,
+                valueAtBeat: () => null,
+            };
+            vi.mocked(hitTestAutomationSubLane)
+                .mockReturnValueOnce({ lane, beat: 2, value: -0.8 })
+                .mockReturnValueOnce({ lane: { ...lane, id: 'other-pan' }, beat: 3, value: 0.9 })
+                .mockReturnValueOnce(null)
+                .mockReturnValueOnce({ lane, beat: 5, value: 0.4 });
+            const ref: { current: CommitInlineAutomationPaintInput | null } = { current: null };
+
+            expect(tryPaintSubLane(10, 10, ref)).toBe(true);
+            paintAutoDragPoint(40, 50, 0, ref);
+            paintAutoDragPoint(60, 40, 0, ref);
+            paintAutoDragPoint(80, 10, 0, ref);
+
+            expect(ref.current).toEqual({
+                inlineLane: { id: 'pan-1', trackId: 't1', parameterId: 'pan' },
+                points: [
+                    { beat: 2, value: -0.8, curve: 'linear', tension: 0 },
+                    { beat: 5, value: 0.4, curve: 'linear', tension: 0 },
+                ],
             });
+            expect(valueAtTrackY).not.toHaveBeenCalled();
+            expect(selectTrack).toHaveBeenCalledExactlyOnceWith('t1');
         });
     });
 
@@ -342,7 +339,7 @@ describe('timelineTools', () => {
             vi.mocked(hitTestTrack).mockReturnValue(null);
             const ref = { current: null };
 
-            const result = handleAutomationTool(10, 10, 4, 0, ref);
+            const result = handleAutomationTool(10, 4, 0, ref);
 
             expect(result).toBe(true);
             expect(ref.current).toBeNull();
@@ -359,7 +356,7 @@ describe('timelineTools', () => {
             ] as any);
             const ref: AutoDragState = { current: null };
 
-            handleAutomationTool(10, 50, 4, 0, ref);
+            handleAutomationTool(50, 4, 0, ref);
 
             expect(ref.current).toMatchObject({ laneId: 'lane-1', trackId: 't1', parameterId: 'gain' });
             expect(ref.current?.points[0]).toMatchObject({ beat: 4, value: 0.3 });
@@ -373,7 +370,7 @@ describe('timelineTools', () => {
             vi.mocked(getAutomationLanes).mockReturnValue([]);
             const ref: AutoDragState = { current: null };
 
-            handleAutomationTool(10, 50, 4, 0, ref);
+            handleAutomationTool(50, 4, 0, ref);
 
             // no trackHit → value defaults to 0.5; no lane → laneId undefined
             expect(ref.current?.laneId).toBeUndefined();

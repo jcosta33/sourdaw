@@ -46,8 +46,18 @@ function narrowHeldNativeChains(reports: readonly NativeChainRelease[]): void {
         return;
     }
     const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
+    const previewTargets = new Map(nativeLiveGraphSession.grandBoulePreviewTargetsByStripId);
     for (const report of held) {
         next.set(report.id, report.deviceIds);
+        const remainingTargets = previewTargets
+            .get(report.id)
+            ?.filter(({ deviceId }) => report.deviceIds.includes(deviceId));
+        if (remainingTargets?.length) {
+            previewTargets.set(report.id, remainingTargets);
+        } else {
+            previewTargets.delete(report.id);
+        }
     }
     nativeLiveGraphSession.nativeChainByStripId = next;
+    nativeLiveGraphSession.grandBoulePreviewTargetsByStripId = previewTargets;
 }

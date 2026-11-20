@@ -233,6 +233,48 @@ describe('createGrandBouleNode', () => {
         return new FakeAudioContext() as unknown as BaseAudioContext;
     }
 
+    it('releases each preview strike once on its original live worker', async () => {
+        const first = await createGrandBouleNode(ctx);
+        const firstPost = workerPostMessage;
+        const releaseFirst = first.startPreviewNote(60, 0.7);
+        const releaseSecond = first.startPreviewNote(60, 0.4);
+        workerPostMessage = vi.fn();
+        const successor = await createGrandBouleNode(ctx);
+        const successorPost = workerPostMessage;
+        successorPost.mockClear();
+        expect(firstPost).toHaveBeenCalledWith({ type: 'previewNoteOn', strikeId: 1, midiNote: 60, velocity: 0.7 });
+        expect(firstPost).toHaveBeenCalledWith({ type: 'previewNoteOn', strikeId: 2, midiNote: 60, velocity: 0.4 });
+        releaseSecond?.();
+        releaseSecond?.();
+        expect(firstPost).toHaveBeenCalledTimes(4);
+        expect(firstPost).toHaveBeenLastCalledWith({ type: 'previewNoteOff', strikeId: 2 });
+        expect(successorPost).not.toHaveBeenCalled();
+        successor.destroy();
+        first.destroy();
+        firstPost.mockClear();
+        releaseFirst?.();
+        expect(firstPost).not.toHaveBeenCalled();
+    });
+
+    it('does not strike while bypassed, destroyed, or offline', async () => {
+        const live = await createGrandBouleNode(ctx);
+        expect(live.startPreviewNote(20, 1)).toBeUndefined();
+        expect(live.startPreviewNote(109, 1)).toBeUndefined();
+        expect(live.startPreviewNote(60, 0)).toBeUndefined();
+        live.setBypass(true);
+        expect(live.startPreviewNote(60, 1)).toBeUndefined();
+        live.destroy();
+        expect(live.startPreviewNote(60, 1)).toBeUndefined();
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const offline = await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        expect(offline.startPreviewNote(60, 1)).toBeUndefined();
+    });
+
     it('posts allNotesOff to the engine worker', async () => {
         const result = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();

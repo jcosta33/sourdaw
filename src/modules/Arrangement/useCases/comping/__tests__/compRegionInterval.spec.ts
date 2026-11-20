@@ -77,6 +77,38 @@ describe('compRegionInterval', () => {
         trackStore.set({ tracks: [owningTrack()], selectedTrackId: null });
     });
 
+    it('refuses a source relink prefix before capturing an audio comp interval', () => {
+        const track = owningTrack();
+        track.kind = 'audio';
+        track.clips = track.clips.map((clip) => ({ ...clip, type: 'audio', audioBufferId: 'source' }));
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        seed([]);
+        const input = { trackId: track.id, startBeat: 2, endBeat: 4, takeId: 'b' };
+        expect(
+            compRegionInterval.capturePatchAfterPrefix(input, {
+                actions: [{ type: 'setClipGain', payload: { clipId: 'clip-a', gain: 0.5 } }],
+                actionIndex: 1,
+            })
+        ).not.toBeNull();
+        const relink: AppAction = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: [
+                    {
+                        trackId: track.id,
+                        trackKind: track.kind,
+                        activeAlternativeId: track.activeAlternativeId,
+                        alternativeId: null,
+                        clipId: 'clip-a',
+                        before: { audioBufferId: 'source' },
+                        after: { audioBufferId: 'replacement' },
+                    },
+                ],
+            },
+        };
+        expect(compRegionInterval.capturePatchAfterPrefix(input, { actions: [relink], actionIndex: 1 })).toBeNull();
+    });
+
     it.each([
         {
             name: 'contained interval',

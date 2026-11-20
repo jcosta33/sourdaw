@@ -87,8 +87,10 @@ fn note_on(note: u8, channel: i16) -> MidiNoteEvent {
 fn public_rt_entry_points_remain_source_compatible() {
     let _spawn: fn(
         Consumer<GraphCommand>,
-    ) -> Result<crate::audio_thread::AudioThreadHandle, String> =
-        crate::audio_thread::spawn_audio_thread;
+    ) -> Result<
+        crate::audio_thread::AudioThreadHandle,
+        crate::audio_thread::AudioThreadError,
+    > = crate::audio_thread::spawn_audio_thread;
     let mut effect = LegacyMidiFx;
     let mut events = MidiEventBuffer::new();
 

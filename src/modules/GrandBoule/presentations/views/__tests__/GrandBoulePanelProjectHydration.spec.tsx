@@ -1,19 +1,25 @@
-import { render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 
 import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig';
+import { createDefaultGrandBoulePersistedState, toGrandBouleDeviceState } from '../../../models/GrandBouleDeviceState';
+import { type GrandBoulePresetParameters } from '../../../models/GrandBoulePreset';
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus, type GrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
+import { reconcileGrandBouleDevicesFromProject } from '../../../useCases/reconcileGrandBouleDevicesFromProject';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
-// Render with the typed default so the panel mounts and its effects run without
-// depending on the global useStore blob. The assertion reads the *real*
-// per-device store, which the hydration writes directly.
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(async () => undefined),
 }));
 
 /**
@@ -42,9 +48,9 @@ const DEVICE_ID = 'device-hydration';
 /** Deliberately unlike `createDefaultGrandBouleConfig().masterGain` (0.1). */
 const SAVED_MASTER_GAIN = 0.42;
 
-function pianoTrack(parameterValues: Record<string, number>): Track {
+function pianoTrack(parameterValues: Record<string, number>, deviceId = DEVICE_ID, trackId = TRACK_ID): Track {
     return {
-        id: TRACK_ID,
+        id: trackId,
         name: 'Piano',
         kind: 'midi',
         muted: false,
@@ -54,7 +60,7 @@ function pianoTrack(parameterValues: Record<string, number>): Track {
         pan: 0,
         color: '#0000ff',
         clips: [],
-        devices: [{ id: DEVICE_ID, name: 'Grand Boule', type: 'grand-boule', bypassed: false, parameterValues }],
+        devices: [{ id: deviceId, name: 'Grand Boule', type: 'grand-boule', bypassed: false, parameterValues }],
         sends: [],
         frozen: false,
         freezeState: { status: 'unfrozen' },
@@ -102,7 +108,10 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
         Container.clear();
         setGrandBouleEventBus(silentEventBus);
         trackStore.set({
-            tracks: [pianoTrack({ masterGain: SAVED_MASTER_GAIN })],
+            tracks: [
+                pianoTrack({ masterGain: SAVED_MASTER_GAIN, micPosition: 2 }),
+                pianoTrack({ micPosition: 0 }, SECOND_DEVICE_ID, 'track-preset-2'),
+            ],
             selectedTrackId: TRACK_ID,
             ghostClips: [],
         });
@@ -110,6 +119,7 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
     });
 
     afterEach(() => {
+        cleanup();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         resetGrandBouleStores();
     });
@@ -124,6 +134,44 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
         render(<GrandBoulePanel deviceId={DEVICE_ID} />);
 
         expect(sessionMasterGain()).toBe(SAVED_MASTER_GAIN);
+    });
+
+    it('repaints the mounted shelf as project replay restores Warm then Bright', () => {
+        render(<GrandBoulePanel deviceId={DEVICE_ID} />);
+
+        fireEvent.click(presetButton('Warm Crumb'));
+        expect(presetButton('Warm Crumb')).toHaveClass('bg-neutral-300/10');
+        fireEvent.click(presetButton('Bright Crust'));
+        expect(presetButton('Bright Crust')).toHaveClass('bg-neutral-300/10');
+
+        act(() => replayProjectVoicing(WARM));
+        expect(createGrandBouleStore(DEVICE_ID).value?.parameters).toEqual(WARM);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Warm Crumb'));
+
+        act(() => replayProjectVoicing(BRIGHT));
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Bright Crust'));
+        expect(createGrandBouleStore(DEVICE_ID).value?.config.micPosition).toBe(2);
+        expect(createGrandBouleStore(SECOND_DEVICE_ID).value?.parameters).toEqual(
+            createDefaultGrandBoulePersistedState().parameters
+        );
+    });
+
+    it('indicates cold-hydrated voicings and clears a near match on the first device', () => {
+        act(() => replayProjectVoicing(WARM));
+        const view = render(<GrandBoulePanel deviceId={DEVICE_ID} />);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Warm Crumb'));
+
+        act(() => replayProjectVoicing({ ...WARM, toneTilt: WARM.toneTilt + 0.0001 }));
+        expect(readPresetShelf()).toEqual(expectedPresetShelf(null));
+
+        view.rerender(<GrandBoulePanel deviceId={SECOND_DEVICE_ID} />);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Classic Miche'));
+        expect(createGrandBouleStore(SECOND_DEVICE_ID).value?.config.micPosition).toBe(0);
+    });
+
+    it('indicates Classic at the neutral defaults', () => {
+        render(<GrandBoulePanel deviceId={DEVICE_ID} />);
+        expect(readPresetShelf()).toEqual(expectedPresetShelf('Classic Miche'));
     });
 
     it('re-reads for the new device when the panel is re-keyed', () => {
@@ -158,3 +206,58 @@ describe('GrandBoulePanel reads project truth when it opens', () => {
         expect(createGrandBouleStore(secondDeviceId).value?.config.masterGain).toBe(secondGain);
     });
 });
+
+const WARM = { hammerHardness: -0.35, velocityCurve: 1.2, stereoWidth: 0.45, toneTilt: -0.3 };
+const BRIGHT = { hammerHardness: 0.4, velocityCurve: 0.85, stereoWidth: 0.7, toneTilt: 0.35 };
+const SECOND_DEVICE_ID = 'device-preset-2';
+
+function replayProjectVoicing(parameters: GrandBoulePresetParameters): void {
+    // Substitute the projection replay would publish, then run its real session reconciliation.
+    const deviceState = toGrandBouleDeviceState({ ...createDefaultGrandBoulePersistedState(), parameters });
+    trackStore.update((current) => {
+        if (current === null) {
+            throw new Error('Replay requires a projected track fixture.');
+        }
+        return {
+            ...current,
+            tracks: current.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    devices: track.devices.map((device) =>
+                        device.id === DEVICE_ID ? { ...device, deviceState } : device
+                    ),
+                };
+            }),
+        };
+    });
+    reconcileGrandBouleDevicesFromProject();
+}
+
+const PRESET_NAMES = ['Warm Crumb', 'Bright Crust', 'Classic Miche'] as const;
+type PresetName = (typeof PRESET_NAMES)[number];
+
+function presetButton(preset: PresetName): HTMLElement {
+    return screen.getByRole('button', { name: (name) => name.startsWith(preset) });
+}
+
+function readPresetShelf() {
+    return PRESET_NAMES.map((name) => {
+        const button = presetButton(name);
+        return {
+            name,
+            highlighted: button.classList.contains('bg-neutral-300/10'),
+            pressed: button.getAttribute('aria-pressed'),
+        };
+    });
+}
+
+function expectedPresetShelf(active: PresetName | null) {
+    return PRESET_NAMES.map((name) => ({
+        name,
+        highlighted: name === active,
+        pressed: name === active ? 'true' : 'false',
+    }));
+}
