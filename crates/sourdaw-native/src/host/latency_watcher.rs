@@ -605,6 +605,7 @@ mod tests {
     /// forever — the flag dies with the instance instead.
     #[test]
     fn a_sweep_does_not_reraise_the_hint_for_an_instance_that_refuses_control() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         runtime.begin_unload();
         let sink = RecordingEventSink::default();
@@ -624,6 +625,7 @@ mod tests {
     /// still standing and nothing else will read it.
     #[test]
     fn a_sweep_reraises_the_hint_for_a_live_instance_it_could_not_reach() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));

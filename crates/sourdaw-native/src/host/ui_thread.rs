@@ -111,6 +111,17 @@ pub trait UiThread: Send + Sync {
         task.run();
         Ok(())
     }
+
+    /// Run, now, the work other threads have already posted to this UI thread
+    /// and that its loop has not yet reached. Call it only on the UI thread.
+    ///
+    /// For code that holds the UI thread for a long stretch and waits there for
+    /// a worker whose own progress is a hop onto it: the quit cascade runs
+    /// synchronously on the UI thread, so the loop that would drain a worker's
+    /// posted teardown cannot turn until the cascade returns. A host whose
+    /// work runs inline, or which has no queue, has nothing posted and keeps
+    /// this default.
+    fn run_posted_work(&self) {}
 }
 
 /// A UI thread reached by posting work to a queue that an external pump drains.

@@ -13,7 +13,7 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
 };
-use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+use crate::state::{locked_or_poisoned, AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
@@ -3062,6 +3062,21 @@ fn attach_one_dormant_plugin(
     }) else {
         return Ok(None);
     };
+    // From here the runtime has left the map, so no exit may drop it: its
+    // teardown belongs on the shell's UI thread, and this is the graph-batch
+    // thread. A poisoned engine lock parks it again and leaves the instance
+    // dormant, which is what the user still has loaded.
+    let engine_guard = match state.engine.lock() {
+        Ok(engine_guard) => engine_guard,
+        Err(error) => {
+            // The poisoned guard rides inside the error: drop it before the
+            // plugins lock is taken, so the engine lock is never held across it.
+            let reason = format!("Failed to lock engine: {error}");
+            drop(error);
+            park_dormant_plugin(state, instance_id, dormant);
+            return Err(reason);
+        }
+    };
     let PluginInstanceData {
         plugin,
         name,
@@ -3072,10 +3087,7 @@ fn attach_one_dormant_plugin(
     } = dormant;
 
     let registration = {
-        let mut engine_guard = state
-            .engine
-            .lock()
-            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        let mut engine_guard = engine_guard;
         match engine_guard.as_mut() {
             Some(engine) => register_runtime_with_engine(
                 engine,
@@ -3112,25 +3124,31 @@ fn attach_one_dormant_plugin(
             // is an owner some other holder is still inside, and there the
             // instance really is gone.
             if let Some(runtime) = refusal.runtime {
-                state
-                    .plugins
-                    .lock()
-                    .map_err(|error| format!("Failed to lock plugins: {error}"))?
-                    .insert(
-                        instance_id.to_string(),
-                        PluginInstanceData {
-                            plugin: runtime,
-                            name,
-                            parameters,
-                            has_gui,
-                            chain_kind,
-                            load_resolution,
-                        },
-                    );
+                park_dormant_plugin(
+                    state,
+                    instance_id,
+                    PluginInstanceData {
+                        plugin: runtime,
+                        name,
+                        parameters,
+                        has_gui,
+                        chain_kind,
+                        load_resolution,
+                    },
+                );
             }
             Err(refusal.reason)
         }
     }
+}
+
+/// Put a dormant instance back in the map it was taken from.
+///
+/// Read through [`locked_or_poisoned`] because the alternative to a poisoned
+/// store is dropping the instance here, on a graph-batch thread, which runs the
+/// plugin's teardown off the UI thread.
+fn park_dormant_plugin(state: &AppState, instance_id: &str, dormant: PluginInstanceData) {
+    locked_or_poisoned(&state.plugins).insert(instance_id.to_string(), dormant);
 }
 
 pub(crate) fn remove_plugin_window(
@@ -3379,6 +3397,10 @@ async fn unload_plugin_runtime(
             Ok(reports) => reports,
             Err(error) => {
                 runtime.cancel_unload();
+                // Asks recorded while the instance refused control lost their
+                // wakes to that refusal; the instance is live again, so carry
+                // them now.
+                crate::host::plugin_host_requests::carry_standing_asks(instance_id);
                 return Err(error);
             }
         };
@@ -5318,6 +5340,114 @@ mod tests {
                 .chain_kind,
             DeviceKind::Generator,
             "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
+    /// A dormant instance whose teardown records the threads it ran on, parked
+    /// in `state.plugins`.
+    fn park_dormant_recording_teardown(
+        state: &AppState,
+        instance_id: &str,
+    ) -> Arc<Mutex<Vec<std::thread::ThreadId>>> {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Parked Dormant", Vec::new(), false);
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(std::thread::current().id());
+        }));
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                instance_id.to_string(),
+                PluginInstanceData::dormant_fixture(wrapper.into()),
+            );
+        torn_down_on
+    }
+
+    /// Panic on another thread while it holds `lock`, which poisons it.
+    fn poison<Value: Send>(lock: &Mutex<Value>) {
+        std::thread::scope(|scope| {
+            let poisoner = scope.spawn(|| {
+                let _guard = lock.lock().expect("the lock is free to poison");
+                panic!("poisoning the lock on purpose");
+            });
+            assert!(poisoner.join().is_err());
+        });
+        assert!(lock.is_poisoned());
+    }
+
+    /// The attach takes the dormant instance out of the map before it reaches
+    /// the engine, so a poisoned engine lock must not drop it: that would run
+    /// the plugin's teardown on the graph-batch thread, and lose an instance the
+    /// user still has loaded. It stays dormant.
+    #[test]
+    fn a_poisoned_engine_lock_leaves_the_dormant_instance_parked_and_alive() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let torn_down_on = park_dormant_recording_teardown(&state, "dormant-instance");
+        poison(&state.engine);
+
+        let attached =
+            attach_dormant_plugins(&state, 1).expect("the attach call itself must not error");
+
+        assert!(attached.is_empty());
+        assert!(
+            locked_or_poisoned(&state.plugins).contains_key("dormant-instance"),
+            "the instance must stay dormant in state.plugins"
+        );
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert!(
+            torn_down.is_empty(),
+            "the runtime must not be torn down on the batch thread"
+        );
+    }
+
+    /// The refusal branch puts the instance back through the same store, and
+    /// that store can be poisoned too, by a panic that lands while the attach is
+    /// between taking the instance out and putting it back. The engine lock is
+    /// what holds the attach in that window: the test keeps it, poisons the
+    /// map, and only then lets the attach reach its refusal (no engine).
+    #[test]
+    fn a_poisoned_plugin_store_still_takes_a_refused_instance_back() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let torn_down_on = park_dormant_recording_teardown(&state, "dormant-instance");
+
+        let engine_guard = state.engine.lock().expect("the engine slot is free");
+        std::thread::scope(|scope| {
+            let attach = scope.spawn(|| attach_one_dormant_plugin(&state, "dormant-instance"));
+
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while locked_or_poisoned(&state.plugins).contains_key("dormant-instance") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the attach must take the instance out of the map"
+                );
+                std::thread::yield_now();
+            }
+            poison(&state.plugins);
+            drop(engine_guard);
+
+            let attached = attach.join().expect("the attach must not panic");
+            assert!(
+                attached.is_err(),
+                "no engine runs, so the attach is refused and reports why"
+            );
+        });
+
+        assert!(
+            locked_or_poisoned(&state.plugins).contains_key("dormant-instance"),
+            "the refused instance must be parked again even through a poisoned store"
+        );
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert!(
+            torn_down.is_empty(),
+            "the runtime must not be torn down on the attaching thread"
         );
     }
 
@@ -10649,6 +10779,58 @@ mod tests {
             fenced_batches(&state),
             fences_before + 1,
             "the release the engine took is one fence, and the registry numbers it"
+        );
+    }
+
+    /// An ask the plugin recorded while its unload was under way lost its wake
+    /// to the refused visit. When the unload is cancelled the instance is live
+    /// again, and the hint that brings the watcher to its recorded ask has to be
+    /// raised again, or the ask waits until the plugin asks a second time.
+    ///
+    /// The cancel is the real one: no engine runs, so the scheduler removal
+    /// fails after `begin_unload` has already been called.
+    #[test]
+    fn a_cancelled_unload_raises_the_hints_its_refused_visits_spent() {
+        let _hint = crate::host::hint_test_support::guard();
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", Vec::new(), true);
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_main_thread_callback_requested();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .insert(
+                "inst-1".to_string(),
+                EnginePluginInstanceData {
+                    engine_plugin_id: 17,
+                    runtime: Arc::clone(&runtime),
+                    name: "Engine Owned Fixture".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    chain_kind: DeviceKind::Effect,
+                    parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
+                },
+            );
+        runtime.begin_unload();
+        // The watcher's visit while unloading: refused, and its wake spent.
+        daw_plugin_host::take_pending_main_thread_callback_signal();
+
+        let error = crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect_err("no engine runs, so the scheduler removal fails and the unload cancels");
+
+        assert_eq!(error, "Native engine not running");
+        assert!(
+            runtime.ensure_public_control_allowed().is_ok(),
+            "the cancelled unload must return the instance to active"
+        );
+        assert!(
+            daw_plugin_host::take_pending_main_thread_callback_signal(),
+            "the cancel must raise the hint that carries the standing request_callback ask"
         );
     }
 
