@@ -1166,6 +1166,13 @@ const TREE_REPORT_MAX_BYTES: usize = 1024;
 const TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN_ENV: &str =
     "SOURDAW_TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN";
 
+/// Test builds only: a tree supervisor whose environment names this dies of
+/// `SIGKILL` when the application releases it, before its own end path —
+/// the death a plugin or the OOM killer can cause inside the release grace.
+#[cfg(test)]
+const TEST_TREE_SUPERVISOR_DIES_ON_RELEASE_ENV: &str =
+    "SOURDAW_TEST_TREE_SUPERVISOR_DIES_ON_RELEASE";
+
 /// Test builds only: the helper's command line for this test binary's tree
 /// supervisor entry, as JSON, because the test harness refuses the
 /// supervisor marker as an unknown option.
@@ -1238,6 +1245,13 @@ fn supervise_helper_tree(helper: &[OsString]) -> i32 {
             return 2;
         }
     };
+    // A helper that joins this supervisor's group turns the application's
+    // death into a hangup: the group is orphaned, and once the end path has
+    // stopped the helper the kernel sends the whole group SIGHUP. Ignored
+    // here, after the spawn so the helper keeps the default, the end path
+    // still runs to completion.
+    // SAFETY: setting a signal's disposition to ignore takes plain values.
+    let _ = unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
     #[cfg(test)]
     if std::env::var_os(TEST_TREE_SUPERVISOR_DIES_AFTER_SPAWN_ENV).is_some() {
         die_by_signal(libc::SIGKILL);
@@ -1255,6 +1269,12 @@ fn supervise_helper_tree(helper: &[OsString]) -> i32 {
     report_to_spawner(&mut spawner, TREE_REPORT_STARTED, &helper.to_string());
     let mut recorded = RecordedDescendants::new();
     let end = watch_helper_tree(&mut spawner, child.id(), helper, &mut recorded);
+    #[cfg(test)]
+    if matches!(end, TreeEnd::SpawnerGone)
+        && std::env::var_os(TEST_TREE_SUPERVISOR_DIES_ON_RELEASE_ENV).is_some()
+    {
+        die_by_signal(libc::SIGKILL);
+    }
     let exit = end_helper_tree(&mut spawner, &mut child, helper, end, &mut recorded);
     report_to_spawner(&mut spawner, TREE_REPORT_DONE, "");
     match exit {
@@ -2299,11 +2319,17 @@ impl TreeTie {
     /// Release the supervisor at the scan's bound and give it
     /// [`TREE_RELEASE_GRACE`] to end its tree and exit. Returns whether it
     /// did and was reaped; otherwise the caller kills what it can reach.
+    ///
+    /// Shutting down the application's writing half is end-of-file to the
+    /// supervisor, while the socket stays open for its [`Self::report`].
     #[cfg(unix)]
     fn release_and_reap(&mut self, registry: &HelperRegistry, child: &mut Child) -> bool {
-        if self.socket.take().is_none() {
+        let Some(socket) = self.socket.as_ref() else {
             return false;
-        }
+        };
+        // An error means the supervisor's end is already closed, which is
+        // the same end-of-file.
+        let _ = socket.shutdown(std::net::Shutdown::Write);
         let deadline = Instant::now() + TREE_RELEASE_GRACE;
         while Instant::now() < deadline {
             match registry.try_reap(child) {
@@ -2478,9 +2504,13 @@ fn run_bounded_in(
     let mut tie = TreeTie {
         socket: Some(application_end),
     };
-    let status = wait_bounded(registry, &mut child, timeout, &mut tie)?;
+    let waited = wait_bounded(registry, &mut child, timeout, &mut tie);
+    // Every way out of the wait, the bound and a lost observation included,
+    // has reaped the supervisor; one that died before its done record left
+    // the helper's group to the application.
     let report = tie.report();
     kill_orphaned_helper_group(&report);
+    let status = waited?;
     match tree_report_refusal(&report) {
         Some(refusal) => Err(refusal),
         None => Ok(status),
@@ -3421,10 +3451,13 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         };
         let mut command = if std::env::var_os(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV).is_some() {
             let mut perl = Command::new("perl");
-            // Joins the supervisor's group, so only its own pid still names it.
+            // Joins the supervisor's group, so only its own pid still names
+            // it. It ignores SIGHUP, as a plugin can: killing the spawner
+            // orphans that group, and a member already stopped would
+            // otherwise bring the kernel's hangup down on the helper.
             perl.args([
                 "-e",
-                "setpgrp(0, getppid()) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
+                "$SIG{HUP} = 'IGNORE'; setpgrp(0, getppid()) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
             ]);
             perl
         } else {
@@ -4355,6 +4388,45 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(
             process_has_exited_within(helper, Duration::from_secs(3)),
             "plain helper {helper} outlived its killed tree supervisor"
+        );
+    }
+
+    /// A tree supervisor that dies inside the release grace, before its own
+    /// end path, leaves the helper's group to the application on the
+    /// timeout path too; the scan still answers that it timed out.
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_killed_while_released_at_the_bound_takes_its_helpers_group_with_it() {
+        let scratch =
+            std::env::temp_dir().join(format!("sourdaw-released-tree-{}", uuid::Uuid::new_v4()));
+        let helper_file = scratch.with_extension("helper");
+        let grouped_file = scratch.with_extension("grouped");
+        let mut stragglers = Stragglers::cleaning(vec![helper_file.clone(), grouped_file.clone()]);
+        let mut command = Command::new("sh");
+        command
+            .args([
+                "-c",
+                "sleep 30 & echo $! > \"$1\"; echo $$ > \"$0\"; exec sleep 30",
+            ])
+            .arg(&helper_file)
+            .arg(&grouped_file)
+            .env(TEST_TREE_SUPERVISOR_DIES_ON_RELEASE_ENV, "1");
+
+        let result = run_bounded(&mut command, Duration::from_secs(1));
+
+        if let Some(helper) = read_pid_within(&helper_file, Duration::ZERO) {
+            stragglers.pids.push(helper);
+        }
+        let grouped = read_pid_within(&grouped_file, Duration::ZERO)
+            .expect("the helper writes its grouped child's pid within the bound");
+        stragglers.pids.push(grouped);
+        assert!(
+            matches!(result, Err(ScanFailure::TimedOut)),
+            "a scan that reached its bound timed out: {result:?}"
+        );
+        assert!(
+            process_has_exited_within(grouped, Duration::from_secs(2)),
+            "the helper's grouped child {grouped} outlived its supervisor's death at the bound"
         );
     }
 
