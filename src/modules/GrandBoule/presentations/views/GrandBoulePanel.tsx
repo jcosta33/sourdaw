@@ -30,7 +30,6 @@ import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff
 import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
 import { onMidiPedalCc } from '../../useCases/midiEventSubscribers/onMidiPedalCc';
 import { panicGrandBoule } from '../../useCases/panicGrandBoule';
-import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
 import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
 import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite';
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
@@ -49,7 +48,7 @@ import { setGrandBouleSympatheticSend } from '../../useCases/setGrandBouleSympat
 import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperament';
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
-import { triggerGrandBouleNote } from '../../useCases/triggerGrandBouleNote';
+import { startGrandBoulePreviewNote } from '../../useCases/triggerGrandBouleNote';
 import { GrandBouleVisualizations, type GrandBouleVisualization } from '../components/GrandBouleVisualizations';
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
@@ -165,7 +164,7 @@ const MICROPHONE_POSITIONS = [
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
-    // (setActiveNotes fires on every MIDI noteOn). Previously: full
+    // (note state changes on every MIDI noteOn). Previously: full
     // getAllTracks().find() scan per render.
     const trackState = useStore(trackStore, defaultTrackState);
     const projectParameterValues = trackState.tracks
@@ -175,7 +174,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // Keep the live value typed without a non-null assertion.
     const store = createGrandBouleStore(deviceId);
     const state = useStore(store, defaultGrandBouleState);
-    const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
+    const [externalNotes, setExternalNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
+    const [previewNotes, setPreviewNotes] = useState<ReadonlyMap<object, { midiNote: number; velocity: number }>>(
+        () => new Map()
+    );
+    const activeNotes = new Map(externalNotes);
+    for (const { midiNote, velocity } of previewNotes.values()) {
+        activeNotes.set(midiNote, velocity);
+    }
     const [lastVelocity, setLastVelocity] = useState(0);
     const [openVisualizations, setOpenVisualizations] = useState<GrandBouleVisualization[]>([]);
     const [pianoPreviewHeld, setPianoPreviewHeld] = useState(false);
@@ -217,7 +223,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return;
                 }
                 setLastVelocity(Math.round(velocity * 127));
-                setActiveNotes((prev) => {
+                setExternalNotes((prev) => {
                     const next = new Map(prev);
                     next.set(midiNote, velocity);
                     return next;
@@ -227,7 +233,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 if (eventDeviceId && eventDeviceId !== deviceId) {
                     return;
                 }
-                setActiveNotes((prev) => {
+                setExternalNotes((prev) => {
                     if (!prev.has(midiNote)) {
                         return prev;
                     }
@@ -296,26 +302,22 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const presets = listGrandBoulePresets();
     const matchingPresetId = findMatchingGrandBoulePresetId(parameters);
 
-    const handleNoteOn = (midiNote: number, velocity: number): void => {
-        triggerGrandBouleNote({ engine, store, midiNote, velocity });
+    const handlePreviewNote = (midiNote: number, velocity: number): (() => void) | undefined => {
+        const release = startGrandBoulePreviewNote({ engine, store, midiNote, velocity });
+        if (release === undefined) {
+            return undefined;
+        }
+        const owner = {};
         setLastVelocity(Math.round(velocity * 127));
-        setActiveNotes((prev) => {
-            const next = new Map(prev);
-            next.set(midiNote, velocity);
-            return next;
-        });
-    };
-
-    const handleNoteOff = (midiNote: number): void => {
-        releaseGrandBouleNote({ engine, midiNote });
-        setActiveNotes((prev) => {
-            if (!prev.has(midiNote)) {
-                return prev;
-            }
-            const next = new Map(prev);
-            next.delete(midiNote);
-            return next;
-        });
+        setPreviewNotes((previous) => new Map(previous).set(owner, { midiNote, velocity }));
+        return () => {
+            release();
+            setPreviewNotes((previous) => {
+                const next = new Map(previous);
+                next.delete(owner);
+                return next;
+            });
+        };
     };
 
     let velocityCurveReadout = 'linear';
@@ -352,8 +354,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 pianoPreviewHeld={pianoPreviewHeld}
                 onToggleVisualization={handleToggleVisualization}
                 onPreviewHoldChange={setPianoPreviewHeld}
-                onNoteOn={handleNoteOn}
-                onNoteOff={handleNoteOff}
+                onPreviewNote={handlePreviewNote}
             />
 
             <div className="grid shrink-0 items-start gap-3 @[36rem]:grid-cols-2 @[54rem]:grid-cols-3">
@@ -705,7 +706,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 size="sm"
                                 onClick={() => {
                                     panicGrandBoule({ engine });
-                                    setActiveNotes(new Map());
+                                    setExternalNotes(new Map());
+                                    setPreviewNotes(new Map());
                                 }}
                             >
                                 <Power className="size-3.5" />

@@ -66,6 +66,15 @@ export const PARAM_MAP: Record<string, string> = {
     toneColor: 'tone_color',
 };
 
+export type GrandBoulePreviewNoteOnMsg = {
+    type: 'previewNoteOn';
+    strikeId: number;
+    midiNote: number;
+    velocity: number;
+    sampleFrame?: number;
+};
+export type GrandBoulePreviewNoteOffMsg = { type: 'previewNoteOff'; strikeId: number; sampleFrame?: number };
+
 export type GrandBouleNoteOnMsg = {
     type: 'noteOn';
     midiNote: number;
@@ -110,6 +119,8 @@ export type GrandBoulePedalMsg = GrandBouleSustainMsg | GrandBouleUnaCordaMsg | 
 
 /** Messages that address a moment in time rather than only the device. */
 export type GrandBouleFramedMsg =
+    | GrandBoulePreviewNoteOnMsg
+    | GrandBoulePreviewNoteOffMsg
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
     | GrandBouleNoteExpressionMsg
@@ -122,6 +133,8 @@ export type GrandBouleFramedMsg =
 export type GrandBouleQueuedMsg = GrandBouleFramedMsg & { sampleFrame: number };
 
 export type GrandBouleDispatchMsg =
+    | GrandBoulePreviewNoteOnMsg
+    | GrandBoulePreviewNoteOffMsg
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
     | GrandBouleNoteExpressionMsg
@@ -269,6 +282,10 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
  */
 export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg, offset = 0): boolean {
     switch (msg.type) {
+        case 'previewNoteOn':
+            return instance.push_preview_note_on(msg.strikeId, msg.midiNote, msg.velocity, offset);
+        case 'previewNoteOff':
+            return instance.push_preview_note_off(msg.strikeId, offset);
         case 'noteOn':
             return instance.push_note_on(msg.midiNote, msg.velocity, msg.channel ?? 0, offset);
         case 'noteExpression':
@@ -494,7 +511,13 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
 
 /** True for the messages that strike, release or bend a note. */
 function isNoteMsg(msg: GrandBouleDispatchMsg): boolean {
-    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression';
+    return (
+        msg.type === 'noteOn' ||
+        msg.type === 'noteOff' ||
+        msg.type === 'noteExpression' ||
+        msg.type === 'previewNoteOn' ||
+        msg.type === 'previewNoteOff'
+    );
 }
 
 function isPedalMsg(msg: GrandBouleDispatchMsg): msg is GrandBoulePedalMsg {
@@ -576,6 +599,10 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
         queue.discardPedal(msg.type);
     }
 
+    if (block === null && (msg.type === 'previewNoteOn' || msg.type === 'previewNoteOff')) {
+        queue.enqueue({ ...msg, sampleFrame: 0 });
+        return;
+    }
     if (block === null || !isFramedGrandBouleMsg(msg)) {
         dispatch(instance, msg);
         return;

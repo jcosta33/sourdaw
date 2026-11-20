@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -21,11 +21,14 @@ const pedalWrites = vi.hoisted(() => ({
     setSustain: vi.fn(),
     setSostenuto: vi.fn(),
     setUnaCorda: vi.fn(),
+    startPreviewNote: vi.fn<(input: { midiNote: number; velocity: number }) => (() => void) | undefined>(),
+    ready: false,
 }));
 
 vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
     resolveGrandBouleEngine: () => ({
         noteOn: () => {},
+        startPreviewNote: pedalWrites.startPreviewNote,
         noteOnMidi2: () => {},
         noteOff: () => {},
         setParam: () => {},
@@ -35,7 +38,7 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
         setSostenuto: pedalWrites.setSostenuto,
         setTemperament: () => {},
         allNotesOff: () => {},
-        isReady: () => false,
+        isReady: () => pedalWrites.ready,
         getAnalyserNode: () => null,
         sampleRate: () => 48_000,
     }),
@@ -105,6 +108,60 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         pedalWrites.setSustain.mockClear();
         pedalWrites.setSostenuto.mockClear();
         pedalWrites.setUnaCorda.mockClear();
+        pedalWrites.startPreviewNote.mockReset();
+        pedalWrites.ready = false;
+    });
+
+    it.each(['blur', 'lostpointercapture'] as const)('releases the preview and reopens silent after %s', (event) => {
+        const release = vi.fn();
+        pedalWrites.ready = true;
+        pedalWrites.startPreviewNote.mockReturnValue(release);
+        render(<GrandBoulePanel deviceId="panel-midi-A" />);
+        const disclosure = screen.getByRole('button', { name: 'Piano keyboard' });
+        fireEvent.click(disclosure);
+        const canvas = screen.getByLabelText('Grand Boule interactive piano');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+        expect(screen.getByRole('status')).toHaveTextContent('Playing');
+        expect(disclosure).toHaveAttribute('aria-disabled', 'true');
+        if (event === 'blur') {
+            fireEvent.blur(window);
+        } else {
+            fireEvent(canvas, new PointerEvent(event, { bubbles: true, pointerId: 1 }));
+        }
+        expect(release).toHaveBeenCalledOnce();
+        expect(disclosure).not.toHaveAttribute('aria-disabled', 'true');
+        fireEvent.click(disclosure);
+        expect(canvas).not.toBeInTheDocument();
+        fireEvent.click(disclosure);
+        expect(screen.getByRole('status')).toHaveTextContent('No notes playing');
+        fireEvent.pointerUp(window, { pointerId: 1 });
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps an external held key lit when the same preview is released', async () => {
+        const release = vi.fn();
+        pedalWrites.ready = true;
+        pedalWrites.startPreviewNote.mockReturnValue(release);
+        render(<GrandBoulePanel deviceId="panel-midi-A" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Piano keyboard' }));
+        const canvas = screen.getByLabelText('Grand Boule interactive piano');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+        const note = pedalWrites.startPreviewNote.mock.calls[0]?.[0].midiNote;
+        if (note === undefined) {
+            throw new Error('preview did not start');
+        }
+        await act(async () => {
+            await testEventBus.emit('midi.noteOn', { deviceId: 'panel-midi-A', midiNote: note, velocity: 0.5 });
+        });
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+        expect(release).toHaveBeenCalledOnce();
+        expect(screen.getByRole('status')).toHaveTextContent('Playing');
+        await act(async () => {
+            await testEventBus.emit('midi.noteOff', { deviceId: 'panel-midi-A', midiNote: note });
+        });
+        expect(screen.getByRole('status')).toHaveTextContent('No notes playing');
     });
 
     it('coerces a boolean CC64 value to a clamped numeric sustain position (#2)', async () => {

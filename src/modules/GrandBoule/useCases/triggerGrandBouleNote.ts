@@ -49,3 +49,13 @@ export function triggerGrandBouleNote(input: TriggerGrandBouleNoteInput): void {
     const shaped = shapeNormalisedVelocity(input.velocity, calibration);
     input.engine.noteOn({ midiNote: input.midiNote, velocity: shaped });
 }
+
+/** Start a panel preview using the same calibrated velocity as ordinary notes. */
+export function startGrandBoulePreviewNote(input: TriggerGrandBouleNoteInput): (() => void) | undefined {
+    if (!input.engine.isReady()) {
+        return undefined;
+    }
+    const calibration = input.store.value?.midiCalibration ?? FALLBACK_CALIBRATION;
+    const velocity = shapeNormalisedVelocity(input.velocity, calibration);
+    return input.engine.startPreviewNote({ midiNote: input.midiNote, velocity });
+}

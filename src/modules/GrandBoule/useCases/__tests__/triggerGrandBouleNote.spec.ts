@@ -6,7 +6,7 @@ import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibra
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { createDefaultGrandBouleState } from '../../stores/grandBouleStore';
-import { triggerGrandBouleNote } from '../triggerGrandBouleNote';
+import { startGrandBoulePreviewNote, triggerGrandBouleNote } from '../triggerGrandBouleNote';
 
 type NoteOnArg = { midiNote: number; velocity: number };
 
@@ -19,6 +19,7 @@ function fakeEngine(overrides: Partial<GrandBouleEngineHandle> = {}): {
         noteOn,
         handle: {
             noteOn,
+            startPreviewNote: vi.fn(),
             noteOnMidi2: vi.fn(),
             noteOff: vi.fn(),
             setParam: vi.fn(),
@@ -47,6 +48,36 @@ function firstNoteOnArg(noteOn: Mock<GrandBouleEngineHandle['noteOn']>): NoteOnA
     }
     return call[0];
 }
+
+describe('startGrandBoulePreviewNote', () => {
+    it('applies the same calibration and returns the exact acquired release', () => {
+        const release = vi.fn();
+        const start = vi.fn(() => release);
+        const state = {
+            ...createDefaultGrandBouleState(),
+            midiCalibration: {
+                ...createDefaultMidiCalibration(),
+                velocityCurveExponent: 2,
+                velocityFloor: 0.1,
+                velocityCeiling: 0.9,
+            },
+        };
+        const { handle } = fakeEngine({ startPreviewNote: start });
+        expect(
+            startGrandBoulePreviewNote({ engine: handle, store: storeWith(state), midiNote: 60, velocity: 0.5 })
+        ).toBe(release);
+        expect(start).toHaveBeenCalledWith({ midiNote: 60, velocity: expect.closeTo(0.3) });
+    });
+
+    it('does not start a disconnected preview', () => {
+        const start = vi.fn();
+        const { handle } = fakeEngine({ startPreviewNote: start, isReady: () => false });
+        expect(
+            startGrandBoulePreviewNote({ engine: handle, store: storeWith(null), midiNote: 60, velocity: 0.5 })
+        ).toBeUndefined();
+        expect(start).not.toHaveBeenCalled();
+    });
+});
 
 describe('triggerGrandBouleNote', () => {
     it('should export triggerGrandBouleNote', () => {

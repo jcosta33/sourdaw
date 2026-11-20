@@ -17,227 +17,96 @@ const KEY_B = { x: 220, y: KEY_Y };
 
 describe('PianoModel3D', () => {
     beforeEach(() => {
-        vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
-            left: 0,
-            top: 0,
-            width: CANVAS_W,
-            height: CANVAS_H,
-            right: CANVAS_W,
-            bottom: CANVAS_H,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-        });
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('should render', () => {
-        const { container } = render(<PianoModel3D activeNotes={new Map()} sustainPedal={0} lidPosition={0.5} />);
-        expect(container.querySelector('canvas')).toBeTruthy();
-    });
-
-    it('keeps two simultaneously pressed notes independent (multi-touch chord)', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const onPreviewHoldChange = vi.fn<(held: boolean) => void>();
-        const { container } = render(
-            <PianoModel3D
-                activeNotes={new Map()}
-                sustainPedal={0}
-                lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
-                onPreviewHoldChange={onPreviewHoldChange}
-            />
+        vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(
+            new DOMRect(0, 0, CANVAS_W, CANVAS_H)
         );
-        const canvas = container.querySelector('canvas')!;
-
-        // Two fingers land on two different keys.
-        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: KEY_A.x, clientY: KEY_A.y });
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true]]);
-        fireEvent.pointerDown(canvas, { pointerId: 2, clientX: KEY_B.x, clientY: KEY_B.y });
-
-        expect(onNoteOn).toHaveBeenCalledTimes(2);
-        const noteA = onNoteOn.mock.calls[0]![0];
-        const noteB = onNoteOn.mock.calls[1]![0];
-        expect(noteA).not.toBe(noteB);
-
-        // Lift the first finger — only its note releases; the second is held.
-        fireEvent.pointerUp(canvas, { pointerId: 1, clientX: KEY_A.x, clientY: KEY_A.y });
-        expect(onNoteOff).toHaveBeenCalledTimes(1);
-        expect(onNoteOff).toHaveBeenCalledWith(noteA);
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true]]);
-
-        // Lift the second finger — its own note releases.
-        fireEvent.pointerUp(canvas, { pointerId: 2, clientX: KEY_B.x, clientY: KEY_B.y });
-        expect(onNoteOff).toHaveBeenCalledTimes(2);
-        expect(onNoteOff).toHaveBeenCalledWith(noteB);
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true], [false]]);
     });
 
-    it('releases a held note via the window fallback when capture is a no-op', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const { container } = render(
-            <PianoModel3D
-                activeNotes={new Map()}
-                sustainPedal={0}
-                lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
-            />
-        );
-        const canvas = container.querySelector('canvas')!;
+    afterEach(() => vi.restoreAllMocks());
 
-        fireEvent.pointerDown(canvas, { pointerId: 7, clientX: KEY_A.x, clientY: KEY_A.y });
-        expect(onNoteOn).toHaveBeenCalledTimes(1);
-        const note = onNoteOn.mock.calls[0]![0];
-
-        // Capture silently no-ops in some environments: the canvas never gets
-        // pointerup, only the window does. The fallback listener must release.
-        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7 }));
-        expect(onNoteOff).toHaveBeenCalledTimes(1);
-        expect(onNoteOff).toHaveBeenCalledWith(note);
-    });
-
-    it('does not double-release when both canvas and window see pointerup', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const { container } = render(
-            <PianoModel3D
-                activeNotes={new Map()}
-                sustainPedal={0}
-                lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
-            />
-        );
-        const canvas = container.querySelector('canvas')!;
-
-        fireEvent.pointerDown(canvas, { pointerId: 3, clientX: KEY_A.x, clientY: KEY_A.y });
-        fireEvent.pointerUp(canvas, { pointerId: 3, clientX: KEY_A.x, clientY: KEY_A.y });
-        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3 }));
-
-        expect(onNoteOff).toHaveBeenCalledTimes(1);
-    });
-
-    it.each(['blur', 'lostpointercapture'] as const)('keeps the acquired release route after %s', (interruption) => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const replacementNoteOff = vi.fn<(midi: number) => void>();
-        const onPreviewHoldChange = vi.fn<(held: boolean) => void>();
-        const props = {
-            activeNotes: new Map(),
-            sustainPedal: 0,
-            lidPosition: 0.5,
-            onNoteOn,
-            onNoteOff,
-            onPreviewHoldChange,
-        };
-        const { container, rerender } = render(<PianoModel3D {...props} />);
-        const canvas = container.querySelector('canvas')!;
-        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
-        fireEvent.pointerDown(canvas, { pointerId: 5, clientX: KEY_B.x, clientY: KEY_B.y });
-        expect(onNoteOn.mock.calls).toHaveLength(2);
-        const heldNotes = onNoteOn.mock.calls.map(([note]) => note);
-        expect(new Set(heldNotes).size).toBe(2);
-
-        rerender(<PianoModel3D {...props} onNoteOff={replacementNoteOff} />);
-        if (interruption === 'blur') {
-            fireEvent.blur(window);
-        } else {
-            fireEvent(canvas, new PointerEvent(interruption, { bubbles: true, pointerId: 4 }));
-        }
-        expect(onNoteOff).not.toHaveBeenCalled();
-        expect(replacementNoteOff).not.toHaveBeenCalled();
-        expect(onPreviewHoldChange.mock.calls).toEqual(interruption === 'blur' ? [[true], [false]] : [[true]]);
-
-        fireEvent.pointerCancel(window, { pointerId: 5 });
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true], [false]]);
-        expect(onNoteOff.mock.calls).toEqual([[heldNotes[1]]]);
-        fireEvent.pointerUp(canvas, { pointerId: 4 });
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true], [false]]);
-        expect(onNoteOff.mock.calls).toEqual([[heldNotes[1]], [heldNotes[0]]]);
-        expect(replacementNoteOff).not.toHaveBeenCalled();
-    });
-
-    it('releases the interrupted note when a reused pointer misses the keyboard', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
+    it('releases each acquired voice once through canvas and window endings', () => {
+        const releaseA = vi.fn();
+        const releaseB = vi.fn();
+        const start = vi.fn().mockReturnValueOnce(releaseA).mockReturnValueOnce(releaseB);
+        const hold = vi.fn();
         const { getByLabelText } = render(
             <PianoModel3D
                 activeNotes={new Map()}
                 sustainPedal={0}
                 lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
+                onPreviewNote={start}
+                onPreviewHoldChange={hold}
             />
         );
         const canvas = getByLabelText('Grand Boule interactive piano');
-        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
-        expect(onNoteOn).toHaveBeenCalledOnce();
-        const firstNote = onNoteOn.mock.calls[0]?.[0];
-        fireEvent.blur(window);
-        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: 0, clientY: 0 });
-        expect(onNoteOn).toHaveBeenCalledOnce();
-        expect(onNoteOff).not.toHaveBeenCalled();
-
-        fireEvent.pointerUp(window, { pointerId: 4 });
-        expect(onNoteOff.mock.calls).toEqual([[firstNote]]);
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: KEY_A.x, clientY: KEY_A.y });
+        fireEvent.pointerDown(canvas, { pointerId: 2, clientX: KEY_B.x, clientY: KEY_B.y });
+        expect(start).toHaveBeenCalledTimes(2);
+        expect(start.mock.calls[0]?.[0]).not.toBe(start.mock.calls[1]?.[0]);
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+        fireEvent.pointerUp(window, { pointerId: 1 });
+        expect(releaseA).toHaveBeenCalledOnce();
+        expect(releaseB).not.toHaveBeenCalled();
+        expect(hold.mock.calls).toEqual([[true]]);
+        fireEvent.pointerCancel(window, { pointerId: 2 });
+        expect(releaseB).toHaveBeenCalledOnce();
+        expect(hold.mock.calls).toEqual([[true], [false]]);
     });
 
-    it('starts a fresh preview when a pointer ID is reused after interruption without a terminal event', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const onPreviewHoldChange = vi.fn<(held: boolean) => void>();
+    it.each(['blur', 'lostpointercapture'] as const)('settles the acquired voice on %s', (event) => {
+        const release = vi.fn();
+        const replacement = vi.fn();
+        const start = vi.fn(() => release);
+        const props = { activeNotes: new Map(), sustainPedal: 0, lidPosition: 0.5, onPreviewNote: start };
+        const { getByLabelText, rerender } = render(<PianoModel3D {...props} />);
+        const canvas = getByLabelText('Grand Boule interactive piano');
+        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
+        rerender(<PianoModel3D {...props} onPreviewNote={() => replacement} />);
+        if (event === 'blur') {
+            fireEvent.blur(window);
+        } else {
+            fireEvent(canvas, new PointerEvent(event, { bubbles: true, pointerId: 4 }));
+        }
+        expect(release).toHaveBeenCalledOnce();
+        fireEvent.pointerUp(window, { pointerId: 4 });
+        expect(release).toHaveBeenCalledOnce();
+        expect(replacement).not.toHaveBeenCalled();
+    });
+
+    it('settles the old strike before a pointer ID is reused', () => {
+        const first = vi.fn();
+        const second = vi.fn();
+        const start = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
         const { getByLabelText } = render(
-            <PianoModel3D
-                activeNotes={new Map()}
-                sustainPedal={0}
-                lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
-                onPreviewHoldChange={onPreviewHoldChange}
-            />
+            <PianoModel3D activeNotes={new Map()} sustainPedal={0} lidPosition={0.5} onPreviewNote={start} />
         );
         const canvas = getByLabelText('Grand Boule interactive piano');
         fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
         fireEvent.blur(window);
         fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_B.x, clientY: KEY_B.y });
-        expect(onNoteOn).toHaveBeenCalledTimes(2);
-        const [firstNote, secondNote] = onNoteOn.mock.calls.map(([midi]) => midi);
-        expect(firstNote).not.toBe(secondNote);
-        expect(onNoteOff).not.toHaveBeenCalled();
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true], [false], [true]]);
-
+        expect(first).toHaveBeenCalledOnce();
+        expect(second).not.toHaveBeenCalled();
         fireEvent.pointerUp(canvas, { pointerId: 4 });
-        expect(onNoteOff.mock.calls).toEqual([[secondNote]]);
-        expect(onPreviewHoldChange.mock.calls).toEqual([[true], [false], [true], [false]]);
+        expect(second).toHaveBeenCalledOnce();
     });
 
-    it('unmounts without issuing a Note Off or leaving window release listeners', () => {
-        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
-        const onNoteOff = vi.fn<(midi: number) => void>();
-        const { getByLabelText, unmount } = render(
-            <PianoModel3D
-                activeNotes={new Map()}
-                sustainPedal={0}
-                lidPosition={0.5}
-                onNoteOn={onNoteOn}
-                onNoteOff={onNoteOff}
-            />
-        );
-        const canvas = getByLabelText('Grand Boule interactive piano');
-        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
-        expect(onNoteOn).toHaveBeenCalledOnce();
-
-        unmount();
-        expect(onNoteOff).not.toHaveBeenCalled();
+    it.each(['hide', 'unmount'] as const)('settles the acquired voice on %s', (ending) => {
+        const release = vi.fn();
+        const props = { activeNotes: new Map(), sustainPedal: 0, lidPosition: 0.5, onPreviewNote: () => release };
+        const { getByLabelText, rerender, unmount } = render(<PianoModel3D {...props} />);
+        fireEvent.pointerDown(getByLabelText('Grand Boule interactive piano'), {
+            pointerId: 4,
+            clientX: KEY_A.x,
+            clientY: KEY_A.y,
+        });
+        if (ending === 'hide') {
+            rerender(<PianoModel3D {...props} visible={false} />);
+        } else {
+            unmount();
+        }
+        expect(release).toHaveBeenCalledOnce();
         fireEvent.pointerUp(window, { pointerId: 4 });
-        expect(onNoteOff).not.toHaveBeenCalled();
+        expect(release).toHaveBeenCalledOnce();
     });
 
     it('announces the currently playing notes through a live region', () => {
@@ -245,9 +114,7 @@ describe('PianoModel3D', () => {
             [60, 0.8],
             [64, 0.8],
         ]);
-        const { container } = render(<PianoModel3D activeNotes={activeNotes} sustainPedal={0} lidPosition={0.5} />);
-        const live = container.querySelector('[role="status"][aria-live="polite"]');
-        expect(live).toBeTruthy();
-        expect(live?.textContent).toBe('Playing C4, E4');
+        const { getByRole } = render(<PianoModel3D activeNotes={activeNotes} sustainPedal={0} lidPosition={0.5} />);
+        expect(getByRole('status')).toHaveTextContent('Playing C4, E4');
     });
 });
