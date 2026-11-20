@@ -84,7 +84,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({ 'test-device': panelState, 'other-device': panelState })),
 }));
 
-vi.mock('../../../stores/levainStore', () => ({
+vi.mock('../../../stores/levainStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/levainStore')>()),
     defaultLevainState: { patch: { instrumentId: 'violin-1' } },
     levainStore: { name: 'levainStore', value: null },
     setCurrentArticulation: vi.fn(),
