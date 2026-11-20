@@ -6,8 +6,10 @@ import { GrooveExtractionActionError } from '../../errors/GrooveExtractionAction
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
 import { getGrooveSourceClipName } from '../../useCases/grooveTemplates/getGrooveSourceClipName';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
+import { hasSameGrooveContent } from '../../useCases/grooveTemplates/hasSameGrooveContent';
 import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
+import { resolveGrooveExtractionTemplateId } from '../../useCases/grooveTemplates/resolveGrooveExtractionTemplateId';
 
 import { isExtractGrooveSessionEntry, isMaterializedExtractGroovePayload } from './validateExtractGrooveCommand';
 
@@ -33,12 +35,32 @@ function templatesEqual(left: ExtractedGrooveTemplate, right: ExtractedGrooveTem
     return valuesEqual(left, right);
 }
 
+function resolveTemplateId(action: ExtractGrooveAction): string {
+    return (
+        action.payload.templateId ??
+        resolveGrooveExtractionTemplateId({
+            clipId: action.payload.clipId,
+            sourceName: action.payload.sourceName ?? action.payload.clipId,
+            subdivision: action.payload.subdivision ?? '1/16',
+        })
+    );
+}
+
+/** A proposal that is the very template the pool holds, pinned because the resolver reused that version. */
+function pinsExistingVersion(
+    existing: ExtractedGrooveTemplate | undefined,
+    proposal: ExtractedGrooveTemplate,
+    extracted: ExtractedGrooveTemplate
+): boolean {
+    return existing !== undefined && templatesEqual(existing, proposal) && hasSameGrooveContent(existing, extracted);
+}
+
 function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     const result = prepareGrooveExtraction({
         clipId: action.payload.clipId,
         sourceName: action.payload.sourceName ?? action.payload.clipId,
         subdivision: action.payload.subdivision ?? '1/16',
-        templateId: action.payload.templateId ?? `groove-${action.payload.clipId}-v1`,
+        templateId: resolveTemplateId(action),
     });
     if (action.payload.proposal && action.payload.sourceRevision !== result.sourceRevision) {
         return { outcome: 'diverged', code: 'source-revision-mismatch' };
@@ -67,15 +89,27 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     if (result.status === 'straight') {
         return { outcome: 'straight' };
     }
-    if (action.payload.proposal && !templatesEqual(result.template, action.payload.proposal)) {
+    const proposal = action.payload.proposal;
+    const existingForResult = getGrooveTemplate(result.template.id);
+    if (
+        proposal &&
+        !templatesEqual(result.template, proposal) &&
+        !pinsExistingVersion(existingForResult, proposal, result.template)
+    ) {
         return { outcome: 'diverged', code: 'proposal-mismatch' };
     }
-    const template = action.payload.proposal ?? result.template;
+    const template = proposal ?? result.template;
     const existing = getGrooveTemplate(template.id);
     if (!existing) {
         return { outcome: 'create', template };
     }
     if (templatesEqual(existing, template)) {
+        return { outcome: 'identical' };
+    }
+    // Only an id the resolver chose may differ in name: the name is derived from the pool, so it moves
+    // when another template is deleted. An explicit or pinned id holding the same notes under another
+    // name is a collaborator's template and stays a conflict.
+    if (action.payload.templateId === undefined && proposal === undefined && hasSameGrooveContent(existing, template)) {
         return { outcome: 'identical' };
     }
     return { outcome: 'diverged', code: 'template-identity-conflict' };
@@ -90,16 +124,24 @@ function pinExtraction(action: ExtractGrooveAction): void {
     if (action.payload.proposal !== undefined) {
         return;
     }
+    const templateId = resolveTemplateId(action);
     const result = prepareGrooveExtraction({
         clipId: action.payload.clipId,
         sourceName: action.payload.sourceName ?? action.payload.clipId,
         subdivision: action.payload.subdivision ?? '1/16',
-        templateId: action.payload.templateId ?? `groove-${action.payload.clipId}-v1`,
+        templateId,
     });
     if (result.status !== 'extracted') {
         return;
     }
-    action.payload = { ...action.payload, proposal: result.template, sourceRevision: result.sourceRevision };
+    const resolvedExisting = action.payload.templateId === undefined ? getGrooveTemplate(templateId) : undefined;
+    const reused = resolvedExisting && hasSameGrooveContent(resolvedExisting, result.template);
+    action.payload = {
+        ...action.payload,
+        templateId,
+        proposal: reused ? structuredClone(resolvedExisting) : result.template,
+        sourceRevision: result.sourceRevision,
+    };
 }
 
 /** Why an extraction cannot run against the project, or null when it creates, finds or needs no template. */

@@ -308,6 +308,11 @@ describe('GrooveDropTarget', () => {
         firstView.unmount();
 
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
         createGrooveTemplate({
             id: 'groove-clip-source-v1',
             name: 'Source clip groove',
@@ -315,11 +320,6 @@ describe('GrooveDropTarget', () => {
             slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
             provenance: { type: 'user', sourceId: 'identity-conflict' },
         });
-        render(<GrooveDropTarget />);
-        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
-            dataTransfer: createDataTransfer('clip-source'),
-        });
-        await screen.findByText('Previewing “Source clip groove”');
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
         expect(await screen.findByRole('alert')).toHaveTextContent(

@@ -14,6 +14,7 @@ import {
     humanizeNotes,
     moveMidiNote,
     removeMidiNote,
+    resolveGrooveExtractionPin,
     restoreStrumOriginals,
     setNoteVelocity,
     setNotesForClip,
@@ -108,6 +109,11 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     applyGrooveToClip: vi.fn(),
     extractGrooveFromClip: vi.fn(),
     snapClipToScale: vi.fn(),
+    resolveGrooveExtractionPin: vi.fn(({ clipId }: { clipId: string }) => ({
+        templateId: `groove-${clipId}-v1`,
+        template: undefined,
+        extraction: { status: 'empty', sourceRevision: 'rev-fresh' },
+    })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -642,6 +648,60 @@ describe('PianoRollContextMenu', () => {
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'applyGroove',
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
+            })
+        );
+    });
+
+    it('extracts under the id the clip resolves, never a freshly minted one', async () => {
+        vi.mocked(resolveGrooveExtractionPin).mockReturnValueOnce({
+            templateId: 'groove-clip-9-v2',
+            template: undefined,
+            extraction: { status: 'empty', sourceRevision: 'rev-fresh' },
+        });
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-9" />);
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+
+        await waitFor(() =>
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'extractGroove',
+                payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v2' },
+            })
+        );
+        expect(resolveGrooveExtractionPin).toHaveBeenCalledWith({
+            clipId: 'clip-9',
+            sourceName: 'clip-9',
+            subdivision: '1/16',
+        });
+    });
+
+    it('pins the stored template and the note revision when the clip reuses an existing version', async () => {
+        const stored = {
+            id: 'groove-clip-9-v2',
+            name: 'Source groove 2',
+            schemaVersion: 1 as const,
+            subdivision: '1/16' as const,
+            slots: [{ index: 0, timingOffset: 0.08, dynamicsOffset: 0 }],
+            provenance: { type: 'midi-clip' as const, sourceId: 'clip-9', analyzerVersion: 1 },
+        };
+        vi.mocked(resolveGrooveExtractionPin).mockReturnValueOnce({
+            templateId: 'groove-clip-9-v2',
+            template: stored,
+            extraction: { status: 'empty', sourceRevision: 'rev-notes' },
+        });
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-9" />);
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+
+        await waitFor(() =>
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'extractGroove',
+                payload: {
+                    clipId: 'clip-9',
+                    templateId: 'groove-clip-9-v2',
+                    proposal: stored,
+                    sourceRevision: 'rev-notes',
+                },
             })
         );
     });
