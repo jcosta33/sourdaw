@@ -121,9 +121,9 @@ describe('active root installations', () => {
         });
         repository.insertDoc('root', view(current, initialHeads));
         expect(repository.getHeads('root')).toEqual(initialHeads);
-        expect(() => repository.captureDocIncremental('root', initialHeads)).toThrow(
-            'Cannot export incremental bytes for outdated document root'
-        );
+        await expect(
+            repository.capturePersistenceIncrementals(new Map([['root', initialHeads]]), new AbortController().signal)
+        ).rejects.toThrow('Cannot export incremental bytes for outdated document root');
 
         ControlledWorker.onPostMessage = (worker, request) => {
             if (request.type === 'loadBundle') {

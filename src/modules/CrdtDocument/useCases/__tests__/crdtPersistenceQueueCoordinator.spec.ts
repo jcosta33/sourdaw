@@ -29,7 +29,8 @@ const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnaps
             mergeBundle: vi.fn(),
             saveAll: vi.fn(),
             capturePersistenceBundle: vi.fn(),
-            captureDocIncremental: vi.fn(),
+            capturePersistenceIncrementals: vi.fn().mockResolvedValue([]),
+            getDocumentIdentityEpoch: vi.fn(() => 0),
             getHeads: vi.fn<(id: string) => string[]>(() => []),
             reserveSnapshotTransactionDocuments: vi.fn(),
             transactSnapshot: vi.fn(async (operation: (transaction: object) => Promise<void>) => {
@@ -185,8 +186,8 @@ describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist do
     beforeEach(async () => {
         await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
-        mockAutomergeRepo.captureDocIncremental.mockClear();
-        mockAutomergeRepo.captureDocIncremental.mockReturnValue(undefined);
+        mockAutomergeRepo.capturePersistenceIncrementals.mockClear();
+        mockAutomergeRepo.capturePersistenceIncrementals.mockResolvedValue([]);
         mockAutomergeRepo.getHeads.mockClear();
         mockAutomergeRepo.getHeads.mockReturnValue(['head-1']);
         vi.mocked(flushAutomergeStorageWrites).mockClear();
@@ -221,7 +222,7 @@ describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist do
 
         expect(flushAutomergeStorageWrites).toHaveBeenCalled();
         const flushOrder = vi.mocked(flushAutomergeStorageWrites).mock.invocationCallOrder[0];
-        const saveOrder = mockAutomergeRepo.captureDocIncremental.mock.invocationCallOrder[0];
+        const saveOrder = mockAutomergeRepo.capturePersistenceIncrementals.mock.invocationCallOrder[0];
         expect(flushOrder).toBeDefined();
         expect(saveOrder).toBeDefined();
         expect(flushOrder as number).toBeLessThan(saveOrder as number);
@@ -248,8 +249,8 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
     beforeEach(async () => {
         await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
-        mockAutomergeRepo.captureDocIncremental.mockClear();
-        mockAutomergeRepo.captureDocIncremental.mockReturnValue(undefined);
+        mockAutomergeRepo.capturePersistenceIncrementals.mockClear();
+        mockAutomergeRepo.capturePersistenceIncrementals.mockResolvedValue([]);
         mockAutomergeRepo.capturePersistenceBundle.mockClear();
         mockAutomergeRepo.capturePersistenceBundle.mockResolvedValue({ bundle: new Map(), headsByDoc: new Map() });
         mockSaveAllToIdb.mockClear();
@@ -296,10 +297,13 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
         // Leaves a chunk pending from a failed prior incremental attempt, so
         // `compactCrdtProject`'s own `await flushPendingChunks(generation)`
         // has real work to do rather than the no-op an empty queue gives it.
-        mockAutomergeRepo.captureDocIncremental.mockReturnValueOnce({
-            chunk: new Uint8Array([1, 2, 3]),
-            heads: ['captured-head'],
-        });
+        mockAutomergeRepo.capturePersistenceIncrementals.mockResolvedValueOnce([
+            {
+                id: 'root',
+                chunk: new Uint8Array([1, 2, 3]),
+                heads: ['captured-head'],
+            },
+        ]);
         mockSaveIncrementals.mockClear();
         mockSaveIncrementals.mockImplementationOnce(() =>
             Promise.reject(new Error('simulated transient chunk failure'))
@@ -371,11 +375,14 @@ describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still 
     beforeEach(async () => {
         await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
-        mockAutomergeRepo.captureDocIncremental.mockClear();
-        mockAutomergeRepo.captureDocIncremental.mockReturnValue({
-            chunk: new Uint8Array([1, 2, 3]),
-            heads: ['captured-head'],
-        });
+        mockAutomergeRepo.capturePersistenceIncrementals.mockClear();
+        mockAutomergeRepo.capturePersistenceIncrementals.mockResolvedValue([
+            {
+                id: 'root',
+                chunk: new Uint8Array([1, 2, 3]),
+                heads: ['captured-head'],
+            },
+        ]);
         mockSaveIncrementals.mockClear();
         mockSaveIncrementals.mockResolvedValue({
             status: 'committed',
@@ -496,12 +503,15 @@ describe('crdtPersistenceQueueCoordinator / a project replacement claims the aut
     // recognise the target it recorded.
     it('writes the replacement as a full snapshot rather than an incremental while its epoch is pending', async () => {
         mockSaveIncrementals.mockClear();
-        mockAutomergeRepo.captureDocIncremental.mockClear();
+        mockAutomergeRepo.capturePersistenceIncrementals.mockClear();
         // A real chunk, so the incremental route would have something to commit.
-        mockAutomergeRepo.captureDocIncremental.mockReturnValue({
-            chunk: new Uint8Array([7, 8, 9]),
-            heads: ['captured-head'],
-        });
+        mockAutomergeRepo.capturePersistenceIncrementals.mockResolvedValue([
+            {
+                id: 'root',
+                chunk: new Uint8Array([7, 8, 9]),
+                heads: ['captured-head'],
+            },
+        ]);
         crdtPersistenceQueueCoordinator.beginReplacement({ epoch: replacementEpoch, old: outgoingAuthority });
 
         await crdtPersistenceQueueCoordinator.runOperation('incremental');

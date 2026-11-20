@@ -667,15 +667,7 @@ function assertPersistenceConflictCanMerge(expected: CrdtPersistenceAuthority, a
 }
 
 function getSortedDocumentIds(documentIds: Iterable<DocId>): DocId[] {
-    return [...documentIds].sort((alpha, bravo) => {
-        if (alpha < bravo) {
-            return -1;
-        }
-        if (alpha > bravo) {
-            return 1;
-        }
-        return 0;
-    });
+    return Array.from(documentIds).sort();
 }
 
 function getDurableDocumentIds(bundle: DocumentBundle): DocId[] {
@@ -789,6 +781,8 @@ async function persistIncrementalCrdtProject(
         return;
     }
 
+    const identityEpoch = automergeRepository.getDocumentIdentityEpoch();
+    const { signal } = persistenceState.persistenceAbortController;
     const activeDocIds = getActiveDocIds();
     if (activeDocIds.length === 0) {
         if (persistenceState.persistedBaseDocIds.size > 0) {
@@ -813,9 +807,7 @@ async function persistIncrementalCrdtProject(
     // it further.
     sessionUndoWitnessStampPort.stamp();
 
-    capturePendingIncrementalChunks(activeDocIds, generation);
-
-    await flushPendingChunks(generation, attempt);
+    await captureAndFlushIncrementalChunks(generation, identityEpoch, signal, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -825,22 +817,38 @@ async function persistIncrementalCrdtProject(
     }
 }
 
-function capturePendingIncrementalChunks(activeDocIds: readonly DocId[], generation: number): void {
-    for (const id of activeDocIds) {
-        const captured = automergeRepository.captureDocIncremental(id, persistenceState.exportFrontiers.get(id) ?? []);
-        if (!captured) {
-            continue;
+async function captureAndFlushIncrementalChunks(
+    generation: number,
+    identityEpoch: number,
+    signal: AbortSignal,
+    attempt: PersistenceAttempt
+): Promise<void> {
+    const { exportFrontiers, pendingChunks } = persistenceState;
+    const captured = await automergeRepository
+        .capturePersistenceIncrementals(exportFrontiers, signal)
+        .catch((error: unknown) => {
+            if (signal.aborted || identityEpoch !== automergeRepository.getDocumentIdentityEpoch()) {
+                return [];
+            }
+            throw error;
+        });
+    const superseded = signal.aborted || generation !== persistenceState.persistenceGeneration;
+    if (superseded || identityEpoch !== automergeRepository.getDocumentIdentityEpoch()) {
+        if (attempt.durable.write === 'noop') {
+            attempt.durable = { write: 'none' };
         }
-        if (captured.chunk.length > 0) {
-            persistenceState.pendingChunks.push({
-                generation,
-                id,
-                chunk: captured.chunk,
-                inFlight: false,
-            });
+        if (superseded) {
+            return;
         }
-        persistenceState.exportFrontiers.set(id, captured.heads);
+        throw new Error('[CrdtPersistence] Document identity changed during incremental capture');
     }
+    for (const { id, heads, chunk } of captured) {
+        if (chunk.length > 0) {
+            pendingChunks.push({ generation, id, chunk, inFlight: false });
+        }
+        exportFrontiers.set(id, heads);
+    }
+    await flushPendingChunks(generation, attempt);
 }
 
 /** See `persistIncrementalCrdtProject`'s `settlePendingWrites` doc. */

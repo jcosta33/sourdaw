@@ -1,7 +1,21 @@
-import { change, getHeads, init, load, loadIncremental, merge, save } from '@automerge/automerge';
+import {
+    change,
+    free,
+    getChangesSince,
+    getHeads,
+    getMissingDeps,
+    init,
+    load,
+    loadIncremental,
+    merge,
+    save,
+} from '@automerge/automerge';
+
+import { isRecord } from '#/utils/structuralEquality';
 
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 
+import type { EncodedIncrementalFrames, IncrementalEncodingInput } from '../../models/IncrementalPersistenceEncoding';
 import type { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
 export type BundleEntry = [string, Uint8Array];
@@ -37,13 +51,24 @@ export type InspectCheckpointRootMediaRequest = {
     rootBytes: Uint8Array;
 };
 
+export type EncodeIncrementalsRequest = {
+    id: number;
+    type: 'encodeIncrementals';
+    documents: IncrementalEncodingInput[];
+};
+
 export type WorkerRequest =
-    LoadBundleRequest | MergeBundleRequest | CompactShadowRequest | InspectCheckpointRootMediaRequest;
+    | LoadBundleRequest
+    | MergeBundleRequest
+    | CompactShadowRequest
+    | InspectCheckpointRootMediaRequest
+    | EncodeIncrementalsRequest;
 
 export type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: BundleEntry[]; rootId: string }
     | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: BundleEntry[] }
+    | { id: number; type: 'incrementalsEncoded'; documents: EncodedIncrementalFrames[] }
     | { id: number; type: 'compactStale'; reason: string }
     | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] };
 
@@ -85,6 +110,19 @@ const shadowReplica = new Map<string, ReturnType<typeof load<Record<string, unkn
 
 function sameHeads(left: string[], right: string[]): boolean {
     return left.length === right.length && [...left].sort().every((hash, index) => hash === [...right].sort()[index]);
+}
+
+function isIncrementalEncodingInput(value: unknown): value is IncrementalEncodingInput {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        value.seed instanceof Uint8Array &&
+        value.seed.buffer instanceof ArrayBuffer &&
+        Array.isArray(value.heads) &&
+        value.heads.every((hash: unknown) => typeof hash === 'string') &&
+        Array.isArray(value.frontier) &&
+        value.frontier.every((hash: unknown) => typeof hash === 'string')
+    );
 }
 
 function parseWorkerRequest(value: unknown): WorkerRequest {
@@ -130,6 +168,14 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
     if (value.type === 'inspectCheckpointRootMedia' && 'rootBytes' in value && value.rootBytes instanceof Uint8Array) {
         return { id: value.id, type: value.type, rootBytes: value.rootBytes };
     }
+    if (
+        value.type === 'encodeIncrementals' &&
+        'documents' in value &&
+        Array.isArray(value.documents) &&
+        value.documents.every(isIncrementalEncodingInput)
+    ) {
+        return { id: value.id, type: value.type, documents: value.documents };
+    }
     throw new TypeError('Expected a supported worker request');
 }
 
@@ -174,7 +220,11 @@ export class ControlledWorker {
         if (this.failed) {
             throw new Error('postMessage called on a failed worker');
         }
-        const request = parseWorkerRequest(value);
+        let request = parseWorkerRequest(value);
+        if (request.type === 'encodeIncrementals') {
+            const transfer = Array.isArray(transferOrOptions) ? transferOrOptions : transferOrOptions?.transfer;
+            request = structuredClone(request, { transfer });
+        }
         this.posted.push(request);
         this.postMessageTransferArguments.push(transferOrOptions);
         ControlledWorker.onPostMessage?.(this, request);
@@ -206,6 +256,24 @@ export class ControlledWorker {
             }
         }
     }
+}
+
+function encodeIncrementalFrames({ id, seed, heads, frontier }: IncrementalEncodingInput): EncodedIncrementalFrames {
+    const document = load(seed);
+    try {
+        if (!sameHeads(getHeads(document), heads)) {
+            throw new Error(`Expected exact incremental seed heads for ${id}`);
+        }
+        const prior = getMissingDeps(document, frontier).length === 0 ? frontier : [];
+        return { id, heads, frames: getChangesSince(document, prior).map((frame) => Uint8Array.from(frame)) };
+    } finally {
+        free(document);
+    }
+}
+
+export function respondToEncodeIncrementals(worker: ControlledWorker, request: EncodeIncrementalsRequest): void {
+    const documents = request.documents.map(encodeIncrementalFrames);
+    worker.emitMessage({ id: request.id, type: 'incrementalsEncoded', documents });
 }
 
 export function respondToLoad(worker: ControlledWorker, request: LoadBundleRequest): void {
