@@ -240,9 +240,9 @@ impl UiThread for JsUiThread {
         })
     }
 
-    fn run_posted_work(&self) {
+    fn run_posted_releases(&self) {
         if self.is_ui_thread() {
-            self.posted.drain();
+            self.posted.drain_releases();
         }
     }
 }
@@ -287,8 +287,8 @@ impl UiThread for JsWindowHost {
         self.ui.run_on_ui_thread(task)
     }
 
-    fn run_posted_work(&self) {
-        self.ui.run_posted_work();
+    fn run_posted_releases(&self) {
+        self.ui.run_posted_releases();
     }
 }
 

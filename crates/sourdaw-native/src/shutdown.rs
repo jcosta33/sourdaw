@@ -305,7 +305,7 @@ fn reclaim_until_waiting_budget_is_spent(
         // here, or the worker waits out its deadline and the process exits
         // with that runtime never torn down.
         if editor_thread.is_ui_thread() {
-            editor_thread.run_posted_work();
+            editor_thread.run_posted_releases();
         }
         app_state.sweep_retired_engine_plugins(editor_thread);
 
@@ -963,8 +963,8 @@ mod tests {
             })
         }
 
-        fn run_posted_work(&self) {
-            self.posted.drain();
+        fn run_posted_releases(&self) {
+            self.posted.drain_releases();
         }
     }
 
@@ -1072,6 +1072,62 @@ mod tests {
         );
         assert!(report.abandoned_instances.is_empty());
         assert_eq!(report.unreclaimed_retirements, 0);
+    }
+
+    /// The cascade runs releases and nothing else. Any other posted task is an
+    /// editor call a worker made under its control claim; running it during the
+    /// quit would open an editor after the close pass, or hold the cascade on a
+    /// plugin call it cannot bound. It stays queued for the pump.
+    #[test]
+    fn the_cascade_runs_a_posted_release_and_leaves_a_posted_editor_call_queued() {
+        let state = AppState::default();
+        let shell = posted_shell();
+        let torn_down_on = retire_runtime_recording_teardown_thread(&state);
+        let ui_thread = thread::current().id();
+        let call_ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        thread::scope(|scope| {
+            let ran = Arc::clone(&call_ran);
+            let call = scope.spawn(|| {
+                crate::host::ui_thread::call_on_ui_thread(&shell.host, move || {
+                    ran.store(true, Ordering::SeqCst);
+                })
+            });
+            shell
+                .hop_queued
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must post its editor call");
+            let sweep = scope.spawn(|| state.sweep_retired_engine_plugins(&shell.host));
+            shell
+                .hop_queued
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must post its release");
+
+            let report = shutdown_with_wait(
+                &CollabState::default(),
+                &MidiState::default(),
+                &state,
+                Some(&shell.host),
+                sleep_one_poll,
+            );
+
+            let torn_down = torn_down_on.lock().expect("teardown log").clone();
+            let call_ran_during_quit = call_ran.load(Ordering::SeqCst);
+            assert_eq!(torn_down, [ui_thread], "the release must run");
+            assert!(
+                !call_ran_during_quit,
+                "an editor call posted before the quit must not run inside the cascade"
+            );
+            assert!(report.abandoned_instances.is_empty());
+
+            // Still queued: the pump, once the cascade returns, runs it.
+            shell.host.posted.drain();
+            sweep.join().expect("the sweeping worker must not panic");
+            call.join()
+                .expect("the calling worker must not panic")
+                .expect("the pump ran the call it was left");
+            assert!(call_ran.load(Ordering::SeqCst));
+        });
     }
 
     /// The window before the hop is even posted: the worker has taken the

@@ -964,6 +964,7 @@ mod tests {
     /// the plugin's recorded flag.
     #[test]
     fn a_state_change_asked_during_a_cancelled_unload_is_carried_afterwards() {
+        let _guard = main_thread_callback_hint_guard();
         let wrapper = ClapWrapper::new_engine_owned_command_fixture("Dirty Fixture", vec![], false);
         wrapper
             .engine_owned_command_fixture_host_state()

@@ -10579,6 +10579,7 @@ mod tests {
 
     #[test]
     fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
