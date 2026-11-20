@@ -191,12 +191,10 @@ export function activateExternalPlugin({
         );
     }
     const activationEpoch = externalPluginActivationEpoch.current;
-    const activeTask = externalPluginActivationTasks.get(instanceId);
-    if (activeTask) {
-        return activeTask;
-    }
     // An Undo that restores a removed device can land while the removal's unload still waits on the
-    // native host: the instance reads loaded, yet the unload is about to forget it.
+    // native host, or still queues behind the instance's first load: the instance reads loaded, yet
+    // the unload is about to forget it, so joining an in-flight activation would answer for a plugin
+    // that is about to go.
     const pendingUnload = pendingKeyedUnloads.get(instanceId);
     if (pendingUnload) {
         const waited: DeferredActivation = {
@@ -209,6 +207,10 @@ export function activateExternalPlugin({
             () => resumeAfterUnload(waited),
             () => resumeAfterUnload(waited)
         );
+    }
+    const activeTask = externalPluginActivationTasks.get(instanceId);
+    if (activeTask) {
+        return activeTask;
     }
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
