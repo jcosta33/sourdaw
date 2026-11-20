@@ -337,6 +337,18 @@ describe('Fermenter whole-patch auditioning through Command', () => {
     }
 
     it('replays a mounted waveform choice as one owning edit', async () => {
+        const original = toFermenterDeviceState(initialPatch);
+        const originalChunk = { ...original, data: { ...original.data, metadata: { source: 'fixture' } } };
+        const changed = toFermenterDeviceState({ ...initialPatch, oscWaveform: 0 });
+        const changedChunk = { ...changed, data: { ...changed.data, metadata: { source: 'fixture' } } };
+        const track = projectedTrack();
+        replaceTrack({
+            ...track,
+            devices: track.devices.map((device) =>
+                device.id === DEVICE_ID ? { ...device, deviceState: originalChunk } : device
+            ),
+        });
+        flushAutomergeStorageWrites();
         await act(() => executeUserAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Lead' } }));
         renderPanel();
         fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
@@ -344,6 +356,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Sine' }));
         await waitFor(() => expect(depth()).toBe(2));
         expect(rawDevice().parameterValues.oscWaveform).toBe(0);
+        expect(rawDevice().deviceState).toEqual(changedChunk);
         expect(committedPatch().oscWaveform).toBe(0);
         expect(getFermenterState(DEVICE_ID).patch.oscWaveform).toBe(0);
         expect(audio.updateDevicePatch).toHaveBeenLastCalledWith(
@@ -351,15 +364,31 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             DEVICE_ID,
             expect.objectContaining({ osc_waveform: 0 })
         );
+        audio.updateDevicePatch.mockClear();
         await act(() => undo());
         expect(Object.hasOwn(rawDevice().parameterValues, 'oscWaveform')).toBe(false);
+        expect(rawDevice().deviceState).toEqual(originalChunk);
         expect(committedPatch()).toEqual(initialPatch);
+        expect(audio.updateDevicePatch).toHaveBeenCalledOnce();
+        expect(audio.updateDevicePatch).toHaveBeenLastCalledWith(
+            TRACK_ID,
+            DEVICE_ID,
+            expect.objectContaining({ osc_waveform: 1 })
+        );
         expect(screen.getByRole('button', { name: 'Saw' })).toHaveAttribute('aria-pressed', 'true');
         expect(depth()).toBe(1);
         expect(projectedTrack().name).toBe('Lead');
+        audio.updateDevicePatch.mockClear();
         await act(() => redo());
         expect(rawDevice().parameterValues.oscWaveform).toBe(0);
+        expect(rawDevice().deviceState).toEqual(changedChunk);
         expect(committedPatch().oscWaveform).toBe(0);
+        expect(audio.updateDevicePatch).toHaveBeenCalledOnce();
+        expect(audio.updateDevicePatch).toHaveBeenLastCalledWith(
+            TRACK_ID,
+            DEVICE_ID,
+            expect.objectContaining({ osc_waveform: 0 })
+        );
         expect(screen.getByRole('button', { name: 'Sine' })).toHaveAttribute('aria-pressed', 'true');
         expect(committedPatch(OTHER_DEVICE_ID)).toEqual(otherPatch);
     });
