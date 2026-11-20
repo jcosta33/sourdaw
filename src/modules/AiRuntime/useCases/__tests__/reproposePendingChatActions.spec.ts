@@ -431,6 +431,24 @@ describe('reproposePendingChatActions', () => {
         expect(mocks.transitionPhase).not.toHaveBeenCalled();
     });
 
+    // Red when the replacement card says only that it was re-previewed and drops the description of
+    // what it changes (#6551).
+    it('keeps the card description of the refreshed batch beside the re-preview sentence', async () => {
+        propose('confirmation-described');
+        mocks.refresh.mockReturnValue(readyRefresh(refreshedBatch));
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-described' })).resolves.toMatchObject({
+            status: 'reproposed',
+        });
+
+        const [persisted] = mocks.persistConfirmation.mock.calls.at(-1) ?? [];
+        const content = (persisted as { content?: string } | undefined)?.content ?? '';
+        expect(content.startsWith('This prompt requires confirmation before execution.')).toBe(true);
+        expect(content.match(/^- \*\*setTrackGain\*\*: /gmu)).toHaveLength(3);
+        expect(content.endsWith('\n\nRe-previewed against the current project.')).toBe(true);
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content }));
+    });
+
     // Red when a partial selection re-proposes actions its dependency closure never included.
     it('re-proposes only the selected groups and the prerequisites they drag in', async () => {
         propose('confirmation-partial');

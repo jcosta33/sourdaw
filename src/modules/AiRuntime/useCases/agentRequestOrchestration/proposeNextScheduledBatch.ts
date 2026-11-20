@@ -18,14 +18,14 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
-import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
 import { chooseVibeBatchValues, type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
-import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
+import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
+import { readVibeBatchValueSource } from '../vibeRun/readVibeBatchValueSource';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
@@ -270,14 +270,7 @@ async function proposeMeasuredVibeBatch(input: {
         commandBatch,
         envelope: parsedCommandBatch.envelope,
     });
-    const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
-    const cardLines = describeVibeBatchCard({
-        batch: input.batch,
-        context: grounded.context,
-        criteria: evaluation.criteria,
-        adoptedRecipes: grounded.result.adoptedRecipes ?? [],
-        valueChoice: input.valueChoice,
-    });
+    const vibeValueSource = readVibeBatchValueSource(input.valueChoice);
     persistPromptActionConfirmation({
         runId: run.runId,
         prompt: run.request,
@@ -297,7 +290,16 @@ async function proposeMeasuredVibeBatch(input: {
         group: commandGroup,
         projectRevision: grounded.revision,
         parsedCommandBatch,
-        content: [input.description.content, ...cardLines].join('\n'),
+        vibeValueSource,
+        content: composeVibeBatchCardContent({
+            descriptionContent: input.description.content,
+            batch: input.batch,
+            context: grounded.context,
+            state: proof.state,
+            commandBatch,
+            adoptedRecipes: grounded.result.adoptedRecipes ?? [],
+            valueSource: vibeValueSource,
+        }),
     });
     return { status: 'awaiting-approval' };
 }

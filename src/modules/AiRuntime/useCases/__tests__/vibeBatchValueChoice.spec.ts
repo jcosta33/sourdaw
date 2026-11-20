@@ -846,6 +846,90 @@ describe('when value requests are made', () => {
     });
 });
 
+describe('a re-previewed vibe batch card (#6551)', () => {
+    const FIGURE_LINE = 'Fresh approval preview on ';
+    const RE_PREVIEWED = 'Re-previewed against the current project.';
+
+    function lines(text: string): string[] {
+        return text.split('\n').filter((line) => line.trim() !== '');
+    }
+
+    /**
+     * Re-previews the only proposed card after the project moved and the drums now sound brighter
+     * than they did, so the fresh measurement reads other figures than the card showed.
+     */
+    async function rePreviewWithBrighterDrums(card: Confirmation): Promise<Confirmation> {
+        landProjectEdit(() => {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected the fixture project');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === VOCAL_ID ? { ...track, name: 'Vocal moved' } : track
+                ),
+            });
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) =>
+            renderTrack({
+                ...input,
+                renderTracks: input.renderTracks.map((track) => {
+                    if (track.id !== DRUMS_ID) {
+                        return track;
+                    }
+                    const brighter = {
+                        id: 'brighter-drums',
+                        name: 'Brighter',
+                        type: 'builtin-eq',
+                        bypassed: false,
+                        parameterValues: { 'eq-high-gain': 6 },
+                    };
+                    return { ...track, devices: [...track.devices, brighter] };
+                }),
+            })
+        );
+        await expect(reproposePendingChatActions({ confirmationId: card.id })).resolves.toMatchObject({
+            status: 'reproposed',
+        });
+        return requireOnlyProposedCard();
+    }
+
+    // Red when the re-preview replaces the card's text with the bare re-preview sentence, or carries
+    // the figure lines the old measurement read.
+    it.each<[string, typeof respond, string]>([
+        ['measurements', () => drumsChoice(), 'on Drums — values chosen from measurements.'],
+        [
+            'catalogue defaults',
+            () => ({
+                calls: [{ name: VIBE_BATCH_VALUE_KEEP_DEFAULTS_TOOL_NAME, arguments: { reason: 'Already warm.' } }],
+            }),
+            'Recipe values are catalogue defaults: the hosted provider declined to choose values (Already warm).',
+        ],
+    ])('keeps every line of its %s card and shows the fresh figures', async (_case, script, sourceLine) => {
+        respond = script;
+        const brief = await planRun();
+        await confirm(brief);
+        const card = requireOnlyProposedCard();
+        const before = lines(cardContent(card));
+        expect(before.some((line) => line.startsWith('Objective: '))).toBe(true);
+        expect(before.some((line) => line.startsWith('Expected on Drums: '))).toBe(true);
+        expect(before.some((line) => line.includes(sourceLine))).toBe(true);
+
+        const replacement = await rePreviewWithBrighterDrums(card);
+
+        const after = lines(cardContent(replacement));
+        expect(after).toEqual(expect.arrayContaining(before.filter((line) => !line.startsWith(FIGURE_LINE))));
+        const freshFigures = after.filter((line) => line.startsWith(FIGURE_LINE));
+        expect(freshFigures).toHaveLength(before.filter((line) => line.startsWith(FIGURE_LINE)).length);
+        expect(freshFigures.length).toBeGreaterThan(0);
+        expect(freshFigures.filter((line) => before.includes(line))).toEqual([]);
+        expect(after).toContain(RE_PREVIEWED);
+        expect(valueBodies).toHaveLength(1);
+        expect(replacement.approvalSnapshot.measuredPreview).toBeUndefined();
+    });
+});
+
 describe('readVibeBatchValueReply', () => {
     /** A window too narrow to hold any legal setting of a stepped parameter, beside an exact window. */
     const PAIRS: VibeBatchValuePair[] = [

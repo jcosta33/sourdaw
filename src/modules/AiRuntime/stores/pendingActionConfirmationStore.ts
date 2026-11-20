@@ -11,6 +11,7 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
+import { type VibeBatchValueSource } from '../models/VibeBatchValueSource';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
@@ -139,6 +140,8 @@ type PendingActionApprovalSnapshot = {
     protectionFacts?: ProposalProtectionFacts;
     /** The readings an ambiguous brief request offers; absent on every other card. */
     briefReadings?: BriefReadings;
+    /** Where a vibe-run batch card's recipe values came from, so a re-preview composes the card again; absent elsewhere. */
+    vibeValueSource?: VibeBatchValueSource;
 };
 
 type PendingActionBatchPosition = { index: number; total: number };
@@ -345,6 +348,7 @@ type ProposePendingActionConfirmationInput = {
     groundingBasis?: ProposalGroundingBasis;
     protectionFacts?: ProposalProtectionFacts;
     briefReadings?: BriefReadings;
+    vibeValueSource?: VibeBatchValueSource;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -394,6 +398,7 @@ export function proposePendingActionConfirmation(
         ...(input.groundingBasis === undefined ? {} : { groundingBasis: structuredClone(input.groundingBasis) }),
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
         ...(input.briefReadings === undefined ? {} : { briefReadings: structuredClone(input.briefReadings) }),
+        ...(input.vibeValueSource === undefined ? {} : { vibeValueSource: { ...input.vibeValueSource } }),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

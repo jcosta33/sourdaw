@@ -48,6 +48,8 @@ type PersistPromptActionConfirmationInput = {
     protectionFacts?: ConfirmationProposal['protectionFacts'];
     /** The readings an ambiguous brief request offers on this card. */
     briefReadings?: ConfirmationProposal['briefReadings'];
+    /** Where a vibe-run batch card's recipe values came from; present only on such a card. */
+    vibeValueSource?: ConfirmationProposal['vibeValueSource'];
     /** A id reserved earlier so a card it replaces can already name it; minted here when absent. */
     confirmationId?: string;
     executionMode: ConfirmationProposal['executionMode'];
@@ -188,6 +190,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             groundingBasis: input.groundingBasis,
             protectionFacts: input.protectionFacts,
             briefReadings: input.briefReadings,
+            vibeValueSource: input.vibeValueSource,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

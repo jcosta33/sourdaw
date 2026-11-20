@@ -3,6 +3,7 @@ import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ToolCallResult } from '../../models/ToolCallResult';
+import { type VibeBatchDefaultsReason } from '../../models/VibeBatchValueSource';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -14,9 +15,6 @@ import { buildVibeBatchCorrectionMessage } from './buildVibeBatchCorrectionMessa
 import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
 import { isHostedValueChoiceChain } from './isHostedValueChoiceChain';
 import { type VibeBatchPairValues, readVibeBatchValueReply } from './readVibeBatchValueReply';
-
-/** Why a batch expands at its catalogue defaults rather than at values the provider chose. */
-export type VibeBatchDefaultsReason = 'local-backend' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
 
 export type VibeBatchValueChoice =
     | { readonly source: 'measurements'; readonly pairs: readonly VibeBatchPairValues[] }
