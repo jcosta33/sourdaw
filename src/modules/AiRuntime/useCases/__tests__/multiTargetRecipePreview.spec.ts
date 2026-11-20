@@ -9,6 +9,7 @@ import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases'
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { chatStore } from '../../stores/chatStore';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
@@ -121,7 +122,7 @@ afterEach(() => {
 type PreviewSource = { recipeCallIds: string[] } | { recipeCallId: string };
 
 /** The intake turn: one vocal-dark objective per backing vocal, over the chorus. */
-function intakeCall(userMessage: string, schemas: Parameters<typeof generateToolPlanningOutcome>[2]) {
+function intakeCall(userMessage: string, schemas: readonly ToolSchema[]) {
     const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
     const base = selectCreativeInterpretationCall({
         catalog,
