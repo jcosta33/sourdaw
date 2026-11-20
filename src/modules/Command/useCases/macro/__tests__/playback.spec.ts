@@ -11,6 +11,18 @@ import { playMacro } from '../playback';
 
 registerKernelPorts();
 
+function hasStringType(value: unknown): value is Macro['actions'][number] {
+    return typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string';
+}
+
+function inheritedNameAction(): Macro['actions'][number] {
+    const parsed: unknown = JSON.parse('{"type":"constructor"}');
+    if (!hasStringType(parsed)) {
+        throw new Error('Fixture is not an action');
+    }
+    return parsed;
+}
+
 const STORAGE_KEY = 'sourdaw:macros';
 
 const { executeAppActionMock } = vi.hoisted(() => ({
@@ -50,6 +62,34 @@ describe('playMacro', () => {
         automationStore.set({ lanes: [] });
     });
 
+    const automationInsertion: Macro['actions'][number] = {
+        type: 'insertAutomationLanePoints',
+        payload: {
+            laneId: 'lane-1',
+            owner: { trackId: 'track-1', parameterId: 'volume' },
+            insertion: { kind: 'split', beat: 1 },
+        },
+    };
+    const levainIdentity: Macro['actions'][number] = {
+        type: 'setLevainIdentity',
+        payload: {
+            kind: 'articulation',
+            trackId: 'owner',
+            deviceId: 'levain',
+            deviceIds: ['levain'],
+            label: 'Select staccato',
+            missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+            before: { deviceState: null, parameterValues: {} },
+            after: {
+                deviceState: {
+                    version: 1,
+                    data: { instrumentId: 'violin-1', currentArticulation: 'staccato' },
+                },
+                parameterValues: {},
+            },
+        },
+    };
+
     it('should execute each action with a shared undo group', async () => {
         await playMacro('play-1');
 
@@ -71,33 +111,41 @@ describe('playMacro', () => {
     it('refuses a saved macro containing a Levain identity edit before dispatching any step', async () => {
         const saved: Macro = {
             ...macro,
-            actions: [
-                ...macro.actions,
-                {
-                    type: 'setLevainIdentity',
-                    payload: {
-                        kind: 'articulation',
-                        trackId: 'owner',
-                        deviceId: 'levain',
-                        deviceIds: ['levain'],
-                        label: 'Select staccato',
-                        missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
-                        before: { deviceState: null, parameterValues: {} },
-                        after: {
-                            deviceState: {
-                                version: 1,
-                                data: { instrumentId: 'violin-1', currentArticulation: 'staccato' },
-                            },
-                            parameterValues: {},
-                        },
-                    },
-                },
-            ],
+            actions: [...macro.actions, levainIdentity],
         };
         macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
 
         await expect(playMacro(saved.id)).rejects.toThrow('Levain identity changes are local edits.');
         expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a saved macro containing an automation lane insertion before dispatching any step', async () => {
+        const saved: Macro = { ...macro, actions: [...macro.actions, automationInsertion] };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Automation lane insertions are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('names the automation refusal first when a Levain edit precedes it', async () => {
+        const saved: Macro = { ...macro, actions: [levainIdentity, automationInsertion] };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Automation lane insertions are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('replays an action whose type is an inherited object name as recorded', async () => {
+        const inherited = inheritedNameAction();
+        macroStore.set({
+            macros: [{ ...macro, actions: [inherited] }],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await playMacro(macro.id);
+
+        expect(executeAppActionMock).toHaveBeenCalledTimes(1);
     });
 
     it('propagates settlement failure before dispatching any macro step', async () => {
