@@ -1,14 +1,63 @@
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { type projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
-
-import { baseRowAction, executeRows, rowAction } from './applyPianoRollTakeMenuAction';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 type FrozenPianoRollNoteOwner = NonNullable<ReturnType<PianoRollTakeNotes['ownersByViewId']['get']>>;
 
-type RowAction = ReturnType<typeof rowAction>;
-type BaseRowAction = ReturnType<typeof baseRowAction>;
+export type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
+export type BaseRowAction = Extract<AppAction, { type: 'replaceOriginalMidiBaseRow' }>;
+
+export function rowAction(owner: FrozenPianoRollNoteOwner, replacement: MidiNote | null): RowAction {
+    return {
+        type: 'replaceOriginalMidiTakeRow',
+        payload: {
+            laneId: owner.laneId,
+            takeId: owner.takeId,
+            sourceClipId: owner.sourceClipId,
+            rowId: owner.row.id,
+            rowKind: 'note',
+            copyScope: 'capture',
+            expected: owner.row,
+            replacement,
+            expectedSlotPresent: true,
+            replacementSlotPresent: true,
+        },
+    };
+}
+
+export function baseRowAction(
+    clipId: string,
+    row: MidiNote | null,
+    replacement: MidiNote | null,
+    options: { rowId?: string; expectedSlotPresent?: boolean } = {}
+): BaseRowAction {
+    return {
+        type: 'replaceOriginalMidiBaseRow',
+        payload: {
+            clipId,
+            rowId: options.rowId ?? row?.id ?? replacement?.id ?? '',
+            expected: row,
+            replacement,
+            expectedSlotPresent: options.expectedSlotPresent ?? true,
+            replacementSlotPresent: true,
+        },
+    };
+}
+
+export async function executeRows(
+    actions: readonly (RowAction | BaseRowAction)[],
+    label: string,
+    groupId = crypto.randomUUID()
+): Promise<boolean> {
+    if (actions.length === 0) {
+        return true;
+    }
+    const result = await executeAppActionBatch(actions, { groupId, groupLabel: label });
+    return result.status === 'committed' || result.status === 'committed-with-warning' || result.status === 'no-op';
+}
 
 type MoveOwner = {
     clipId: string;

@@ -17000,7 +17000,7 @@
     },
     "src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts": {
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
