@@ -98,6 +98,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     setDeviceState: noFallbackScope,
     setFermenterPatch: noFallbackScope,
     setGrandBouleDeviceState: noFallbackScope,
+    setToasterFactoryKit: noFallbackScope,
     createBus: noFallbackScope,
     createFolder: noFallbackScope,
     setSend: noFallbackScope,

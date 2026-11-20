@@ -265,6 +265,7 @@ export const macroReplayCreateByActionType: {
     setDeviceState: notAGeneratedCreate,
     setFermenterPatch: notAGeneratedCreate,
     setGrandBouleDeviceState: notAGeneratedCreate,
+    setToasterFactoryKit: notAGeneratedCreate,
     createBus: notAGeneratedCreate,
     createFolder: notAGeneratedCreate,
     setSend: notAGeneratedCreate,

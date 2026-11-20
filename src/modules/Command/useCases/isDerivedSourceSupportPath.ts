@@ -99,6 +99,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setDeviceState: noSupportPath,
     setFermenterPatch: noSupportPath,
     setGrandBouleDeviceState: noSupportPath,
+    setToasterFactoryKit: noSupportPath,
     createBus: noSupportPath,
     createFolder: noSupportPath,
     setSend: noSupportPath,

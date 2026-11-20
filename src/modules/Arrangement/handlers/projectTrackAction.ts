@@ -219,6 +219,7 @@ export const trackProjectionByActionType: {
     setDeviceState: keepTrack,
     setFermenterPatch: keepTrack,
     setGrandBouleDeviceState: keepTrack,
+    setToasterFactoryKit: keepTrack,
     createBus: keepTrack,
     createFolder: keepTrack,
     setSend: projectSendLevel,

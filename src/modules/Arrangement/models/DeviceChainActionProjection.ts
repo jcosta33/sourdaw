@@ -1,4 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
@@ -50,6 +52,45 @@ function projectReorderedDevice(chain: Device[], action: Extract<AppAction, { ty
     return chain;
 }
 
+function projectFermenterPatch(devices: Device[], action: Extract<AppAction, { type: 'setFermenterPatch' }>): Device[] {
+    const index = devices.findIndex((device) => device.id === action.payload.deviceId);
+    const current = devices[index];
+    const next =
+        current && projectCapturedDevicePatch(current, action.payload.expectedProject, action.payload.afterProject);
+    if (next) {
+        devices[index] = next;
+    }
+    return devices;
+}
+
+function projectToasterFactoryKit(
+    devices: Device[],
+    action: Extract<AppAction, { type: 'setToasterFactoryKit' }>
+): Device[] | null {
+    const { deviceId, deviceIds, before, after } = action.payload;
+    const index = devices.findIndex((device) => device.id === deviceId);
+    const current = devices[index];
+    if (
+        current?.type !== DEVICE_TYPE_IDS.toaster ||
+        !valuesEqual(
+            devices.map((device) => device.id),
+            deviceIds
+        )
+    ) {
+        return null;
+    }
+    const next = projectCapturedDevicePatch(
+        current,
+        { deviceState: before, parameterValues: {} },
+        { deviceState: after, parameterValues: {} }
+    );
+    if (!next) {
+        return null;
+    }
+    devices[index] = next;
+    return devices;
+}
+
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
 export function projectDeviceChainAction(
     trackId: string,
@@ -65,14 +106,10 @@ export function projectDeviceChainAction(
     }
     const devices = source.map((device) => structuredClone(device));
     if (action.type === 'setFermenterPatch') {
-        const index = devices.findIndex((device) => device.id === action.payload.deviceId);
-        const current = devices[index];
-        const next =
-            current && projectCapturedDevicePatch(current, action.payload.expectedProject, action.payload.afterProject);
-        if (next) {
-            devices[index] = next;
-        }
-        return devices;
+        return projectFermenterPatch(devices, action);
+    }
+    if (action.type === 'setToasterFactoryKit') {
+        return projectToasterFactoryKit(devices, action);
     }
     if (action.type === 'addDevice') {
         return projectAddedDevice(devices, action, plugins);

@@ -123,6 +123,7 @@ const seedMaterializerByActionType: {
     setDeviceState: leaveSeedUnminted,
     setFermenterPatch: leaveSeedUnminted,
     setGrandBouleDeviceState: leaveSeedUnminted,
+    setToasterFactoryKit: leaveSeedUnminted,
     createBus: leaveSeedUnminted,
     createFolder: leaveSeedUnminted,
     setSend: leaveSeedUnminted,
