@@ -457,16 +457,30 @@ describe('packaged editor workspace proof', () => {
     });
 
     it.each([
-        { paused: 0, verdict: 'failed' },
-        { paused: 7, verdict: 'failed' },
-        { paused: 8 - 2 / 480, verdict: 'failed' },
-        { paused: 8 - 1 / 480, verdict: 'proven' },
-        { paused: 8, verdict: 'proven' },
-        { paused: 8.25, verdict: 'proven' },
-        { paused: 16, verdict: 'proven' },
+        { label: 'missing witness', clickReadout: null, paused: 8, verdict: 'failed' },
+        { label: 'undefined witness', clickReadout: undefined, paused: 8, verdict: 'failed' },
+        { label: 'malformed witness', clickReadout: 'unknown', paused: 8, verdict: 'failed' },
+        { label: 'invalid tick witness', clickReadout: 'Bars3.1.480', paused: 8, verdict: 'failed' },
+        { label: 'rewound click witness', clickReadout: 'Bars2.4.000', paused: 8, verdict: 'failed' },
+        { label: 'reset to zero', clickReadout: 'Bars3.1.000', paused: 0, verdict: 'failed' },
+        { label: 'rewind to seek', clickReadout: 'Bars3.1.000', paused: 7, verdict: 'failed' },
+        { label: 'two-tick rewind', clickReadout: 'Bars3.1.000', paused: 8 - 2 / 480, verdict: 'failed' },
+        { label: 'one-tick quantization', clickReadout: 'Bars3.1.000', paused: 8 - 1 / 480, verdict: 'proven' },
+        { label: 'same displayed position', clickReadout: 'Bars3.1.000', paused: 8, verdict: 'proven' },
+        { label: 'small forward jitter', clickReadout: 'BARS\n3\n.\n1\n.\n000', paused: 8.1, verdict: 'proven' },
+        { label: 'quarter-beat cadence bound', clickReadout: 'Bars3.1.000', paused: 8.25, verdict: 'proven' },
+        {
+            label: 'one tick beyond cadence bound',
+            clickReadout: 'Bars3.1.000',
+            paused: 8 + 121 / 480,
+            verdict: 'failed',
+        },
+        { label: 'forward jump eight to sixteen', clickReadout: 'Bars3.1.000', paused: 16, verdict: 'failed' },
+        { label: 'advance before actual click', clickReadout: 'Bars3.2.000', paused: 9.1, verdict: 'proven' },
+        { label: 'rewind from actual click', clickReadout: 'Bars3.2.000', paused: 8.25, verdict: 'failed' },
     ] as const)(
-        'requires Pause at $paused to retain the last advancing display before proof can be $verdict',
-        async ({ paused, verdict }) => {
+        'requires valid click-bound parking for $label before proof can be $verdict',
+        async ({ clickReadout, paused, verdict }) => {
             const { options, env } = fixture();
             const record = await runEditorWorkspaceProof(options, env, {
                 hostSupported: true,
@@ -478,8 +492,8 @@ describe('packaged editor workspace proof', () => {
                     }
                     row.outcome = 'failed';
                     row.values.push({ before: 0, sought: 7, advancing: 7.5, advanced: 8, paused });
-                    if (!pausePreservesProgress(8, paused)) {
-                        throw new Error('Pause rewound the advancing playhead');
+                    if (!pausePreservesProgress(8, clickReadout, paused)) {
+                        throw new Error('Pause did not park at its click position');
                     }
                     row.outcome = 'passed';
                 },

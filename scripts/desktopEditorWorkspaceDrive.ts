@@ -338,9 +338,50 @@ async function heldPlayhead(page: Page, expected: number): Promise<void> {
     assert.equal(await playhead(page), expected);
 }
 
+async function pauseAtClick(
+    page: Page,
+    playback: Locator,
+    advanced: number,
+    samples: Record<string, number>
+): Promise<number> {
+    const pause = exactButton(playback, 'Pause');
+    const capture = await pause.evaluateHandle((button) => {
+        const witness: { readout: string | null } = { readout: null };
+        function sample(): void {
+            witness.readout = document.querySelector('[data-testid="transport-playhead"]')?.textContent ?? null;
+        }
+        // Native target capture runs before React's delegated bubble action changes transport state.
+        button.addEventListener('click', sample, { capture: true, once: true });
+        return { witness, cleanup: () => button.removeEventListener('click', sample, true) };
+    });
+    try {
+        await pause.click();
+        const clickReadout = await capture.evaluate(({ witness }) => witness.readout);
+        const clicked = renderedPlayheadBeat(clickReadout ?? '');
+        if (clicked !== null) {
+            samples.pauseClick = clicked;
+        }
+        await exactButton(playback, 'Play').waitFor({ state: 'visible' });
+        const paused = await playhead(page);
+        samples.paused = paused;
+        assert(pausePreservesProgress(advanced, clickReadout, paused), 'Pause did not park at its click position');
+        return paused;
+    } finally {
+        try {
+            await capture.evaluate(({ cleanup }) => cleanup());
+        } finally {
+            await capture.dispose();
+        }
+    }
+}
+
 async function transport(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
     await minimumSize(dialog, row);
     await pointerDrag(exactButton(dialog, 'Move Fermenter panel'), 3000, 3000);
+    assert.equal(
+        Number(await page.getByRole('spinbutton', { name: 'Tempo BPM', exact: true }).getAttribute('aria-valuenow')),
+        120
+    );
     const tracks = page.getByRole('grid', { name: 'Track list', exact: true });
     const selected = tracks.locator('[data-track-id][aria-selected="true"]');
     const trackId = await selected.getAttribute('data-track-id');
@@ -367,11 +408,7 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     const advanced = await until(read, (value) => value > advancing + 0.25);
     samples.advancing = advancing;
     samples.advanced = advanced;
-    await exactButton(playback, 'Pause').click();
-    await exactButton(playback, 'Play').waitFor({ state: 'visible' });
-    const paused = await playhead(page);
-    samples.paused = paused;
-    assert(pausePreservesProgress(advanced, paused), 'Pause rewound the advancing playhead');
+    const paused = await pauseAtClick(page, playback, advanced, samples);
     await heldPlayhead(page, paused);
     await exactButton(playback, 'Stop').click();
     await until(read, (value) => value === 0);
