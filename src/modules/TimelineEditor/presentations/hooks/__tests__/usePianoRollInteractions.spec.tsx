@@ -699,6 +699,63 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('rubber-band selection', () => {
+        it('selects notes across opened clips instead of stamping a chord when dragged from empty space', () => {
+            mocks.stampChord.mockReturnValue([]);
+            const { canvas } = renderRoll({
+                chordMode: true,
+                openedClipNotes: { 'clip-2': [makeNote('n2', 62, 1, 1)] },
+            });
+
+            fireEvent.mouseDown(canvas, { clientX: 10, clientY: yForPitch(70) });
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(58) });
+            fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(58) });
+
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set(['n1', 'n2']));
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('does not stamp a pending chord when the pointer leaves', () => {
+            const { canvas } = renderRoll({ chordMode: true });
+
+            fireEvent.mouseDown(canvas, { clientX: 10, clientY: yForPitch(70) });
+            fireEvent.mouseLeave(canvas, { clientX: 10, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 10, clientY: yForPitch(70) });
+
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('does not stamp into a clip that loses focus while the chord is pending', () => {
+            const args = buildArgs({ chordMode: true, focusedClipId: 'clip-2', openedClipNotes: { 'clip-2': [] } });
+            const view = render(<Harness args={args} />);
+            const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+            fireEvent.mouseDown(canvas, { clientX: 10, clientY: yForPitch(70) });
+            view.rerender(<Harness args={{ ...args, focusedClipId: 'clip-1' }} />);
+            fireEvent.mouseUp(canvas, { clientX: 10, clientY: yForPitch(70) });
+
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('keeps chord-mode Alt empty clicks select-only and Shift drags additive', () => {
+            const { canvas } = renderRoll({ chordMode: true });
+            fireEvent.mouseDown(canvas, { clientX: 10, clientY: yForPitch(70), altKey: true });
+            fireEvent.mouseUp(canvas, { clientX: 10, clientY: yForPitch(70), altKey: true });
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+
+            fireEvent.mouseDown(canvas, { clientX: 10, clientY: yForPitch(70), shiftKey: true });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(58), shiftKey: true });
+            fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(58), shiftKey: true });
+            const updater = setSelectedNoteIds.mock.lastCall?.[0];
+            expect(updater(new Set(['other']))).toEqual(new Set(['other', 'n1']));
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
         it('selects intersecting notes on a meaningful drag and never stamps', () => {
             const { canvas } = renderRoll();
 
@@ -924,6 +981,8 @@ describe('usePianoRollInteractions', () => {
             const { canvas } = renderRoll({ chordMode: true, chordType: 'min7', notes: [] });
 
             fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
 
             expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
         });
@@ -933,6 +992,8 @@ describe('usePianoRollInteractions', () => {
             const { canvas } = renderRoll({ chordMode: true, chordType: 'min7' });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
             expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['ch1', 'ch2', 'ch3']));
@@ -1706,6 +1767,8 @@ describe('usePianoRollInteractions', () => {
             const { canvas } = renderRoll({ ...focusedOnSecondary, chordMode: true, chordType: 'min7' });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.stampChord).not.toHaveBeenCalled();
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
             expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
@@ -1854,6 +1917,7 @@ describe('usePianoRollInteractions', () => {
             mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
             const chord = renderRoll({ notes: [], chordMode: true, chordType: 'min7' });
             fireEvent.mouseDown(chord.canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseUp(chord.canvas, { clientX: 45, clientY: yForPitch(70) });
             expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
 
             cleanup();
