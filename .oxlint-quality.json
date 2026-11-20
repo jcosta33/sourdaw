@@ -72,7 +72,6 @@
                 "max-params": ["error", { "max": 4 }],
                 "sourdaw-craft/no-positional-boolean-flags": "error",
                 "typescript/no-non-null-assertion": "error",
-                "typescript/require-array-sort-compare": ["error", { "ignoreStringArrays": true }],
                 "unicorn/no-invalid-remove-event-listener": "error"
             }
         },
