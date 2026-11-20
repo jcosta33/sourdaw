@@ -66,8 +66,9 @@ import {
     NOTE_NAMES,
     ROW_HEIGHT,
     RULER_HEIGHT,
+    NOTE_INSET_X,
+    getPaintedNoteWidth,
     getScaleIntervals,
-    EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
     getPianoRollContentHeight,
@@ -90,8 +91,9 @@ type ViewportRange = { leftPx: number; rightPx: number };
 
 /** True when a note's painted span overlaps the visible slice at all. */
 function isSpanVisible(startBeat: number, duration: number, beatWidth: number, view: ViewportRange): boolean {
-    const startPx = startBeat * beatWidth;
-    return startPx <= view.rightPx && startPx + duration * beatWidth >= view.leftPx;
+    const startPx = startBeat * beatWidth + NOTE_INSET_X;
+    const width = getPaintedNoteWidth(duration * beatWidth);
+    return startPx <= view.rightPx && startPx + width >= view.leftPx;
 }
 
 type RendererDeps = {
@@ -105,6 +107,7 @@ type RendererDeps = {
      */
     scrollRef: RefObject<HTMLElement | null>;
     notes: MidiNote[];
+    openedClipNotes?: Record<string, MidiNote[]>;
     clipId: string;
     trackId: string;
     beatWidth: number;
@@ -136,6 +139,8 @@ type RendererDeps = {
 export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     // ── Mirror all layout/config props into refs so the rAF loop always
     //    reads the current value without being re-created on every render. ──
+    const notesRef = useRef(deps.notes);
+    const openedClipNotesRef = useRef(deps.openedClipNotes);
     const beatWidthRef = useRef(deps.beatWidth);
     const gridSnapRef = useRef(deps.gridSnap);
     const scaleTypeRef = useRef(deps.scaleType);
@@ -154,6 +159,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     // the latest values. useLayoutEffect runs synchronously before the browser
     // paints, ensuring refs are current before the next animation frame fires.
     useLayoutEffect(() => {
+        notesRef.current = deps.notes;
+        openedClipNotesRef.current = deps.openedClipNotes;
         beatWidthRef.current = deps.beatWidth;
         gridSnapRef.current = deps.gridSnap;
         scaleTypeRef.current = deps.scaleType;
@@ -179,6 +186,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
     // ── Change-detection sentinels ───────────────────────────────────────
     const prevNotesRef = useRef<MidiNote[] | null>(null);
+    const prevOpenedNotesRef = useRef<typeof deps.openedClipNotes>(undefined);
     const prevMidiStateRef = useRef<object | null>(null);
     const prevTracksRef = useRef<object | null>(null);
     const prevSelIdsRef = useRef<Set<string> | null>(null);
@@ -223,7 +231,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             // Read store state
             const midiState = midiStore.value;
             const trackState = trackStore.value;
-            const notes = midiState?.notesByClipId[cId] ?? EMPTY_NOTES;
+            const notes = notesRef.current;
+            const openedNotes = openedClipNotesRef.current;
             const tracks = trackState?.tracks ?? null;
             const openedIds = openedClipIdsRef.current;
 
@@ -308,6 +317,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 gridDirty ||
                 scrollDirty ||
                 notesDirty ||
+                openedNotes !== prevOpenedNotesRef.current ||
                 midiDirty ||
                 tracksDirty ||
                 selDirty ||
@@ -319,6 +329,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             if (needsRepaint) {
                 // Update sentinels
                 prevNotesRef.current = notes;
+                prevOpenedNotesRef.current = openedNotes;
                 prevMidiStateRef.current = midiState;
                 prevTracksRef.current = trackState;
                 prevSelIdsRef.current = selIds;
@@ -378,12 +389,12 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId, view);
                 }
                 // A9: draw notes from other simultaneously-open clips at 55% opacity
-                if (openedIds.length > 0 && midiState && tracks) {
+                if (openedIds.length > 0 && openedNotes && tracks) {
                     drawOpenedClipNotes(
                         ctx,
                         pitchToRow,
                         bw,
-                        midiState.notesByClipId,
+                        openedNotes,
                         tracks,
                         cId,
                         openedIds,
@@ -647,7 +658,7 @@ function drawGhostNote(
 
     ctx.fillStyle = colorWithAlpha(color, fillAlpha);
     ctx.beginPath();
-    ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+    ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
     ctx.fill();
 
     ctx.strokeStyle = colorWithAlpha(color, strokeAlpha);
@@ -726,7 +737,7 @@ function drawOpenedClipNotes(
             const strokeAlpha = isSelected ? 0.9 : 0.65;
             ctx.fillStyle = colorWithAlpha(clipColor, fillAlpha);
             ctx.beginPath();
-            ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+            ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
             ctx.fill();
             ctx.strokeStyle = colorWithAlpha(clipColor, strokeAlpha);
             ctx.lineWidth = isSelected ? 1 : 0.5;
@@ -804,7 +815,7 @@ function drawActiveNotes(
 
         ctx.fillStyle = colorWithAlpha(noteColor, alpha);
         ctx.beginPath();
-        ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+        ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
         ctx.fill();
 
         if (isSelected) {

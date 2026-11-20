@@ -1,8 +1,11 @@
 import { createStore } from '#/infra/store/createStore';
+import { automationStore } from '#/modules/Automation/stores';
 
+import { getInlineAutomationRows } from '../models/InlineAutomationRows';
 import { getTimelineHorizontalContentWidth } from '../models/TimelineHorizontalExtent';
 import { getTimelineContentHeight } from '../transformers/getTimelineContentHeight';
 
+import { timelineEditingStore } from './timelineEditingStore';
 import { trackStore } from './trackStore';
 
 export type TimelineViewState = {
@@ -55,7 +58,13 @@ function clampScrollX(scrollX: number, pixelsPerBeat: number, viewportWidth: num
 }
 
 function clampScrollY(scrollY: number, viewportHeight: number): number {
-    const totalHeight = getTimelineContentHeight(trackStore.value?.tracks ?? []);
+    const tracks = trackStore.value?.tracks ?? [];
+    const automationRows = getInlineAutomationRows(
+        tracks,
+        automationStore.value?.lanes ?? [],
+        timelineEditingStore.value
+    );
+    const totalHeight = getTimelineContentHeight(tracks, automationRows);
     const maxY = Math.max(0, totalHeight - viewportHeight);
     return Math.max(0, Math.min(maxY, scrollY));
 }

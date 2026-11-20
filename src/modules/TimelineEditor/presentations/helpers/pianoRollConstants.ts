@@ -30,6 +30,8 @@ export const LOWEST_PITCH = 0;
 export const HIGHEST_PITCH = 127;
 export const TOTAL_ROWS = HIGHEST_PITCH - LOWEST_PITCH + 1;
 export const ROW_HEIGHT = 16;
+export const NOTE_INSET_X = 1;
+export const getPaintedNoteWidth = (width: number): number => Math.max(4, width - 2 * NOTE_INSET_X);
 /** Minimum grid span, in beats, so an empty or very short clip still opens on a usable grid. */
 export const GRID_BEATS = 32;
 export const RULER_HEIGHT = 22;
