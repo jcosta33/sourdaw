@@ -2,11 +2,19 @@ import { createHandler } from '#/utils/createHandler';
 
 import { type TrackAlternativeStateSnapshot } from '../../events/arrangementTrackAppActions';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
+import {
+    applyRetiredClipLanes,
+    applyRetiredClipRows,
+    captureRetiredClips,
+    findRetiredClipIds,
+    settledRetiredClips,
+} from './retiredAlternativeClips';
 
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
@@ -16,6 +24,12 @@ type MutableTrackAlternativeStateSnapshot = {
     alternatives: TrackAlternativeStateSnapshot['alternatives'];
     activeAlternativeId: TrackAlternativeStateSnapshot['activeAlternativeId'];
     clips: TrackAlternativeStateSnapshot['clips'];
+    retiredClips?: TrackAlternativeStateSnapshot['retiredClips'];
+};
+
+type PendingDeletion = {
+    previous: MutableTrackAlternativeStateSnapshot;
+    settled: MutableTrackAlternativeStateSnapshot;
 };
 
 // `describe()` runs before `execute()` and cannot know which alternative execute will
@@ -23,7 +37,7 @@ type MutableTrackAlternativeStateSnapshot = {
 // real post-delete state in after it writes — the same describe-then-finalize pattern
 // `handleFreezeTrack` uses, so `executeAppAction`'s undo entry (built from the object
 // `describe` returned, read again after `execute` runs) picks up the settled values.
-const pendingDeletionSnapshots = new WeakMap<object, MutableTrackAlternativeStateSnapshot>();
+const pendingDeletionSnapshots = new WeakMap<object, PendingDeletion>();
 
 function isValidAlternativeCollection(value: unknown): value is TrackAlternative[] {
     if (!Array.isArray(value)) {
@@ -136,16 +150,28 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
             };
         }
 
-        setTrackStoreState({
-            ...state,
-            tracks: state.tracks.map((track) => (track.id === targetTrack.id ? updatedTrack : track)),
-        });
+        const tracksAfter = state.tracks.map((track) => (track.id === targetTrack.id ? updatedTrack : track));
+        // The clips this alternative held leave the arrangement, so their rows in
+        // the MIDI, automation and satellite stores leave with them, as a clip
+        // removal retires them. Captured before the write so undo can put them back.
+        const retiredClipIds = findRetiredClipIds(targetTrack, tracksAfter);
+        const retiredClips = captureRetiredClips(retiredClipIds);
+        const clearedClips = settledRetiredClips(retiredClipIds, []);
+        if (!applyRetiredClipLanes(retiredClips, clearedClips)) {
+            return toHandlerExecutionResult(false);
+        }
+        setTrackStoreState({ ...state, tracks: tracksAfter });
+        applyRetiredClipRows(retiredClips, clearedClips);
+        removeTakesForClips(retiredClipIds);
+        const settledClips = settledRetiredClips(retiredClipIds, retiredClips.takeLaneIds);
 
         const pending = pendingDeletionSnapshots.get(action);
         if (pending) {
-            pending.alternatives = structuredClone(updatedTrack.alternatives);
-            pending.activeAlternativeId = updatedTrack.activeAlternativeId;
-            pending.clips = structuredClone(updatedTrack.clips);
+            pending.previous.retiredClips = retiredClips;
+            pending.settled.alternatives = structuredClone(updatedTrack.alternatives);
+            pending.settled.activeAlternativeId = updatedTrack.activeAlternativeId;
+            pending.settled.clips = structuredClone(updatedTrack.clips);
+            pending.settled.retiredClips = settledClips;
         }
 
         return toHandlerExecutionResult(true);
@@ -157,19 +183,20 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
             return { label: 'Delete Alternative', inverseAction: null };
         }
 
-        const previous: TrackAlternativeStateSnapshot = structuredClone({
+        const previous: MutableTrackAlternativeStateSnapshot = structuredClone({
             alternatives: target.targetTrack.alternatives,
             activeAlternativeId: target.targetTrack.activeAlternativeId,
             clips: target.targetTrack.clips,
         });
         // Seeded empty; `execute()` overwrites these once it knows which alternative
-        // (if any) actually got promoted and which clips actually got installed.
+        // (if any) actually got promoted and which clips actually got installed, and
+        // adds to both sides the rows of the clips the delete retired.
         const settled: MutableTrackAlternativeStateSnapshot = {
             alternatives: [],
             activeAlternativeId: null,
             clips: [],
         };
-        pendingDeletionSnapshots.set(action, settled);
+        pendingDeletionSnapshots.set(action, { previous, settled });
 
         return {
             label: 'Delete Alternative',

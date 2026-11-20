@@ -1,7 +1,9 @@
 import { type AppAction } from '#/utils/handlerContract';
+import { type DevicePatchTransitionMetadata } from '#/utils/resolveDevicePatchTransition';
 
 import { type DevicePatchState } from './DevicePatchState';
 import { type DeviceSnapshot } from './DeviceSnapshot';
+import { type DeviceStateChunk } from './Track';
 
 export type PlannedDeviceOwnerSource = {
     id: string;
@@ -16,8 +18,10 @@ export type CapturedDevicePatchStep = {
     deviceId: string;
     expectedDeviceIds: readonly string[];
     expectedTrackFrozen: boolean;
+    expectedDeviceType?: string;
     expected: DevicePatchState;
     after: DevicePatchState;
+    preservedMetadata?: DevicePatchTransitionMetadata<DeviceStateChunk>;
 };
 
 export type PlannedDeviceWriteStep =

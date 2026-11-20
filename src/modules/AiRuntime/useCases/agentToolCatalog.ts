@@ -112,7 +112,7 @@ function getProjectQuerySchema(): ToolSchema {
     const queryTypes = getProjectProtocolContracts().query.operations.map((operation) => operation.name);
     return tool(
         PROJECT_QUERY_TOOL_NAME,
-        'Read bounded, revision-bearing project facts. Query calls must be returned alone; use their receipts in a later planning turn.',
+        'Read bounded, revision-bearing project facts. For musical-content, filters must name one MIDI clip by stableId and a nonempty timeline range by startBeat and endBeat. Follow nextCursor with the same filters until null. Notes are stored-score evidence with separate projected timing and expression rows, not rendered audio. Query calls must be returned alone; use their receipts in a later planning turn.',
         {
             type: { type: 'string', enum: queryTypes },
             filters: getSemanticProjectQueryFiltersSchema(),

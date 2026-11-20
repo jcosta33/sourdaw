@@ -64,7 +64,14 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
             return { loaded: false, snapshot: null };
         }
 
-        const committed = await automergeRepository.loadAll({ bundle: active_bundle, shouldCommit: canCommit });
+        const installed: { headsByDoc?: Map<string, string[]> } = {};
+        const committed = await automergeRepository.loadAll({
+            bundle: active_bundle,
+            shouldCommit: canCommit,
+            onInstalled: (headsByDoc) => {
+                installed.headsByDoc = headsByDoc;
+            },
+        });
         if (!committed || !canCommit()) {
             return { loaded: false, snapshot: null };
         }
@@ -76,6 +83,7 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
         restoreActiveBranchSlot();
         return {
             loaded: true,
+            durableHeadsByDoc: installed.headsByDoc,
             snapshot: {
                 ...snapshot,
                 authority: active_authority,

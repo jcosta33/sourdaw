@@ -25,7 +25,7 @@ export const LevainMacroStrip = ({
         {labels.map((label, i) => {
             const spaceUnavailable = label === 'Space' && !spaceAvailable;
             return (
-                <div key={label} className="flex flex-col items-center gap-1">
+                <div key={label} className="flex min-w-0 flex-col items-center gap-1 text-center">
                     <RotaryKnob
                         value={macros[i] ?? 0.5}
                         onChange={(v) => onMacroChange(i, v)}
@@ -35,6 +35,7 @@ export const LevainMacroStrip = ({
                         defaultValue={0.5}
                         size={compact ? 'sm' : 'md'}
                         label={label}
+                        className="min-w-0 max-w-full [&>span]:wrap-anywhere [&>span]:whitespace-normal"
                         tone="amber"
                         disabled={spaceUnavailable}
                         title={spaceUnavailable ? 'Space requires a loaded Room microphone position.' : undefined}

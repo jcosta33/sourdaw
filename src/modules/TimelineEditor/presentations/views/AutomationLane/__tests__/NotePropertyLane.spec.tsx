@@ -262,6 +262,11 @@ describe('NotePropertyLane', () => {
             const setFrozenValue = vi.fn();
             const projection = {
                 notes: [viewNote],
+                baseOccurrences: [],
+                baseControllers: [],
+                basePitchBends: [],
+                frozenControllers: [],
+                frozenPitchBends: [],
                 baseNotes: [],
                 baseOwnersByViewId: new Map(),
                 ownersByViewId: new Map([
@@ -305,6 +310,11 @@ describe('NotePropertyLane', () => {
             seedNotes([original]);
             const projection = {
                 notes: [],
+                baseOccurrences: [],
+                baseControllers: [],
+                basePitchBends: [],
+                frozenControllers: [],
+                frozenPitchBends: [],
                 baseNotes: [view],
                 baseOwnersByViewId: new Map([
                     [
@@ -537,6 +547,11 @@ describe('NotePropertyLane', () => {
                 const setFrozenValue = vi.fn();
                 const projection = {
                     notes: [viewNote],
+                    baseOccurrences: [],
+                    baseControllers: [],
+                    basePitchBends: [],
+                    frozenControllers: [],
+                    frozenPitchBends: [],
                     baseNotes: [],
                     baseOwnersByViewId: new Map(),
                     ownersByViewId: new Map([

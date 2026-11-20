@@ -215,25 +215,26 @@ describe('required unit account isolation', () => {
                         stderr: 'useradd warning: selected uid is greater than SYS_UID_MAX\n',
                     };
                 }
-                expect(args).toEqual(
-                    expect.arrayContaining([
-                        '--uid',
-                        '20000',
-                        '--gid',
-                        '--no-create-home',
-                        '--no-log-init',
-                        '--password',
-                        '!',
-                        '--home-dir',
-                        context.home,
-                        '--shell',
-                        '/usr/sbin/nologin',
-                    ])
-                );
             }
             return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
         });
         expect(() => prepareUnitIsolation(ports)).not.toThrow();
+        const useradd = run.mock.calls.find(([, args]) => args.includes('/usr/sbin/useradd'));
+        expect(useradd?.[1]).toEqual(
+            expect.arrayContaining([
+                '--uid',
+                '20000',
+                '--gid',
+                '--no-create-home',
+                '--no-log-init',
+                '--password',
+                '!',
+                '--home-dir',
+                context.home,
+                '--shell',
+                '/usr/sbin/nologin',
+            ])
+        );
         expect(mailCreated).toBe(false);
         expect(run.mock.calls.some(([, args]) => args.includes('verify'))).toBe(true);
         expect(run.mock.calls.some(([, args]) => args.includes('install'))).toBe(false);
@@ -350,6 +351,98 @@ describe('required unit account isolation', () => {
             )
         ).toThrow('ownership');
         expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it('exports coverage as runner-owned data only after the dropped-identity shard succeeds', () => {
+        const { ports, run, write } = setupPorts();
+        const original = run.getMockImplementation();
+        const contextPath = `${root}/.agents/guard-storage-fixtures/unit-account-${nonce}.json`;
+        ports.env.RUNNER_TEMP = '/runner-temp';
+        ports.env.GITHUB_RUN_ID = '1891';
+        ports.env.GITHUB_RUN_ATTEMPT = '2';
+        const report = { [join(context.workspace, 'src/choice.ts')]: { s: { 0: 1 } } };
+        run.mockImplementation((file, args, options) => {
+            if (args.includes('/usr/bin/head')) {
+                return { status: 0, stdout: JSON.stringify(report), stderr: '' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+
+        expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(0);
+        expect(run.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['coverage-shard', '3/4']));
+        const [headFile, headArgs] = run.mock.calls.find(([, args]) => args.includes('/usr/bin/head')) ?? [];
+        expect(headFile).toBe('/usr/bin/sudo');
+        expect(headArgs).toEqual(
+            expect.arrayContaining([
+                '/usr/bin/setpriv',
+                '--reuid=20000',
+                '--regid=20000',
+                '--no-new-privs',
+                '/usr/bin/head',
+                join(context.temp, 'unit-coverage-shard/coverage-final.json'),
+            ])
+        );
+        expect(headArgs).not.toContain('/runner-temp');
+        expect(ports.mkdir).toHaveBeenCalledWith('/runner-temp/unit-coverage-shard', 0o700);
+        const [path, packet, mode] = write.mock.calls[0] ?? [];
+        expect(path).toBe('/runner-temp/unit-coverage-shard/shard-3.json');
+        expect(mode).toBe(0o600);
+        expect(JSON.parse(packet ?? '')).toEqual({
+            version: 1,
+            revision: sourceHead,
+            runId: '1891',
+            attempt: '2',
+            shard: 3,
+            sourceRoot: context.workspace,
+            elapsedMs: expect.any(Number),
+            coverage: report,
+        });
+
+        const successfulCallCount = run.mock.calls.length;
+        run.mockImplementation((file, args, options) => {
+            if (file === '/usr/bin/sudo') {
+                return { status: 7, stdout: '', stderr: '' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+        expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(7);
+        const failureCalls = run.mock.calls.slice(successfulCallCount);
+        expect(failureCalls.filter(([file]) => file === '/usr/bin/sudo')).toHaveLength(1);
+        expect(failureCalls.some(([, args]) => args.includes('/usr/bin/head'))).toBe(false);
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('activates PR coverage placement only in the final Istanbul shard child', () => {
+        const { ports, run } = runtimePorts();
+        expect(runUnitPhase(context, 'coverage-shard', '2/4', ports)).toBe(0);
+        const standardOptions = { cwd: context.workspace, env: ports.env, inheritOutput: true };
+        const guardOptions = { ...standardOptions, env: { ...ports.env, VITEST_MAX_WORKERS: '1' } };
+        expect(run.mock.calls).toEqual([
+            ...sequentialGuardSpecs.map((spec) => [context.pnpm, ['run', 'test:run', spec], guardOptions]),
+            [
+                context.pnpm,
+                [
+                    'run',
+                    'test:run',
+                    '--shard=2/4',
+                    ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`),
+                    '--coverage',
+                    '--coverage.provider=istanbul',
+                    '--coverage.reporter=json',
+                    `--coverage.reportsDirectory=${context.temp}/unit-coverage-shard`,
+                ],
+                { ...standardOptions, env: { ...ports.env, SOURDAW_PR_UNIT_COVERAGE_SHARD: '1' } },
+            ],
+        ]);
+    });
+
+    it('rejects a coverage placement marker supplied before runtime identity admission', () => {
+        const { ports, run } = runtimePorts();
+        ports.env.SOURDAW_PR_UNIT_COVERAGE_SHARD = '1';
+        expect(() => runUnitPhase(context, 'coverage-shard', '2/4', ports)).toThrow(
+            'unit runtime isolation environment is invalid'
+        );
+        expect(run).not.toHaveBeenCalled();
     });
 
     it('requires the native denied-consumer proof during verification and propagates its failure before any install', () => {
@@ -477,8 +570,8 @@ describe('required unit account isolation', () => {
                     '-e',
                     `
                 const {createVitest,parseCLI}=await import('vitest/node');
-                const {filter,options}=parseCLI(['vitest','run',...JSON.parse(process.argv[1])]);
-                const context=await createVitest({...options,watch:false,run:true});
+                const {filter,options:{exclude,...options}}=parseCLI(['vitest','run',...JSON.parse(process.argv[1])]);
+                const context=await createVitest({...options,cliExclude:exclude,watch:false,run:true});
                 try {
                     let files=await context.getRelevantTestSpecifications(filter);
                     if(context.config.shard) {
@@ -514,9 +607,8 @@ describe('required unit account isolation', () => {
             if (shardArgs === undefined) {
                 throw new Error('all three guard and normal shard producers are required');
             }
-            if (isolated.length === 0) {
+            if (shard === '1/4') {
                 isolated = commands.slice(0, 3).flatMap((args) => collect(args));
-                expect(isolated).toEqual(sequentialGuardSpecs);
             }
             const selected = collect([...shardArgs, ...targets]);
             for (const spec of sequentialGuardSpecs) {
@@ -524,6 +616,7 @@ describe('required unit account isolation', () => {
             }
             sharded.push(...selected);
         }
+        expect(isolated).toEqual(sequentialGuardSpecs);
         expect(sharded.sort()).toEqual(control.filter((path) => !sequentialGuardSpecs.includes(path)));
         expect([...isolated, ...sharded].sort()).toEqual(control);
     }, 60_000);
@@ -559,7 +652,7 @@ describe('required unit account isolation', () => {
             expect(runUnitPhase(context, 'browsers', undefined, ports)).toBe(7);
             expect(run).toHaveBeenCalledTimes(1);
             const [file, args, options] = run.mock.calls[0] ?? [];
-            expect([file, args]).toEqual([context.pnpm, ['exec', 'playwright', 'install', 'chromium']]);
+            expect([file, args]).toEqual([context.pnpm, ['exec', 'playwright', 'install', 'chromium', '--only-shell']]);
             // The browser cache resolves from the account's private HOME; no
             // browser path is admitted into the environment.
             expect(options?.env).toEqual(ports.env);

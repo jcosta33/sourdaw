@@ -1,8 +1,10 @@
-import { act, render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
-import { persistDeviceParam } from '#/modules/Arrangement/stores';
+import { defaultTrackState, persistDeviceParam, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { getProofPatchSnapshot, type ProofTarget } from '../../../models/ProofPatch';
 import {
@@ -14,6 +16,7 @@ import {
 } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
 import { loadProofPatchWithAudio } from '../../../useCases/proofParamBridge/loadProofPatchWithAudio';
+import { proofLimiterCeilingProjection } from '../../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
 import { PROOF_PRESETS } from '../../../useCases/proofPresets';
 import { ProofPanel } from '../ProofPanel';
 
@@ -74,6 +77,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(),
+    captureDeviceParameterRuntimeWriteAuthority: () => ({
+        owner: Symbol(),
+        canCommit: () => true,
+        isCurrent: () => true,
+        release: () => undefined,
+    }),
     getCachedAudioBuffer: vi.fn(),
     restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
     holdAudioBufferForSession: vi.fn(),
@@ -126,6 +135,11 @@ vi.mock('../../../models/ProofPatch', async (importOriginal) => {
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     persistDevicePatch: persistDevicePatchMock,
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
 }));
 
 // persistDeviceParam writes into the Arrangement track store; isolate this view
@@ -351,6 +365,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    proofLimiterCeilingProjection.reset();
+    act(() => trackStore.set(defaultTrackState));
     bridges.clear();
     proofStore.set({});
     vi.clearAllMocks();
@@ -363,6 +379,14 @@ describe('ProofPanel', () => {
 
         const compareToggle = screen.getByRole('button', { name: 'A/B compare' });
         expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
+    });
+
+    it('exposes the compare control inside the mastering region', () => {
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        const panel = screen.getByRole('region', { name: 'Proof mastering panel' });
+        const compare = within(panel).getByRole('button', { name: 'A/B compare' });
+        compare.focus();
+        expect(compare).toHaveFocus();
     });
 
     it('keeps rail cards at their intrinsic height so the rail owns overflow', () => {
@@ -685,48 +709,75 @@ describe('ProofPanel', () => {
         });
     });
 
-    it('finalizes a Level 2 rotary preview before a module bypass commit', () => {
-        const bridge = makeBridge();
-        bridges.set(DEVICE_ID, bridge);
+    it('settles a Level 2 ceiling through the owning action before a module bypass commit', async () => {
+        bridges.set(DEVICE_ID, makeBridge());
         seedState({ uiLevel: 2 });
-
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...createTrack({ id: 'track-1', name: 'Proof track', kind: 'audio' }),
+                    devices: [
+                        {
+                            id: DEVICE_ID,
+                            type: 'proof',
+                            name: 'Proof',
+                            bypassed: false,
+                            parameterValues: {},
+                            deviceState: { version: 1, data: { disclosureTier: 'shape' } },
+                        },
+                    ],
+                },
+            ],
+        });
+        const admission = Promise.withResolvers<void>();
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (_action, options) => {
+            await admission.promise;
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
+            expect(options?.shouldExecute?.()).toBe(true);
+            options?.onCommitted?.();
+        });
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
         const knob = screen.getByRole('slider', { name: 'Limiter Ceiling' });
         const initialCeiling = getProofState(DEVICE_ID).patch.limCeiling;
-
         fireEvent.pointerDown(knob, { button: 0, pointerId: 63, clientY: 100 });
         fireEvent.pointerMove(knob, { pointerId: 63, clientY: 70 });
-
         const previewCeiling = getProofState(DEVICE_ID).patch.limCeiling;
         expect(previewCeiling).not.toBe(initialCeiling);
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: 'EQ module' }));
-
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
-        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(1, DEVICE_ID, {
-            lim_ceiling: previewCeiling,
+        await waitFor(() =>
+            expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({
+                    type: 'setDeviceParameter',
+                    payload: expect.objectContaining({
+                        deviceId: DEVICE_ID,
+                        paramId: 'lim_ceiling',
+                        value: previewCeiling,
+                    }),
+                }),
+                expect.objectContaining({ onCommitted: expect.any(Function) })
+            )
+        );
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+        await act(async () => {
+            admission.resolve();
         });
-        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
-            eq_bypass: 1,
-        });
-        expect(deviceWrites(DEVICE_ID)).toHaveLength(2);
-        expect(deviceWrites(DEVICE_ID)[0]).toEqual(['lim_ceiling', previewCeiling]);
-        expect(deviceWrites(DEVICE_ID)[1]).toEqual(['eq_bypass', 1]);
-        expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(previewCeiling);
-        expect(getProofState(DEVICE_ID).patch.eqBypassed).toBe(true);
+        await waitFor(() =>
+            expect(persistDevicePatchMock).toHaveBeenCalledExactlyOnceWith(DEVICE_ID, { eq_bypass: 1 })
+        );
+        expect(deviceWrites(DEVICE_ID)).toEqual([
+            ['lim_ceiling', previewCeiling],
+            ['eq_bypass', 1],
+        ]);
 
         fireEvent.pointerUp(knob, { pointerId: 63 });
-
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(deviceWrites(DEVICE_ID)).toHaveLength(2);
-        expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(previewCeiling);
-        expect(getProofState(DEVICE_ID).patch.eqBypassed).toBe(true);
-        expect(persistedProjectPatches.get(DEVICE_ID)).toMatchObject({
-            lim_ceiling: previewCeiling,
-            eq_bypass: 1,
-        });
+        expect(getProofState(DEVICE_ID).patch).toMatchObject({ limCeiling: previewCeiling, eqBypassed: true });
     });
 
     it('finalizes an EQ curve preview before a same-view granular commit', () => {

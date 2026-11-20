@@ -739,6 +739,28 @@ export type AudioGraphSendMidiNoteCommand = Readonly<{
     isNoteOn: boolean;
 }>;
 
+/** One realized native Grand Boule body. Its generation is supplied by the live engine. */
+export type AudioGraphGrandBoulePreviewTarget = Readonly<{
+    deviceId: string;
+    generation: string;
+}>;
+
+export type AudioGraphStartGrandBoulePreviewCommand = Readonly<{
+    kind: 'start-grand-boule-preview';
+    target: AudioGraphDeviceTarget;
+    generation: string;
+    strikeId: number;
+    note: number;
+    velocity: number;
+}>;
+
+export type AudioGraphReleaseGrandBoulePreviewCommand = Readonly<{
+    kind: 'release-grand-boule-preview';
+    target: AudioGraphDeviceTarget;
+    generation: string;
+    strikeId: number;
+}>;
+
 /**
  * Apply one live controller message now on a device that sinks notes.
  *
@@ -883,6 +905,8 @@ export type AudioGraphCommand =
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand
+    | AudioGraphStartGrandBoulePreviewCommand
+    | AudioGraphReleaseGrandBoulePreviewCommand
     | AudioGraphSendMidiControlCommand
     | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
@@ -954,6 +978,7 @@ export type AudioGraphStripReport = Readonly<{
      * command it sent.
      */
     deviceIds: readonly string[];
+    grandBoulePreviewTargets?: readonly AudioGraphGrandBoulePreviewTarget[];
 }>;
 
 /**

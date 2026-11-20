@@ -237,6 +237,14 @@ pub enum CrumbsCommand {
     NoteOff {
         note: u8,
     },
+    PadAuditionOn {
+        note: u8,
+        velocity: u8,
+        audition_id: u32,
+    },
+    PadAuditionOff {
+        audition_id: u32,
+    },
     SetMode(CrumbsMode),
     SetParam {
         param: CrumbsParam,

@@ -35,7 +35,7 @@ test.describe('Device Panels & Inspector', () => {
         const grinderCard = page.getByText('Grinder', { exact: true });
         await grinderCard.dblclick();
 
-        // The expanded panel mounts inside InstrumentBottomPanel, which exposes a
+        // The expanded panel mounts inside the floating device editor, which exposes a
         // "Close Grinder" control — a stable hook that the panel is open.
         const closePanel = page.getByRole('button', { name: 'Close Grinder' });
         await expect(closePanel).toBeVisible();

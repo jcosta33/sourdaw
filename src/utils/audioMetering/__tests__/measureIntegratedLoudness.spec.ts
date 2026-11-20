@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { createIntegratedLoudnessAccumulator, measureIntegratedLoudness } from '../measureIntegratedLoudness';
+import * as biquad from '../applyBiquad';
+import {
+    createIntegratedLoudnessAccumulator,
+    measureIntegratedLoudness,
+    type MeasureIntegratedLoudnessInput,
+} from '../measureIntegratedLoudness';
 
 import { createMainMeteringInput, mainMeteringReference } from './mainMeteringReference';
 
@@ -12,6 +17,37 @@ function sine(length: number, freq: number, amplitude = 1, sampleRate = SAMPLE_R
         buf[i] = amplitude * Math.sin((2 * Math.PI * freq * i) / sampleRate);
     }
     return buf;
+}
+
+function measureStreamingReplay({ channels, length, sampleRate }: MeasureIntegratedLoudnessInput) {
+    function replay(chunkFrames: number, relativeGatePower?: number) {
+        const meter = createIntegratedLoudnessAccumulator({
+            numberOfChannels: channels.length,
+            sampleRate,
+            relativeGatePower,
+        });
+        for (let start = 0; start < length; start += chunkFrames) {
+            meter.push(channels.map((channel) => channel.subarray(start, start + chunkFrames)));
+        }
+        return meter;
+    }
+
+    const absoluteGate = replay(997);
+    return {
+        absoluteLufs: absoluteGate.integratedLufs(),
+        integratedLufs: replay(4096, absoluteGate.relativeGatePower()).integratedLufs(),
+    };
+}
+
+function measureBufferedWork(input: MeasureIntegratedLoudnessInput) {
+    const filter = vi.spyOn(biquad, 'applyBiquad');
+    try {
+        const integratedLufs = measureIntegratedLoudness(input);
+        const framesFiltered = filter.mock.calls.reduce((frames, [samples]) => frames + samples.length, 0);
+        return { integratedLufs, framesFiltered };
+    } finally {
+        filter.mockRestore();
+    }
 }
 
 describe('measureIntegratedLoudness', () => {
@@ -135,6 +171,45 @@ describe('measureIntegratedLoudness', () => {
 
         expect(result).not.toBeNull();
         expect(Number.isFinite(result)).toBe(true);
+    });
+
+    it('matches both strict gates with one filter pass over ragged, non-finite stereo', () => {
+        const length = SAMPLE_RATE * 3 + 71;
+        const quietFrames = SAMPLE_RATE * 2;
+        const left = sine(length, 740, 0.4);
+        const right = sine(length - 567, 1230, 0.16);
+        for (let frame = 0; frame < quietFrames; frame++) {
+            left[frame] = left[frame]! * 0.015;
+            right[frame] = right[frame]! * 0.03;
+        }
+        left[4095] = Number.NaN;
+        right[4097] = Number.POSITIVE_INFINITY;
+        const paddedRight = new Float32Array(length);
+        paddedRight.set(right);
+        const expected = measureStreamingReplay({ channels: [left, paddedRight], length, sampleRate: SAMPLE_RATE });
+
+        const measured = measureBufferedWork({ channels: [left, right], length, sampleRate: SAMPLE_RATE });
+
+        expect(expected.integratedLufs).not.toBe(expected.absoluteLufs);
+        expect(measured.integratedLufs).toBe(expected.integratedLufs);
+        expect(measured.framesFiltered).toBe(length * 2 * 2);
+    });
+
+    it.each([
+        { blocks: 4096, passes: 1 },
+        { blocks: 4097, passes: 2 },
+    ])('preserves exact LUFS and uses $passes filter passes for $blocks blocks', ({ blocks, passes }) => {
+        const sampleRate = 8_003;
+        const blockFrames = Math.round(0.4 * sampleRate);
+        const stepFrames = Math.round(0.1 * sampleRate);
+        const length = blockFrames + (blocks - 1) * stepFrames;
+        const input = { channels: [sine(length, 1_000, 0.1, sampleRate)], length, sampleRate };
+        const expected = measureStreamingReplay(input);
+
+        const measured = measureBufferedWork(input);
+
+        expect(measured.integratedLufs).toBe(expected.integratedLufs);
+        expect(measured.framesFiltered).toBe(length * 2 * passes);
     });
 });
 
