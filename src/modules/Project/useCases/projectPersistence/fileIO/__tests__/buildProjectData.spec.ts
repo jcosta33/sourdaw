@@ -296,6 +296,10 @@ describe('buildProjectData', () => {
     });
 
     it('refuses a prepared snapshot when a deferred edit moves its exact revision', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
         const preparedRevision = 'snapshot-revision';
         await expect(buildProjectData({ preparedRevision })).resolves.toHaveProperty(
             'snapshotRevision',
