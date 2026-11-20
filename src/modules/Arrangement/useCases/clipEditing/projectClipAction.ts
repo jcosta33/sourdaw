@@ -136,6 +136,7 @@ const projectClipActionByActionType: {
     setLevainIdentity: keepState,
     setGrandBouleDeviceState: keepState,
     setToasterFactoryKit: keepState,
+    setBacteriaFactoryPatch: keepState,
     setGlutenFactoryPreset: keepState,
     createBus: keepState,
     createFolder: keepState,

@@ -17,8 +17,9 @@ describe('plannedDeviceWriteStepByActionType', () => {
                 'addTrack',
                 'createBus',
                 'setFermenterPatch',
-                'setLevainIdentity',
                 'setToasterFactoryKit',
+                'setBacteriaFactoryPatch',
+                'setLevainIdentity',
                 'restoreTrack',
             ].sort()
         );

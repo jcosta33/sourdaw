@@ -92,6 +92,7 @@ export const indirectMutationByActionType: {
     setLevainIdentity: indirectMutationRules.none,
     setGrandBouleDeviceState: indirectMutationRules.none,
     setToasterFactoryKit: indirectMutationRules.none,
+    setBacteriaFactoryPatch: indirectMutationRules.none,
     setGlutenFactoryPreset: indirectMutationRules.none,
     createBus: indirectMutationRules.none,
     createFolder: indirectMutationRules.none,

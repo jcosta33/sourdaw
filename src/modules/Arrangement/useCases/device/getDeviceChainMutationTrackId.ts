@@ -116,6 +116,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setLevainIdentity: levainParameterShapeTrackId,
     setGrandBouleDeviceState: noMutatedTrack,
     setToasterFactoryKit: noMutatedTrack,
+    setBacteriaFactoryPatch: noMutatedTrack,
     setGlutenFactoryPreset: noMutatedTrack,
     createBus: noMutatedTrack,
     createFolder: noMutatedTrack,

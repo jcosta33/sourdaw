@@ -37,6 +37,11 @@ boundaries.
    choices (filter type/model) restore an absent leaf on first-selection Undo, a hidden non-SVF Type stays stored,
    Model and Type each own pending authority by device and parameter, and an old queued direct parameter frame
    cannot overwrite the newer choice.
+   Bacteria factory selection wrote through `persistDeviceParam` outside Command
+   (`0249a95cc5292e687a27f084bac510d31eb7f3d8`, commit lookup returned no associated PR).
+   Make an Input edit, then select Bitcrush Cascade in the mounted panel. Require one separate
+   preset history entry and observe both replay legs in raw CRDT, projection and the engine patch.
+   Restoring the direct write must fail the history assertion.
    Crust's initial numeric panel bridge (`cd59903255`, no associated PR returned by commit lookup) persisted
    preview samples outside semantic history; its historical review brief and stance coverage are unestablished.
    Drive keyboard and multi-sample pointer gestures through the real panel, Command and CRDT: previews leave

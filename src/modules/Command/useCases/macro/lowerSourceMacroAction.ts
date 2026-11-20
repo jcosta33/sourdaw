@@ -144,6 +144,7 @@ const lowerByActionType: {
     setLevainIdentity: cloneForReplay,
     setGrandBouleDeviceState: cloneForReplay,
     setToasterFactoryKit: cloneForReplay,
+    setBacteriaFactoryPatch: cloneForReplay,
     setGlutenFactoryPreset: cloneForReplay,
     createBus: cloneForReplay,
     createFolder: cloneForReplay,

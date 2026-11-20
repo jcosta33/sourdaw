@@ -178,21 +178,20 @@ function projectMaterializedTrack(
     return { status: 'projected', owners };
 }
 
-function requiresCapturedPatchStep(action: AppAction): boolean {
-    return (
-        action.type === 'setFermenterPatch' ||
-        action.type === 'setGlutenFactoryPreset' ||
-        action.type === 'setLevainIdentity' ||
-        action.type === 'setToasterFactoryKit'
-    );
-}
+const capturedPatchActions = new Set<AppAction['type']>([
+    'setFermenterPatch',
+    'setToasterFactoryKit',
+    'setBacteriaFactoryPatch',
+    'setGlutenFactoryPreset',
+    'setLevainIdentity',
+]);
 
 function projectCommandOwners(
     owners: Owner[],
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (requiresCapturedPatchStep(action)) {
+    if (capturedPatchActions.has(action.type)) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

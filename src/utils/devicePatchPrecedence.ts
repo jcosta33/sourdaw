@@ -1,3 +1,4 @@
+import { projectBacteriaParameters } from './bacteriaParameterReplay';
 import { resolveNativeDspDeviceType } from './nativeDspDeviceTypes';
 
 /**
@@ -40,15 +41,20 @@ export const DEVICE_PATCH_PRECEDENCE: Readonly<Record<string, readonly string[]>
 /**
  * Order a device's numeric parameter entries for replay into an audio engine.
  *
- * Replays any leading precedence keys first in declared precedence order,
+ * Projects Bacteria's saved band overrides and crossovers for replay. For
+ * other devices, replays any leading precedence keys first in declared precedence order,
  * followed by all other parameters in their original insertion order.
  */
 export function orderDeviceParametersForReplay(
     deviceType: string,
     parameterValues: Record<string, number> | Readonly<Record<string, number>>
 ): Array<[string, number]> {
-    const entries = Object.entries(parameterValues);
     const canonicalType = resolveNativeDspDeviceType(deviceType) ?? deviceType.toLowerCase();
+    if (canonicalType === 'bacteria') {
+        return Object.entries(projectBacteriaParameters(parameterValues));
+    }
+
+    const entries = Object.entries(parameterValues);
     const precedence = DEVICE_PATCH_PRECEDENCE[canonicalType];
     if (!precedence || precedence.length === 0) {
         return entries;

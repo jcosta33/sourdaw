@@ -194,7 +194,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // touches a store directly.
         'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 6,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
+        // The committed factory reconcile sends one patch batch to the runtime.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
         // Count provenance: 0 in code, was 1 — #4756 extracted the engine half
@@ -735,8 +736,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
-        'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         // Event contract and subscription re-apply the persisted modulation
         // routing to a freshly loaded Bacteria worklet; neither writes project truth.
         'src/modules/Bacteria/useCases/bacteriaSubscriber.ts': 2,
@@ -1058,7 +1057,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
-        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
+        // Device-list admission extracts a pure compiler helper and its call.
+        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
         // UI: compileLoadPresetActions / compileReorderDevicesAction /
@@ -1116,7 +1116,8 @@ const DEVICE_DATA_COUNTS = {
     executable: {
         // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
         'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
-        // Four typed detached chain inputs and two empty scalar footprints for Toaster's kit snapshots.
+        // The typed patch helpers operate on detached chains. Toaster's kit
+        // snapshots declare two empty scalar footprints.
         'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 6,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
@@ -1375,7 +1376,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts',
     'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/createFlushParam.ts',
-    'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts',
+    'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
