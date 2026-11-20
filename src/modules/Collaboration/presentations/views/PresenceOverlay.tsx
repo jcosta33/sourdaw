@@ -6,10 +6,8 @@ import { usePresence } from '../hooks/usePresence';
 type PresenceOverlayProps = {
     /** Convert a beat position to pixel X offset in the timeline. */
     beatToX: (beat: number) => number;
-    /** Convert a track ID to pixel Y offset in the timeline. */
-    trackIdToY: (trackId: string) => number | null;
-    /** Height of a single track row in pixels. */
-    trackHeight: number;
+    /** Convert a visible track ID to the center of its row in the timeline. */
+    trackIdToCenterY: (trackId: string) => number | null;
 };
 
 /**
@@ -20,7 +18,7 @@ type PresenceOverlayProps = {
  * - Solid cursor lines at each peer's mouse cursor position
  * - Name labels and track focus dots alongside cursor lines
  */
-export const PresenceOverlay = ({ beatToX, trackIdToY, trackHeight }: PresenceOverlayProps): ReactElement => {
+export const PresenceOverlay = ({ beatToX, trackIdToCenterY }: PresenceOverlayProps): ReactElement => {
     const presences = usePresence();
 
     return (
@@ -28,7 +26,7 @@ export const PresenceOverlay = ({ beatToX, trackIdToY, trackHeight }: PresenceOv
             {presences.map((presence) => {
                 const playheadX = presence.playheadBeat !== null ? beatToX(presence.playheadBeat) : null;
                 const cursorX = presence.cursorBeat !== null ? beatToX(presence.cursorBeat) : null;
-                const trackY = presence.cursorTrackId ? trackIdToY(presence.cursorTrackId) : null;
+                const trackCenterY = presence.cursorTrackId ? trackIdToCenterY(presence.cursorTrackId) : null;
 
                 return (
                     <div key={presence.peerId}>
@@ -47,7 +45,7 @@ export const PresenceOverlay = ({ beatToX, trackIdToY, trackHeight }: PresenceOv
                                 color={presence.color}
                                 left={cursorX}
                                 variant="cursor"
-                                trackDotY={trackY !== null ? trackY + trackHeight / 2 : null}
+                                trackDotY={trackCenterY}
                             />
                         ) : null}
                     </div>

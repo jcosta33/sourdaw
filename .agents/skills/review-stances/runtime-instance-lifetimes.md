@@ -16,6 +16,12 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
    conditionally mounted surface is not a lifecycle lock. For any change that puts a network or IPC wait between
    opening a credential session and `replace_runtime`, walk Connect, leave the section and return, Connect again
    before the first wait settles, and name which runtime is installed; the first one is the finding.
+   Check conditional DOM ownership too. In the automation sidebar, `fc30a188ee` introduced the
+   ResizeObserver and `589815413b` split its target between conditional nodes. The introducing PR and review
+   stance are unknown. Mount with no selected track, select one, close the sidebar and reopen it. Deliver distinct
+   resize widths to each mounted lane viewport. Its row must use the new width and the outgoing observer must
+   disconnect. Restore the effect's stable ref dependency and the remount case in
+   `src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx` must fail.
 2. **Cold strip: live eligibility is not an initialized strip (#2035, #2083, #5387, #5805).** Scheduler synth and
    drum devices are excluded from the Web Audio chain projection, so a MIDI track carries valid project instruments
    with no Web Audio node beside a node-backed effect, and MIDI import publishes the track with its default Synth

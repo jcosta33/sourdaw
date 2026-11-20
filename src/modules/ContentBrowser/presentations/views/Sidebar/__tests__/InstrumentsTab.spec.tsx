@@ -536,6 +536,33 @@ describe('InstrumentsTab', () => {
         );
     });
 
+    it('waits for composition to finish before saving a preset with Enter', () => {
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save "Track 1" as preset' }));
+        const input = screen.getByPlaceholderText('Preset name…');
+        fireEvent.change(input, { target: { value: 'New preset' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(arrangementMocks.saveCurrentAsPreset).not.toHaveBeenCalled();
+        expect(screen.getByDisplayValue('New preset')).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(arrangementMocks.saveCurrentAsPreset).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ name: 'New preset', trackKind: 'audio', devices: [] })
+        );
+    });
+
     it('keeps the save form open when a withheld preset is rejected', () => {
         arrangementMocks.saveCurrentAsPreset.mockReturnValue(null);
         const selectedTrack = {

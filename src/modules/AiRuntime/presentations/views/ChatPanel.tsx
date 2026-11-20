@@ -472,6 +472,9 @@ export const ChatPanel = ({ style, routeBadge }: ChatPanelProps): ReactElement =
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.nativeEvent.isComposing) {
+            return;
+        }
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             handleSend();

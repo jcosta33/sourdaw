@@ -1,7 +1,11 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { type GrandBouleMorphState, createDefaultMorphState } from '../../../models/GrandBouleMorphState';
+import {
+    BUILTIN_PIANO_MODELS,
+    type GrandBouleMorphState,
+    createDefaultMorphState,
+} from '../../../models/GrandBouleMorphState';
 import { MorphPanel } from '../MorphPanel';
 
 function morph(overrides: Partial<GrandBouleMorphState> = {}): GrandBouleMorphState {
@@ -66,6 +70,26 @@ describe('MorphPanel — morph position readout', () => {
 });
 
 describe('MorphPanel — product voicings', () => {
+    it('identifies each model slot and sends each factory choice to its own slot', () => {
+        const props = defaultProps();
+        render(<MorphPanel {...props} />);
+
+        const modelA = within(screen.getByRole('group', { name: 'Model A' }));
+        const modelB = within(screen.getByRole('group', { name: 'Model B' }));
+        expect(modelA.getByRole('button', { pressed: true })).toHaveAccessibleName(
+            BUILTIN_PIANO_MODELS.find((model) => model.id === props.morph.modelA)?.name
+        );
+        expect(modelB.getByRole('button', { pressed: true })).toHaveAccessibleName(
+            BUILTIN_PIANO_MODELS.find((model) => model.id === props.morph.modelB)?.name
+        );
+        for (const { id, name } of BUILTIN_PIANO_MODELS) {
+            fireEvent.click(modelA.getByRole('button', { name }));
+            fireEvent.click(modelB.getByRole('button', { name }));
+            expect(props.onModelAChange).toHaveBeenLastCalledWith(id);
+            expect(props.onModelBChange).toHaveBeenLastCalledWith(id);
+        }
+    });
+
     it('does not offer removed branded aliases', () => {
         render(<MorphPanel {...defaultProps()} />);
 

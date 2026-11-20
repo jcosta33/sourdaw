@@ -82,7 +82,7 @@ impl GrinderInstance {
     pub fn load_neural_model(&mut self, json: &str) -> Result<(), JsValue> {
         self.engine
             .load_neural_model(json)
-            .map_err(|error| JsValue::from_str(&error))
+            .map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
     /// Whether a real imported .nam model is loaded (distinct from the

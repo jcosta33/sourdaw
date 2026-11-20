@@ -112,6 +112,31 @@ describe('readExplicitProtections over a role family', () => {
         expect(reading.resolvedTrackClauses).toHaveLength(1);
     });
 
+    it.each([
+        'make the mix warmer, leave all the drums alone',
+        "make the mix warmer, don't touch any of the drums",
+        'make the mix warmer, keep every drum track untouched',
+        'make the mix warmer, leave each of the drums alone',
+        "make the mix warmer, don't touch the drum kit",
+    ])('"%s" protects every drums-family track through a quantifier or the drum kit', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
+    it.each(["make the mix warmer, don't touch the vocal kit", "make the mix warmer, don't touch the bass kit"])(
+        '"%s" reads kit as a kind noun of the drums alone and protects nothing',
+        (prompt) => {
+            expect(readExplicitProtections(prompt, context)).toEqual(NOTHING);
+        }
+    );
+
+    it.each([
+        "make the mix warmer, don't mess with the drums",
+        'make the mix warmer, hands off the drums',
+        'make the mix warmer, keep your hands off the drums',
+    ])('"%s" opens a protection like "don\'t touch" and protects every drums-family track', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
     it('protects only the operations a control of the family names', () => {
         expect(readExplicitProtections("make the mix warmer but leave the drums' faders alone", context)).toEqual({
             ...NOTHING,
@@ -173,6 +198,34 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 
+    describe('in a project with no Drum Bus', () => {
+        const withoutDrumBus: ProjectContext = {
+            ...context,
+            tracks: context.tracks.filter((track) => track.id !== drumBus.id),
+        };
+
+        it.each(["make the mix warmer, don't touch the Drum Bus", 'make the mix warmer, leave the Drum Track alone'])(
+            '"%s" refuses the capitalized kind name as an unbound reference rather than reading the family',
+            (prompt) => {
+                const reading = readExplicitProtections(prompt, withoutDrumBus);
+
+                expect(reading.unresolved).toEqual(['Drum']);
+                expect(reading.protectedTrackIds).toEqual([]);
+            }
+        );
+
+        it.each([
+            "make the mix warmer, don't touch the drum bus",
+            "make the mix warmer, don't touch the Drums",
+            'make the mix warmer, leave the Drum tracks alone',
+        ])('"%s" still reads the drums family: lowercase, a bare word or a plural category', (prompt) => {
+            expect(readExplicitProtections(prompt, withoutDrumBus)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: DRUM_IDS,
+            });
+        });
+    });
+
     it('protects nothing when the family is what the request changes', () => {
         expect(readExplicitProtections('warm up the drums', context)).toEqual(NOTHING);
     });
@@ -196,6 +249,25 @@ describe('readExplicitProtections over a role family', () => {
         ['make the Snare punchier, leave the drums alone', [kick.id, hiHat.id, overheads.id]],
         ['brighten the Lead Vox but leave the drums alone', DRUM_IDS],
     ])('"%s" protects the rest of the family beside the request\'s own target', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds });
+    });
+
+    it.each([
+        'make the Lead Vox brighter than the Snare, leave the drums alone',
+        'make the Lead Vox brighter than Snare, leave the drums alone',
+        'add a Snare Parallel track, leave the drums alone',
+        'add a new Snare Crush bus and leave the drums alone',
+    ])('"%s" names the Snare only as a comparison reference or inside a created object and protects it', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
+    it.each([
+        // A device on the Snare is the Snare's own processing, so the request edits the Snare.
+        ["brighten the Snare's reverb, leave the drums alone", [kick.id, hiHat.id, overheads.id]],
+        // A track made for the Kick takes the Kick's send, so the request edits the Kick's routing.
+        ['add a track for the Kick, leave the drums alone', [snare.id, hiHat.id, overheads.id]],
+        ['make the Snare brighter than the Lead Vox, leave the drums alone', [kick.id, hiHat.id, overheads.id]],
+    ])('"%s" still exempts the drum track the request edits', (prompt, protectedTrackIds) => {
         expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds });
     });
 

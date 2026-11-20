@@ -50,11 +50,15 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 
 type FillRectEntry = { fillStyle: string; x: number; y: number; w: number; h: number };
 type FillTextEntry = { fillStyle: string; text: string; x: number; y: number };
+type PathCommand = [command: 'moveTo' | 'lineTo', x: number, y: number];
+type StrokePath = { color: string; commands: PathCommand[] };
 
 function createMockCtx() {
     const fillRectLog: FillRectEntry[] = [];
     const fillTextLog: FillTextEntry[] = [];
     const strokeLog: string[] = [];
+    const strokePaths: StrokePath[] = [];
+    let commands: PathCommand[] = [];
     let currentFillStyle = '';
     let currentStrokeStyle = '';
 
@@ -78,14 +82,23 @@ function createMockCtx() {
         save: vi.fn(),
         restore: vi.fn(),
         scale: vi.fn(),
-        beginPath: vi.fn(),
+        beginPath: vi.fn(() => {
+            commands = [];
+        }),
         closePath: vi.fn(),
         rect: vi.fn(),
         clip: vi.fn(),
         translate: vi.fn(),
-        moveTo: vi.fn(),
-        lineTo: vi.fn(),
-        stroke: vi.fn(() => strokeLog.push(currentStrokeStyle)),
+        moveTo: vi.fn((x: number, y: number) => {
+            commands.push(['moveTo', x, y]);
+        }),
+        lineTo: vi.fn((x: number, y: number) => {
+            commands.push(['lineTo', x, y]);
+        }),
+        stroke: vi.fn(() => {
+            strokeLog.push(currentStrokeStyle);
+            strokePaths.push({ color: currentStrokeStyle, commands: [...commands] });
+        }),
         fill: vi.fn(),
         fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
             fillRectLog.push({ fillStyle: currentFillStyle, x, y, w, h });
@@ -97,7 +110,7 @@ function createMockCtx() {
         setLineDash: vi.fn(),
     };
 
-    return { ctx: ctx as unknown as CanvasRenderingContext2D, fillRectLog, fillTextLog, strokeLog };
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, fillRectLog, fillTextLog, strokeLog, strokePaths };
 }
 
 function createTestModel(overrides: Partial<TimelineRenderModel> = {}): TimelineRenderModel {
@@ -156,6 +169,7 @@ let ctx: CanvasRenderingContext2D;
 let fillRectLog: FillRectEntry[];
 let fillTextLog: FillTextEntry[];
 let strokeLog: string[];
+let strokePaths: StrokePath[];
 let canvas: HTMLCanvasElement;
 
 describe('createCanvasRenderer', () => {
@@ -171,6 +185,7 @@ describe('createCanvasRenderer', () => {
         fillRectLog = mock.fillRectLog;
         fillTextLog = mock.fillTextLog;
         strokeLog = mock.strokeLog;
+        strokePaths = mock.strokePaths;
 
         canvas = document.createElement('canvas');
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (contextId: string) {
@@ -340,6 +355,80 @@ describe('createCanvasRenderer', () => {
         ]);
         const laneDraw = mocks.drawClip.mock.calls.find((call) => call[1].id === 'lane-clip');
         expect(laneDraw?.[3]).toBe(40);
+    });
+
+    it('draws visible inline automation after variations and culls rows below the scrolled viewport', () => {
+        const baseClip = createTestClip({ id: 'base', startBeat: 8, endBeat: 10 });
+        const variationClip = createTestClip({ ...baseClip, id: 'variation' });
+        const nextClip = createTestClip({ ...baseClip, id: 'following' });
+        const pan = {
+            id: 'pan',
+            trackId: 't0',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            minValue: -1,
+            maxValue: 1,
+            color: '#126d93',
+            valueAtBeat: (beat: number) => (beat - 8) / 2 - 1,
+        };
+        const gain = {
+            ...pan,
+            id: 'gain',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            minValue: 0,
+            maxValue: 2,
+            color: '#cf6742',
+            valueAtBeat: () => 1,
+        };
+        const offscreen = {
+            ...gain,
+            id: 'offscreen-gain',
+            trackId: 't1',
+            color: '#3e3942',
+            valueAtBeat: vi.fn(() => 1),
+        };
+        const tracks = [
+            createTestTrack({
+                id: 't0',
+                index: 0,
+                clips: [baseClip],
+                variationLanes: [
+                    { id: 'a', name: 'A', clips: [variationClip] },
+                    { id: 'b', name: 'B', clips: [] },
+                ],
+                automationLanes: [pan, gain],
+            }),
+            createTestTrack({ id: 't1', index: 1, clips: [nextClip], automationLanes: [offscreen] }),
+        ];
+        const renderer = createCanvasRenderer(canvas);
+        // The third automation row starts at content Y 208, exactly at the scrolled viewport bottom.
+        renderer.resize(16, 196);
+        renderer.render(createTestModel({ tracks, viewportStartBeat: 8, pixelsPerBeat: 4, scrollY: 12 }));
+
+        expect(ctx.translate).toHaveBeenCalledWith(0, -12);
+        expect(mocks.drawClip.mock.calls.map(([, clip, , top, height]) => [clip.id, top, height])).toEqual([
+            ['base', 0, 40],
+            ['variation', 40, 24],
+            ['following', 168, 40],
+        ]);
+        expect(fillRectLog.filter(({ fillStyle }) => fillStyle === 'rgba(0, 0, 0, 0.25)')).toEqual([
+            { fillStyle: 'rgba(0, 0, 0, 0.25)', x: 0, y: 88, w: 16, h: 40 },
+            { fillStyle: 'rgba(0, 0, 0, 0.25)', x: 0, y: 128, w: 16, h: 40 },
+        ]);
+        expect(strokePaths.find(({ color }) => color === pan.color)?.commands).toEqual([
+            ['moveTo', 0, 126],
+            ['lineTo', 4, 117],
+            ['moveTo', 4, 117],
+            ['lineTo', 8, 108],
+            ['moveTo', 8, 108],
+            ['lineTo', 12, 99],
+            ['moveTo', 12, 99],
+            ['lineTo', 16, 90],
+        ]);
+        expect(strokePaths.find(({ color }) => color === gain.color)?.commands).toContainEqual(['lineTo', 16, 148]);
+        expect(strokeLog).not.toContain(offscreen.color);
+        expect(offscreen.valueAtBeat).not.toHaveBeenCalled();
     });
 
     it('culls off-screen clips inside a variation lane', () => {

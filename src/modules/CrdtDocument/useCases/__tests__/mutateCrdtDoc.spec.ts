@@ -41,12 +41,17 @@ describe('mutateCrdtDoc', () => {
             baseValue: null,
             value: { count: 1 },
         };
+        const preparationOptions = {
+            preparationPolicy: 'bounded-native-sequence-v1',
+            ownedPath: ['target'],
+        } as const;
         cloneProspectiveCrdtMutation({
             id: 'root',
             changeFn,
             message: 'Detect',
             localSlots: ['slot'],
             canonicalMutation,
+            preparationOptions,
         });
         expect(automergeRepository.cloneProspectiveMutation).toHaveBeenCalledWith(
             'root',
@@ -54,7 +59,8 @@ describe('mutateCrdtDoc', () => {
             'Detect',
             undefined,
             ['slot'],
-            canonicalMutation
+            canonicalMutation,
+            preparationOptions
         );
     });
 

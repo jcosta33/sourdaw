@@ -3,6 +3,8 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
+import { startVisiblePianoFrameLoop } from './startVisiblePianoFrameLoop';
+
 /**
  * Interactive 3D grand piano model.
  *
@@ -51,8 +53,9 @@ type PianoModel3DProps = {
     activeNotes: ReadonlyMap<number, number>;
     sustainPedal: number;
     lidPosition: number;
-    onNoteOn?: (midiNote: number, velocity: number) => void;
-    onNoteOff?: (midiNote: number) => void;
+    visible?: boolean;
+    onPreviewNote?: (midiNote: number, velocity: number) => (() => void) | undefined;
+    onPreviewHoldChange?: (held: boolean) => void;
     className?: string;
 };
 
@@ -249,48 +252,48 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     return null;
 }
 
+type PreviewGestures = Map<number, (() => void) | undefined>;
+
+function releasePreview(
+    gestures: PreviewGestures,
+    pointerId: number,
+    onPreviewHoldChange: PianoModel3DProps['onPreviewHoldChange']
+): void {
+    if (!gestures.has(pointerId)) {
+        return;
+    }
+    const release = gestures.get(pointerId);
+    gestures.delete(pointerId);
+    if (gestures.size === 0) {
+        onPreviewHoldChange?.(false);
+    }
+    release?.();
+}
+
 export const PianoModel3D = ({
     activeNotes,
     sustainPedal,
     lidPosition,
-    onNoteOn,
-    onNoteOff,
+    visible = true,
+    onPreviewNote,
+    onPreviewHoldChange,
     className,
-}: PianoModel3DProps): ReactElement => {
+}: PianoModel3DProps): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    // Map of active pointerId -> MIDI note. A Map (not a single ref) lets
-    // multiple simultaneous pointers each hold their own note, so multi-touch
-    // chords release independently instead of one pointer-down stomping the
-    // prior note's pending release.
-    const pressedNotesRef = useRef<Map<number, number>>(new Map());
-    const animRef = useRef<KeyAnim[]>(
-        Array.from({ length: NUM_KEYS }, () => ({
-            hammerT: 0,
-            hammerVel: 0,
-            keyDepress: 0,
-            damperLift: 0,
-            stringVib: 0,
-        }))
-    );
-    const prevNotesRef = useRef<ReadonlyMap<number, number>>(new Map());
+    const gesturesRef = useRef<PreviewGestures>(new Map());
+    const previewHoldChangeRef = useRef(onPreviewHoldChange);
+    previewHoldChangeRef.current = onPreviewHoldChange;
     const lidRef = useRef(lidPosition);
     lidRef.current = lidPosition;
-    // The rAF render loop is created once in a []-deps effect, so it would
-    // otherwise close over the first-render activeNotes/sustainPedal forever.
-    // Mirror both changing inputs into refs and read *.current inside the loop
-    // (same pattern as StringVibrationView's notesRef).
+    // Mirror changing inputs so the visible renderer can read them without restarting.
     const activeNotesRef = useRef(activeNotes);
     activeNotesRef.current = activeNotes;
     const sustainPedalRef = useRef(sustainPedal);
     sustainPedalRef.current = sustainPedal;
-    // Keep the latest onNoteOff reachable from the window-level fallback
-    // listener without re-subscribing it on every render.
-    const onNoteOffRef = useRef(onNoteOff);
-    onNoteOffRef.current = onNoteOff;
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (canvas === null) {
+        if (!visible || canvas === null) {
             return undefined;
         }
 
@@ -323,6 +326,15 @@ export const PianoModel3D = ({
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+        const anims: KeyAnim[] = Array.from({ length: NUM_KEYS }, () => ({
+            hammerT: 0,
+            hammerVel: 0,
+            keyDepress: 0,
+            damperLift: 0,
+            stringVib: 0,
+        }));
+        let previousNotes: ReadonlyMap<number, number> = new Map();
+
         // Vertex scratch reused across frames. Truncating with `length = 0`
         // keeps the V8 backing store, so per-frame array growth amortises
         // to zero allocation once the maximum vertex count is reached.
@@ -330,7 +342,6 @@ export const PianoModel3D = ({
         // when the vertex count exceeds the currently-cached capacity.
         const vertexScratch: number[] = [];
         let uploadBuffer: Float32Array | null = null;
-        let rafId = 0;
 
         const render = (): void => {
             const W = canvas.width;
@@ -339,8 +350,6 @@ export const PianoModel3D = ({
             gl.uniform2f(uRes, W, H);
             gl.clearColor(0.07, 0.07, 0.07, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
-
-            const anims = animRef.current;
 
             // Read the latest props through their refs so the loop reflects
             // live play instead of the mount-time snapshot.
@@ -355,7 +364,7 @@ export const PianoModel3D = ({
                 const isHeld = vel !== undefined;
 
                 // Hammer: snap up on new note-on, decay back
-                if (isHeld && !prevNotesRef.current.has(midi)) {
+                if (isHeld && !previousNotes.has(midi)) {
                     a.hammerT = 1.0;
                     a.hammerVel = vel;
                 }
@@ -378,7 +387,7 @@ export const PianoModel3D = ({
                     a.stringVib = 0;
                 }
             }
-            prevNotesRef.current = currentNotes;
+            previousNotes = currentNotes;
 
             // --- Layout constants (pixel coords) ---
             const margin = W * 0.04;
@@ -533,37 +542,46 @@ export const PianoModel3D = ({
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
             gl.bufferData(gl.ARRAY_BUFFER, uploadBuffer.subarray(0, vertexCount), gl.DYNAMIC_DRAW);
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount / 6);
-
-            rafId = requestAnimationFrame(render);
         };
 
-        rafId = requestAnimationFrame(render);
+        const stopRendering = startVisiblePianoFrameLoop(canvas, render);
         return () => {
-            cancelAnimationFrame(rafId);
+            stopRendering();
+            gl.deleteBuffer(vbo);
+            gl.deleteVertexArray(vao);
+            gl.deleteProgram(prog);
         };
-    }, []);
+    }, [visible]);
 
-    // Fallback release path: if setPointerCapture silently no-ops, the canvas
-    // never sees pointerup and the note would hang. A window-level listener
-    // releases any pointer still recorded as held, guaranteeing every
-    // pointer-down is eventually matched by a release.
+    // Window events cover ordinary gesture endings when capture is unavailable.
     useEffect(() => {
-        const pressed = pressedNotesRef.current;
-        const releaseFromWindow = (e: PointerEvent): void => {
-            const note = pressed.get(e.pointerId);
-            if (note === undefined) {
-                return;
+        const gestures = gesturesRef.current;
+        const releaseFromWindow = (event: PointerEvent): void =>
+            releasePreview(gestures, event.pointerId, previewHoldChangeRef.current);
+        const clearPreviewHolds = (): void => {
+            for (const pointerId of [...gestures.keys()]) {
+                releasePreview(gestures, pointerId, previewHoldChangeRef.current);
             }
-            pressed.delete(e.pointerId);
-            onNoteOffRef.current?.(note);
         };
         window.addEventListener('pointerup', releaseFromWindow);
         window.addEventListener('pointercancel', releaseFromWindow);
+        window.addEventListener('blur', clearPreviewHolds);
         return () => {
             window.removeEventListener('pointerup', releaseFromWindow);
             window.removeEventListener('pointercancel', releaseFromWindow);
+            window.removeEventListener('blur', clearPreviewHolds);
+            clearPreviewHolds();
         };
     }, []);
+
+    useEffect(() => {
+        if (!visible) {
+            const gestures = gesturesRef.current;
+            for (const pointerId of [...gestures.keys()]) {
+                releasePreview(gestures, pointerId, previewHoldChangeRef.current);
+            }
+        }
+    }, [visible]);
 
     const canvasToPixel = (clientX: number, clientY: number): [number, number] => {
         const canvas = canvasRef.current;
@@ -577,7 +595,11 @@ export const PianoModel3D = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        if (onNoteOn === undefined) {
+        const gestures = gesturesRef.current;
+        if (gestures.has(e.pointerId)) {
+            return;
+        }
+        if (onPreviewNote === undefined) {
             return;
         }
         const canvas = canvasRef.current;
@@ -588,32 +610,32 @@ export const PianoModel3D = ({
         // never receives pointerup, so the window-level fallback listener
         // installed in the effect below releases the note instead.
         try {
-            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+            e.currentTarget.setPointerCapture(e.pointerId);
         } catch {
             // Capture unsupported/failed — fallback listener covers release.
         }
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
         if (midi !== null) {
-            pressedNotesRef.current.set(e.pointerId, midi);
-            onNoteOn(midi, 0.8);
+            const release = onPreviewNote(midi, 0.8);
+            gestures.set(e.pointerId, release);
+            if (gestures.size === 1) {
+                onPreviewHoldChange?.(true);
+            }
         }
     };
 
-    const releasePointer = (pointerId: number): void => {
-        const note = pressedNotesRef.current.get(pointerId);
-        if (note === undefined) {
-            return;
-        }
-        pressedNotesRef.current.delete(pointerId);
-        onNoteOff?.(note);
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        releasePreview(gesturesRef.current, event.pointerId, onPreviewHoldChange);
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        releasePointer(e.pointerId);
+    const handleLostPointerCapture = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        releasePreview(gesturesRef.current, event.pointerId, onPreviewHoldChange);
     };
 
-    const handlePointerLeave = handlePointerUp;
+    if (!visible) {
+        return null;
+    }
 
     return (
         <>
@@ -626,7 +648,8 @@ export const PianoModel3D = ({
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
-                onPointerLeave={handlePointerLeave}
+                onPointerLeave={handlePointerUp}
+                onLostPointerCapture={handleLostPointerCapture}
             />
             {/* The canvas itself is opaque to assistive tech; announce the
                 currently sounding notes through a polite live region. */}

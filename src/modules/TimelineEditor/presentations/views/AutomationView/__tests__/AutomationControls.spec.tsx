@@ -125,7 +125,8 @@ describe('AutomationAddLaneControl', () => {
 
     it('should show available count when showAvailableCount is true', () => {
         render(<AutomationAddLaneControl {...defaultProps} showAvailableCount />);
-        expect(screen.getByText('2 available')).toBeInTheDocument();
+        expect(screen.getByText('2 available').closest('button')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Add Lane' })).toHaveAttribute('data-size', 'xs');
     });
 
     it('should call onAdd when parameter is selected', () => {

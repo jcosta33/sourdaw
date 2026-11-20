@@ -46,6 +46,11 @@ input, state or mutation to run, and the check that must go red. Report the conc
    fail `crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts`; a native default-level band
    or historical timing figure does not establish this configured load. Review draw history was
    unavailable, so do not invent model, tier or stance claims.
+   For Bacteria, exercise the compiled DSP through the native ordered keys from #4127 and
+   the empty Bacteria precedence table introduced by #4152. Give a bare parameter and its active band
+   override distinct values, then require PCM to match the explicitly resolved band reference
+   and differ from the bare-only control. Vary a saved crossover outside the active band count
+   and require unchanged PCM until the corresponding split is active.
 4. **Format conformance by an independent decoder.** Compare real encoded output through the shipped decoder
    against the originating PCM at each bit depth, including container checksums and decoder warnings (FLAC Rice
    polarity per RFC 9639); reverting the grammar fix must fail the parity case.

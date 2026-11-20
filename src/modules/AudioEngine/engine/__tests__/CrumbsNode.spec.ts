@@ -118,6 +118,37 @@ describe('createCrumbsNode', () => {
         expect(messagesOfType('noteOff')).toEqual([{ type: 'noteOff', note: 60, sampleFrame: 480 }]);
     });
 
+    it('binds a pad audition release to the port that accepted its attack', async () => {
+        const original = await createCrumbsNode(makeCtx());
+        const originalPort = postMessage;
+        const release = original.startPadAudition(60, 100);
+        expect(release).toBeTypeOf('function');
+        expect(originalPort).toHaveBeenLastCalledWith({
+            type: 'padAuditionOn',
+            note: 60,
+            velocity: 100,
+            auditionId: 1,
+        });
+
+        postMessage = vi.fn();
+        const replacement = await createCrumbsNode(makeCtx());
+        const releaseReplacement = replacement.startPadAudition(60, 100);
+        expect(releaseReplacement).toBeTypeOf('function');
+
+        original.setBypass(true);
+        expect(original.startPadAudition(60, 100)).toBeUndefined();
+        release?.();
+        release?.();
+
+        expect(originalPort.mock.calls).toContainEqual([{ type: 'padAuditionOff', auditionId: 1 }]);
+        expect(originalPort.mock.calls.filter(([message]) => message.type === 'padAuditionOff')).toHaveLength(1);
+        expect(messagesOfType('padAuditionOff')).toEqual([]);
+
+        replacement.destroy();
+        releaseReplacement?.();
+        expect(messagesOfType('padAuditionOff')).toEqual([]);
+    });
+
     // A non-finite parameter would reach `set_param` and poison the engine's
     // smoother for the rest of the render.
     it('refuses a non-finite parameter value rather than forwarding it', async () => {

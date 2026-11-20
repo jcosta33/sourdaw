@@ -1,7 +1,24 @@
 import { type Track } from './Track';
 
+const FOLDER_TRACK_HEIGHT = 26;
+
 /** Height of one variation lane (one per track alternative) under its track. */
 export const VARIATION_LANE_HEIGHT = 24;
+export const AUTOMATION_SUB_LANE_HEIGHT = 40;
+
+export type TimelineTrackHeightPreview = { trackId: string; height: number };
+
+/** Display the project height, or its local resize preview, at the current view scale. */
+export function getTimelineTrackHeight(
+    track: Track,
+    scale: number,
+    preview?: TimelineTrackHeightPreview | null
+): number {
+    if (track.kind === 'folder') {
+        return FOLDER_TRACK_HEIGHT;
+    }
+    return (preview?.trackId === track.id ? preview.height : track.height) * scale;
+}
 
 type LaneHostingTrack = Pick<Track, 'kind' | 'showVariationLanes' | 'alternatives'>;
 
@@ -27,19 +44,27 @@ export function getVariationLaneExtent(track: LaneHostingTrack): number {
     return getVariationLaneCount(track) * VARIATION_LANE_HEIGHT;
 }
 
-type RenderedTrack = { height: number; variationLanes?: readonly unknown[] };
+export type RenderedTrackRows = {
+    height: number;
+    variationLanes?: readonly unknown[];
+    automationLanes?: readonly unknown[];
+};
+
+export function getAutomationSubLaneTop(height: number, variationCount: number, automationIndex = 0): number {
+    return height + variationCount * VARIATION_LANE_HEIGHT + automationIndex * AUTOMATION_SUB_LANE_HEIGHT;
+}
 
 /**
- * Vertical space a rendered track takes: its own row plus its variation lanes.
+ * Vertical space a rendered track takes: its own row, variation lanes and automation lanes.
  * The canvas advances to the next row by exactly this, and every y-to-track
  * mapping steps by it.
  */
-export function getRenderedTrackExtent(track: RenderedTrack): number {
-    return track.height + (track.variationLanes?.length ?? 0) * VARIATION_LANE_HEIGHT;
+export function getRenderedTrackExtent(track: RenderedTrackRows): number {
+    return getAutomationSubLaneTop(track.height, track.variationLanes?.length ?? 0, track.automationLanes?.length ?? 0);
 }
 
 /** Content-space top of each rendered track, in order. */
-export function getRenderedTrackTops(tracks: readonly RenderedTrack[]): number[] {
+export function getRenderedTrackTops(tracks: readonly RenderedTrackRows[]): number[] {
     const tops: number[] = [];
     let top = 0;
     for (const track of tracks) {
