@@ -1,5 +1,5 @@
 import { type AdoptedRecipe } from '../../models/AdoptedRecipe';
-import { type VibeBatchValueSource } from '../../models/VibeBatchValueSource';
+import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 
@@ -18,7 +18,7 @@ export function composeVibeBatchCardContent(input: {
     state: Parameters<typeof evaluateMetricGoalAdmission>[0]['state'];
     commandBatch: Parameters<typeof evaluateMetricGoalAdmission>[0]['commandBatch'];
     adoptedRecipes: readonly AdoptedRecipe[];
-    valueSource: VibeBatchValueSource;
+    valueChoice: VibeBatchValueChoice;
 }): string {
     const evaluation = evaluateMetricGoalAdmission({ state: input.state, commandBatch: input.commandBatch });
     const cardLines = describeVibeBatchCard({
@@ -26,9 +26,7 @@ export function composeVibeBatchCardContent(input: {
         context: input.context,
         criteria: evaluation.criteria,
         adoptedRecipes: input.adoptedRecipes,
-        // The card reads only where the values came from; the chosen values themselves ride the batch.
-        valueChoice:
-            input.valueSource.source === 'measurements' ? { source: 'measurements', pairs: [] } : input.valueSource,
+        valueChoice: input.valueChoice,
     });
     return [input.descriptionContent, ...cardLines].join('\n');
 }

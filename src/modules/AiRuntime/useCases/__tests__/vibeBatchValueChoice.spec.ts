@@ -4,6 +4,8 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { containsSampleData } from '../../__tests__/hostedSampleDataDetector';
 import {
@@ -26,10 +28,16 @@ import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { encodeWireToolName } from '../../repositories/cloudLlm/cloudInference/encodeWireToolName';
 import { chatStore } from '../../stores/chatStore';
+import {
+    getPendingActionConfirmation,
+    pendingActionConfirmationStore,
+} from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { skipPendingVibeBatch } from '../skipPendingVibeBatch';
 import {
@@ -846,19 +854,55 @@ describe('when value requests are made', () => {
     });
 });
 
-describe('a re-previewed vibe batch card (#6551)', () => {
-    const FIGURE_LINE = 'Fresh approval preview on ';
+describe('a re-previewed vibe batch card (#6551, #6629)', () => {
     const RE_PREVIEWED = 'Re-previewed against the current project.';
 
-    function lines(text: string): string[] {
-        return text.split('\n').filter((line) => line.trim() !== '');
+    /** The card's own lines: past its action list and before the approval lines every card ends on. */
+    function cardLines(card: Confirmation): string[] {
+        const all = cardContent(card)
+            .split('\n')
+            .filter((line) => line.trim() !== '');
+        return all.slice(
+            all.findIndex((line) => line.startsWith('Affected IDs: ')) + 1,
+            all.findIndex((line) => line.startsWith('Approval risk: '))
+        );
+    }
+
+    /** The latest of the card's metric-goal proofs bound to its own batch: the one preview a claim may read. */
+    function latestBoundProof(card: Confirmation) {
+        const batch = card.approvalSnapshot.commandBatch;
+        const parsed = batch && parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed?.status !== 'valid') {
+            throw new TypeError('Expected the card to hold its batch');
+        }
+        const proofs = metricGoalStateCodec(card.approvalSnapshot.metricGoalState)?.proofs ?? [];
+        return proofs.flatMap((proof) => bindMeasuredPreviewToBatch(proof.preview, parsed.envelope) ?? []).at(-1);
+    }
+
+    /** Leaves the card as a snapshot proposed before the value choice was recorded on it. */
+    function forgetValueChoice(confirmationId: string): void {
+        const state = pendingActionConfirmationStore.value;
+        if (state === null) {
+            throw new TypeError('Expected the pending confirmations');
+        }
+        pendingActionConfirmationStore.set({
+            ...state,
+            confirmations: state.confirmations.map((confirmation) => {
+                if (confirmation.id !== confirmationId) {
+                    return confirmation;
+                }
+                const { vibeValueChoice: _recorded, ...snapshot } = confirmation.approvalSnapshot;
+                return { ...confirmation, approvalSnapshot: snapshot };
+            }),
+        });
+        expect(getPendingActionConfirmation(confirmationId)?.approvalSnapshot.vibeValueChoice).toBeUndefined();
     }
 
     /**
-     * Re-previews the only proposed card after the project moved and the drums now sound brighter
-     * than they did, so the fresh measurement reads other figures than the card showed.
+     * Moves the project on, and has the drums sound brighter than they did when the card was measured,
+     * so the fresh measurement reads other figures than the card showed.
      */
-    async function rePreviewWithBrighterDrums(card: Confirmation): Promise<Confirmation> {
+    function brightenDrumsAfterAnEdit(): void {
         landProjectEdit(() => {
             const state = trackStore.value;
             if (state === null) {
@@ -889,44 +933,105 @@ describe('a re-previewed vibe batch card (#6551)', () => {
                 }),
             })
         );
-        await expect(reproposePendingChatActions({ confirmationId: card.id })).resolves.toMatchObject({
-            status: 'reproposed',
-        });
+    }
+
+    async function rePreview(card: Confirmation, selectedIntentGroupIds?: string[]): Promise<Confirmation> {
+        await expect(
+            reproposePendingChatActions({ confirmationId: card.id, selectedIntentGroupIds })
+        ).resolves.toMatchObject({ status: 'reproposed' });
         return requireOnlyProposedCard();
     }
 
-    // Red when the re-preview replaces the card's text with the bare re-preview sentence, or carries
-    // the figure lines the old measurement read.
-    it.each<[string, typeof respond, string]>([
-        ['measurements', () => drumsChoice(), 'on Drums — values chosen from measurements.'],
+    async function proposeDrumsCard(script: typeof respond): Promise<Confirmation> {
+        respond = script;
+        const brief = await planRun();
+        await confirm(brief);
+        return requireOnlyProposedCard();
+    }
+
+    // Red when the re-preview replaces the card's own lines with the bare re-preview sentence, or
+    // shows the figures the old measurement read rather than the fresh ones.
+    it.each<[string, typeof respond, string[], string[]]>([
+        [
+            'measurements',
+            () => drumsChoice(),
+            ['Recipe: Shell weight lifted, cymbal shelf eased on Drums — values chosen from measurements.'],
+            [
+                'Fresh approval preview on Drums, arrangement [0, 4]: frequency-band energy (bass) 0.5 → 0.76 (verified).',
+                'Fresh approval preview on Drums, arrangement [0, 4]: spectral centroid 1509.09 Hz → 1106.29 Hz (verified).',
+            ],
+        ],
         [
             'catalogue defaults',
             () => ({
                 calls: [{ name: VIBE_BATCH_VALUE_KEEP_DEFAULTS_TOOL_NAME, arguments: { reason: 'Already warm.' } }],
             }),
-            'Recipe values are catalogue defaults: the hosted provider declined to choose values (Already warm).',
+            [
+                'Recipe: Shell weight lifted, cymbal shelf eased on Drums — catalogue defaults.',
+                'Recipe values are catalogue defaults: the hosted provider declined to choose values (Already warm).',
+            ],
+            [
+                'Fresh approval preview on Drums, arrangement [0, 4]: frequency-band energy (bass) 0.5 → 0.76 (verified).',
+                'Fresh approval preview on Drums, arrangement [0, 4]: spectral centroid 1509.09 Hz → 1106.28 Hz (verified).',
+            ],
         ],
-    ])('keeps every line of its %s card and shows the fresh figures', async (_case, script, sourceLine) => {
-        respond = script;
-        const brief = await planRun();
-        await confirm(brief);
-        const card = requireOnlyProposedCard();
-        const before = lines(cardContent(card));
-        expect(before.some((line) => line.startsWith('Objective: '))).toBe(true);
-        expect(before.some((line) => line.startsWith('Expected on Drums: '))).toBe(true);
-        expect(before.some((line) => line.includes(sourceLine))).toBe(true);
+    ])('recomposes its %s card from the fresh measurement', async (_case, script, recipeLines, freshFigures) => {
+        const card = await proposeDrumsCard(script);
+        brightenDrumsAfterAnEdit();
 
-        const replacement = await rePreviewWithBrighterDrums(card);
+        const replacement = await rePreview(card);
 
-        const after = lines(cardContent(replacement));
-        expect(after).toEqual(expect.arrayContaining(before.filter((line) => !line.startsWith(FIGURE_LINE))));
-        const freshFigures = after.filter((line) => line.startsWith(FIGURE_LINE));
-        expect(freshFigures).toHaveLength(before.filter((line) => line.startsWith(FIGURE_LINE)).length);
-        expect(freshFigures.length).toBeGreaterThan(0);
-        expect(freshFigures.filter((line) => before.includes(line))).toEqual([]);
-        expect(after).toContain(RE_PREVIEWED);
+        expect(cardLines(replacement)).toEqual([
+            'Objective: warm drums.',
+            ...recipeLines,
+            'Expected on Drums: frequency-band energy (bass) rises; spectral centroid falls.',
+            ...freshFigures,
+            RE_PREVIEWED,
+        ]);
         expect(valueBodies).toHaveLength(1);
-        expect(replacement.approvalSnapshot.measuredPreview).toBeUndefined();
+        expect(replacement.approvalSnapshot.vibeValueChoice).toEqual(card.approvalSnapshot.vibeValueChoice);
+        expect(getAgentApprovalView({ confirmationId: replacement.id })?.measuredPreview).toBeNull();
+    });
+
+    // Red when a subset keeps recipe lines it no longer claims, or shows no fresh figures at all.
+    it('re-previews a subset as an ordinary card with its own fresh measurement', async () => {
+        const card = await proposeDrumsCard(() => drumsChoice());
+        const lowGain = getAgentApprovalView({ confirmationId: card.id })?.intentGroups.find((group) =>
+            group.summary.includes('(eq-low-gain)')
+        );
+        if (lowGain === undefined) {
+            throw new TypeError('Expected the card to offer its low-gain write as an intent group');
+        }
+        brightenDrumsAfterAnEdit();
+
+        const replacement = await rePreview(card, [lowGain.id]);
+
+        expect(replacement.actions.map((action) => action.type)).toEqual(['addDevice', 'setDeviceParameter']);
+        expect(cardLines(replacement)).toEqual([RE_PREVIEWED]);
+        expect(replacement.approvalSnapshot.adoptedRecipes).toBeUndefined();
+        expect(replacement.approvalSnapshot.vibeValueChoice).toBeUndefined();
+        const preview = replacement.approvalSnapshot.measuredPreview;
+        expect(preview?.revision).toBe(captureProjectRevision());
+        expect(preview).toEqual(latestBoundProof(replacement));
+        const centroid = getAgentApprovalView({ confirmationId: replacement.id })
+            ?.measuredPreview?.targets.find((target) => target.targetId === DRUMS_ID)
+            ?.metrics.find((metric) => metric.metricId === 'spectralCentroid');
+        expect(centroid?.baseline?.value).toBeCloseTo(1509.09, 2);
+        expect(centroid?.preview?.value).toBeCloseTo(1222.59, 2);
+    });
+
+    // Red when a card proposed before snapshots recorded the value choice no longer re-previews.
+    it('re-previews a card whose snapshot recorded no value choice as an ordinary card', async () => {
+        const card = await proposeDrumsCard(() => drumsChoice());
+        forgetValueChoice(card.id);
+        brightenDrumsAfterAnEdit();
+
+        const replacement = await rePreview(card);
+
+        expect(cardLines(replacement)).toEqual([RE_PREVIEWED]);
+        expect(replacement.approvalSnapshot.vibeValueChoice).toBeUndefined();
+        expect(replacement.approvalSnapshot.measuredPreview?.revision).toBe(captureProjectRevision());
+        expect(replacement.approvalSnapshot.measuredPreview).toEqual(latestBoundProof(replacement));
     });
 });
 

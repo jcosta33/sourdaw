@@ -1,4 +1,4 @@
-import { type VibeBatchDefaultsReason } from '../../models/VibeBatchValueSource';
+import { type VibeBatchDefaultsReason } from '../../models/VibeBatchValueChoice';
 
 const DEFAULTS_REASON_PHRASES: Readonly<Record<VibeBatchDefaultsReason, string>> = {
     'local-backend': 'the run is on a local backend, which does not choose values',

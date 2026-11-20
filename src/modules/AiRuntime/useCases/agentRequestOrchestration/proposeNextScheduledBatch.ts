@@ -25,7 +25,6 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
 import { chooseVibeBatchValues, type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
 import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
-import { readVibeBatchValueSource } from '../vibeRun/readVibeBatchValueSource';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
@@ -270,7 +269,6 @@ async function proposeMeasuredVibeBatch(input: {
         commandBatch,
         envelope: parsedCommandBatch.envelope,
     });
-    const vibeValueSource = readVibeBatchValueSource(input.valueChoice);
     persistPromptActionConfirmation({
         runId: run.runId,
         prompt: run.request,
@@ -290,7 +288,7 @@ async function proposeMeasuredVibeBatch(input: {
         group: commandGroup,
         projectRevision: grounded.revision,
         parsedCommandBatch,
-        vibeValueSource,
+        vibeValueChoice: input.valueChoice,
         content: composeVibeBatchCardContent({
             descriptionContent: input.description.content,
             batch: input.batch,
@@ -298,7 +296,7 @@ async function proposeMeasuredVibeBatch(input: {
             state: proof.state,
             commandBatch,
             adoptedRecipes: grounded.result.adoptedRecipes ?? [],
-            valueSource: vibeValueSource,
+            valueChoice: input.valueChoice,
         }),
     });
     return { status: 'awaiting-approval' };

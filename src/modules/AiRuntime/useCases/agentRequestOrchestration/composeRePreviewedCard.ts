@@ -25,24 +25,20 @@ type ComposeRePreviewedCardInput = {
     selectsSubset: boolean;
 };
 
-/** A vibe-run batch card is a later position of a vibe-run schedule; the brief at position 1 is not one. */
-function isVibeBatchCard(confirmation: PendingAppActionConfirmation): boolean {
-    const schedule = agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule;
-    return schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1;
-}
-
 /**
- * The text a vibe batch card is composed from at its first proposal, read back from the run's plan
- * and the card's own snapshot, or `null` when any of it no longer reads.
+ * What a whole vibe-run batch card was composed from at its first proposal: its planned batch, read
+ * back from the run's schedule, and the value choice its snapshot recorded. `null` for a subset,
+ * which is no longer that batch, for every other card, and for a card proposed before snapshots
+ * recorded the value choice, each of which re-previews as an ordinary card.
  */
-function readVibeCardSource(confirmation: PendingAppActionConfirmation) {
-    const schedule = agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule;
-    const { batchPosition, vibeValueSource } = confirmation.approvalSnapshot;
-    if (schedule?.kind !== 'vibe-run' || batchPosition === undefined || vibeValueSource === undefined) {
+function readVibeCardSource(input: ComposeRePreviewedCardInput) {
+    const schedule = agentRunLifecycle.get(input.confirmation.runId)?.plan?.batchSchedule;
+    const { batchPosition, vibeValueChoice } = input.confirmation.approvalSnapshot;
+    if (input.selectsSubset || schedule?.kind !== 'vibe-run' || !batchPosition || !vibeValueChoice) {
         return null;
     }
     const stored = readStoredVibeRunBatch(schedule, batchPosition.index);
-    return stored === null ? null : { batch: stored.batch, valueSource: vibeValueSource };
+    return stored === null ? null : { batch: stored.batch, valueChoice: vibeValueChoice };
 }
 
 /**
@@ -60,8 +56,17 @@ function readRePreviewedMeasurement(input: ComposeRePreviewedCardInput): Measure
     })?.preview;
 }
 
-/** The card body before the re-preview sentence: a whole vibe batch's own card, or the batch description. */
-function composeCardBody(input: ComposeRePreviewedCardInput): string {
+/**
+ * A re-previewed card is composed again from this re-preview alone, then says in one sentence that
+ * it was re-previewed. A whole vibe-run batch card gets its own lines again, each figure line read
+ * from the fresh measurement, and, as at its first proposal, shows its figures only as those lines.
+ * Every other card describes the actions it keeps and shows this re-preview's own bound measurement
+ * as its measured preview.
+ */
+export function composeRePreviewedCard(input: ComposeRePreviewedCardInput): {
+    content: string;
+    measuredPreview: MeasuredPreview | undefined;
+} {
     const { confirmation, actions, context } = input;
     const description = describePendingActionConfirmation({
         actions,
@@ -70,33 +75,21 @@ function composeCardBody(input: ComposeRePreviewedCardInput): string {
         inheritedProtectedUnchanged: confirmation.protectedUnchanged,
         requestProtectionFacts: confirmation.approvalSnapshot.protectionFacts,
     });
-    const vibe = input.selectsSubset ? null : readVibeCardSource(confirmation);
+    const vibe = readVibeCardSource(input);
     if (vibe === null) {
-        return description.content;
+        return {
+            content: `${description.content}\n\n${RE_PREVIEWED_SENTENCE}`,
+            measuredPreview: readRePreviewedMeasurement(input),
+        };
     }
-    return composeVibeBatchCardContent({
+    const vibeContent = composeVibeBatchCardContent({
         descriptionContent: description.content,
         batch: vibe.batch,
         context,
         state: input.measuredState,
         commandBatch: input.commandBatch,
         adoptedRecipes: confirmation.approvalSnapshot.adoptedRecipes ?? [],
-        valueSource: vibe.valueSource,
+        valueChoice: vibe.valueChoice,
     });
-}
-
-/**
- * A re-previewed card is composed again from this re-preview alone: its text as the first proposal
- * composed it, for the refreshed batch and the fresh figures, then one sentence saying it was
- * re-previewed, and its measured preview from this re-preview's own bound measurement. A vibe batch
- * card shows its figures as text lines and carries no preview section, as at its first proposal.
- */
-export function composeRePreviewedCard(input: ComposeRePreviewedCardInput): {
-    content: string;
-    measuredPreview: MeasuredPreview | undefined;
-} {
-    return {
-        content: `${composeCardBody(input)}\n\n${RE_PREVIEWED_SENTENCE}`,
-        measuredPreview: isVibeBatchCard(input.confirmation) ? undefined : readRePreviewedMeasurement(input),
-    };
+    return { content: `${vibeContent}\n\n${RE_PREVIEWED_SENTENCE}`, measuredPreview: undefined };
 }

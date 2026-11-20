@@ -3,7 +3,7 @@ import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ToolCallResult } from '../../models/ToolCallResult';
-import { type VibeBatchDefaultsReason } from '../../models/VibeBatchValueSource';
+import { type VibeBatchDefaultsReason, type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -14,11 +14,9 @@ import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 import { buildVibeBatchCorrectionMessage } from './buildVibeBatchCorrectionMessage';
 import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
 import { isHostedValueChoiceChain } from './isHostedValueChoiceChain';
-import { type VibeBatchPairValues, readVibeBatchValueReply } from './readVibeBatchValueReply';
+import { readVibeBatchValueReply } from './readVibeBatchValueReply';
 
-export type VibeBatchValueChoice =
-    | { readonly source: 'measurements'; readonly pairs: readonly VibeBatchPairValues[] }
-    | { readonly source: 'catalogue-defaults'; readonly reason: VibeBatchDefaultsReason; readonly detail: string };
+export type { VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 
 export type VibeBatchValueChoiceOutcome = VibeBatchValueChoice | { readonly source: 'stopped' };
 
