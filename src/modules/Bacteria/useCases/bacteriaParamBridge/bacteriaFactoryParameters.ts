@@ -77,8 +77,9 @@ function captureValues(
         if (band) {
             // The opposite replay leg may inherit this value after deleting
             // the per-band override. Guard it without rewriting it.
-            before[band.bare] = current[band.bare] ?? null;
-            after[band.bare] = before[band.bare];
+            const inherited = current[band.bare] ?? null;
+            before[band.bare] = inherited;
+            after[band.bare] = inherited;
         }
     }
     return { before, after };
