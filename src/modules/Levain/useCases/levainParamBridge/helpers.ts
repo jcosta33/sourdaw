@@ -247,6 +247,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         paramBatcher.schedule(compositeKey, value, flushParam);
     }
 
+    function isMasterGainQueued(deviceId: string): boolean {
+        return pendingKeysByDevice.get(deviceId)?.has(`${deviceId}:master_gain`) ?? false;
+    }
+
+    function captureMasterRegistration(deviceId: string): () => boolean {
+        const device = activeDevices.get(deviceId);
+        const port = activePorts.get(deviceId);
+        return () =>
+            device !== undefined && activeDevices.get(deviceId) === device && activePorts.get(deviceId) === port;
+    }
+
     async function followCurrentSampleLoad(operation: SampleLoadOperation): Promise<LevainSampleLoadOutcome> {
         let current = operation;
         let outcome = await current.completion;
@@ -625,6 +636,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         setLevainParamWithAudio,
         setMacroWithAudio,
         sendMicParamToEngine,
+        isMasterGainQueued,
+        captureMasterRegistration,
         applyPatchToEngine,
         readRegistrySizes,
     };

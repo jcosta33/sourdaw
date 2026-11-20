@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
+import { ROW_HEIGHT, getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -111,6 +111,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     clipId: 'clip-1',
     trackId: 'track-1',
     beatWidth: BEAT_W,
+    rowHeight: ROW_HEIGHT,
     gridSnap: 1,
     scaleType: 'chromatic',
     scaleRoot: 0,
@@ -159,7 +160,7 @@ describe('usePianoRollRenderer', () => {
         expect(canvas.width).toBe(VIEWPORT_W);
         expect(canvas.height).toBe(2070);
         expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
-        expect(canvas.style.height).toBe('2070px');
+        expect(canvas.style.height).toBe('');
     });
 
     it('paints the live lasso in the scrolled note frame until the path is cleared', () => {
@@ -531,6 +532,18 @@ describe('usePianoRollRenderer', () => {
         runTick();
         expect(drawImage).toHaveBeenCalledTimes(5);
         expect(roundRect).not.toHaveBeenCalledWith(...rect(8, 66));
+    });
+
+    it.each([8, 32])('draws notes and resizes the backing store at row height %i', (height) => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const deps = buildDeps({
+            rowHeight: height,
+            notes: [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+        expect(deps.canvasRef.current!.height).toBe(22 + 128 * height);
+        expect(roundRect).toHaveBeenCalledWith(21, 67 * height + 1, 18, height - 2, 2);
     });
 
     it('draws each active note of the clip at its beat/pitch cell', () => {

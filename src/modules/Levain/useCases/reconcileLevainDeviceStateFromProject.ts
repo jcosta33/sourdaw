@@ -1,10 +1,18 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { fromLevainDeviceState } from '../models/LevainDeviceState';
-import { levainStore, setCurrentArticulation } from '../stores/levainStore';
+import {
+    defaultLevainState,
+    levainStore,
+    setCurrentArticulation,
+    setLevainParam,
+    type LevainState,
+} from '../stores/levainStore';
 
+import { levainBridge } from './levainParamBridge/levainBridge';
 import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
 import { loadInstrument } from './loadPreset';
+import { readLevainMasterGain } from './readLevainMasterGain';
 
 /**
  * Apply authoritative project identity state to a loaded Levain session
@@ -46,10 +54,17 @@ export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
     }
 
     const identity = fromLevainDeviceState(device.deviceState);
-    if (!identity) {
-        return;
+    if (identity) {
+        reconcileIdentity(deviceId, state, identity);
     }
+    projectMasterGain(deviceId, device.parameterValues);
+}
 
+function reconcileIdentity(
+    deviceId: string,
+    state: LevainState,
+    identity: NonNullable<ReturnType<typeof fromLevainDeviceState>>
+): void {
     const uiLevel = identity.disclosureTier === 'expert' ? 6 : 1;
     if (state.uiLevel !== uiLevel) {
         const instances = levainStore.value ?? {};
@@ -70,5 +85,13 @@ export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
     if (levainStore.value?.[deviceId]?.patch.currentArticulation !== identity.currentArticulation) {
         setCurrentArticulation(deviceId, identity.currentArticulation);
         setLevainParamWithAudio(deviceId, 'currentArticulation', identity.currentArticulation);
+    }
+}
+
+function projectMasterGain(deviceId: string, values: Readonly<Record<string, number>>): void {
+    const gain = readLevainMasterGain(values, defaultLevainState.patch.masterGain);
+    // Leave the synchronous patch intact until its own queued instrument reset publishes.
+    if (levainStore.value?.[deviceId]?.patch.masterGain !== gain && !levainBridge().isMasterGainQueued(deviceId)) {
+        setLevainParam(deviceId, 'masterGain', gain);
     }
 }

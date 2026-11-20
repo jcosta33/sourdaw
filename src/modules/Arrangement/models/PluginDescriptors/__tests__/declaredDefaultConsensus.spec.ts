@@ -625,10 +625,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
             'Levain declares no default patch. `models/LevainPatch.ts` exports four sub-configs (expression, ' +
             'legato, humanize, release-trigger) whose keys are none of the six descriptor parameter ids; the ' +
             'instrument manifest supplies the rest at load time.',
-        noPanelReason:
-            "Levain's eighteen reset literals sit on knobs that write a *fragment* of a sub-config — " +
-            '`onChange={(v) => onChange({ amount: v })}` — so the id is an object key inside a lambda and names ' +
-            'a field of `DEFAULT_HUMANIZE_CONFIG` rather than a descriptor parameter.',
+        noPanelReason: '',
     },
     'builtin-crumbs': {
         moduleDir: 'src/modules/Crumbs',
@@ -1215,7 +1212,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Levain/presentations/components/LegatoTuning.tsx', readable: 0 },
     { file: 'src/modules/Levain/presentations/components/LevainMacroStrip.tsx', readable: 0 },
     { file: 'src/modules/Levain/presentations/components/MicBlendSlider.tsx', readable: 0 },
-    { file: 'src/modules/Levain/presentations/views/LevainPanel.tsx', readable: 0 },
+    { file: 'src/modules/Levain/presentations/views/LevainPanel.tsx', declared: 1, readable: 1 },
     { file: 'src/modules/Proof/presentations/components/ProofDynSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/components/ProofEqSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/components/ProofExciterSection.tsx', readable: 0 },

@@ -1697,6 +1697,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.grandBouleControls = {
             ready: false,
+            startPreviewNote: () => undefined,
             noteOn: () => {},
             noteOff: () => {},
             noteExpression: () => {},
@@ -1759,6 +1760,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         noteExpression: result.noteExpression,
+                        startPreviewNote: result.startPreviewNote,
                         setParam: result.setParam,
                         setSustain: result.setSustain,
                         setUnaCorda: result.setUnaCorda,

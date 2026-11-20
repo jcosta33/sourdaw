@@ -776,8 +776,9 @@ function percussiveStereoWav(): Buffer {
     return wav;
 }
 
-async function sourceState(page: Page, last = false) {
-    return page.evaluate(async (last) => {
+async function sourceState(page: Page, last = false, { includePcmDigest = true }: { includePcmDigest?: boolean } = {}) {
+    const readOptions = { last, includePcmDigest };
+    return page.evaluate(async ({ last, includePcmDigest }) => {
         const { trackStore, getWarpState } = await import('/src/modules/Arrangement/stores/index.ts');
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/index.ts');
         const { getCrdtDoc } = await import('/src/modules/CrdtDocument/useCases/index.ts');
@@ -788,7 +789,7 @@ async function sourceState(page: Page, last = false) {
         const clip = last ? clips.at(-1) : clips[0];
         const source = clip?.audioBufferId ? audioBufferCache.get(clip.audioBufferId) : undefined;
         const pcm = [];
-        if (source) {
+        if (source && includePcmDigest) {
             for (let channel = 0; channel < source.numberOfChannels; channel++) {
                 const samples = new Float32Array(source.getChannelData(channel));
                 pcm.push(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', samples.buffer))).join(','));
@@ -806,7 +807,7 @@ async function sourceState(page: Page, last = false) {
             projected,
             raw: clip ? (raw?.warpStates?.states[clip.id]?.markers ?? []) : [],
         };
-    }, last);
+    }, readOptions);
 }
 
 test('120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget', async ({
@@ -846,10 +847,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await row.click({ button: 'right' });
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: /Import Audio/i }).click();
-    await (
-        await chooser
-    ).setFiles({ name: '120s-48k-stereo-attacks.wav', mimeType: 'audio/wav', buffer: percussiveStereoWav() });
-    await expect.poll(async () => (await sourceState(page)).ready).toBe(true);
+    // A file path avoids Playwright's in-renderer buffer conversion before the timing checks.
+    const fixturePath = info.outputPath('120s-48k-stereo-attacks.wav');
+    await writeFile(fixturePath, percussiveStereoWav());
+    await (await chooser).setFiles(fixturePath);
+    const readSourceMetadata = () => sourceState(page, false, { includePcmDigest: false });
+    await expect.poll(async () => (await readSourceMetadata()).ready).toBe(true);
     const before = await sourceState(page);
     expect(before.sampleRate).toBe(RATE);
     expect(before.frames).toBe(RATE * SECONDS);
@@ -1092,9 +1095,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     assertMaterializationTaskSpans(result.nativePhases);
     assertProspectiveObservations(result.nativePhases, measured.measures, measured.prospectiveRequests);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
+    await expect.poll(async () => (await readSourceMetadata()).projected.length).toBe(0);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
+    await expect.poll(async () => (await readSourceMetadata()).projected.length).toBe(ATTACKS.length);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     const canvas = panel.getByTestId('elastic-waveform-canvas');
@@ -1110,7 +1113,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 user');
     await panel.getByTestId('elastic-tool-select').click();
     const populated = await sourceState(page);
-    await expect.poll(async () => (await sourceState(page)).raw).toEqual(populated.projected);
+    await expect.poll(async () => (await readSourceMetadata()).raw).toEqual(populated.projected);
     expect(populated.projected).toHaveLength(ATTACKS.length + 1);
     const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
     expect(retained).toHaveLength(2);
@@ -1129,9 +1132,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
     const redetected = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(populated.projected);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(redetected.projected);
 
     const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
     await armPopulatedMeasurement(page, 'sensitivity');
@@ -1147,9 +1150,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
     const sensitive = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(redetected.projected);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(sensitive.projected);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     assertElasticTiming(result, 'cold-detect');

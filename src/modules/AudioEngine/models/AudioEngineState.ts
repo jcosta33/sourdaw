@@ -340,6 +340,7 @@ export type BuiltinDeviceNode = {
         noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
         setTemperament: (index: number) => void;
         allNotesOff: () => void;
+        startPreviewNote: (midiNote: number, velocity: number) => (() => void) | undefined;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };

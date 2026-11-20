@@ -1623,6 +1623,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeGrandBouleResult(): GrandBouleNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPreviewNote: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 noteExpression: vi.fn(),
@@ -1641,6 +1642,18 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: Promise.resolve({}),
             };
         }
+
+        it('exposes preview only on the ready Grand Boule controls', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-1' });
+            const { placeholder, loadPromise } = requireDescriptor('grand-boule').create(deps);
+            expect(placeholder.grandBouleControls?.startPreviewNote(60, 1)).toBeUndefined();
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.grandBouleControls?.startPreviewNote).toBe(result.startPreviewNote);
+            expect(loaded.controller).not.toHaveProperty('startPreviewNote');
+        });
 
         it('replays queued params and announces the loaded device', async () => {
             const result = makeGrandBouleResult();
