@@ -18,7 +18,7 @@ describe('BacteriaPanel', () => {
         expect(screen.getByText('Band energy')).toBeInTheDocument();
     });
 
-    it('selects an effect for the sixth band and preserves the band across tier changes', () => {
+    it('preserves Band 6 and Body when returning from Lab to Shape', () => {
         bacteriaStore.set({
             'dev-1': {
                 ...DEFAULT_BACTERIA_STATE,
@@ -40,6 +40,9 @@ describe('BacteriaPanel', () => {
         expect(screen.getByRole('button', { name: 'Band 6' })).toHaveAttribute('aria-pressed', 'true');
 
         fireEvent.click(screen.getByRole('button', { name: 'Shape' }));
+        expect(
+            within(screen.getByRole('grid', { name: 'Bands' })).getByRole('row', { name: 'Band 6' })
+        ).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByRole('button', { name: 'Body' })).toHaveAttribute('aria-pressed', 'true');
     });
 });
