@@ -497,6 +497,7 @@ export function runUnitPhase(
             '--coverage.reporter=json',
             `--coverage.reportsDirectory=${join(context.temp, unitCoverageShardDirectory)}`
         );
+        options.env[PR_UNIT_COVERAGE_SHARD_ENV] = '1';
     }
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];
@@ -506,10 +507,7 @@ export function runUnitPhase(
     if (phase === 'browsers') {
         args = ['exec', 'playwright', 'install', 'chromium', '--only-shell'];
     }
-    const childOptions = reportsCoverage
-        ? { ...options, env: { ...options.env, [PR_UNIT_COVERAGE_SHARD_ENV]: '1' } }
-        : options;
-    return ports.run(context.pnpm, args, childOptions).status ?? 1;
+    return ports.run(context.pnpm, args, options).status ?? 1;
 }
 
 export function launchUnitPhase(
