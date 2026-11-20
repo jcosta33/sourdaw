@@ -1,55 +1,36 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { markToasterKitCommitted } from '../models/ToasterKitCommitMarkers';
 import { fromToasterKitState } from '../models/ToasterKitState';
-import { toasterStore } from '../stores/toasterStore';
+import { discardPendingToasterKitUpdates, toasterStore } from '../stores/toasterStore';
 
 import { loadToasterKitPreset } from './loadToasterKit';
+import { observePublishedToasterKit } from './observePublishedToasterKit';
+import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 
-/**
- * Apply authoritative project kit state to a loaded Toaster session (#4764).
- *
- * The inbound half of `initToasterKitPersistence`: the peer's kit commit landed
- * in the document without any local trigger firing, so this reads the chunk the
- * same way `hydrateToasterKitFromProject` does at load and pushes it through
- * the same wholesale-replacement route a preset pick uses — store, worklet and
- * native session in one gesture. A device with no session record is skipped:
- * nothing live holds a stale kit, and its load path rehydrates from the
- * document anyway.
- *
- * The comparison is the GB hydrate's diff gate: the decoded kit is compared
- * with the session kit and equal chunks cost nothing. A reconciled kit is
- * marked as committed before loading so the persistence subscriber does not
- * echo the peer's write back into the document.
- */
-export function reconcileToasterKitFromProject(deviceId: string): void {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
+export function reconcileToasterKitFromProject(
+    deviceId: string,
+    { committedReplacement = false }: { committedReplacement?: boolean } = {}
+): void {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
         return;
     }
-
-    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
-    if (!device || !device.deviceState) {
-        // No chunk is no inbound change. An undo that removes the last kit
-        // commit ever recorded leaves the loaded kit stale — the same window a
-        // session that never saved has — and is not worth a default-kit stomp
-        // over every unrelated document write.
+    const source = observePublishedToasterKit({ deviceId, trackId: target.trackId, committedReplacement });
+    if (!source) {
         return;
     }
-
     const state = toasterStore.value?.[deviceId];
     if (!state) {
+        discardPendingToasterKitUpdates(deviceId);
+    }
+    const kit = fromToasterKitState(source.chunk);
+    if (state && jsonValuesEqual(state.kit, kit)) {
         return;
     }
 
-    const kit = fromToasterKitState(device.deviceState);
-    if (jsonValuesEqual(state.kit, kit)) {
-        return;
-    }
-
-    // This kit was read from document truth. Applying it to the session must
-    // not mirror the same payload back as a new local edit.
+    toasterRefusalEpisodes.end(deviceId);
     markToasterKitCommitted(kit);
     loadToasterKitPreset(deviceId, kit);
 }

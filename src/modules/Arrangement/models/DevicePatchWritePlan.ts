@@ -110,6 +110,7 @@ function projectCapturedStep(
     if (
         !target ||
         target.owner.id !== step.trackId ||
+        (step.expectedDeviceType !== undefined && target.device.type !== step.expectedDeviceType) ||
         (target.owner.frozen ?? false) !== step.expectedTrackFrozen ||
         target.owner.frozen === true ||
         target.owner.devices.length !== step.expectedDeviceIds.length ||
@@ -175,7 +176,7 @@ function projectCommandOwners(
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (action.type === 'setFermenterPatch') {
+    if (action.type === 'setFermenterPatch' || action.type === 'setToasterFactoryKit') {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

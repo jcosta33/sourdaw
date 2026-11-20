@@ -103,6 +103,7 @@ export const semanticDiffClassificationByActionType: {
     setDeviceState: { overwrite: true },
     setFermenterPatch: NONE,
     setGrandBouleDeviceState: NONE,
+    setToasterFactoryKit: NONE,
     createBus: { created: true, routed: true, structuralAudio: true },
     createFolder: NONE,
     setSend: { routed: true, structuralAudio: true },

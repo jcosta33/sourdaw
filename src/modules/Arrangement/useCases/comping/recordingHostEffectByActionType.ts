@@ -94,6 +94,7 @@ export const recordingHostEffectByActionType: {
     setDeviceState: leaveHosts,
     setFermenterPatch: leaveHosts,
     setGrandBouleDeviceState: leaveHosts,
+    setToasterFactoryKit: leaveHosts,
     createBus: leaveHosts,
     createFolder: leaveHosts,
     setSend: leaveHosts,

@@ -34,7 +34,8 @@ const TOOLBAR_CONTROLS = [
     'Toggle paint mode',
     'Toggle magic lasso selection',
     'Toggle Expression View (I4)',
-    'Piano roll zoom',
+    'Horizontal zoom',
+    'Vertical zoom',
 ] as const;
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -431,8 +432,21 @@ async function toolbarState(frame: Frame): Promise<ToolbarState> {
                 visibleViewport = intersect(visibleViewport, copy(ancestor.getBoundingClientRect()));
             }
         }
-        const nameOf = (element: HTMLElement): string =>
-            element.getAttribute('aria-label') ?? element.textContent.trim();
+        const nameOf = (element: HTMLElement): string => {
+            const labelledBy = element.getAttribute('aria-labelledby');
+            if (labelledBy) {
+                const label = labelledBy
+                    .trim()
+                    .split(/\s+/)
+                    .map((id) => (document.getElementById(id)?.textContent ?? '').trim())
+                    .filter(Boolean)
+                    .join(' ');
+                if (label) {
+                    return label;
+                }
+            }
+            return element.getAttribute('aria-label') ?? element.textContent.trim();
+        };
         const active = document.activeElement;
         return {
             activeName: active instanceof HTMLElement ? nameOf(active) : null,

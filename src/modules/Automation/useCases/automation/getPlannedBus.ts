@@ -166,6 +166,7 @@ const plannedBusByActionType: {
     setDeviceState: unchangedBus,
     setFermenterPatch: unchangedBus,
     setGrandBouleDeviceState: unchangedBus,
+    setToasterFactoryKit: unchangedBus,
     createBus: afterCreateBus,
     createFolder: unchangedBus,
     setSend: unchangedBus,

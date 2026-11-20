@@ -153,6 +153,7 @@ const midiSnapshotByActionType: {
     setDeviceState: unchangedSnapshot,
     setFermenterPatch: unchangedSnapshot,
     setGrandBouleDeviceState: unchangedSnapshot,
+    setToasterFactoryKit: unchangedSnapshot,
     createBus: unchangedSnapshot,
     createFolder: unchangedSnapshot,
     setSend: unchangedSnapshot,

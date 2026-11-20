@@ -415,6 +415,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     // Reached only because the Toaster barrel is loaded for real below, which
     // pulls its preset-loading compiler into this spec's graph.
     compileLoadPresetActions: noop,
+    applyDevicePatchState: () => false,
+    captureDevicePatchCommitValidation: () => null,
+    getPlannedDevicePatchState: () => null,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -694,6 +697,7 @@ vi.mock('#/modules/Project/useCases', () => ({
 
 vi.mock('#/modules/Project/stores', () => ({
     getSettledProjectId: getDurableProjectOwnerIdMock,
+    projectTransitionEpoch: { captureEditAuthority: () => ({ isCurrent: () => false }) },
 }));
 
 vi.mock('#/modules/ProjectVersioning/useCases', () => ({
@@ -741,6 +745,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     const real = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
 
     return {
+        getToasterHandlers: sentinelHandlers('Toaster'),
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
@@ -971,6 +976,7 @@ describe('bootstrap', () => {
         'CvGate',
         'Fermenter',
         'GrandBoule',
+        'Toaster',
         'NodeView',
         'WebMidiInput',
         'Rave',

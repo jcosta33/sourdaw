@@ -142,6 +142,7 @@ const lowerByActionType: {
     setDeviceState: cloneForReplay,
     setFermenterPatch: cloneForReplay,
     setGrandBouleDeviceState: cloneForReplay,
+    setToasterFactoryKit: cloneForReplay,
     createBus: cloneForReplay,
     createFolder: cloneForReplay,
     setSend: cloneForReplay,
