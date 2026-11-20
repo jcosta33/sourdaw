@@ -1,4 +1,4 @@
-import { startsWordInitialElision } from '../../../transformers/promptParser/wordInitialElision';
+import { opensStraightQuote } from '../../../transformers/promptParser/wordInitialElision';
 
 const QUOTED_LABEL = /"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu;
 
@@ -18,7 +18,7 @@ export function maskQuotedLabels(text: string): string {
     let copiedUpTo = 0;
     let match = pattern.exec(text);
     while (match !== null) {
-        if (match[0][0] === "'" && startsWordInitialElision(text, match.index)) {
+        if (match[0][0] === "'" && !opensStraightQuote(text, match.index)) {
             pattern.lastIndex = match.index + 1;
         } else {
             masked += text.slice(copiedUpTo, match.index) + maskLabel(match[0]);

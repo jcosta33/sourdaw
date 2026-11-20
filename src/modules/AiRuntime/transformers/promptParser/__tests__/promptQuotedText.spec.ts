@@ -50,6 +50,10 @@ describe('prompt quoted text', () => {
         ["don't touch the kick's tail on the drums' bus", true, "don't touch the kick's tail on the drums' bus"],
         ["'Keys", false, "'    "],
         ["'Til Dawn'", true, "'Til Dawn'"],
+        ["Make the 'Round' track louder", true, "Make the '     ' track louder"],
+        ["Make the 'Kay' track and the 'Keys' track louder", true, "Make the '   ' track and the '    ' track louder"],
+        ["Make 'em louder than 'Keys'", true, "Make 'em louder than '    '"],
+        ["Make the 'Till' track louder", true, "Make the '    ' track louder"],
         ['"Til Dawn"', true, '"        "'],
         ['‘Til Dawn’', true, '‘        ’'],
     ])('reads a word-initial elision as part of the word in %s', (value, complete, expected) => {

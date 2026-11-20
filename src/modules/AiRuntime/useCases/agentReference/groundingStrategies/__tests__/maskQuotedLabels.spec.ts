@@ -6,6 +6,11 @@ describe('maskQuotedLabels', () => {
     it.each([
         ["Make 'em louder than the 'Keys' track", "Make 'em louder than the '    ' track"],
         ["Make the drums louder, 'cause the mix is dull", "Make the drums louder, 'cause the mix is dull"],
+        ["rock 'n' roll the bass", "rock 'n' roll the bass"],
+        ["Make the 'Round' track louder", "Make the '     ' track louder"],
+        ["Make the 'Kay' track and the 'Keys' track louder", "Make the '   ' track and the '    ' track louder"],
+        ["Don't make 'em louder than the 'Keys' track", "Don't make 'em louder than the '    ' track"],
+        ["Make 'em louder than 'Keys'", "Make 'em louder than '    '"],
         ["'Keys'", "'    '"],
         ["the 'Lead Vocal' track", "the '          ' track"],
         ["don't touch Keys", "don't touch Keys"],
