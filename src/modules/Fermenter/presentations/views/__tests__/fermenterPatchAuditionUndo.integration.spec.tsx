@@ -455,52 +455,49 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(rawDevice().parameterValues.oscWaveform).toBe(0);
     });
 
-    it.each(['frozen', 'changed-owner', 'removed-device'] as const)(
-        'refuses a queued waveform after %s',
-        async (change) => {
-            renderPanel();
-            fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
-            const hold = await holdSnapshot();
-            fireEvent.click(screen.getByRole('button', { name: 'Sine' }));
-            act(() =>
-                hold.change(() => {
-                    const track = projectedTrack();
-                    if (change === 'frozen') {
-                        replaceTrack({ ...track, frozen: true });
-                    } else if (change === 'removed-device') {
-                        replaceTrack({ ...track, devices: track.devices.slice(1) });
-                    } else {
-                        replaceTrack({ ...track, name: 'Replacement owner' });
-                    }
-                })
-            );
-            await act(() => hold.finish());
-            await act(() =>
-                executeUserAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Barrier' } })
-            );
-            if (change !== 'removed-device') {
-                await waitFor(() =>
-                    expect(screen.getByRole('button', { name: 'Saw' })).toHaveAttribute('aria-pressed', 'true')
-                );
-                expect(committedPatch()).toEqual(initialPatch);
-                expect(Object.hasOwn(rawDevice().parameterValues, 'oscWaveform')).toBe(false);
-            } else {
-                expect(projectedTrack().devices.map((device) => device.id)).toEqual([OTHER_DEVICE_ID]);
+    async function queueWaveformBeforeOwnerChange(change: (track: Track) => Track): Promise<void> {
+        renderPanel();
+        fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
+        const hold = await holdSnapshot();
+        fireEvent.click(screen.getByRole('button', { name: 'Sine' }));
+        act(() => hold.change(() => replaceTrack(change(projectedTrack()))));
+        await act(() => hold.finish());
+        await act(() => executeUserAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Barrier' } }));
+    }
+
+    it.each(['frozen', 'changed-owner'] as const)('refuses a queued waveform after %s', async (change) => {
+        await queueWaveformBeforeOwnerChange((track) => {
+            if (change === 'frozen') {
+                return { ...track, frozen: true };
             }
-            expect(depth()).toBe(1);
-            expect(audio.updateDevicePatch).not.toHaveBeenCalled();
-        }
-    );
+            return { ...track, name: 'Replacement owner' };
+        });
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'Saw' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(Object.hasOwn(rawDevice().parameterValues, 'oscWaveform')).toBe(false);
+        expect(depth()).toBe(1);
+        expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a queued waveform after device removal', async () => {
+        await queueWaveformBeforeOwnerChange((track) => ({ ...track, devices: track.devices.slice(1) }));
+        expect(projectedTrack().devices.map((device) => device.id)).toEqual([OTHER_DEVICE_ID]);
+        expect(depth()).toBe(1);
+        expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+    });
 
     it('restores an explicit scalar separately from the original chunk', async () => {
         const track = projectedTrack();
         replaceTrack({
             ...track,
-            devices: track.devices.map((device) =>
-                device.id === DEVICE_ID
-                    ? { ...device, parameterValues: { ...device.parameterValues, oscWaveform: 2 } }
-                    : device
-            ),
+            devices: track.devices.map((device) => {
+                if (device.id !== DEVICE_ID) {
+                    return device;
+                }
+                return { ...device, parameterValues: { ...device.parameterValues, oscWaveform: 2 } };
+            }),
         });
         flushAutomergeStorageWrites();
         renderPanel();
