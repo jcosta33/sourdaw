@@ -506,7 +506,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
-                    "digest": "4e15bea3a1dc801a65aea9c3318eb6f1a408f758de1eeb99c7ced8f08c2a4249"
+                    "digest": "e96b0910378f34213fa773040b7f7f276afb47449cfd86d8c77bea447329e034"
                 }
             ]
         },
@@ -730,7 +730,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "e8b8b4de5c2e88c59cc8de5cee24ece20c531b034240606efd57d9fe876bc7ff"
+                    "digest": "aea0b21aa465d7ac6d72e94e5421436dcbd3515dac0ccf598d43b5ad61aade87"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
