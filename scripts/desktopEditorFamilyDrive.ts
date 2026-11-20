@@ -153,7 +153,7 @@ async function dismissFailedEditor(page: Page): Promise<void> {
 async function addEffectTrack(page: Page): Promise<void> {
     await page.keyboard.press('Meta+k');
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
-    await page.getByRole('option', { name: 'Add MIDI Track', exact: true }).click();
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     const tracks = page.getByRole('grid', { name: 'Track list', exact: true });
     await tracks
         .locator('[data-track-id][aria-selected="true"]')
