@@ -1,3 +1,4 @@
+import { getHeads, getObjectId } from '@automerge/automerge';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -14,6 +15,7 @@ import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/A
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
+import * as command from '#/modules/Command/useCases';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -123,8 +125,16 @@ function seed(before?: Chunk): void {
     flushAutomergeStorageWrites();
 }
 
+function root() {
+    const document = getCrdtDoc<Root>('root');
+    if (!document) {
+        throw new Error('Missing Grand Boule project document');
+    }
+    return document;
+}
+
 function track() {
-    const raw = getCrdtDoc<Root>('root')?.tracks.tracks[0];
+    const raw = root().tracks.tracks[0];
     if (!raw) {
         throw new Error('Expected the raw Grand Boule owner track');
     }
@@ -280,6 +290,45 @@ describe('Grand Boule preset history through production Command and document sto
         ).resolves.toMatchObject({ status: 'conflicted' });
         expect(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.devices[0]?.deviceState).toEqual(EXPLICIT_NEUTRAL);
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('refuses a preset picked before a peer replaces the piano with an equal device', async () => {
+        seed();
+        const original = track().devices[0];
+        expect(original).toEqual(DEVICE);
+        const originalId = getObjectId(original);
+        expect(originalId).toBeTruthy();
+
+        const execute = vi.spyOn(command, 'executeAppAction');
+        pickPreset('grand-boule-warm');
+        const dispatch = execute.mock.results[0]?.value;
+        execute.mockRestore();
+        expect(dispatch).toBeInstanceOf(Promise);
+
+        mutateCrdtDoc<Root>({
+            id: 'root',
+            changeFn: (document) => {
+                const piano = document.tracks.tracks[0];
+                if (!piano) {
+                    throw new Error('Missing Grand Boule owner track');
+                }
+                piano.devices.splice(0, 1, structuredClone(DEVICE));
+            },
+        });
+        const replacement = track().devices[0];
+        expect(replacement).toEqual(original);
+        const replacementId = getObjectId(replacement);
+        expect(replacementId).toBeTruthy();
+        expect(replacementId).not.toBe(originalId);
+        const peerHeads = getHeads(root());
+
+        const [completion] = await Promise.allSettled([dispatch]);
+        expectChunk(null);
+        expect(getObjectId(track().devices[0])).toBe(replacementId);
+        expect(getHeads(root())).toEqual(peerHeads);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(createGrandBouleStore(DEVICE.id).value?.parameters).toEqual(DEFAULT.parameters);
+        expect(completion.status).toBe('rejected');
     });
 
     it('refuses Undo when a peer moves the device to another owner', async () => {

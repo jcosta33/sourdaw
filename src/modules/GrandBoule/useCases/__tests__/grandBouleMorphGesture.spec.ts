@@ -87,7 +87,8 @@ describe('Grand Boule morph gesture', () => {
                     },
                     after: expect.objectContaining({ data: expect.objectContaining({ morphPosition: 0.6 }) }),
                 }),
-            })
+            }),
+            { authorizeFirstHandler: expect.any(Function) }
         );
     });
 });

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureDevicePatchCommitValidation } from '#/modules/Arrangement/useCases';
 import {
     describeAppActionRefusal,
     executeAppAction,
@@ -34,12 +35,24 @@ export function commitGrandBouleDeviceState(deviceId: string, state: GrandBouleP
         reconcileGrandBouleDeviceStateFromProject(deviceId);
         return;
     }
+    // A peer can replace the device during Command's snapshot wait while reusing its ID and state.
+    const authority = captureDevicePatchCommitValidation({
+        deviceId,
+        trackId: target.trackId,
+        parameterIds: [],
+        requireCurrentProjection: true,
+    });
     const encoded = toGrandBouleDeviceState(state);
     const after = { ...encoded, data: { ...structuredClone(before?.data), ...encoded.data } };
-    void executeAppAction({
-        type: 'setGrandBouleDeviceState',
-        payload: { deviceId, trackId: target.trackId, before: structuredClone(before), after },
-    }).catch((error: unknown) => {
+    void executeAppAction(
+        {
+            type: 'setGrandBouleDeviceState',
+            payload: { deviceId, trackId: target.trackId, before: structuredClone(before), after },
+        },
+        {
+            authorizeFirstHandler: () => (authority?.isCurrent() ? null : 'Grand Boule changed before the edit began'),
+        }
+    ).catch((error: unknown) => {
         reconcileGrandBouleDeviceStateFromProject(deviceId);
         if (isAppActionAdmissionRefusal(error)) {
             notifyUser(describeAppActionRefusal('setGrandBouleDeviceState'), 'warning');
