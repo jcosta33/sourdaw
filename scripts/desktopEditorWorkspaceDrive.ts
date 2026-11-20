@@ -185,7 +185,7 @@ async function titleDrag(dialog: Locator, row: WorkspaceObservation): Promise<vo
     for (const [dx, dy] of [
         [61, 43],
         [-23, -17],
-    ]) {
+    ] as const) {
         const before = await box(dialog);
         await pointerDrag(title, dx, dy);
         await waitRectangle(dialog, { x: before.x + dx, y: before.y + dy });
