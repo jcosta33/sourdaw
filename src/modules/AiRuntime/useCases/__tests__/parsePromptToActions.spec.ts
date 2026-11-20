@@ -5,6 +5,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
@@ -20,6 +21,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
+import { llmStatusStore } from '../../stores/llmStatusStore';
 import {
     buildPresetContext,
     tryPresetMatch,
@@ -55,6 +57,7 @@ const {
     mockBuildLlmActionSystemPrompt,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
+    mockGenerateWebLlmToolCalls,
 } = vi.hoisted(() => ({
     mockLogger: {
         warn: vi.fn(),
@@ -63,6 +66,7 @@ const {
         debug: vi.fn(),
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
+    mockGenerateWebLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
@@ -104,6 +108,14 @@ vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
         tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
     };
 });
+
+vi.mock('../../repositories/webLlm/toolCalling', () => ({
+    generateWebLlmToolCalls: mockGenerateWebLlmToolCalls,
+}));
+
+vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
+
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 
 vi.mock('../getProjectContext', async (importOriginal) => {
     const original = await importOriginal<typeof import('../getProjectContext')>();
@@ -1438,6 +1450,47 @@ describe('parsePromptToActions', () => {
                 /^Automatic uses only the local model and never sends requests to a hosted provider\. This request needs an AI model/u
             );
             expect(reason).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
+    });
+
+    describe('with the local model chosen and its download awaiting consent', () => {
+        beforeEach(() => {
+            aiBackendPreferenceStore.set('auto');
+            capabilityStore.set({
+                phase: 'done',
+                report: {
+                    capability: 'supported',
+                    webGpu: { status: 'supported' },
+                    webGpuTier: 'not-measured',
+                    crossOriginIsolated: true,
+                    workerAvailable: true,
+                    opfsAvailable: true,
+                    inference: { status: 'not-measured', reason: 'not-requested' },
+                    detectedAt: 0,
+                },
+            });
+            mockGenerateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+        });
+
+        afterEach(() => {
+            capabilityStore.set({ phase: 'idle' });
+            mockGenerateWebLlmToolCalls.mockReset();
+        });
+
+        // The real chain loop and application tool loop run here, so the typed error must survive both.
+        it('denies with the remedy and settles the answering status to it, never a provider failure', async () => {
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(mockGenerateWebLlmToolCalls).toHaveBeenCalled();
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({ kind: 'denied', reason: describeNoAiBackendRemedy() });
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: describeNoAiBackendRemedy() });
         });
     });
 
