@@ -19,7 +19,7 @@
  *   → { id, type: 'compactStale',  reason: string }
  *
  *   ← { id, type: 'encodeIncrementals', documents: IncrementalEncodingInput[] }
- *   → { id, type: 'incrementalsEncoded', documents: EncodedIncremental[] }
+ *   → { id, type: 'incrementalsEncoded', documents: EncodedIncrementalFrames[] }
  *
  *   ← { id, type: 'inspectCheckpointRootMedia', rootBytes: Uint8Array }
  *   → { id, type: 'checkpointRootMediaInspected', audioBufferIds: string[] }
@@ -31,16 +31,16 @@ import {
     type Doc,
     type Heads,
     free,
+    getChangesSince,
     getHeads,
     getMissingDeps,
     load,
     loadIncremental,
     merge,
     save,
-    saveSince,
 } from '@automerge/automerge';
 
-import { type EncodedIncremental, type IncrementalEncodingInput } from '../models/IncrementalPersistenceEncoding';
+import { type EncodedIncrementalFrames, type IncrementalEncodingInput } from '../models/IncrementalPersistenceEncoding';
 
 import { inspectCheckpointRootMedia } from './checkpointRootMedia';
 
@@ -243,9 +243,9 @@ export function processCompactShadow({
     return { status: 'compacted', bundle };
 }
 
-function processIncrementalEncoding(documents: readonly IncrementalEncodingInput[]): EncodedIncremental[] {
+function processIncrementalEncoding(documents: readonly IncrementalEncodingInput[]): EncodedIncrementalFrames[] {
     const seen = new Set<string>();
-    const encoded: EncodedIncremental[] = [];
+    const encoded: EncodedIncrementalFrames[] = [];
     for (const { id, seed, heads, frontier } of documents) {
         if (seen.has(id)) {
             throw new Error(`[CrdtWorker] Duplicate incremental encoding document ${id}`);
@@ -261,7 +261,8 @@ function processIncrementalEncoding(documents: readonly IncrementalEncodingInput
             // usable even when getMissingDeps also reports unrelated queued changes.
             const alreadyCurrent = frontier.every((head) => currentHeads.includes(head));
             const activeFrontier = alreadyCurrent || getMissingDeps(doc, frontier).length === 0 ? frontier : [];
-            encoded.push({ id, chunk: Uint8Array.from(saveSince(doc, activeFrontier)), heads: currentHeads });
+            const frames = getChangesSince(doc, activeFrontier).map((frame) => Uint8Array.from(frame));
+            encoded.push({ id, frames, heads: currentHeads });
         } finally {
             free(doc);
         }
@@ -323,7 +324,7 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
             const documents = processIncrementalEncoding(data.documents);
             self.postMessage(
                 { id, type: 'incrementalsEncoded', documents },
-                documents.map(({ chunk }) => chunk.buffer)
+                documents.flatMap(({ frames }) => frames.map((frame) => frame.buffer))
             );
         } else if (data.type === 'inspectCheckpointRootMedia') {
             const result = inspectCheckpointRootMedia(data.rootBytes);

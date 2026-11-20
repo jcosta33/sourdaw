@@ -12,3 +12,9 @@ export type EncodedIncremental = {
     chunk: Uint8Array<ArrayBuffer>;
     heads: Heads;
 };
+
+export type EncodedIncrementalFrames = {
+    id: string;
+    heads: Heads;
+    frames: Uint8Array<ArrayBuffer>[];
+};

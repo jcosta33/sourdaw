@@ -4,6 +4,7 @@ import {
     change,
     clone,
     getBackend,
+    getChangesSince,
     getHeads,
     getMissingDeps,
     init,
@@ -15,7 +16,10 @@ import {
 } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type EncodedIncremental, type IncrementalEncodingInput } from '../../models/IncrementalPersistenceEncoding';
+import {
+    type EncodedIncrementalFrames,
+    type IncrementalEncodingInput,
+} from '../../models/IncrementalPersistenceEncoding';
 import { processLoad } from '../crdtWorker';
 
 type AnyDoc = Record<string, unknown>;
@@ -41,7 +45,7 @@ type CompactedResponse = { id: number; type: 'compacted'; bundle: [string, Uint8
 
 type CompactStaleResponse = { id: number; type: 'compactStale'; reason: string };
 
-type IncrementalsEncodedResponse = { id: number; type: 'incrementalsEncoded'; documents: EncodedIncremental[] };
+type IncrementalsEncodedResponse = { id: number; type: 'incrementalsEncoded'; documents: EncodedIncrementalFrames[] };
 
 type WorkerResponse =
     | LoadedResponse
@@ -399,18 +403,23 @@ describe('crdtWorker message dispatcher', () => {
             throw new Error('Expected root and child output');
         }
         expect(response.documents).toEqual([
-            { id: 'root', chunk: saveSince(evolved, rootHeads), heads: getHeads(evolved) },
-            { id: 'branch_child', chunk: saveSince(child, []), heads: getHeads(child) },
+            { id: 'root', frames: getChangesSince(evolved, rootHeads), heads: getHeads(evolved) },
+            { id: 'branch_child', frames: getChangesSince(child, []), heads: getHeads(child) },
         ]);
+        const [rootFrame] = rootOutput.frames;
+        const [childFrame] = childOutput.frames;
+        if (!rootFrame || !childFrame) {
+            throw new Error('Expected both native change frames');
+        }
         expect(postedTransfers).toHaveLength(2);
-        expect(postedTransfers?.[0]).toBe(rootOutput.chunk.buffer);
-        expect(postedTransfers?.[1]).toBe(childOutput.chunk.buffer);
-        expect(rootOutput.chunk.buffer).not.toBe(childOutput.chunk.buffer);
+        expect(postedTransfers?.[0]).toBe(rootFrame.buffer);
+        expect(postedTransfers?.[1]).toBe(childFrame.buffer);
+        expect(rootFrame.buffer).not.toBe(childFrame.buffer);
 
-        const standalone = loadIncremental(init<AnyDoc>(), rootOutput.chunk);
+        const standalone = loadIncremental(init<AnyDoc>(), rootFrame);
         expect(getHeads(standalone)).toEqual([]);
         expect(getMissingDeps(standalone, rootHeads)).toEqual(rootHeads);
-        const replay = loadIncremental(load<AnyDoc>(rootBytes), rootOutput.chunk);
+        const replay = loadIncremental(load<AnyDoc>(rootBytes), rootFrame);
         expect(getHeads(replay)).toEqual(getHeads(evolved));
         expect(replay).toEqual({ baseline: 'durable', edited: true });
 
@@ -453,7 +462,7 @@ describe('crdtWorker message dispatcher', () => {
             {
                 id: 32,
                 type: 'incrementalsEncoded',
-                documents: [{ id: 'root', chunk: saveSince(historical, []), heads: earlier }],
+                documents: [{ id: 'root', frames: getChangesSince(historical, []), heads: earlier }],
             },
         ]);
     });
@@ -480,7 +489,7 @@ describe('crdtWorker message dispatcher', () => {
             {
                 id: 33,
                 type: 'incrementalsEncoded',
-                documents: [{ id: 'root', chunk: new Uint8Array(), heads: activeHeads }],
+                documents: [{ id: 'root', frames: [], heads: activeHeads }],
             },
         ]);
     });

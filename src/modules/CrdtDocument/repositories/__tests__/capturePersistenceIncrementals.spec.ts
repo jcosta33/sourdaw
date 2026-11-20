@@ -1,5 +1,6 @@
 import {
     change,
+    getChangesSince,
     getHeads,
     getMissingDeps,
     init,
@@ -9,9 +10,14 @@ import {
     saveSince,
     view,
 } from '@automerge/automerge';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type EncodedIncremental, type IncrementalEncodingInput } from '../../models/IncrementalPersistenceEncoding';
+import { logger } from '#/infra/logger/appLogger';
+
+import {
+    type EncodedIncrementalFrames,
+    type IncrementalEncodingInput,
+} from '../../models/IncrementalPersistenceEncoding';
 import { capturePersistenceIncrementals } from '../capturePersistenceIncrementals';
 
 type TestDocument = { edit?: string; baseline?: boolean; later?: string };
@@ -28,18 +34,28 @@ function editAfterDurableBase(edit: string) {
     return { live, durable, frontier };
 }
 
-function encodeOwnedRequest(documents: IncrementalEncodingInput[]): EncodedIncremental[] {
+function encodeOwnedRequest(documents: IncrementalEncodingInput[]): EncodedIncrementalFrames[] {
     return documents.map(({ id, seed, frontier }) => {
         const loaded = load(seed);
-        return { id, chunk: Uint8Array.from(saveSince(loaded, frontier)), heads: getHeads(loaded) };
+        return {
+            id,
+            frames: getChangesSince(loaded, frontier).map((frame) => Uint8Array.from(frame)),
+            heads: getHeads(loaded),
+        };
     });
 }
 
 describe('capturePersistenceIncrementals', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
     it('captures every document before requesting and accepts exact bytes in capture order', async () => {
         const root = editAfterDurableBase('root change');
         const child = editAfterDurableBase('child change');
         const signal = new AbortController().signal;
+        const warn = vi.spyOn(logger, 'warn');
         const request = vi.fn((documents: IncrementalEncodingInput[]) =>
             Promise.resolve({ type: 'incrementalsEncoded', documents: encodeOwnedRequest(documents).reverse() })
         );
@@ -59,9 +75,7 @@ describe('capturePersistenceIncrementals', () => {
         const inputs = request.mock.calls[0]?.[0];
         expect(inputs?.map((doc) => doc.id)).toEqual(['root', 'child']);
         expect(inputs?.map((doc) => getHeads(load(doc.seed)))).toEqual([getHeads(root.live), getHeads(child.live)]);
-        const workerReply = await request.mock.results[0]?.value;
-        expect(result[0]?.chunk.buffer).toBe(workerReply?.documents[1]?.chunk.buffer);
-        expect(result[1]?.chunk.buffer).toBe(workerReply?.documents[0]?.chunk.buffer);
+        expect(warn).not.toHaveBeenCalled();
         expect(result).toEqual([
             { id: 'root', chunk: saveSince(root.live, root.frontier), heads: getHeads(root.live) },
             { id: 'child', chunk: saveSince(child.live, child.frontier), heads: getHeads(child.live) },
@@ -112,17 +126,25 @@ describe('capturePersistenceIncrementals', () => {
         if (problem === 'rejected transport') {
             reply.reject(new Error('worker unavailable'));
         } else {
-            const invalidRoot = { ...expectedRoot, chunk: Uint8Array.from(saveSince(newer, root.frontier)) };
-            const validChild = { ...expectedChild, chunk: Uint8Array.from(expectedChild.chunk) };
+            const newerFrame = getChangesSince(newer, expectedRoot.heads)[0];
+            if (!newerFrame) {
+                throw new Error('Expected a native frame for the later edit');
+            }
+            const invalidRoot = { id: 'root', heads: expectedRoot.heads, frames: [Uint8Array.from(newerFrame)] };
+            const validChild = {
+                id: 'child',
+                heads: expectedChild.heads,
+                frames: [Uint8Array.from(expectedChild.chunk)],
+            };
             const replacements = {
                 'wrong response type': [invalidRoot, validChild],
                 'missing document': [invalidRoot],
                 'wrong document': [invalidRoot, { ...validChild, id: 'other' }],
                 'duplicate document': [invalidRoot, invalidRoot],
                 'stale heads': [{ ...invalidRoot, heads: getHeads(newer) }, validChild],
-                'unrecognized bytes': [{ ...invalidRoot, chunk: [1] }, validChild],
-                'partial buffer view': [{ ...invalidRoot, chunk: invalidRoot.chunk.subarray(1) }, validChild],
-                'empty change': [{ ...invalidRoot, chunk: new Uint8Array() }, validChild],
+                'unrecognized bytes': [{ ...invalidRoot, frames: [1] }, validChild],
+                'partial buffer view': [{ ...invalidRoot, frames: [invalidRoot.frames[0]?.subarray(1)] }, validChild],
+                'empty change': [{ ...invalidRoot, frames: [] }, validChild],
             };
             reply.resolve({
                 type: problem === 'wrong response type' ? 'loaded' : 'incrementalsEncoded',
@@ -140,6 +162,86 @@ describe('capturePersistenceIncrementals', () => {
         const restored = loadIncremental(load(root.durable), delta);
         expect(restored).toEqual({ baseline: true, edit: 'captured root' });
         expect(getHeads(restored)).toEqual(expectedRoot.heads);
+    });
+
+    it.each(['corrupt', 'truncated', 'different native change'] as const)(
+        'recovers the captured delta from %s bytes with truthful declared heads',
+        async (kind) => {
+            const root = editAfterDurableBase('durable edit');
+            const warn = vi.spyOn(logger, 'warn');
+            const capturedHeads = getHeads(root.live);
+            const captured = saveSince(root.live, root.frontier);
+            const other = change(load<TestDocument>(root.durable), (doc) => {
+                doc.edit = 'different edit';
+            });
+            const corrupt = Uint8Array.from(captured);
+            corrupt[4] = (corrupt[4] ?? 0) ^ 1;
+            const changed = {
+                corrupt,
+                truncated: Uint8Array.from(captured.slice(0, -1)),
+                'different native change': Uint8Array.from(saveSince(other, root.frontier)),
+            };
+            const request = () =>
+                Promise.resolve({
+                    type: 'incrementalsEncoded',
+                    documents: [{ id: 'root', heads: capturedHeads, frames: [changed[kind]] }],
+                });
+
+            const [encoded] = await capturePersistenceIncrementals({
+                documents: [['root', root.live]],
+                exportFrontiers: new Map([['root', root.frontier]]),
+                request,
+                signal: new AbortController().signal,
+            });
+            expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('invalid incremental encoding'));
+            expect(encoded).toEqual({ id: 'root', heads: capturedHeads, chunk: captured });
+            if (!encoded) {
+                throw new Error('Expected verified captured delta');
+            }
+            const replayed = loadIncremental(load<TestDocument>(root.durable), encoded.chunk);
+            expect(replayed.edit).toBe('durable edit');
+            expect(getHeads(replayed)).toEqual(capturedHeads);
+        }
+    );
+
+    it('stops validation on supersession between bounded native frame batches', async () => {
+        const root = editAfterDurableBase('first edit');
+        let latest = root.live;
+        for (let index = 0; index < 16; index++) {
+            latest = change(latest, (doc) => {
+                doc.later = String(index);
+            });
+        }
+        const request = (documents: IncrementalEncodingInput[]) =>
+            Promise.resolve({ type: 'incrementalsEncoded', documents: encodeOwnedRequest(documents) });
+        const controller = new AbortController();
+        const reason = new DOMException('Superseded while validating native changes', 'AbortError');
+        const warn = vi.spyOn(logger, 'warn');
+        const NativeChannel = MessageChannel;
+        let taskCount = 0;
+        vi.stubGlobal(
+            'MessageChannel',
+            class extends NativeChannel {
+                constructor() {
+                    super();
+                    taskCount++;
+                    if (taskCount === 3) {
+                        queueMicrotask(() => controller.abort(reason));
+                    }
+                }
+            }
+        );
+
+        await expect(
+            capturePersistenceIncrementals({
+                documents: [['root', latest]],
+                exportFrontiers: new Map([['root', root.frontier]]),
+                request,
+                signal: controller.signal,
+            })
+        ).rejects.toBe(reason);
+        expect(taskCount).toBe(3);
+        expect(warn).not.toHaveBeenCalled();
     });
 
     it('does not ask the worker to encode an unchanged document', async () => {
@@ -196,7 +298,7 @@ describe('capturePersistenceIncrementals', () => {
                     documents: [
                         {
                             id: 'root',
-                            chunk: Uint8Array.from(saveSince(root.live, root.frontier)),
+                            frames: getChangesSince(root.live, root.frontier).map((frame) => Uint8Array.from(frame)),
                             heads: getHeads(root.live),
                         },
                     ],
