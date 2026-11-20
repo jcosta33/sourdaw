@@ -524,7 +524,7 @@ describe('persistCrdtProject', () => {
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.firstEdit = 'retained';
         });
-        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'captureDocIncremental');
+        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'capturePersistenceIncrementals');
 
         const firstAttempt = persistCrdtProject();
         const firstTransaction = await persistence.waitForTransaction('readwrite', 2);

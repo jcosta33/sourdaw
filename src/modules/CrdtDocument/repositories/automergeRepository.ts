@@ -32,6 +32,7 @@ import {
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { type EncodedIncremental, type EncodedIncrementalFrames } from '../models/IncrementalPersistenceEncoding';
 import {
     BOUNDED_NATIVE_SEQUENCE_POLICY,
     type ProspectiveMutationWorkerResult,
@@ -44,6 +45,7 @@ import { isAbsentNativeAuthor } from '../transformers/nativeChangeMetadata';
 import { admitBoundedNativeSequence } from './admitBoundedNativeSequence';
 import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChanges';
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
+import { capturePersistenceIncrementals } from './capturePersistenceIncrementals';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 import { retainsActiveFrontier } from './retainsActiveFrontier';
@@ -113,10 +115,6 @@ function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>)
     return retainsActiveFrontier(replacement, getHeads(previous));
 }
 
-function hasCompleteNativeHistory(doc: Doc<unknown>, heads: Heads): boolean {
-    return getMissingDeps(doc, heads).length === 0;
-}
-
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
@@ -127,6 +125,7 @@ type WorkerResponse =
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
     | { id: number; type: 'compactStale'; reason: string }
+    | { id: number; type: 'incrementalsEncoded'; documents: EncodedIncrementalFrames[] }
     | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] }
     | { id: number; type: 'error'; message: string };
 
@@ -238,11 +237,16 @@ function getCrdtWorkerInstance(): CrdtWorkerInstance {
     return crdtWorkerState.instance;
 }
 
-function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
-    return new Promise((resolve, reject) => {
+function invokeWorker(
+    msg: Record<string, unknown>,
+    options?: { transfer: Transferable[]; signal: AbortSignal }
+): Promise<WorkerResponse> {
+    let disconnectAbort: (() => void) | undefined;
+    const response = new Promise<WorkerResponse>((resolve, reject) => {
         let instance: CrdtWorkerInstance;
         try {
             instance = getCrdtWorkerInstance();
+            options?.signal.throwIfAborted();
         } catch (error) {
             reject(error instanceof Error ? error : new Error(String(error)));
             return;
@@ -251,12 +255,24 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
         const id = crdtWorkerState.nextId++;
         instance.pending.set(id, { resolve, reject });
         try {
-            instance.worker.postMessage({ ...msg, id });
+            if (options) {
+                const { signal, transfer } = options;
+                const abort = (): void => {
+                    instance.pending.delete(id);
+                    reject(new DOMException('Incremental encoding aborted', 'AbortError'));
+                };
+                signal.addEventListener('abort', abort, { once: true });
+                disconnectAbort = () => signal.removeEventListener('abort', abort);
+                instance.worker.postMessage({ ...msg, id }, transfer);
+            } else {
+                instance.worker.postMessage({ ...msg, id });
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             failCrdtWorker(instance, new Error(`crdtWorker postMessage failed: ${message}`));
         }
     });
+    return options ? response.finally(() => disconnectAbort?.()) : response;
 }
 
 /** Callback invoked after any document change for projection. */
@@ -1040,20 +1056,20 @@ class AutomergeRepository {
         return saveIncremental(doc);
     }
 
-    /** Capture persistence bytes without consuming a handle-local serialization cursor. */
-    captureDocIncremental(id: DocId, previousHeads: Heads): { chunk: Uint8Array; heads: Heads } | undefined {
-        const doc = this.docs.get(id);
-        if (!doc) {
-            return undefined;
-        }
-        const heads = getHeads(doc);
-        const nativeHeads = getBackend(doc).getHeads();
-        // saveSince serializes the backing handle, including history outside a historical view.
-        if (heads.length !== nativeHeads.length || !heads.every((head) => nativeHeads.includes(head))) {
-            throw new RangeError(`Cannot export incremental bytes for outdated document ${id}`);
-        }
-        const frontier = retainsActiveFrontier(doc, previousHeads, hasCompleteNativeHistory) ? previousHeads : [];
-        return { chunk: Uint8Array.from(saveSince(doc, frontier)), heads };
+    capturePersistenceIncrementals(
+        exportFrontiers: ReadonlyMap<DocId, Heads>,
+        signal: AbortSignal
+    ): Promise<EncodedIncremental[]> {
+        return capturePersistenceIncrementals({
+            documents: this.docs,
+            exportFrontiers,
+            request: (batch, requestSignal) =>
+                invokeWorker(
+                    { type: 'encodeIncrementals', documents: batch },
+                    { transfer: batch.map(({ seed }) => seed.buffer), signal: requestSignal }
+                ),
+            signal,
+        });
     }
 
     /** Serialize all documents as a bundle. */
