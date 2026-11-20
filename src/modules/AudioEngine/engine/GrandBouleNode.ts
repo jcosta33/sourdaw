@@ -629,7 +629,9 @@ export async function createGrandBouleNode(
             post({ type: 'previewNoteOn', strikeId, midiNote, velocity });
             let released = false;
             return () => {
-                if (released || destroyed) return;
+                if (released || destroyed) {
+                    return;
+                }
                 released = true;
                 post({ type: 'previewNoteOff', strikeId });
             };

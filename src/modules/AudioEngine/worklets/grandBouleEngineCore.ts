@@ -117,17 +117,16 @@ export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; samp
 
 export type GrandBoulePedalMsg = GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
 
-/** Messages that address a moment in time rather than only the device. */
-export type GrandBouleFramedMsg =
+type GrandBouleNoteMsg =
     | GrandBoulePreviewNoteOnMsg
     | GrandBoulePreviewNoteOffMsg
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
-    | GrandBouleNoteExpressionMsg
-    | GrandBouleParamMsg
-    | GrandBouleSustainMsg
-    | GrandBouleUnaCordaMsg
-    | GrandBouleSostenutoMsg;
+    | GrandBouleNoteExpressionMsg;
+
+/** Messages that address a moment in time rather than only the device. */
+export type GrandBouleFramedMsg =
+    GrandBouleNoteMsg | GrandBouleParamMsg | GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
 
 /** A framed message that actually carries a usable frame, so it can be queued. */
 export type GrandBouleQueuedMsg = GrandBouleFramedMsg & { sampleFrame: number };
@@ -259,28 +258,7 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
     return views;
 }
 
-/**
- * Apply one control message to the engine, `offset` samples into the block it
- * is about to render.
- *
- * Notes and pedals take the engine's offset-queued API, so a scheduled note or
- * pedal lands on its own sample rather than at the block boundary and in push
- * order with the notes around it; an offset of 0 is the "voice now" case both
- * hosts use for a message with no frame of its own. Everything else — params,
- * temperament, MIDI 2.0 notes, the panic — is block-rate and applies
- * immediately, which is what those controls mean.
- *
- * Answers `false` only when the engine's block event list refused a note or
- * pedal, so the caller can hold that message (and everything behind it) back
- * for the next block. Every other message returns `true`.
- *
- * The `default` arm is the whole point of centralising this: a new member of
- * `GrandBouleDispatchMsg` that nobody handles fails to compile here rather than
- * being ignored in whichever host was not updated. It is *not* unreachable at
- * runtime — the senders are not type-welded — so see the arm itself for why it
- * ignores rather than raises.
- */
-export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg, offset = 0): boolean {
+function dispatchNote(instance: GrandBouleInstance, msg: GrandBouleNoteMsg, offset: number): boolean {
     switch (msg.type) {
         case 'previewNoteOn':
             return instance.push_preview_note_on(msg.strikeId, msg.midiNote, msg.velocity, offset);
@@ -312,6 +290,35 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
                 return instance.push_note_off(msg.midiNote, offset);
             }
             return instance.push_note_off_on_channel(msg.midiNote, msg.channel, offset);
+    }
+}
+
+/**
+ * Apply one control message to the engine, `offset` samples into the block it
+ * is about to render.
+ *
+ * Notes and pedals take the engine's offset-queued API, so a scheduled note or
+ * pedal lands on its own sample rather than at the block boundary and in push
+ * order with the notes around it; an offset of 0 is the "voice now" case both
+ * hosts use for a message with no frame of its own. Everything else — params,
+ * temperament, MIDI 2.0 notes, the panic — is block-rate and applies
+ * immediately, which is what those controls mean.
+ *
+ * Answers `false` only when the engine's block event list refused a note or
+ * pedal, so the caller can hold that message (and everything behind it) back
+ * for the next block. Every other message returns `true`.
+ *
+ * The `default` arm is the whole point of centralising this: a new member of
+ * `GrandBouleDispatchMsg` that nobody handles fails to compile here rather than
+ * being ignored in whichever host was not updated. It is *not* unreachable at
+ * runtime — the senders are not type-welded — so see the arm itself for why it
+ * ignores rather than raises.
+ */
+export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg, offset = 0): boolean {
+    if (isNoteMsg(msg)) {
+        return dispatchNote(instance, msg, offset);
+    }
+    switch (msg.type) {
         case 'param':
             // Block-rate: a parameter belongs to the whole block, and the engine
             // snaps or smooths it once per `process` call either way.
@@ -510,7 +517,7 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
 }
 
 /** True for the messages that strike, release or bend a note. */
-function isNoteMsg(msg: GrandBouleDispatchMsg): boolean {
+function isNoteMsg(msg: GrandBouleDispatchMsg): msg is GrandBouleNoteMsg {
     return (
         msg.type === 'noteOn' ||
         msg.type === 'noteOff' ||
@@ -599,10 +606,6 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
         queue.discardPedal(msg.type);
     }
 
-    if (block === null && (msg.type === 'previewNoteOn' || msg.type === 'previewNoteOff')) {
-        queue.enqueue({ ...msg, sampleFrame: 0 });
-        return;
-    }
     if (block === null || !isFramedGrandBouleMsg(msg)) {
         dispatch(instance, msg);
         return;
