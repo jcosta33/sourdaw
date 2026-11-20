@@ -24,6 +24,7 @@ import {
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
+import { pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -164,6 +165,16 @@ export function activateExternalPlugin({
     const activeTask = externalPluginActivationTasks.get(instanceId);
     if (activeTask) {
         return activeTask;
+    }
+    // An Undo that restores a removed device can land while the removal's unload still waits on the
+    // native host: the instance reads loaded, yet the unload is about to forget it.
+    const pendingUnload = pendingKeyedUnloads.get(instanceId);
+    if (pendingUnload) {
+        // The unload's own caller owns its failure; either outcome settles whether the instance is loaded.
+        return pendingUnload.then(
+            () => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs }),
+            () => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs })
+        );
     }
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);

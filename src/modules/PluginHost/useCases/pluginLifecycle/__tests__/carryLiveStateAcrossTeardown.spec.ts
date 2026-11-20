@@ -127,6 +127,26 @@ describe('live plugin state across an app-initiated teardown', () => {
     });
 
     describe('device removal', () => {
+        // An Undo that restores the removed device reactivates it while the
+        // removal's unload is still waiting on the native host (#6557).
+        it('reloads from the live bytes when reactivation lands while the unload is still in flight', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const nativeUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(nativeUnload.promise);
+
+            const unloading = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+            const reactivation = activate(SAVED_CHUNK);
+            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await unloading;
+
+            await expect(reactivation).resolves.toEqual({ status: 'active' });
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+            expect(carriedExternalPluginStates.size).toBe(0);
+        });
+
         it.each([
             ['saved', SAVED_CHUNK],
             ['never saved', undefined],
