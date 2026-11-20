@@ -211,7 +211,7 @@ describe('Grinder disclosure in project truth', () => {
         }
 
         function gainKnob(): HTMLElement {
-            const knob = screen.getByRole('slider', { name: 'Gain', exact: true });
+            const knob = screen.getByRole('slider', { name: /^Gain$/ });
             Object.defineProperties(knob, {
                 setPointerCapture: { configurable: true, value: vi.fn() },
                 releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -287,9 +287,12 @@ describe('Grinder disclosure in project truth', () => {
             fireEvent.pointerUp(knob, { pointerId: 1 });
             await waitFor(() => expect(undoStore.value?.past).toHaveLength(original.length + 1));
             const released = captureUndoHistory().past.at(-1);
-            expect(released?.action).toMatchObject({
-                type: 'setDeviceParameter',
-                payload: { deviceId: 'a', paramId: 'gain', value: 7 },
+            expect(released).toMatchObject({
+                kind: 'action',
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'a', paramId: 'gain', value: 7 },
+                },
             });
             expect(captureUndoHistory().past.slice(0, -1)).toEqual(original);
             expect(rawValues('a')).toEqual({ ...raw, gain: 7 });
