@@ -78,6 +78,7 @@ const INITIAL_PARAMETERS = {
     'comp-release': 180,
     'comp-knee': 6,
     'comp-makeup': 3,
+    'comp-auto-makeup': 0,
 };
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
@@ -584,6 +585,8 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                 { id: 'comp-attack', value: 12 },
                 { id: 'comp-release', value: 180 },
                 { id: 'comp-makeup', value: 3 },
+                // "makeup gain unchanged" names the Auto Makeup switch too.
+                { id: 'comp-auto-makeup', value: 0 },
             ],
             track: { id: 'track-bass-di', name: 'Bass DI' },
         });
@@ -641,6 +644,10 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             {
                 id: `${COMPRESSOR_ID}:comp-makeup`,
                 name: 'Bass DI Compressor Makeup = 3 dB',
+            },
+            {
+                id: `${COMPRESSOR_ID}:comp-auto-makeup`,
+                name: 'Bass DI Compressor Auto Makeup = 0',
             },
         ]);
         expect(confirmation?.actionLabels).toEqual([

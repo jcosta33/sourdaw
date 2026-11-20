@@ -15,7 +15,7 @@ function makeFallbackContext(): FallbackContext {
         knee: { value: 0 },
         connect: vi.fn(),
     } as unknown as DynamicsCompressorNode;
-    const makeup = { gain: { value: 0 } } as GainNode;
+    const makeup = { gain: { value: 0 }, connect: vi.fn() } as unknown as GainNode;
     const addModule = vi.fn<() => Promise<void>>(() => Promise.resolve());
     const context = {
         audioWorklet: { addModule },

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
+import { migrateStoredDeviceParameterValues } from '../../models/StoredDeviceParameterMigration';
+import { composeAddedDeviceParameterValues } from '../../useCases/device/composeAddedDeviceParameterValues';
 import { getPluginById } from '../../useCases/getPluginById';
 import { sanitizeTrackSnapshot } from '../trackStore';
 
@@ -102,5 +104,110 @@ describe('stored Brick-Wall Limiter release survives the seconds → millisecond
             getPluginById('faust-brick-wall-limiter')?.parameters.find((parameter) => parameter.id === 'lookahead')
                 ?.defaultValue
         ).toBe(5);
+    });
+});
+
+/**
+ * The built-in compressor's Auto Makeup switch is new. A new device starts
+ * with it off, but every compressor stored before it existed sounded with the
+ * browser's makeup gain, so a stored record without the key loads as on.
+ */
+function storedProjectWithDevices(devices: readonly Record<string, unknown>[]): unknown {
+    return {
+        tracks: [
+            {
+                id: 'track-1',
+                name: 'Vocal',
+                kind: 'audio',
+                devices: devices.map((device, index) => ({
+                    id: `dev-${index}`,
+                    name: String(device.type),
+                    bypassed: false,
+                    ...device,
+                })),
+            },
+        ],
+        selectedTrackId: 'track-1',
+    };
+}
+
+const LEGACY_COMPRESSOR_VALUES = {
+    'comp-threshold': -18,
+    'comp-ratio': 3,
+    'comp-attack': 10,
+    'comp-release': 100,
+    'comp-knee': 6,
+    'comp-makeup': 2,
+};
+
+function loadedDevices(snapshot: unknown): Array<Record<string, number>> {
+    return sanitizeTrackSnapshot(snapshot).tracks[0]!.devices.map((device) => device.parameterValues);
+}
+
+describe('stored built-in compressor reads Auto Makeup as on when the record predates it', () => {
+    it('loads a compressor stored without the key with the switch on and every other value as stored', () => {
+        const [values] = loadedDevices(
+            storedProjectWithDevices([{ type: 'builtin-compressor', parameterValues: LEGACY_COMPRESSOR_VALUES }])
+        );
+        expect(values).toEqual({ ...LEGACY_COMPRESSOR_VALUES, 'comp-auto-makeup': 1 });
+    });
+
+    it.each([0, 1])('keeps a stored switch value of %d', (stored) => {
+        const [values] = loadedDevices(
+            storedProjectWithDevices([
+                {
+                    type: 'builtin-compressor',
+                    parameterValues: { ...LEGACY_COMPRESSOR_VALUES, 'comp-auto-makeup': stored },
+                },
+            ])
+        );
+        expect(values?.['comp-auto-makeup']).toBe(stored);
+    });
+
+    it('is idempotent across repeated projections', () => {
+        const once = sanitizeTrackSnapshot(
+            storedProjectWithDevices([{ type: 'builtin-compressor', parameterValues: LEGACY_COMPRESSOR_VALUES }])
+        );
+        const twice = sanitizeTrackSnapshot(once);
+        expect(twice.tracks[0]?.devices[0]?.parameterValues).toEqual({
+            ...LEGACY_COMPRESSOR_VALUES,
+            'comp-auto-makeup': 1,
+        });
+    });
+
+    it('fills nothing on devices of another type, the sidechain compressor included', () => {
+        const scValues = { 'sc-comp-threshold': -20, 'sc-comp-ratio': 4 };
+        const eqValues = { 'eq-low-gain': 1 };
+        const [sidechain, eq] = loadedDevices(
+            storedProjectWithDevices([
+                { type: 'builtin-sidechain-compressor', parameterValues: scValues },
+                { type: 'builtin-eq', parameterValues: eqValues },
+            ])
+        );
+        expect(sidechain).toEqual(scValues);
+        expect(eq).toEqual(eqValues);
+    });
+
+    it('returns the same record when nothing applies, and still rescales the limiter release', () => {
+        const withSwitch = { ...LEGACY_COMPRESSOR_VALUES, 'comp-auto-makeup': 0 };
+        expect(migrateStoredDeviceParameterValues('builtin-compressor', withSwitch)).toBe(withSwitch);
+        expect(migrateStoredDeviceParameterValues('faust-brick-wall-limiter', { release: 0.1 })).toEqual({
+            release: 100,
+        });
+    });
+
+    it('places a newly added compressor with the switch off, and loading it keeps it off', () => {
+        const plugin = getPluginById('builtin-compressor');
+        expect(plugin?.parameters.find((candidate) => candidate.id === 'comp-auto-makeup')).toMatchObject({
+            type: 'bool',
+            defaultValue: 0,
+            automatable: false,
+        });
+        const added = composeAddedDeviceParameterValues(plugin);
+        expect(added['comp-auto-makeup']).toBe(0);
+        const [values] = loadedDevices(
+            storedProjectWithDevices([{ type: 'builtin-compressor', parameterValues: added }])
+        );
+        expect(values?.['comp-auto-makeup']).toBe(0);
     });
 });

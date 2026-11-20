@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { Row, Stack } from '#/components/layout';
+import { dynamicsCompressorHiddenMakeupDb, isCompressorAutoMakeupEngaged } from '#/utils/dynamicsCompressorMakeupLaw';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
@@ -22,7 +23,15 @@ const Param = ({ param, device, trackId }: ParameterProps): ReactElement => (
     </SurfaceCard>
 );
 
-type CurveValues = { threshold: number; ratio: number; knee: number; makeup: number };
+type CurveValues = { threshold: number; ratio: number; knee: number; makeup: number; autoMakeup: boolean };
+
+/**
+ * The output gain the curve draws: Makeup, plus with Auto Makeup on the gain
+ * the browser's compressor derives from the static curve, so the drawn level
+ * is the level the device renders.
+ */
+const drawnMakeup = ({ threshold, ratio, knee, makeup, autoMakeup }: CurveValues): number =>
+    autoMakeup ? makeup + dynamicsCompressorHiddenMakeupDb({ thresholdDb: threshold, kneeDb: knee, ratio }) : makeup;
 
 const InteractiveCompressorCurve = ({
     param,
@@ -33,7 +42,9 @@ const InteractiveCompressorCurve = ({
     const gesture = useDeviceParameterGesture({ param, device, trackId });
     return (
         <CompressorCurve
-            {...values}
+            ratio={values.ratio}
+            knee={values.knee}
+            makeup={drawnMakeup({ ...values, threshold: gesture.value })}
             threshold={gesture.value}
             width={140}
             height={140}
@@ -56,12 +67,16 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
         const parameter = parameters.find((param) => param.id === id);
         return pv[id] ?? parameter?.defaultValue ?? parameter?.value ?? fallback;
     };
-    const curveValues = {
+    const curveValues: CurveValues = {
         threshold: parameterValue('threshold', -20),
         ratio: parameterValue('ratio', 4),
         knee: sidechain ? 0 : parameterValue('knee', 6),
         makeup: parameterValue('makeup', 0),
+        // Only `builtin-compressor` runs the browser's makeup; a stored device
+        // without the switch reads as on, as it sounded before the switch existed.
+        autoMakeup: !sidechain && isCompressorAutoMakeupEngaged(pv['comp-auto-makeup']),
     };
+    const autoMakeupParameters = filterParams(parameters, ['comp-auto-makeup']);
 
     return (
         <Stack gap={3}>
@@ -75,7 +90,14 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                         trackId={trackId}
                     />
                 ) : (
-                    <CompressorCurve {...curveValues} width={140} height={140} />
+                    <CompressorCurve
+                        threshold={curveValues.threshold}
+                        ratio={curveValues.ratio}
+                        knee={curveValues.knee}
+                        makeup={drawnMakeup(curveValues)}
+                        width={140}
+                        height={140}
+                    />
                 )}
             </Row>
             <SectionHeader title="Controls" />
@@ -94,6 +116,13 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </ParamCardGrid>
+            {autoMakeupParameters.length > 0 && (
+                <ParamCardGrid>
+                    {autoMakeupParameters.map((param) => (
+                        <Param key={param.id} param={param} device={device} trackId={trackId} />
+                    ))}
+                </ParamCardGrid>
+            )}
         </Stack>
     );
 };

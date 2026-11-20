@@ -71,6 +71,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
                     { paramId: 'comp-ratio', minimum: 4, maximum: 6 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 15 },
@@ -107,6 +108,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -304,6 +306,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },

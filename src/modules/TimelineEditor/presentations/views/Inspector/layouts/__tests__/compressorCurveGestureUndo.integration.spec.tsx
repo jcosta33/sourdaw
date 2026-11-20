@@ -106,6 +106,11 @@ function makeDevice(type: CompressorType, absent = false): Device {
     const parameterValues: Device['parameterValues'] = {
         [`${prefix(type)}-ratio`]: 4,
     };
+    // A compressor placed since Auto Makeup existed stores it, so the raw document and the
+    // projection agree; a record without it is filled on read (storedDeviceParameterMigration.spec).
+    if (type === 'builtin-compressor') {
+        parameterValues['comp-auto-makeup'] = 0;
+    }
     if (!absent) {
         parameterValues[`${prefix(type)}-threshold`] = -20;
     }
@@ -432,7 +437,8 @@ describe('actual registered Compressor curve through real project and history', 
             expect(writes().map((write) => write.value)).toEqual([-15, -30, -45, -45]);
             expect(writes().every((write) => write.paramId === thresholdId)).toBe(true);
             expect(Object.keys(rawValues()).sort()).toEqual(Object.keys(before).sort());
-            const expectedControls = type === 'builtin-sidechain-compressor' ? 5 : 6;
+            // The built-in compressor adds knee and its Auto Makeup switch.
+            const expectedControls = type === 'builtin-sidechain-compressor' ? 5 : 7;
             expect(screen.getAllByRole('slider')).toHaveLength(expectedControls);
             await act(() => undo());
             expect(rawValues()).toEqual(before);

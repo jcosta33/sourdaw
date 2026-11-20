@@ -122,17 +122,24 @@ describe('controlled authored recipes', () => {
             const recipe = controlled.find((candidate) => candidate.id === entry.id);
             const parameterIdsForRecipe =
                 entry.windows.length === 5 ? [...parameterIds[entry.device], 'comp-knee'] : parameterIds[entry.device];
+            // A compressor step states Auto Makeup on: its windows were voiced
+            // with the browser's makeup gain in the output (ADR 0064).
+            const autoMakeup =
+                entry.device === 'builtin-compressor' ? [{ paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 }] : [];
             expect(recipe).toBeDefined();
             expect(recipe!.roles).toEqual([entry.role]);
             expect(recipe!.steps).toEqual([
                 {
                     kind: 'insert',
                     deviceType: entry.device,
-                    parameters: entry.windows.map(([minimum, maximum], index) => ({
-                        paramId: parameterIdsForRecipe[index],
-                        minimum,
-                        maximum,
-                    })),
+                    parameters: [
+                        ...autoMakeup,
+                        ...entry.windows.map(([minimum, maximum], index) => ({
+                            paramId: parameterIdsForRecipe[index],
+                            minimum,
+                            maximum,
+                        })),
+                    ],
                 },
             ]);
             expect(recipe!.metrics).toEqual([{ metric: entry.metric, direction: 'decrease' }]);
@@ -181,6 +188,7 @@ describe('controlled authored recipes', () => {
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -24, maximum: -16 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 12 },

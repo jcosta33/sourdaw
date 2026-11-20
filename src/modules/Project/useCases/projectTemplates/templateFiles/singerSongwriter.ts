@@ -56,6 +56,7 @@ export async function createSingerSongwriterTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Vox Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -117,6 +118,7 @@ export async function createSingerSongwriterTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Gtr Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -16,
                     'comp-ratio': 2.5,
                     'comp-attack': 8,
