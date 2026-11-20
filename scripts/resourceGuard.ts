@@ -3269,9 +3269,18 @@ export async function main(
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
-            const explicitProof = hasExplicitProof
-                ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
-                : undefined;
+            // A bare recovery of a recorded e2e server re-runs that server itself, so it is
+            // observed under a run token exactly like an explicit proof; a lint-target
+            // replacement keeps its own refusal in resolveRecoveryLintArgs.
+            const observesRecordedE2eServer =
+                !hasExplicitProof &&
+                input.lintTargetReplacements.length === 0 &&
+                receipt.command === 'node' &&
+                receipt.args[0] === 'scripts/e2eDevServer.ts';
+            const explicitProof =
+                hasExplicitProof || observesRecordedE2eServer
+                    ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
+                    : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args
@@ -3326,7 +3335,7 @@ export async function main(
                     profile: resolvedProfile,
                     maxRssBytes:
                         input.maxRssBytes ??
-                        (explicitProof === undefined
+                        (!hasExplicitProof
                             ? receipt.maxRssBytes
                             : resolveDefaultMaxRssBytes({
                                   profile: resolvedProfile,
