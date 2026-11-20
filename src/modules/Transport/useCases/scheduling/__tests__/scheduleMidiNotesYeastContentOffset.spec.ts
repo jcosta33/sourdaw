@@ -151,6 +151,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         builtinSynthVoice: { read: () => synthVoices },
         applyNoteExpression: vi.fn(),
