@@ -3300,7 +3300,8 @@ fn release_then_retire_engine_plugin(
     let mut reports = Vec::new();
     if !release.ops.is_empty() {
         // Read before the send, so the step after it has nothing left to fail.
-        let release_reports = graph::live_strip_reports(&working, &release.touched_strip_ids)?;
+        let release_reports = graph::live_strip_reports(&working, &release.touched_strip_ids)
+            .map_err(|refusal| refusal.to_string())?;
         // The reserved slot is the `RemovePlugin` push below: the
         // retirement must not find the ring full behind the release.
         match engine.send_graph_batch_with_headroom(release.ops, 1) {
