@@ -24,6 +24,7 @@ import {
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
+import { pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -159,6 +160,20 @@ export function activateExternalPlugin({
                 onLatencyMs,
             })
         );
+    }
+    const pendingUnload = pendingKeyedUnloads.get(instanceId);
+    if (pendingUnload) {
+        // Ordering only: activate after the queued unload settles, whatever its
+        // outcome, so the activation reflects the instance the unload leaves.
+        function activateAfterUnload(): Promise<ExternalPluginActivationResult> {
+            return activateExternalPlugin({
+                pluginId,
+                instanceId,
+                stateChunk,
+                onLatencyMs,
+            });
+        }
+        return pendingUnload.then(activateAfterUnload, activateAfterUnload);
     }
     const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);
