@@ -14367,11 +14367,6 @@
             "count": 1
         }
     },
-    "src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/handlers/chordTrack/handleRestoreChordTrackState.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 3

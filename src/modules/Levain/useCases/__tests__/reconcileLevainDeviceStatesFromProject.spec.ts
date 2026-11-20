@@ -14,9 +14,9 @@ const mocks = vi.hoisted(() => ({
     executeUserAppAction: vi.fn<typeof executeUserAppAction>(() => Promise.resolve()),
 }));
 
-// Exhaustive over this spec's graph: the sweep reads `trackStore`, the preset
-// route its eligibility answer, and nothing else from this barrel.
-vi.mock('#/modules/Arrangement/stores', () => ({
+// Supply the projected owner fixture while keeping the other store contracts real.
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: mocks.trackStore,
     resolveEligibleDeviceWriteTarget: mocks.resolveWriteTarget,
 }));
@@ -30,14 +30,10 @@ vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
 vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
     setLevainParamWithAudio: mocks.setLevainParamWithAudio,
 }));
-// `loadPreset` reads this dependency record for its own eligibility gate; kept
-// light so the real bridge (and its sample-loader graph) never loads.
-vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
-    levainBridgeDependencies: { resolveEligibleDeviceWriteTarget: mocks.resolveWriteTarget },
-}));
 // The persistence subscriber commits through this door; captured so the
 // data-loss case can read exactly what a local edit mirrored into the document.
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: mocks.executeUserAppAction,
 }));
