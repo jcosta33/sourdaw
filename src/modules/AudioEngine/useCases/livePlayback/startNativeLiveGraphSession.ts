@@ -599,6 +599,13 @@ function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBac
     }
 }
 
+function captureNativeChains(): Parameters<typeof restoreNativeChains>[0] {
+    return {
+        nativeChainByStripId: nativeLiveGraphSession.nativeChainByStripId,
+        grandBoulePreviewTargetsByStripId: nativeLiveGraphSession.grandBoulePreviewTargetsByStripId,
+    };
+}
+
 /**
  * Settle the chain record a refused first batch leaves behind.
  *
@@ -1095,10 +1102,7 @@ export function startNativeLiveGraphSession(
                 // of the start that reopens the gates below also settles the
                 // record — dropping it, restoring it, or replacing it with the
                 // applied batch's reports.
-                const chainsTheStartFound = {
-                    nativeChainByStripId: nativeLiveGraphSession.nativeChainByStripId,
-                    grandBoulePreviewTargetsByStripId: nativeLiveGraphSession.grandBoulePreviewTargetsByStripId,
-                };
+                const chainsTheStartFound = captureNativeChains();
                 claimInitialNativeCarriers(prepared);
                 const started = await applyTopologyBatch({
                     transport: availability.transport,

@@ -45,6 +45,7 @@ import {
     type AudioGraphDeviceParameterTarget,
     type AudioGraphMidiNoteEvent,
     type AudioGraphParameterWrite,
+    type AudioGraphReleaseGrandBoulePreviewCommand,
     type AudioGraphRouteTarget,
     type AudioGraphScheduleMidiCommand,
     type AudioGraphSendMidiControlCommand,
@@ -56,6 +57,7 @@ import {
     type AudioGraphSetDeviceParametersCommand,
     type AudioGraphSetGrinderModelCommand,
     type AudioGraphSetTransportCommand,
+    type AudioGraphStartGrandBoulePreviewCommand,
     type AudioGraphStripParameterTarget,
     type AudioGraphStripState,
     type AudioGraphWriteDeviceParameterCommand,
@@ -339,35 +341,63 @@ function serializeMidiCommand(
     throw new Error(`unhandled command: ${JSON.stringify(unhandled)}`);
 }
 
-/**
- * The two live messages, which the mirror reads on the same terms: a device
- * named by strip and id, and nothing placing the message on the timeline.
- *
- * Split out of the switch below because they are the one pair of commands that
- * share a shape rather than a field list, so stating the shared half once is
- * what keeps a note and a controller addressing the same device.
- */
-function serializeLiveMidi(
-    command: AudioGraphSendMidiNoteCommand | AudioGraphSendMidiControlCommand
-): NativeGraphWireCommand {
+type AudioGraphLiveInputCommand =
+    | AudioGraphSendMidiNoteCommand
+    | AudioGraphSendMidiControlCommand
+    | AudioGraphStartGrandBoulePreviewCommand
+    | AudioGraphReleaseGrandBoulePreviewCommand;
+
+const LIVE_INPUT_COMMAND_KINDS: ReadonlySet<AudioGraphCommand['kind']> = new Set<AudioGraphLiveInputCommand['kind']>([
+    'send-midi-note',
+    'send-midi-control',
+    'start-grand-boule-preview',
+    'release-grand-boule-preview',
+]);
+
+function isLiveInputCommand(command: AudioGraphCommand): command is AudioGraphLiveInputCommand {
+    return LIVE_INPUT_COMMAND_KINDS.has(command.kind);
+}
+
+/** Live input addresses a device by strip and id and carries no timeline position. */
+function serializeLiveInput(command: AudioGraphLiveInputCommand): NativeGraphWireCommand {
     const target = { trackId: command.target.trackId, deviceId: command.target.deviceId };
-    if (command.kind === 'send-midi-note') {
-        return {
-            kind: 'send-midi-note',
-            ...target,
-            note: command.note,
-            velocity: command.velocity,
-            channel: command.channel,
-            isNoteOn: command.isNoteOn,
-        };
+    switch (command.kind) {
+        case 'send-midi-note':
+            return {
+                kind: command.kind,
+                ...target,
+                note: command.note,
+                velocity: command.velocity,
+                channel: command.channel,
+                isNoteOn: command.isNoteOn,
+            };
+        case 'send-midi-control':
+            return {
+                kind: command.kind,
+                ...target,
+                controller: command.controller,
+                value: command.value,
+                channel: command.channel,
+            };
+        case 'start-grand-boule-preview':
+            return {
+                kind: command.kind,
+                ...target,
+                generation: command.generation,
+                strikeId: command.strikeId,
+                note: command.note,
+                velocity: command.velocity,
+            };
+        case 'release-grand-boule-preview':
+            return {
+                kind: command.kind,
+                ...target,
+                generation: command.generation,
+                strikeId: command.strikeId,
+            };
     }
-    return {
-        kind: 'send-midi-control',
-        ...target,
-        controller: command.controller,
-        value: command.value,
-        channel: command.channel,
-    };
+    const unhandled: never = command;
+    throw new Error(`unhandled command: ${JSON.stringify(unhandled)}`);
 }
 
 /**
@@ -470,6 +500,9 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
     if (isDeviceWriteCommand(command)) {
         return serializeDeviceWrite(command);
     }
+    if (isLiveInputCommand(command)) {
+        return serializeLiveInput(command);
+    }
     switch (command.kind) {
         case 'create-track-strip':
             return {
@@ -517,27 +550,6 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
         case 'schedule-midi':
         case 'clear-midi':
             return serializeMidiCommand(command);
-        case 'send-midi-note':
-        case 'send-midi-control':
-            return serializeLiveMidi(command);
-        case 'start-grand-boule-preview':
-            return {
-                kind: command.kind,
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                generation: command.generation,
-                strikeId: command.strikeId,
-                note: command.note,
-                velocity: command.velocity,
-            };
-        case 'release-grand-boule-preview':
-            return {
-                kind: command.kind,
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                generation: command.generation,
-                strikeId: command.strikeId,
-            };
         case 'set-transport':
             return serializeTransport(command);
         case 'set-monitor-shadow':

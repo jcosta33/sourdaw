@@ -38,7 +38,6 @@ function createVisualizations({
     activeNotes,
     sustainPedal,
     lidPosition,
-    engineReady,
     analyser,
     sampleRate,
     openVisualizations,
@@ -53,9 +52,7 @@ function createVisualizations({
             content: (
                 <>
                     {pianoVisible ? (
-                        <p className="text-caption text-muted-foreground">
-                            {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
-                        </p>
+                        <p className="text-caption text-muted-foreground">Click the piano keys to audition notes.</p>
                     ) : null}
                     <PianoModel3D
                         key={deviceId}
@@ -137,9 +134,8 @@ export const GrandBouleVisualizations = (props: GrandBouleVisualizationsProps): 
                 </Row>
                 <DawPluginMetricTile
                     className="grand-boule-window"
-                    label="Engine"
+                    label="WASM engine"
                     value={engineReady ? 'ready' : 'idle'}
-                    detail="WASM"
                 />
             </Row>
             {visualizations.map(({ id, content }) => {

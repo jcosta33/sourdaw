@@ -181,10 +181,12 @@ describe('GrandBoulePanel', () => {
         };
         const view = render(<GrandBoulePanel deviceId="dev-1" />);
         fireEvent.click(screen.getByRole('button', { name: 'Piano keyboard' }));
-        expect(screen.getByText('Piano audio is unavailable.')).toBeInTheDocument();
+        expect(screen.getByText('Click the piano keys to audition notes.')).toBeInTheDocument();
+        expect(screen.getByText('WASM engine')).toBeInTheDocument();
+        expect(screen.getByText('idle')).toBeInTheDocument();
         runtime.nodes = [{ deviceId: 'dev-1', grandBouleControls: controls }];
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
-        expect(screen.getByText('Click the piano keys to audition notes.')).toBeInTheDocument();
+        expect(screen.getByText('ready')).toBeInTheDocument();
         const canvas = screen.getByLabelText('Grand Boule interactive piano');
         vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
         fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
@@ -226,7 +228,7 @@ describe('GrandBoulePanel', () => {
         expect(screen.getByText('ready')).toBeInTheDocument();
         replacement.ready = false;
         act(() => replacementRetirement.abort());
-        expect(screen.getByText('Piano audio is unavailable.')).toBeInTheDocument();
+        expect(screen.getByText('idle')).toBeInTheDocument();
         expect(projectTrackState.current.tracks).toBe(tracks);
         expect(executeAppAction).not.toHaveBeenCalled();
         view.unmount();
@@ -341,7 +343,7 @@ describe('GrandBoulePanel', () => {
 
         fireEvent.click(piano);
         expect(piano).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByText('Piano audio is unavailable.')).toBeVisible();
+        expect(screen.getByText('Click the piano keys to audition notes.')).toBeVisible();
         expect(screen.getByLabelText('Grand Boule interactive piano')).toBeVisible();
         fireEvent.click(strings);
         expect(strings).toHaveAttribute('aria-expanded', 'true');

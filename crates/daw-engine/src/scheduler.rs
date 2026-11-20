@@ -6989,9 +6989,7 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SendGrandBoulePreview(id, event) => {
-                    let Some(slot) = self.effect_index.lookup(id) else {
-                        return None;
-                    };
+                    let slot = self.effect_index.lookup(id)?;
                     let effect = &mut self.effects[slot];
                     if matches!(event, GrandBoulePreviewEvent::Attack { .. })
                         && effect.receives_no_block()
