@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { prepareGrooveExtraction, resolveGrooveExtractionTemplateId } from '#/modules/MIDI/useCases';
+import { type prepareGrooveExtraction, resolveGrooveExtractionPin } from '#/modules/MIDI/useCases';
 
 type ProposeYeastGrooveExtractionInput = {
     clipId: string;
@@ -38,14 +38,9 @@ export function proposeYeastGrooveExtraction({
         sourceName: clip.name,
         subdivision,
     };
-    const result = prepareGrooveExtraction({
-        clipId: clip.id,
-        sourceName: clip.name,
-        subdivision,
-        templateId: resolveGrooveExtractionTemplateId(source),
-    });
+    const { extraction: result, template: storedTemplate } = resolveGrooveExtractionPin(source);
     if (result.status === 'extracted') {
-        return { ...source, ...result };
+        return { ...source, ...result, template: storedTemplate ?? result.template };
     }
     if (result.status === 'straight') {
         return { ...source, status: result.status, template: result.template };
