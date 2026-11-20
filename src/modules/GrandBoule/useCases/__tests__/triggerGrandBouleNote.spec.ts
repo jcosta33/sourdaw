@@ -19,6 +19,7 @@ function fakeEngine(overrides: Partial<GrandBouleEngineHandle> = {}): {
         noteOn,
         handle: {
             noteOn,
+            startPreviewNote: vi.fn(),
             noteOnMidi2: vi.fn(),
             noteOff: vi.fn(),
             setParam: vi.fn(),

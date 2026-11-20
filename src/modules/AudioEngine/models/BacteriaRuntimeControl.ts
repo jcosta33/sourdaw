@@ -1,3 +1,5 @@
+import { BACTERIA_BAND_PARAMETER_IDS, BACTERIA_MAX_BANDS } from '#/utils/bacteriaParameterReplay';
+
 /**
  * Bacteria's numeric port-wire namespace. This is a runtime safety schema, not
  * project truth: it admits the finite keys the Bacteria bridge can emit without
@@ -43,71 +45,13 @@ const GLOBAL_PARAMETER_IDS = [
     'lorenzSpeed',
 ] as const;
 
-const BAND_PARAMETER_IDS = [
-    'enabled',
-    'solo',
-    'mute',
-    'gain',
-    'oversampling',
-    'distortionEnabled',
-    'filterEnabled',
-    'granularEnabled',
-    'spectralEnabled',
-    'modulationEnabled',
-    'convolutionEnabled',
-    'freqShiftEnabled',
-    'chorusEnabled',
-    'phaserEnabled',
-    'lofiEnabled',
-    'distortionMode',
-    'drive',
-    'asymmetry',
-    'foldbackThreshold',
-    'bitDepth',
-    'sampleRateReduce',
-    'tubeBias',
-    'breakdownDepth',
-    'filterMode',
-    'filterCutoff',
-    'filterResonance',
-    'filterEnvAmount',
-    'filterEnvAttack',
-    'filterEnvRelease',
-    'chorusRate',
-    'chorusDepth',
-    'chorusFeedback',
-    'chorusMix',
-    'phaserRate',
-    'phaserDepth',
-    'phaserFeedback',
-    'phaserMix',
-    'grainSize',
-    'grainDensity',
-    'grainPosOffset',
-    'grainPitch',
-    'grainWindow',
-    'grainFreeze',
-    'grainMix',
-    'spectralBlur',
-    'spectralFreeze',
-    'spectralMix',
-    'freqShiftHz',
-    'freqShiftMix',
-    'lofiAmount',
-    'codecArtifact',
-    'convolutionIr',
-    'convolutionMix',
-    'convolutionSeparation',
-    'routingMode',
-] as const;
-
-const GENERATED_BAND_PARAMETER_IDS = Array.from({ length: 6 }, (_value, band) =>
-    BAND_PARAMETER_IDS.map((parameter) => `band${band}_${parameter}`)
+const GENERATED_BAND_PARAMETER_IDS = Array.from({ length: BACTERIA_MAX_BANDS }, (_value, band) =>
+    BACTERIA_BAND_PARAMETER_IDS.map((parameter) => `band${band}_${parameter}`)
 ).flat();
 
 const BACTERIA_RUNTIME_PARAMETER_IDS = new Set<string>([
     ...GLOBAL_PARAMETER_IDS,
-    ...BAND_PARAMETER_IDS,
+    ...BACTERIA_BAND_PARAMETER_IDS,
     ...GENERATED_BAND_PARAMETER_IDS,
 ]);
 
@@ -118,4 +62,17 @@ const BACTERIA_RUNTIME_PARAMETER_IDS = new Set<string>([
  */
 export function createBacteriaRuntimeParameterIds(): readonly string[] {
     return Object.freeze([...BACTERIA_RUNTIME_PARAMETER_IDS]);
+}
+
+/** Admit only identifiers inside the fixed worklet namespace, including its capacity. */
+export function isWithinBacteriaRuntimeParameterNamespace(parameterIds: readonly unknown[]): boolean {
+    if (parameterIds.length > BACTERIA_RUNTIME_PARAMETER_IDS.size) {
+        return false;
+    }
+    for (const parameterId of parameterIds) {
+        if (typeof parameterId !== 'string' || !BACTERIA_RUNTIME_PARAMETER_IDS.has(parameterId)) {
+            return false;
+        }
+    }
+    return true;
 }

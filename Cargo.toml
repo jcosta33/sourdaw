@@ -28,17 +28,18 @@ repository = "https://github.com/jcosta33/sourdaw"
 windows = "0.62.2"
 
 # Workspace lint policy. Every crate opts in with `[lints] workspace = true`.
-# A lint with zero violations is denied. PR clippy enforces it on host-target
-# code only: Linux for every crate but sourdaw-native (health-gates-rust.sh),
-# macOS for sourdaw-native (native-macos). Windows-only and wasm32-only code is
-# not clippy-linted yet (#6528). The `warn` entries are pending cleanup tracked
-# in #6525: shrink that list as sites are fixed, never grow it.
+# A lint with zero violations is denied. PR clippy enforces it per target:
+# Linux host code for every crate but sourdaw-native, and wasm32 library code
+# for the wasm packages (both in health-gates-rust.sh); macOS for
+# sourdaw-native (native-macos); cfg(windows) code in daw-engine,
+# daw-plugin-host and sourdaw-harness-fx (native-windows). No entry sits
+# at `warn`: a lint either fails the build or is not in the table (#6525).
 [workspace.lints.rust]
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
-unsafe_op_in_unsafe_fn = "warn"
-unused_assignments = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+unused_assignments = "deny"
 
 # Restriction lints weighed for this table and left out:
 # Rejected: indexing_slicing. Bounds-checked indexing is the DSP idiom; the
@@ -62,6 +63,8 @@ unimplemented = "deny"
 unreachable = "deny"
 unwrap_used = "deny"
 too_many_arguments = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
 # Rejected: timeline tracks, buses and clips cross the scheduler command ring
 # as boxes, so the audio thread neither reallocates nor copies large structs
 # when one is added or removed.

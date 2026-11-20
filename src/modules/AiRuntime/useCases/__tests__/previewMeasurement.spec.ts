@@ -21,6 +21,7 @@ import {
     commandTrackDefaultsPort,
     parseVersionedCommandBatchEnvelope,
     resetActionReplayAuthority,
+    undo,
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
@@ -51,6 +52,7 @@ import { persistPromptActionConfirmation } from '../agentRequestOrchestration/pe
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import * as batchDigest from '../digestCommandBatchContent';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
@@ -117,7 +119,13 @@ const RUN_ID = 'run-preview';
 const ASSISTANT_ID = 'assistant-preview';
 const RANGE = { startBeat: 0, endBeat: 8 };
 
-type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string; targetTrackId?: string };
+type SubgraphRequest = {
+    renderTracks: readonly Track[];
+    trackId?: string;
+    targetTrackId?: string;
+    startBeat?: number;
+    endBeat?: number;
+};
 
 const DRUMS_TRIM_ID = 'drums-trim';
 const DEVICE_NAMES: Readonly<Record<string, string>> = {
@@ -495,9 +503,24 @@ async function approvalMeasuredPreview(revision: string) {
 }
 
 /** Persist a planned result for approval as the prompt route does, under a run that is planning. */
-function persistForApproval(planned: IntentResult, revision: string, prompt = PROMPT): string {
+function persistForApproval(planned: IntentResult, revision: string, prompt = PROMPT, retainReceipts = false): string {
     agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: null, createdAt: 1 });
     agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
+    if (retainReceipts) {
+        const run = agentRunLifecycle.get(RUN_ID);
+        if (run === null || planned.applicationToolReceipts === undefined) {
+            throw new TypeError('Expected run and receipts');
+        }
+        agentRunLifecycle.recordApplicationToolEvidence({
+            runId: RUN_ID,
+            summary: 'Measured candidates',
+            applicationToolReceipts: planned.applicationToolReceipts,
+            revision,
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+        });
+    }
     const group = { groupId: 'group-preview', groupLabel: 'Punchier drums' };
     const actionLabels = planned.actions.map((action) => action.type);
     const compiled = compileAgentActionExecution({
@@ -2022,6 +2045,253 @@ describe('real caller sequential measurement opportunity', () => {
                 expect(view?.metricGoals.failure).toBe('incomparable');
             }
             assertUnchanged(before);
+        }
+    );
+
+    it.each(['improve', 'decline'] as const)(
+        'uses measured loudness to %s a candidate without an early write',
+        async (outcome) => {
+            markerStore.set({
+                markers: [],
+                sections: [{ id: 'passage', name: 'Passage', startBeat: 0, endBeat: 8, color: '#ffffff' }],
+            });
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected tracks');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === 'bass' ? { ...track, gain: 0.4 } : track)),
+            });
+            flushAutomergeStorageWrites();
+            const before = captureBefore();
+            const projectBefore = structuredClone(projectStore.value);
+            const prompt = 'Make Drums match Bass loudness over Passage';
+            engine.renderTrackSubgraphOffline.mockImplementation(async (request: SubgraphRequest) => {
+                const target = request.renderTracks.find((track) => track.id === request.targetTrackId);
+                if (target === undefined) {
+                    throw new TypeError('Expected rendered target');
+                }
+                const level = target.devices.reduce(
+                    (sum, device) => sum + (device.parameterValues['gain-level'] ?? 0),
+                    0
+                );
+                return sineBuffer(0.5 * target.gain * 10 ** (level / 20), SAMPLE_RATE, 4);
+            });
+            const scope = { kind: 'tracks', ids: ['drums', 'bass'] };
+            const call = (id: string, level: number) => {
+                const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, level));
+                return { ...measureCallFor(id, proposal), arguments: { ...previewArgs(proposal), scope } };
+            };
+            scriptTurns(
+                before.revision,
+                [
+                    [
+                        call('poor', -12),
+                        {
+                            id: 'search',
+                            name: 'agent.command-index.search',
+                            arguments: { intent: 'match track loudness' },
+                        },
+                    ],
+                ],
+                'match',
+                prompt
+            );
+            let improvedLevel = Number.NaN;
+            let firstError = Number.NaN;
+            vi.mocked(generateToolPlanningOutcome).mockImplementationOnce(
+                async (
+                    _system,
+                    _user,
+                    _schemas,
+                    _a,
+                    _b,
+                    _c,
+                    _d,
+                    _e,
+                    _f,
+                    options: Parameters<typeof generateToolPlanningOutcome>[9]
+                ) => {
+                    const history: HostedTurnHistory | undefined = options?.history;
+                    const receipt = history?.flatMap((turn) => turn.receipts).find((entry) => entry.callId === 'poor');
+                    expect(receipt).toMatchObject({
+                        status: 'success',
+                        revision: before.revision,
+                        callId: 'poor',
+                        toolName: 'analysis.measure',
+                        data: {
+                            subject: 'preview',
+                            scope,
+                            range: { startBeat: 0, endBeat: 8 },
+                            commands: [
+                                {
+                                    name: 'setDeviceParameter',
+                                    arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -12 },
+                                },
+                            ],
+                        },
+                    });
+                    const data = receipt?.data as {
+                        targets: Array<{
+                            targetId: string;
+                            preview: { integratedLoudness: { value: number } };
+                            baseline: { integratedLoudness: { value: number } };
+                            deltas: { integratedLoudness: { delta: number } };
+                        }>;
+                    };
+                    const drums = data.targets.find((target) => target.targetId === 'drums');
+                    const bass = data.targets.find((target) => target.targetId === 'bass');
+                    if (drums === undefined || bass === undefined) {
+                        throw new TypeError('Expected both measured targets');
+                    }
+                    expect(drums.deltas.integratedLoudness.delta).toBeCloseTo(-12, 1);
+                    expect(
+                        drums.preview.integratedLoudness.value - drums.baseline.integratedLoudness.value
+                    ).toBeCloseTo(-12, 1);
+                    expect(bass.preview.integratedLoudness.value).toBeCloseTo(
+                        bass.baseline.integratedLoudness.value,
+                        4
+                    );
+                    expect(
+                        Math.abs(drums.preview.integratedLoudness.value - bass.preview.integratedLoudness.value)
+                    ).toBeGreaterThan(1);
+                    firstError = Math.abs(
+                        drums.preview.integratedLoudness.value - bass.preview.integratedLoudness.value
+                    );
+                    improvedLevel =
+                        -12 + bass.preview.integratedLoudness.value - drums.preview.integratedLoudness.value;
+                    if (outcome === 'decline') {
+                        return {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    id: 'decline',
+                                    name: 'command.batch.decline',
+                                    arguments: {
+                                        kind: 'unsupported',
+                                        reason: 'The measured candidate does not match the reference.',
+                                        questions: [],
+                                    },
+                                },
+                            ],
+                            providerTurn: { provider: 'openai', assistantItems: null },
+                        };
+                    }
+                    return {
+                        status: 'complete',
+                        toolCalls: [call('improved', improvedLevel)],
+                        providerTurn: { provider: 'openai', assistantItems: null },
+                    };
+                }
+            );
+            vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [proposeCall({ commands: [], compiledCallIds: ['improved'] })],
+                providerTurn: { provider: 'openai', assistantItems: null },
+            });
+            const planned = await parsePromptToActions({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+                streamIdentity: { runId: RUN_ID, requestId: 'refinement', cancellationGeneration: 0 },
+            });
+            const renderRequests = engine.renderTrackSubgraphOffline.mock.calls.map(([request]) => request);
+            expect(renderRequests).toHaveLength(outcome === 'improve' ? 8 : 4);
+            for (const request of renderRequests) {
+                expect(request).toMatchObject({ startBeat: 0, endBeat: 8 });
+            }
+            if (outcome === 'decline') {
+                expect(planned.planningOutcome).toMatchObject({
+                    kind: 'unsupported',
+                    reason: 'The measured candidate does not match the reference.',
+                });
+                expect(planned.actions).toEqual([]);
+                assertUnchanged(before);
+                expect(projectStore.value).toEqual(projectBefore);
+                return;
+            }
+            expect(planned.rejectionReason).toBeUndefined();
+            const improvedReceipt = planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'improved');
+            expect(improvedReceipt).toMatchObject({
+                status: 'success',
+                revision: before.revision,
+                data: {
+                    subject: 'preview',
+                    scope,
+                    range: { startBeat: 0, endBeat: 8 },
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: improvedLevel },
+                        },
+                    ],
+                },
+            });
+            expect(planned.actions).toMatchObject([
+                {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: improvedLevel },
+                },
+            ]);
+            const preview = planned.measuredPreview;
+            expect(preview).toMatchObject({
+                revision: before.revision,
+                scope,
+                range: { startBeat: 0, endBeat: 8 },
+                provenance: { origin: 'planner', callId: 'improved', runId: RUN_ID },
+            });
+            const drums = preview?.targets.find((target) => target.targetId === 'drums')?.preview.integratedLoudness;
+            const bass = preview?.targets.find((target) => target.targetId === 'bass')?.preview.integratedLoudness;
+            if (
+                drums?.status !== 'measured' ||
+                bass?.status !== 'measured' ||
+                typeof drums.value !== 'number' ||
+                typeof bass.value !== 'number'
+            ) {
+                throw new TypeError('Expected measured loudness');
+            }
+            expect(Math.abs(drums.value - bass.value)).toBeLessThan(firstError);
+            expect(improvedLevel).not.toBeCloseTo(-12, 1);
+            assertUnchanged(before);
+            expect(projectStore.value).toEqual(projectBefore);
+            const confirmationId = persistForApproval(planned, before.revision, prompt, true);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                canConfirm: true,
+                metricGoals: { status: 'verified' },
+            });
+            const audition = resolveMeasuredPreviewAudition({ confirmationId, targetId: 'drums' });
+            if (audition.status !== 'available') {
+                throw new TypeError(audition.reason);
+            }
+            expect(audition.baseline.buffer).not.toBe(audition.preview.buffer);
+            expect(audition.baseline.buffer.duration).toBe(4);
+            expect(audition.preview.buffer.duration).toBe(4);
+            expect(audition.baseline.buffer.length).toBe(4 * SAMPLE_RATE);
+            expect(audition.preview.buffer.length).toBe(4 * SAMPLE_RATE);
+            expect(audition.baseline.gain).toBeCloseTo(10 ** (improvedLevel / 20), 2);
+            expect(audition.preview.gain).toBe(1);
+            const pair = preview?.targets.find((target) => target.targetId === 'drums')?.audition;
+            if (pair === undefined) {
+                throw new TypeError('Expected retained original and candidate renders');
+            }
+            const baseline = getAgentMeasurementArtifact(pair.baseline.artifact.contentAddress);
+            const candidate = getAgentMeasurementArtifact(pair.preview.artifact.contentAddress);
+            expect(baseline?.sourceRevision).toBe(before.revision);
+            expect(candidate?.sourceRevision).toBe(before.revision);
+            expect(audition.baseline.buffer).toBe(baseline?.buffer);
+            expect(audition.preview.buffer).toBe(candidate?.buffer);
+            expect(baseline?.buffer).not.toBe(candidate?.buffer);
+            expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({ status: 'executed' });
+            expect(drumsLevel()).toBeCloseTo(improvedLevel, 4);
+            const history = undoHistoryStore.value;
+            if (history === null) {
+                throw new TypeError('Expected undo history');
+            }
+            expect(history.past).toHaveLength(1);
+            expect(await undo()).toMatchObject({ headConsumed: true });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(projectStore.value).toEqual(projectBefore);
         }
     );
 

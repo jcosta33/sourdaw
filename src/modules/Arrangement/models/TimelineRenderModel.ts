@@ -37,7 +37,20 @@ export type TrackRenderModel = {
         name: string;
         clips: ClipRenderModel[];
     }[];
+    automationLanes?: readonly AutomationSubLaneRenderModel[];
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+};
+
+export type AutomationSubLaneRenderModel = {
+    id: string;
+    trackId: string;
+    parameterId: string;
+    parameterName: string;
+    minValue: number;
+    maxValue: number;
+    color?: string;
+    linkedLaneId?: string;
+    valueAtBeat: (beat: number) => number | null;
 };
 
 export type MiniNoteRenderModel = {

@@ -53,7 +53,7 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: `pnpm dev --host 127.0.0.1 --port ${WEBGPU_ADMISSION_PORT} --strictPort`,
+        command: 'node scripts/e2eDevServer.ts --browser-ai-admission',
         // The cold DDSP worker probe needs optimizer reloads to refresh its
         // pre-bundle URLs. Keep this dedicated development profile's HMR on.
         env: { NO_HMR: '0' },

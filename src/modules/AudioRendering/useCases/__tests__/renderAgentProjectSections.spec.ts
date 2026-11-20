@@ -27,6 +27,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
+    getCrdtDoc: vi.fn(),
     settledProjectRevisionMatchesLiveIgnoringSaveWrites: mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 

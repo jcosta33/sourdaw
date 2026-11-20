@@ -102,6 +102,18 @@ function addPlannedDevices(
     }
 }
 
+function acceptedInitialization(
+    delta: RuntimeGraphTrackStripInitializationDelta,
+    runtimeRevision: number
+): RuntimeGraphDeltaResult {
+    return Object.freeze({
+        acceptance: 'accepted' as const,
+        application: 'applied' as const,
+        correlation: delta.correlation,
+        runtimeRevision,
+    });
+}
+
 /**
  * Creates a missing strip from one compiled project snapshot. The source is
  * kept private until its full ordered chain and output route are valid, so a
@@ -153,12 +165,7 @@ export function createRuntimeTrackStripInitialization(
         const existing = ports.readTrackNode(sourcePlan.id);
         if (existing) {
             if (matchesExistingStrip(existing, sourcePlan, delta.output, ports.readToasterPadBinding(sourcePlan.id))) {
-                return Object.freeze({
-                    acceptance: 'accepted' as const,
-                    application: 'applied' as const,
-                    correlation: delta.correlation,
-                    runtimeRevision: ports.readRevision(),
-                });
+                return acceptedInitialization(delta, ports.readRevision());
             }
             return rejectRuntimeGraphDelta('Live source strip does not match the compiled initialization snapshot');
         }
@@ -181,12 +188,7 @@ export function createRuntimeTrackStripInitialization(
 
         try {
             const initialization = ports.mutateRuntimeGraph(() => buildStrip(sourcePlan, delta.output));
-            return Object.freeze({
-                acceptance: 'accepted' as const,
-                application: 'applied' as const,
-                correlation: delta.correlation,
-                runtimeRevision: initialization.runtimeRevision,
-            });
+            return acceptedInitialization(delta, initialization.runtimeRevision);
         } catch (error) {
             return classifyInitializationFailure(delta, error, ports.readRevision());
         }

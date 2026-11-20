@@ -3,11 +3,13 @@ import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useLay
 import { Flag } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/ColorPalette';
 import { type Marker } from '../../models/Marker';
@@ -53,12 +55,13 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const [laneWidth, setLaneWidth] = useState(0);
 
+    const editingMarkerId = editing?.markerId;
     useEffect(() => {
-        if (editing && inputRef.current) {
+        if (editingMarkerId !== undefined && inputRef.current) {
             inputRef.current.focus();
             inputRef.current.select();
         }
-    }, [editing]);
+    }, [editingMarkerId]);
 
     // Detach any global drag listeners still attached when the lane unmounts.
     useEffect(() => {
@@ -84,18 +87,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         return () => observer.disconnect();
     }, []);
 
-    useEffect(() => {
-        if (contextMenu.kind === 'none') {
-            return undefined;
-        }
-        const handleClick = (event: globalThis.MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                setContextMenu({ kind: 'none' });
-            }
-        };
-        window.addEventListener('mousedown', handleClick);
-        return () => window.removeEventListener('mousedown', handleClick);
-    }, [contextMenu.kind]);
+    useContextMenuDismiss(menuRef, () => setContextMenu({ kind: 'none' }));
 
     // Compute final beat on mouseup by reading the last mousemove position
     // We use a ref-based approach for the final commit to avoid stale closure
@@ -237,7 +229,11 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                             transition: isDragging ? 'none' : 'left 0.1s ease-out',
                         }}
                         title={marker.name}
-                        onDoubleClick={() => setEditing({ markerId: marker.id, name: marker.name })}
+                        onDoubleClick={() => {
+                            if (!isEditing) {
+                                setEditing({ markerId: marker.id, name: marker.name });
+                            }
+                        }}
                     >
                         <Stack
                             className="h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
@@ -261,6 +257,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                     value={editing.name}
                                     onChange={(event) => setEditing({ ...editing, name: event.target.value })}
                                     onBlur={commitRename}
+                                    onMouseDown={(event) => event.stopPropagation()}
                                     onKeyDown={(event) => {
                                         if (event.key === 'Enter') {
                                             commitRename();
@@ -278,13 +275,18 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                 );
             })}
             {contextMenu.kind !== 'none' ? (
-                <div
+                <DawContextMenuSurface
                     ref={menuRef}
-                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
-                    style={{
-                        left: contextMenu.x,
-                        top: contextMenu.y,
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    xClampOffset={contextMenu.kind === 'empty' ? 140 : 180}
+                    yClampOffset={contextMenu.kind === 'empty' ? 40 : 120}
+                    onClose={() => setContextMenu({ kind: 'none' })}
+                    onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                     }}
+                    className="min-w-[140px] p-1"
                     role="menu"
                 >
                     {contextMenu.kind === 'empty' ? (
@@ -318,7 +320,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                             </DawMenuButton>
                         </>
                     ) : null}
-                </div>
+                </DawContextMenuSurface>
             ) : null}
         </TimelineChromeSurface>
     );

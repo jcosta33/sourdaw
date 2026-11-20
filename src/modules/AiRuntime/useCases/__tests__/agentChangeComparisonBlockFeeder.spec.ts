@@ -129,7 +129,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Command/stores', () => ({ undoHistoryStore: doubles.undoHistoryStore }));
+vi.mock('#/modules/Command/stores', () => ({
+    commandBatchIdempotencyStore: { value: { records: [] }, hydrate: vi.fn() },
+    undoHistoryStore: doubles.undoHistoryStore,
+}));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     // Spread: the real AudioEngine barrel this file loads reaches Command's
     // other consumers, so the factory must carry the barrel's whole surface.

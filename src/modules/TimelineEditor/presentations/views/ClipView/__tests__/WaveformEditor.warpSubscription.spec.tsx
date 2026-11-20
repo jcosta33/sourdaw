@@ -69,7 +69,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: vi.fn(() => ({})),
+    captureArrangementMediaAuthority: vi.fn(() => ({ isCurrent: () => true, dispose: () => undefined })),
     verifyAudioBufferReferences: vi.fn(),
 }));
 

@@ -147,9 +147,9 @@ function dispatchAiChord(key: string): boolean {
 
 /**
  * Where the key was pressed: the workspace at large, a text-entry surface that
- * consumes typed characters, or a focused note editor (canvas editor).
+ * consumes typed characters, a note editor, or a floating device editor.
  */
-export type KeyTarget = 'workspace' | 'textEntry' | 'noteEditor';
+export type KeyTarget = 'workspace' | 'textEntry' | 'noteEditor' | 'deviceEditor';
 
 export type KeyDescriptor = {
     /**
@@ -644,6 +644,14 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 if (keyTarget === 'textEntry' && !allowedInInput) {
                     continue;
                 }
+                if (
+                    keyTarget === 'deviceEditor' &&
+                    !allowedInInput &&
+                    def.id !== 'editing.undo' &&
+                    def.id !== 'editing.redo'
+                ) {
+                    continue;
+                }
                 if (keyTarget === 'noteEditor' && !NOTE_EDITOR_SHORTCUT_IDS.has(def.id)) {
                     continue;
                 }
@@ -665,7 +673,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         // All remaining shortcuts are blocked in input fields — the
         // one exception (`mod+k` → command palette) already matched
         // above via its `allowedInInput` flag — and in note editors, whose
-        // admitted shortcuts are all definitions.
+        // admitted shortcuts, like the device editor's, are all definitions.
         if (keyTarget !== 'workspace') {
             return false;
         }
