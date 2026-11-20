@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
         value: {
             tracks: [
                 {
+                    id: 'piano',
                     devices: [
                         {
                             id: 'grand-1',
@@ -73,6 +74,17 @@ describe('Grand Boule morph gesture', () => {
                 type: 'setGrandBouleDeviceState',
                 payload: expect.objectContaining({
                     deviceId: 'grand-1',
+                    trackId: 'piano',
+                    before: {
+                        version: 1,
+                        data: {
+                            modelA: 'balanced-grand',
+                            modelB: 'clear-grand',
+                            morphPosition: 0,
+                            layerBalance: 0,
+                            enabled: false,
+                        },
+                    },
                     after: expect.objectContaining({ data: expect.objectContaining({ morphPosition: 0.6 }) }),
                 }),
             })

@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => {
         AdmissionRefusedError,
         executeAppAction: vi.fn(),
         trackStore: {
-            value: { tracks: [{ devices: [{ id: 'grand-1', type: 'grand-boule', deviceState: undefined }] }] },
+            value: {
+                tracks: [{ id: 'piano', devices: [{ id: 'grand-1', type: 'grand-boule', deviceState: undefined }] }],
+            },
         },
         reconcile: vi.fn(),
         notifyUser: vi.fn(),
@@ -52,7 +54,7 @@ describe('commitGrandBouleDeviceState', () => {
         vi.clearAllMocks();
     });
 
-    it('saves before and after versioned state through the undoable action', () => {
+    it('captures the owning track and missing chunk through the undoable action', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         commitGrandBouleDeviceState('grand-1', edited);
 
@@ -60,21 +62,8 @@ describe('commitGrandBouleDeviceState', () => {
             type: 'setGrandBouleDeviceState',
             payload: {
                 deviceId: 'grand-1',
-                before: {
-                    version: 1,
-                    data: {
-                        modelA: 'balanced-grand',
-                        modelB: 'clear-grand',
-                        morphPosition: 0,
-                        layerBalance: 0,
-                        enabled: false,
-                        temperament: 0,
-                        hammerHardness: 0,
-                        velocityCurve: 1,
-                        stereoWidth: 0.6,
-                        toneTilt: 0,
-                    },
-                },
+                trackId: 'piano',
+                before: null,
                 after: {
                     version: 1,
                     data: {

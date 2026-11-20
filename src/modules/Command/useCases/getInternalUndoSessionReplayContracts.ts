@@ -32,6 +32,16 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
+const grandBouleDeviceStateReplayContract: SessionActionContract = {
+    actionType: 'setGrandBouleDeviceState',
+    operationVersion: 1,
+    role: 'forward',
+    validateArguments: (payload: unknown) =>
+        validateVersionedCommandArguments('setGrandBouleDeviceState', payload) &&
+        getHandlerByType('setGrandBouleDeviceState')?.validateSessionActionArguments?.(payload) === true,
+    validateEntry: (entry) => getHandlerByType('setGrandBouleDeviceState')?.validateSessionEntry?.(entry) === true,
+};
+
 const toasterFactoryKitReplayContract: SessionActionContract = {
     actionType: 'setToasterFactoryKit',
     operationVersion: 1,
@@ -67,6 +77,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
+        grandBouleDeviceStateReplayContract,
         toasterFactoryKitReplayContract,
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
