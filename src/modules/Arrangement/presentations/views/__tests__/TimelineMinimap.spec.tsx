@@ -127,7 +127,8 @@ describe('TimelineMinimap', () => {
         expect(slider).toHaveAttribute('aria-valuemin', '0');
         expect(slider).toHaveAttribute('aria-valuemax', '64');
         expect(slider).toHaveAttribute('aria-valuenow', '0');
-        expect(slider).toHaveAttribute('aria-valuetext', 'Bars 1 to 1');
+        // An unmeasured timeline shows the 16-beat fallback: bars 1 to 4 in 4/4.
+        expect(slider).toHaveAttribute('aria-valuetext', 'Bars 1 to 4');
     });
 
     it('describes every valid section in musical order, including offscreen and dense labels', () => {
@@ -209,8 +210,11 @@ describe('TimelineMinimap', () => {
             }
         };
 
-        // At 12 px/beat, 12 px of minimap width shows one beat.
+        // At 12 px/beat, 12 px of timeline width shows one beat; the readout names the
+        // timeline's span, so the timeline is measured at the same width as the minimap.
         const measureMinimap = (visibleBeats = 20) => {
+            const view = storeOverrides.values.get(timelineViewStoreMock) as object;
+            storeOverrides.values.set(timelineViewStoreMock, { ...view, viewportWidth: visibleBeats * 12 });
             vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
                 new DOMRect(0, 0, visibleBeats * 12, 28)
             );
@@ -314,7 +318,8 @@ describe('TimelineMinimap', () => {
             throw new Error('expected setTimelineMinimapScrollX to have been called');
         }
         const [scrollX] = firstScrollCall;
-        expect(scrollX).toBeCloseTo(284, 6);
+        // Unmeasured timeline shows 16 beats: click at beat 100 / (200 / 64) = 32, centred to beat 24 = 288 px.
+        expect(scrollX).toBeCloseTo(288, 6);
     });
 
     it('should route viewport drags through the minimap scroll use case', () => {
@@ -357,6 +362,63 @@ describe('TimelineMinimap', () => {
 
         fireEvent.keyDown(slider, { key: 'Home' });
         expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(0);
+    });
+
+    describe('highlight sized by the visible timeline span, not the minimap width', () => {
+        // Minimap 400 px wide over the 64-beat minimum span (6.25 px per beat); the
+        // timeline shows 240 px at 12 px/beat = 20 beats, so the highlight is 125 px.
+        const MINIMAP_WIDTH = 400;
+        const setTimelineView = (viewportWidth: number) => {
+            const view = { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportWidth };
+            storeOverrides.values.set(timelineViewStoreMock, view);
+            timelineViewStoreMock.value = view;
+        };
+        const renderMeasured = () => {
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+                new DOMRect(0, 0, MINIMAP_WIDTH, 28)
+            );
+            renderWithTooltip(<TimelineMinimap />);
+            act(() => resizeCallback?.());
+            return screen.getByRole('slider');
+        };
+
+        it('names the bars of the timeline span in the readout', () => {
+            setTimelineView(1600);
+            // 1600 px at 12 px/beat is 133.3 beats, ending in bar 34; the 400 px minimap would say bar 9.
+            expect(renderMeasured()).toHaveAttribute('aria-valuetext', 'Bars 1 to 34');
+        });
+
+        it('treats a click just inside the timeline-span highlight as a drag grab', () => {
+            setTimelineView(240);
+            const slider = renderMeasured();
+
+            fireEvent.mouseDown(slider, { button: 0, clientX: 124 });
+
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).not.toHaveBeenCalled();
+        });
+
+        it('treats a click just beyond the timeline-span highlight as a jump', () => {
+            setTimelineView(240);
+            const slider = renderMeasured();
+
+            fireEvent.mouseDown(slider, { button: 0, clientX: 130 });
+
+            // Centred on beat 20.8 with a 20-beat span: (20.8 - 10) beats at 12 px/beat.
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls[0]?.[0]).toBeCloseTo(129.6, 6);
+        });
+
+        it('falls back to 16 beats for the highlight before the timeline is measured', () => {
+            setTimelineView(0);
+            const slider = renderMeasured();
+
+            // 16 beats * 6.25 = 100 px: 99 is inside, 105 is a jump.
+            fireEvent.mouseDown(slider, { button: 0, clientX: 99 });
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).not.toHaveBeenCalled();
+            fireEvent.mouseUp(document);
+            fireEvent.mouseDown(slider, { button: 0, clientX: 105 });
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe('paging by the visible timeline span', () => {
