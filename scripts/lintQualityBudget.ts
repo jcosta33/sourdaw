@@ -28,6 +28,7 @@ export const qualityRuleIds = [
     'typescript/no-unnecessary-type-parameters',
     'typescript/no-unsafe-type-assertion',
     'typescript/switch-exhaustiveness-check',
+    'unicorn/no-invalid-remove-event-listener',
     'vitest/expect-expect',
     'vitest/no-conditional-expect',
     'vitest/no-disabled-tests',
