@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'rev-1'),
+    captureMusicalContentBinding: vi.fn(() => ({
+        expectedRevision: 'semantic-revision',
+        selectionToken: 'selection-token',
+    })),
     // Revisions here are labels with no document behind them, so the save-insensitive question is
     // answered as equality with the live label; planPromptActionsAfterSave.spec.ts asks it over a
     // real document and a real save.
@@ -64,6 +68,11 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 
 vi.mock('../getProjectContext', () => ({
     getProjectContext: mocks.getProjectContext,
+}));
+
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureMusicalContentBinding: mocks.captureMusicalContentBinding,
 }));
 
 vi.mock('../parsePromptToActions', () => ({
@@ -128,6 +137,12 @@ describe('planPromptActions', () => {
         expect(result.projectRevision).toBe('rev-1');
         expect(result.result.actions).toHaveLength(1);
         expect(result.context).toEqual({ tracks: [] });
+        expect(mocks.captureMusicalContentBinding).toHaveBeenCalledTimes(1);
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                musicalContentBinding: { expectedRevision: 'semantic-revision', selectionToken: 'selection-token' },
+            })
+        );
     });
 
     it('throws AiProposalInvalidatedError when the project revision changed during planning', async () => {
@@ -205,6 +220,7 @@ describe('planPromptActions', () => {
             context: { tracks: [] },
             signal: undefined,
             projectRevision: 'rev-1',
+            musicalContentBinding: { expectedRevision: 'semantic-revision', selectionToken: 'selection-token' },
             onProviderResult: undefined,
             streamIdentity: expect.any(Object),
             onProviderAttempt: expect.any(Function),
@@ -519,6 +535,10 @@ describe('planPromptActions', () => {
 
             expect(result.result.actions).toHaveLength(1);
             expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
+            expect(mocks.captureMusicalContentBinding).toHaveBeenCalledTimes(1);
+            expect(mocks.parsePromptToActions.mock.calls[1]?.[0]?.musicalContentBinding).toBe(
+                mocks.parsePromptToActions.mock.calls[0]?.[0]?.musicalContentBinding
+            );
             expect(mocks.parsePromptToActions.mock.calls[1]?.[0]?.correction).toEqual({
                 creativeAuthority: authority,
             });

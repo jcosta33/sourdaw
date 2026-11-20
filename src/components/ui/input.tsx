@@ -2,7 +2,7 @@ import { type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
-function Input({ className, type, ...props }: ComponentProps<'input'>) {
+function Input({ className, type, onKeyDown, ...props }: ComponentProps<'input'>) {
     return (
         <input
             type={type}
@@ -14,6 +14,17 @@ function Input({ className, type, ...props }: ComponentProps<'input'>) {
                 className
             )}
             {...props}
+            onKeyDown={
+                onKeyDown
+                    ? (event) => {
+                          if (event.key === 'Enter' && event.nativeEvent.isComposing) {
+                              event.stopPropagation();
+                              return;
+                          }
+                          onKeyDown(event);
+                      }
+                    : undefined
+            }
         />
     );
 }

@@ -11,6 +11,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
+import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
@@ -296,6 +297,8 @@ describe('quantize grid labels', () => {
                 onToggleNotePreview={vi.fn()}
                 zoom={1}
                 onZoomChange={vi.fn()}
+                rowHeight={ROW_HEIGHT}
+                onRowHeightChange={vi.fn()}
             />
         );
 

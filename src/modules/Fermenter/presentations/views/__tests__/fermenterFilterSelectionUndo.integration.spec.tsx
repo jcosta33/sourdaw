@@ -658,26 +658,26 @@ describe('Fermenter Filter selection through Command', () => {
         await expectModel(0, 0);
     });
 
-    it('keeps an ordinary panel control and runtime filter automation outside manual history', async () => {
+    it('keeps waveform and filter selections independent of runtime filter automation', async () => {
         renderPanel();
         fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
         fireEvent.click(screen.getByRole('button', { name: 'Square' }));
         await waitFor(() => expect(rawValues().oscWaveform).toBe(2));
-        expect(depth()).toBe(0);
+        expect(depth()).toBe(1);
         expect(audio.updateDevicePatch).toHaveBeenLastCalledWith(
             TRACK_ID,
             DEVICE_ID,
             expect.objectContaining({ osc_waveform: 2 })
         );
         fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
-        await chooseModel(1, 1);
+        await chooseModel(1, 2);
         act(() => applyFermenterRuntimeParam({ deviceId: DEVICE_ID, paramId: 'filterModel', value: 4 }));
-        await expectModel(1, 1);
+        await expectModel(1, 2);
         expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'filter_model', 4);
         act(() => applyFermenterRuntimeParam({ deviceId: DEVICE_ID, paramId: 'filterMode', value: 2 }));
         expect(rawValues().filterMode).toBe(0);
         expect(getFermenterState(DEVICE_ID).patch.filterMode).toBe(0);
-        expect(depth()).toBe(1);
+        expect(depth()).toBe(2);
         expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'filter_mode', 2);
     });
 

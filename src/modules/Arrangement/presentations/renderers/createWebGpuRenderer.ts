@@ -8,12 +8,32 @@ import {
     resolveMidiPitchWindow,
 } from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import { type TimelineRenderModel, type TrackRenderModel } from '../../models/TimelineRenderModel';
 import { getRenderedTrackExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
+import { createWebGpuInlineAutomationPass } from './createWebGpuInlineAutomationPass';
+
+type ClipRow = Pick<TrackRenderModel, 'color' | 'clips'> & { top: number; height: number };
+
+function* getClipRows(model: TimelineRenderModel, dpr: number): Generator<ClipRow> {
+    let top = -model.scrollY * dpr;
+    for (const track of model.tracks) {
+        const height = track.height * dpr;
+        yield { top, height, color: track.color, clips: track.clips };
+        for (const [index, lane] of (track.variationLanes ?? []).entries()) {
+            yield {
+                top: top + height + index * VARIATION_LANE_HEIGHT * dpr,
+                height: VARIATION_LANE_HEIGHT * dpr,
+                color: track.color,
+                clips: lane.clips,
+            };
+        }
+        top += getRenderedTrackExtent(track) * dpr;
+    }
+}
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -141,13 +161,15 @@ function pushRect(
     buffer: number,
     alpha: number,
     w: number,
-    h: number
+    h: number,
+    rightEdgeYOffset = 0
 ): number {
     // Convert pixel coords → NDC (WebGPU: Y+ is up)
     const nx1 = (x1 / w) * 2 - 1;
     const nx2 = (x2 / w) * 2 - 1;
     const ny1 = 1 - (y1 / h) * 2;
     const ny2 = 1 - (y2 / h) * 2;
+    const rightOffset = (rightEdgeYOffset / h) * 2;
 
     // Triangle 1: top-left, top-right, bottom-left
     // Triangle 2: top-right, bottom-right, bottom-left
@@ -159,7 +181,7 @@ function pushRect(
         buffer,
         alpha,
         nx2,
-        ny1,
+        ny1 - rightOffset,
         r,
         gain,
         buffer,
@@ -171,13 +193,13 @@ function pushRect(
         buffer,
         alpha,
         nx2,
-        ny1,
+        ny1 - rightOffset,
         r,
         gain,
         buffer,
         alpha,
         nx2,
-        ny2,
+        ny2 - rightOffset,
         r,
         gain,
         buffer,
@@ -425,14 +447,33 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 labelBindGroups.push(label.bindGroup);
             }
 
-            function addRect(x1: number, y1: number, x2: number, y2: number, color: string, alpha = 1): void {
+            function addRect(
+                x1: number,
+                y1: number,
+                x2: number,
+                y2: number,
+                color: string | ReturnType<typeof colorToRgba>,
+                alpha = 1,
+                rightEdgeYOffset = 0
+            ): void {
                 if (rectCount >= MAX_RECTS) {
                     return;
                 }
-                const [r, gain, buffer1] = colorToRgba(color, alpha);
-                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, r, gain, buffer1, alpha, w, h);
+                const [red, green, blue] = typeof color === 'string' ? colorToRgba(color, alpha) : color;
+                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, red, green, blue, alpha, w, h, rightEdgeYOffset);
                 rectCount++;
             }
+
+            const automation = createWebGpuInlineAutomationPass(
+                model,
+                { width: w, height: h, dpr },
+                {
+                    addRect({ left, top, right, bottom, rightEdgeYOffset }, color, alpha) {
+                        addRect(left, top, right, bottom, color, alpha, rightEdgeYOffset);
+                    },
+                    colorToRgba,
+                }
+            );
 
             // 1. Track background rows
             let trackY = -scrollY * dpr;
@@ -451,13 +492,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const laneTop = trackY + th + lane * VARIATION_LANE_HEIGHT * dpr;
                     addRect(0, laneTop, w, laneTop + VARIATION_LANE_HEIGHT * dpr, '#000000', 0.15);
                 }
+                automation.collectTrackRows(track, trackY);
                 trackY += getRenderedTrackExtent(track) * dpr;
             }
 
             // 2. Clips
-            trackY = -scrollY * dpr;
-            for (const track of model.tracks) {
-                const th = track.height * dpr;
+            for (const track of getClipRows(model, dpr)) {
+                trackY = track.top;
+                const th = track.height;
                 const clipTop = trackY + 2 * dpr;
                 const clipBottom = trackY + th - 2 * dpr;
 
@@ -586,13 +628,18 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     // also uses, so switching backends loses no information.
                     addClipLabel(clip.name, cx1, cx2, trackY);
                 }
-                trackY += getRenderedTrackExtent(track) * dpr;
             }
 
-            // 3. Bar / beat grid lines
             const barBeats = model.timeSignatureNumerator;
             const firstBar = Math.floor(viewportStartBeat / barBeats);
             const lastBar = Math.ceil((viewportStartBeat + w / pixelsPerBeat / dpr) / barBeats) + 1;
+
+            // Keep the existing clip, grid and playhead geometry ahead of the automation budget.
+            // The backing is emitted before the grid so the bar lines remain visible through the row.
+            const remainingAfterGridAndPlayhead = MAX_RECTS - rectCount - (lastBar - firstBar + 1) - 2;
+            const maxAutomationSegments = automation.drawBackings(remainingAfterGridAndPlayhead);
+
+            // 3. Bar / beat grid lines
             for (let bar = firstBar; bar <= lastBar; bar++) {
                 const beat = bar * barBeats;
                 const gx = beatToX(beat);
@@ -601,6 +648,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 }
                 addRect(gx, 0, gx + dpr, h, '#ffffff', bar % 4 === 0 ? 0.08 : 0.04);
             }
+
+            automation.drawEnvelopes(maxAutomationSegments);
 
             // 4. Playhead
             const phX = beatToX(playheadPosition);

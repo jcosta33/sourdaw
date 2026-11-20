@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::sample::SampleData;
-use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, MAX_VOICES};
+use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, PlaybackMode, MAX_VOICES};
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
@@ -860,4 +860,202 @@ fn quick_mode_still_plays_the_active_sample_chromatically() {
     // Root note 60, note 72 — one octave up, so every other source frame.
     let every_other: Vec<f32> = (0..BLOCK).map(|i| pcm[i * 2]).collect();
     assert_proportional_to(&out, &every_other, "quick mode an octave above the root");
+}
+
+// ── Pad audition voice ownership ──────────────────────────────────────
+
+fn pad_audition_collision_engine() -> CrumbsEngine {
+    let mut engine = engine_with(flat_pcm(128 * BLOCK, 0.2), CrumbsMode::Quick);
+    let sentinel = load(&mut engine, flat_pcm(128 * BLOCK, 0.35));
+    let preview = load(&mut engine, flat_pcm(128 * BLOCK, 0.55));
+    engine.drum_mode_mut().set_pad_sample(0, preview);
+    engine.drum_mode_mut().set_pad_sample(1, sentinel);
+    engine
+        .drum_mode_mut()
+        .get_pad_mut(1)
+        .expect("sentinel pad")
+        .playback_mode = PlaybackMode::Sustain;
+    engine
+}
+
+fn start_pad_audition_transport(engine: &mut CrumbsEngine, same_pitch: bool, other_pitch: bool) {
+    if same_pitch {
+        note_on(engine, 36, 127);
+    }
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+    if other_pitch {
+        note_on(engine, 37, 127);
+    }
+    render(engine, BLOCK);
+}
+
+fn assert_pcm_matches(actual: &[f32], expected: &[f32], what: &str) {
+    assert_eq!(actual.len(), expected.len());
+    for (frame, (&actual, &expected)) in actual.iter().zip(expected).enumerate() {
+        assert!(
+            (actual - expected).abs() < 1e-5,
+            "{what}: frame {frame} was {actual}, expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn pad_audition_release_preserves_sounding_transport_across_modes() {
+    let mut audition = pad_audition_collision_engine();
+    start_pad_audition_transport(&mut audition, true, true);
+    pad_audition_on(&mut audition, 36, 127, 42);
+    let mixed = render_second_block(&mut audition);
+
+    let mut same_pitch = pad_audition_collision_engine();
+    start_pad_audition_transport(&mut same_pitch, true, false);
+    let mut other_pitch = pad_audition_collision_engine();
+    start_pad_audition_transport(&mut other_pitch, false, true);
+    let same_pcm = render_second_block(&mut same_pitch);
+    let other_pcm = render_second_block(&mut other_pitch);
+    let transport_pcm: Vec<_> = same_pcm
+        .iter()
+        .zip(&other_pcm)
+        .map(|(same, other)| same + other)
+        .collect();
+
+    assert!(peak(&same_pcm) > 0.1, "same-pitch transport must sound");
+    assert!(peak(&other_pcm) > 0.2, "other-pitch transport must sound");
+    assert!(
+        peak(&mixed) > peak(&transport_pcm) + 0.3,
+        "preview must contribute distinct PCM before release"
+    );
+
+    pad_audition_off(&mut audition, 42);
+    let fade = render(&mut audition, 2 * BLOCK);
+    assert!(
+        (fade[0] - mixed[0]).abs() < 0.01,
+        "one-shot release must begin at its sounding level"
+    );
+    assert_pcm_matches(
+        &fade[BLOCK + 32..],
+        &transport_pcm[32..],
+        "PCM after the preview de-click",
+    );
+}
+
+fn pad_audition_on(engine: &mut CrumbsEngine, note: u8, velocity: u8, audition_id: u32) {
+    engine.handle_command(CrumbsCommand::PadAuditionOn {
+        note,
+        velocity,
+        audition_id,
+    });
+}
+
+fn pad_audition_off(engine: &mut CrumbsEngine, audition_id: u32) {
+    engine.handle_command(CrumbsCommand::PadAuditionOff { audition_id });
+}
+
+#[test]
+fn ordinary_one_shot_ignores_pitch_and_unknown_pad_audition_releases() {
+    let mut engine = engine_with(flat_pcm(8 * BLOCK, 0.5), CrumbsMode::Drum);
+    note_on(&mut engine, 36, 127);
+    let held = render_second_block(&mut engine);
+    assert!(peak(&held) > 0.3, "ordinary pad must sound first");
+
+    engine.handle_command(CrumbsCommand::NoteOff { note: 36 });
+    pad_audition_off(&mut engine, 36);
+    render(&mut engine, 2 * BLOCK);
+    assert_pcm_matches(&render(&mut engine, BLOCK), &held, "ordinary one-shot PCM");
+
+    render(&mut engine, 3 * BLOCK);
+    assert_eq!(peak(&render(&mut engine, BLOCK)), 0.0);
+}
+
+#[test]
+fn pad_audition_release_isolates_each_sustained_stack_at_the_same_pitch() {
+    let mut engine = engine_with(flat_pcm(32 * BLOCK, 0.25), CrumbsMode::Quick);
+    for (param, value) in [
+        (CrumbsParam::LoopMode, 1.0),
+        (CrumbsParam::LoopEnd, (4 * BLOCK) as f32),
+        (CrumbsParam::Release, 0.05),
+    ] {
+        engine.handle_command(CrumbsCommand::SetParam { param, value });
+    }
+    note_on(&mut engine, 60, 127);
+    let ordinary = render_second_block(&mut engine);
+    let ordinary_level = peak(&ordinary);
+    assert!(ordinary_level > 0.15, "ordinary hold must sound first");
+
+    engine.handle_command(CrumbsCommand::SetParam {
+        param: CrumbsParam::StackCount,
+        value: 3.0,
+    });
+    pad_audition_on(&mut engine, 60, 18, 70);
+    pad_audition_on(&mut engine, 60, 44, 12);
+    let first_stack = ordinary_level * (3.0 * 18.0 / 127.0);
+    let second_stack = ordinary_level * (3.0 * 44.0 / 127.0);
+    assert_pcm_matches(
+        &render_second_block(&mut engine),
+        &flat_pcm(BLOCK, ordinary_level + first_stack + second_stack),
+        "ordinary hold and both three-voice stacks",
+    );
+
+    engine.handle_command(CrumbsCommand::NoteOff { note: 60 });
+    pad_audition_off(&mut engine, 999);
+    render(&mut engine, 32 * BLOCK);
+    assert_pcm_matches(
+        &render(&mut engine, BLOCK),
+        &flat_pcm(BLOCK, first_stack + second_stack),
+        "both audition stacks after ordinary and unknown releases",
+    );
+
+    pad_audition_off(&mut engine, 12);
+    let release = render(&mut engine, 2 * BLOCK);
+    assert!(
+        release[0] > first_stack + second_stack - 0.01
+            && release[2 * BLOCK - 1] > first_stack + 0.02
+            && release[2 * BLOCK - 1] < release[0] - 0.02,
+        "looping preview must follow its amp release beyond the one-shot de-click"
+    );
+    pad_audition_off(&mut engine, 12);
+    render(&mut engine, 32 * BLOCK);
+    assert_pcm_matches(
+        &render(&mut engine, BLOCK),
+        &flat_pcm(BLOCK, first_stack),
+        "older audition after repeated release of the newer stack",
+    );
+
+    pad_audition_off(&mut engine, 70);
+    render(&mut engine, 32 * BLOCK);
+    assert_eq!(peak(&render(&mut engine, BLOCK)), 0.0);
+}
+
+#[test]
+fn pad_audition_release_ignores_a_reused_slot_and_a_swallowed_attack() {
+    let mut engine = engine_with(flat_pcm(128 * BLOCK, 0.5), CrumbsMode::Quick);
+    engine.handle_command(CrumbsCommand::SetParam {
+        param: CrumbsParam::RootNote,
+        value: 37.0,
+    });
+    pad_audition_on(&mut engine, 37, 127, 42);
+    let preview = render_second_block(&mut engine);
+    assert!(peak(&preview) > 0.3, "audition must occupy the first slot");
+    pad_audition_off(&mut engine, 42);
+    render(&mut engine, 32 * BLOCK);
+    assert_eq!(peak(&render(&mut engine, BLOCK)), 0.0);
+
+    note_on(&mut engine, 37, 127);
+    let normal = render_second_block(&mut engine);
+    assert_pcm_matches(&normal, &preview, "ordinary note in the reused slot");
+
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+    pad_audition_on(&mut engine, 37, 127, 43);
+    assert_pcm_matches(
+        &render_second_block(&mut engine),
+        &normal,
+        "ordinary voice while the unassigned pad remains silent",
+    );
+    pad_audition_off(&mut engine, 42);
+    pad_audition_off(&mut engine, 43);
+    render(&mut engine, 32 * BLOCK);
+    assert_pcm_matches(
+        &render(&mut engine, BLOCK),
+        &normal,
+        "ordinary voice after retired and swallowed audition releases",
+    );
 }

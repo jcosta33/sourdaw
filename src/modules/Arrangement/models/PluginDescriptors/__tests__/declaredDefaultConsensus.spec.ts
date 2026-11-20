@@ -625,10 +625,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
             'Levain declares no default patch. `models/LevainPatch.ts` exports four sub-configs (expression, ' +
             'legato, humanize, release-trigger) whose keys are none of the six descriptor parameter ids; the ' +
             'instrument manifest supplies the rest at load time.',
-        noPanelReason:
-            "Levain's eighteen reset literals sit on knobs that write a *fragment* of a sub-config — " +
-            '`onChange={(v) => onChange({ amount: v })}` — so the id is an object key inside a lambda and names ' +
-            'a field of `DEFAULT_HUMANIZE_CONFIG` rather than a descriptor parameter.',
+        noPanelReason: '',
     },
     'builtin-crumbs': {
         moduleDir: 'src/modules/Crumbs',
@@ -919,6 +916,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             'descriptor advertises none of them.',
     },
     {
+        file: 'src/modules/Levain/models/LevainDeviceState.ts',
+        exportName: 'LEVAIN_MISSING_DEVICE_STATE',
+        reason: 'Versioned serialized absence witness. Its number is format metadata and its instrument id is identity.',
+    },
+    {
         file: 'src/modules/Levain/models/LevainPatch.ts',
         exportName: 'ARTICULATION_ID_BY_TYPE',
         reason: 'A lookup from articulation type to sample-set id. No numeric parameter values.',
@@ -1185,6 +1187,7 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [];
  */
 const PANEL_FILES: readonly { readonly file: string; readonly declared?: number; readonly readable: number }[] = [
     { file: 'src/modules/Bacteria/presentations/components/BandStrip.tsx', declared: 1, readable: 1 },
+    { file: 'src/modules/Bacteria/presentations/views/BacteriaInputGainKnob.tsx', declared: 1, readable: 1 },
     { file: 'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx', readable: 0 },
     { file: 'src/modules/Crumbs/presentations/components/CrumbsControls.tsx', declared: 14, readable: 10 },
     { file: 'src/modules/Crust/presentations/components/CrustControlZone.tsx', readable: 0 },
@@ -1214,7 +1217,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Levain/presentations/components/LegatoTuning.tsx', readable: 0 },
     { file: 'src/modules/Levain/presentations/components/LevainMacroStrip.tsx', readable: 0 },
     { file: 'src/modules/Levain/presentations/components/MicBlendSlider.tsx', readable: 0 },
-    { file: 'src/modules/Levain/presentations/views/LevainPanel.tsx', readable: 0 },
+    { file: 'src/modules/Levain/presentations/views/LevainPanel.tsx', declared: 1, readable: 1 },
     { file: 'src/modules/Proof/presentations/components/ProofDynSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/components/ProofEqSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/components/ProofExciterSection.tsx', readable: 0 },

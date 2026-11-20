@@ -146,7 +146,6 @@ import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import {
     configureLevainZoneTableBuilder,
-    initLevainDeviceStatePersistence,
     registerLevainDevice,
     unregisterLevainDevice,
 } from '#/modules/Levain/useCases';
@@ -674,12 +673,9 @@ initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is
 // already carrying the kit read back from the document by the time this observes it.
 initToasterKitPersistence();
-// Same shape and the same reason: `Device.parameterValues` holds numbers, and
-// neither Levain's instrument id nor Crumbs' sample reference is one. Registered
-// here so a device's first appearance is already carrying whatever the document
-// held for it, and only a genuine edit afterwards writes back.
+// Levain observes committed device membership for pending identity changes.
+// The document reconciliation below refreshes loaded devices from project state.
 initLevainDeviceStateProjectAccess();
-initLevainDeviceStatePersistence();
 initBacteriaSubscribers({ eventBus, logger });
 // Same shape and the same reason, subscriber first so the device's first
 // appearance already carries the routing table read back from the document:
