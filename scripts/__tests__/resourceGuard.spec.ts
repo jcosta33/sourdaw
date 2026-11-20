@@ -85,9 +85,11 @@ function runIsolatedGuardedCommand(
 function startMarkerServer(
     root: string,
     port = 0,
-    runToken?: string
+    runToken?: string,
+    onRequest?: () => void
 ): Promise<{ port: number; close: () => Promise<void> }> {
     const server = createServer((_request, response) => {
+        onRequest?.();
         response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
         if (runToken !== undefined) {
             response.setHeader(SOURDAW_E2E_RUN_TOKEN_HEADER, runToken);
@@ -3748,6 +3750,7 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             );
             const errors: string[] = [];
             let marker: { close: () => Promise<void> } | undefined;
+            let probed = false;
 
             try {
                 const code = await runGuardCli(['--recover', '--', 'true'], {
@@ -3757,9 +3760,12 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         marker = await startMarkerServer(
                             fixture.lane.worktreePath,
                             fixture.port,
-                            input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]
+                            input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV],
+                            () => {
+                                probed = true;
+                            }
                         );
-                        await new Promise((resolve) => setTimeout(resolve, 600));
+                        await waitUntil(() => probed);
                         return fakeResult(result);
                     },
                     assertModulesPreflight: () => undefined,
