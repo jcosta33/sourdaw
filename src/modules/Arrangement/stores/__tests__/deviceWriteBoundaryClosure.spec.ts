@@ -953,11 +953,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // call that measures a batch preview. Measurement compiles a versioned
         // Command envelope over an isolated projection; no device hydration or write.
         'src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts': 4,
-        // Count provenance: new file entry, measured 3 — the
+        // Count provenance: moved from planVibeRunSchedule.ts, measured 3 — the
         // `compilePerceptualConstraints` import, its module path and one call
-        // that reads the request's constraint clauses while planning the
+        // that reads the request's constraint clauses while preparing the
         // schedule. Pure prompt reading; no device hydration or write.
-        'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
+        'src/modules/AiRuntime/useCases/vibeRun/prepareVibeRunSchedule.ts': 3,
         // Count provenance: new file entry, measured 3 — the
         // `compilePerceptualConstraints` import, its module path and one call
         // that blanks the clauses the constraint reader consumed before the
@@ -1024,7 +1024,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
         // compileRuntimeGrinderNeuralPatch. Node apply sites plus the pure
-        // delta compiler; createWebAudioEngine applies accepted deltas.
+        // delta compiler; the web audio engine's delta application unit
+        // (webAudioEngine/createRuntimeGraphDeltaApplication) compiles and
+        // applies accepted deltas.
         'src/modules/AudioEngine/engine/BacteriaNode.ts': 3,
         'src/modules/AudioEngine/engine/CrustNode.ts': 3,
         'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
@@ -1055,7 +1057,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // through `proofParamBridge`, which is censused separately under
         // 'persistence-runtime' and guard-listed below.
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        'src/modules/AudioEngine/repositories/webAudioEngine/createRuntimeGraphDeltaApplication.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
         // Device-list admission extracts a pure compiler helper and its call.
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
