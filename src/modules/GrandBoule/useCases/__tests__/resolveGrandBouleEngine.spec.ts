@@ -20,15 +20,19 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: () => [{ id: 'track-1', devices: [{ id: 'grand-1' }] }],
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    ensureTrackStrip: () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => {
+    const getStrip = () => ({
         deviceNodes: [{ deviceId: 'grand-1', grandBouleControls: mocks.controls }],
         analyserNode: null,
-    }),
-    getAudioSampleRate: () => 48_000,
-    sendNativeLiveMidiControl: mocks.sendNativeLiveMidiControl,
-    writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
-}));
+    });
+    return {
+        ensureTrackStrip: getStrip,
+        getTrackStrip: getStrip,
+        getAudioSampleRate: () => 48_000,
+        sendNativeLiveMidiControl: mocks.sendNativeLiveMidiControl,
+        writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
+    };
+});
 vi.mock('../../repositories/grandBouleEngineHandle', () => ({
     createDisconnectedGrandBouleEngineHandle: vi.fn(() => ({ setCalibration: vi.fn() })),
 }));
