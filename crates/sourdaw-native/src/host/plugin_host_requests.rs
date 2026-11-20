@@ -427,13 +427,16 @@ fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
 /// A layout the host cannot route is not a failed follow-up: the instance
 /// latches the refusal, reports it and passes its blocks dry, and asking again
 /// would refuse the same layout. Only not reaching the plugin is retried.
-fn restart_component(runtime: &SharedHostedPlugin) -> Result<(), String> {
-    let Some(ui) = registered_ui_thread() else {
+fn restart_component(
+    runtime: &SharedHostedPlugin,
+    ui: Option<&dyn UiThread>,
+) -> Result<(), String> {
+    let Some(ui) = ui else {
         return Err("no UI thread is registered to carry a component restart".to_string());
     };
     runtime
         .with_control(CONTROL_TIMEOUT, |plugin| {
-            lend_on_ui_thread(&*ui, plugin, |plugin| plugin.apply_component_restart())
+            lend_on_ui_thread(ui, plugin, |plugin| plugin.apply_component_restart())
         })
         .map(|_routed_or_refused| ())
 }
@@ -510,7 +513,9 @@ fn serve_channel_wake(
             PluginHostRequest::ParametersRescan => {
                 rescan_parameters(&runtime, instance_id, engine_plugins, events)
             }
-            PluginHostRequest::ComponentRestart => restart_component(&runtime),
+            PluginHostRequest::ComponentRestart => {
+                restart_component(&runtime, registered_ui_thread().as_deref())
+            }
         },
         || runtime.ensure_public_control_allowed().is_ok(),
     );
@@ -525,6 +530,63 @@ mod tests {
     use super::*;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
+
+    /// A UI thread that is never the caller's, and runs what it is handed
+    /// inline while counting it.
+    #[derive(Default)]
+    struct CountingUiThread {
+        lent: std::sync::atomic::AtomicUsize,
+    }
+
+    impl UiThread for CountingUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), String> {
+            self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.run();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_component_restart_is_carried_to_the_ui_thread() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+        let ui = CountingUiThread::default();
+
+        assert_eq!(restart_component(&runtime, Some(&ui)), Ok(()));
+
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the restart runs on the UI thread, never on the watcher"
+        );
+    }
+
+    #[test]
+    fn a_component_restart_with_no_ui_thread_is_not_run_and_asks_again() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+
+        assert!(restart_component(&runtime, None).is_err());
+        let again = serve_queued_request(
+            ("inst-1".to_string(), PluginHostRequest::ComponentRestart, 0),
+            |_, _| restart_component(&runtime, None),
+            || runtime.ensure_public_control_allowed().is_ok(),
+        );
+        assert_eq!(
+            again,
+            Some(("inst-1".to_string(), PluginHostRequest::ComponentRestart, 1)),
+            "the wake is queued again for when a UI thread is registered"
+        );
+    }
 
     #[test]
     fn a_recorded_state_change_becomes_an_event_naming_the_instance() {
