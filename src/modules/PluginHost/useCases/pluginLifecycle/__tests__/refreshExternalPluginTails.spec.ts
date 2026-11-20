@@ -124,6 +124,22 @@ describe('refreshExternalPluginTails', () => {
         expect(tailOf('inst-1')).toBe(240_000);
     });
 
+    it('lets the later refresh win when the older one answers first', async () => {
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        const olderAnswer = Promise.withResolvers<PluginTailReading[]>();
+        const newerAnswer = Promise.withResolvers<PluginTailReading[]>();
+        mocks.readPluginTailsRepo.mockReturnValueOnce(olderAnswer.promise).mockReturnValueOnce(newerAnswer.promise);
+
+        const older = refreshExternalPluginTails();
+        const newer = refreshExternalPluginTails();
+        olderAnswer.resolve([{ instance_id: 'inst-1', tail_samples: 48_000 }]);
+        await older;
+        newerAnswer.resolve([{ instance_id: 'inst-1', tail_samples: 240_000 }]);
+        await newer;
+
+        expect(tailOf('inst-1')).toBe(240_000);
+    });
+
     it('does not overwrite a tail the plugin announced while the read was in flight', async () => {
         await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
         const answer = Promise.withResolvers<PluginTailReading[]>();

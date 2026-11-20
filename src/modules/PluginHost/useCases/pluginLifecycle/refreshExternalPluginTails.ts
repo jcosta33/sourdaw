@@ -15,9 +15,11 @@ import { loadedExternalInstances } from './loadedExternalInstances';
  * — an export — asks here first.
  *
  * An answer lands only if nothing has written that instance's tail since the read
- * was issued: an unload (and any reload under the same id), a
- * `plugin-tail-changed` revision, or a newer refresh all make it older than what
- * the store holds. An instance the host could not read keeps the figure it had.
+ * was issued (an unload and any reload under the same id, or a
+ * `plugin-tail-changed` revision), and no refresh issued after this one has
+ * already published for it. Refreshes are ordered by when they were issued, not
+ * by which answers first, and one answer never invalidates another. An instance
+ * the host could not read keeps the figure it had.
  *
  * Never throws: a refused read leaves every stored tail as it was, because a
  * stale tail is a better answer than none.
@@ -31,8 +33,9 @@ export async function refreshExternalPluginTails(): Promise<void> {
         const issued = issueExternalPluginTailRead(instanceIds);
         const readings = await readPluginTails(instanceIds);
         for (const { instance_id: instanceId, tail_samples: tailSamples } of readings) {
-            if (issued.has(instanceId)) {
-                publishExternalPluginTailRead(instanceId, issued.get(instanceId), tailSamples);
+            const issue = issued.get(instanceId);
+            if (issue) {
+                publishExternalPluginTailRead(instanceId, issue, tailSamples);
             }
         }
     } catch (error) {
