@@ -26,15 +26,29 @@ async function open_midi_editor(page: import('@playwright/test').Page): Promise<
     await expect(page.getByTestId('toolbar-zoom')).toBeVisible({ timeout: 5000 });
 }
 
-// Piano roll zoom slider keyboard response. Existing specs assert the slider
+// Horizontal zoom slider keyboard response. Existing specs assert the slider
 // EXISTS with a numeric aria-valuenow — existence-only. This asserts ArrowUp
 // changes the value (a real zoom-level state change).
-test.describe('Piano roll zoom — keyboard response', () => {
+test.describe('Horizontal zoom — keyboard response', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_midi_editor(page);
+    });
+
+    test('vertical slider reaches both boundaries with the keyboard', async ({ page }) => {
+        const vertical = page.getByRole('slider', { name: 'Vertical zoom' });
+        const horizontal = page.getByRole('slider', { name: 'Horizontal zoom' });
+        await expect(vertical).toHaveAttribute('aria-valuenow', '16');
+        await vertical.focus();
+        await page.keyboard.press('Home');
+        await expect(vertical).toHaveAttribute('aria-valuenow', '8');
+        await page.keyboard.press('End');
+        await expect(vertical).toHaveAttribute('aria-valuenow', '32');
+        await page.keyboard.press('ArrowDown');
+        await expect(vertical).toHaveAttribute('aria-valuenow', '31');
+        await expect(horizontal).toHaveAttribute('aria-valuenow', '100');
     });
 
     test('zoom slider responds to ArrowUp', async ({ page }) => {

@@ -38,6 +38,8 @@ vi.mock('../captureProjectTransitionAuthority', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: crdt.compactProject,
     captureProjectIdentity: crdt.captureProjectIdentity,
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
+    getCrdtDoc: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => notifications);
 

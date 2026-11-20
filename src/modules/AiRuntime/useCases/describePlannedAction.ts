@@ -199,7 +199,11 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setExternalPluginState: describeFromRegistry,
     setDeviceState: describeFromRegistry,
     setFermenterPatch: describeFromRegistry,
+    setLevainIdentity: describeFromRegistry,
     setGrandBouleDeviceState: describeFromRegistry,
+    setToasterFactoryKit: describeFromRegistry,
+    setBacteriaFactoryPatch: describeFromRegistry,
+    setGlutenFactoryPreset: describeFromRegistry,
     createBus: describeFromRegistry,
     createFolder: describeFromRegistry,
     setSend: describeFromRegistry,
@@ -253,6 +257,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     removeAutomationLane: describeFromRegistry,
     setAutomationLaneEnabled: describeFromRegistry,
     addAutomationPoint: describeFromRegistry,
+    insertAutomationLanePoints: describeFromRegistry,
     quantizeNotes: (action, context) =>
         describeOnClip(
             action,
@@ -315,6 +320,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setClipFade: describeFromRegistry,
     importMidiFile: describeFromRegistry,
     normalizeClip: describeNormalizedClip,
+    relinkClipAudioSources: describeFromRegistry,
     reverseClip: describeFromRegistry,
     restoreReversedClip: describeFromRegistry,
     glueClips: describeGluedClips,

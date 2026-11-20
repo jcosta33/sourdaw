@@ -184,6 +184,10 @@ export { setStepRecordBeat } from './stepRecording/setStepRecordBeat';
 export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingForClip';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
+export { projectPianoRollTakeNotes } from './midiClipData/projectPianoRollTakeNotes';
+export { clearPianoRollSelection } from './clearPianoRollSelection';
+export { readPianoRollSelection } from './readPianoRollSelection';
+export { setPianoRollSelection } from './setPianoRollSelection';
 export { getMidiTransformProtocolContract } from './getMidiTransformProtocolContract';
 export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
@@ -217,3 +221,4 @@ export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
 
 // ── MIDI Effect Plugins ───────────────────────────────────────────────────────
 export { MIDI_EFFECT_FACTORIES } from './midiEffectPlugins/registry';
+export { locatePianoRollSelectionWindows } from './locatePianoRollSelectionWindows';

@@ -284,8 +284,20 @@ describe('DragResizeHandle', () => {
             fireEvent.pointerMove(document, { pointerId: 7, clientX: 120, clientY: 0 });
             expect(onResize).toHaveBeenCalledWith(20);
 
-            fireEvent.pointerUp(document);
+            fireEvent.pointerUp(document, { pointerId: 7 });
             expect(releasePointerCapture).toHaveBeenCalledWith(7);
+            expect(onResizeEnd).toHaveBeenCalledTimes(1);
+        });
+
+        it('ends a canceled pointer drag when no cancellation callback is provided', () => {
+            const onResizeEnd = vi.fn();
+            render(<DragResizeHandle aria-label="Resize panel" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+            const handle = screen.getByRole('separator');
+
+            fireEvent.pointerDown(handle, { pointerId: 4, button: 0 });
+            fireEvent.pointerCancel(document, { pointerId: 4 });
+            fireEvent.pointerUp(document, { pointerId: 4 });
+
             expect(onResizeEnd).toHaveBeenCalledTimes(1);
         });
     });

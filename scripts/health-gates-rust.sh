@@ -44,8 +44,10 @@ fi
 # that table stays the single source of the policy. The host clippy pass lints Linux host-target code. Code behind
 # `cfg(target_arch = "wasm32")` is linted by the second clippy pass below
 # (library targets only: the crates' integration tests are native-only and do
-# not compile for wasm32). Code behind `cfg(windows)` is linted by the
-# `native-windows` job in `validation.yml`. `sourdaw-native` is excluded from
+# not compile for wasm32). Code behind `cfg(windows)` is linted only for the
+# crates the `native-windows` job in `validation.yml` names (`daw-engine`,
+# `daw-plugin-host`, `sourdaw-harness-fx`); `sourdaw-native`'s Windows code is
+# linted nowhere, because it has no Windows build. `sourdaw-native` is excluded from
 # this leg and linted on its macOS host target by the `native-macos` job in
 # `validation.yml`.
 #

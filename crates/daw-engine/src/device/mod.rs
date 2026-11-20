@@ -96,7 +96,7 @@ pub(crate) trait OutputBackend {
     /// Open the default output and negotiate period and format. No audio
     /// flows yet: the caller reads [`OpenOutput::negotiated`], builds its
     /// scheduler and callback on those facts, then starts the stream.
-    fn open_default_output(request: DeviceOpenRequest) -> Result<Self::Open, String>;
+    fn open_default_output(request: DeviceOpenRequest) -> Result<Self::Open, OutputDeviceError>;
 }
 
 /// An opened, negotiated, not-yet-running output stream.
@@ -110,7 +110,11 @@ pub(crate) trait OpenOutput {
 
     /// Start the stream: `render` fills every device buffer from here on,
     /// and `on_error` receives every mid-stream error the backend sees.
-    fn start(self, render: RenderFn, on_error: StreamErrorFn) -> Result<Self::Stream, String>;
+    fn start(
+        self,
+        render: RenderFn,
+        on_error: StreamErrorFn,
+    ) -> Result<Self::Stream, OutputDeviceError>;
 }
 
 /// What the caller asks of the platform when opening the default input.
@@ -245,6 +249,14 @@ pub(crate) trait OpenInput {
 pub(crate) type PlatformOutputBackend = wasapi::backend::WasapiOutputBackend;
 #[cfg(not(windows))]
 pub(crate) type PlatformOutputBackend = cpal_backend::CpalOutputBackend;
+
+/// Why the platform backend could not open or start the default output.
+/// Built control-side only: the open and the start both run before the
+/// buffer loop does, and mid-stream failures travel as [`StreamErrorKind`].
+#[cfg(windows)]
+pub type OutputDeviceError = wasapi::backend::WasapiOutputError;
+#[cfg(not(windows))]
+pub type OutputDeviceError = cpal_backend::CpalOutputError;
 
 /// The capture counterpart. Windows capture is out of scope (ADR 0027 covers
 /// the output path only, and jcosta33/sourdaw#2230 owns the input one), so

@@ -24,6 +24,7 @@ mod lstm;
 pub mod native_admission;
 mod wavenet;
 
+pub use admission_plan::NamAdmissionError;
 pub use convnet::ConvnetModel;
 pub use linear::LinearModel;
 pub use lstm::LstmModel;
@@ -117,6 +118,9 @@ pub enum NamModelError {
     SlimmableUnsupported,
     /// The config block contradicts itself or the weight array.
     InvalidConfig(String),
+    /// The shared admission plan refused the config before any buffer was
+    /// sized from it.
+    Refused(NamAdmissionError),
     /// `weights` does not exactly satisfy the declared architecture.
     WeightCountMismatch {
         expected: usize,
@@ -146,6 +150,7 @@ impl core::fmt::Display for NamModelError {
                 write!(f, "unsupported NAM model: slimmable (dynamic-channel) captures are not supported")
             }
             NamModelError::InvalidConfig(detail) => write!(f, "invalid NAM model config: {detail}"),
+            NamModelError::Refused(error) => write!(f, "invalid NAM model config: {error}"),
             NamModelError::WeightCountMismatch { expected, actual } => write!(
                 f,
                 "invalid NAM model: architecture expects {expected} weights but the file carries {actual}"
@@ -225,7 +230,7 @@ pub fn parse_nam_model(json: &str) -> Result<NamModel, NamModelError> {
             }
             // Native admission's structural and memory plan, before any
             // buffer is sized from the config.
-            admission_plan::admit_wavenet(json).map_err(NamModelError::InvalidConfig)?;
+            admission_plan::admit_wavenet(json).map_err(NamModelError::Refused)?;
             let mut slice: &[f32] = &weights;
             let model = WavenetModel::from_config(config, &mut slice, sample_rate)?;
             let leftover = slice.len();
@@ -511,8 +516,9 @@ mod parity {
         let mutated = serde_json::to_string(&parsed).expect("mutated fixture must serialize");
         // The shared admission plan counts the weights before the parser does.
         match parse_nam_model(&mutated) {
-            Err(super::NamModelError::InvalidConfig(reason))
-                if reason.contains("exact weight count") => {}
+            Err(super::NamModelError::Refused(super::NamAdmissionError::Refused(
+                "exact weight count",
+            ))) => {}
             Err(other) => panic!("dilation-count change must fail loudly, got {other}"),
             Ok(_) => panic!("dilation-count change must be rejected, not silently accepted"),
         }
@@ -596,11 +602,15 @@ mod parity {
         parsed["config"]["head"]["activation"] =
             serde_json::json!({ "type": "PReLU", "negative_slopes": [] });
         let mutated = serde_json::to_string(&parsed).unwrap();
+        // The shared admission plan runs the activation grammar first, so the
+        // grammar's own InvalidConfig arrives wrapped in the admission refusal.
         match parse_nam_model(&mutated) {
-            Err(super::NamModelError::InvalidConfig(message)) => {
+            Err(super::NamModelError::Refused(super::NamAdmissionError::Model(inner)))
+                if matches!(*inner, super::NamModelError::InvalidConfig(_)) =>
+            {
                 assert!(
-                    message.contains("PReLU"),
-                    "the rejection must name PReLU, got: {message}"
+                    inner.to_string().contains("PReLU"),
+                    "the rejection must name PReLU, got: {inner}"
                 );
             }
             Err(other) => {
@@ -614,7 +624,8 @@ mod parity {
         bare["config"]["head"]["activation"] = serde_json::json!("PReLU");
         assert!(matches!(
             parse_nam_model(&serde_json::to_string(&bare).unwrap()),
-            Err(super::NamModelError::InvalidConfig(_))
+            Err(super::NamModelError::Refused(super::NamAdmissionError::Model(inner)))
+                if matches!(*inner, super::NamModelError::InvalidConfig(_))
         ));
     }
 

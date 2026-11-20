@@ -1511,6 +1511,38 @@ describe('handleKeydown', () => {
         });
     });
 
+    it('admits remapped project history and the palette from a device editor, rejecting the new holder of the Undo chord', () => {
+        shortcutStoreMock.value.definitions = [
+            callbackDefinition({
+                id: 'arrangement.deleteTimeRange',
+                key: 'mod+Backspace',
+                callbackId: 'deleteTimeRange',
+            }),
+            callbackDefinition({ id: 'editing.undo', key: 'mod+z', callbackId: 'undo' }),
+            callbackDefinition({ id: 'editing.redo', key: 'mod+shift+z', callbackId: 'redo' }),
+            callbackDefinition({
+                id: 'workspace.toggleCommandPalette',
+                key: 'mod+k',
+                callbackId: 'toggleCommandPalette',
+            }),
+        ];
+        shortcutStoreMock.value.customMappings = {
+            'arrangement.deleteTimeRange': ['mod+z'],
+            'editing.undo': ['F7'],
+            'editing.redo': ['F8'],
+        };
+        clipSelectionStoreMock.value.marqueeSelection = { startBeat: 1, endBeat: 5, trackIds: ['t1'] };
+        expect(handleKeydown(descriptor({ key: 'z', mod: true, keyTarget: 'deviceEditor' }))).toBe(false);
+        expect(deleteTimeRange).not.toHaveBeenCalled();
+        expect(undo).not.toHaveBeenCalled();
+        expect(handleKeydown(descriptor({ key: 'F7', keyTarget: 'deviceEditor' }))).toBe(true);
+        expect(undo).toHaveBeenCalledOnce();
+        expect(handleKeydown(descriptor({ key: 'F8', keyTarget: 'deviceEditor' }))).toBe(true);
+        expect(redo).toHaveBeenCalledOnce();
+        expect(handleKeydown(descriptor({ key: 'k', mod: true, keyTarget: 'deviceEditor' }))).toBe(true);
+        expect(toggleCommandPalette).toHaveBeenCalledOnce();
+    });
+
     describe('note editor key target', () => {
         const loadShippedDefinitions = (): void => {
             const realState = realShortcutStoreModule.shortcutStore.value;
