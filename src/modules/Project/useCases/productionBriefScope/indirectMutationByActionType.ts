@@ -167,6 +167,7 @@ export const indirectMutationByActionType: {
     setClipFade: indirectMutationRules.none,
     importMidiFile: indirectMutationRules.none,
     normalizeClip: indirectMutationRules.none,
+    relinkClipAudioSources: indirectMutationRules.none,
     reverseClip: indirectMutationRules.none,
     restoreReversedClip: indirectMutationRules.none,
     glueClips: indirectMutationRules.none,

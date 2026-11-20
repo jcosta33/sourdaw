@@ -458,15 +458,6 @@ function isFullyVisible(inner: Rect, outer: Rect): boolean {
     );
 }
 
-function expectedToolbarControls(expressionVisible: boolean): string[] {
-    const zoom = requireValue(TOOLBAR_CONTROLS.at(-1), 'Piano roll Zoom control');
-    const controls: string[] = [...TOOLBAR_CONTROLS.slice(0, -1)];
-    if (expressionVisible) {
-        controls.push('Active expression lane');
-    }
-    return [...controls, zoom];
-}
-
 function assertToolbarFocus(state: ToolbarState, expectedName: string): void {
     expect(state.activeName).toBe(expectedName);
     const control = requireValue(
@@ -484,12 +475,7 @@ async function pressFromActiveControl(frame: Frame, key: string): Promise<void> 
     await active.press(key);
 }
 
-async function assertToolbarKeyboardTraversal(
-    page: Page,
-    frame: Frame,
-    scale: number,
-    expressionVisible: boolean
-): Promise<void> {
+async function assertToolbarKeyboardTraversal(page: Page, frame: Frame, scale: number): Promise<void> {
     let state = await toolbarState(frame);
     if (state.toolbarScrollLeft > 0) {
         await mouseWheelInFrame(
@@ -505,7 +491,7 @@ async function assertToolbarKeyboardTraversal(
         await expect.poll(async () => (await toolbarState(frame)).toolbarScrollLeft).toBe(0);
         state = await toolbarState(frame);
     }
-    const expected = expectedToolbarControls(expressionVisible);
+    const expected = [...TOOLBAR_CONTROLS];
     for (const name of expected) {
         expect(state.controls.map((control) => control.name)).toContain(name);
     }
@@ -904,19 +890,24 @@ async function assertCondition(
 ): Promise<void> {
     const evidence: Record<string, unknown> = { condition, scale, expressionVisible, gestures: {} };
     const expressionToggle = frame.getByRole('button', { name: /Toggle Expression View/i });
-    const expressionLane = frame.getByRole('combobox', { name: 'Active expression lane' });
+    const expressionSelector = frame.getByRole('combobox', { name: 'Active expression lane' });
+    const expressionReadout = frame.getByText('Velocity only for this instrument', { exact: true });
+    const expressionLane = frame.getByRole('group', { name: 'velocity lane', exact: true });
     try {
         if (expressionVisible) {
             await expressionToggle.click();
             await expect(expressionToggle).toHaveAttribute('aria-pressed', 'true');
+            await expect(expressionSelector).toHaveCount(0);
+            await expect(expressionReadout).toBeVisible();
             await expect(expressionLane).toBeVisible();
         } else {
             await expect(expressionToggle).toHaveAttribute('aria-pressed', 'false');
+            await expect(expressionReadout).toHaveCount(0);
             await expect(expressionLane).toHaveCount(0);
         }
 
         await assertAutomationTray(page, frame, scale);
-        await assertToolbarKeyboardTraversal(page, frame, scale, expressionVisible);
+        await assertToolbarKeyboardTraversal(page, frame, scale);
 
         const geometry = await pianoRollGeometry(frame);
         evidence.geometry = geometry;
@@ -988,6 +979,8 @@ async function assertCondition(
 
         if (expressionVisible) {
             await expressionToggle.click();
+            await expect(expressionToggle).toHaveAttribute('aria-pressed', 'false');
+            await expect(expressionReadout).toHaveCount(0);
             await expect(expressionLane).toHaveCount(0);
         }
     } finally {

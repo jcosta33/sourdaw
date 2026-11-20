@@ -312,6 +312,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     setClipFade: unaffected,
     importMidiFile: unaffected,
     normalizeClip: unaffected,
+    relinkClipAudioSources: unaffected,
     reverseClip: unaffected,
     restoreReversedClip: unaffected,
     glueClips: unaffected,

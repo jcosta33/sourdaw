@@ -342,6 +342,7 @@ export const macroReplayCreateByActionType: {
     setClipFade: notAGeneratedCreate,
     importMidiFile: notAGeneratedCreate,
     normalizeClip: notAGeneratedCreate,
+    relinkClipAudioSources: notAGeneratedCreate,
     reverseClip: notAGeneratedCreate,
     restoreReversedClip: notAGeneratedCreate,
     glueClips: notAGeneratedCreate,

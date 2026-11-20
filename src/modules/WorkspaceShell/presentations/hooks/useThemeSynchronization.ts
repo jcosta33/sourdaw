@@ -5,11 +5,22 @@ import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
 
 export function useThemeSynchronization(): void {
     useEffect(() => {
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
         const syncTheme = (): void => {
-            applyDocumentTheme(preferencesStore.value?.theme ?? 'dark');
+            const preference = preferencesStore.value?.theme ?? 'system';
+            if (preference !== 'system') {
+                applyDocumentTheme(preference);
+                return;
+            }
+            applyDocumentTheme(systemTheme.matches ? 'dark' : 'light');
         };
 
         syncTheme();
-        return preferencesStore.subscribe(syncTheme);
+        const unsubscribe = preferencesStore.subscribe(syncTheme);
+        systemTheme.addEventListener('change', syncTheme);
+        return () => {
+            unsubscribe();
+            systemTheme.removeEventListener('change', syncTheme);
+        };
     }, []);
 }

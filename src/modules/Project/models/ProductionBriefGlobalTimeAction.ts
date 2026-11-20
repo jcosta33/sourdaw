@@ -158,6 +158,7 @@ export const globalTimeMutatesTrackByActionType: { readonly [Type in AppActionTy
     setClipFade: false,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,

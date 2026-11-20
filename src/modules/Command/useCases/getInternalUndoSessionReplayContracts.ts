@@ -67,6 +67,19 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
         },
         {
+            actionType: 'relinkClipAudioSources',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('relinkClipAudioSources', payload),
+            validateEntry: (entry) =>
+                [entry.action, entry.inverseAction, entry.redoAction].every(
+                    (action) =>
+                        action?.type === 'relinkClipAudioSources' &&
+                        validateVersionedCommandArguments('relinkClipAudioSources', action.payload)
+                ) && getHandlerByType('relinkClipAudioSources')?.validateSessionEntry?.(entry) === true,
+        },
+        {
             actionType: 'deleteTime',
             operationVersion: 1,
             role: 'forward',

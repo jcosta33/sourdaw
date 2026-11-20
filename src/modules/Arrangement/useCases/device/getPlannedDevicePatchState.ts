@@ -215,6 +215,7 @@ export const plannedDeviceWriteStepByActionType: {
     setClipFade: commandStep,
     importMidiFile: commandStep,
     normalizeClip: commandStep,
+    relinkClipAudioSources: commandStep,
     reverseClip: commandStep,
     restoreReversedClip: commandStep,
     glueClips: commandStep,

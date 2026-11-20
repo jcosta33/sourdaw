@@ -1,5 +1,7 @@
 import { type AgentRunReceipt } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatActionConfirmationStatus, type ChatMessage } from '../models/Chat';
+import { readPublicCreativeInterpretation } from '../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import {
     THREAD_CONTEXT_MAX_TURNS,
@@ -23,6 +25,7 @@ type ThreadConfirmation = {
      * group id, which a re-proposed subset keeps from the proposal it replaced.
      */
     batchId: string | null;
+    creativeAuthorityIds?: readonly string[];
     /** What each executed action changed: project state, or only the runtime (transport and the like). */
     executedActions: ReadonlyArray<{ executionKind: 'project' | 'runtime' }>;
     approvalSnapshot: {
@@ -34,7 +37,12 @@ type ThreadConfirmation = {
     };
 };
 
-type ThreadRun = { runId: string; receipts: readonly AgentRunReceipt[] };
+type ThreadRun = {
+    runId: string;
+    receipts: readonly AgentRunReceipt[];
+    creativeAuthorityIds?: readonly string[];
+    plan?: { applicationToolReceipts?: readonly ApplicationToolReceipt[] } | null;
+};
 
 type ThreadActionGroup = {
     groupId: string;
@@ -104,6 +112,17 @@ function publicCommandArguments(type: string, payload: Record<string, unknown>):
         default:
             return payload;
     }
+}
+
+function interpretationForRun(
+    run: ThreadRun | undefined,
+    authorityIds: readonly string[] | undefined
+): { creativeInterpretation?: string } {
+    const interpretation = readPublicCreativeInterpretation(
+        run?.plan?.applicationToolReceipts ?? [],
+        authorityIds ?? []
+    );
+    return interpretation === null ? {} : { creativeInterpretation: interpretation };
 }
 
 function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): ThreadCommand[] {
@@ -194,6 +213,9 @@ function readConfirmedCommit(
     }
     return {
         runId: confirmation.runId,
+        batchId: confirmation.batchId,
+        confirmationId: confirmation.id,
+        ...interpretationForRun(run, confirmation.creativeAuthorityIds),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: commandsOfSnapshot(confirmation.approvalSnapshot),
@@ -221,6 +243,8 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
     const group = sources.actionGroups.find((candidate) => candidate.groupId === receipt.revertGroupId);
     return {
         runId,
+        batchId,
+        ...interpretationForRun(run, run?.creativeAuthorityIds),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: (group?.actions ?? []).map((action) => ({ name: action.actionType, label: action.label })),
@@ -265,7 +289,43 @@ function readPendingProposal(
                 runId: pending.runId,
                 confirmationId: pending.id,
                 batchPosition: pending.approvalSnapshot.batchPosition ?? null,
+                ...interpretationForRun(
+                    sources.runs.find((run) => run.runId === pending.runId),
+                    pending.creativeAuthorityIds
+                ),
                 commands: commandsOfSnapshot(pending.approvalSnapshot),
+            };
+        }
+    }
+    return null;
+}
+
+function readLastCancelled(
+    window: readonly ChatMessage[],
+    sources: ThreadContextSources
+): ThreadContext['lastCancelled'] {
+    for (const message of [...window].reverse()) {
+        const cancelled = sources.confirmations.find(
+            (candidate) =>
+                candidate.assistantMessageId === message.id &&
+                candidate.status === 'cancelled' &&
+                candidate.supersededBy === null &&
+                candidate.batchId !== null &&
+                !sources.runs
+                    .find((run) => run.runId === candidate.runId)
+                    ?.receipts.some((receipt) => receipt.workId === candidate.batchId) &&
+                isOpenProjectConfirmation(candidate, sources)
+        );
+        if (cancelled !== undefined && cancelled.batchId !== null) {
+            return {
+                runId: cancelled.runId,
+                confirmationId: cancelled.id,
+                batchId: cancelled.batchId,
+                ...interpretationForRun(
+                    sources.runs.find((run) => run.runId === cancelled.runId),
+                    cancelled.creativeAuthorityIds
+                ),
+                commands: commandsOfSnapshot(cancelled.approvalSnapshot),
             };
         }
     }
@@ -293,12 +353,17 @@ export function buildThreadContext(sources: ThreadContextSources): ThreadContext
     const window = readThreadWindow(sources.messages);
     const pendingProposal = readPendingProposal(window, sources);
     const lastCommit = readLastCommit(window, sources);
-    if (pendingProposal === null && lastCommit === null) {
+    const lastCancelled = readLastCancelled(window, sources);
+    if (pendingProposal === null && lastCommit === null && lastCancelled === null) {
         return null;
     }
-    return {
+    const thread: ThreadContext = {
         requests: window.filter((message) => message.role === 'user').map((message) => message.content),
         pendingProposal,
         lastCommit,
     };
+    if (lastCancelled !== null) {
+        thread.lastCancelled = lastCancelled;
+    }
+    return thread;
 }

@@ -172,6 +172,7 @@ export const automationRecordingPolicyByActionType: {
     setClipFade: noPolicy,
     importMidiFile: noPolicy,
     normalizeClip: noPolicy,
+    relinkClipAudioSources: noPolicy,
     reverseClip: noPolicy,
     restoreReversedClip: noPolicy,
     glueClips: noPolicy,

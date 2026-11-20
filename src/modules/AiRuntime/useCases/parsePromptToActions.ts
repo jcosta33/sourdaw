@@ -17,6 +17,7 @@ import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
+    isPublicCreativeInterpretation,
     type CreativeRequestAuthority,
     getCreativeSelectionSnapshot,
 } from '../models/CreativeInterpretation';
@@ -1372,6 +1373,14 @@ const planPromptIntent = inject({ logger })(
                                           };
                                       }
                                       creativeAuthority = admission.authority;
+                                      const publicReadingReceipt: { creativeInterpretation?: string } = {};
+                                      if (
+                                          'creativeInterpretation' in admission &&
+                                          isPublicCreativeInterpretation(admission.creativeInterpretation)
+                                      ) {
+                                          publicReadingReceipt.creativeInterpretation =
+                                              admission.creativeInterpretation;
+                                      }
                                       return {
                                           status: 'admitted',
                                           providerProjection:
@@ -1390,6 +1399,7 @@ const planPromptIntent = inject({ logger })(
                                                   editDimensions: admission.authority.editDimensions,
                                                   prohibitions: admission.authority.prohibitions,
                                                   creationSlots: admission.authority.creationSlots,
+                                                  ...publicReadingReceipt,
                                               },
                                               summary:
                                                   'Creative interpretation admitted; acoustic goals require actual compatible preview proof before approval.',

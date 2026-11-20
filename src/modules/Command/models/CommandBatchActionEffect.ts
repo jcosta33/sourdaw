@@ -248,6 +248,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setClipFade: NONE,
     importMidiFile: NONE,
     normalizeClip: NONE,
+    relinkClipAudioSources: NONE,
     reverseClip: NONE,
     restoreReversedClip: NONE,
     glueClips: {

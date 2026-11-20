@@ -73,14 +73,25 @@ export type ThreadContext = {
         confirmationId: string;
         /** Where the card sits in a multi-batch schedule, which no refinement may replace; `null` for a single batch. */
         batchPosition: { index: number; total: number } | null;
+        creativeInterpretation?: string;
         commands: ThreadCommand[];
     } | null;
     lastCommit: {
         runId: string;
+        batchId?: string;
+        confirmationId?: string;
+        creativeInterpretation?: string;
         receiptIds: string[];
         standing: ThreadCommitStanding;
         commands: ThreadCommand[];
         measuredDeltas: ThreadMeasuredDelta[];
+    } | null;
+    lastCancelled?: {
+        runId: string;
+        confirmationId: string;
+        batchId: string;
+        creativeInterpretation?: string;
+        commands: ThreadCommand[];
     } | null;
 };
 

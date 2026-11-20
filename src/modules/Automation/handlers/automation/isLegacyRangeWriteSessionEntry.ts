@@ -185,6 +185,7 @@ export const legacyRangeRemovalByActionType: {
     setClipFade: notLegacyRangeWrite,
     importMidiFile: notLegacyRangeWrite,
     normalizeClip: notLegacyRangeWrite,
+    relinkClipAudioSources: notLegacyRangeWrite,
     reverseClip: notLegacyRangeWrite,
     restoreReversedClip: notLegacyRangeWrite,
     glueClips: notLegacyRangeWrite,

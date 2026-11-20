@@ -158,6 +158,7 @@ export const macroRecordingExcludesActionType: { readonly [Type in AppActionType
     setClipFade: false,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,

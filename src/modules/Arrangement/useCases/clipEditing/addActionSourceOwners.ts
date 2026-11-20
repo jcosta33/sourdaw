@@ -334,6 +334,7 @@ const addActionSourceOwnersByActionType: {
     setClipFade: addNoOwners,
     importMidiFile: addNoOwners,
     normalizeClip: addNoOwners,
+    relinkClipAudioSources: addNoOwners,
     reverseClip: addNoOwners,
     restoreReversedClip: addNoOwners,
     glueClips: addNoOwners,

@@ -180,6 +180,7 @@ export const semanticDiffClassificationByActionType: {
     setClipFade: NONE,
     importMidiFile: { externalEffect: true },
     normalizeClip: { sourceMutation: true },
+    relinkClipAudioSources: NONE,
     reverseClip: { sourceMutation: true },
     restoreReversedClip: NONE,
     glueClips: { consolidation: true },

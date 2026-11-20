@@ -299,6 +299,7 @@ export const macroReplayRemapByActionType: {
     setClipFade: leaveReferencesUnmapped,
     importMidiFile: leaveReferencesUnmapped,
     normalizeClip: leaveReferencesUnmapped,
+    relinkClipAudioSources: leaveReferencesUnmapped,
     reverseClip: leaveReferencesUnmapped,
     restoreReversedClip: leaveReferencesUnmapped,
     glueClips: leaveReferencesUnmapped,

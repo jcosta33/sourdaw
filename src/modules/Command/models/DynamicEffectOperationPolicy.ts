@@ -158,6 +158,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     setClipFade: false,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,

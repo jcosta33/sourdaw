@@ -160,6 +160,7 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     normalizeClip: false,
     reverseClip: true,
     restoreReversedClip: true,
+    relinkClipAudioSources: true,
     glueClips: true,
     restoreClipGlueState: true,
     setCompRegion: false,

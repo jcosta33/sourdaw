@@ -213,6 +213,7 @@ export const macroGeneratedIdByActionType: {
     setClipFade: noGeneratedId,
     importMidiFile: noGeneratedId,
     normalizeClip: noGeneratedId,
+    relinkClipAudioSources: noGeneratedId,
     reverseClip: noGeneratedId,
     restoreReversedClip: noGeneratedId,
     glueClips: noGeneratedId,

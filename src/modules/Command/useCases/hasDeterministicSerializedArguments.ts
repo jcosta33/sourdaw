@@ -178,6 +178,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setClipFade: anyArguments,
     importMidiFile: anyArguments,
     normalizeClip: anyArguments,
+    relinkClipAudioSources: anyArguments,
     reverseClip: anyArguments,
     restoreReversedClip: anyArguments,
     glueClips: anyArguments,

@@ -3269,7 +3269,7 @@
     },
     "src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts": {
@@ -7895,14 +7895,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/relinkClipAudioSource.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts": {
         "eslint/complexity": {
             "count": 1
@@ -12427,9 +12419,6 @@
     },
     "src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts": {
         "eslint/complexity": {
-            "count": 1
-        },
-        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },
@@ -17301,9 +17290,6 @@
         "sourdaw-craft/no-complex-ternary-branch": {
             "count": 1
         },
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
         "typescript/no-non-null-assertion": {
             "count": 2
         }
@@ -19816,7 +19802,7 @@
     },
     "tests/e2e/inspectorAndRouting.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 2
+            "count": 1
         }
     },
     "tests/e2e/inspectorClip.spec.ts": {
