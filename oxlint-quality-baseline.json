@@ -6049,9 +6049,6 @@
     "src/modules/Arrangement/presentations/helpers/timelineTools.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-params": {
-            "count": 1
         }
     },
     "src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx": {
@@ -8051,14 +8048,6 @@
     "src/modules/Arrangement/useCases/timelineInteractions/getTrackAtY.ts": {
         "typescript/no-non-null-assertion": {
             "count": 2
-        }
-    },
-    "src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-depth": {
-            "count": 1
         }
     },
     "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts": {

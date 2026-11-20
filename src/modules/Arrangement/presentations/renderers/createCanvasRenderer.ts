@@ -5,6 +5,7 @@ import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 import {
     AUTOMATION_SUB_LANE_HEIGHT,
     getAutomationSubLaneTop,
+    getRenderedTrackExtent,
     getRenderedTrackTops,
     VARIATION_LANE_HEIGHT,
 } from '../../models/TimelineTrackExtent';
@@ -255,11 +256,11 @@ function drawInlineAutomation(
     width: number,
     viewportHeight: number
 ): void {
-    const tops = getRenderedTrackTops(model.tracks);
-    for (const [index, track] of model.tracks.entries()) {
+    let trackTop = 0;
+    for (const track of model.tracks) {
+        const variationCount = track.variationLanes?.length ?? 0;
         for (const [laneIndex, lane] of (track.automationLanes ?? []).entries()) {
-            const top =
-                tops[index]! + getAutomationSubLaneTop(track.height, track.variationLanes?.length ?? 0, laneIndex);
+            const top = trackTop + getAutomationSubLaneTop(track.height, variationCount, laneIndex);
             const bottom = top + AUTOMATION_SUB_LANE_HEIGHT;
             if (bottom <= model.scrollY || top >= model.scrollY + viewportHeight) {
                 continue;
@@ -271,12 +272,13 @@ function drawInlineAutomation(
             ctx.strokeStyle = inlineAutomationColor(lane);
             ctx.lineWidth = 2;
             ctx.beginPath();
-            forEachInlineAutomationSegment(lane, model, width, (from, to) => {
+            forEachInlineAutomationSegment(lane, model, { width }, (from, to) => {
                 ctx.moveTo(from.x, top + from.y);
                 ctx.lineTo(to.x, top + to.y);
             });
             ctx.stroke();
         }
+        trackTop += getRenderedTrackExtent(track);
     }
 }
 

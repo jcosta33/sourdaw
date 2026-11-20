@@ -48,6 +48,19 @@ function isCycleCount(value: unknown): boolean {
     );
 }
 
+function isStrokeInsertion(insertion: Record<string, unknown>): boolean {
+    const { points } = insertion;
+    if (!Array.isArray(points) || points.length === 0 || points.length > MAX_STROKE_POINTS) {
+        return false;
+    }
+    for (const point of points) {
+        if (!is_exact_automation_point(point) || Object.hasOwn(point, 'id')) {
+            return false;
+        }
+    }
+    return Object.keys(insertion).length === 2;
+}
+
 export function isLaneInsertion(insertion: unknown): insertion is ValidatedInsertion {
     if (!isRecord(insertion)) {
         return false;
@@ -56,16 +69,7 @@ export function isLaneInsertion(insertion: unknown): insertion is ValidatedInser
         return is_exact_automation_point(insertion.point) && !Object.hasOwn(insertion.point, 'id');
     }
     if (insertion.kind === 'stroke') {
-        const { points } = insertion;
-        if (!Array.isArray(points) || points.length === 0 || points.length > MAX_STROKE_POINTS) {
-            return false;
-        }
-        for (const point of points) {
-            if (!is_exact_automation_point(point) || Object.hasOwn(point, 'id')) {
-                return false;
-            }
-        }
-        return Object.keys(insertion).length === 2;
+        return isStrokeInsertion(insertion);
     }
     if (insertion.kind === 'split') {
         return Object.keys(insertion).length === 2 && isNonNegativeBeat(insertion.beat);

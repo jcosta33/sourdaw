@@ -12,9 +12,8 @@ type EnvelopePoint = { x: number; y: number };
 export function forEachInlineAutomationSegment(
     lane: AutomationSubLaneRenderModel,
     { viewportStartBeat, pixelsPerBeat }: Pick<TimelineRenderModel, 'viewportStartBeat' | 'pixelsPerBeat'>,
-    width: number,
-    drawSegment: (from: EnvelopePoint, to: EnvelopePoint) => void,
-    maxSegments = Infinity
+    { width, maxSegments = Infinity }: { width: number; maxSegments?: number },
+    drawSegment: (from: EnvelopePoint, to: EnvelopePoint) => void
 ): void {
     // Subdivide in screen space so curves remain legible without rendering offscreen points.
     const segments = Math.min(Math.ceil(width / 4), maxSegments);

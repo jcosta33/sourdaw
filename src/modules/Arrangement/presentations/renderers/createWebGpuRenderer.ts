@@ -661,7 +661,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     forEachInlineAutomationSegment(
                         lane,
                         model,
-                        w / dpr,
+                        { width: w / dpr, maxSegments: maxAutomationSegments },
                         (from, to) => {
                             const y = top + from.y * dpr;
                             offset = pushRect(
@@ -680,8 +680,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 (to.y - from.y) * dpr
                             );
                             rectCount++;
-                        },
-                        maxAutomationSegments
+                        }
                     );
                 }
             }
