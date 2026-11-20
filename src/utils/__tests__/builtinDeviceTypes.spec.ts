@@ -28,12 +28,9 @@ describe('resolveBuiltinDeviceType', () => {
 
     // A project file or a model can carry any string; an inherited member of a
     // plain object must never pass for a device.
-    it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', ''])(
-        'does not resolve %j',
-        (raw) => {
-            expect(resolveBuiltinDeviceType(raw)).toBeNull();
-        }
-    );
+    it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', ''])('does not resolve %j', (raw) => {
+        expect(resolveBuiltinDeviceType(raw)).toBeNull();
+    });
 
     it.each(['faust-x', 'faust-rhodes', 'external-plugin', 'builtin-drum', 'drum-machine-808'])(
         'leaves %j outside the built-in vocabulary',

@@ -21,7 +21,9 @@ describe('the built-in device vocabulary and the catalog', () => {
         const catalog = new Set(catalogBuiltinIds);
 
         expect(
-            BUILTIN_DEVICE_TYPES.filter((deviceType) => !LEGACY_ALIASES.includes(deviceType) && !catalog.has(deviceType))
+            BUILTIN_DEVICE_TYPES.filter(
+                (deviceType) => !LEGACY_ALIASES.includes(deviceType) && !catalog.has(deviceType)
+            )
         ).toEqual([]);
     });
 

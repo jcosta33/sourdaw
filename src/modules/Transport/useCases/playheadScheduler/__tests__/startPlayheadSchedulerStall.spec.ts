@@ -56,14 +56,19 @@ const trackStripStub = {
 };
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
-        () => 'root-identity'
-    ),
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        getCrdtDoc: actual.getCrdtDoc,
+        captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+            () => 'root-identity'
+        ),
+    };
+});
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
+        sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
         addWarpMarker: actual.addWarpMarker,
         readMusicalRange: actual.readMusicalRange,
         readMusicalRangeInputs: actual.readMusicalRangeInputs,

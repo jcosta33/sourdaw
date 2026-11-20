@@ -44,9 +44,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: mocks.captureProjectRevision,
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        captureProjectRevision: mocks.captureProjectRevision,
+        captureProjectRootIdentity: actual.captureProjectRootIdentity,
+        getCrdtDoc: actual.getCrdtDoc,
+    };
+});
 
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,

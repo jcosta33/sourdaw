@@ -74,9 +74,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: () => 'project-revision-1',
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        captureProjectRevision: () => 'project-revision-1',
+        captureProjectRootIdentity: actual.captureProjectRootIdentity,
+        getCrdtDoc: actual.getCrdtDoc,
+    };
+});
 
 vi.mock('#/modules/Routing/useCases', () => ({
     setSend: mocks.setSend,

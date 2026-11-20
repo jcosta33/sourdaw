@@ -69,12 +69,16 @@ const trackStripStub = {
 };
 
 const projectRoot = { current: 'startup-root' };
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => projectRoot.current }));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return { getCrdtDoc: actual.getCrdtDoc, captureProjectRootIdentity: () => projectRoot.current };
+});
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
+        sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
         addWarpMarker: actual.addWarpMarker,
         markerStore: actual.markerStore,
         readMusicalRange: actual.readMusicalRange,

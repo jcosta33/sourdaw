@@ -56,13 +56,13 @@ modules that could not reach each other could share it.
    importing device modules, so a device module cannot hold a table that those tiers read.
 
 4. **Not a target.** These comparisons stay as they are:
-   - a device module naming its own type;
-   - AudioEngine node, worklet-processor and device-strategy code for the device it hosts;
-   - catalog, descriptor and composition-root tables keyed by type;
-   - demo and template content that creates a named device;
-   - migration of a named legacy persisted key;
-   - tests;
-   - strings that only coincide with a device id (track roles, failure kinds).
+    - a device module naming its own type;
+    - AudioEngine node, worklet-processor and device-strategy code for the device it hosts;
+    - catalog, descriptor and composition-root tables keyed by type;
+    - demo and template content that creates a named device;
+    - migration of a named legacy persisted key;
+    - tests;
+    - strings that only coincide with a device id (track roles, failure kinds).
 
 5. **The Rust `PluginCore` enum is not mirrored.** `crates/daw-engine/src/scheduler.rs` constructs
    native device bodies through an exhaustive Rust match. The TypeScript tables answer graph and

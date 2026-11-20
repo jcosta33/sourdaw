@@ -31,6 +31,7 @@ const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduled
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
+        sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
         addWarpMarker: actual.addWarpMarker,
         markerStore: actual.markerStore,
         readMusicalRange: actual.readMusicalRange,

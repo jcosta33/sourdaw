@@ -45,11 +45,15 @@ const trackStripStub = {
 };
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
-        () => 'root-identity'
-    ),
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        getCrdtDoc: actual.getCrdtDoc,
+        captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+            () => 'root-identity'
+        ),
+    };
+});
 const takeLaneState = vi.hoisted(() => ({
     value: { lanes: [] as { id: string; trackId: string; takes: StagedTake[]; activeCompRegions: unknown[] }[] },
 }));
