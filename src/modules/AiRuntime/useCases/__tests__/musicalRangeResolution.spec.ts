@@ -626,6 +626,68 @@ describe('musical range resolution', () => {
             expect(result.actions).toMatchObject([{ payload: { startBeat: 32, endBeat: 36 } }]);
         });
 
+        describe('two sections named like a bar', () => {
+            const twoBarNines = {
+                ...projectWithTwoChoruses(),
+                sections: [
+                    { id: 'section-intro', name: 'Intro', startBeat: 0, endBeat: 40 },
+                    { id: 'section-bar-nine-one', name: 'Bar 9', startBeat: 40, endBeat: 56 },
+                    { id: 'section-middle', name: 'Middle', startBeat: 56, endBeat: 120 },
+                    { id: 'section-bar-nine-two', name: 'Bar 9', startBeat: 120, endBeat: 136 },
+                ],
+            };
+            const prompt = 'Dip the Lead Vocal by 6 dB in Bar 9 with 0.5 beat ramps in and out.';
+
+            it.each([
+                ['names the section', { section: 'Bar 9' }],
+                ['states bar 9', { startBar: 9, endBar: 9 }],
+            ])(
+                'refuses with the ambiguity when the provider %s, never bar 9 at beats 32 to 36',
+                async (_label, range) => {
+                    scriptDipRange(range);
+                    const result = await parsePromptToActions({
+                        prompt,
+                        context: twoBarNines,
+                        projectRevision: 'revision-two-bar-nines',
+                    });
+
+                    expect(result.actions).toEqual([]);
+                    expect(JSON.stringify(result)).toContain('matches 2 sections equally');
+                }
+            );
+
+            it('keeps reading "in bar 9" as the bar when the ambiguous sections have other names', async () => {
+                scriptDipRange({ startBar: 9, endBar: 9 });
+                const result = await parsePromptToActions({
+                    prompt,
+                    context: projectWithTwoChoruses(),
+                    projectRevision: 'revision-bar-nine-other-names',
+                });
+
+                expect(result.actions).toMatchObject([{ payload: { startBeat: 32, endBeat: 36 } }]);
+            });
+
+            it('still asks about two sections both named Verse, and finds no range in a Bridge the project lacks', async () => {
+                scriptDip('Verse');
+                const verse = await parsePromptToActions({
+                    prompt: 'Dip the Lead Vocal by 6 dB in the Verse with 0.5 beat ramps in and out.',
+                    context: projectWithTwoChoruses(),
+                    projectRevision: 'revision-ambiguous-verse',
+                });
+                expect(verse.actions).toEqual([]);
+                expect(verse.planningOutcome).toMatchObject({ kind: 'clarify' });
+
+                scriptDip('Bridge');
+                const bridge = await parsePromptToActions({
+                    prompt: 'Dip the Lead Vocal by 6 dB in the Bridge with 0.5 beat ramps in and out.',
+                    context: projectWithTwoChoruses(),
+                    projectRevision: 'revision-unknown-bridge',
+                });
+                expect(bridge.actions).toEqual([]);
+                expect(bridge.planningOutcome).not.toMatchObject({ kind: 'clarify' });
+            });
+        });
+
         it("refuses a request for more bars than come before the section, carrying the law's reason", async () => {
             // Bars 1–28 come before the second chorus; 40 bars cannot be clamped to them.
             scriptDipRange({ section: 'second chorus', barsBefore: 40 });
