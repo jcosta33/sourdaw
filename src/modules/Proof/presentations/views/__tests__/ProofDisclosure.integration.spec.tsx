@@ -233,7 +233,7 @@ describe('Proof cumulative disclosure in project truth', () => {
         render(<ProofPanel deviceId="a" />);
 
         audioEngine.updateDeviceParam.mockClear();
-        fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
         await waitFor(() => expectProofParameters({ ...initial, target_mode: 3, target_lufs: -23 }));
         expect(captureUndoHistory().past).toHaveLength(2);
         expect(getProofState('a').patch).toMatchObject({ target: 'broadcast', targetLufs: -23, limCeiling: -3 });
@@ -246,7 +246,7 @@ describe('Proof cumulative disclosure in project truth', () => {
         await act(() => redo());
         expectProofParameters({ ...initial, target_mode: 3, target_lufs: -23 });
         expect(getProofState('a').patch).toMatchObject({ target: 'broadcast', targetLufs: -23, limCeiling: -3 });
-        expect(screen.getByRole('button', { name: 'Broadcast', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Broadcast' })).toHaveAttribute('aria-pressed', 'true');
         expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
         expect(audioEngine.updateDevicePatch).not.toHaveBeenCalled();
     });
@@ -320,7 +320,7 @@ describe('Proof cumulative disclosure in project truth', () => {
         await seedSentinel();
         render(<ProofPanel deviceId="a" />);
 
-        const streaming = screen.getByRole('button', { name: 'Streaming', exact: true });
+        const streaming = screen.getByRole('button', { name: 'Streaming' });
         expect(streaming).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(streaming);
         await waitFor(() => expectProofParameters({ target_mode: 0, target_lufs: -14 }));
@@ -334,8 +334,8 @@ describe('Proof cumulative disclosure in project truth', () => {
     it('recovers explicit preset identity through target Undo and the saved session history', async () => {
         render(<ProofPanel deviceId="a" />);
         const preset = screen.getByRole('button', { name: /^Streaming Master/ });
-        const streaming = screen.getByRole('button', { name: 'Streaming', exact: true });
-        const broadcast = screen.getByRole('button', { name: 'Broadcast', exact: true });
+        const streaming = screen.getByRole('button', { name: 'Streaming' });
+        const broadcast = screen.getByRole('button', { name: 'Broadcast' });
         fireEvent.click(preset);
         await waitFor(() => expect(preset).toHaveClass('border-white/18'));
         const history = captureUndoHistory();
@@ -394,7 +394,7 @@ describe('Proof cumulative disclosure in project truth', () => {
         try {
             const ceiling = beginMasterCeilingPreview();
             const preview = getProofState('a').patch.limCeiling;
-            fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
             fireEvent.click(screen.getByRole('button', { name: /^Club \/ DJ club/ }));
             expect(captureUndoHistory().past).toEqual([]);
             expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
@@ -515,7 +515,7 @@ describe('Proof cumulative disclosure in project truth', () => {
 
     it('replays a target without retiring a ceiling preview acquired afterward', async () => {
         render(<ProofPanel deviceId="a" />);
-        fireEvent.click(screen.getByRole('button', { name: 'Broadcast', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
         await waitFor(() => expect(captureUndoHistory().past).toHaveLength(1));
         const ceiling = beginMasterCeilingPreview();
         const preview = getProofState('a').patch.limCeiling;
