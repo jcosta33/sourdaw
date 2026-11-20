@@ -1,10 +1,10 @@
 import { reconcileUndoStoreForProject } from '../stores/undoStore';
 
 export type SessionUndoReconciliationTarget = {
-    /** The project boot restore just loaded, or `undefined` for a legacy
-     *  document that has not yet migrated to a canonical id. */
+    /** The installed project's identity, or `undefined` for a legacy document
+     *  that has not yet migrated to a canonical id. */
     readonly projectId: string | undefined;
-    /** Captures a durable witness for the document boot restore just loaded
+    /** Captures a durable witness for the installed document
      *  (see `CrdtDocument`'s `captureDurableDocumentWitness`). Injected here
      *  rather than imported directly: Command must not depend on
      *  CrdtDocument, which already depends on Command. */

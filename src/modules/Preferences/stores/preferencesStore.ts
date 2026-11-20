@@ -56,7 +56,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     showMinimap: (value) => typeof value === 'boolean',
     timelineMinimapHeight: isFiniteNumber,
     voiceCommandKey: (value) => typeof value === 'string',
-    theme: isOneOf('dark', 'light'),
+    theme: isOneOf('dark', 'light', 'system'),
     uiScale: (value) => normalizeUiScale(value) === value,
     elasticTransientSensitivity: (value) => normalizeElasticTransientSensitivity(value) === value,
     panelPlacementSidebar: isOneOf('left', 'right'),

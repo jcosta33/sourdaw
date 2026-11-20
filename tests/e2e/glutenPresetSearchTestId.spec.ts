@@ -85,93 +85,79 @@ test.describe('Gluten panel — preset search filtering', () => {
         await expect(page.getByRole('button', { name: /Bus Glue/ })).toBeVisible();
     });
 
-    test('uses the wide layout by default and contains stacked content at narrow widths', async ({ page }) => {
+    test('scrolls to the last control card in both wide and stacked layouts', async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 900 });
-        const faceplate = page.locator('.gluten-faceplate');
-        const workspace = faceplate.locator(':scope > div').first();
-        const panelBody = page.getByTestId('instrument-bottom-panel-body').filter({ has: faceplate });
-        const defaultGeometry = await faceplate.evaluate((element) => ({
-            width: element.getBoundingClientRect().width,
-            columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,
-            viewport: window.innerWidth,
-        }));
-        expect(defaultGeometry.width, JSON.stringify(defaultGeometry)).toBeGreaterThanOrEqual(896);
-        await expect
-            .poll(() =>
-                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-            )
-            .toBe(3);
-
-        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        const dialog = page.getByRole('dialog', { name: 'Gluten', exact: true });
+        const panelBody = dialog.getByTestId('floating-device-panel-body');
+        const workspace = panelBody.getByRole('region', { name: 'Gluten workspace', exact: true });
+        const grid = workspace.locator(':scope > div').first();
+        const disclosure = workspace.getByRole('group', { name: 'Effect control detail' });
         await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
-        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+        await expect(workspace.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
 
-        await expect
-            .poll(() =>
-                faceplate.evaluate((element) => {
-                    const content = element.firstElementChild;
-                    if (!content) {
-                        throw new Error('Expected the Gluten workspace grid');
-                    }
-                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
-                })
-            )
-            .toBeGreaterThanOrEqual(11);
-
-        for (const label of ['Gluten dynamics overview', 'Gluten controls']) {
-            const column = page.getByLabel(label, { exact: true });
-            await expect.poll(() => column.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
-        }
-
-        const controls = page.getByLabel('Gluten controls', { exact: true });
-        await expect
-            .poll(() => controls.evaluate((element) => element.scrollHeight - element.clientHeight))
-            .toBeGreaterThan(0);
-        await controls.evaluate((element) => {
-            element.scrollTop = element.scrollHeight;
+        const stageTwo = workspace.locator('section').filter({
+            has: page.getByText('Stage two', { exact: true }),
         });
-        await expect.poll(() => controls.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+        const fet = stageTwo.getByRole('button', { name: 'FET', exact: true });
+        await expect(fet).toBeEnabled();
 
-        await page.setViewportSize({ width: 900, height: 700 });
-        await expect
-            .poll(() =>
-                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-            )
-            .toBe(1);
-        await expect
-            .poll(() =>
-                faceplate.evaluate((element) => {
-                    const content = element.firstElementChild;
-                    if (!content) {
-                        throw new Error('Expected the Gluten workspace grid');
-                    }
-                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
-                })
-            )
-            .toBeGreaterThanOrEqual(-1);
-        await expect
-            .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
-            .toBeLessThanOrEqual(0);
-
-        // Narrow reachability: the stacked workspace stays scrollable to its
-        // last card. An overflow clip on the root wrapper would leave the card
-        // below the scrollport while every assertion above stays green.
-        await expect
-            .poll(() => panelBody.evaluate((element) => element.scrollHeight - element.clientHeight))
-            .toBeGreaterThan(0);
-        await panelBody.evaluate((element) => {
-            element.scrollTop = element.scrollHeight;
-        });
-        const lastCard = panelBody.locator('.gluten-window').last();
-        await expect
-            .poll(async () => {
-                const scrollerBox = await panelBody.boundingBox();
-                const cardBox = await lastCard.boundingBox();
-                if (scrollerBox === null || cardBox === null) {
-                    throw new Error('Expected the panel body and its last control card');
+        for (const layout of [
+            { width: 1440, height: 900, columns: 3 },
+            { width: 900, height: 700, columns: 1 },
+        ]) {
+            await test.step(`${layout.columns}-column workspace`, async () => {
+                await page.setViewportSize({ width: layout.width, height: layout.height });
+                await expect
+                    .poll(() =>
+                        grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+                    )
+                    .toBe(layout.columns);
+                if (layout.columns === 3) {
+                    await expect
+                        .poll(() => workspace.evaluate((element) => element.getBoundingClientRect().width))
+                        .toBeGreaterThanOrEqual(896);
+                } else {
+                    await expect
+                        .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
+                        .toBe(0);
+                    await expect
+                        .poll(() => workspace.evaluate((element) => element.scrollWidth - element.clientWidth))
+                        .toBe(0);
                 }
-                return cardBox.y + cardBox.height - (scrollerBox.y + scrollerBox.height);
-            })
-            .toBeLessThanOrEqual(1);
+
+                const readWorkspaceScroll = () => workspace.evaluate((element) => element.scrollTop);
+                await expect.poll(readWorkspaceScroll).toBe(0);
+                await expect(fet).not.toBeInViewport();
+
+                // Wheel over the workspace padding to avoid targeting a nested scroll area.
+                const point = await workspace.evaluate((element) => {
+                    const bounds = element.getBoundingClientRect();
+                    const padding = Number.parseFloat(getComputedStyle(element).paddingLeft);
+                    const x = bounds.left + element.clientLeft + padding / 2;
+                    const y = bounds.top + Math.min(100, element.clientHeight / 2);
+                    return { x, y, hitsWorkspace: document.elementFromPoint(x, y) === element };
+                });
+                expect(point.hitsWorkspace).toBe(true);
+                await page.mouse.move(point.x, point.y);
+                await page.mouse.wheel(0, 5000);
+
+                await expect.poll(readWorkspaceScroll).toBeGreaterThan(0);
+                await expect(stageTwo).toBeInViewport({ ratio: 0.99 });
+                await expect
+                    .poll(() =>
+                        fet.evaluate((element) => {
+                            const { left, top, width, height } = element.getBoundingClientRect();
+                            return element.contains(document.elementFromPoint(left + width / 2, top + height / 2));
+                        })
+                    )
+                    .toBe(true);
+                expect(await panelBody.evaluate((element) => element.scrollTop)).toBe(0);
+
+                if (layout.columns === 3) {
+                    await page.mouse.wheel(0, -5000);
+                    await expect.poll(readWorkspaceScroll).toBe(0);
+                }
+            });
+        }
     });
 });

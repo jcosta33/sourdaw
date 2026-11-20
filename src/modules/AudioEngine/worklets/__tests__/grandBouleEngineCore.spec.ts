@@ -45,6 +45,8 @@ function createRecordingInstance(): RecordingInstance {
             return true;
         };
     const instance = {
+        push_preview_note_on: recordPush('push_preview_note_on'),
+        push_preview_note_off: recordPush('push_preview_note_off'),
         push_note_on: recordPush('push_note_on'),
         push_note_off: recordPush('push_note_off'),
         push_note_off_on_channel: recordPush('push_note_off_on_channel'),
@@ -99,6 +101,54 @@ describe('an unrecognised message', () => {
 });
 
 describe('the Grand Boule frame queue', () => {
+    it('orders preview strikes with MIDI and pedals, retaining refused events for the next block', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 100, endFrame: 228 };
+        receive(instance, queue, { type: 'noteOn', midiNote: 64, velocity: 1, sampleFrame: 100 }, block);
+        receive(instance, queue, { type: 'previewNoteOn', strikeId: 3, midiNote: 60, velocity: 0.5 }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 100 }, block);
+        receive(instance, queue, { type: 'previewNoteOff', strikeId: 3 }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 100, 228);
+        expect(queue.size()).toBe(4);
+        queue.drain(instance, 228, 356);
+        expect(calls).toEqual([
+            { method: 'push_note_on', args: [64, 1, 0, 0] },
+            { method: 'push_preview_note_on', args: [3, 60, 0.5, 0] },
+            { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_preview_note_off', args: [3, 0] },
+        ]);
+    });
+
+    it('retries a preview release refused by the full event list before later notes', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+        receive(instance, queue, { type: 'previewNoteOff', strikeId: 7 }, block);
+        receive(instance, queue, { type: 'noteOn', midiNote: 67, velocity: 1 }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
+        expect(queue.size()).toBe(2);
+        queue.drain(instance, 128, 256);
+        expect(calls).toEqual([
+            { method: 'push_preview_note_off', args: [7, 0] },
+            { method: 'push_note_on', args: [67, 1, 0, 0] },
+        ]);
+    });
+
+    it('clears pending preview strikes and releases on panic', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+        receive(instance, queue, { type: 'previewNoteOn', strikeId: 1, midiNote: 60, velocity: 1 }, block);
+        receive(instance, queue, { type: 'previewNoteOff', strikeId: 1 }, block);
+        expect(queue.size()).toBe(2);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.drain(instance, 0, 128);
+        expect(calls).toEqual([{ method: 'all_notes_off', args: [] }]);
+    });
+
     it('drops pending notes when the device panics', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();

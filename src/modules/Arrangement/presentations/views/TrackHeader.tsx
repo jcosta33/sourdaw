@@ -21,10 +21,15 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { cn } from '#/utils/Styles/cn';
 
+import { getTimelineTrackHeight } from '../../models/TimelineTrackExtent';
 import { type Track, type InputMonitoring } from '../../models/Track';
+import { getTimelineTrackHeightScale } from '../../stores/timelineTrackHeightPreference';
+import { timelineViewStore } from '../../stores/timelineViewStore';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
@@ -60,7 +65,13 @@ type TrackHeaderProps = {
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
     const toggleMute = useTrackMuteToggle(track.id, track.muted);
-    const trackHeight = track.height;
+    const heightScale = useStoreSelector(preferencesStore, (preferences) =>
+        getTimelineTrackHeightScale(preferences?.trackHeight ?? 'normal')
+    );
+    const heightPreview = useStoreSelector(timelineViewStore, (view) =>
+        view?.trackHeightPreview?.trackId === track.id ? view.trackHeightPreview : null
+    );
+    const trackHeight = getTimelineTrackHeight(track, heightScale, heightPreview);
     const isFreezing = track.freezeState.status === 'freezing';
     const isStale = track.freezeState.status === 'stale';
     const freezeErrorMessage =
@@ -136,7 +147,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     }
                     endSlot={freezeErrorContent}
                     style={{
-                        height: 26,
+                        height: trackHeight,
                         boxShadow: isSelected
                             ? 'inset 0 1px 3px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)'
                             : 'inset 0 1px 0 rgba(255,255,255,0.03)',
@@ -358,7 +369,13 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     </Row>
                 </div>
 
-                <ResizeHandle trackId={track.id} trackName={track.name} height={track.height} />
+                <ResizeHandle
+                    trackId={track.id}
+                    trackName={track.name}
+                    height={track.height}
+                    displayHeight={trackHeight}
+                    heightScale={heightScale}
+                />
             </div>
         </TrackContextMenu>
     );

@@ -45,12 +45,8 @@ describe('levainNativeBankKey', () => {
     });
 
     it('names the default instrument for a device that has committed no chunk', () => {
-        // `initLevainDeviceStatePersistence` records a fresh device without
-        // committing a chunk, and the Web Audio carrier plays
-        // `createDefaultPatch`'s instrument for it. Answering `null` instead
-        // would put a device naming no bank on the wire, and `map_device`
-        // refuses the batch whole over one on an audible strip — so a project
-        // with one untouched Levain would decline native carriage entirely.
+        // A fresh device sounds the default instrument. Native carriage requires
+        // that default bank even before any instrument selection is committed.
         expect(nativeBankKeyForLevainDeviceState({ deviceState: undefined })).toBe('levain:violin-1');
         expect(nativeBankKeyForLevainDeviceState({ deviceState: undefined })).toBe(
             levainNativeBankKey(createDefaultPatch().instrumentId)

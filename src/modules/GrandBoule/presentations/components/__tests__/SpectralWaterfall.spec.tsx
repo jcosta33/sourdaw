@@ -227,3 +227,61 @@ describe('SpectralWaterfall — multiple frames', () => {
         expect(offscreen.putImageData.mock.calls.length).toBe(2);
     });
 });
+
+describe('SpectralWaterfall — renderer lifecycle', () => {
+    const observe = vi.fn<ResizeObserver['observe']>();
+    const disconnect = vi.fn<ResizeObserver['disconnect']>();
+
+    const makeGet2DContext = (): typeof HTMLCanvasElement.prototype.getContext => {
+        const ctx = makeRecordingCtx() as unknown as CanvasRenderingContext2D;
+        return ((id: string): RenderingContext | null =>
+            id === '2d' ? ctx : null) as typeof HTMLCanvasElement.prototype.getContext;
+    };
+
+    beforeEach(() => {
+        observe.mockClear();
+        disconnect.mockClear();
+        vi.spyOn(globalThis, 'ResizeObserver').mockImplementation(function () {
+            return { observe, disconnect, unobserve: vi.fn() };
+        });
+        vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each([
+        { context: 'display', contextRequests: 1 },
+        { context: 'offscreen', contextRequests: 2 },
+    ])('never registers a resize observer across remounts with no $context context', ({ contextRequests }) => {
+        const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+        const get2DContext = makeGet2DContext();
+
+        for (let mount = 0; mount < 2; mount += 1) {
+            if (contextRequests === 2) {
+                getContext.mockImplementationOnce(get2DContext);
+            }
+            getContext.mockReturnValueOnce(null);
+
+            const view = render(<SpectralWaterfall analyser={null} />);
+            view.unmount();
+        }
+
+        expect(getContext).toHaveBeenCalledTimes(contextRequests * 2);
+        expect(observe).not.toHaveBeenCalled();
+        expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it('disconnects its observer and cancels its frame when a working renderer unmounts', () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(makeGet2DContext());
+        const view = render(<SpectralWaterfall analyser={null} />);
+        const canvas = view.getByLabelText('Grand Boule spectral waterfall');
+
+        expect(observe).toHaveBeenCalledExactlyOnceWith(canvas.parentElement);
+        expect(window.requestAnimationFrame).toHaveBeenCalledOnce();
+        expect(disconnect).not.toHaveBeenCalled();
+        view.unmount();
+        expect(disconnect).toHaveBeenCalledOnce();
+        expect(window.cancelAnimationFrame).toHaveBeenCalledExactlyOnceWith(1);
+    });
+});

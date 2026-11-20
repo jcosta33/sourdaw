@@ -6,6 +6,7 @@ import { handleAutomateParameterRange } from '../handlers/automation/handleAutom
 import { handleAutomateSendRange } from '../handlers/automation/handleAutomateSendRange';
 import { handleAutomateSendRanges } from '../handlers/automation/handleAutomateSendRanges';
 import { handleAutomateTrackGainRange } from '../handlers/automation/handleAutomateTrackGainRange';
+import { handleInsertAutomationLanePoints } from '../handlers/automation/handleInsertAutomationLanePoints';
 import { handleInvertAutomation } from '../handlers/automation/handleInvertAutomation';
 import { handleQuantizeAutomation } from '../handlers/automation/handleQuantizeAutomation';
 import { handleRemoveAutomationLane } from '../handlers/automation/handleRemoveAutomationLane';
@@ -30,6 +31,7 @@ type AutomationAction =
     | Extract<AppAction, { type: 'addAutomationLane' }>
     | Extract<AppAction, { type: 'removeAutomationLane' }>
     | Extract<AppAction, { type: 'setAutomationLaneEnabled' }>
+    | Extract<AppAction, { type: 'insertAutomationLanePoints' }>
     | Extract<AppAction, { type: 'addAutomationPoint' }>
     | Extract<AppAction, { type: 'automateSendRange' }>
     | Extract<AppAction, { type: 'automateSendRanges' }>
@@ -65,6 +67,7 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         addAutomationLane: handleAddAutomationLane,
         removeAutomationLane: handleRemoveAutomationLane,
         setAutomationLaneEnabled: handleSetAutomationLaneEnabled,
+        insertAutomationLanePoints: handleInsertAutomationLanePoints,
         addAutomationPoint: handleAddAutomationPoint,
         automateSendRange: handleAutomateSendRange,
         automateSendRanges: handleAutomateSendRanges,

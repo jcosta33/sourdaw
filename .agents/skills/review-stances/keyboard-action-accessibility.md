@@ -1,10 +1,10 @@
-# Standing probes: keyboard actions in interactive rows
+# Standing probes: keyboard actions and text editing in interactive rows
 
 An interactive browser row fails when its main action is pointer-only, when sibling actions also trigger it, or
-when keyboard focus is hidden by hover-only styling. Probe native controls, their owning state changes, and
-rendered focus in Chromium. The component cases live in
-`src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx`; the browser cases live
-in `tests/e2e/importedSampleKeyboardAdd.spec.ts`.
+when keyboard focus is hidden by hover-only styling. An inline editor can also take over text selection on each
+keystroke. Probe native controls, their owning state changes, and rendered focus in Chromium. The imported-sample
+component cases live in `src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx`.
+The imported-sample browser cases live in `tests/e2e/importedSampleKeyboardAdd.spec.ts`.
 
 ## Standing probes
 
@@ -40,3 +40,16 @@ src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec
    raw/projected clip and one `addClip` Undo action. The component case "populates dataTransfer with sample
    details including durationSeconds on drag start" keeps the full drag payload. Removing the Add click or
    breaking dragstart on the row must fail its corresponding case (#6287).
+6. **Timeline rename focus steals the draft selection after entry (#6990, #7013).** Runs: orchestrator.
+   Enter marker and section rename through both the menu and double-click. Require focus and the original
+   name selected on entry. Type the replacement one key at a time, move the caret into the middle, insert
+   letters and replace a selected range. Check Enter and blur commits, Escape cancellation and empty-draft
+   handling. Compare the raw and projected name and identity through real Undo and Redo with an unrelated
+   preceding history entry. A whole-value input event can pass while every physical key overwrites the last.
+   The reviewer checks the selection-aware input in the fixed specs and mutates one editor at a time. Restore
+   the focus effect's dependency on the full editing object. The “preserves the marker draft and caret after
+   %s rename entry” and “preserves the section draft and caret after %s rename entry” cases must fail in their
+   respective `MarkerLane.spec.tsx` and `ArrangementBar.spec.tsx` files under
+   `src/modules/Arrangement/presentations/views/__tests__/`. Remove the marker input's mouse-down propagation
+   guard to fail “allows native mouse selection in the marker input without moving the marker”. These cases
+   observe focus, selection and action dispatch. Chromium supplies physical keypresses and real replay.
