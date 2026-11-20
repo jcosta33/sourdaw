@@ -5,8 +5,8 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type ProofPatchSelectionAction } from '../events/proofAppActions';
 import { TARGET_LABELS } from '../models/ProofPatch';
+import { proofPatchSelectionParameterIds } from '../services/proofPatchSelectionParameterIds';
 import { syncProofPatchSelection } from '../useCases/proofParamBridge/syncProofPatchSelection';
-import { proofPatchSelectionParameterIds } from '../useCases/proofPatchSelection';
 import { getProofFactoryPreset } from '../useCases/proofPresets';
 import { readProofPatchSelectionOwner } from '../useCases/readProofPatchSelectionOwner';
 
@@ -21,7 +21,7 @@ type Admission = NonNullable<ReturnType<typeof captureDevicePatchCommitValidatio
 const admissions = new WeakMap<ProofPatchSelectionAction, Admission>();
 
 function readGuardedOwner({ deviceId, trackId, deviceIds, selection }: Payload) {
-    const owner = readProofPatchSelectionOwner(deviceId, proofPatchSelectionParameterIds(selection));
+    const owner = readProofPatchSelectionOwner(deviceId, proofPatchSelectionParameterIds(selection.kind));
     return owner?.trackId === trackId && valuesEqual(owner.deviceIds, deviceIds) ? owner : null;
 }
 
@@ -90,7 +90,7 @@ export const handleSetProofPatchSelection = createHandler<'setProofPatchSelectio
             const admission = captureDevicePatchCommitValidation({
                 trackId: payload.trackId,
                 deviceId: payload.deviceId,
-                parameterIds: proofPatchSelectionParameterIds(payload.selection),
+                parameterIds: proofPatchSelectionParameterIds(payload.selection.kind),
                 requireCurrentProjection: true,
             });
             if (admission) {

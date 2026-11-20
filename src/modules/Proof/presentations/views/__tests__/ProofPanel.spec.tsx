@@ -14,11 +14,11 @@ import {
     type ProofMeterData,
     type ProofState,
 } from '../../../stores/proofStore';
+import { prepareProofPatchSelection } from '../../../useCases/prepareProofPatchSelection';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
 import { loadProofPatchWithAudio } from '../../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { proofLimiterCeilingProjection } from '../../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
 import { PROOF_PRESETS } from '../../../useCases/proofPresets';
-import { prepareProofPatchSelection } from '../../../useCases/selectProofPatch';
 import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
@@ -143,7 +143,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeUserAppAction: vi.fn(),
 }));
 
-vi.mock('../../../useCases/selectProofPatch', () => ({
+vi.mock('../../../useCases/prepareProofPatchSelection', () => ({
     prepareProofPatchSelection: vi.fn(() => () => undefined),
 }));
 

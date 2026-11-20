@@ -3,17 +3,15 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type ProofPatchSelection, type ProofPatchSelectionSnapshot } from '../../events/proofAppActions';
 import { DEFAULT_PATCH, type ProofPatch } from '../../models/ProofPatch';
 import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
+import { getRestoredProofPatch } from '../../services/getRestoredProofPatch';
+import { readRestoredProofTarget } from '../../services/proofTargetCodec';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 import { getProofFactoryPreset } from '../proofPresets';
 
+import { getRestoredProofParameterValues } from './getRestoredProofParameterValues';
 import { loadProofPatchWithAudio } from './loadProofPatchWithAudio';
 import { proofLimiterCeiling } from './proofLimiterCeiling';
-import {
-    getRestoredProofParameterValues,
-    getRestoredProofPatch,
-    readRestoredProofTarget,
-    rehydrateRestoredPatch,
-} from './rehydrateRestoredPatch';
+import { rehydrateRestoredPatch } from './rehydrateRestoredPatch';
 
 function matchingPresetId(patch: ProofPatch, presetId: string | null): string | undefined {
     if (presetId === null) {

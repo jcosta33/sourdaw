@@ -7,11 +7,12 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type ProofPatchSelection, type ProofPatchSelectionAction } from '../events/proofAppActions';
 import { DEFAULT_PATCH, TARGET_LUFS } from '../models/ProofPatch';
 import { isValidProofPatch } from '../services/isValidProofPatch';
+import { proofPatchSelectionParameterIds } from '../services/proofPatchSelectionParameterIds';
+import { readRestoredProofTarget } from '../services/proofTargetCodec';
 import { getProofState } from '../stores/proofStore';
 
-import { readRestoredProofTarget } from './proofParamBridge/rehydrateRestoredPatch';
 import { syncProofPatchSelection } from './proofParamBridge/syncProofPatchSelection';
-import { proofPatchSelectionParameterIds, proofPatchSelectionParameters } from './proofPatchSelection';
+import { proofPatchSelectionParameters } from './proofPatchSelectionParameters';
 import { getProofFactoryPreset } from './proofPresets';
 import { readProofPatchSelectionOwner } from './readProofPatchSelectionOwner';
 
@@ -25,7 +26,7 @@ function planSelection(deviceId: string, selection: ProofPatchSelection) {
     if (!parameters) {
         return null;
     }
-    const parameterIds = proofPatchSelectionParameterIds(selection);
+    const parameterIds = proofPatchSelectionParameterIds(selection.kind);
     const owner = readProofPatchSelectionOwner(deviceId, parameterIds);
     if (!owner) {
         return null;
@@ -48,12 +49,11 @@ function matchesQueuedSource(
 ): boolean {
     // Only an earlier click's committed writes may advance the source captured
     // at enqueue. A peer write or a replaced owner must refuse the queued edit.
-    const expected = { ...plan.owner.state.parameterValues };
-    for (const [key, value] of Object.entries(priorWrites)) {
-        if (Object.hasOwn(expected, key)) {
-            expected[key] = value;
-        }
-    }
+    const source = plan.owner.state.parameterValues;
+    const overlappingWrites = Object.fromEntries(
+        Object.entries(priorWrites).filter(([key]) => Object.hasOwn(source, key))
+    );
+    const expected = { ...source, ...overlappingWrites };
     return (
         valuesEqual(current.state.deviceState, plan.owner.state.deviceState) &&
         valuesEqual(current.state.parameterValues, expected) &&
@@ -142,9 +142,12 @@ export async function selectProofPatch(deviceId: string, selection: ProofPatchSe
         return;
     }
     const previous = pendingSelections.get(deviceId);
-    const pending = previous
-        ? previous.then((priorWrites) => commitSelection(plan, priorWrites))
-        : commitSelection(plan, {});
+    let pending: Promise<CommittedParameters>;
+    if (previous) {
+        pending = previous.then((priorWrites) => commitSelection(plan, priorWrites));
+    } else {
+        pending = commitSelection(plan, {});
+    }
     pendingSelections.set(deviceId, pending);
     try {
         await pending;
@@ -153,23 +156,4 @@ export async function selectProofPatch(deviceId: string, selection: ProofPatchSe
             pendingSelections.delete(deviceId);
         }
     }
-}
-
-/** Keep a click bound to its original owner while a ceiling gesture settles. */
-export function prepareProofPatchSelection(deviceId: string, selection: ProofPatchSelection): () => void {
-    const parameterIds: readonly string[] = [];
-    const owner = readProofPatchSelectionOwner(deviceId, parameterIds);
-    const authority = owner
-        ? captureDevicePatchCommitValidation({
-              trackId: owner.trackId,
-              deviceId,
-              parameterIds,
-              requireCurrentProjection: true,
-          })
-        : null;
-    return () => {
-        if (authority?.isCurrent()) {
-            void selectProofPatch(deviceId, selection);
-        }
-    };
 }

@@ -45,6 +45,7 @@ import {
     type ProofState,
 } from '../../stores/proofStore';
 import { hydrateProofDisclosureFromProject } from '../../useCases/hydrateProofDisclosureFromProject';
+import { prepareProofPatchSelection } from '../../useCases/prepareProofPatchSelection';
 import { proofLimiterCeiling } from '../../useCases/proofParamBridge/proofLimiterCeiling';
 import { proofLimiterCeilingProjection } from '../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
 import { rehydrateRestoredPatch } from '../../useCases/proofParamBridge/rehydrateRestoredPatch';
@@ -53,7 +54,6 @@ import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetInte
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
-import { prepareProofPatchSelection } from '../../useCases/selectProofPatch';
 import { setProofPanelUiLevel } from '../../useCases/setProofPanelUiLevel';
 import { LoudnessHistory } from '../components/LoudnessHistory';
 import { ProofDynSection } from '../components/ProofDynSection';

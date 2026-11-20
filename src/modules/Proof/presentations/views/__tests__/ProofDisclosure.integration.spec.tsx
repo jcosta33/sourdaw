@@ -93,11 +93,12 @@ function seedProofParameters(parameterValues: Record<string, number>): void {
         ...project,
         tracks: project.tracks.map((track) => ({
             ...track,
-            devices: track.devices.map((device) =>
-                device.id === 'a'
-                    ? { ...device, parameterValues, deviceState: { version: 1, data: { disclosureTier: 'shape' } } }
-                    : device
-            ),
+            devices: track.devices.map((device) => {
+                if (device.id !== 'a') {
+                    return device;
+                }
+                return { ...device, parameterValues, deviceState: { version: 1, data: { disclosureTier: 'shape' } } };
+            }),
         })),
     });
     flushAutomergeStorageWrites();

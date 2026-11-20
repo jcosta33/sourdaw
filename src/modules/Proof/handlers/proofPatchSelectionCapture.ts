@@ -8,8 +8,9 @@ import {
     type ProofPatchSelectionSnapshot,
 } from '../events/proofAppActions';
 import { DEFAULT_PATCH, TARGET_LUFS } from '../models/ProofPatch';
-import { readRestoredProofTarget } from '../useCases/proofParamBridge/rehydrateRestoredPatch';
-import { proofPatchSelectionParameterIds, proofPatchSelectionParameters } from '../useCases/proofPatchSelection';
+import { proofPatchSelectionParameterIds } from '../services/proofPatchSelectionParameterIds';
+import { readRestoredProofTarget } from '../services/proofTargetCodec';
+import { proofPatchSelectionParameters } from '../useCases/proofPatchSelectionParameters';
 import { getProofFactoryPreset, PROOF_PRESETS } from '../useCases/proofPresets';
 
 type Payload = ProofPatchSelectionAction['payload'];
@@ -99,7 +100,7 @@ export function validProofPatchSelectionCapture(payload: unknown): payload is Pa
     ) {
         return false;
     }
-    const parameters = proofPatchSelectionParameterIds(payload.selection);
+    const parameters = proofPatchSelectionParameterIds(payload.selection.kind);
     return (
         isSnapshot(payload.before, parameters) &&
         isSnapshot(payload.after, parameters) &&

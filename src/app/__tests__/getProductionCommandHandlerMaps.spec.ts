@@ -4,8 +4,8 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
-import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
