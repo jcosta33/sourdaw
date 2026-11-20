@@ -1059,7 +1059,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseMove(canvas, { clientX: 200, clientY: above });
             fireEvent.mouseMove(canvas, { clientX: 200, clientY: below });
             fireEvent.mouseMove(canvas, { clientX: 60, clientY: below });
-            const original = args.lassoPathRef.current!.map((point) => ({ ...point }));
+            const original = args.lassoPathRef.current!.map((point) => ({ x: point.x, y: point.y }));
             rerender(<Harness args={{ ...args, rowHeight }} />);
             expect(args.lassoPathRef.current).toEqual(
                 original.map((point) => ({ x: point.x, y: (point.y * rowHeight) / ROW_HEIGHT }))
