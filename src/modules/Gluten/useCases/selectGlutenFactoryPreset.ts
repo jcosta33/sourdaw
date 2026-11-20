@@ -34,7 +34,7 @@ export async function selectGlutenFactoryPreset(deviceId: string, presetId: stri
     }
     const before = owner.state.parameterValues;
     const alreadyApplied = valuesEqual(before, after);
-    let observedAdmission = false;
+    const admission: { observed: boolean } = { observed: false };
     try {
         await executeUserAppAction(
             {
@@ -53,11 +53,11 @@ export async function selectGlutenFactoryPreset(deviceId: string, presetId: stri
                 shouldCommit: authority.isCurrent,
                 skipMacroRecording: true,
                 observeMaterializedAction: () => {
-                    observedAdmission = true;
+                    admission.observed = true;
                 },
             }
         );
-        if (alreadyApplied && observedAdmission && authority.isCurrent()) {
+        if (alreadyApplied && admission.observed && authority.isCurrent()) {
             // Command drops equal project writes. The explicit pick still selects and reasserts the sound.
             syncGlutenPresetRuntime(owner.trackId, deviceId, after, preset.name);
         }

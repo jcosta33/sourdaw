@@ -111,6 +111,19 @@ function withField<Key extends keyof GlutenPatch>(patch: GlutenPatch, key: Key, 
     return { ...patch, [key]: value };
 }
 
+function hydrateEncodedField<Key extends keyof GlutenPatch>(
+    patch: GlutenPatch,
+    encoded: Readonly<Record<string, unknown>>,
+    key: Key,
+    decode: (value: number) => GlutenPatch[Key]
+): GlutenPatch {
+    const stored = encoded[key];
+    if (typeof stored !== 'number' || !Number.isFinite(stored)) {
+        return patch;
+    }
+    return withField(patch, key, decode(stored));
+}
+
 export function hydrateGlutenPatchFromProject(deviceId: string, committedName?: string): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -122,55 +135,37 @@ export function hydrateGlutenPatchFromProject(deviceId: string, committedName?: 
         return;
     }
 
+    const encoded = device.parameterValues;
     const currentPatch = getGlutenState(deviceId).patch;
     let patch = committedName === undefined ? currentPatch : { ...DEFAULT_PATCH, name: committedName };
 
     for (const field of NUMERIC_FIELDS) {
-        const stored = device.parameterValues[field];
-        if (typeof stored === 'number' && Number.isFinite(stored)) {
-            patch = withField(patch, field, NUMERIC_NORMALIZERS[field](stored));
-        }
+        patch = hydrateEncodedField(patch, encoded, field, NUMERIC_NORMALIZERS[field]);
     }
 
     for (const field of BOOLEAN_FIELDS) {
-        const stored = device.parameterValues[field];
-        if (typeof stored === 'number' && Number.isFinite(stored)) {
-            patch = withField(patch, field, stored > 0.5);
-        }
+        patch = hydrateEncodedField(patch, encoded, field, (value) => value > 0.5);
     }
 
-    const topology = device.parameterValues[GLUTEN_PARAM_IDS.topology];
-    if (typeof topology === 'number' && Number.isFinite(topology)) {
-        patch = withField(patch, GLUTEN_PARAM_IDS.topology, topologyFromWire(topology, DEFAULT_PATCH.topology));
-    }
-
-    const blendTopology = device.parameterValues[GLUTEN_PARAM_IDS.blendTopology];
-    if (typeof blendTopology === 'number' && Number.isFinite(blendTopology)) {
-        patch = withField(
-            patch,
-            GLUTEN_PARAM_IDS.blendTopology,
-            topologyFromWire(blendTopology, DEFAULT_PATCH.blendTopology)
-        );
-    }
-
-    const style = device.parameterValues[GLUTEN_PARAM_IDS.style];
-    if (typeof style === 'number' && Number.isFinite(style)) {
-        patch = withField(patch, GLUTEN_PARAM_IDS.style, STYLES[rustU8(style)] ?? DEFAULT_PATCH.style);
-    }
-
-    const detection = device.parameterValues[GLUTEN_PARAM_IDS.detection];
-    if (typeof detection === 'number' && Number.isFinite(detection)) {
-        patch = withField(patch, GLUTEN_PARAM_IDS.detection, detection > 0.5 ? 'peak' : 'rms');
-    }
-
-    const stereoMode = device.parameterValues[GLUTEN_PARAM_IDS.stereoMode];
-    if (typeof stereoMode === 'number' && Number.isFinite(stereoMode)) {
-        patch = withField(
-            patch,
-            GLUTEN_PARAM_IDS.stereoMode,
-            STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode
-        );
-    }
+    patch = hydrateEncodedField(patch, encoded, GLUTEN_PARAM_IDS.topology, (value) =>
+        topologyFromWire(value, DEFAULT_PATCH.topology)
+    );
+    patch = hydrateEncodedField(patch, encoded, GLUTEN_PARAM_IDS.blendTopology, (value) =>
+        topologyFromWire(value, DEFAULT_PATCH.blendTopology)
+    );
+    patch = hydrateEncodedField(
+        patch,
+        encoded,
+        GLUTEN_PARAM_IDS.style,
+        (value) => STYLES[rustU8(value)] ?? DEFAULT_PATCH.style
+    );
+    patch = hydrateEncodedField(patch, encoded, GLUTEN_PARAM_IDS.detection, (value) => (value > 0.5 ? 'peak' : 'rms'));
+    patch = hydrateEncodedField(
+        patch,
+        encoded,
+        GLUTEN_PARAM_IDS.stereoMode,
+        (value) => STEREO_MODES[rustU8(value)] ?? DEFAULT_PATCH.stereoMode
+    );
 
     if (!valuesEqual(patch, currentPatch)) {
         loadGlutenPatch(deviceId, patch);
