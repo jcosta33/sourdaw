@@ -359,6 +359,65 @@ describe('TimelineMinimap', () => {
         expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(0);
     });
 
+    describe('paging by the visible timeline span', () => {
+        const setTimelineView = (scrollX: number, viewportWidth: number) => {
+            const view = { scrollX, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportWidth };
+            storeOverrides.values.set(timelineViewStoreMock, view);
+            timelineViewStoreMock.value = view;
+        };
+
+        // The minimap canvas is deliberately wider than the visible timeline so a
+        // page computed from the minimap width would differ from the timeline span.
+        const measureMinimapCanvas = (width: number) => {
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, width, 28));
+            act(() => resizeCallback?.());
+        };
+
+        it('moves PageDown by the visible timeline width, not the minimap width', () => {
+            measureMinimapCanvas(900);
+            setTimelineView(0, 600);
+            renderWithTooltip(<TimelineMinimap />);
+
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'PageDown' });
+
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(600);
+        });
+
+        it('moves PageUp by the visible timeline width, not the minimap width', () => {
+            measureMinimapCanvas(900);
+            setTimelineView(1200, 600);
+            renderWithTooltip(<TimelineMinimap />);
+
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'PageUp' });
+
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(600);
+        });
+
+        it('uses the viewport width the store holds at key time, not the width at mount', () => {
+            measureMinimapCanvas(900);
+            setTimelineView(0, 600);
+            renderWithTooltip(<TimelineMinimap />);
+            const slider = screen.getByRole('slider');
+
+            fireEvent.keyDown(slider, { key: 'PageDown' });
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(600);
+
+            setTimelineView(0, 1000);
+            fireEvent.keyDown(slider, { key: 'PageDown' });
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(1000);
+        });
+
+        it('falls back to 16 beats when the timeline viewport has not been measured', () => {
+            measureMinimapCanvas(900);
+            setTimelineView(0, 0);
+            renderWithTooltip(<TimelineMinimap />);
+
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'PageDown' });
+
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(16 * 12);
+        });
+    });
+
     it.each(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home'])(
         'stops propagation and prevents default when %s is pressed so global transport shortcuts are not triggered',
         (key) => {

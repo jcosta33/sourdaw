@@ -49,7 +49,7 @@ function formatDisclosure(disclosure: AgentRouteView['dataDisclosure']): string 
 
 const FALLBACK_POLICY_LABELS: Readonly<Record<string, string>> = {
     'local-only': 'local only, never widens to a hosted provider',
-    'hosted-then-local': 'hosted first, local fallback',
+    'hosted-only': 'hosted provider only, no local fallback',
 };
 
 function renderOptions(options: AgentRouteView['options']): ReactElement {

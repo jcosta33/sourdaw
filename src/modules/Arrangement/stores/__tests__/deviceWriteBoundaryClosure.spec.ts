@@ -1025,7 +1025,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
         // compileRuntimeGrinderNeuralPatch. Node apply sites plus the pure
-        // delta compiler; createWebAudioEngine applies accepted deltas.
+        // delta compiler; the web audio engine's delta application unit
+        // (webAudioEngine/createRuntimeGraphDeltaApplication) compiles and
+        // applies accepted deltas.
         'src/modules/AudioEngine/engine/BacteriaNode.ts': 3,
         'src/modules/AudioEngine/engine/CrustNode.ts': 3,
         'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
@@ -1056,7 +1058,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // through `proofParamBridge`, which is censused separately under
         // 'persistence-runtime' and guard-listed below.
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        'src/modules/AudioEngine/repositories/webAudioEngine/createRuntimeGraphDeltaApplication.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
         // Device-list admission extracts a pure compiler helper and its call.
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
