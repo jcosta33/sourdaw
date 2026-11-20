@@ -404,11 +404,14 @@ describe('handleExtractGroove', () => {
                 reason: 'template-identity-conflict',
             });
 
-            const pinned = createAction('groove-clip-source-v1');
-            pinned.payload = {
-                ...pinned.payload,
-                proposal: { ...getExtractedTemplate().template, id: 'groove-clip-source-v1' },
-                sourceRevision: getExtractedTemplate().sourceRevision,
+            const extracted = getExtractedTemplate();
+            const pinned = {
+                ...createProposalAction('groove-clip-source-v1'),
+                payload: {
+                    ...createProposalAction('groove-clip-source-v1').payload,
+                    proposal: { ...extracted.template, id: 'groove-clip-source-v1' },
+                    sourceRevision: extracted.sourceRevision,
+                },
             };
             expect(handleExtractGroove.execute(pinned)).toMatchObject({ status: 'conflict' });
         });
