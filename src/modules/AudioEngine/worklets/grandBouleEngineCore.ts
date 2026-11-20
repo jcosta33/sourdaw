@@ -66,6 +66,15 @@ export const PARAM_MAP: Record<string, string> = {
     toneColor: 'tone_color',
 };
 
+export type GrandBoulePreviewNoteOnMsg = {
+    type: 'previewNoteOn';
+    strikeId: number;
+    midiNote: number;
+    velocity: number;
+    sampleFrame?: number;
+};
+export type GrandBoulePreviewNoteOffMsg = { type: 'previewNoteOff'; strikeId: number; sampleFrame?: number };
+
 export type GrandBouleNoteOnMsg = {
     type: 'noteOn';
     midiNote: number;
@@ -108,20 +117,23 @@ export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; samp
 
 export type GrandBoulePedalMsg = GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
 
-/** Messages that address a moment in time rather than only the device. */
-export type GrandBouleFramedMsg =
+type GrandBouleNoteMsg =
+    | GrandBoulePreviewNoteOnMsg
+    | GrandBoulePreviewNoteOffMsg
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
-    | GrandBouleNoteExpressionMsg
-    | GrandBouleParamMsg
-    | GrandBouleSustainMsg
-    | GrandBouleUnaCordaMsg
-    | GrandBouleSostenutoMsg;
+    | GrandBouleNoteExpressionMsg;
+
+/** Messages that address a moment in time rather than only the device. */
+export type GrandBouleFramedMsg =
+    GrandBouleNoteMsg | GrandBouleParamMsg | GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
 
 /** A framed message that actually carries a usable frame, so it can be queued. */
 export type GrandBouleQueuedMsg = GrandBouleFramedMsg & { sampleFrame: number };
 
 export type GrandBouleDispatchMsg =
+    | GrandBoulePreviewNoteOnMsg
+    | GrandBoulePreviewNoteOffMsg
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
     | GrandBouleNoteExpressionMsg
@@ -246,6 +258,46 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
     return views;
 }
 
+function dispatchNote(instance: GrandBouleInstance, msg: GrandBouleNoteMsg, offset: number): boolean {
+    switch (msg.type) {
+        case 'previewNoteOn':
+            return instance.push_preview_note_on(msg.strikeId, msg.midiNote, msg.velocity, offset);
+        case 'previewNoteOff':
+            return instance.push_preview_note_off(msg.strikeId, offset);
+        case 'noteOn':
+            return instance.push_note_on(msg.midiNote, msg.velocity, msg.channel ?? 0, offset);
+        case 'noteExpression':
+            // Grand Boule sounds bend only; pressure and slide are dropped
+            // inside the engine rather than faked (audit MD-2). Queued at the
+            // same offset as the note it bends so it cannot overtake it.
+            return instance.push_note_expression(
+                msg.midiNote,
+                msg.channel,
+                msg.bendSemitones,
+                msg.pressure,
+                msg.slide,
+                offset
+            );
+        case 'noteOff':
+            // `msg.releaseVelocity` (normalized 0..1) is threaded to this engine
+            // boundary from the live-MIDI Note Off. The current WASM ABI
+            // (`push_note_off(midi_note, offset)`) does not yet consume it; it is
+            // forwarded as part of the typed message so the release dynamic is no
+            // longer dropped at the control boundary.
+            // Without a channel every MIDI voice at the pitch is released — the
+            // historical behaviour channel-unaware callers rely on.
+            if (msg.channel === undefined) {
+                return instance.push_note_off(msg.midiNote, offset);
+            }
+            return instance.push_note_off_on_channel(msg.midiNote, msg.channel, offset);
+        default: {
+            const exhaustive: never = msg;
+            void exhaustive;
+            return true;
+        }
+    }
+}
+
 /**
  * Apply one control message to the engine, `offset` samples into the block it
  * is about to render.
@@ -268,33 +320,10 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
  * ignores rather than raises.
  */
 export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg, offset = 0): boolean {
+    if (isNoteMsg(msg)) {
+        return dispatchNote(instance, msg, offset);
+    }
     switch (msg.type) {
-        case 'noteOn':
-            return instance.push_note_on(msg.midiNote, msg.velocity, msg.channel ?? 0, offset);
-        case 'noteExpression':
-            // Grand Boule sounds bend only; pressure and slide are dropped
-            // inside the engine rather than faked (audit MD-2). Queued at the
-            // same offset as the note it bends so it cannot overtake it.
-            return instance.push_note_expression(
-                msg.midiNote,
-                msg.channel,
-                msg.bendSemitones,
-                msg.pressure,
-                msg.slide,
-                offset
-            );
-        case 'noteOff':
-            // `msg.releaseVelocity` (normalized 0..1) is threaded to this engine
-            // boundary from the live-MIDI Note Off. The current WASM ABI
-            // (`push_note_off(midi_note, offset)`) does not yet consume it; it is
-            // forwarded as part of the typed message so the release dynamic is no
-            // longer dropped at the control boundary.
-            // Without a channel every voice at the pitch is released — the
-            // historical behaviour channel-unaware callers rely on.
-            if (msg.channel === undefined) {
-                return instance.push_note_off(msg.midiNote, offset);
-            }
-            return instance.push_note_off_on_channel(msg.midiNote, msg.channel, offset);
         case 'param':
             // Block-rate: a parameter belongs to the whole block, and the engine
             // snaps or smooths it once per `process` call either way.
@@ -493,8 +522,14 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
 }
 
 /** True for the messages that strike, release or bend a note. */
-function isNoteMsg(msg: GrandBouleDispatchMsg): boolean {
-    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression';
+function isNoteMsg(msg: GrandBouleDispatchMsg): msg is GrandBouleNoteMsg {
+    return (
+        msg.type === 'noteOn' ||
+        msg.type === 'noteOff' ||
+        msg.type === 'noteExpression' ||
+        msg.type === 'previewNoteOn' ||
+        msg.type === 'previewNoteOff'
+    );
 }
 
 function isPedalMsg(msg: GrandBouleDispatchMsg): msg is GrandBoulePedalMsg {

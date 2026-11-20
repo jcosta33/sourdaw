@@ -76,6 +76,8 @@ const guardPath = resolve('scripts/resourceGuard.ts');
 const storagePath = resolve('scripts/resourceGuardStorage.ts');
 const atomicJsonMarkerPath = resolve('scripts/__tests__/fixtures/atomicJsonMarker.cjs');
 const { publishJson: publishFixtureJson } = createRequire(import.meta.url)(atomicJsonMarkerPath);
+const guardReadinessMarkersPath = resolve('scripts/__tests__/fixtures/guardReadinessMarkers.cjs');
+const { publishDescendantReady, publishRootPid } = createRequire(import.meta.url)(guardReadinessMarkersPath);
 
 function fixture(): string {
     const fixtures = resolve('.agents/guard-storage-fixtures');
@@ -193,6 +195,38 @@ describe('atomic JSON fixture markers', () => {
         expect(existsSync(marker)).toBe(true);
         expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual(record);
     });
+
+    it.each([
+        {
+            markerName: 'started.json',
+            record: { pid: 12345, tmp: '/guard-fixture/tmp' },
+            publish: publishDescendantReady,
+        },
+        { markerName: 'root.pid', record: 12345, publish: publishRootPid },
+    ])(
+        'keeps the guard readiness marker $markerName absent during a partial write',
+        ({ markerName, record, publish }) => {
+            const marker = join(fixture(), markerName);
+            let observedPartialWrite = false;
+            const filesystem = {
+                writeFileSync(path: string, contents: string, options?: Parameters<typeof writeFileSync>[2]) {
+                    // Leaving out the last digit of root.pid gives a valid but incorrect PID.
+                    const prefix = contents.slice(0, -1);
+                    writeFileSync(path, prefix, options);
+                    const visibleBytes = existsSync(marker) ? readFileSync(marker, 'utf8') : undefined;
+                    expect(visibleBytes).toBeUndefined();
+                    observedPartialWrite = true;
+                    appendFileSync(path, contents.slice(-1), 'utf8');
+                },
+                renameSync,
+            };
+
+            publish(marker, record, filesystem);
+
+            expect(observedPartialWrite).toBe(true);
+            expect(readFileSync(marker, 'utf8')).toBe(JSON.stringify(record));
+        }
+    );
 });
 
 function proofDiagnostic(result: Awaited<ReturnType<typeof runGuardedCommand>>): string {
@@ -1071,11 +1105,21 @@ setInterval(() => {}, 1000);
     it('preserves a killed supervisors storage while descendants live and reclaims it on a later start', async () => {
         const root = fixture();
         const marker = join(root, 'started.json');
-        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`;
-        const child = `const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(join(root, 'root.pid'))}, String(process.pid)); setInterval(() => {}, 1000);`;
+        const rootMarker = join(root, 'root.pid');
+        const descendant = [
+            'const [marker, readinessWriter] = process.argv.slice(1);',
+            "require(readinessWriter).publishDescendantReady(marker, { pid: process.pid, tmp: require('node:os').tmpdir() });",
+            'setInterval(() => {}, 1000);',
+        ].join(' ');
+        const child = [
+            'const [descendant, marker, rootMarker, readinessWriter] = process.argv.slice(1);',
+            "require('node:child_process').spawn(process.execPath, ['-e', descendant, marker, readinessWriter], { detached: true, stdio: 'ignore' });",
+            'require(readinessWriter).publishRootPid(rootMarker, process.pid);',
+            'setInterval(() => {}, 1000);',
+        ].join(' ');
         const options = {
             command: process.execPath,
-            args: ['-e', child],
+            args: ['-e', child, descendant, marker, rootMarker, guardReadinessMarkersPath],
             profile: 'focused',
             availableMemoryBytes: abundantMemoryBytes,
             maxRssBytes: 512 * 1024 ** 2,
@@ -1098,9 +1142,9 @@ setInterval(() => {}, 1000);
         if (supervisor.pid !== undefined) {
             childPids.add(supervisor.pid);
         }
-        await waitUntil(() => existsSync(marker) && existsSync(join(root, 'root.pid')));
+        await waitUntil(() => existsSync(marker) && existsSync(rootMarker));
         const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
-        const rootPid = Number(readFileSync(join(root, 'root.pid'), 'utf8'));
+        const rootPid = Number(readFileSync(rootMarker, 'utf8'));
         childPids.add(started.pid);
         childPids.add(rootPid);
         await waitUntil(() => readOwner(started.tmp).tracked.some((identity) => identity.pid === started.pid));

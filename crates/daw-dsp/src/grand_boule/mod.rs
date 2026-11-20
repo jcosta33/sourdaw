@@ -25,6 +25,8 @@ pub mod string;
 pub mod sympathetic;
 pub mod voice;
 
+use core::num::NonZeroU32;
+
 use crate::primitives::{sanitize_block, ProcessLifecycle};
 use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
@@ -55,7 +57,7 @@ pub const GRAND_BOULE_BLOCK_FRAMES: usize = 4096;
 /// The ceiling delays events; it never loses them.
 const GRAND_BOULE_MAX_BLOCK_EVENTS: usize = 256;
 
-/// [`GrandBouleEvent::kind`] — release the voices at the pitch. Zero so it is
+/// [`GrandBouleEvent::kind`] — release MIDI voices at the pitch. Zero so it is
 /// what `Default` produces.
 const GRAND_BOULE_EVENT_NOTE_OFF: u8 = 0;
 /// [`GrandBouleEvent::kind`] — strike the pitch.
@@ -71,6 +73,10 @@ const GRAND_BOULE_EVENT_SOSTENUTO: u8 = 4;
 /// [`GrandBouleEvent::kind`] — engage or release the una corda pedal, per
 /// [`GrandBouleEvent::pedal_position`].
 const GRAND_BOULE_EVENT_UNA_CORDA: u8 = 5;
+/// [`GrandBouleEvent::kind`] — strike a new panel preview voice.
+const GRAND_BOULE_EVENT_PREVIEW_NOTE_ON: u8 = 6;
+/// [`GrandBouleEvent::kind`] — release the voice of the matching preview strike.
+const GRAND_BOULE_EVENT_PREVIEW_NOTE_OFF: u8 = 7;
 
 /// A pedal event engages its on/off pedal at or above this position.
 const PEDAL_ENGAGED_THRESHOLD: f32 = 0.5;
@@ -84,10 +90,11 @@ struct GrandBouleEvent {
     note: u8,
     /// The `0..1` fraction the engine's note-on takes, not a MIDI byte.
     velocity: f32,
-    /// MPE member channel. `None` on a note-off releases *every* voice at the
-    /// pitch — the channel-unaware behaviour [`GrandBouleInstance::note_off`]
-    /// has always had — and on the other kinds means member channel 0.
+    /// MPE member channel. `None` on a MIDI note-off releases MIDI voices on
+    /// every channel at the pitch.
     channel: Option<u8>,
+    /// Instance-local identity supplied for preview events only.
+    strike_id: u32,
     /// Expression payload; read only for [`GRAND_BOULE_EVENT_NOTE_EXPRESSION`].
     bend_semitones: f32,
     pressure: f32,
@@ -152,7 +159,7 @@ impl GrandBouleInstance {
         self.engine.note_on(midi_note, velocity);
     }
 
-    /// Begin the release phase for any voice holding this note.
+    /// Begin the release phase for MIDI voices holding this note.
     pub fn note_off(&mut self, midi_note: u8) {
         self.engine.note_off(midi_note);
     }
@@ -218,8 +225,8 @@ impl GrandBouleInstance {
         })
     }
 
-    /// Queue a note-off releasing every voice at `midi_note`, at `offset`
-    /// samples into the next rendered block. Ordering and refusal as
+    /// Queue a note-off releasing MIDI voices at `midi_note` on every channel,
+    /// at `offset` samples into the next rendered block. Ordering and refusal as
     /// [`Self::push_note_on`].
     pub fn push_note_off(&mut self, midi_note: u8, offset: u32) -> bool {
         self.push_event(GrandBouleEvent {
@@ -237,6 +244,38 @@ impl GrandBouleInstance {
             kind: GRAND_BOULE_EVENT_NOTE_OFF,
             note: midi_note,
             channel: Some(channel),
+            offset,
+            ..GrandBouleEvent::default()
+        })
+    }
+
+    /// Queue a preview strike at `offset`. Use a fresh nonzero `strike_id`
+    /// within this instance for every preview strike. Returns queue acceptance
+    /// as in [`Self::push_note_on`]. If all voices are busy at the event's frame,
+    /// the engine counts the refusal and leaves the sounding voices alone.
+    pub fn push_preview_note_on(
+        &mut self,
+        strike_id: u32,
+        midi_note: u8,
+        velocity: f32,
+        offset: u32,
+    ) -> bool {
+        self.push_event(GrandBouleEvent {
+            kind: GRAND_BOULE_EVENT_PREVIEW_NOTE_ON,
+            strike_id,
+            note: midi_note,
+            velocity,
+            offset,
+            ..GrandBouleEvent::default()
+        })
+    }
+
+    /// Queue a release for the held preview with `strike_id` at `offset`.
+    /// An already released, refused or displaced strike has no effect.
+    pub fn push_preview_note_off(&mut self, strike_id: u32, offset: u32) -> bool {
+        self.push_event(GrandBouleEvent {
+            kind: GRAND_BOULE_EVENT_PREVIEW_NOTE_OFF,
+            strike_id,
             offset,
             ..GrandBouleEvent::default()
         })
@@ -387,6 +426,11 @@ impl GrandBouleInstance {
         self.nan_flush_count as f64
     }
 
+    /// Preview strikes refused at render time because no voice slot was idle.
+    pub fn get_preview_voice_refusal_count(&self) -> f64 {
+        self.engine.preview_voice_refusal_count() as f64
+    }
+
     /// Pointer to the right channel buffer (call after `process`).
     pub fn get_right_ptr(&self) -> *const f32 {
         self.right_buf.as_ptr()
@@ -506,6 +550,17 @@ impl GrandBouleInstance {
             GRAND_BOULE_EVENT_UNA_CORDA => self
                 .engine
                 .set_una_corda(event.pedal_position > PEDAL_ENGAGED_THRESHOLD),
+            GRAND_BOULE_EVENT_PREVIEW_NOTE_ON => {
+                if let Some(strike_id) = NonZeroU32::new(event.strike_id) {
+                    self.engine
+                        .preview_note_on(strike_id, event.note, event.velocity);
+                }
+            }
+            GRAND_BOULE_EVENT_PREVIEW_NOTE_OFF => {
+                if let Some(strike_id) = NonZeroU32::new(event.strike_id) {
+                    self.engine.preview_note_off(strike_id);
+                }
+            }
             _ => {}
         }
     }

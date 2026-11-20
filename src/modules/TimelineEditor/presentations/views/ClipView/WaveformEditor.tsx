@@ -43,7 +43,7 @@ import {
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { captureProjectTransitionAuthority, verifyAudioBufferReferences } from '#/modules/Project/useCases';
+import { captureArrangementMediaAuthority, verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
@@ -73,6 +73,28 @@ type WaveformEditorProps = {
     clipId: string;
     audioBufferId?: string;
 };
+
+async function relinkDroppedAudio(input: {
+    sourceBufferId: string;
+    replacementBufferId: string;
+    fileName: string;
+    isCurrent: () => boolean;
+}): Promise<boolean | null> {
+    try {
+        const result = await relinkClipAudioSource({
+            sourceBufferId: input.sourceBufferId,
+            replacementBufferId: input.replacementBufferId,
+            shouldExecute: input.isCurrent,
+        });
+        return result.status === 'relinked';
+    } catch {
+        discardDecodedAudioFile(input.replacementBufferId);
+        if (input.isCurrent()) {
+            notifyUser(`Failed to relink "${input.fileName}"`, 'error');
+        }
+        return null;
+    }
+}
 
 type DrawWaveformInput = {
     canvas: HTMLCanvasElement;
@@ -238,7 +260,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     };
 
     const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
-        const authority = captureProjectTransitionAuthority();
         event.preventDefault();
         setIsDragging(false);
         const file = event.dataTransfer.files[0];
@@ -246,6 +267,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
             return;
         }
 
+        const authority = captureArrangementMediaAuthority();
         try {
             const { id: bufferId } = await decodeAudioFile(file);
             if (!authority.isCurrent()) {
@@ -260,9 +282,26 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
             // source at write time.
             const sourceBufferId = audioBufferId ?? clipId;
             const sourceIsMissing = getCachedAudioBuffer({ bufferId: sourceBufferId }) === null;
-            const repaired = sourceIsMissing
-                ? relinkClipAudioSource({ sourceBufferId, replacementBufferId: bufferId }).status === 'relinked'
-                : replaceClipAudioBuffer(clipId, bufferId);
+            let repaired: boolean | null;
+            if (sourceIsMissing) {
+                repaired = await relinkDroppedAudio({
+                    sourceBufferId,
+                    replacementBufferId: bufferId,
+                    fileName: file.name,
+                    isCurrent: authority.isCurrent,
+                });
+                if (repaired === null) {
+                    return;
+                }
+            } else {
+                repaired = replaceClipAudioBuffer(clipId, bufferId);
+            }
+            if (!authority.isCurrent()) {
+                if (!repaired) {
+                    discardDecodedAudioFile(bufferId);
+                }
+                return;
+            }
             if (repaired) {
                 // The panel holds a scan rather than a subscription — so a
                 // successful relink has to re-scan or it keeps counting a clip
@@ -279,6 +318,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
             if (authority.isCurrent()) {
                 notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
+        } finally {
+            authority.dispose();
         }
     };
 

@@ -3,6 +3,8 @@
 //! Owns the voice pool plus every shared DSP block (pedals, soundboard,
 //! sympathetic bank, mechanical noise) and drives the per-block render loop.
 
+use core::num::NonZeroU32;
+
 use super::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use super::parameters::{
     key_fundamental_hz, midi_to_key, railsback_smooth_cents, temperament_offset_cents, Temperament,
@@ -61,6 +63,7 @@ pub struct GrandBouleEngine {
     /// the tail pool, so steals can activate and retire tails without scanning
     /// every idle slot in the per-sample loop or growing storage.
     active_steal_tails: Vec<usize>,
+    preview_voice_refusal_count: u64,
     pedals: PedalState,
     soundboard: Soundboard,
     radiation: RadiationModel,
@@ -89,11 +92,6 @@ pub struct GrandBouleEngine {
     hammer_mass_scale: f32,
     /// Crossfade between the fixed warm and open body FIR kernels (0..1).
     soundboard_brightness: f32,
-    /// MPE member channel the in-flight note-on belongs to (audit MD-2).
-    /// `note_on_with_pitch` has three voice-allocation exits; rather than
-    /// thread the channel through all of them, `note_on_with_channel` sets this
-    /// for the duration of one call. Defaults to 0 (non-MPE).
-    pending_channel: u8,
     /// Sympathetic resonance level from product voicing (0..1).
     sympathetic_level: f32,
     /// Late body diffusion gain from product voicing (0..1).
@@ -128,6 +126,7 @@ impl GrandBouleEngine {
             voices,
             steal_tails,
             active_steal_tails: Vec::with_capacity(count),
+            preview_voice_refusal_count: 0,
             pedals: PedalState::new(),
             soundboard: Soundboard::new(sample_rate),
             radiation: RadiationModel::new(sample_rate),
@@ -145,7 +144,6 @@ impl GrandBouleEngine {
             hammer_hardness_scale: 0.92,
             hammer_mass_scale: 1.08,
             soundboard_brightness: 0.48,
-            pending_channel: 0,
             sympathetic_level: 0.58,
             body_resonance: 0.52,
             tone_color: -0.08,
@@ -212,17 +210,23 @@ impl GrandBouleEngine {
     /// Note-on carrying the MPE member channel that owns the note.
     /// Channel 0 is the non-MPE default and what `note_on` uses.
     pub fn note_on_with_channel(&mut self, midi_note: u8, velocity: f32, channel: u8) {
-        self.pending_channel = channel;
-        self.note_on_with_pitch(midi_note, velocity, 1.0);
-        self.pending_channel = 0;
+        self.strike_midi_note(midi_note, velocity, channel, 1.0);
     }
 
     /// Trigger a note-on with a microtuning frequency ratio. `pitch_ratio`
     /// = 1.0 is standard Railsback tuning; `2^(cents/1200)` otherwise.
     pub fn note_on_with_pitch(&mut self, midi_note: u8, velocity: f32, pitch_ratio: f32) {
-        let Some(key) = midi_to_key(midi_note) else {
-            return;
-        };
+        self.strike_midi_note(midi_note, velocity, 0, pitch_ratio);
+    }
+
+    fn prepare_voice_start(
+        &mut self,
+        midi_note: u8,
+        velocity: f32,
+        channel: u8,
+        pitch_ratio: f32,
+        key: u32,
+    ) -> PianoVoiceStart {
         self.quiet_block_count = 0;
         // Apply velocity curve shaping: v' = v^exponent.
         let shaped_velocity = velocity.clamp(0.0, 1.0).powf(self.velocity_curve);
@@ -242,7 +246,6 @@ impl GrandBouleEngine {
         let stiffness_scale =
             self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale;
         let mass_scale = self.hammer_mass_scale;
-        self.pedals.press_key(key);
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise
             .trigger(NoiseEvent::HammerLetoff, shaped_velocity);
@@ -258,40 +261,47 @@ impl GrandBouleEngine {
                 .trigger(NoiseEvent::StringPrecursor, bite_velocity);
         }
 
-        let start = PianoVoiceStart {
+        PianoVoiceStart {
             midi_note,
-            channel: self.pending_channel,
+            channel,
             velocity: shaped_velocity,
             key,
             pitch_ratio: combined_ratio,
             stiffness_scale,
             mass_scale,
+        }
+    }
+
+    fn strike_midi_note(&mut self, midi_note: u8, velocity: f32, channel: u8, pitch_ratio: f32) {
+        let Some(key) = midi_to_key(midi_note) else {
+            return;
         };
+        self.pedals.press_key(key);
+        let start = self.prepare_voice_start(midi_note, velocity, channel, pitch_ratio, key);
 
         // Retrigger only the same MIDI identity. Distinct MPE member channels
         // may concurrently own the same pitch and must remain independently
         // addressable for expression and release.
         for voice in self.voices.iter_mut() {
-            if !voice.is_idle()
-                && voice.midi_note() == midi_note
-                && voice.channel() == self.pending_channel
-            {
+            if voice.matches_midi_note(midi_note) && voice.channel() == channel {
                 voice.note_on(start);
                 return;
             }
         }
 
-        // Steal the lowest-priority active voice when the pool is full.
+        // A preview yields to incoming MIDI when no slot is idle. Ordinary
+        // voices keep the existing musical priority relative to one another.
         let (highest_midi, lowest_midi) = self.extreme_notes();
-        let mut victim_index: Option<usize> = None;
-        let mut best_priority: Option<(u8, u8, u64)> = None;
+        let mut victim_index = None;
+        let mut best_priority = None;
         for (index, voice) in self.voices.iter().enumerate() {
             let note = voice.midi_note();
-            if !voice.is_idle() && (note == highest_midi || note == lowest_midi) {
+            let preview = voice.preview_strike_id().is_some();
+            if !voice.is_idle() && !preview && (note == highest_midi || note == lowest_midi) {
                 continue;
             }
             let (class, age) = voice.steal_priority();
-            let priority = (u8::from(voice.is_idle()), class, age);
+            let priority = (voice.is_idle(), preview, class, age);
             if best_priority.is_none() || Some(priority) > best_priority {
                 best_priority = Some(priority);
                 victim_index = Some(index);
@@ -300,7 +310,7 @@ impl GrandBouleEngine {
         if victim_index.is_none() {
             for (index, voice) in self.voices.iter().enumerate() {
                 let (class, age) = voice.steal_priority();
-                let priority = (u8::from(voice.is_idle()), class, age);
+                let priority = (false, false, class, age);
                 if best_priority.is_none() || Some(priority) > best_priority {
                     best_priority = Some(priority);
                     victim_index = Some(index);
@@ -327,12 +337,69 @@ impl GrandBouleEngine {
             // the quietest fade makes the least audible bounded degradation.
             self.steal_tails[tail_index].kill();
         }
+        let victim = &self.voices[index];
+        let displaced_preview = victim.preview_strike_id().map(|_| victim.midi_note());
         std::mem::swap(&mut self.voices[index], &mut self.steal_tails[tail_index]);
         self.steal_tails[tail_index].begin_steal();
         if tail_was_idle {
             self.active_steal_tails.push(tail_index);
         }
         self.voices[index].note_on(start);
+        if let Some(midi_note) = displaced_preview {
+            self.refresh_preview_key(midi_note);
+        }
+    }
+
+    pub(super) fn preview_note_on(&mut self, strike_id: NonZeroU32, midi_note: u8, velocity: f32) {
+        let Some(key) = midi_to_key(midi_note) else {
+            return;
+        };
+        if !velocity.is_finite()
+            || self
+                .voices
+                .iter()
+                .any(|voice| voice.is_held() && voice.preview_strike_id() == Some(strike_id))
+        {
+            return;
+        }
+        let Some(index) = self.voices.iter().position(PianoVoice::is_idle) else {
+            self.preview_voice_refusal_count = self.preview_voice_refusal_count.saturating_add(1);
+            return;
+        };
+        let start = self.prepare_voice_start(midi_note, velocity, 0, 1.0, key);
+        self.pedals.set_preview_key_held(key, true);
+        self.voices[index].note_on_preview(start, strike_id);
+    }
+
+    pub(super) fn preview_note_off(&mut self, strike_id: NonZeroU32) {
+        let Some(voice) = self
+            .voices
+            .iter_mut()
+            .find(|voice| voice.is_held() && voice.preview_strike_id() == Some(strike_id))
+        else {
+            return;
+        };
+        let midi_note = voice.midi_note();
+        let sustain_engaged = self.pedals.sustain_position() > 0.5;
+        Self::release_voice(voice, sustain_engaged);
+        self.refresh_preview_key(midi_note);
+        self.trigger_damper_landing(midi_note);
+        self.quiet_block_count = 0;
+    }
+
+    pub(super) fn preview_voice_refusal_count(&self) -> u64 {
+        self.preview_voice_refusal_count
+    }
+
+    fn refresh_preview_key(&mut self, midi_note: u8) {
+        if let Some(key) = midi_to_key(midi_note) {
+            let held = self.voices.iter().any(|voice| {
+                voice.is_held()
+                    && voice.midi_note() == midi_note
+                    && voice.preview_strike_id().is_some()
+            });
+            self.pedals.set_preview_key_held(key, held);
+        }
     }
 
     /// Select a preallocated crossfade slot without coupling it to the musical
@@ -358,7 +425,7 @@ impl GrandBouleEngine {
         let mut highest: u8 = 0;
         let mut lowest: u8 = 255;
         for voice in self.voices.iter() {
-            if voice.is_idle() {
+            if voice.is_idle() || voice.preview_strike_id().is_some() {
                 continue;
             }
             let note = voice.midi_note();
@@ -379,25 +446,32 @@ impl GrandBouleEngine {
             // Apply damping immediately — `apply_damper_state` will pick up
             // the pedal state on the next process iteration.
         }
+        self.trigger_damper_landing(midi_note);
         let sustain_engaged = self.pedals.sustain_position() > 0.5;
-        // The damper-lift thud is the sound of felt landing back on the
-        // string. A pedal-held or sostenuto-captured note keeps its damper
-        // raised, so no felt lands and no thud belongs in the output.
+        for voice in self.voices.iter_mut() {
+            if voice.matches_midi_note(midi_note) {
+                Self::release_voice(voice, sustain_engaged);
+            }
+        }
+    }
+
+    fn release_voice(voice: &mut PianoVoice, sustain_engaged: bool) {
+        if sustain_engaged || voice.is_sostenuto_captured() {
+            voice.release_key();
+        } else {
+            voice.note_off();
+        }
+    }
+
+    fn trigger_damper_landing(&mut self, midi_note: u8) {
+        // Felt lands when the last owner lets the physical key go and
+        // neither pedal keeps its damper lifted.
+        let held = midi_to_key(midi_note).is_some_and(|key| self.pedals.key_is_held(key));
         let sostenuto_captured = self.voices.iter().any(|voice| {
             !voice.is_idle() && voice.midi_note() == midi_note && voice.is_sostenuto_captured()
         });
-        if !sustain_engaged && !sostenuto_captured {
+        if !held && self.pedals.sustain_position() <= 0.5 && !sostenuto_captured {
             self.noise.trigger(NoiseEvent::DamperLift, 0.5);
-        }
-        for voice in self.voices.iter_mut() {
-            if voice.is_idle() || voice.midi_note() != midi_note {
-                continue;
-            }
-            if sustain_engaged || voice.is_sostenuto_captured() {
-                voice.release_key();
-            } else {
-                voice.note_off();
-            }
         }
     }
 
@@ -413,7 +487,11 @@ impl GrandBouleEngine {
             let Some(key) = midi_to_key(midi) else {
                 continue;
             };
-            let held = self.pedals.key_is_held(key);
+            let held = if voice.preview_strike_id().is_some() {
+                voice.is_held()
+            } else {
+                self.pedals.midi_key_is_held(key)
+            };
             let damping =
                 self.pedals
                     .damper_bandwidth_for_key(key, held, voice.is_sostenuto_captured());
@@ -597,11 +675,7 @@ impl GrandBouleEngine {
         _slide: f32,
     ) {
         for voice in self.voices.iter_mut() {
-            if !voice.is_idle()
-                && voice.is_held()
-                && voice.midi_note() == midi_note
-                && voice.channel() == channel
-            {
+            if voice.matches_midi_note(midi_note) && voice.is_held() && voice.channel() == channel {
                 voice.set_expression_bend(bend_semitones);
             }
         }
@@ -613,34 +687,19 @@ impl GrandBouleEngine {
     /// sibling still holds the pitch, only this voice's key and pedal ownership
     /// transition is applied and aggregate damper state remains held.
     pub fn note_off_on_channel(&mut self, midi_note: u8, channel: u8) {
-        let sustain_engaged = self.pedals.sustain_position() > 0.5;
-        let mut sounding_on_other_channel = false;
-        for voice in self.voices.iter() {
-            let current_on_other_channel = !voice.is_idle()
-                && voice.is_held()
-                && voice.midi_note() == midi_note
-                && voice.channel() != channel;
-            if current_on_other_channel {
-                sounding_on_other_channel = true;
-            }
-        }
+        let sounding_on_other_channel = self.voices.iter().any(|voice| {
+            voice.matches_midi_note(midi_note) && voice.is_held() && voice.channel() != channel
+        });
         if !sounding_on_other_channel {
             self.note_off(midi_note);
             return;
         }
         // Another member channel still holds this pitch: release only ours and
         // leave the pedal/damper state alone, since the key is still down.
+        let sustain_engaged = self.pedals.sustain_position() > 0.5;
         for voice in self.voices.iter_mut() {
-            if !voice.is_idle()
-                && voice.is_held()
-                && voice.midi_note() == midi_note
-                && voice.channel() == channel
-            {
-                if sustain_engaged || voice.is_sostenuto_captured() {
-                    voice.release_key();
-                } else {
-                    voice.note_off();
-                }
+            if voice.matches_midi_note(midi_note) && voice.is_held() && voice.channel() == channel {
+                Self::release_voice(voice, sustain_engaged);
             }
         }
     }

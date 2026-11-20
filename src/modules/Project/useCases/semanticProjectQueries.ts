@@ -1,4 +1,8 @@
 import { clipSelectionStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import {
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 
 import { CURRENT_PROJECT_VERSION } from '../models/ProjectData';
@@ -20,6 +24,8 @@ import {
 } from '../models/SemanticProjectQuery';
 import { projectStore } from '../stores/projectStore';
 
+import { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+import { readMusicalContent } from './readMusicalContent';
 import { isSemanticProjectIdentityReady, semanticProjectIndex } from './semanticProjectIndex';
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
 
@@ -44,6 +50,9 @@ function pushWarning(warnings: string[], warning: string): void {
 }
 
 function assertSemanticProjectQueryInput(input: SemanticProjectQueryInput): void {
+    if (input.type === 'musical-content' && parseSemanticProjectQueryInput(input).status !== 'valid') {
+        throw new Error('Invalid musical content query');
+    }
     if (!SEMANTIC_PROJECT_QUERY_TYPES.includes(input.type)) {
         throw new Error('Unsupported semantic project query type');
     }
@@ -452,6 +461,15 @@ function selectItems(
     snapshot: SemanticProjectIndexSnapshot,
     warnings: string[]
 ): SemanticQueryItem[] {
+    if (input.type === 'musical-content') {
+        if (
+            input.expectedRevision === undefined ||
+            !projectRevisionMatchesLiveIgnoringSaveWrites(input.expectedRevision)
+        ) {
+            throw new Error('Stale musical content revision');
+        }
+        return readMusicalContent(input);
+    }
     if (input.type === 'project-summary') {
         return [createProjectSummary(snapshot, warnings)];
     }
@@ -516,6 +534,8 @@ function queryFingerprint(input: SemanticProjectQueryInput, revisionToken: strin
             type: input.type,
             filters: input.filters ?? null,
             sinceRevision: input.sinceRevision ?? null,
+            expectedRevision: input.expectedRevision ?? null,
+            selectionToken: input.selectionToken ?? null,
         })
     );
 }
@@ -612,17 +632,22 @@ function boundRevision(revision: SemanticProjectRevision, warnings: string[]): S
 
 export function querySemanticProject(input: SemanticProjectQueryInput): SemanticProjectQueryReceipt {
     assertSemanticProjectQueryInput(input);
+    if (input.type === 'musical-content') {
+        settlePendingProjectWritesAndCaptureRevision();
+    }
     const snapshot = semanticProjectIndex.read();
     resetRetentionForProject(snapshot);
     const warnings: string[] = [];
+    const cursorRevision = input.type === 'musical-content' ? input.expectedRevision : snapshot.revisionToken;
+    if (cursorRevision === undefined) {
+        throw new Error('Musical content revision is unavailable');
+    }
+    const page = getPage(input, cursorRevision);
     const items = selectItems(input, snapshot, warnings);
-    const page = getPage(input, snapshot.revisionToken);
     const pagedItems = items.slice(page.offset, page.offset + page.limit).map((item) => boundQueryItem(item, warnings));
     const nextOffset = page.offset + page.limit;
     const nextCursor =
-        nextOffset < items.length
-            ? `v1.${queryFingerprint(input, snapshot.revisionToken)}.${String(nextOffset)}`
-            : null;
+        nextOffset < items.length ? `v1.${queryFingerprint(input, cursorRevision)}.${String(nextOffset)}` : null;
     rememberSnapshot(snapshot);
     return {
         schema: SEMANTIC_PROJECT_QUERY_SCHEMA,

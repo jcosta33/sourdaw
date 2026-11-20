@@ -4,12 +4,19 @@ import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { getProofState } from '../../stores/proofStore';
 
 import { sendProofParam } from './helpers';
+import { CEILING_PARAMETER, proofLimiterCeilingProjection } from './reconcileProofLimiterCeiling';
 import { rehydrateRestoredPatch } from './rehydrateRestoredPatch';
 import { sendProofChainOrder } from './sendProofChainOrder';
 import { syncDynBands } from './syncDynBands';
 import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
 import { syncImager } from './syncImager';
+
+function syncCeiling(deviceId: string, displayed: number): void {
+    // Readiness sync replaces the placeholder's last receipt for this parameter.
+    const ceiling = proofLimiterCeilingProjection.get(deviceId)?.ceilingForSync?.(displayed);
+    sendProofParam(deviceId, CEILING_PARAMETER, ceiling?.value ?? displayed, ceiling?.runtimeOwner);
+}
 
 /** Send full patch to engine (e.g., after preset load). */
 export function syncFullPatch(deviceId: string): void {
@@ -34,7 +41,7 @@ export function syncFullPatch(deviceId: string): void {
     sendProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 1 : 0);
     sendProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 1 : 0);
     sendProofParam(deviceId, 'lim_bypass', patch.limBypassed ? 1 : 0);
-    sendProofParam(deviceId, 'lim_ceiling', patch.limCeiling);
+    syncCeiling(deviceId, patch.limCeiling);
     sendProofParam(deviceId, 'lim_release', patch.limRelease);
     sendProofParam(deviceId, 'lim_lookahead', patch.limLookahead);
     sendProofParam(deviceId, 'dither_mode', ditherModeToInt(patch.ditherMode));

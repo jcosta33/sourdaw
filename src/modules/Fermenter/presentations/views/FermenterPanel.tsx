@@ -258,11 +258,15 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
     );
 }
 
-function renderSectionContent(
-    section: FermenterSection,
-    patch: FermenterPatch,
-    onParam: (key: string, value: number) => void
-): ReactElement {
+function SectionContent({
+    section,
+    patch,
+    onParam,
+}: {
+    section: FermenterSection;
+    patch: FermenterPatch;
+    onParam: (key: string, value: number) => void;
+}): ReactElement {
     if (section === 'osc') {
         return (
             <Row align="start" wrap gap={4}>
@@ -484,6 +488,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const observedLocalCommitRef = useRef(false);
     const hydratedOwnerRef = useRef<{ deviceId: string; patchOwner: string | null } | null>(null);
     const patchOperationRef = useRef(0);
+    const waveformOperationRef = useRef<number | null>(null);
 
     function updateReference(value: FermenterPatch): void {
         const next = cloneFermenterPatch(value);
@@ -565,7 +570,31 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             void selectFermenterFilterChoice(deviceId, key, value);
             return;
         }
+        if (key === 'oscWaveform') {
+            void changeWaveform(value);
+            return;
+        }
         setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, value);
+    }
+
+    async function changeWaveform(value: number): Promise<void> {
+        const current = getFermenterState(deviceId).patch;
+        if (current.oscWaveform === value && waveformOperationRef.current !== patchOperationRef.current) {
+            return;
+        }
+        const next = { ...current, oscWaveform: value };
+        const operation = ++patchOperationRef.current;
+        waveformOperationRef.current = operation;
+        localCommitRef.current = current.oscWaveform === value ? null : toFermenterDeviceState(next);
+        observedLocalCommitRef.current = false;
+        const committed = await commitFermenterPatch({ deviceId, patch: next, label: 'Change Fermenter waveform' });
+        if (waveformOperationRef.current === operation) {
+            waveformOperationRef.current = null;
+        }
+        if (patchOperationRef.current === operation && !committed) {
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+        }
     }
 
     function setMacro(index: number, value: number): void {
@@ -692,12 +721,19 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     return (
-        <Row align="stretch" gap={2.5} className="fermenter-faceplate h-full min-h-[460px] p-2.5">
+        <Row
+            align="stretch"
+            wrap
+            gap={2.5}
+            className="fermenter-faceplate @container/fermenter h-full min-h-0 content-start overflow-y-auto overscroll-contain p-2.5"
+        >
             <Stack
                 as="aside"
+                aria-label="Preset bench"
+                tabIndex={0}
                 gap={2.5}
                 shrink={false}
-                className="fermenter-window h-full w-[228px] min-h-0 overflow-y-auto p-2.5"
+                className="fermenter-window max-h-96 w-full min-w-0 overflow-y-auto p-2.5 @[34rem]/fermenter:h-full @[34rem]/fermenter:max-h-none @[34rem]/fermenter:w-52 @[34rem]/fermenter:overscroll-contain @[62rem]/fermenter:w-[228px]"
             >
                 <SectionHeader
                     eyebrow="Scenes"
@@ -720,19 +756,19 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     ))}
                 </Row>
 
-                <Row justify="between" gap={2} shrink={false} className="fermenter-window px-3 py-2">
-                    <div className="min-w-0">
+                <Row align="start" justify="between" wrap gap={2} shrink={false} className="fermenter-window px-3 py-2">
+                    <div className="min-w-0 flex-[1_1_5rem]">
                         <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                             Current scene
                         </div>
-                        <div className="truncate text-[11px] text-foreground">{patch.name}</div>
+                        <div className="wrap-anywhere text-[11px] text-foreground">{patch.name}</div>
                         {modified ? (
                             <div className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.16em] text-[var(--color-accent-peach)]">
                                 Modified
                             </div>
                         ) : null}
                     </div>
-                    <Row align="stretch" gap={1}>
+                    <Row align="stretch" gap={1} shrink={false} className="max-w-full">
                         {showSave ? (
                             <>
                                 <Input
@@ -748,16 +784,10 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                         }
                                     }}
                                     placeholder="Name…"
-                                    className="fermenter-window h-8 w-24 px-2 text-[10px] outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
+                                    className="fermenter-window h-6 w-24 min-w-0 px-2 text-[10px] outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                                     autoFocus
                                 />
-                                <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    className="h-8 w-8"
-                                    onClick={handleSave}
-                                    aria-label="Save preset"
-                                >
+                                <Button variant="ghost" size="icon-sm" onClick={handleSave} aria-label="Save preset">
                                     <Save className="size-3" />
                                 </Button>
                             </>
@@ -765,8 +795,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             <>
                                 <Button
                                     variant="ghost"
-                                    size="icon-xs"
-                                    className="h-8 w-8"
+                                    size="icon-sm"
                                     onClick={() => {
                                         setSaveName(patch.name === 'Init' ? '' : patch.name);
                                         setShowSave(true);
@@ -777,8 +806,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 </Button>
                                 <Button
                                     variant="ghost"
-                                    size="icon-xs"
-                                    className="h-8 w-8"
+                                    size="icon-sm"
                                     onClick={initPatch}
                                     aria-label="Reset patch to default"
                                 >
@@ -786,8 +814,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 </Button>
                                 <Button
                                     variant="ghost"
-                                    size="icon-xs"
-                                    className="h-8 w-8"
+                                    size="icon-sm"
                                     onClick={applyRandomPatch}
                                     aria-label="Randomize patch"
                                 >
@@ -819,7 +846,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Row>
                 </Row>
 
-                <div className="fermenter-window min-h-[160px] flex-1 shrink-0 overflow-hidden">
+                <div className="fermenter-window flex-1 shrink-0">
                     <PresetBrowser
                         currentPresetId={currentPresetId}
                         userPatches={userPatches}
@@ -830,11 +857,12 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                 </div>
             </Stack>
 
-            <Stack grow gap={2.5} className="min-w-0">
+            <Stack gap={2.5} className="w-full min-w-0 @[34rem]/fermenter:h-full @[34rem]/fermenter:flex-1">
                 <Row
                     as="header"
                     align="center"
                     justify="between"
+                    wrap
                     gap={2}
                     shrink={false}
                     className="fermenter-window min-h-[32px] px-2.5 py-1"
@@ -846,7 +874,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
                     </Row>
 
-                    <Row align="center" gap={1.5} className="min-w-0 overflow-x-auto no-scrollbar">
+                    <Row align="center" wrap gap={1.5}>
                         <DawPluginMetricTile
                             compact
                             className="fermenter-window shrink-0"
@@ -886,8 +914,18 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Row>
                 </Row>
 
-                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
-                    <Stack as="section" gap={2.5} className="fermenter-window min-h-0 overflow-y-auto p-2.5">
+                <div
+                    role="group"
+                    aria-label="Inspector and performance"
+                    className="grid flex-1 auto-rows-max grid-cols-1 content-start gap-2.5 @[34rem]/fermenter:min-h-0 @[34rem]/fermenter:overflow-y-auto @[34rem]/fermenter:overscroll-contain @[62rem]/fermenter:grid-cols-[minmax(0,1fr)_260px] @[62rem]/fermenter:grid-rows-[minmax(0,1fr)] @[62rem]/fermenter:overflow-visible"
+                >
+                    <Stack
+                        as="section"
+                        aria-label="Fermenter inspector"
+                        tabIndex={0}
+                        gap={2.5}
+                        className="fermenter-window @container/inspector min-w-0 p-2.5 @[62rem]/fermenter:overflow-y-auto @[62rem]/fermenter:overscroll-contain"
+                    >
                         <SectionHeader
                             eyebrow={sectionMeta.eyebrow}
                             title={sectionMeta.title}
@@ -897,8 +935,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
 
                         <Stack gap={2} shrink={false} className="fermenter-window p-3">
                             <SectionNav active={section} onChange={setSection} />
-                            <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-3">
-                                <Row justify="center" className="fermenter-window h-[136px] p-2">
+                            <div className="grid grid-cols-1 gap-3 @[27rem]/inspector:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                                <Row justify="center" className="fermenter-window px-2 py-3 [&>canvas]:max-w-full">
                                     <Oscilloscope deviceId={deviceId} width={360} height={96} />
                                 </Row>
                                 <Stack justify="between" className="fermenter-window p-3">
@@ -910,7 +948,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                             {ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
                                         </div>
                                     </div>
-                                    <Row justify="between" gap={2} className="text-[9px] text-muted-foreground">
+                                    <Row justify="between" wrap gap={2} className="text-[9px] text-muted-foreground">
                                         <span>Master {formatPercent(Math.min(1, patch.masterGain / 2))}</span>
                                         <span>Layer {patch.activeLayer + 1}</span>
                                     </Row>
@@ -923,9 +961,11 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             id={FERMENTER_SECTION_PANEL_ID}
                             aria-labelledby={getDawTabId(FERMENTER_SECTION_TAB_ID_PREFIX, section)}
                             tabIndex={0}
-                            className="min-h-[180px] flex-1 overflow-y-auto px-1"
+                            className="shrink-0 px-1"
                         >
-                            <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
+                            <div className="pb-2">
+                                <SectionContent section={section} patch={patch} onParam={onParam} />
+                            </div>
                             {uiLevel >= 4 ? (
                                 <div className="mt-3 border-t border-border/15 pt-3">
                                     <SignalFlowView
@@ -939,7 +979,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         </div>
                     </Stack>
 
-                    <Stack as="aside" gap={2.5} className="fermenter-window min-h-[220px] overflow-y-auto p-2.5">
+                    <Stack
+                        as="aside"
+                        aria-label="Macro rig"
+                        tabIndex={0}
+                        gap={2.5}
+                        className="fermenter-window min-w-0 p-2.5 @[62rem]/fermenter:overflow-y-auto @[62rem]/fermenter:overscroll-contain"
+                    >
                         <Stack gap={3} shrink={false} className="fermenter-window p-3">
                             <SectionHeader
                                 eyebrow="Performance"
@@ -987,7 +1033,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                         Spectrum
                                     </div>
-                                    <SpectrumAnalyzer deviceId={deviceId} width={210} height={62} />
+                                    <div className="[&>canvas]:max-w-full">
+                                        <SpectrumAnalyzer deviceId={deviceId} width={210} height={62} />
+                                    </div>
                                 </Stack>
                             </>
                         ) : null}

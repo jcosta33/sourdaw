@@ -659,6 +659,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
             ready: false,
+            startPadAudition: () => undefined,
             noteOn: () => {},
             noteOff: () => {},
             allNotesOff: () => {},
@@ -699,6 +700,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                     },
                     crumbsControls: {
                         ready: true,
+                        startPadAudition: result.startPadAudition,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         allNotesOff: result.allNotesOff,
@@ -1684,7 +1686,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             // The failed stand-in stays in the chain, so the device has not left
             // the project and its failure announces no removal.
             replaceRuntimeFailure?.(publishedNode, placeholder);
-            publishedResult.destroy();
+            publishedNode.controller?.destroy?.();
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {
@@ -1697,6 +1699,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.grandBouleControls = {
             ready: false,
+            startPreviewNote: () => undefined,
             noteOn: () => {},
             noteOff: () => {},
             noteExpression: () => {},
@@ -1724,6 +1727,14 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value, sampleFrame] of pendingParams) {
                     result.setParam(name, value, sampleFrame);
                 }
+                const retirement = new AbortController();
+                const destroy = (): void => {
+                    if (loadedNode.grandBouleControls) {
+                        loadedNode.grandBouleControls.ready = false;
+                    }
+                    retirement.abort();
+                    result.destroy();
+                };
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
@@ -1743,13 +1754,15 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         setTemperament: result.setTemperament,
                         allNotesOff: result.allNotesOff,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     grandBouleControls: {
                         ready: true,
+                        retirement: retirement.signal,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         noteExpression: result.noteExpression,
+                        startPreviewNote: result.startPreviewNote,
                         setParam: result.setParam,
                         setSustain: result.setSustain,
                         setUnaCorda: result.setUnaCorda,
@@ -1759,7 +1772,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         setTemperament: result.setTemperament,
                         allNotesOff: result.allNotesOff,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 };
                 const accepted = onLoaded(loadedNode);

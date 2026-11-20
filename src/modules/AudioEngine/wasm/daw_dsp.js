@@ -450,7 +450,7 @@ export class CrumbsInstance {
         return this;
     }
     /**
-     * Release every voice sounding at `note`.
+     * Release ordinary held voices sounding at `note`.
      * @param {number} note
      */
     note_off(note) {
@@ -463,6 +463,22 @@ export class CrumbsInstance {
      */
     note_on(note, velocity) {
         wasm.crumbsinstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Release voices created by this pad audition.
+     * @param {number} audition_id
+     */
+    pad_audition_off(audition_id) {
+        wasm.crumbsinstance_pad_audition_off(this.__wbg_ptr, audition_id);
+    }
+    /**
+     * Trigger a pad audition whose voices can be released together by id.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} audition_id
+     */
+    pad_audition_on(note, velocity, audition_id) {
+        wasm.crumbsinstance_pad_audition_on(this.__wbg_ptr, note, velocity, audition_id);
     }
     /**
      * Render a block. Returns a pointer to the left channel; the right channel
@@ -1072,6 +1088,14 @@ export class GrandBouleInstance {
         return ret;
     }
     /**
+     * Preview strikes refused at render time because no voice slot was idle.
+     * @returns {number}
+     */
+    get_preview_voice_refusal_count() {
+        const ret = wasm.grandbouleinstance_get_preview_voice_refusal_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Pointer to the right channel buffer (call after `process`).
      * @returns {number}
      */
@@ -1119,7 +1143,7 @@ export class GrandBouleInstance {
         wasm.grandbouleinstance_note_expression(this.__wbg_ptr, midi_note, channel, bend_semitones, pressure, slide);
     }
     /**
-     * Begin the release phase for any voice holding this note.
+     * Begin the release phase for MIDI voices holding this note.
      * @param {number} midi_note
      */
     note_off(midi_note) {
@@ -1202,8 +1226,8 @@ export class GrandBouleInstance {
         return ret !== 0;
     }
     /**
-     * Queue a note-off releasing every voice at `midi_note`, at `offset`
-     * samples into the next rendered block. Ordering and refusal as
+     * Queue a note-off releasing MIDI voices at `midi_note` on every channel,
+     * at `offset` samples into the next rendered block. Ordering and refusal as
      * [`Self::push_note_on`].
      * @param {number} midi_note
      * @param {number} offset
@@ -1249,6 +1273,32 @@ export class GrandBouleInstance {
      */
     push_note_on(midi_note, velocity, channel, offset) {
         const ret = wasm.grandbouleinstance_push_note_on(this.__wbg_ptr, midi_note, velocity, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a release for the held preview with `strike_id` at `offset`.
+     * An already released, refused or displaced strike has no effect.
+     * @param {number} strike_id
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_preview_note_off(strike_id, offset) {
+        const ret = wasm.grandbouleinstance_push_preview_note_off(this.__wbg_ptr, strike_id, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a preview strike at `offset`. Use a fresh nonzero `strike_id`
+     * within this instance for every preview strike. Returns queue acceptance
+     * as in [`Self::push_note_on`]. If all voices are busy at the event's frame,
+     * the engine counts the refusal and leaves the sounding voices alone.
+     * @param {number} strike_id
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_preview_note_on(strike_id, midi_note, velocity, offset) {
+        const ret = wasm.grandbouleinstance_push_preview_note_on(this.__wbg_ptr, strike_id, midi_note, velocity, offset);
         return ret !== 0;
     }
     /**
