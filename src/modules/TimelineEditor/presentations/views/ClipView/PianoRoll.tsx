@@ -166,7 +166,9 @@ export const PianoRoll = ({
     const zoomAnchorRef = useRef<number | null>(null);
     const changeRowHeight = (height: number): void => {
         openingScroll.settle();
-        if (height === rowHeight) return;
+        if (height === rowHeight) {
+            return;
+        }
         const viewport = scrollRef.current;
         if (viewport) {
             zoomAnchorRef.current =

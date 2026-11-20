@@ -332,11 +332,15 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     useLayoutEffect(() => {
         const ratio = rowHeight / previousRowHeight.current;
         previousRowHeight.current = rowHeight;
-        if (ratio === 1) return;
+        if (ratio === 1) {
+            return;
+        }
         dragRef.current.startY *= ratio;
         lassoPathRef.current = lassoPathRef.current.map((point) => ({ ...point, y: point.y * ratio }));
         const band = rubberBandRef.current;
-        if (band) rubberBandRef.current = { ...band, y: band.y * ratio, h: band.h * ratio };
+        if (band) {
+            rubberBandRef.current = { ...band, y: band.y * ratio, h: band.h * ratio };
+        }
     }, [rowHeight, rubberBandRef]);
     const auditionRef = useRef<(() => void) | null>(null);
     /** R-A13: debounce timer for note-hover audition. */
