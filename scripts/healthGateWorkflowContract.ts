@@ -305,6 +305,8 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the Fermenter proof record',
             'Prove premium editor mounts in the packaged app',
             'Upload the premium editor proof record',
+            'Prove premium editor workspace in the packaged app',
+            'Upload the premium editor workspace proof record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
@@ -414,6 +416,13 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
     pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor workspace in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor workspace proof record',
+        "${{ !cancelled() && (steps.prove-editor-workspace.outcome == 'success' || steps.prove-editor-workspace.outcome == 'failure') }}"
+    ),
     pin('nightly.yml', 'desktop-measure', 'Capture the Fermenter build receipt', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Prove Fermenter in the packaged app', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Upload the Fermenter proof record', FERMENTER_UPLOAD_ADMISSION),

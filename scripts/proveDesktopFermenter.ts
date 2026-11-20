@@ -25,6 +25,12 @@ import {
     type FamilyObservations,
 } from './desktopEditorFamilyEvidence.ts';
 import {
+    freshWorkspaceObservations,
+    workspaceFailure,
+    type EditorWorkspaceDrive,
+    type WorkspaceObservations,
+} from './desktopEditorWorkspaceEvidence.ts';
+import {
     FermenterDriveError,
     FERMENTER_OBSERVATIONS,
     type FermenterDrive,
@@ -38,7 +44,7 @@ const COMMIT = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
 const MAX_RECEIPT_BYTES = 1024;
-const USAGE = 'Expected either --capture --receipt PATH or [--family] --receipt PATH --json PATH';
+const USAGE = 'Expected either --capture --receipt PATH or [--family | --workspace] --receipt PATH --json PATH';
 
 type RunIdentity = { sourceSha: string; runId: string; runAttempt: string };
 type Digests = { payloadSha256: string; executableSha256: string };
@@ -58,6 +64,7 @@ type FailureCode =
     | FermenterDriveError['code']
     | 'observations-incomplete'
     | NonNullable<ReturnType<typeof familyFailure>>
+    | NonNullable<ReturnType<typeof workspaceFailure>>
     | 'checkout-changed'
     | 'bundle-changed'
     | 'driver-failed';
@@ -350,6 +357,27 @@ export async function runEditorFamilyProof(
     return { ...record, scope: 'packaged-premium-editor-mount-and-lifecycle', observations };
 }
 
+type WorkspaceRecord = BoundRecord & {
+    scope: 'packaged-premium-editor-workspace';
+    observations: WorkspaceObservations;
+};
+
+export async function runEditorWorkspaceProof(
+    options: Options,
+    env: NodeJS.ProcessEnv,
+    ports: { hostSupported: boolean; drive: EditorWorkspaceDrive }
+): Promise<WorkspaceRecord> {
+    const observations = freshWorkspaceObservations();
+    const record = await runBoundObservation(options, env, ports.hostSupported, async (binary) => {
+        await ports.drive(binary, observations);
+        const failure = workspaceFailure(observations);
+        if (failure !== null) {
+            throw new FermenterProofError(failure);
+        }
+    });
+    return { ...record, scope: 'packaged-premium-editor-workspace', observations };
+}
+
 /** Publish a fully written private file under its final name, without overwriting prior evidence. */
 function writeFinalJson(path: string, value: object): void {
     const directory = mkdtempSync(join(dirname(path), '.fermenter-'));
@@ -372,13 +400,14 @@ async function main(): Promise<number> {
         options: {
             capture: { type: 'boolean' },
             family: { type: 'boolean' },
+            workspace: { type: 'boolean' },
             receipt: { type: 'string' },
             json: { type: 'string' },
         },
     });
     const checkout = process.cwd();
-    const { capture, family, receipt, json } = values;
-    if (!receipt || (capture && (family || json !== undefined))) {
+    const { capture, family, workspace, receipt, json } = values;
+    if (!receipt || (family && workspace) || (capture && (family || workspace || json !== undefined))) {
         throw new TypeError(USAGE);
     }
     const options = { checkout, app: join(checkout, APP_PATH), receipt };
@@ -391,8 +420,16 @@ async function main(): Promise<number> {
     if (!json) {
         throw new TypeError(USAGE);
     }
-    let record: FamilyRecord | ProofRecord;
-    if (family) {
+    let record: FamilyRecord | ProofRecord | WorkspaceRecord;
+    if (workspace) {
+        record = await runEditorWorkspaceProof(options, process.env, {
+            hostSupported,
+            async drive(binary, observations) {
+                const { driveDesktopEditorWorkspace } = await import('./desktopEditorWorkspaceDrive.ts');
+                await driveDesktopEditorWorkspace(binary, observations);
+            },
+        });
+    } else if (family) {
         record = await runEditorFamilyProof(options, process.env, {
             hostSupported,
             async drive(binary, observations) {
@@ -410,7 +447,12 @@ async function main(): Promise<number> {
         });
     }
     writeFinalJson(json, record);
-    const label = family ? 'Premium editor family' : 'Fermenter';
+    let label = 'Fermenter';
+    if (workspace) {
+        label = 'Premium editor workspace';
+    } else if (family) {
+        label = 'Premium editor family';
+    }
     process.stdout.write(
         `${label} packaged proof: ${record.verdict}${record.failureCode ? ` (${record.failureCode})` : ''}.\n`
     );

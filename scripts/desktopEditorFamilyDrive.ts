@@ -9,11 +9,11 @@ import { STEP_TIMEOUT_MS, step } from './packagedAppSession.ts';
 
 const ID = /^device-card-([a-zA-Z0-9_-]{1,80})$/u;
 
-function devicesNamed(inspector: Locator, name: string): Locator {
+export function devicesNamed(inspector: Locator, name: string): Locator {
     return inspector.getByTestId(ID).filter({ has: inspector.page().getByText(name, { exact: true }) });
 }
 
-async function newInstance(cards: Locator, before: string[]): Promise<string> {
+export async function newInstance(cards: Locator, before: string[]): Promise<string> {
     const exclude = before.map((testId) => `:not([data-testid="${testId}"])`).join('');
     let added = cards;
     if (exclude) {
@@ -26,11 +26,11 @@ async function newInstance(cards: Locator, before: string[]): Promise<string> {
     return id;
 }
 
-async function existingCards(cards: Locator): Promise<string[]> {
+export async function existingCards(cards: Locator): Promise<string[]> {
     return await cards.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-testid') ?? ''));
 }
 
-function exactButton(surface: Locator, name: string): Locator {
+export function exactButton(surface: Locator, name: string): Locator {
     return surface.getByRole('button', { name, exact: true });
 }
 
@@ -53,7 +53,7 @@ async function browserCard(browser: Locator, row: DeviceObservation): Promise<Lo
     });
 }
 
-function deviceEditor(page: Page, name: string): Locator {
+export function deviceEditor(page: Page, name: string): Locator {
     return page
         .getByRole('dialog', { name, exact: true, includeHidden: true })
         .and(page.locator('[data-device-editor]'));
@@ -161,7 +161,7 @@ async function dismissFailedEditor(page: Page): Promise<void> {
     }
 }
 
-async function addEffectTrack(page: Page): Promise<void> {
+export async function addEffectTrack(page: Page): Promise<void> {
     await page.keyboard.press('Meta+k');
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
@@ -172,7 +172,7 @@ async function addEffectTrack(page: Page): Promise<void> {
         .waitFor({ state: 'visible' });
 }
 
-async function observeProofInstance(page: Page, dialog: Locator, id: string): Promise<void> {
+export async function observeProofInstance(page: Page, dialog: Locator, id: string): Promise<void> {
     await observeShell(page, dialog);
     const depth = dialog.getByRole('group', { name: 'Effect control detail', exact: true });
     await exactButton(depth, 'route').press('Enter');

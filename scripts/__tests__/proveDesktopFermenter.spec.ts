@@ -19,9 +19,21 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
+import { driveDesktopEditorWorkspace } from '../desktopEditorWorkspaceDrive.ts';
+import {
+    renderedPlayheadBeat,
+    type EditorWorkspaceDrive,
+    WORKSPACE_STAGES,
+} from '../desktopEditorWorkspaceEvidence.ts';
+import * as editorSession from '../desktopFermenterDrive.ts';
 import { FermenterDriveError, FERMENTER_OBSERVATIONS, type FermenterDrive } from '../desktopFermenterEvidence.ts';
 import { readPayloadIdentity } from '../desktopLatencyRecord.ts';
-import { captureBuildReceipt, runEditorFamilyProof, runProof } from '../proveDesktopFermenter.ts';
+import {
+    captureBuildReceipt,
+    runEditorWorkspaceProof,
+    runEditorFamilyProof,
+    runProof,
+} from '../proveDesktopFermenter.ts';
 
 const tempDirs: string[] = [];
 
@@ -419,5 +431,188 @@ describe('packaged editor family proof', () => {
             failureCode: 'invalid-run-identity',
         });
         expect(record.observations.devices.map(({ device }: { device: string }) => device)).toEqual(FAMILY);
+    });
+});
+
+const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observations) => {
+    for (const row of observations.stages) {
+        row.outcome = 'passed';
+    }
+    observations.appQuit = true;
+};
+
+describe('packaged editor workspace proof', () => {
+    it.each([
+        ['BARS\n1\n.\n1\n.\n000', 0],
+        ['Bars2.4.000', 7],
+        ['Bars 3 . 2 . 240', 9.5],
+        ['00:00:01.000', null],
+        ['Bars1.5.000', null],
+        ['Bars1.1.480', null],
+        ['Bars0.1.000', null],
+        ['Bars1.1.000garbage', null],
+    ] as const)('reads the rendered musical display %s', (text, expected) => {
+        expect(renderedPlayheadBeat(text)).toBe(expected);
+    });
+
+    it('reports launch-unavailable without teardown credit when all three isolated sessions refuse launch', async () => {
+        const { options, env } = fixture();
+        const launch = vi
+            .spyOn(editorSession, 'launchEditorSession')
+            .mockRejectedValue(new FermenterDriveError('launch-unavailable'));
+        const quit = vi.spyOn(editorSession, 'quitEditorSession');
+        try {
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                drive: driveDesktopEditorWorkspace,
+            });
+            expect(launch).toHaveBeenCalledTimes(3);
+            expect(quit).not.toHaveBeenCalled();
+            expect(record).toMatchObject({
+                verdict: 'not-run',
+                failureCode: 'launch-unavailable',
+                observations: { appQuit: false },
+            });
+            expect(record.observations.stages.filter(({ outcome }) => outcome === 'passed')).toEqual([]);
+            expect(
+                record.observations.stages.filter(({ outcome }) => outcome === 'failed').map(({ stage }) => stage)
+            ).toEqual(['workspace-ready', 'nested-escape', 'remove-instance']);
+        } finally {
+            launch.mockRestore();
+            quit.mockRestore();
+        }
+    });
+
+    it('refuses missing teardown even when every workspace observation passed', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeWorkspaceDrive(binary, observations);
+                observations.appQuit = false;
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'quit-failed' });
+    });
+
+    it('binds the separate complete workspace record to the frozen packaged build', async () => {
+        const { options, env, receipt } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            drive: completeWorkspaceDrive,
+        });
+        expect(record).toMatchObject({
+            verdict: 'proven',
+            failureCode: null,
+            build: receipt,
+            scope: 'packaged-premium-editor-workspace',
+        });
+        expect(record.observations.stages.map(({ stage, outcome }) => ({ stage, outcome }))).toEqual(
+            WORKSPACE_STAGES.map((stage) => ({ stage, outcome: 'passed' }))
+        );
+    });
+
+    it.each(['failed', 'not-reached'] as const)(
+        'refuses a %s stage even after the driver returns normally',
+        async (outcome) => {
+            const { options, env } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(binary, observations) {
+                    await completeWorkspaceDrive(binary, observations);
+                    const stage = observations.stages.find(({ stage }) => stage === 'title-drag');
+                    if (!stage) {
+                        throw new Error('missing fixture stage');
+                    }
+                    stage.outcome = outcome;
+                },
+            });
+            expect(record.verdict).toBe('failed');
+            expect(record.failureCode).toBe('workspace-observations-incomplete');
+            expect(record.observations.stages[4]).toMatchObject({ stage: 'title-drag', outcome });
+        }
+    );
+
+    it('retains passed, failed and unreached stages separately after an interrupted driver', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            async drive(_binary, observations) {
+                for (const row of observations.stages) {
+                    if (row.stage === 'workspace-ready') {
+                        row.outcome = 'passed';
+                    }
+                    if (row.stage === 'initial-placement') {
+                        row.outcome = 'failed';
+                    }
+                }
+                observations.appQuit = true;
+                throw new Error('fixture observation failed');
+            },
+        });
+        expect(record.verdict).toBe('failed');
+        expect(record.failureCode).toBe('driver-failed');
+        expect(record.observations.stages.map(({ outcome }) => outcome)).toEqual([
+            'passed',
+            'failed',
+            ...WORKSPACE_STAGES.slice(2).map(() => 'not-reached'),
+        ]);
+    });
+
+    it.each(['source', 'binary', 'payload'] as const)(
+        'refuses post-observation %s drift after all stages pass',
+        async (target) => {
+            const { options, env, tracked, binary, asar } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(executable, observations) {
+                    await completeWorkspaceDrive(executable, observations);
+                    const targets = { source: tracked, binary, payload: asar };
+                    writeFileSync(targets[target], 'drifted fixture');
+                },
+            });
+            expect(record.verdict).toBe('failed');
+            expect(record.failureCode).toBe(target === 'source' ? 'checkout-changed' : 'bundle-changed');
+        }
+    );
+
+    it('leaves every stage unreached when capture admission fails', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn(completeWorkspaceDrive);
+        const record = await runEditorWorkspaceProof(
+            options,
+            { ...env, FERMENTER_CAPTURE_OUTCOME: 'failure' },
+            { hostSupported: true, drive }
+        );
+        expect(record.verdict).toBe('not-run');
+        expect(record.failureCode).toBe('build-receipt-unavailable-or-invalid');
+        expect(drive).not.toHaveBeenCalled();
+        expect(record.observations.stages.every(({ outcome }) => outcome === 'not-reached')).toBe(true);
+    });
+
+    it('writes only the workspace record for the workspace CLI mode on invalid admission', () => {
+        const { options, env } = fixture();
+        const output = join(options.checkout, 'workspace.json');
+        const run = spawnSync(
+            process.execPath,
+            [
+                fileURLToPath(new URL('../proveDesktopFermenter.ts', import.meta.url)),
+                '--workspace',
+                '--receipt',
+                options.receipt,
+                '--json',
+                output,
+            ],
+            {
+                cwd: options.checkout,
+                env: { ...process.env, ...env, GITHUB_SHA: 'invalid' },
+                encoding: 'utf8',
+            }
+        );
+        expect(run.status).toBe(2);
+        expect(run.stdout).toContain('Premium editor workspace packaged proof: not-run (invalid-run-identity).');
+        const record = JSON.parse(readFileSync(output, 'utf8'));
+        expect(record).toMatchObject({ verdict: 'not-run', scope: 'packaged-premium-editor-workspace' });
+        expect(record.observations.stages).toHaveLength(WORKSPACE_STAGES.length);
     });
 });
