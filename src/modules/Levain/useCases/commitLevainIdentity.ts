@@ -60,10 +60,10 @@ export async function commitLevainIdentity(deviceId: string, selection: Selectio
         notifyUser('This Levain device is no longer available.', 'warning');
         return;
     }
-    const parameterValues =
-        selection.kind === 'instrument'
-            ? projectLevainPresetParameters(createDefaultPatch(selection.instrumentId))
-            : {};
+    let parameterValues: LevainIdentitySnapshot['parameterValues'] = {};
+    if (selection.kind === 'instrument') {
+        parameterValues = projectLevainPresetParameters(createDefaultPatch(selection.instrumentId));
+    }
     const parameterIds = Object.keys(parameterValues);
     const current = getPlannedDevicePatchState({ deviceId, trackId: owner.trackId, parameterIds });
     if (current?.deviceType !== 'levain' || current.frozen) {

@@ -50,14 +50,26 @@ function projectSameBankIdentity(
     }
 }
 
+function readRegisteredLevain(deviceId: string): { device: Device; state: LevainState } | null {
+    const owner = trackStore.value?.tracks.find(({ devices }) => devices.some(({ id }) => id === deviceId));
+    if (!owner || owner.frozen) {
+        return null;
+    }
+    const device = owner.devices.find(({ id }) => id === deviceId);
+    const state = levainStore.value?.[deviceId];
+    if (device?.type !== 'levain' || !state) {
+        return null;
+    }
+    return { device, state };
+}
+
 /** Reflect committed identity in the registered session. Only a Browse edit resets the stored settings. */
 export function reconcileLevainDeviceStateFromProject(deviceId: string, { projectPatch = false } = {}): void {
-    const owner = trackStore.value?.tracks.find(({ devices }) => devices.some(({ id }) => id === deviceId));
-    const device = owner?.devices.find(({ id }) => id === deviceId);
-    const state = levainStore.value?.[deviceId];
-    if (device?.type !== 'levain' || owner?.frozen || !state) {
+    const registered = readRegisteredLevain(deviceId);
+    if (!registered) {
         return;
     }
+    const { device, state } = registered;
     const identity = fromLevainDeviceState(device.deviceState);
     if (!identity && device.deviceState !== undefined) {
         projectMasterGain(device);
