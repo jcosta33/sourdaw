@@ -23,6 +23,7 @@ import {
     quiesceProjectSession,
     cancelProjectSessionQuiesce,
 } from '#/modules/Project/useCases';
+import { isDeviceEditorControlTarget } from '#/utils/UI/isDeviceEditorControlTarget';
 
 import { openExportDialog } from '../../useCases/dialogs/openExportDialog';
 import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
@@ -113,7 +114,9 @@ const createNewProject = async (): Promise<void> => {
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
-    if (isCanvasEditorCommand(action)) {
+    const deviceHistory =
+        (action === 'edit:undo' || action === 'edit:redo') && isDeviceEditorControlTarget(document.activeElement);
+    if (isCanvasEditorCommand(action) && !deviceHistory) {
         if (isNativeTextEditableTarget(document.activeElement)) {
             return;
         }

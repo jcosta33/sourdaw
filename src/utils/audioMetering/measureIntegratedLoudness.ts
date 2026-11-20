@@ -15,6 +15,8 @@ const BLOCK_SECONDS = 0.4;
 const BLOCK_STEP_SECONDS = 0.1;
 const ABSOLUTE_GATE_LUFS = -70;
 const RELATIVE_GATE_LU = -10;
+/** Bounds retained block powers to 32 KiB, including for offline exports. */
+const MAX_RETAINED_BLOCKS = 4096;
 
 export type MeasureIntegratedLoudnessInput = {
     channels: readonly Float32Array[];
@@ -22,12 +24,25 @@ export type MeasureIntegratedLoudnessInput = {
     sampleRate: number;
 };
 
-/** Fixed400ms energy history and filter carry. Replay supplies the relative-gated second pass. */
-export function createIntegratedLoudnessAccumulator(input: {
+type AccumulatorInput = {
     numberOfChannels: number;
     sampleRate: number;
     relativeGatePower?: number;
-}) {
+};
+
+function readIntegratedLufs(sum: number, count: number): number | null {
+    if (count === 0) {
+        return null;
+    }
+    return LOUDNESS_OFFSET + 10 * Math.log10(sum / count);
+}
+
+/** Fixed 400 ms energy history and filter carry. Streaming readers supply the relative-gated replay. */
+export function createIntegratedLoudnessAccumulator(input: AccumulatorInput) {
+    return createAccumulator(input);
+}
+
+function createAccumulator(input: AccumulatorInput, retainGatedBlock?: (power: number) => void) {
     const blockFrames = Math.round(BLOCK_SECONDS * input.sampleRate);
     const stepFrames = Math.round(BLOCK_STEP_SECONDS * input.sampleRate);
     if (blockFrames < 1 || stepFrames < 1 || !Number.isSafeInteger(blockFrames) || input.numberOfChannels < 1) {
@@ -41,6 +56,7 @@ export function createIntegratedLoudnessAccumulator(input: {
     }));
     const history = new Float64Array(blockFrames);
     const absoluteGatePower = 10 ** ((ABSOLUTE_GATE_LUFS - LOUDNESS_OFFSET) / 10);
+    const recordGatedBlock = retainGatedBlock ?? (() => undefined);
     let frames = 0,
         energy = 0,
         gatedSum = 0,
@@ -76,6 +92,7 @@ export function createIntegratedLoudnessAccumulator(input: {
                         if (blockPower > absoluteGatePower && blockPower > (input.relativeGatePower ?? 0)) {
                             gatedSum += blockPower;
                             gatedCount++;
+                            recordGatedBlock(blockPower);
                         }
                     }
                 }
@@ -83,11 +100,11 @@ export function createIntegratedLoudnessAccumulator(input: {
         },
         relativeGatePower: () =>
             gatedCount === 0 ? Number.POSITIVE_INFINITY : (gatedSum / gatedCount) * 10 ** (RELATIVE_GATE_LU / 10),
-        integratedLufs: () => (gatedCount === 0 ? null : LOUDNESS_OFFSET + 10 * Math.log10(gatedSum / gatedCount)),
+        integratedLufs: () => readIntegratedLufs(gatedSum, gatedCount),
     };
 }
 
-/** Integrated LUFS, null below the absolute gate or shorter than one400ms block. */
+/** Integrated LUFS, null below the absolute gate or shorter than one 400 ms block. */
 export function measureIntegratedLoudness({
     channels,
     length,
@@ -105,12 +122,11 @@ export function measureIntegratedLoudness({
     ) {
         return null;
     }
-    const replay = (relativeGatePower?: number) => {
-        const meter = createIntegratedLoudnessAccumulator({
-            numberOfChannels: channels.length,
-            sampleRate,
-            relativeGatePower,
-        });
+    const replay = (relativeGatePower?: number, retainGatedBlock?: (power: number) => void) => {
+        const meter = createAccumulator(
+            { numberOfChannels: channels.length, sampleRate, relativeGatePower },
+            retainGatedBlock
+        );
         for (let start = 0; start < length; start += 4096) {
             const count = Math.min(4096, length - start);
             meter.push(
@@ -126,5 +142,27 @@ export function measureIntegratedLoudness({
         }
         return meter;
     };
-    return replay(replay().relativeGatePower()).integratedLufs();
+
+    const blockCount = Math.floor((length - blockFrames) / stepFrames) + 1;
+    if (blockCount > MAX_RETAINED_BLOCKS) {
+        return replay(replay().relativeGatePower()).integratedLufs();
+    }
+
+    // Retain the first pass's absolute-gate survivors in order for the relative gate.
+    const powers = new Float64Array(blockCount);
+    let retainedCount = 0;
+    const first = replay(undefined, (power) => {
+        powers[retainedCount] = power;
+        retainedCount++;
+    });
+    const relativeGatePower = first.relativeGatePower();
+    let gatedSum = 0;
+    let gatedCount = 0;
+    for (const power of powers.subarray(0, retainedCount)) {
+        if (power > relativeGatePower) {
+            gatedSum += power;
+            gatedCount++;
+        }
+    }
+    return readIntegratedLufs(gatedSum, gatedCount);
 }

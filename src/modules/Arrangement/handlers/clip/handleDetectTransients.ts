@@ -103,6 +103,7 @@ type StorageScope = ReturnType<typeof captureAutomergeStorageTransactionScope>;
 type PreparationScope = ReturnType<typeof captureAutomergeStoragePreparationScope>;
 type TransientRows = ReturnType<typeof planTransientRows>;
 type TransientPlan = ReturnType<typeof prepareTransientWarpState>;
+type MaterializationOutcome = 'ready' | 'stale' | 'cancelled';
 
 function transientConflict(): HandlerExecutionResult {
     return { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' };
@@ -128,13 +129,6 @@ function planTransientRows(clipId: string, result: DetectedSource) {
             markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
         },
     };
-}
-
-function materializationFailure(error: unknown, lifetime: DetectionLifetime): HandlerExecutionResult {
-    if (!lifetime.isCurrent()) {
-        return transientConflict();
-    }
-    throw error;
 }
 
 /** Keep committed history rendering ahead of success feedback without waiting for a visible frame. */
@@ -358,6 +352,32 @@ function readTransientCapture(action: DetectAction, result: DetectedSource): Cap
     return capture;
 }
 
+async function waitForTransientMaterialization(
+    request: (signal: AbortSignal) => Promise<void>,
+    plan: NonNullable<TransientPlan>,
+    lifetime: DetectionLifetime
+): Promise<MaterializationOutcome> {
+    const workerStarted = performance.now();
+    try {
+        await request(lifetime.signal);
+    } catch (error) {
+        if (!lifetime.isCurrent()) {
+            return 'cancelled';
+        }
+        if (!plan.isCurrent()) {
+            return 'stale';
+        }
+        throw error;
+    } finally {
+        performance.measure('elastic-transient-materialization-worker-wall', {
+            start: workerStarted,
+            end: performance.now(),
+        });
+        performance.clearMeasures('elastic-transient-materialization-worker-wall');
+    }
+    return (await lifetime.waitForFrame()) ? 'ready' : 'cancelled';
+}
+
 async function consumeDetectedTransients(
     action: DetectAction,
     context: DetectContext,
@@ -394,28 +414,18 @@ async function consumeDetectedTransients(
                     continue;
                 }
             }
-            const requestMaterialization = plan?.requestMaterialization;
-            if (plan && requestMaterialization) {
-                const workerStarted = performance.now();
-                try {
-                    await requestMaterialization(lifetime.signal);
-                } catch (error) {
-                    return materializationFailure(error, lifetime);
-                } finally {
-                    performance.measure('elastic-transient-materialization-worker-wall', {
-                        start: workerStarted,
-                        end: performance.now(),
-                    });
-                    performance.clearMeasures('elastic-transient-materialization-worker-wall');
+            if (plan) {
+                const request = plan.requestMaterialization;
+                let materialization: MaterializationOutcome = 'ready';
+                if (request) {
+                    materialization = await waitForTransientMaterialization(request, plan, lifetime);
                 }
-                if (!(await lifetime.waitForFrame())) {
+                if (materialization === 'cancelled' || !lifetime.isCurrent()) {
                     return transientConflict();
                 }
-                if (!plan.isCurrent()) {
+                if (materialization === 'stale' || !plan.isCurrent()) {
                     continue;
                 }
-            }
-            if (plan) {
                 measurePreparationTask('elastic-transient-change-task', plan.materialize);
             }
             if (!(await lifetime.waitForFrame())) {

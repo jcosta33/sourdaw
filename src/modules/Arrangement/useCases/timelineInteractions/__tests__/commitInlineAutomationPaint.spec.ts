@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     addAutomationLane: vi.fn(),
     batchAddAutomationPoints: vi.fn(),
     getAutomationLanes: vi.fn(),
+    insertAutomationLanePoints: vi.fn(),
     pushUndoEntry: vi.fn(),
     removeAutomationLane: vi.fn(),
     removeAutomationPoint: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     addAutomationLane: mocks.addAutomationLane,
     batchAddAutomationPoints: mocks.batchAddAutomationPoints,
     getAutomationLanes: mocks.getAutomationLanes,
+    insertAutomationLanePoints: mocks.insertAutomationLanePoints,
     removeAutomationLane: mocks.removeAutomationLane,
     removeAutomationPoint: mocks.removeAutomationPoint,
     replaceAutomationLanePoints: mocks.replaceAutomationLanePoints,
@@ -45,6 +47,26 @@ describe('commitInlineAutomationPaint', () => {
                 points: [],
             },
         ]);
+    });
+
+    it('dispatches the existing non-gain lane and the thinned stroke to the Automation owner', () => {
+        const pan = { id: 'existing-pan', trackId: 'track-1', parameterId: 'pan' };
+        const points: AutomationPoint[] = [
+            { beat: 1, value: -0.75, curve: 'linear', tension: 0 },
+            { beat: 1.5, value: 0, curve: 'linear', tension: 0 },
+            { beat: 2, value: 0.75, curve: 'linear', tension: 0 },
+        ];
+        const thinned = [points[0]!, points[2]!];
+        mocks.simplifyGesturePoints.mockReturnValueOnce(thinned);
+
+        expect(commitInlineAutomationPaint({ inlineLane: pan, points })).toBe(true);
+        expect(mocks.insertAutomationLanePoints).toHaveBeenCalledExactlyOnceWith(pan, {
+            kind: 'stroke',
+            points: thinned,
+        });
+        expect(mocks.addAutomationLane).not.toHaveBeenCalled();
+        expect(mocks.batchAddAutomationPoints).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('should batch painted points through the automation use case and own undo', () => {

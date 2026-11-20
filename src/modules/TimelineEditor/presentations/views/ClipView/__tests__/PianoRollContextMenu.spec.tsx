@@ -145,6 +145,11 @@ describe('PianoRollContextMenu', () => {
         const display = { ...original, id: 'view-first', startBeat: 0.5 };
         const projection = {
             notes: [display],
+            baseOccurrences: [],
+            baseControllers: [],
+            basePitchBends: [],
+            frozenControllers: [],
+            frozenPitchBends: [],
             baseNotes: [],
             baseOwnersByViewId: new Map(),
             ownersByViewId: new Map([
@@ -202,6 +207,11 @@ describe('PianoRollContextMenu', () => {
                 selectedNoteIds={new Set([first.id, second.id, frozen.id])}
                 takeProjection={{
                     notes: [frozen],
+                    baseOccurrences: [],
+                    baseControllers: [],
+                    basePitchBends: [],
+                    frozenControllers: [],
+                    frozenPitchBends: [],
                     baseNotes: [first, second],
                     ownersByViewId: new Map([
                         [
@@ -264,6 +274,11 @@ describe('PianoRollContextMenu', () => {
                 selectedNoteIds={new Set([frozen.id])}
                 takeProjection={{
                     notes: [frozen],
+                    baseOccurrences: [],
+                    baseControllers: [],
+                    basePitchBends: [],
+                    frozenControllers: [],
+                    frozenPitchBends: [],
                     baseNotes: [],
                     ownersByViewId: new Map([
                         [
@@ -307,6 +322,11 @@ describe('PianoRollContextMenu', () => {
                 selectedNoteIds={new Set([base.id])}
                 takeProjection={{
                     notes: [],
+                    baseOccurrences: [],
+                    baseControllers: [],
+                    basePitchBends: [],
+                    frozenControllers: [],
+                    frozenPitchBends: [],
                     baseNotes: [base],
                     ownersByViewId: new Map(),
                     baseOwnersByViewId: new Map(),
@@ -339,6 +359,11 @@ describe('PianoRollContextMenu', () => {
                 selectedNoteIds={new Set([frozen.id, base.id])}
                 takeProjection={{
                     notes: [frozen],
+                    baseOccurrences: [],
+                    baseControllers: [],
+                    basePitchBends: [],
+                    frozenControllers: [],
+                    frozenPitchBends: [],
                     baseNotes: [base],
                     ownersByViewId: new Map([
                         [

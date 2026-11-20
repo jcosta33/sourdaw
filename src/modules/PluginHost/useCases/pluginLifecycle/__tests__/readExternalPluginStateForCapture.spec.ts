@@ -81,8 +81,8 @@ describe('readExternalPluginStateForCapture', () => {
 
         mocks.getPluginState.mockRejectedValueOnce(new Error('read failed'));
         await expect(readExternalPluginStateForCapture(INSTANCE_ID)).resolves.toEqual({
-            status: 'preserve',
-            reason: 'read-failed',
+            status: 'unreadable',
+            authorityToken: externalPluginStateCaptureAuthority.current(INSTANCE_ID),
         });
     });
 
