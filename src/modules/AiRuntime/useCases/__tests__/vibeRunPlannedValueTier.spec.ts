@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { digest } from '#/utils/canonicalDigest';
 
 import {
     BRIEF_ROUTE,
@@ -17,13 +18,14 @@ import {
     type RenderInput,
 } from '../../__tests__/vibeRunWorkflowFixture';
 import { type ToolSchema } from '../../models/ToolDefinitions';
-import { digestScheduledVibeRunPlan } from '../../validators/digestScheduledVibeRunPlan';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { preflightVibeRunBatch } from '../agentRequestOrchestration/preflightVibeRunBatch';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
-import { VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME } from '../vibeRun/buildVibeBatchValueRequest';
+import { VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME, buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
+import { chooseVibeBatchValues } from '../vibeRun/chooseVibeBatchValues';
+import { describeCatalogueDefaultsReason } from '../vibeRun/describeCatalogueDefaultsReason';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
@@ -193,23 +195,53 @@ describe('the backend tier a vibe run was planned on', () => {
             expect(readScheduledVibeRunPlan(flipped)).toBeNull();
         });
 
-        it('with no recorded tier and its original digest still reads, and is planned locally', async () => {
+        /** The pre-tier plan as an older build stored it: no tier, sealed by the digest formula it used. */
+        async function legacyPlan() {
             const { run, schedule, stored } = await storedPlan();
             const { valueChoiceTier: _recorded, ...rest } = stored;
             const legacy = {
                 ...rest,
-                planDigest: digestScheduledVibeRunPlan({
+                planDigest: digest({
                     briefRevision: stored.briefRevision,
                     batches: stored.batches,
                     initialDigest: stored.initialDigest,
                 }),
             };
-            const older = { ...schedule, serializedPlan: JSON.stringify(legacy) };
+            return { run, older: { ...schedule, serializedPlan: JSON.stringify(legacy) } };
+        }
+
+        it('with no recorded tier and its original digest still reads, and its tier is unrecorded', async () => {
+            const { run, older } = await legacyPlan();
             expect(readScheduledVibeRunPlan(older.serializedPlan)).not.toBeNull();
             expect(preflightVibeRunBatch(run, older, 2)).toMatchObject({
                 status: 'admitted',
-                valueChoiceTier: 'local',
+                valueChoiceTier: 'unrecorded',
             });
+        });
+
+        it('with no recorded tier asks no hosted provider on a hosted chain and says why', async () => {
+            const { run, older } = await legacyPlan();
+            const preflight = preflightVibeRunBatch(run, older, 2);
+            if (preflight.status !== 'admitted') {
+                throw new TypeError('Expected the legacy batch to be admitted');
+            }
+            const built = buildVibeBatchValueRequest(preflight);
+            if (built.status === 'refused') {
+                throw new TypeError(built.reason);
+            }
+            valueRequests.length = 0;
+            const choice = await chooseVibeBatchValues({
+                runId: run.runId,
+                request: built.request,
+                plannedTier: preflight.valueChoiceTier,
+            });
+            expect(valueRequests).toEqual([]);
+            if (choice.source !== 'catalogue-defaults') {
+                throw new TypeError('Expected catalogue defaults');
+            }
+            const line = describeCatalogueDefaultsReason(choice.reason, choice.detail);
+            expect(line).toContain('planned before its value tier was recorded');
+            expect(line).not.toContain('the AI backend changed');
         });
     });
 });

@@ -3,7 +3,6 @@ import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ToolCallResult } from '../../models/ToolCallResult';
-import { type VibeRunValueChoiceTier } from '../../models/VibeRunPlan';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -13,12 +12,12 @@ import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { buildVibeBatchCorrectionMessage } from './buildVibeBatchCorrectionMessage';
 import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
-import { readPlannedValueChoiceDefaults } from './readPlannedValueChoiceDefaults';
+import { type PlannedValueChoiceTier, readPlannedValueChoiceDefaults } from './readPlannedValueChoiceDefaults';
 import { type VibeBatchPairValues, readVibeBatchValueReply } from './readVibeBatchValueReply';
 
 /** Why a batch expands at its catalogue defaults rather than at values the provider chose. */
 export type VibeBatchDefaultsReason =
-    'local-backend' | 'planned-local' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
+    'local-backend' | 'planned-local' | 'tier-unrecorded' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
 
 export type VibeBatchValueChoice =
     | { readonly source: 'measurements'; readonly pairs: readonly VibeBatchPairValues[] }
@@ -185,7 +184,7 @@ async function chooseThroughProvider(input: {
 export async function chooseVibeBatchValues(input: {
     runId: string;
     request: VibeBatchValueRequest;
-    plannedTier: VibeRunValueChoiceTier;
+    plannedTier: PlannedValueChoiceTier;
     onBegin?: () => void;
 }): Promise<VibeBatchValueChoiceOutcome> {
     const kept = readPlannedValueChoiceDefaults(input.plannedTier);

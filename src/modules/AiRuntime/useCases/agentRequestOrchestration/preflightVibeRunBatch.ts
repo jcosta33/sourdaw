@@ -3,16 +3,13 @@ import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocu
 import { digest } from '#/utils/canonicalDigest';
 
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
-import {
-    type ScheduledVibeRunBatch,
-    type VibeRunInitialEvidence,
-    type VibeRunValueChoiceTier,
-} from '../../models/VibeRunPlan';
+import { type ScheduledVibeRunBatch, type VibeRunInitialEvidence } from '../../models/VibeRunPlan';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
+import { type PlannedValueChoiceTier } from '../vibeRun/readPlannedValueChoiceDefaults';
 import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
 import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
@@ -104,8 +101,8 @@ export type VibeRunBatchPreflight =
           catalog: ReturnType<typeof getMixRecipeCatalog>;
           context: ReturnType<typeof getProjectContext>;
           revision: string;
-          /** The tier the run was planned under; a plan stored before it was recorded reads as `local`. */
-          valueChoiceTier: VibeRunValueChoiceTier;
+          /** The tier the run was planned under; a plan stored before it was recorded reads as `unrecorded`. */
+          valueChoiceTier: PlannedValueChoiceTier;
       }
     | { status: 'rejected'; reason: string };
 
@@ -150,6 +147,6 @@ export function preflightVibeRunBatch(
         catalog,
         context,
         revision,
-        valueChoiceTier: plan.valueChoiceTier ?? 'local',
+        valueChoiceTier: plan.valueChoiceTier ?? 'unrecorded',
     };
 }

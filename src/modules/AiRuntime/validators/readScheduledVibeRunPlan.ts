@@ -14,6 +14,7 @@ import {
     type ScheduledVibeRunPlan,
     type VibeRunBatchTarget,
     type VibeRunExpectedDelta,
+    type VibeRunValueChoiceTier,
 } from '../models/VibeRunPlan';
 
 import { digestScheduledVibeRunPlan } from './digestScheduledVibeRunPlan';
@@ -560,6 +561,51 @@ export function readScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPl
     return lastRead.plan;
 }
 
+/** The measured plan's evidence, tier and digests, each checked as the planner sealed them. */
+function readMeasuredPlan(
+    value: Record<string, unknown>,
+    briefRevision: number,
+    batches: readonly ScheduledVibeRunBatch[]
+): MeasuredScheduledVibeRunPlan | null {
+    const tier = readValueChoiceTier(value.valueChoiceTier);
+    if (tier === 'invalid') {
+        return null;
+    }
+    if (
+        !initialEvidence(value.initial, batches) ||
+        value.initialDigest !== digest(value.initial) ||
+        value.planDigest !==
+            digestScheduledVibeRunPlan({
+                briefRevision,
+                batches,
+                initialDigest: value.initialDigest,
+                valueChoiceTier: tier,
+            })
+    ) {
+        return null;
+    }
+    const plan: MeasuredScheduledVibeRunPlan = {
+        schemaVersion: 2,
+        briefRevision,
+        batches,
+        initial: value.initial,
+        initialDigest: value.initialDigest,
+        planDigest: value.planDigest,
+    };
+    if (tier === undefined) {
+        return plan;
+    }
+    return { ...plan, valueChoiceTier: tier };
+}
+
+/** An absent tier is a plan stored before it was recorded; any other unrecognised value is invalid. */
+function readValueChoiceTier(value: unknown): VibeRunValueChoiceTier | undefined | 'invalid' {
+    if (value === undefined || value === 'hosted' || value === 'local') {
+        return value;
+    }
+    return 'invalid';
+}
+
 function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | null {
     if (
         serialized.length === 0 ||
@@ -586,33 +632,5 @@ function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | n
     if (value.schemaVersion === 1) {
         return { schemaVersion: 1, briefRevision: value.briefRevision, batches };
     }
-    const tier = value.valueChoiceTier;
-    if (tier !== undefined && tier !== 'hosted' && tier !== 'local') {
-        return null;
-    }
-    if (
-        !initialEvidence(value.initial, batches) ||
-        value.initialDigest !== digest(value.initial) ||
-        value.planDigest !==
-            digestScheduledVibeRunPlan({
-                briefRevision: value.briefRevision,
-                batches,
-                initialDigest: value.initialDigest,
-                valueChoiceTier: tier,
-            })
-    ) {
-        return null;
-    }
-    const plan: MeasuredScheduledVibeRunPlan = {
-        schemaVersion: 2,
-        briefRevision: value.briefRevision,
-        batches,
-        initial: value.initial,
-        initialDigest: value.initialDigest,
-        planDigest: value.planDigest,
-    };
-    if (tier === undefined) {
-        return plan;
-    }
-    return { ...plan, valueChoiceTier: tier };
+    return readMeasuredPlan(value, value.briefRevision, batches);
 }
