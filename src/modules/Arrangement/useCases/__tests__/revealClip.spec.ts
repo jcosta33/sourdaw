@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
-import { timelineViewStore } from '../../stores/timelineViewStore';
+import { setTimelineTrackHeightPreview, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { revealClip } from '../revealClip';
 
@@ -25,7 +28,11 @@ const targetClip: Clip = {
 };
 
 describe('revealClip', () => {
+    let previousMode: Preferences['trackHeight'];
+
     beforeEach(() => {
+        previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        setTrackHeight('normal');
         clipSelectionStore.set(defaultClipSelectionState);
         timelineViewStore.set({
             scrollX: 0,
@@ -41,6 +48,10 @@ describe('revealClip', () => {
             ],
             selectedTrackId: null,
         });
+    });
+
+    afterEach(() => {
+        setTrackHeight(previousMode);
     });
 
     it('selects the clip and reveals its position without changing timeline zoom', () => {
@@ -85,6 +96,36 @@ describe('revealClip', () => {
         expect(revealClip(targetClip.id)).toBe(true);
 
         expect(timelineViewStore.value?.scrollY).toBe(88);
+    });
+
+    it.each([
+        { mode: 'compact', preview: null, scrollY: 37.5 },
+        { mode: 'large', preview: null, scrollY: 160 },
+        { mode: 'large', preview: { trackId: 'track-first', height: 96 }, scrollY: 184 },
+        { mode: 'large', preview: { trackId: 'track-target', height: 84 }, scrollY: 196 },
+    ] as const)('reveals scaled rows in $mode mode with preview $preview', ({ mode, preview, scrollY }) => {
+        setTrackHeight(mode);
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'folder', kind: 'folder' }),
+                TrackDummy.create({
+                    id: 'track-first',
+                    height: 80,
+                    showVariationLanes: true,
+                    alternatives: [{ id: 'first-a', name: 'A', clips: [] }],
+                }),
+                TrackDummy.create({ id: 'track-target', height: 60, clips: [targetClip] }),
+                TrackDummy.create({ id: 'track-tail', height: 200 }),
+            ],
+            selectedTrackId: null,
+        });
+        if (preview) {
+            setTimelineTrackHeightPreview(preview.trackId, preview.height);
+        }
+
+        expect(revealClip(targetClip.id)).toBe(true);
+
+        expect(timelineViewStore.value?.scrollY).toBe(scrollY);
     });
 
     it('expands a collapsed owning folder before selecting its clip', () => {
