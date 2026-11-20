@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { crumbsNoteOff } from '../crumbsNoteOff';
+import { crumbsNoteOn } from '../crumbsNoteOn';
+
 const mocks = vi.hoisted(() => ({ desktop: vi.fn(), invoke: vi.fn() }));
 vi.mock('#/utils/desktopBridge', () => ({ isDesktopRuntime: mocks.desktop, desktopInvoke: mocks.invoke }));
-import { crumbsNoteOn } from '../crumbsNoteOn';
-import { crumbsNoteOff } from '../crumbsNoteOff';
 
 describe('Crumbs pad audition bridge', () => {
     beforeEach(() => {
