@@ -4599,7 +4599,7 @@
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/readNamedTracks.ts": {
         "typescript/no-non-null-assertion": {
-            "count": 3
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/retargetCommittedRecipe.ts": {
