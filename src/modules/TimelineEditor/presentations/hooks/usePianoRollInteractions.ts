@@ -327,10 +327,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const dragRef = useRef<DragState>({ ...INITIAL_DRAG_STATE });
     const paintNotesRef = useRef<Set<string>>(new Set());
     const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
-    const previousRowHeight = useRef(rowHeight);
+    const previousRowHeightRef = useRef(rowHeight);
     useLayoutEffect(() => {
-        const ratio = rowHeight / previousRowHeight.current;
-        previousRowHeight.current = rowHeight;
+        const ratio = rowHeight / previousRowHeightRef.current;
+        previousRowHeightRef.current = rowHeight;
         if (ratio === 1) {
             return;
         }
