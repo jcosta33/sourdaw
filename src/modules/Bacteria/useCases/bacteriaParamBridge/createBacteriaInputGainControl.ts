@@ -173,8 +173,10 @@ async function commitInput(
 ): Promise<boolean> {
     const { deviceId, trackId, frozen, deviceIds, baseline } = owner;
     const { hasEditAuthority, runtime } = gesture;
-    const canCommit = () => hasEditAuthority() && runtime.canCommit();
-    let committed = false;
+    function canCommit(): boolean {
+        return hasEditAuthority() && runtime.canCommit();
+    }
+    const receipt = { committed: false };
     try {
         if (previous && !(await previous.committed)) {
             return false;
@@ -206,18 +208,18 @@ async function commitInput(
                     isCurrent: () => stillOwnsRuntime(owner, runtime),
                 },
                 onCommitted: () => {
-                    committed = true;
+                    receipt.committed = true;
                 },
             }
         );
     } catch (error) {
         reportInputError(error);
     } finally {
-        if (!committed) {
+        if (!receipt.committed) {
             restorePreview(gesture);
         }
     }
-    return committed;
+    return receipt.committed;
 }
 
 function settleHeldGesture(control: InputControl, predecessor: PendingInput, committed: boolean): void {
@@ -244,6 +246,25 @@ function settleHeldGesture(control: InputControl, predecessor: PendingInput, com
     previewInput(control, gesture, value);
 }
 
+async function awaitPendingInput(control: InputControl, pending: PendingInput): Promise<void> {
+    let didCommit = false;
+    try {
+        didCommit = await pending.committed;
+    } finally {
+        const isLatest = control.pending === pending;
+        if (isLatest) {
+            delete control.pending;
+        }
+        try {
+            if (isLatest && control.mounted) {
+                settleHeldGesture(control, pending, didCommit);
+            }
+        } finally {
+            releaseUnusedRuntime(control, pending.runtime);
+        }
+    }
+}
+
 function queueInput(control: InputControl, gesture: InputGesture, value: number): void {
     delete control.gesture;
     const { owner: originalOwner } = gesture;
@@ -261,15 +282,7 @@ function queueInput(control: InputControl, gesture: InputGesture, value: number)
     const pending = { owner, value, runtime: gesture.runtime, committed };
     control.pending = pending;
     control.show(value);
-    void committed.then((didCommit) => {
-        if (control.pending === pending) {
-            delete control.pending;
-            if (control.mounted) {
-                settleHeldGesture(control, pending, didCommit);
-            }
-        }
-        releaseUnusedRuntime(control, gesture.runtime);
-    });
+    void awaitPendingInput(control, pending);
 }
 
 function previewInput(control: InputControl, gesture: InputGesture, value: number): void {
