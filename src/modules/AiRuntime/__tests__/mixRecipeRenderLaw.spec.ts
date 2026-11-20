@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { type MixRecipe } from '#/modules/Arrangement/models/MixRecipe';
-import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Track } from '#/modules/Arrangement/stores';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 
 import { createTrack } from '../useCases/__tests__/trackFixture';
 
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
+
+registerDeviceEnginePorts();
+
+type MixRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
 
 const TEMPO = 120;
 const BEATS = 8;
@@ -61,7 +65,7 @@ function movedDirection(before: number, after: number): 'increase' | 'decrease' 
 }
 
 describe('mix recipe metric claims against the acceptance render law', () => {
-    const drumsTight = buildMixRecipeCatalog().recipes.find((recipe) => recipe.id === 'drums-tight');
+    const drumsTight = getMixRecipeCatalog().recipes.find((recipe) => recipe.id === 'drums-tight');
 
     it.each(SOURCE_POSITIONS)(
         'drums-tight moves every dynamics metric it claims the way it claims, on source %i at its parameter midpoints',
