@@ -3711,6 +3711,33 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             GUARDED_CASE_TIMEOUT_MS
         );
 
+        it.each([130, 143] as const)(
+            'clears a node E2E receipt once the verified server exits by itself with code %s and no signal',
+            async (exitCode) => {
+                const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-self-exit-${exitCode}`);
+                writeMarkerProof(fixture, 'process.env.SOURDAW_E2E_RUN_TOKEN', `process.exit(${exitCode})`);
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'node', 'proof.mts'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) =>
+                            runIsolatedGuardedCommand({
+                                ...input,
+                                availableMemoryBytes: abundantMemoryBytes,
+                            }),
+                        assertModulesPreflight: () => undefined,
+                    });
+
+                    expect(code).toBe(0);
+                    expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+                } finally {
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            },
+            GUARDED_CASE_TIMEOUT_MS
+        );
+
         it.each(['SIGINT', 'SIGTERM'] as const)(
             'clears a node E2E receipt when %s reaches the guard after the server was verified',
             async (interrupt) => {
