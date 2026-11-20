@@ -55,6 +55,20 @@ export const getPianoRollContentHeight = (rowCount: number, rowHeight = ROW_HEIG
 /** Top edge of a note row; the row's centre is `ROW_HEIGHT / 2` below it. */
 export const getPianoRollRowTop = (row: number, rowHeight = ROW_HEIGHT): number => RULER_HEIGHT + row * rowHeight;
 
+/** Preserve the visible pitch and its within-row position when the pitch scale changes. */
+export const getPianoRollZoomAnchor = (scrollTop: number, oldHeight: number, newHeight: number): number => {
+    if (scrollTop <= RULER_HEIGHT) {
+        return scrollTop;
+    }
+    return RULER_HEIGHT + Math.floor(((scrollTop - RULER_HEIGHT) / oldHeight) * newHeight);
+};
+
+/** Clamp a scroll anchor to the browser viewport's current content bounds. */
+export const clampPianoRollScrollTop = (
+    anchor: number,
+    viewport: Pick<HTMLElement, 'scrollHeight' | 'clientHeight'>
+): number => Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight, anchor));
+
 /** The row under `y`, or `null` over the ruler or past the last row. */
 export const getPianoRollRowAtY = (y: number, rowCount: number, rowHeight = ROW_HEIGHT): number | null => {
     const row = Math.floor((y - RULER_HEIGHT) / rowHeight);

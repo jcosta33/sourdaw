@@ -58,6 +58,8 @@ import {
     getPianoRollExtentBeats,
     getPianoRollContentHeight,
     getPianoRollRowTop,
+    getPianoRollZoomAnchor,
+    clampPianoRollScrollTop,
 } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
@@ -171,22 +173,14 @@ export const PianoRoll = ({
         }
         const viewport = scrollRef.current;
         if (viewport) {
-            if (viewport.scrollTop <= RULER_HEIGHT) {
-                zoomAnchorRef.current = viewport.scrollTop;
-            } else {
-                zoomAnchorRef.current =
-                    RULER_HEIGHT + Math.floor(((viewport.scrollTop - RULER_HEIGHT) / rowHeight) * height);
-            }
+            zoomAnchorRef.current = getPianoRollZoomAnchor(viewport.scrollTop, rowHeight, height);
         }
         setRowHeight(height);
     };
     useLayoutEffect(() => {
         const viewport = scrollRef.current;
         if (viewport && zoomAnchorRef.current !== null) {
-            viewport.scrollTop = Math.max(
-                0,
-                Math.min(viewport.scrollHeight - viewport.clientHeight, zoomAnchorRef.current)
-            );
+            viewport.scrollTop = clampPianoRollScrollTop(zoomAnchorRef.current, viewport);
             zoomAnchorRef.current = null;
         }
     }, [rowHeight]);
@@ -496,6 +490,7 @@ export const PianoRoll = ({
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
+    const contentHeight = getPianoRollContentHeight(visiblePitches.length, rowHeight);
     const openingScroll = usePianoRollOpeningScroll({ scrollRef, clipId, notes, visiblePitches, beatWidth, rowHeight });
     // MPE lanes the edited track's instrument actually sounds — the toolbar's
     // documented per-track truth (audit MD-2), derived from the same engine
@@ -578,10 +573,7 @@ export const PianoRoll = ({
                     {/* Piano keys sidebar */}
                     <DawSideRail
                         className="sticky left-0 z-10"
-                        style={{
-                            width: PITCH_RAIL_WIDTH,
-                            height: getPianoRollContentHeight(visiblePitches.length, rowHeight),
-                        }}
+                        style={{ width: PITCH_RAIL_WIDTH, height: contentHeight }}
                     >
                         <DawGridHeaderCell className="absolute inset-x-0 top-0 px-0" style={{ height: RULER_HEIGHT }} />
                         {visiblePitches.map((pitch, row) => {
@@ -627,11 +619,7 @@ export const PianoRoll = ({
                         <canvas
                             ref={canvasRef}
                             className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-                            style={{
-                                left: PITCH_RAIL_WIDTH,
-                                cursor: hoverCursor,
-                                height: getPianoRollContentHeight(visiblePitches.length, rowHeight),
-                            }}
+                            style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor, height: contentHeight }}
                             tabIndex={0}
                             // Marks this surface as a canvas editor. The global
                             // keyboard contract reads
