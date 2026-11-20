@@ -27,14 +27,9 @@ export function observePublishedToasterKit(input: {
         return committedReplacement ? { chunk } : null;
     }
 
-    const previous = observedChunks.get(lifetime);
+    const previous = observedChunks.get(lifetime) ?? null;
     observedChunks.set(lifetime, chunk);
-    if (
-        initial ||
-        (previous === undefined && chunk === null) ||
-        previous === chunk ||
-        jsonValuesEqual(previous, chunk)
-    ) {
+    if (initial || previous === chunk || jsonValuesEqual(previous, chunk)) {
         return null;
     }
     return { chunk };

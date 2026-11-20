@@ -109,15 +109,12 @@ function seed({
 }: { before?: Chunk; frozen?: boolean; wrongType?: boolean; duplicate?: boolean } = {}): void {
     const track = createTrack({ id: TRACK_ID, name: 'Rhythm', kind: 'midi', withoutDefaultDevice: true });
     const other = createTrack({ id: 'other', name: 'Other', kind: 'midi', withoutDefaultDevice: true });
-    const device = {
-        ...DEVICE,
-        type: wrongType ? 'fermenter' : DEVICE.type,
-        ...(before ? { deviceState: before } : {}),
-    };
+    const device = { ...DEVICE, type: wrongType ? 'fermenter' : DEVICE.type };
+    const seededDevice = before ? { ...device, deviceState: before } : device;
     trackStore.set({
         ...defaultTrackState,
         tracks: [
-            { ...track, frozen, devices: [device, NEIGHBOR] },
+            { ...track, frozen, devices: [seededDevice, NEIGHBOR] },
             { ...other, devices: duplicate ? [DEVICE] : [] },
         ],
     });
@@ -139,7 +136,8 @@ function expectChunk(expected: Chunk | null): void {
         throw new Error('Expected the raw Toaster device');
     }
     expect(Object.hasOwn(device, 'deviceState')).toBe(expected !== null);
-    expect(device).toEqual({ ...DEVICE, ...(expected === null ? {} : { deviceState: expected }) });
+    const expectedDevice = expected === null ? DEVICE : { ...DEVICE, deviceState: expected };
+    expect(device).toEqual(expectedDevice);
     expect(neighbor).toEqual(NEIGHBOR);
 }
 

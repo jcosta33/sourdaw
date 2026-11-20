@@ -40,12 +40,10 @@ async function readToasterProject(page: Page, selection: { trackId?: string; exc
                 deviceId: device.id,
                 projectedHasChunk: Object.hasOwn(device, 'deviceState'),
                 rawHasChunk: Object.hasOwn(raw, 'deviceState'),
-                projected: JSON.parse(JSON.stringify(device)),
-                raw: JSON.parse(JSON.stringify(raw)),
-                otherRows: JSON.parse(
-                    JSON.stringify(root.tracks.tracks.filter((candidate) => candidate.id !== track.id))
-                ),
-                automation: JSON.parse(JSON.stringify(automation.automationStore.value ?? null)),
+                projected: device,
+                raw,
+                otherRows: root.tracks.tracks.filter((candidate) => candidate.id !== track.id),
+                automation: automation.automationStore.value ?? null,
                 history: {
                     count: history.past.length,
                     latestType: latest?.kind === 'action' ? latest.action.type : null,
@@ -186,13 +184,10 @@ test.describe('Toaster kit shelf and sequencer', () => {
                         const tracks = decoded.rootMediaSlots.tracks as Tracks;
                         files.push({
                             header: await file.slice(0, 4).text(),
-                            device: JSON.parse(
-                                JSON.stringify(
-                                    tracks.tracks
-                                        .find((track) => track.id === trackId)
-                                        ?.devices.find((device) => device.id === deviceId) ?? null
-                                )
-                            ),
+                            device:
+                                tracks.tracks
+                                    .find((track) => track.id === trackId)
+                                    ?.devices.find((device) => device.id === deviceId) ?? null,
                         });
                     }
                 }

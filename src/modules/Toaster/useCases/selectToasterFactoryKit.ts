@@ -16,10 +16,11 @@ export async function selectToasterFactoryKit(deviceId: string, presetId: string
         return;
     }
     const owner = resolveEligibleDeviceWriteTarget(deviceId);
-    const current =
-        owner.status === 'eligible'
-            ? getPlannedDevicePatchState({ deviceId, trackId: owner.trackId, parameterIds: [] })
-            : null;
+    if (owner.status !== 'eligible') {
+        notifyUser('Could not load the kit. The Toaster track is frozen or no longer available.', 'warning');
+        return;
+    }
+    const current = getPlannedDevicePatchState({ deviceId, trackId: owner.trackId, parameterIds: [] });
     if (current?.deviceType !== DEVICE_TYPE_IDS.toaster || current.frozen) {
         notifyUser('Could not load the kit. The Toaster track is frozen or no longer available.', 'warning');
         return;

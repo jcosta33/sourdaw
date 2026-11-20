@@ -5,7 +5,12 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { projectTransitionEpoch } from '#/modules/Project/stores';
 import { createHandler } from '#/utils/createHandler';
-import { type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type AppActionType,
+    type HandlerExecutionResult,
+    type HandlerValidationContext,
+} from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -34,6 +39,16 @@ const unplannedTrackChanges = new Set<AppActionType>([
     'discardCreatedTrack',
 ]);
 
+function changesKitDevice(action: AppAction, deviceId: string): boolean {
+    if (action.type === 'restoreDevice') {
+        return action.payload.deviceSnapshot.id === deviceId;
+    }
+    return (
+        (action.type === 'setDeviceState' || action.type === 'removeDevice' || action.type === 'addDevice') &&
+        action.payload.deviceId === deviceId
+    );
+}
+
 function supportedBatch(action: ToasterFactoryKitAction, context?: HandlerValidationContext): boolean {
     const { deviceId, trackId } = action.payload;
     return (
@@ -47,15 +62,7 @@ function supportedBatch(action: ToasterFactoryKitAction, context?: HandlerValida
             if (sibling.type === 'discardImportedStemSet') {
                 return sibling.payload.folderId !== trackId && !sibling.payload.stemTrackIds.includes(trackId);
             }
-            if (sibling.type === 'restoreDevice') {
-                return sibling.payload.deviceSnapshot.id !== deviceId;
-            }
-            if (
-                (sibling.type === 'setDeviceState' ||
-                    sibling.type === 'removeDevice' ||
-                    sibling.type === 'addDevice') &&
-                sibling.payload.deviceId === deviceId
-            ) {
+            if (changesKitDevice(sibling, deviceId)) {
                 return false;
             }
             return !(
@@ -99,6 +106,37 @@ function admit(action: ToasterFactoryKitAction, context?: HandlerValidationConte
     return true;
 }
 
+function writeKitChunk(
+    { deviceId, before, after }: ToasterFactoryKitAction['payload'],
+    proof: ReturnType<Admission['start']> | undefined
+): HandlerExecutionResult {
+    const expected = { deviceState: before, parameterValues: {} };
+    const next = { deviceState: after, parameterValues: {} };
+    let validationTransferred = false;
+    try {
+        if (!applyDevicePatchState({ deviceId, expected, next }) || (proof && !proof.captureWrittenState(next))) {
+            return { status: 'conflict' };
+        }
+        const transition = projectTransitionEpoch.captureEditAuthority();
+        const reconcile = (): void => {
+            if (transition.isCurrent()) {
+                reconcileToasterKitFromProject(deviceId, { committedReplacement: true });
+            }
+        };
+        validationTransferred = true;
+        return {
+            status: 'written',
+            commitValidation: proof?.validation,
+            afterCommit: reconcile,
+            afterAmbiguousCommit: reconcile,
+        };
+    } finally {
+        if (!validationTransferred) {
+            proof?.validation.release();
+        }
+    }
+}
+
 export const handleSetToasterFactoryKit = createHandler<'setToasterFactoryKit'>({
     validate: (action, context) =>
         validToasterFactoryKitCapture(action.payload) &&
@@ -120,32 +158,7 @@ export const handleSetToasterFactoryKit = createHandler<'setToasterFactoryKit'>(
         if (!preview && !proof) {
             return { status: 'conflict' };
         }
-        const { deviceId, before, after } = action.payload;
-        const expected = { deviceState: before, parameterValues: {} };
-        const next = { deviceState: after, parameterValues: {} };
-        let validationTransferred = false;
-        try {
-            if (!applyDevicePatchState({ deviceId, expected, next }) || (proof && !proof.captureWrittenState(next))) {
-                return { status: 'conflict' };
-            }
-            const transition = projectTransitionEpoch.captureEditAuthority();
-            const reconcile = (): void => {
-                if (transition.isCurrent()) {
-                    reconcileToasterKitFromProject(deviceId, { committedReplacement: true });
-                }
-            };
-            validationTransferred = true;
-            return {
-                status: 'written',
-                commitValidation: proof?.validation,
-                afterCommit: reconcile,
-                afterAmbiguousCommit: reconcile,
-            };
-        } finally {
-            if (!validationTransferred) {
-                proof?.validation.release();
-            }
-        }
+        return writeKitChunk(action.payload, proof);
     },
     describe: (action, context) => {
         // Single-action replay calls describe before execution without running validate.
