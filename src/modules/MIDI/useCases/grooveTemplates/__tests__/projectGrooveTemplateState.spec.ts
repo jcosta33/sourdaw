@@ -204,7 +204,7 @@ describe('projectGrooveTemplateState refusals', () => {
                         payload: {
                             template: userTemplate('back'),
                             templateIndex: 1,
-                            assignments: [{ assignment: { ...assignment('back'), amount: 0.5 } }],
+                            assignments: [{ index: 0, assignment: { ...assignment('back'), amount: 0.5 } }],
                         },
                     },
                 ]
@@ -225,7 +225,7 @@ describe('projectGrooveTemplateState refusals', () => {
                     payload: {
                         template: userTemplate('back'),
                         templateIndex: 1,
-                        assignments: [{ assignment: { ...assignment('back'), amount: 0.5 } }],
+                        assignments: [{ index: 0, assignment: { ...assignment('back'), amount: 0.5 } }],
                     },
                 },
             ]);
@@ -252,10 +252,8 @@ describe('projectGrooveTemplateState refusals', () => {
         expect(projected).toBe(base);
     });
 
-    it('extractGroove leaves the state unchanged for a proposal that is not a template', () => {
-        const projected = projectGrooveTemplateState(base, [
-            { type: 'extractGroove', payload: { clipId: 'clip-1', proposal: null, sourceRevision: 'rev' } },
-        ]);
+    it('extractGroove leaves the state unchanged when it pins no proposal', () => {
+        const projected = projectGrooveTemplateState(base, [{ type: 'extractGroove', payload: { clipId: 'clip-1' } }]);
         expect(projected).toBe(base);
     });
 
