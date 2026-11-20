@@ -35,6 +35,21 @@ function projectMasterGain(device: Device): void {
     }
 }
 
+function projectSameBankIdentity(
+    deviceId: string,
+    state: LevainState,
+    identity: ReturnType<typeof fromLevainDeviceState>
+): void {
+    const uiLevel = identity?.disclosureTier === 'expert' ? 6 : 1;
+    if (state.uiLevel !== uiLevel) {
+        levainStore.set({ ...levainStore.value, [deviceId]: { ...state, uiLevel } });
+    }
+    const articulation = identity?.currentArticulation ?? defaultLevainState.patch.currentArticulation;
+    if (state.patch.currentArticulation !== articulation) {
+        setLevainParamWithAudio(deviceId, 'currentArticulation', articulation);
+    }
+}
+
 /** Reflect committed identity in the registered session. Only a Browse edit resets the stored settings. */
 export function reconcileLevainDeviceStateFromProject(deviceId: string, { projectPatch = false } = {}): void {
     const owner = trackStore.value?.tracks.find(({ devices }) => devices.some(({ id }) => id === deviceId));
@@ -55,13 +70,6 @@ export function reconcileLevainDeviceStateFromProject(deviceId: string, { projec
         return;
     }
 
-    const uiLevel = identity?.disclosureTier === 'expert' ? 6 : 1;
-    if (state.uiLevel !== uiLevel) {
-        levainStore.set({ ...levainStore.value, [deviceId]: { ...state, uiLevel } });
-    }
-    const articulation = identity?.currentArticulation ?? defaultLevainState.patch.currentArticulation;
-    if (state.patch.currentArticulation !== articulation) {
-        setLevainParamWithAudio(deviceId, 'currentArticulation', articulation);
-    }
+    projectSameBankIdentity(deviceId, state, identity);
     projectMasterGain(device);
 }

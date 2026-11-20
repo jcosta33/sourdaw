@@ -1,8 +1,8 @@
+import { logger } from '#/infra/logger/appLogger';
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { captureDevicePatchCommitValidation, getPlannedDevicePatchState } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/stores';
-import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 

@@ -1,6 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 import { mirrorDeviceChainDelta, projectsToDifferentNativeBank } from '#/modules/AudioEngine/useCases';
-import { logger } from '#/infra/logger/appLogger';
 
 import { hydrateLevainStateFromDevice } from './hydrateLevainStateFromDevice';
 import { projectLevainPresetParameters } from './projectLevainPresetParameters';

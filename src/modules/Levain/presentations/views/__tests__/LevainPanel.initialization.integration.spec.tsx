@@ -40,8 +40,8 @@ import {
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
-import { levainStore, setLoadedMicPositions } from '../../../stores/levainStore';
 import { type MicPositionType } from '../../../models/LevainPatch';
+import { levainStore, setLoadedMicPositions } from '../../../stores/levainStore';
 import { type autoLoadLevainSamples as loadSamples } from '../../../useCases/autoLoadSamples';
 import { configureLevainDeviceStateProjectAccess } from '../../../useCases/configureLevainDeviceStateProjectAccess';
 import { getLevainHandlers } from '../../../useCases/getLevainHandlers';

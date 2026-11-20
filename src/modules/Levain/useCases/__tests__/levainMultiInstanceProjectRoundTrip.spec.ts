@@ -54,8 +54,8 @@ import {
 
 import { defaultLevainState, levainStore, setLoadedMicPositions, updateMicPosition } from '../../stores/levainStore';
 import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
-import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { getLevainHandlers } from '../getLevainHandlers';
+import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
 import { sendMicParamToEngine } from '../levainParamBridge/sendMicParamToEngine';
