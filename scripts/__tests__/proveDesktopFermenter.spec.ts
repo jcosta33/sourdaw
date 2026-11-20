@@ -18,9 +18,10 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
 import { FermenterDriveError, FERMENTER_OBSERVATIONS, type FermenterDrive } from '../desktopFermenterEvidence.ts';
 import { readPayloadIdentity } from '../desktopLatencyRecord.ts';
-import { captureBuildReceipt, runProof } from '../proveDesktopFermenter.ts';
+import { captureBuildReceipt, runEditorFamilyProof, runProof } from '../proveDesktopFermenter.ts';
 
 const tempDirs: string[] = [];
 
@@ -34,6 +35,37 @@ const completeDrive: FermenterDrive = async (_binary, report) => {
     for (const observation of FERMENTER_OBSERVATIONS) {
         report(observation);
     }
+};
+
+const FAMILY = [
+    'Fermenter',
+    'Toaster',
+    'Levain',
+    'Crumbs',
+    'Grand Boule',
+    'Dutch Oven',
+    'Gluten',
+    'Bacteria',
+    'Grinder',
+    'Proof',
+    'Scoring',
+    'Yeast',
+    'Crust',
+];
+
+const completeFamilyDrive: EditorFamilyDrive = async (_binary, observations) => {
+    observations.devices.forEach((row, index) => {
+        row.instanceId = `device-${index}`;
+        row.phase = 'focus-returned';
+    });
+    observations.lifecycle = {
+        firstInstanceId: 'device-9',
+        secondInstanceId: 'proof-replacement',
+        selectionClosed: true,
+        originalReopened: true,
+        phase: 'closed',
+    };
+    observations.appQuit = true;
 };
 
 function fixture() {
@@ -278,5 +310,114 @@ describe('packaged Fermenter proof', () => {
             },
         });
         expect(record).toMatchObject({ verdict: 'failed', failureCode, observations: [...FERMENTER_OBSERVATIONS] });
+    });
+});
+
+describe('packaged editor family proof', () => {
+    it('binds the complete family and lifecycle to the existing build receipt', async () => {
+        const { options, env, receipt, binary } = fixture();
+        const drive = vi.fn(completeFamilyDrive);
+        const record = await runEditorFamilyProof(options, env, { hostSupported: true, drive });
+        expect(drive).toHaveBeenCalledExactlyOnceWith(binary, record.observations);
+        expect(record).toMatchObject({
+            scope: 'packaged-premium-editor-mount-and-lifecycle',
+            build: receipt,
+            verdict: 'proven',
+            failureCode: null,
+        });
+        expect(record.observations.devices.map((row) => row.device)).toEqual(FAMILY);
+        expect(record.observations.devices.find((row) => row.device === 'Crumbs')).toEqual({
+            device: 'Crumbs',
+            navigation: 'instrument',
+            dialog: 'Sampler',
+            editorControl: 'Ready',
+            instanceId: 'device-3',
+            phase: 'focus-returned',
+            failure: null,
+        });
+    });
+
+    it('keeps the missing sampler admission and later results without awarding family credit', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                Object.assign(observations.devices[3]!, {
+                    instanceId: null,
+                    phase: 'not-attempted',
+                    failure: 'card-unavailable',
+                });
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'device-observations-incomplete' });
+        expect(record.observations.devices.map((row) => row.device)).toEqual(FAMILY);
+        expect(record.observations.devices[3]).toMatchObject({ device: 'Crumbs', failure: 'card-unavailable' });
+        expect(record.observations.devices.at(-1)).toMatchObject({ device: 'Crust', phase: 'focus-returned' });
+    });
+
+    it('rejects a driver that closes the original Proof instance without replacing it', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                observations.lifecycle!.secondInstanceId = observations.lifecycle!.firstInstanceId;
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'lifecycle-observation-incomplete' });
+    });
+
+    it('refuses a previous attempt before launching the family driver', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn(completeFamilyDrive);
+        const record = await runEditorFamilyProof(
+            options,
+            { ...env, GITHUB_RUN_ATTEMPT: '3' },
+            {
+                hostSupported: true,
+                drive,
+            }
+        );
+        expect(drive).not.toHaveBeenCalled();
+        expect(record).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'build-receipt-run-mismatch',
+            build: null,
+        });
+        expect(record.observations.devices.map((row) => row.phase)).toEqual(FAMILY.map(() => 'not-attempted'));
+    });
+
+    it('invalidates a completed family observation if the runner changes the packaged payload', async () => {
+        const { options, env, asar } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                writeFileSync(asar, 'changed during the proof');
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'bundle-changed' });
+        expect(record.observations.devices).toHaveLength(13);
+    });
+
+    it('writes the family record and returns exit 2 through its scheduled CLI mode', () => {
+        const { options, env } = fixture();
+        const output = join(options.checkout, 'family.json');
+        const script = fileURLToPath(new URL('../proveDesktopFermenter.ts', import.meta.url));
+        const run = spawnSync(process.execPath, [script, '--family', '--receipt', options.receipt, '--json', output], {
+            cwd: options.checkout,
+            env: { ...process.env, ...env, GITHUB_SHA: '' },
+            encoding: 'utf8',
+        });
+        expect(run.status).toBe(2);
+        expect(run.stdout).toContain('Premium editor family packaged proof: not-run (invalid-run-identity).');
+        const record = JSON.parse(readFileSync(output, 'utf8'));
+        expect(record).toMatchObject({
+            scope: 'packaged-premium-editor-mount-and-lifecycle',
+            verdict: 'not-run',
+            failureCode: 'invalid-run-identity',
+        });
+        expect(record.observations.devices.map(({ device }: { device: string }) => device)).toEqual(FAMILY);
     });
 });

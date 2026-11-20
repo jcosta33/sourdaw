@@ -303,6 +303,8 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the agent workspace proof record',
             'Prove Fermenter in the packaged app',
             'Upload the Fermenter proof record',
+            'Prove premium editor mounts in the packaged app',
+            'Upload the premium editor proof record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
@@ -415,6 +417,13 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('nightly.yml', 'desktop-measure', 'Capture the Fermenter build receipt', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Prove Fermenter in the packaged app', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Upload the Fermenter proof record', FERMENTER_UPLOAD_ADMISSION),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor mounts in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor proof record',
+        "${{ !cancelled() && (steps.prove-premium-editors.outcome == 'success' || steps.prove-premium-editors.outcome == 'failure') }}"
+    ),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
     pin(
         'nightly.yml',
