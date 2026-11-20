@@ -55,6 +55,8 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         applyNoteExpression: apply_note_expression,
         builtinSynthVoice: { read: () => synthVoices },
         audioEngine: {
