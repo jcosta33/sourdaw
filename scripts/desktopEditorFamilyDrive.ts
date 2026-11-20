@@ -85,7 +85,7 @@ function renderedControl(body: Locator, row: DeviceObservation): Locator {
     }
 }
 
-async function observeEditor(dialog: Locator, row: DeviceObservation): Promise<void> {
+async function observeEditor(dialog: Locator, row: DeviceObservation, instanceId: string): Promise<void> {
     const body = dialog.getByTestId('floating-device-panel-body');
     const control = renderedControl(body, row);
     if (row.device === 'Crumbs') {
@@ -98,11 +98,15 @@ async function observeEditor(dialog: Locator, row: DeviceObservation): Promise<v
     }
     await control.waitFor({ state: 'visible' });
     if (row.device === 'Toaster') {
-        assert.equal(await control.getAttribute('id'), `toaster-view-${row.instanceId}`);
+        assert.equal(await control.getAttribute('id'), `toaster-view-${instanceId}`);
     }
 }
 
-async function openFromBrowser(browser: Locator, cards: Locator, row: DeviceObservation): Promise<Locator> {
+async function openFromBrowser(
+    browser: Locator,
+    cards: Locator,
+    row: DeviceObservation
+): Promise<{ opener: Locator; instanceId: string }> {
     row.failure = 'browser-route-unavailable';
     const opener = await browserCard(browser, row);
     row.failure = 'card-unavailable';
@@ -115,21 +119,22 @@ async function openFromBrowser(browser: Locator, cards: Locator, row: DeviceObse
     await opener.focus();
     await opener.click();
     row.failure = 'instance-missing-or-ambiguous';
-    row.instanceId = await newInstance(cards, before);
+    const instanceId = await newInstance(cards, before);
+    row.instanceId = instanceId;
     row.phase = 'instance';
-    return opener;
+    return { opener, instanceId };
 }
 
 async function observeDevice(browser: Locator, inspector: Locator, row: DeviceObservation): Promise<void> {
     const page = browser.page();
     const cards = devicesNamed(inspector, row.dialog);
     const dialog = deviceEditor(page, row.dialog);
-    const opener = await openFromBrowser(browser, cards, row);
+    const { opener, instanceId } = await openFromBrowser(browser, cards, row);
     row.failure = 'dialog-missing-or-incorrect';
     await observeShell(page, dialog);
     row.phase = 'dialog';
     row.failure = 'editor-control-missing-or-incorrect';
-    await observeEditor(dialog, row);
+    await observeEditor(dialog, row, instanceId);
     row.phase = 'editor';
     row.failure = 'close-action-failed';
     // Use the real close button by keyboard. Pointer reachability is a C13 check.
@@ -194,12 +199,12 @@ async function observeLifecycle(
     };
     observations.lifecycle = lifecycle;
     const second = { ...first, instanceId: null };
-    await openFromBrowser(browser, cards, second);
-    assert(second.instanceId !== null && second.instanceId !== first.instanceId);
+    const { instanceId: secondInstanceId } = await openFromBrowser(browser, cards, second);
+    assert(secondInstanceId !== first.instanceId);
     // The old Route content must leave before the second instance's actual control is read.
     await dialog.locator(`[aria-labelledby="${first.instanceId}-chain-order-label"]`).waitFor({ state: 'detached' });
-    await observeProofInstance(page, dialog, second.instanceId);
-    lifecycle.secondInstanceId = second.instanceId;
+    await observeProofInstance(page, dialog, secondInstanceId);
+    lifecycle.secondInstanceId = secondInstanceId;
     lifecycle.phase = 'replacement-open';
     const tracks = page.getByRole('grid', { name: 'Track list', exact: true }).locator('[data-track-id]');
     const selected = tracks.and(page.locator('[aria-selected="true"]'));

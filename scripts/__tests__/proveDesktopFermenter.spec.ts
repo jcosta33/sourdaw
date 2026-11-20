@@ -54,10 +54,10 @@ const FAMILY = [
 ];
 
 const completeFamilyDrive: EditorFamilyDrive = async (_binary, observations) => {
-    observations.devices.forEach((row, index) => {
+    for (const [index, row] of observations.devices.entries()) {
         row.instanceId = `device-${index}`;
         row.phase = 'focus-returned';
-    });
+    }
     observations.lifecycle = {
         firstInstanceId: 'device-9',
         secondInstanceId: 'proof-replacement',
