@@ -420,15 +420,21 @@ describe('FermenterPanel', () => {
             expectRouted('noiseLevel', 1.2);
         });
 
-        it('routes Engine through its selection use case and Waveform through the existing bridge', () => {
+        it('routes Engine through its selection use case and Waveform through the patch commit', () => {
             renderPanel();
             // ENGINE_NAMES[2] = 'FM', WAVEFORM_NAMES[1] = 'Saw'.
             fireEvent.click(screen.getByText('FM'));
-            fireEvent.click(screen.getByText('Saw'));
+            fireEvent.click(screen.getByText('Sine'));
             const calls = setFermenterParamWithAudioMock.mock.calls;
             expect(selectFermenterOscillatorEngineMock).toHaveBeenCalledWith('fermenter-1', 2);
             expect(calls.some(([, k]) => k === 'oscEngine')).toBe(false);
-            expect(calls.find(([, k]) => k === 'oscWaveform')![2]).toBe(1);
+            expect(calls.some(([, k]) => k === 'oscWaveform')).toBe(false);
+            expect(commitFermenterPatchMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    deviceId: 'fermenter-1',
+                    patch: expect.objectContaining({ oscWaveform: 0 }),
+                })
+            );
         });
 
         it('routes the filter section knobs to their param keys', () => {

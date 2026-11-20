@@ -258,11 +258,15 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
     );
 }
 
-function renderSectionContent(
-    section: FermenterSection,
-    patch: FermenterPatch,
-    onParam: (key: string, value: number) => void
-): ReactElement {
+function SectionContent({
+    section,
+    patch,
+    onParam,
+}: {
+    section: FermenterSection;
+    patch: FermenterPatch;
+    onParam: (key: string, value: number) => void;
+}): ReactElement {
     if (section === 'osc') {
         return (
             <Row align="start" wrap gap={4}>
@@ -484,6 +488,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const observedLocalCommitRef = useRef(false);
     const hydratedOwnerRef = useRef<{ deviceId: string; patchOwner: string | null } | null>(null);
     const patchOperationRef = useRef(0);
+    const waveformOperationRef = useRef<number | null>(null);
 
     function updateReference(value: FermenterPatch): void {
         const next = cloneFermenterPatch(value);
@@ -565,7 +570,31 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             void selectFermenterFilterChoice(deviceId, key, value);
             return;
         }
+        if (key === 'oscWaveform') {
+            void changeWaveform(value);
+            return;
+        }
         setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, value);
+    }
+
+    async function changeWaveform(value: number): Promise<void> {
+        const current = getFermenterState(deviceId).patch;
+        if (current.oscWaveform === value && waveformOperationRef.current !== patchOperationRef.current) {
+            return;
+        }
+        const next = { ...current, oscWaveform: value };
+        const operation = ++patchOperationRef.current;
+        waveformOperationRef.current = operation;
+        localCommitRef.current = current.oscWaveform === value ? null : toFermenterDeviceState(next);
+        observedLocalCommitRef.current = false;
+        const committed = await commitFermenterPatch({ deviceId, patch: next, label: 'Change Fermenter waveform' });
+        if (waveformOperationRef.current === operation) {
+            waveformOperationRef.current = null;
+        }
+        if (patchOperationRef.current === operation && !committed) {
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+        }
     }
 
     function setMacro(index: number, value: number): void {
@@ -934,7 +963,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             tabIndex={0}
                             className="shrink-0 px-1"
                         >
-                            <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
+                            <div className="pb-2">
+                                <SectionContent section={section} patch={patch} onParam={onParam} />
+                            </div>
                             {uiLevel >= 4 ? (
                                 <div className="mt-3 border-t border-border/15 pt-3">
                                     <SignalFlowView
