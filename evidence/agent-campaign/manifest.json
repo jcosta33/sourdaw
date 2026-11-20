@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "9bcf615312317cb62126a8cfe38f5d3cf47c21d8ce7a447e081b5d380a4a0e73"
+                    "digest": "48b09ebfd14be879a851ff2110b25f7cd5273449577af77390428770f65bf19c"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "527645950528f7901fb3dc3aedb80cefaf138e6864c8c87d6820a7c5b961e524"
+                    "digest": "b8cba0f2af6886b084a68393d0d0ffe994acfd789949e554b7cc56f7fab5de17"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "f8247fb7c145b680b437314b1a2e4a9a514b709de445b0fb51852ed0a8968234"
+                    "digest": "4200ee920feaebf552d118224e091dc33ea39fd36f3fca2aae9c16a2ad5f29a0"
                 }
             ]
         },
