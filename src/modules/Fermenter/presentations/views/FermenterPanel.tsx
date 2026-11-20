@@ -484,6 +484,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const observedLocalCommitRef = useRef(false);
     const hydratedOwnerRef = useRef<{ deviceId: string; patchOwner: string | null } | null>(null);
     const patchOperationRef = useRef(0);
+    const waveformOperationRef = useRef<number | null>(null);
 
     function updateReference(value: FermenterPatch): void {
         const next = cloneFermenterPatch(value);
@@ -565,7 +566,31 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             void selectFermenterFilterChoice(deviceId, key, value);
             return;
         }
+        if (key === 'oscWaveform') {
+            void changeWaveform(value);
+            return;
+        }
         setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, value);
+    }
+
+    async function changeWaveform(value: number): Promise<void> {
+        const current = getFermenterState(deviceId).patch;
+        if (current.oscWaveform === value && waveformOperationRef.current !== patchOperationRef.current) {
+            return;
+        }
+        const next = { ...current, oscWaveform: value };
+        const operation = ++patchOperationRef.current;
+        waveformOperationRef.current = operation;
+        localCommitRef.current = current.oscWaveform === value ? null : toFermenterDeviceState(next);
+        observedLocalCommitRef.current = false;
+        const committed = await commitFermenterPatch({ deviceId, patch: next, label: 'Change Fermenter waveform' });
+        if (waveformOperationRef.current === operation) {
+            waveformOperationRef.current = null;
+        }
+        if (patchOperationRef.current === operation && !committed) {
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+        }
     }
 
     function setMacro(index: number, value: number): void {
