@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "059c9d705853b5a34af7a37d8b5e46f7597569b160ef0ec2f0d6db4cfb4f6754"
+        "digest": "cd807df0b0f32d34c3576974858adb288f6d4bdf978161b29c3e36c572ad3bfa"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
+                    "digest": "3d9024b4f780bc3857ab20797c4d6725573d665f3fa18d527e912c998c3a1f98"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "e2fe4c59c5211836bbda281ba3ec1ac28786b9af3df2ba30dfafc954e2afa8ae"
+                    "digest": "de2eb7c470d0f8d6c6d1919d1e3db449a3882c3f904b19c914ea397c2a3f99bd"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "f98855eec2f13dd9f61384e31f8654f966c5ae48c9280f80df350945c95ba939"
+                    "digest": "b17a5ae78e9b01714278f0c0bd48571adbdf0178149c619c7dc9cc90bfff4bc1"
                 }
             ]
         },

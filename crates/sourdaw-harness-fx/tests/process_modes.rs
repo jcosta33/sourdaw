@@ -11,6 +11,7 @@
 mod support;
 
 use clap_sys::ext::render::CLAP_RENDER_OFFLINE;
+use daw_plugin_host::clap_wrapper::ClapError;
 use daw_plugin_host::vst3_wrapper::{decode_state as decode_vst3_container, format_class_id};
 use daw_plugin_host::{
     AudioPlugin, ClapWrapper, HostParameterUpdate, HostedPluginRuntime, ProcessMode, Vst3Wrapper,
@@ -207,9 +208,13 @@ fn a_clap_plugin_with_a_hard_realtime_requirement_is_refused_offline_by_name() {
         .expect("an offline instance of a hard-realtime plugin must be refused");
 
     assert!(
-        error.contains("Sourdaw Harness Fx Hard Realtime")
-            && error.contains("requires real-time rendering and cannot render offline"),
+        matches!(&error, ClapError::RequiresRealtime { name } if name == "Sourdaw Harness Fx Hard Realtime"),
         "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[CLAP] 'Sourdaw Harness Fx Hard Realtime' requires real-time rendering and cannot \
+         render offline"
     );
     assert!(plugin
         .clap(CLAP_HARD_REALTIME_PLUGIN_ID, ProcessMode::Realtime)

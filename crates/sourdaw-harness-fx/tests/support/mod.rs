@@ -11,6 +11,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use daw_plugin_host::clap_wrapper::ClapError;
 use daw_plugin_host::vst3_wrapper::format_class_id;
 use daw_plugin_host::{ClapWrapper, ProcessMode, Vst3Wrapper};
 use sourdaw_harness_fx::VST3_CLASS_ID;
@@ -84,7 +85,7 @@ impl InstalledPlugin {
         }
     }
 
-    pub fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, String> {
+    pub fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
         let path = self.clap_path.to_str().expect("the path should be utf8");
         ClapWrapper::new_with_mode(path, plugin_id, SAMPLE_RATE, mode)
     }

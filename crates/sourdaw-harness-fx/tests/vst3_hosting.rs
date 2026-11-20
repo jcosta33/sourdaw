@@ -180,7 +180,7 @@ fn a_bus_change_is_answered_by_a_reactivation_that_adopts_the_new_layout() {
         "neither the handler nor a block runs any part of the cycle"
     );
 
-    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
 
     let log = lifecycle_log(&wrapper);
     assert_eq!(
@@ -200,8 +200,8 @@ fn a_bus_change_is_answered_by_a_reactivation_that_adopts_the_new_layout() {
         "the stereo output the plugin moved to reaches both channels"
     );
     assert_eq!(
-        wrapper.apply_component_restart(),
-        Ok(false),
+        wrapper.apply_component_restart().ok(),
+        Some(false),
         "one request, one cycle"
     );
 }
@@ -220,7 +220,7 @@ fn a_reload_reactivates_and_asks_for_a_parameter_rescan() {
         "the rescan follows the cycle"
     );
 
-    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
 
     let log = lifecycle_log(&wrapper);
     let shape = cycle_shape(&log[before_cycle.len()..]);
@@ -253,7 +253,8 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
     wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
     let refusal = wrapper
         .apply_component_restart()
-        .expect_err("six output channels cannot be routed");
+        .expect_err("six output channels cannot be routed")
+        .to_string();
     assert!(
         take_pending_process_refusal_signal(),
         "the refusal wakes the control path's failure reporter"
@@ -272,7 +273,7 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
         "an effect out of service passes its dry input"
     );
 
-    assert_eq!(wrapper.reactivate_for_latency(), Ok(0));
+    assert_eq!(wrapper.reactivate_for_latency().ok(), Some(0));
     assert!(
         !wrapper.is_activated(),
         "a latency change does not bring back a layout the host refused"
@@ -341,7 +342,7 @@ fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
     process(&mut wrapper, &left, &right);
 
     wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 0.0);
-    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
     assert!(wrapper.is_activated());
 
     let halved: Vec<f32> = unity.iter().map(|sample| sample * 0.5).collect();
@@ -396,7 +397,7 @@ fn a_plugin_that_asks_for_a_restart_on_every_activation_is_cycled_a_bounded_numb
     wrapper.set_parameter(RESTART_FOREVER_PARAM_ID, 1.0);
     let before = activations(&wrapper);
 
-    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
     assert_eq!(
         activations(&wrapper) - before,
         4,
@@ -404,7 +405,7 @@ fn a_plugin_that_asks_for_a_restart_on_every_activation_is_cycled_a_bounded_numb
     );
     assert!(wrapper.is_activated());
 
-    assert_eq!(wrapper.apply_component_restart(), Ok(false));
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(false));
     assert_eq!(
         activations(&wrapper) - before,
         4,
