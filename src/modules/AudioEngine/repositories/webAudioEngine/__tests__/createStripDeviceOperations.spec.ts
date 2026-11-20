@@ -42,7 +42,7 @@ describe('createStripDeviceOperations', () => {
         const { operations } = createOperations(new Map([['t1', track]]), { isFallback: () => true });
 
         operations.updateDeviceParam('t1', 'd1', 'gain', 0.5);
-        operations.addDeviceToStrip('t1', 'd1', 'builtin-eq');
+        operations.addDeviceToStrip({ trackId: 't1', deviceId: 'd1', deviceType: 'builtin-eq' });
 
         expect(track.updateParam).not.toHaveBeenCalled();
         expect(track.addDevice).not.toHaveBeenCalled();
@@ -59,7 +59,9 @@ describe('createStripDeviceOperations', () => {
             ensureTrackStripInGraph: () => ({ value: {} as TrackChannelStrip, changed: true }),
         });
 
-        expect(() => operations.addDeviceToStrip('t1', 'd1', 'builtin-eq')).toThrow(fault);
+        expect(() => operations.addDeviceToStrip({ trackId: 't1', deviceId: 'd1', deviceType: 'builtin-eq' })).toThrow(
+            fault
+        );
         expect(runtimeGraph.current()).toBe(1);
     });
 
@@ -71,7 +73,9 @@ describe('createStripDeviceOperations', () => {
         });
         const { operations, runtimeGraph } = createOperations(new Map([['t1', track]]));
 
-        expect(() => operations.addDeviceToStrip('t1', 'd1', 'builtin-eq')).toThrow('insert failed');
+        expect(() => operations.addDeviceToStrip({ trackId: 't1', deviceId: 'd1', deviceType: 'builtin-eq' })).toThrow(
+            'insert failed'
+        );
         expect(runtimeGraph.current()).toBe(0);
     });
 

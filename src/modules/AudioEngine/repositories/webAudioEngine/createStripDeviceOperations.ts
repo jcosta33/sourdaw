@@ -13,21 +13,39 @@ import type {
 import type { BuiltinLufsMeterReading } from '../../models/BuiltinLufsMeterReader';
 import type { RuntimeGraphMutation, RuntimeGraphRevision } from './createRuntimeGraphRevision';
 
+type DeviceAddition = Readonly<{
+    trackId: string;
+    deviceId: string;
+    deviceType: string;
+    externalInstanceId?: string;
+    precedingDeviceIds?: readonly string[];
+    parameterIds?: readonly string[];
+}>;
+
+type ScheduledDeviceParam = Readonly<{
+    trackId: string;
+    deviceId: string;
+    paramId: string;
+    value: number;
+    time: number;
+}>;
+
+type ScheduledDeviceKey = Readonly<{
+    trackId: string;
+    deviceId: string;
+    pitch: number;
+    velocity: number;
+    time?: number;
+}>;
+
 export type StripDeviceOperations = {
-    addDeviceToStrip(
-        trackId: string,
-        deviceId: string,
-        deviceType: string,
-        externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[],
-        parameterIds?: readonly string[]
-    ): void;
+    addDeviceToStrip(addition: DeviceAddition): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
-    scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
-    scheduleDeviceKeyOn(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
-    scheduleDeviceKeyOff(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
+    scheduleDeviceParam(write: ScheduledDeviceParam): void;
+    scheduleDeviceKeyOn(key: ScheduledDeviceKey): void;
+    scheduleDeviceKeyOff(key: ScheduledDeviceKey): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void;
     removeMidiFxFromStrip(trackId: string, fxId: string): void;
@@ -50,15 +68,6 @@ export type StripDeviceOperationsPorts = Readonly<{
     ensureTrackStripInGraph: (trackId: string) => RuntimeGraphMutation<TrackChannelStrip>;
     pendingDevicePromises: Set<Promise<unknown>>;
     deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-}>;
-
-type DeviceAddition = Readonly<{
-    trackId: string;
-    deviceId: string;
-    deviceType: string;
-    externalInstanceId?: string;
-    precedingDeviceIds?: readonly string[];
-    parameterIds?: readonly string[];
 }>;
 
 function addDeviceToStrip(ports: StripDeviceOperationsPorts, addition: DeviceAddition): void {
@@ -178,25 +187,17 @@ export function createStripDeviceOperations(ports: StripDeviceOperationsPorts): 
     }
 
     return {
-        addDeviceToStrip: (trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds) =>
-            addDeviceToStrip(ports, {
-                trackId,
-                deviceId,
-                deviceType,
-                externalInstanceId,
-                precedingDeviceIds,
-                parameterIds,
-            }),
+        addDeviceToStrip: (addition) => addDeviceToStrip(ports, addition),
         removeDeviceFromStrip: (trackId, deviceId) => removeDeviceFromStrip(ports, trackId, deviceId),
         updateDeviceParam: (trackId, deviceId, paramId, value) =>
             onLiveTrack(trackId, (node) => node.updateParam(deviceId, paramId, value)),
         updateDevicePatch: (trackId, deviceId, patch) =>
             onLiveTrack(trackId, (node) => node.updatePatch(deviceId, patch)),
-        scheduleDeviceParam: (trackId, deviceId, paramId, value, time) =>
+        scheduleDeviceParam: ({ trackId, deviceId, paramId, value, time }) =>
             onLiveTrack(trackId, (node) => node.scheduleParam(deviceId, paramId, value, time)),
-        scheduleDeviceKeyOn: (trackId, deviceId, pitch, velocity, time) =>
+        scheduleDeviceKeyOn: ({ trackId, deviceId, pitch, velocity, time }) =>
             onLiveTrack(trackId, (node) => node.scheduleDeviceKeyOn(deviceId, pitch, velocity, time)),
-        scheduleDeviceKeyOff: (trackId, deviceId, pitch, velocity, time) =>
+        scheduleDeviceKeyOff: ({ trackId, deviceId, pitch, velocity, time }) =>
             onLiveTrack(trackId, (node) => node.scheduleDeviceKeyOff(deviceId, pitch, velocity, time)),
         updateDeviceBypass: (trackId, deviceId, bypassed) => {
             if (isFallback()) {

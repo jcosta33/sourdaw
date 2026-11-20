@@ -357,9 +357,12 @@ export function composeWebAudioEngine(providedContext?: AudioContext): {
         findDeviceOutputNode: devices.findDeviceOutputNode,
         updateDeviceParam: devices.updateDeviceParam,
         updateDevicePatch: devices.updateDevicePatch,
-        scheduleDeviceParam: devices.scheduleDeviceParam,
-        scheduleDeviceKeyOn: devices.scheduleDeviceKeyOn,
-        scheduleDeviceKeyOff: devices.scheduleDeviceKeyOff,
+        scheduleDeviceParam: (trackId, deviceId, paramId, value, time) =>
+            devices.scheduleDeviceParam({ trackId, deviceId, paramId, value, time }),
+        scheduleDeviceKeyOn: (trackId, deviceId, pitch, velocity, time) =>
+            devices.scheduleDeviceKeyOn({ trackId, deviceId, pitch, velocity, time }),
+        scheduleDeviceKeyOff: (trackId, deviceId, pitch, velocity, time) =>
+            devices.scheduleDeviceKeyOff({ trackId, deviceId, pitch, velocity, time }),
         updateDeviceBypass: devices.updateDeviceBypass,
         addMidiFxToStrip: devices.addMidiFxToStrip,
         removeMidiFxFromStrip: devices.removeMidiFxFromStrip,
@@ -448,7 +451,15 @@ export function composeWebAudioEngine(providedContext?: AudioContext): {
         get previewProgrammeGate() {
             return lifecycle.master().previewProgrammeGate;
         },
-        addDeviceToStrip: devices.addDeviceToStrip,
+        addDeviceToStrip: (trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds) =>
+            devices.addDeviceToStrip({
+                trackId,
+                deviceId,
+                deviceType,
+                externalInstanceId,
+                precedingDeviceIds,
+                parameterIds,
+            }),
         removeDeviceFromStrip: devices.removeDeviceFromStrip,
         reconnectRoutingForTrack: strips.reconnectRoutingForTrack,
         reconcileToasterParent: toasterPads.reconcileParent,

@@ -25,9 +25,7 @@ type LoadDeadlines = { expired: Set<Promise<unknown>>; nextDeadline: number };
 function readLoadDeadlines(
     pending: readonly CapturedLoad[],
     lastKnownStage: LoadStages,
-    waitStartedAtMs: number,
-    timeoutMs: number,
-    now: number
+    { waitStartedAtMs, timeoutMs, now }: Readonly<{ waitStartedAtMs: number; timeoutMs: number; now: number }>
 ): LoadDeadlines {
     const expired = new Set<Promise<unknown>>();
     let nextDeadline = Number.POSITIVE_INFINITY;
@@ -118,13 +116,11 @@ export async function waitForDeviceLoads(
             pending = readPendingLoads(capturedLoads, pendingDevicePromises)
         ) {
             const now = Date.now();
-            const { expired, nextDeadline } = readLoadDeadlines(
-                pending,
-                lastKnownStage,
+            const { expired, nextDeadline } = readLoadDeadlines(pending, lastKnownStage, {
                 waitStartedAtMs,
                 timeoutMs,
-                now
-            );
+                now,
+            });
             if (expired.size > 0) {
                 logger.warn(`[AudioEngine] Device loading timed out (${expired.size} pending)`);
                 for (const trackNode of trackNodes.values()) {
