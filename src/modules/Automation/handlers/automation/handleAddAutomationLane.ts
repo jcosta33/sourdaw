@@ -7,6 +7,8 @@ import { getAutomationParameterRangeResolver } from '../../useCases/automation/g
 import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomationBusId';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isAddAutomationLaneSessionEntry } from './validateAutomationSessionEntries';
+
 type AddAutomationLaneAction = {
     payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
 };
@@ -173,5 +175,6 @@ export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
         };
     },
     isNoop: isAddAutomationLaneNoop,
+    validateSessionEntry: isAddAutomationLaneSessionEntry,
     undoable: true,
 });

@@ -4681,10 +4681,10 @@
             "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 9
+            "count": 8
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 14
+            "count": 12
         }
     },
     "src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts": {

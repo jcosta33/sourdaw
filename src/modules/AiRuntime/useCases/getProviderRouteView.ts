@@ -20,7 +20,7 @@ export type ProviderRouteView = {
     capability: { operations: readonly string[]; modalities: readonly string[]; streaming: boolean } | null;
     fidelity: 'release-owned-local' | 'configured-remote' | null;
     fallback: { attempted: boolean; reasons: readonly string[] };
-    fallbackPolicy: 'local-only' | 'hosted-then-local';
+    fallbackPolicy: 'local-only' | 'hosted-only';
     dataDisclosure: { categories: readonly AgentDataCategory[]; retention: AgentDataRetention } | null;
     usage: {
         provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
@@ -254,7 +254,7 @@ export function getProviderRouteView(input: GetProviderRouteViewInput): Provider
         capability,
         fidelity,
         fallback: getFallbackProjection(run.modelRoute.requestedRoute, run.providerUsage),
-        fallbackPolicy: hostedRequested ? 'hosted-then-local' : 'local-only',
+        fallbackPolicy: hostedRequested ? 'hosted-only' : 'local-only',
         dataDisclosure: getDataDisclosureProjection(run.providerUsage),
         usage: getUsageProjection(run.providerUsage),
         cost: getCostProjection(run),

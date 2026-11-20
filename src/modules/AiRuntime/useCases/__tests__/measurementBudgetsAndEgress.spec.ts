@@ -1683,7 +1683,7 @@ describe('no sample data reaches a hosted provider through a vibe batch value re
         createRun();
 
         const bodies = await recordHostedBodies(() =>
-            chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(0.42) })
+            chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(0.42), plannedTier: 'hosted' })
         );
 
         expect(bodies.length).toBeGreaterThan(0);
@@ -1699,7 +1699,7 @@ describe('no sample data reaches a hosted provider through a vibe batch value re
             createRun();
 
             const bodies = await recordHostedBodies(() =>
-                chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(SAMPLE_SERIES) })
+                chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(SAMPLE_SERIES), plannedTier: 'hosted' })
             );
 
             expect(bodies.length).toBeGreaterThan(0);
