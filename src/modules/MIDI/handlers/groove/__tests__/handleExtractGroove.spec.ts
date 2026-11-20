@@ -307,4 +307,55 @@ describe('handleExtractGroove', () => {
         expect(handleExtractGroove.execute(eighth)).toMatchObject({ status: 'written' });
         expect(extractedIds()).toEqual(['groove-clip-source-first', 'groove-clip-source-second']);
     });
+    describe('without a template id', () => {
+        function idLessAction() {
+            return createAction(undefined);
+        }
+
+        function extractIdLess() {
+            const action = idLessAction();
+            const { inverseAction } = handleExtractGroove.describe(action);
+            void handleExtractGroove.execute(action);
+            return { action, inverseAction };
+        }
+
+        it('gives a re-extraction after a note change the next free version, and redo recreates it', () => {
+            extractIdLess();
+            mocks.notes = [{ id: 'note', startBeat: 0.06, velocity: 96 }];
+            const second = extractIdLess();
+
+            expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v2']);
+            expect(second.action.payload.templateId).toBe('groove-clip-source-v2');
+
+            if (second.inverseAction?.type !== 'deleteGrooveTemplate') {
+                throw new Error('Expected a deleteGrooveTemplate inverse');
+            }
+            void handleDeleteGrooveTemplate.execute(second.inverseAction);
+            expect(extractedIds()).toEqual(['groove-clip-source-v1']);
+
+            expect(handleExtractGroove.execute(second.action)).toMatchObject({ status: 'written' });
+            expect(extractedIds()).toEqual(['groove-clip-source-v1', 'groove-clip-source-v2']);
+        });
+
+        it('reuses the existing template when the content is identical', () => {
+            extractIdLess();
+            const again = idLessAction();
+
+            expect(handleExtractGroove.isNoop?.(again)).toBe(true);
+            handleExtractGroove.describe(again);
+            expect(again.payload.templateId).toBe('groove-clip-source-v1');
+            expect(handleExtractGroove.execute(again)).toEqual({ status: 'no-write' });
+            expect(extractedIds()).toEqual(['groove-clip-source-v1']);
+        });
+
+        it('still refuses an explicit id that holds other content', () => {
+            extractIdLess();
+            mocks.notes = [{ id: 'note', startBeat: 0.06, velocity: 96 }];
+
+            expect(handleExtractGroove.execute(createAction('groove-clip-source-v1'))).toEqual({
+                status: 'conflict',
+                reason: 'template-identity-conflict',
+            });
+        });
+    });
 });
