@@ -25,6 +25,7 @@ import { HumanizePanel } from '../components/HumanizePanel';
 import { LegatoTuning } from '../components/LegatoTuning';
 import { LevainMacroStrip } from '../components/LevainMacroStrip';
 import { MicBlendSlider } from '../components/MicBlendSlider';
+import { useLevainMasterGesture } from '../hooks/useLevainMasterGesture';
 
 const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean; family: string }[] = [
     { id: 'violin-1', label: 'Solo Violin', hasSamples: true, family: 'Strings' },
@@ -80,6 +81,8 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         index: number;
     } | null>(null);
     const expert = state.uiLevel === 6;
+    const master = useLevainMasterGesture(deviceId, expert);
+    const displayedMaster = master.preview ?? state.patch.masterGain;
 
     const { patch, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
     const sampleLoadError = state.sampleLoadError ?? null;
@@ -413,8 +416,11 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <Row justify="between" wrap gap={3}>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
-                                            value={patch.masterGain}
-                                            onChange={(value) => setLevainParamWithAudio(deviceId, 'masterGain', value)}
+                                            key={deviceId}
+                                            value={displayedMaster}
+                                            onChange={master.change}
+                                            gestureAuthority={master.authority}
+                                            paramId="masterGain"
                                             min={0}
                                             max={2}
                                             step={0.01}
@@ -427,7 +433,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             Master
                                         </span>
                                         <span className="font-mono text-caption text-foreground/85">
-                                            {(patch.masterGain * 100).toFixed(0)}%
+                                            {(displayedMaster * 100).toFixed(0)}%
                                         </span>
                                     </Stack>
 

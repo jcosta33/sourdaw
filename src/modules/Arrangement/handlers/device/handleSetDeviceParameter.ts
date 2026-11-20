@@ -8,6 +8,7 @@ import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue, findDeviceParameterDefault } from '../../models/DeviceParameterLaw';
+import { type Device } from '../../models/Track';
 import { getPlannedDevicePatchState } from '../../useCases/device/getPlannedDevicePatchState';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -39,10 +40,11 @@ function resolveDeviceTarget(
     context?: HandlerValidationContext
 ) {
     if (context) {
+        const { paramId } = action.payload;
         const planned = getPlannedDevicePatchState({
             deviceId: action.payload.deviceId,
             trackId: action.payload.expectedTrackId,
-            parameterIds: action.payload.paramId ? [action.payload.paramId] : [],
+            parameterIds: paramId === 'masterGain' ? [paramId, 'master_gain'] : paramId ? [paramId] : [],
             context,
         });
         if (!planned) {
@@ -64,6 +66,18 @@ function resolveDeviceTarget(
     );
     const owner = owners.length === 1 ? owners[0] : undefined;
     return { owner, device: owner?.devices.find((device) => device.id === action.payload.deviceId) };
+}
+
+function valueWhenParameterIsAbsent(
+    device: Pick<Device, 'type' | 'parameterValues'>,
+    paramId: string
+): number | undefined {
+    const legacyMaster =
+        device.type === 'levain' && paramId === 'masterGain' ? device.parameterValues.master_gain : undefined;
+    if (legacyMaster !== undefined && Number.isFinite(legacyMaster)) {
+        return clampDeviceParameterValue({ deviceType: device.type, paramId, value: legacyMaster });
+    }
+    return findDeviceParameterDefault({ deviceType: device.type, paramId });
 }
 
 function nativeUnitMatches(
@@ -246,13 +260,9 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const owner = getTrackStoreState()?.tracks.find((track) =>
             track.devices.some((device) => device.id === action.payload.deviceId)
         );
-        const previousValue = owner?.devices.find((device) => device.id === action.payload.deviceId)?.parameterValues[
-            action.payload.paramId
-        ];
-        const deviceType = owner?.devices.find((device) => device.id === action.payload.deviceId)?.type;
-        const defaultValue = deviceType
-            ? findDeviceParameterDefault({ deviceType, paramId: action.payload.paramId })
-            : undefined;
+        const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+        const previousValue = device?.parameterValues[action.payload.paramId];
+        const defaultValue = device ? valueWhenParameterIsAbsent(device, action.payload.paramId) : undefined;
         return () => {
             const effects: Array<() => void> = rollbackAutomationRecording ? [rollbackAutomationRecording] : [];
             const runtimeRollbackValue = previousValue ?? defaultValue;
@@ -297,9 +307,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const { owner, device: prev } = resolveDeviceTarget(alpha, context);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
         const previousValuePresent = prev ? Object.hasOwn(prev.parameterValues, alpha.payload.paramId) : false;
-        const defaultValue = prev
-            ? findDeviceParameterDefault({ deviceType: prev.type, paramId: alpha.payload.paramId })
-            : undefined;
+        const defaultValue = prev ? valueWhenParameterIsAbsent(prev, alpha.payload.paramId) : undefined;
         const exactLabel = describeParameterOutcome(alpha.payload);
         const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? defaultValue;
         const expectedPreviousValuePresent =
