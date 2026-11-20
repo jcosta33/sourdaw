@@ -17,6 +17,7 @@ import {
 import { describeBatchPreviewProgress } from './agentRequestOrchestration/describeBatchPreviewProgress';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
+import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { settleStoppedBatchPreparation } from './agentRequestOrchestration/settleStoppedBatchPreparation';
@@ -24,6 +25,7 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { cancelPendingChatActions } from './cancelPendingChatActions';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getProjectContext } from './getProjectContext';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
@@ -568,23 +570,14 @@ export async function reproposePendingChatActions(
             requireExplicitApproval: true,
             metricGoalState: JSON.stringify(goalState),
         });
-        if (liveRun.plan !== null) {
-            const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-            agentRunLifecycle.recordPlan({
-                runId: liveRun.runId,
-                summary: liveRun.plan.summary,
-                commandIds: liveRun.plan.commandIds,
-                serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-                revision: refreshed.currentRevision,
-                scope: liveRun.scope,
-                grants: liveRun.grants,
-                budgets: liveRun.budgets,
-                plan: {
-                    ...liveRun.plan,
-                    metricGoalState: approval.metricGoalState ?? undefined,
-                    applicationToolReceipts: [...priorReceipts, ...refreshedProof.receipts],
-                },
-            });
+        const refusal = recordBatchPreviewEvidence(
+            liveRun,
+            refreshed.currentRevision,
+            approval.metricGoalState,
+            refreshedProof.receipts
+        );
+        if (refusal !== null) {
+            return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
         }
     }
     const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval);

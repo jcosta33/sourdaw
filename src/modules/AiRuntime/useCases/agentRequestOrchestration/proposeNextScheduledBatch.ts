@@ -17,6 +17,7 @@ import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPla
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
@@ -266,10 +267,14 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts, {
+    const refusal = recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState, proof.receipts, {
         commandBatch,
         envelope: parsedCommandBatch.envelope,
     });
+    if (refusal !== null) {
+        agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
+        return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
+    }
     const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
     const cardLines = describeVibeBatchCard({
         batch: input.batch,

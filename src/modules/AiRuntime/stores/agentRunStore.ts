@@ -39,7 +39,11 @@ import {
     type AgentRunVibeRunBatchSchedule,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
-import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import {
+    APPLICATION_TOOL_RECEIPT_MAX_BYTES,
+    measureApplicationToolReceiptBytes,
+    type ApplicationToolReceipt,
+} from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
@@ -55,7 +59,7 @@ import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
-const MAX_COLLECTION_LENGTH = 256;
+export const MAX_COLLECTION_LENGTH = 256;
 /**
  * Every batch preview of a run appends its verification receipts to the plan, so the list grows
  * with the run rather than with one turn. A vibe run knows that count before it is scheduled — one
@@ -935,7 +939,15 @@ function readCollection<TItem>(
     return result;
 }
 
+/** A stored receipt reads back only within the per-call bound it was created under. */
 function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | null {
+    const receipt = readApplicationToolReceiptFields(value);
+    return receipt !== null && measureApplicationToolReceiptBytes(receipt) <= APPLICATION_TOOL_RECEIPT_MAX_BYTES
+        ? receipt
+        : null;
+}
+
+function readApplicationToolReceiptFields(value: unknown): ApplicationToolReceipt | null {
     if (
         !isRecord(value) ||
         value.schema !== 'sourdaw.application-tool-receipt' ||

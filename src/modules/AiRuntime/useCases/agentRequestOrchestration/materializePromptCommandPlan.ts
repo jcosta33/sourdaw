@@ -8,6 +8,7 @@ import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentP
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { planAgentRun } from '../planAgentRun';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 
@@ -137,6 +138,20 @@ function bindBatchSchedule(
 }
 
 /** The commands the batch being planned and every later batch of its schedule still owe. */
+type PlanRecord = Parameters<typeof agentRunLifecycle.recordPlan>[0];
+
+/**
+ * A plan the run could not persist is refused as a rejected plan is, before the resumed decision is
+ * accepted or anything is written.
+ */
+function requireAdmittedPlanRecord(record: PlanRecord): PlanRecord {
+    const refusal = agentRunLifecycle.admitPlan(record);
+    if (refusal !== null) {
+        throw new Error(describeAgentRunPlanBoundRefusal(refusal));
+    }
+    return record;
+}
+
 function getScheduledCommandCount(schedule: AgentRunBatchSchedule): number {
     return schedule.slices
         .filter((slice) => slice.position >= schedule.position)
@@ -247,8 +262,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         if (plannedRun.status === 'rejected') {
             throw new Error(plannedRun.reason);
         }
-        input.onResumedPlanAccepted?.();
-        agentRunLifecycle.recordPlan({
+        const planRecord = requireAdmittedPlanRecord({
             runId: input.runId,
             summary: input.actionLabels.join('\n'),
             commandIds: [],
@@ -260,6 +274,8 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             budgets: admittedRun.budgets,
             plan: plannedRun.plan,
         });
+        input.onResumedPlanAccepted?.();
+        agentRunLifecycle.recordPlan(planRecord);
         agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
         const completion = (async () => {
             await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
@@ -348,8 +364,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
     if (plannedRun.status === 'rejected') {
         throw new Error(plannedRun.reason);
     }
-    input.onResumedPlanAccepted?.();
-    agentRunLifecycle.recordPlan({
+    const planRecord = requireAdmittedPlanRecord({
         runId: input.runId,
         summary: input.actionLabels.join('\n'),
         commandIds,
@@ -366,6 +381,8 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             ...(batchSchedule === undefined ? {} : { batchSchedule }),
         },
     });
+    input.onResumedPlanAccepted?.();
+    agentRunLifecycle.recordPlan(planRecord);
     agentRunLifecycle.recordBatch({
         runId: input.runId,
         batch: {

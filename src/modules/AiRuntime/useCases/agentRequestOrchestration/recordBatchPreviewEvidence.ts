@@ -1,4 +1,5 @@
 import { type AgentRun } from '../../models/AgentRun';
+import { type AgentRunPlanBoundRefusal } from '../../stores/readAgentRunPlanBoundRefusal';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
@@ -9,21 +10,22 @@ type PreviewedBatch = Pick<Parameters<typeof deriveAudibleImpact>[0], 'commandBa
 /**
  * The run keeps the batch's measured goal state and every receipt its preview read, after those of
  * earlier batches. Given the previewed batch, the plan also records the audible claim its proofs
- * verify; without it the plan restates the frozen predictions unverified.
+ * verify; without it the plan restates the frozen predictions unverified. A plan that could not keep
+ * them is refused before anything is written, and the refusal is returned for the caller to report.
  */
 export function recordBatchPreviewEvidence(
     liveRun: AgentRun,
     revision: string,
-    metricGoalState: string | undefined,
+    metricGoalState: string | null | undefined,
     receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts'],
     batch?: PreviewedBatch
-): void {
+): AgentRunPlanBoundRefusal | null {
     if (!liveRun.plan) {
-        return;
+        return null;
     }
     const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
     const state = metricGoalStateCodec(metricGoalState);
-    agentRunLifecycle.recordPlan({
+    const record = {
         runId: liveRun.runId,
         summary: liveRun.plan.summary,
         commandIds: liveRun.plan.commandIds,
@@ -34,11 +36,16 @@ export function recordBatchPreviewEvidence(
         budgets: liveRun.budgets,
         plan: {
             ...liveRun.plan,
-            metricGoalState,
+            metricGoalState: metricGoalState ?? undefined,
             applicationToolReceipts: [...priorReceipts, ...receipts],
         },
         audibleClaim: readVerifiedAudibleClaim(state, batch),
-    });
+    };
+    const refusal = agentRunLifecycle.admitPlan(record);
+    if (refusal === null) {
+        agentRunLifecycle.recordPlan(record);
+    }
+    return refusal;
 }
 
 function readVerifiedAudibleClaim(state: ReturnType<typeof metricGoalStateCodec>, batch: PreviewedBatch | undefined) {

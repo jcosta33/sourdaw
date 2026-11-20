@@ -39,6 +39,8 @@ import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecove
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
+import { readAgentRunPlanBoundRefusal, type AgentRunPlanBoundRefusal } from '../stores/readAgentRunPlanBoundRefusal';
+import { createLegacyAgentRunPlan } from '../transformers/createLegacyAgentRunPlan';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
@@ -59,6 +61,7 @@ import {
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
 import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
 import { derivePredictedAudibleImpact } from './derivePredictedAudibleImpact';
+import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 
@@ -313,43 +316,6 @@ function getExactPendingEffectManualReviewSagaStepIds(
     return expectedStepIds;
 }
 
-function createLegacyAgentRunPlan(input: {
-    summary: string;
-    commandIds: string[];
-    serializedBatchIdentity: string | null;
-    applicationToolReceipts: ApplicationToolReceipt[];
-    revision: string;
-    scope: AgentRunScope;
-}): AgentRunPlan {
-    return {
-        summary: input.summary,
-        commandIds: [...input.commandIds],
-        serializedBatchIdentity: input.serializedBatchIdentity,
-        applicationToolReceipts: structuredClone(input.applicationToolReceipts),
-        revision: input.revision,
-        classification: 'simple',
-        showPlanPanel: false,
-        objective: input.summary,
-        interpretedConstraints: [`Plan is bound to project revision ${input.revision}.`],
-        scope: structuredClone(input.scope),
-        steps: [],
-        expectedImpact: {
-            project: [],
-            audible: {
-                status: 'not-claimed',
-                reason: 'No audible result is claimed by a persisted legacy plan.',
-            },
-        },
-        capabilities: [],
-        risks: [],
-        approvalPoints: [],
-        validationStrategy: ['Revalidate the persisted project revision before resuming.'],
-        stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
-        alternatives: [],
-        needsUserDecision: false,
-    } satisfies AgentRunPlan;
-}
-
 function clearAgentRuns(): void {
     resetAgentRunState();
 }
@@ -480,7 +446,31 @@ function transitionAgentRunPhase(input: {
     });
 }
 
-function recordAgentRunPlan(input: {
+/**
+ * Whether the run a plan write would leave can be persisted and read back; `null` admits it. An
+ * unknown run is admitted here so the write refuses it with its own reason.
+ */
+function readAgentRunPlanWriteRefusal(
+    run: AgentRun | null,
+    write: (run: AgentRun) => AgentRun
+): AgentRunPlanBoundRefusal | null {
+    if (run === null) {
+        return null;
+    }
+    const { plan } = write(run);
+    return plan === null ? null : readAgentRunPlanBoundRefusal(plan);
+}
+
+/** The write path itself refuses a plan its admission would refuse, before anything is persisted. */
+function requireAdmittedAgentRunPlan(run: AgentRun): AgentRun {
+    const refusal = run.plan === null ? null : readAgentRunPlanBoundRefusal(run.plan);
+    if (refusal !== null) {
+        throw new Error(describeAgentRunPlanBoundRefusal(refusal));
+    }
+    return run;
+}
+
+type RecordAgentRunPlanInput = {
     metricGoalState?: string;
     runId: string;
     summary: string;
@@ -495,41 +485,51 @@ function recordAgentRunPlan(input: {
     /** The measured claim this write itself supplies; every other plan write claims nothing audible. */
     audibleClaim?: AgentRunPlan['expectedImpact']['audible'];
     recordedAt?: number;
-}): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        if (AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
-            throw new Error(`Terminal agent run cannot record a plan: ${run.runId}`);
-        }
-        return {
-            ...run,
-            phase: reduceAgentRunTransition(run.phase, { type: 'plan-recorded' }),
-            revisions: { ...run.revisions, planned: input.revision },
-            scope: structuredClone(input.scope),
-            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
-            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-            plan: withAudibleClaim(
-                carryBatchSchedule(
-                    {
-                        ...structuredClone(
-                            input.plan ??
-                                createLegacyAgentRunPlan({
-                                    summary: input.summary,
-                                    commandIds: input.commandIds,
-                                    serializedBatchIdentity: input.serializedBatchIdentity,
-                                    applicationToolReceipts: input.applicationToolReceipts ?? [],
-                                    revision: input.revision,
-                                    scope: input.scope,
-                                })
-                        ),
-                        metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
-                    },
-                    run.plan
-                ),
-                input.audibleClaim,
-                input.metricGoalState ?? input.plan?.metricGoalState
+};
+
+function recordAgentRunPlan(input: RecordAgentRunPlanInput): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) =>
+        requireAdmittedAgentRunPlan(withRecordedPlan(run, input))
+    );
+}
+
+function admitAgentRunPlan(input: RecordAgentRunPlanInput): AgentRunPlanBoundRefusal | null {
+    return readAgentRunPlanWriteRefusal(getAgentRun(input.runId), (run) => withRecordedPlan(run, input));
+}
+
+function withRecordedPlan(run: AgentRun, input: RecordAgentRunPlanInput): AgentRun {
+    if (AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
+        throw new Error(`Terminal agent run cannot record a plan: ${run.runId}`);
+    }
+    return {
+        ...run,
+        phase: reduceAgentRunTransition(run.phase, { type: 'plan-recorded' }),
+        revisions: { ...run.revisions, planned: input.revision },
+        scope: structuredClone(input.scope),
+        grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
+        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
+        plan: withAudibleClaim(
+            carryBatchSchedule(
+                {
+                    ...structuredClone(
+                        input.plan ??
+                            createLegacyAgentRunPlan({
+                                summary: input.summary,
+                                commandIds: input.commandIds,
+                                serializedBatchIdentity: input.serializedBatchIdentity,
+                                applicationToolReceipts: input.applicationToolReceipts ?? [],
+                                revision: input.revision,
+                                scope: input.scope,
+                            })
+                    ),
+                    metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
+                },
+                run.plan
             ),
-        };
-    });
+            input.audibleClaim,
+            input.metricGoalState ?? input.plan?.metricGoalState
+        ),
+    };
 }
 
 /**
@@ -598,7 +598,7 @@ function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecisi
     }));
 }
 
-function recordAgentRunApplicationToolEvidence(input: {
+type RecordAgentRunApplicationToolEvidenceInput = {
     runId: string;
     summary: string;
     applicationToolReceipts: ApplicationToolReceipt[];
@@ -607,35 +607,47 @@ function recordAgentRunApplicationToolEvidence(input: {
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
     recordedAt?: number;
-}): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        const plan =
-            run.plan === null
-                ? createLegacyAgentRunPlan({
-                      summary: input.summary,
-                      commandIds: [],
-                      serializedBatchIdentity: null,
-                      applicationToolReceipts: input.applicationToolReceipts,
-                      revision: input.revision,
-                      scope: input.scope,
-                  })
-                : withAudibleClaim(
-                      { ...run.plan, applicationToolReceipts: structuredClone(input.applicationToolReceipts) },
-                      undefined,
-                      run.plan.metricGoalState
-                  );
-        if (run.plan !== null) {
-            return { ...run, plan };
-        }
-        return {
-            ...run,
-            revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
-            scope: structuredClone(input.scope),
-            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
-            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-            plan,
-        };
-    });
+};
+
+function recordAgentRunApplicationToolEvidence(input: RecordAgentRunApplicationToolEvidenceInput): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) =>
+        requireAdmittedAgentRunPlan(withApplicationToolEvidence(run, input))
+    );
+}
+
+function admitAgentRunApplicationToolEvidence(
+    input: RecordAgentRunApplicationToolEvidenceInput
+): AgentRunPlanBoundRefusal | null {
+    return readAgentRunPlanWriteRefusal(getAgentRun(input.runId), (run) => withApplicationToolEvidence(run, input));
+}
+
+function withApplicationToolEvidence(run: AgentRun, input: RecordAgentRunApplicationToolEvidenceInput): AgentRun {
+    const plan =
+        run.plan === null
+            ? createLegacyAgentRunPlan({
+                  summary: input.summary,
+                  commandIds: [],
+                  serializedBatchIdentity: null,
+                  applicationToolReceipts: input.applicationToolReceipts,
+                  revision: input.revision,
+                  scope: input.scope,
+              })
+            : withAudibleClaim(
+                  { ...run.plan, applicationToolReceipts: structuredClone(input.applicationToolReceipts) },
+                  undefined,
+                  run.plan.metricGoalState
+              );
+    if (run.plan !== null) {
+        return { ...run, plan };
+    }
+    return {
+        ...run,
+        revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
+        scope: structuredClone(input.scope),
+        grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
+        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
+        plan,
+    };
 }
 
 function recordAgentRunBatch(input: { runId: string; batch: AgentRunBatch; recordedAt?: number }): AgentRun {
@@ -2516,6 +2528,8 @@ export const agentRunLifecycle = {
     settlePendingEffectManualReview: settleAgentRunPendingEffectManualReview,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,
+    admitApplicationToolEvidence: admitAgentRunApplicationToolEvidence,
+    admitPlan: admitAgentRunPlan,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
     rebindMetricGoalState: rebindAgentRunMetricGoalState,
