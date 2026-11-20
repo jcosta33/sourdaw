@@ -1954,6 +1954,11 @@
         {
             "surface": "cloud-ai-providers",
             "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.anthropic.com/v1/messages"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
             "value": "https://api.openai.com"
         },
         {
