@@ -5,12 +5,13 @@ import { countSettledTakes } from '#/modules/Transport/useCases';
 
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
+import { buildProjectData } from '../fileIO/buildProjectData';
+
 import {
     authorizedPreparations,
     ProjectSavePreparationStaleError,
     type SavePreparationIntent,
-} from '../../../stores/savePreparationAuthority';
-import { buildProjectData } from '../fileIO/buildProjectData';
+} from './savePreparationAuthority';
 
 type SaveAuthority = {
     readonly projectId: string;

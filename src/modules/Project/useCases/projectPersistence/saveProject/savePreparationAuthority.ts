@@ -1,6 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type ProjectStoreState } from './projectStore';
+import { type ProjectStoreState } from '../../../stores/projectStore';
 
 export type SavePreparationIntent = NonNullable<Extract<AppAction, { type: 'saveProject' }>['payload']>;
 

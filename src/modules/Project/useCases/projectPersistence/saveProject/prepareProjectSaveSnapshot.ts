@@ -21,12 +21,13 @@ import {
     prepareArrangementStoreState,
 } from '../../../stores/arrangementStore';
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
+import { takeSnapshot } from '../../arrangement/takeSnapshot';
+
 import {
     authorizedPreparations,
     ProjectSavePreparationStaleError,
     type SavePreparationIntent,
-} from '../../../stores/savePreparationAuthority';
-import { takeSnapshot } from '../../arrangement/takeSnapshot';
+} from './savePreparationAuthority';
 
 function snapshotSources(): readonly unknown[] {
     return [
