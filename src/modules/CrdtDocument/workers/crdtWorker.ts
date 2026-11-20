@@ -2,10 +2,9 @@
 /**
  * CRDT Worker — runs Automerge WASM operations off the main thread.
  *
- * `loadBundle`, `mergeBundle` and `compactShadow` are the blocking Automerge
- * operations (they parse or re-encode WASM binary data). Moving them here keeps
- * the main thread free during project load, collaboration patch ingestion and
- * periodic compaction.
+ * These operations parse or re-encode Automerge binary data. Moving them here
+ * keeps the main thread free during project load, collaboration patch ingestion,
+ * incremental persistence and periodic compaction.
  *
  * Port protocol (self.onmessage):
  *   ← { id, type: 'loadBundle',  bundle:  [string, Uint8Array][], retainShadow?: boolean }
@@ -19,13 +18,29 @@
  *   → { id, type: 'compacted',     bundle: [string, Uint8Array][] }
  *   → { id, type: 'compactStale',  reason: string }
  *
+ *   ← { id, type: 'encodeIncrementals', documents: IncrementalEncodingInput[] }
+ *   → { id, type: 'incrementalsEncoded', documents: EncodedIncremental[] }
+ *
  *   ← { id, type: 'inspectCheckpointRootMedia', rootBytes: Uint8Array }
  *   → { id, type: 'checkpointRootMediaInspected', audioBufferIds: string[] }
  *
  *   → { id, type: 'error', message: string }  (on any failure)
  */
 
-import { type Doc, type Heads, getHeads, load, loadIncremental, merge, save } from '@automerge/automerge';
+import {
+    type Doc,
+    type Heads,
+    free,
+    getHeads,
+    getMissingDeps,
+    load,
+    loadIncremental,
+    merge,
+    save,
+    saveSince,
+} from '@automerge/automerge';
+
+import { type EncodedIncremental, type IncrementalEncodingInput } from '../models/IncrementalPersistenceEncoding';
 
 import { inspectCheckpointRootMedia } from './checkpointRootMedia';
 
@@ -228,6 +243,32 @@ export function processCompactShadow({
     return { status: 'compacted', bundle };
 }
 
+function processIncrementalEncoding(documents: readonly IncrementalEncodingInput[]): EncodedIncremental[] {
+    const seen = new Set<string>();
+    const encoded: EncodedIncremental[] = [];
+    for (const { id, seed, heads, frontier } of documents) {
+        if (seen.has(id)) {
+            throw new Error(`[CrdtWorker] Duplicate incremental encoding document ${id}`);
+        }
+        seen.add(id);
+        const doc = load(seed);
+        try {
+            const currentHeads = getHeads(doc);
+            if (!haveSameHeads(currentHeads, heads)) {
+                throw new Error(`[CrdtWorker] Incremental encoding seed heads changed for ${id}`);
+            }
+            // A fresh load exposes the entire applied graph. Current heads remain
+            // usable even when getMissingDeps also reports unrelated queued changes.
+            const alreadyCurrent = frontier.every((head) => currentHeads.includes(head));
+            const activeFrontier = alreadyCurrent || getMissingDeps(doc, frontier).length === 0 ? frontier : [];
+            encoded.push({ id, chunk: Uint8Array.from(saveSince(doc, activeFrontier)), heads: currentHeads });
+        } finally {
+            free(doc);
+        }
+    }
+    return encoded;
+}
+
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
 type WorkerInMsg =
@@ -241,6 +282,7 @@ type WorkerInMsg =
           removedDocIds: string[];
           expectedHeads: [string, Heads][];
       }
+    | { id: number; type: 'encodeIncrementals'; documents: IncrementalEncodingInput[] }
     | { id: number; type: 'inspectCheckpointRootMedia'; rootBytes: Uint8Array };
 
 self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
@@ -277,6 +319,12 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
                 mergedDocIds: result.mergedDocIds,
                 newDocIds: result.newDocIds,
             });
+        } else if (data.type === 'encodeIncrementals') {
+            const documents = processIncrementalEncoding(data.documents);
+            self.postMessage(
+                { id, type: 'incrementalsEncoded', documents },
+                documents.map(({ chunk }) => chunk.buffer)
+            );
         } else if (data.type === 'inspectCheckpointRootMedia') {
             const result = inspectCheckpointRootMedia(data.rootBytes);
             self.postMessage({ id, type: 'checkpointRootMediaInspected', audioBufferIds: result.audioBufferIds });
