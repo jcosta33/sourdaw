@@ -13004,7 +13004,7 @@
     },
     "src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
