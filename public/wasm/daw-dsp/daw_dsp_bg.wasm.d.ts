@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:ac7fe727782a8172b5bd11de0b6075992ee370ab6a08a3abecdea73b4f7d5ee6
+// @wasm-bindgen-dts crate-source: sha256:78f8d77986b1a83ece25ba7b6a9ecff18e8d90697445b01032b3fd10a9b5f8b1
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -100,6 +100,7 @@ export const gluteninstance_set_param: (a: number, b: number, c: number, d: numb
 export const grandbouleinstance_active_voices: (a: number) => number;
 export const grandbouleinstance_all_notes_off: (a: number) => void;
 export const grandbouleinstance_get_nan_flush_count: (a: number) => number;
+export const grandbouleinstance_get_preview_voice_refusal_count: (a: number) => number;
 export const grandbouleinstance_get_right_ptr: (a: number) => number;
 export const grandbouleinstance_lifecycle_state: (a: number) => number;
 export const grandbouleinstance_new: (a: number, b: number) => number;
@@ -114,6 +115,8 @@ export const grandbouleinstance_push_note_expression: (a: number, b: number, c: 
 export const grandbouleinstance_push_note_off: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
 export const grandbouleinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
+export const grandbouleinstance_push_preview_note_off: (a: number, b: number, c: number) => number;
+export const grandbouleinstance_push_preview_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
 export const grandbouleinstance_push_sostenuto: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_sustain: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;

@@ -82,6 +82,7 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     const controls = deviceNode.grandBouleControls;
     const engine: GrandBouleEngineHandle = {
         noteOn: (noteInput) => controls.noteOn(noteInput.midiNote, noteInput.velocity),
+        startPreviewNote: (noteInput) => controls.startPreviewNote(noteInput.midiNote, noteInput.velocity),
         noteOff: (noteInput) => controls.noteOff(noteInput.midiNote),
         noteOnMidi2: (noteInput) =>
             controls.noteOnMidi2(noteInput.midiNote, noteInput.velocity16bit, noteInput.pitchOffsetQ24),

@@ -11,6 +11,8 @@
 export type GrandBouleEngineHandle = {
     /** Trigger a note. MIDI notes outside A0..C8 are ignored silently. */
     noteOn: (input: { midiNote: number; velocity: number }) => void;
+    /** Start one preview voice and return its exact release. */
+    startPreviewNote: (input: { midiNote: number; velocity: number }) => (() => void) | undefined;
     /**
      * Trigger a note with MIDI 2.0 fidelity: 16-bit velocity and a signed
      * microtuning pitch offset in semitones × 2^24 (Q24).
@@ -55,6 +57,7 @@ export type GrandBouleEngineHandle = {
 export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHandle {
     return {
         noteOn: () => {},
+        startPreviewNote: () => undefined,
         noteOnMidi2: () => {},
         noteOff: () => {},
         setParam: () => {},

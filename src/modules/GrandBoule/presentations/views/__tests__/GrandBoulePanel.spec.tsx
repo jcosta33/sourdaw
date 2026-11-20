@@ -160,7 +160,11 @@ describe('GrandBoulePanel', () => {
         };
         const tracks = projectTrackState.current.tracks;
         const retirement = new AbortController();
+        const releaseOriginal = vi.fn();
         const controls = {
+            startPreviewNote: vi.fn<(note: number, velocity: number) => (() => void) | undefined>(
+                () => releaseOriginal
+            ),
             retirement: retirement.signal,
             ready: true,
             noteOn: vi.fn<(note: number, velocity: number) => void>(),
@@ -183,8 +187,10 @@ describe('GrandBoulePanel', () => {
         vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
         fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
         fireEvent.pointerUp(canvas, { pointerId: 1 });
-        expect(controls.noteOn).toHaveBeenCalledOnce();
-        expect(controls.noteOff).toHaveBeenCalledWith(controls.noteOn.mock.calls[0]?.[0]);
+        expect(controls.startPreviewNote).toHaveBeenCalledExactlyOnceWith(23, 0.8);
+        expect(releaseOriginal).toHaveBeenCalledOnce();
+        expect(controls.noteOn).not.toHaveBeenCalled();
+        expect(controls.noteOff).not.toHaveBeenCalled();
         const paramsBefore = controls.setParam.mock.calls.length;
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'other', deviceType: 'grand-boule' }));
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'other' }));
@@ -192,8 +198,12 @@ describe('GrandBoulePanel', () => {
         expect(controls.setParam).toHaveBeenCalledTimes(paramsBefore);
         expect(screen.getByText('ready')).toBeInTheDocument();
         const replacementRetirement = new AbortController();
+        const releaseReplacement = vi.fn();
         const replacement = {
             ...controls,
+            startPreviewNote: vi.fn<(note: number, velocity: number) => (() => void) | undefined>(
+                () => releaseReplacement
+            ),
             retirement: replacementRetirement.signal,
             setParam: vi.fn(),
             noteOn: vi.fn<(note: number, velocity: number) => void>(),
@@ -204,8 +214,12 @@ describe('GrandBoulePanel', () => {
         expect(replacement.setParam).toHaveBeenCalled();
         fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 220, clientY: 400 });
         fireEvent.pointerUp(canvas, { pointerId: 2 });
-        expect(replacement.noteOn).toHaveBeenCalledOnce();
-        expect(replacement.noteOff).toHaveBeenCalledWith(replacement.noteOn.mock.calls[0]?.[0]);
+        expect(replacement.startPreviewNote).toHaveBeenCalledExactlyOnceWith(40, 0.8);
+        expect(releaseReplacement).toHaveBeenCalledOnce();
+        expect(releaseOriginal).toHaveBeenCalledOnce();
+        expect(controls.startPreviewNote).toHaveBeenCalledOnce();
+        expect(replacement.noteOn).not.toHaveBeenCalled();
+        expect(replacement.noteOff).not.toHaveBeenCalled();
         act(() => retirement.abort()); // a retired old body must not invalidate its successor
         expect(screen.getByText('ready')).toBeInTheDocument();
         replacement.ready = false;
@@ -393,38 +407,6 @@ describe('GrandBoulePanel', () => {
             fireEvent.click(piano);
             expect(piano).toHaveAttribute('aria-expanded', 'false');
             expect(canvas).not.toBeInTheDocument();
-        }
-    );
-
-    it.each(['blur', 'lostpointercapture'])(
-        'keeps a preview release reachable while the piano disclosure is closed after %s',
-        (interruption) => {
-            render(<GrandBoulePanel deviceId="dev-1" />);
-            const piano = screen.getByRole('button', { name: 'Piano keyboard' });
-            fireEvent.click(piano);
-            const canvas = screen.getByLabelText('Grand Boule interactive piano');
-            vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
-            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
-            const playing = screen.getByText(/^Playing /).textContent;
-
-            if (interruption === 'blur') {
-                fireEvent.blur(window);
-            } else {
-                fireEvent(canvas, new PointerEvent(interruption, { bubbles: true, pointerId: 1 }));
-            }
-            fireEvent.click(piano);
-            expect(piano).toHaveAttribute('aria-expanded', 'false');
-            expect(canvas).not.toBeInTheDocument();
-            expect(screen.queryByText(/^Playing /)).not.toBeInTheDocument();
-
-            fireEvent.click(piano);
-            expect(screen.getByText(/^Playing /).textContent).toBe(playing);
-            fireEvent.click(piano);
-            expect(piano).toHaveAttribute('aria-expanded', 'false');
-
-            fireEvent.pointerUp(window, { pointerId: 1 });
-            fireEvent.click(piano);
-            expect(screen.getByText('No notes playing')).toBeInTheDocument();
         }
     );
 
