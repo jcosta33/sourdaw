@@ -10,6 +10,7 @@ import {
     type BacteriaGrainWindow,
     type BacteriaPatch,
     type BacteriaRoutingMode,
+    DEFAULT_PATCH,
 } from '../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../stores/bacteriaStore';
 
@@ -144,6 +145,19 @@ function isStoredTrue(stored: number): boolean {
     return stored > 0.5;
 }
 
+function hydrateNumericGlobalFields(patch: BacteriaPatch, parameters: Record<string, number>): BacteriaPatch {
+    let next = patch;
+    for (const field of NUMERIC_GLOBAL_FIELDS) {
+        // The Input action removes a formerly absent parameter on Undo.
+        const fallback = field === 'inputGain' ? DEFAULT_PATCH.inputGain : undefined;
+        const stored = parameters[field] ?? fallback;
+        if (isFiniteNumber(stored) && !Object.is(next[field], stored)) {
+            next = { ...next, [field]: stored };
+        }
+    }
+    return next;
+}
+
 /**
  * The patch with its routing table replaced by the device's decoded chunk, or
  * the same patch reference when there is nothing to project.
@@ -214,13 +228,9 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
 
     const parameterValues = device.parameterValues;
     if (parameterValues) {
-        for (const field of NUMERIC_GLOBAL_FIELDS) {
-            const stored = parameterValues[field];
-            if (isFiniteNumber(stored) && !Object.is(patch[field], stored)) {
-                patch = { ...patch, [field]: stored };
-                changed = true;
-            }
-        }
+        const globals = hydrateNumericGlobalFields(patch, parameterValues);
+        changed ||= globals !== patch;
+        patch = globals;
 
         for (const field of BOOLEAN_GLOBAL_FIELDS) {
             const stored = parameterValues[field];
