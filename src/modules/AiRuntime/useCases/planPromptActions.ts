@@ -4,6 +4,7 @@ import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
+import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -110,6 +111,7 @@ function admitPlanningRun(input: {
 
 export async function planPromptActions(input: PlanPromptActionsInput): Promise<PlannedPromptActions> {
     const projectRevision = settlePendingProjectWritesAndCaptureRevision();
+    const musicalContentBinding = captureMusicalContentBinding();
     const context = getProjectContext();
     const admission = admitPlanningRun({
         prompt: input.prompt,
@@ -213,6 +215,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             context,
             signal: input.signal,
             projectRevision,
+            musicalContentBinding,
             onProviderResult: input.onProviderResult,
             streamIdentity,
             onProviderAttempt,
@@ -293,6 +296,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 context,
                 signal: input.signal,
                 projectRevision,
+                musicalContentBinding,
                 onProviderResult: input.onProviderResult,
                 streamIdentity,
                 onProviderAttempt: admitCorrectionAttempt,
@@ -349,6 +353,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 context,
                 signal: input.signal,
                 projectRevision,
+                musicalContentBinding,
                 stemImportScope,
                 onProviderResult: input.onProviderResult,
                 streamIdentity,

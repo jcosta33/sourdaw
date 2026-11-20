@@ -4,6 +4,7 @@ import { hasUnprojectedAudioSourceWrite } from './hasUnprojectedAudioSourceWrite
 import { projectClipRestore } from './projectClipRestore';
 import { projectDuplicate } from './projectDuplicate';
 import { projectPreparedSplit } from './projectPreparedSplit';
+import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks';
 import { projectRemoval } from './projectRemoval';
 import { projectSplitReplay } from './projectSplitReplay';
 import { projectTempoAction } from './projectTempoAction';
@@ -14,6 +15,21 @@ type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 function keepState(_action: unknown, state: ShiftedOwnerState): ShiftedOwnerState {
     return state;
+}
+
+function projectRelink(action: ActionOf<'relinkClipAudioSources'>, state: ShiftedOwnerState): ShiftedOwnerState | null {
+    if (!state.tracks) {
+        return null;
+    }
+    const tracks = projectRelinkAudioSourceTracks(state.tracks, [action]);
+    if (!tracks) {
+        return null;
+    }
+    return {
+        ...state,
+        tracks,
+        clips: tracks.flatMap((track) => track.clips.map((clip) => ({ owningTrackId: track.id, clip }))),
+    };
 }
 
 function projectDiscard(
@@ -117,7 +133,11 @@ const projectClipActionByActionType: {
     setExternalPluginState: keepState,
     setDeviceState: keepState,
     setFermenterPatch: keepState,
+    setLevainIdentity: keepState,
     setGrandBouleDeviceState: keepState,
+    setToasterFactoryKit: keepState,
+    setBacteriaFactoryPatch: keepState,
+    setGlutenFactoryPreset: keepState,
     createBus: keepState,
     createFolder: keepState,
     setSend: keepState,
@@ -170,6 +190,7 @@ const projectClipActionByActionType: {
     removeAutomationLane: keepState,
     setAutomationLaneEnabled: keepState,
     addAutomationPoint: keepState,
+    insertAutomationLanePoints: keepState,
     quantizeNotes: keepState,
     removeShortMidiOverlaps: keepState,
     createDrumPreviewBranches: keepState,
@@ -193,6 +214,7 @@ const projectClipActionByActionType: {
     setClipFade: keepState,
     importMidiFile: keepState,
     normalizeClip: keepState,
+    relinkClipAudioSources: projectRelink,
     reverseClip: keepState,
     restoreReversedClip: keepState,
     glueClips: keepState,

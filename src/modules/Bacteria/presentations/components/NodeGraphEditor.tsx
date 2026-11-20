@@ -58,7 +58,7 @@ function buildNodes(
     bands: BacteriaBand[],
     width: number,
     height: number
-): { nodes: NodeDef[]; connections: Connection[]; nodeById: Map<string, NodeDef> } {
+): { nodes: NodeDef[]; connections: Connection[]; nodeById: Map<string, NodeDef>; bandNodeWidth: number } {
     const nodes: NodeDef[] = [];
     const connections: Connection[] = [];
 
@@ -90,7 +90,8 @@ function buildNodes(
     }
 
     // Band nodes
-    const bandSpacing = usableWidth / (bandCount + 1);
+    const bandSpacing = usableWidth / Math.max(1, bandCount - 1);
+    const bandNodeWidth = Math.max(1, Math.min(80, bandSpacing - 6));
     for (let i = 0; i < bandCount; i++) {
         const band = bands[i]!;
         const effects = Object.entries(EFFECT_KEYS)
@@ -101,7 +102,7 @@ function buildNodes(
         nodes.push({
             id: nodeId,
             label: `Band ${i + 1}`,
-            x: bandSpacing * (i + 1) + margin,
+            x: bandCount === 1 ? width / 2 : bandSpacing * i + margin,
             y: margin + usableHeight * 0.45,
             color: BAND_COLORS[i % BAND_COLORS.length]!,
             type: 'band',
@@ -144,7 +145,7 @@ function buildNodes(
     // connection on every render.
     const nodeById = new Map<string, NodeDef>(nodes.map((node) => [node.id, node]));
 
-    return { nodes, connections, nodeById };
+    return { nodes, connections, nodeById, bandNodeWidth };
 }
 
 export const NodeGraphEditor = ({
@@ -158,7 +159,7 @@ export const NodeGraphEditor = ({
     // React Compiler memoizes this pure computation; the node map below gives
     // O(1) id lookups regardless of render count (the manual-memoization rule
     // forbids useMemo here).
-    const { nodes, connections, nodeById } = buildNodes(bandCount, bands, width, height);
+    const { nodes, connections, nodeById, bandNodeWidth } = buildNodes(bandCount, bands, width, height);
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
     const getNode = (id: string): NodeDef | undefined => nodeById.get(id);
@@ -196,7 +197,7 @@ export const NodeGraphEditor = ({
             {/* Nodes */}
             {nodes.map((node) => {
                 const isHovered = hoveredNode === node.id;
-                const nodeWidth = node.type === 'band' ? 80 : 60;
+                const nodeWidth = node.type === 'band' ? bandNodeWidth : 60;
                 const nodeHeight = node.type === 'band' ? 50 + (node.effects?.length ?? 0) * 10 : 24;
 
                 return (

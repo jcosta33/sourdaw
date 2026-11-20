@@ -54,6 +54,7 @@ const RUNTIME_HEALTH_CHECK_TIMEOUT_MS = 2000;
 
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
+    startPreviewNote: (midiNote: number, velocity: number) => (() => void) | undefined;
     noteOn: (midiNote: number, velocity: number, sampleFrame?: number, channel?: number) => void;
     noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number, channel?: number) => void;
     /**
@@ -600,6 +601,7 @@ export async function createGrandBouleNode(
     const node = transport.workletNode;
     let bypassed = false;
     let destroyed = false;
+    let nextPreviewStrikeId = 1;
 
     /** Post a control message to wherever this node's engine lives. */
     const post = (msg: Record<string, unknown>): void => {
@@ -608,6 +610,32 @@ export async function createGrandBouleNode(
 
     return {
         workletNode: node,
+        startPreviewNote(midiNote, velocity) {
+            if (
+                isOfflineRender ||
+                bypassed ||
+                destroyed ||
+                nextPreviewStrikeId > 0xffff_ffff ||
+                !Number.isInteger(midiNote) ||
+                midiNote < 21 ||
+                midiNote > 108 ||
+                !Number.isFinite(velocity) ||
+                velocity <= 0 ||
+                velocity > 1
+            ) {
+                return undefined;
+            }
+            const strikeId = nextPreviewStrikeId++;
+            post({ type: 'previewNoteOn', strikeId, midiNote, velocity });
+            let released = false;
+            return () => {
+                if (released || destroyed) {
+                    return;
+                }
+                released = true;
+                post({ type: 'previewNoteOff', strikeId });
+            };
+        },
         noteOn(midiNote: number, velocity: number, sampleFrame?: number, channel?: number) {
             if (!bypassed) {
                 post({ type: 'noteOn', midiNote, velocity, sampleFrame, channel });

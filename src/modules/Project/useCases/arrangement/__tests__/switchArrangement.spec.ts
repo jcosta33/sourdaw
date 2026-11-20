@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
@@ -6,10 +6,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { relinkClipAudioSource } from '#/modules/Arrangement/useCases';
+import { relinkClipAudioSource, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     captureProjectRootIdentity,
     createCrdtDoc,
@@ -146,6 +147,12 @@ function snapshotFixture(id: string, name: string, tracks: Track[]): Arrangement
 }
 
 describe('switchArrangement', () => {
+    afterEach(() => {
+        clearHandlerRegistry();
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.stopPlayback.mockReset().mockResolvedValue(undefined);
@@ -174,9 +181,29 @@ describe('switchArrangement', () => {
     });
 
     it('re-flags the missing-media panel when the switched-to arrangement still references the missing source', async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('Arrangement source repair fixture');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        registerHandlerMap(getArrangementHandlers());
+        projectStore.set({ ...defaultProjectStoreState, loading: false });
+        arrangementStore.set({
+            arrangements: [
+                snapshotFixture('arr-a', 'Arrangement A', []),
+                snapshotFixture('arr-b', 'Arrangement B', [trackFixture([clipB])]),
+            ],
+            activeArrangementId: 'arr-a',
+        });
+        trackStore.set({ tracks: [trackFixture([clipA])], selectedTrackId: null });
+        flushAutomergeStorageWrites();
         // Repair arrangement A the way the waveform-editor drop does: relink
         // every clip sharing buf-x, then re-scan — the panel clears.
-        const relink = relinkClipAudioSource({ sourceBufferId: 'buf-x', replacementBufferId: 'buf-new' });
+        const relink = await relinkClipAudioSource({ sourceBufferId: 'buf-x', replacementBufferId: 'buf-new' });
         expect(relink).toMatchObject({ status: 'relinked', relinkedClipIds: ['clip-a'] });
         verifyAudioBufferReferences();
         expect(missingMediaStore.value?.items).toEqual([]);

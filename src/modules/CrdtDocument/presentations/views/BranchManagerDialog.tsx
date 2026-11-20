@@ -158,11 +158,15 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
 
                         <Row align="stretch" gap={1.5}>
                             <Input
+                                aria-label="New branch name"
                                 value={newBranchName}
                                 onChange={(event) => setNewBranchName(event.target.value)}
                                 placeholder="New branch name"
                                 className="h-7 flex-1 text-xs"
                                 onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing) {
+                                        return;
+                                    }
                                     if (event.key === 'Enter') {
                                         void handleCreate();
                                     }

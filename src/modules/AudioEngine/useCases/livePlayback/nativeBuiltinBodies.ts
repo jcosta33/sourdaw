@@ -33,6 +33,8 @@
  * file's own answer for what the body actually addresses.
  */
 
+import { projectBacteriaParameters } from '#/utils/bacteriaParameterReplay';
+
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
@@ -444,14 +446,9 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * `stepSeqVal_{n}` indexes a sequencer step, and the engine
              * decodes both itself.
              *
-             * The record needs no narrowing beyond the shape and the wire's
-             * number: `encodePatchValue`
-             * (`#/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts`)
-             * already index-encodes every string selector before it is
-             * persisted, and a key the engine has no arm for — `routingMode`,
-             * `crossoverSlope`, the modulation flags — falls through its
-             * broadcast to sub-processors that ignore it, exactly as it does
-             * under the worklet.
+             * The record has the same numeric and shape admission as before.
+             * Patch projection resolves overlapping band broadcasts and protects
+             * active crossovers before native replay sorts the keys by name.
              *
              * `addressesParameter` refuses the name whose engine arm
              * allocates, but that only keeps an automation write off the
@@ -479,7 +476,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * `externalLatencyRegistry`, and that is what aligns it.
              */
             parameterName: (paramId) => paramId,
-            projectPatch: shapedNumericParametersOnly,
+            projectPatch: (values) => projectBacteriaParameters(shapedNumericParametersOnly(values)),
             addressesParameter: (paramId) =>
                 BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !isBacteriaControlThreadOnly(paramId),
             // Sounds no notes, so no clip release is ever addressed to it.

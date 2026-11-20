@@ -5,7 +5,7 @@
  * toolbar's documented `mpeExpressionLanes` contract (audit MD-2), so on a
  * Fermenter track the selector lists Velocity plus Pressure, Slide and
  * Pitch Bend, while a track whose instrument sounds none of them lists
- * Velocity alone.
+ * a Velocity availability readout.
  *
  * This file renders the real PianoRollToolbar (unlike PianoRoll.spec.tsx,
  * which stubs it) so the assertion covers the whole chain — trackStore
@@ -197,6 +197,7 @@ vi.mock('#/components/ui/button', () => ({
         onClick,
         variant,
         size,
+        ref,
         className,
         'aria-pressed': ariaPressed,
         'aria-label': ariaLabel,
@@ -205,12 +206,14 @@ vi.mock('#/components/ui/button', () => ({
         onClick?: () => void;
         variant?: string;
         size?: string;
+        ref?: React.Ref<HTMLButtonElement>;
         className?: string;
         'aria-pressed'?: boolean;
         'aria-label'?: string;
     }) => (
         <button
             type="button"
+            ref={ref}
             onClick={onClick}
             className={className}
             data-variant={variant}
@@ -301,7 +304,7 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         expect(values).toContain('pitchBend');
     });
 
-    it('offers Velocity only on a track whose instrument sounds no MPE dimension', () => {
+    it('explains Velocity availability on a track whose instrument sounds no MPE dimension', () => {
         trackState.tracks = [
             {
                 id: 'track-1',
@@ -313,10 +316,32 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         ];
         renderWithExpressionViewOn();
 
-        const values = selectorOptionValues();
-        expect(values).toContain('velocity');
-        expect(values).not.toContain('pressure');
-        expect(values).not.toContain('slide');
-        expect(values).not.toContain('pitchBend');
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
+    });
+    it('returns to Velocity after the primary instrument stops offering the selected lane', () => {
+        const track: ProbeTrack = {
+            id: 'track-1',
+            kind: 'midi',
+            color: 'oklch(0.5 0.1 200)',
+            clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 64 }],
+            devices: [{ type: 'fermenter' }],
+        };
+        trackState.tracks = [track];
+        const { rerender } = render(<PianoRoll {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Toggle Expression View (I4)'));
+        fireEvent.change(screen.getByLabelText('Active expression lane'), { target: { value: 'pressure' } });
+        expect(screen.getByText('pressure')).toBeInTheDocument();
+
+        trackState.tracks = [{ ...track, devices: [{ type: 'toaster' }] }];
+        rerender(<PianoRoll {...defaultProps} />);
+        expect(screen.getByText('pressure')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
+        expect(screen.queryByText('Velocity only for this instrument')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Return to Velocity' }));
+        expect(screen.getByLabelText('Toggle Expression View (I4)')).toHaveFocus();
+        expect(screen.getByLabelText('Toggle Expression View (I4)')).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText('velocity')).toBeInTheDocument();
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
     });
 });

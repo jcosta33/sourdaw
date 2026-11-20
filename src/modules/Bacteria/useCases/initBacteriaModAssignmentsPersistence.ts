@@ -9,11 +9,9 @@ import { isBacteriaModAssignmentsDocumented } from './isBacteriaModAssignmentsDo
 /**
  * Mirror every Bacteria modulation-routing edit into project truth.
  *
- * Subscribing to the session store rather than calling `commitBacteriaModAssignments`
- * from each mutation site is deliberate, mirroring `initToasterKitPersistence`: the
- * table is reached from the panel's routing matrix and from `loadBacteriaPatchWithAudio`
- * loading a whole patch, and a persistence call added to each site is a list that goes
- * stale the moment a new caller appears. One subscription cannot miss a path.
+ * The panel's routing gestures update the session store before this subscriber
+ * writes their table. Factory presets write the table inside their project action
+ * and then hydrate the session store from the published chunk.
  *
  * Change is detected by **`modAssignments` object identity**, not the whole patch or
  * state: `updateBacteriaMeters` rewrites `inputDb`/`outputDb`/`bandLevels`/`latency` on

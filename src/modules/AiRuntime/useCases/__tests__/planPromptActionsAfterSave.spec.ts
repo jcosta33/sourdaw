@@ -9,8 +9,21 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState } from '#/modules/MIDI/stores';
+import {
+    projectPianoRollTakeNotes,
+    setMidiStoreState,
+    setNotesForClip,
+    setPianoRollSelection,
+} from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import {
+    bindMusicalContentQuery,
+    captureMusicalContentBinding,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { type PlannedIntentResult } from '../../models/IntentResult';
@@ -118,6 +131,60 @@ afterEach(() => {
 });
 
 describe('planning across a save', () => {
+    it('keeps the original musical binding through save before the first read and between pages', async () => {
+        const track = createTrack({ id: 'midi-track', name: 'MIDI', kind: 'midi' });
+        const clip = {
+            id: 'midi-clip',
+            trackId: track.id,
+            name: 'MIDI',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        track.clips = [clip];
+        trackStore.set({ ...trackStore.value!, tracks: [track] });
+        const notes = [
+            { id: 'note-a', pitch: 67, startBeat: 0, duration: 1, velocity: 80 },
+            { id: 'note-b', pitch: 70, startBeat: 2, duration: 1, velocity: 90 },
+        ];
+        setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: notes } });
+        const projection = projectPianoRollTakeNotes(clip, track.id, null, notes);
+        setPianoRollSelection(clip.id, ['note-a'], [clip.id], [{ clipId: clip.id, projection }]);
+        const binding = captureMusicalContentBinding();
+        const originalBinding = structuredClone(binding);
+        const beforeSave = querySemanticProject({ type: 'project-summary' }).revisionToken;
+        await writeProjectSave();
+        const first = bindMusicalContentQuery(
+            { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 }, page: { limit: 1 } },
+            binding
+        );
+        if (first.status !== 'valid') {
+            throw new Error('Musical query was refused');
+        }
+        const firstPage = querySemanticProject(first.input);
+        expect(firstPage.revisionToken).not.toBe(beforeSave);
+        expect(firstPage.nextCursor).not.toBeNull();
+        await writeProjectSave();
+        const second = querySemanticProject({ ...first.input, page: { limit: 1, cursor: firstPage.nextCursor! } });
+        expect(second.revisionToken).not.toBe(firstPage.revisionToken);
+        expect(second.items).toEqual([expect.objectContaining({ kind: 'note', noteId: 'note-a', pitch: 67 })]);
+        expect(binding).toEqual(originalBinding);
+        setNotesForClip(clip.id, [{ ...notes[0]!, pitch: 68 }, notes[1]!]);
+        expect(() => querySemanticProject(first.input)).toThrow('Stale musical content revision');
+        settlePendingProjectWritesAndCaptureRevision();
+        setNotesForClip(clip.id, notes);
+        settlePendingProjectWritesAndCaptureRevision();
+        expect(() =>
+            querySemanticProject({ ...first.input, page: { limit: 1, cursor: firstPage.nextCursor! } })
+        ).toThrow('Stale musical content revision');
+    });
+
     it('offers the proposal planned while the project was saved, bound to the revision it planned against', async () => {
         planReturning('save', PROPOSAL);
 

@@ -89,3 +89,73 @@ src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
    placeholder must remain at least 4.5:1 without becoming the entered-value color. Inactive or disabled controls are
    exempt from this contrast floor. Reverting either route to `placeholder:text-text-primary` must fail the hierarchy
    assertion even when the contrast assertion still passes.
+10. **Timeline menus stay reachable through positioned and clipped ancestors (#6989, #7013).** Runs: orchestrator.
+    In Chromium, compare the section menu's rendered top-left to the right-click's client coordinates at two
+    horizontal scroll offsets with sidebars open and closed. Require at most four CSS pixels of drift away from
+    viewport edges. Check clamping and hit-test the menu items at the edges. Open New Adjustment Layer from the
+    actual button with zero and three layers, including a bottom-edge trigger. Require every option's rendered
+    bounds to fit and its center to hit the option. Choose the effect by keyboard and pointer, and test Escape
+    and trigger focus return. Activate Add Section and compare its snapped beat to the original click.
+    The reviewer checks the fixed command payload and runs one focused mutation at a time. Set `portal={false}`
+    at the section or add-layer caller. Under `src/modules/Arrangement/presentations/views/__tests__/`, the
+    corresponding case must fail. Run “anchors Add Section outside the clipped bar and retains the clicked
+    beat across scrolling” in `ArrangementBar.spec.tsx` or “opens the full Add menu outside the clipped strip
+    with %i existing layers” in `AdjustmentLayerStrip.spec.tsx`. Remove the portaled section menu's
+    context-menu propagation guard to fail the section test's original clicked-beat assertion. The focused
+    cases observe ancestry, inline positions, action payloads and focus. Chromium supplies the allocated
+    geometry and reachability.
+11. **Track-height mode changes row geometry, hit targets and scroll together (#7000, #7013).** Runs: orchestrator.
+    Cycle Compact, Normal and Large on a fixture with distinct stored track heights, a folder, a clip and visible
+    alternative lanes. In both Canvas2D and WebGPU, compare actual header bounds and fresh canvas pixels for row
+    heights and origins. Hit the clip body and the alternative lane in each mode. Shrink from a scrolled Large
+    view into Compact. Derive the scroll ceiling from Compact content height and the measured canvas viewport,
+    accounting for remaining overflow. Require the shared offset and native header scroll to agree within one
+    CSS pixel, and compare the header and canvas row origins using that offset. Check that stored heights,
+    Automerge heads, Undo/Redo stacks and the clean project state survive the cycle. Drag-resize in Compact.
+    Require one committed height change using the CSS delta divided by the display scale, then check the exact
+    project value and row through real Undo and Redo.
+    The reviewer checks the fixed tests and runs one focused mutation per check. Substitute scale 1 at the
+    render-model or header call to `getTimelineTrackHeight`. This must fail “reprojects stored row heights and
+    clip hit targets when only the display mode changes” in `src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts`
+    or “scales the actual header bounds on a local preference change and keeps folders fixed” in
+    `src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx`. Remove the preference's
+    renderer dirty subscription or scroll clamp. This must fail “updates the canvas floor and paints scaled
+    rows while transport is paused” in `src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx`
+    or “re-clamps the current vertical scroll when local row heights shrink” in
+    `src/modules/Arrangement/useCases/__tests__/initTimelineScrollClamp.spec.ts`. Remove division by the scale
+    or dispatch on each move. This must fail “previews incremental display deltas during drag and dispatches one
+    unscaled action on release” in `src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx`.
+    The focused cases observe projected heights, header CSS requests, renderer calls, store offsets and resize
+    dispatch. Chromium supplies the measured layout and committed history.
+12. **Automation marquee paint preserves the lane color and underlying points (#6986, #7015).** Runs: orchestrator.
+    In Chromium, drag a marquee over known points with OKLCH, hex and CSS-variable-backed lane colors. Compare the
+    SVG rectangle's computed fill to the resolved lane color and require computed fill opacity greater than zero
+    and below 0.25. Read the selection IDs after equivalent forward and reverse drags at different scroll offsets.
+    The reviewer restores the `15` alpha suffix on the marquee's fill and removes its separate `fillOpacity`.
+    This must fail “paints the marquee with its lane color %s and a translucent interior” in
+    `src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx`.
+    The focused case checks the authored SVG attributes. Chromium resolves the fill and drives the selection gesture.
+13. **A replaced automation viewport loses its live width measurement (#7015).** Runs: orchestrator.
+    In Chromium, open the panel with no selected track, select one, then populate the lane list. Close and reopen
+    the track-list sidebar. Measure the active viewport and actual rendered lane widths at distinct widths in each
+    branch. Resize again after each switch and require the lane to follow the mounted viewport. Drive a resize
+    immediately before replacing a viewport and check that detached or stale measurements never change the current
+    lane width. The reviewer restores the stable object ref and one-shot layout effect in
+    `AutomationBottomPanel.tsx`. This must fail “measures the mounted lane viewport after selecting a track and
+    toggling the sidebar” in `src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx`.
+    That case feeds widths to the observed node, checks that only the active node remains registered and reads
+    the lane's width prop. Chromium measures allocated widths and the live observer after replacement.
+14. **A short modulation form can leave the existing list unreachable (#6988, #7015).** Runs: orchestrator.
+    Put a mapped source A and enough cards and mappings to overflow in ModulationMatrix. Open the New Modulator form
+    for B and test an ordinary panel and one 220 CSS pixels tall. Measure both allocated scroll regions and the
+    field group at narrow and wide viewport widths. Require the group to fit the available width and stay within
+    40rem. Reset the scroll position for each input. Use real wheel input, PageDown with the intended region
+    focused, and native scrollbar-thumb drag to reach the form's Add button, the last card and its final mapping.
+    Read scroll offsets and confirm each target fits its clipped region and remains actionable.
+    Remove the nonshrinking form's max-height to reproduce the unbounded allocation, then separately remove
+    the field group's max-width. Those mutations must fail the corresponding Chromium measurements.
+    The reviewer checks “focuses native controls in the open creation form and the existing mapping list” in
+    `src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx`. Remove either region's
+    accessible name or set the Remove mapping button's `tabIndex` to `-1` to fail the focused case. It checks
+    initial focus on the name input and native child focus and tab stops. Chromium exercises actual Tab
+    navigation followed by PageDown and measures scroll movement and reachability.
