@@ -179,6 +179,9 @@ function prepareReadings(input: {
     brief: ProjectContextProductionBrief;
     sourceRunId: string | null;
 }): ReadingPreparation {
+    if (input.alternatives.length === 0) {
+        return { status: 'prepared', alternatives: [] };
+    }
     const run = input.sourceRunId === null ? null : agentRunLifecycle.get(input.sourceRunId);
     if (input.sourceRunId === null || run === null) {
         return {

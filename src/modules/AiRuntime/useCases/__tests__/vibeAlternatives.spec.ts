@@ -862,7 +862,8 @@ describe('a choice that no longer applies', () => {
     describe('whose retained plan no longer holds', () => {
         const READING = 'Darker top end';
 
-        async function expectRefusedUntouched(card: Confirmation, reason: RegExp) {
+        /** Chooses the reading and checks that the card, run and renders are as they were; returns the outcome. */
+        async function chooseLeavingUntouched(card: Confirmation) {
             const before = snapshotOf(card);
             const renders = audio.renderTrackSubgraphOffline.mock.calls.length;
 
@@ -871,12 +872,12 @@ describe('a choice that no longer applies', () => {
                 readingId: readingIdOf(card, READING),
             });
 
-            expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(reason) });
             expect(snapshotOf(card)).toEqual(before);
             expect(getPendingActionConfirmation(card.id)?.status).toBe('proposed');
             expect(agentRunLifecycle.get(card.runId)?.phase).toBe(before.run?.phase);
             expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBe(renders);
             expect(proposedCards().map((candidate) => candidate.id)).toEqual([card.id]);
+            return outcome;
         }
 
         it('refuses a recipe the live catalogue no longer publishes, naming it', async () => {
@@ -899,7 +900,10 @@ describe('a choice that no longer applies', () => {
                 ),
             });
 
-            await expectRefusedUntouched(card, /"retired-recipe".*no longer published/u);
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/"retired-recipe".*no longer published/u),
+            });
         });
 
         it('refuses a target the project no longer holds, naming its track', async () => {
@@ -912,7 +916,10 @@ describe('a choice that no longer applies', () => {
             }
             await executeAppAction({ type: 'removeTrack', payload: { trackId: removedId } });
 
-            await expectRefusedUntouched(card, new RegExp(`"${removedName}".*no longer in the project`, 'u'));
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
+            });
         });
 
         it('refuses a plan the live project prepares differently', async () => {
@@ -926,7 +933,10 @@ describe('a choice that no longer applies', () => {
                 ),
             });
 
-            await expectRefusedUntouched(card, /no longer plans this reading as offered/u);
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/no longer plans this reading as offered/u),
+            });
         });
     });
 

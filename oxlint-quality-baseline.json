@@ -5087,7 +5087,7 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/vibeRun/readVibeBatchValueReply.ts": {
