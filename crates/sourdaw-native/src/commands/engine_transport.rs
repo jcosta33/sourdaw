@@ -40,6 +40,7 @@
 //! or not at all.
 
 use crate::commands::graph::{finite, seconds_to_frames};
+use crate::commands::graph_refusals::ValueRefusal;
 use crate::state::AppState;
 use daw_engine::scheduler::{GraphCommand, ScoringReading, StripPeak, TransportPositionSnapshot};
 use daw_engine::transport_map::{
@@ -50,6 +51,7 @@ use daw_engine::{CaptureClockQuality, CaptureClockSnapshot};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
 /// One tempo segment of the arrangement's map, in seconds on the engine clock.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -422,15 +424,14 @@ fn last_per_frame<T>(segments: Vec<T>, start_frame: fn(&T) -> u64) -> Vec<T> {
 fn tempo_segments(
     payload: &[TempoSegmentPayload],
     sample_rate: f32,
-) -> Result<Vec<TempoSegment>, String> {
+) -> Result<Vec<TempoSegment>, TransportMapsRefusal> {
     let segments = payload
         .iter()
         .map(|segment| {
             let beats_per_minute = finite(segment.beats_per_minute, "tempo segment bpm")?;
             if beats_per_minute <= 0.0 {
-                return Err(format!(
-                    "tempo map is unusable: {}",
-                    TransportMapError::NonPositiveTempo
+                return Err(TransportMapsRefusal::UnusableTempo(
+                    TransportMapError::NonPositiveTempo,
                 ));
             }
             Ok(TempoSegment {
@@ -442,21 +443,20 @@ fn tempo_segments(
                 beats_per_minute,
             })
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, TransportMapsRefusal>>()?;
     Ok(last_per_frame(segments, |segment| segment.start_frame))
 }
 
 fn time_signature_segments(
     payload: &[TimeSignatureSegmentPayload],
     sample_rate: f32,
-) -> Result<Vec<TimeSignatureSegment>, String> {
+) -> Result<Vec<TimeSignatureSegment>, TransportMapsRefusal> {
     let segments = payload
         .iter()
         .map(|segment| {
             if segment.numerator == 0 || segment.denominator == 0 {
-                return Err(format!(
-                    "time signature map is unusable: {}",
-                    TransportMapError::NonPositiveTimeSignature
+                return Err(TransportMapsRefusal::UnusableTimeSignature(
+                    TransportMapError::NonPositiveTimeSignature,
                 ));
             }
             Ok(TimeSignatureSegment {
@@ -469,11 +469,14 @@ fn time_signature_segments(
                 denominator: segment.denominator,
             })
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, TransportMapsRefusal>>()?;
     Ok(last_per_frame(segments, |segment| segment.start_frame))
 }
 
-fn loop_region(payload: Option<LoopRegionPayload>, sample_rate: f32) -> Result<LoopRegion, String> {
+fn loop_region(
+    payload: Option<LoopRegionPayload>,
+    sample_rate: f32,
+) -> Result<LoopRegion, ValueRefusal> {
     let Some(region) = payload else {
         return Ok(LoopRegion::default());
     };
@@ -484,6 +487,34 @@ fn loop_region(payload: Option<LoopRegionPayload>, sample_rate: f32) -> Result<L
     })
 }
 
+/// Why a maps write could not be turned into engine maps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TransportMapsRefusal {
+    Value(ValueRefusal),
+    UnusableTempo(TransportMapError),
+    UnusableTimeSignature(TransportMapError),
+}
+
+impl fmt::Display for TransportMapsRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(refusal) => refusal.fmt(f),
+            Self::UnusableTempo(error) => write!(f, "tempo map is unusable: {error}"),
+            Self::UnusableTimeSignature(error) => {
+                write!(f, "time signature map is unusable: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransportMapsRefusal {}
+
+impl From<ValueRefusal> for TransportMapsRefusal {
+    fn from(refusal: ValueRefusal) -> Self {
+        Self::Value(refusal)
+    }
+}
+
 /// Build the engine-side objects a maps write installs.
 ///
 /// Split out of the command so the mapping — the part that can silently swap a
@@ -492,15 +523,15 @@ fn loop_region(payload: Option<LoopRegionPayload>, sample_rate: f32) -> Result<L
 fn transport_maps_commands(
     payload: &TransportMapsPayload,
     sample_rate: f32,
-) -> Result<(Vec<GraphCommand>, TransportMapsApplied), String> {
+) -> Result<(Vec<GraphCommand>, TransportMapsApplied), TransportMapsRefusal> {
     let rate = f64::from(sample_rate);
     let tempo = TempoMap::new(&tempo_segments(&payload.tempo, sample_rate)?, rate)
-        .map_err(|error| format!("tempo map is unusable: {error}"))?;
+        .map_err(TransportMapsRefusal::UnusableTempo)?;
     let time_signature = TimeSignatureMap::new(&time_signature_segments(
         &payload.time_signature,
         sample_rate,
     )?)
-    .map_err(|error| format!("time signature map is unusable: {error}"))?;
+    .map_err(TransportMapsRefusal::UnusableTimeSignature)?;
     let region = loop_region(payload.loop_region, sample_rate)?;
 
     let applied = TransportMapsApplied {
@@ -559,7 +590,8 @@ pub async fn set_transport_maps(
         return Err("no native engine is running".to_string());
     };
 
-    let (ops, mut applied) = transport_maps_commands(&payload, engine.sample_rate())?;
+    let (ops, mut applied) = transport_maps_commands(&payload, engine.sample_rate())
+        .map_err(|refusal| refusal.to_string())?;
     engine
         .send_graph_batch(ops)
         .map_err(|error| format!("transport maps were not applied: {error:?}"))?;
@@ -731,9 +763,13 @@ mod tests {
             panic!("a map that does not start at zero is unusable");
         };
 
-        assert!(
-            error.starts_with("tempo map is unusable:"),
-            "unexpected error: {error}"
+        assert_eq!(
+            error,
+            TransportMapsRefusal::UnusableTempo(TransportMapError::DoesNotStartAtZero)
+        );
+        assert_eq!(
+            error.to_string(),
+            "tempo map is unusable: a transport map's first segment must start at frame 0"
         );
     }
 
@@ -767,7 +803,10 @@ mod tests {
             panic!("segments past the frame range must refuse the whole map");
         };
 
-        assert_eq!(error, "tempo segment start exceeds the frame range");
+        assert_eq!(
+            error.to_string(),
+            "tempo segment start exceeds the frame range"
+        );
     }
 
     const ONE_FRAME_AT_48K: f64 = 1.0 / 48_000.0;
@@ -796,7 +835,8 @@ mod tests {
         payload: &TransportMapsPayload,
         sample_rate: f32,
     ) -> Result<Box<TransportMaps>, String> {
-        let (mut ops, _) = transport_maps_commands(payload, sample_rate)?;
+        let (mut ops, _) =
+            transport_maps_commands(payload, sample_rate).map_err(|refusal| refusal.to_string())?;
         match ops.remove(0) {
             GraphCommand::SetTransportMaps(maps) => Ok(maps),
             _ => panic!("the first command should be the maps"),

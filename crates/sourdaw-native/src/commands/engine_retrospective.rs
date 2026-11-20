@@ -12,6 +12,8 @@
 //! Lock order, shared with `apply_graph_commands`: graph registry, then
 //! engine, then the recorded arm.
 
+use std::fmt;
+
 use daw_engine::retrospective::RETROSPECTIVE_CHANNEL_RANGE;
 use daw_engine::EngineHandle;
 
@@ -50,7 +52,7 @@ pub async fn arm_retrospective_capture(
     channels: u32,
     state: &AppState,
 ) -> Result<(), String> {
-    let channels = supported_channels(channels)?;
+    let channels = supported_channels(channels).map_err(|refusal| refusal.to_string())?;
 
     // Stamped before any lock: the arm's session is whoever owned this command
     // when it was issued, not whoever holds the graph registry when it finally
@@ -153,18 +155,31 @@ fn retrospective_arm_owed(
     (armed_target != Some(native_id)).then_some((native_id, desired.channels))
 }
 
-fn supported_channels(channels: u32) -> Result<usize, String> {
+/// An arm asking for a channel count the retrospective ring cannot hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UnsupportedRetrospectiveChannels {
+    channels: u32,
+}
+
+impl fmt::Display for UnsupportedRetrospectiveChannels {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "arm-retrospective-capture: {} channels is outside the supported range {}..={}",
+            self.channels,
+            RETROSPECTIVE_CHANNEL_RANGE.start(),
+            RETROSPECTIVE_CHANNEL_RANGE.end()
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedRetrospectiveChannels {}
+
+fn supported_channels(channels: u32) -> Result<usize, UnsupportedRetrospectiveChannels> {
     usize::try_from(channels)
         .ok()
         .filter(|channels| RETROSPECTIVE_CHANNEL_RANGE.contains(channels))
-        .ok_or_else(|| {
-            format!(
-                "arm-retrospective-capture: {channels} channels is outside the supported range \
-                 {}..={}",
-                RETROSPECTIVE_CHANNEL_RANGE.start(),
-                RETROSPECTIVE_CHANNEL_RANGE.end()
-            )
-        })
+        .ok_or(UnsupportedRetrospectiveChannels { channels })
 }
 
 #[cfg(test)]
@@ -542,7 +557,14 @@ mod tests {
                 &state,
             ));
 
-            assert!(refused.is_err(), "{channels} channels must be refused");
+            assert_eq!(
+                refused,
+                Err(format!(
+                    "arm-retrospective-capture: {channels} channels is outside the supported \
+                     range 1..=2"
+                )),
+                "{channels} channels must be refused"
+            );
             assert_eq!(recorded(&state), None);
             assert_eq!(armed_target(&state), None);
         }
