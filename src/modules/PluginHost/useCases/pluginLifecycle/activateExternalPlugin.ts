@@ -144,6 +144,35 @@ function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPlugi
  * (`add_hosted_plugin` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
+type DeferredActivation = {
+    readonly input: ActivateExternalPluginInput;
+    readonly unloadGeneration: number;
+    readonly activationEpoch: number;
+};
+
+/**
+ * Resume an activation that waited for a pending unload, unless a later unload of the same instance
+ * or a runtime rebuild was admitted meanwhile: that later owner decided the instance's fate, and
+ * reloading here would leave a plugin loaded that nothing in the project holds (Remove, Undo, Redo).
+ */
+function resumeAfterUnload({
+    input,
+    unloadGeneration,
+    activationEpoch,
+}: DeferredActivation): Promise<ExternalPluginActivationResult> {
+    if (
+        pendingKeyedUnloads.generation(input.instanceId) !== unloadGeneration ||
+        externalPluginActivationEpoch.current !== activationEpoch
+    ) {
+        return Promise.resolve({
+            status: 'failed',
+            stage: 'load',
+            reason: 'External plugin activation was superseded by a later unload',
+        });
+    }
+    return activateExternalPlugin(input);
+}
+
 export function activateExternalPlugin({
     pluginId,
     instanceId,
@@ -170,10 +199,15 @@ export function activateExternalPlugin({
     // native host: the instance reads loaded, yet the unload is about to forget it.
     const pendingUnload = pendingKeyedUnloads.get(instanceId);
     if (pendingUnload) {
+        const waited: DeferredActivation = {
+            input: { pluginId, instanceId, stateChunk, onLatencyMs },
+            unloadGeneration: pendingKeyedUnloads.generation(instanceId),
+            activationEpoch,
+        };
         // The unload's own caller owns its failure; either outcome settles whether the instance is loaded.
         return pendingUnload.then(
-            () => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs }),
-            () => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs })
+            () => resumeAfterUnload(waited),
+            () => resumeAfterUnload(waited)
         );
     }
     if (loadedExternalInstances.has(instanceId)) {

@@ -147,6 +147,24 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(carriedExternalPluginStates.size).toBe(0);
         });
 
+        // Remove, Undo, Redo: the Redo's unload is admitted while the Undo's activation still waits.
+        it('does not reload a waiting reactivation once a later unload of the instance is admitted', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const nativeUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(nativeUnload.promise);
+
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+            const reactivation = activate(SAVED_CHUNK);
+            const secondRemoval = unloadPluginCarryingLiveState(INSTANCE_ID);
+            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await Promise.all([removal, secondRemoval]);
+
+            await expect(reactivation).resolves.toMatchObject({ status: 'failed', stage: 'load' });
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+            expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+        });
+
         it.each([
             ['saved', SAVED_CHUNK],
             ['never saved', undefined],

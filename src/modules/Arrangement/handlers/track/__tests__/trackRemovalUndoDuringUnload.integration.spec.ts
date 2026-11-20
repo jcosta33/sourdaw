@@ -5,6 +5,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/
 import {
     clearUndoHistory,
     executeAppAction,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -187,5 +188,23 @@ describe('undoing a track removal while its plugins are still unloading', () => 
                 INSTANCE_IDS.map((instanceId) => [instanceId, LIVE_BYTES])
             )
         );
+    });
+
+    it('leaves no instance loaded when a Redo removes the track again before the held unload completes', async () => {
+        native.heldUnload = Promise.withResolvers<void>();
+        const removal = executeAppAction(
+            { type: 'removeTrack', payload: { trackId: 'track-1' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() => expect(native.unloadRequests).toContain(INSTANCE_IDS[0]));
+        await undo();
+
+        const repeatedRemoval = redo();
+        await vi.waitFor(() => expect(trackStore.value?.tracks).toEqual([]));
+        native.heldUnload.resolve();
+        await Promise.all([removal, repeatedRemoval]);
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect([...native.loaded]).toEqual([]);
     });
 });
