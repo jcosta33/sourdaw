@@ -3269,7 +3269,7 @@
     },
     "src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts": {
