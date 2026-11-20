@@ -186,6 +186,22 @@ export type NativeGraphWireCommand =
           isNoteOn: boolean;
       }>
     | Readonly<{
+          kind: 'start-grand-boule-preview';
+          trackId: string;
+          deviceId: string;
+          generation: string;
+          strikeId: number;
+          note: number;
+          velocity: number;
+      }>
+    | Readonly<{
+          kind: 'release-grand-boule-preview';
+          trackId: string;
+          deviceId: string;
+          generation: string;
+          strikeId: number;
+      }>
+    | Readonly<{
           kind: 'send-midi-control';
           trackId: string;
           deviceId: string;
@@ -504,6 +520,24 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
         case 'send-midi-note':
         case 'send-midi-control':
             return serializeLiveMidi(command);
+        case 'start-grand-boule-preview':
+            return {
+                kind: command.kind,
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                generation: command.generation,
+                strikeId: command.strikeId,
+                note: command.note,
+                velocity: command.velocity,
+            };
+        case 'release-grand-boule-preview':
+            return {
+                kind: command.kind,
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                generation: command.generation,
+                strikeId: command.strikeId,
+            };
         case 'set-transport':
             return serializeTransport(command);
         case 'set-monitor-shadow':

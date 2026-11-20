@@ -64,6 +64,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     getAudioSampleRate: () => 44100,
     sendNativeLiveMidiControl: async () => true,
+    isDeviceCarriedByNativeSession: () => false,
+    startNativeGrandBoulePreviewNote: () => undefined,
     writeNativeBuiltinParameters: () => {},
 }));
 

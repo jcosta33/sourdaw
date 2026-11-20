@@ -21,8 +21,15 @@ export function recordNativeChains(reports: readonly AudioGraphStripReport[]): v
         return;
     }
     const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
+    const previewTargets = new Map(nativeLiveGraphSession.grandBoulePreviewTargetsByStripId);
     for (const report of reports) {
         next.set(report.id, report.deviceIds);
+        if (report.grandBoulePreviewTargets?.length) {
+            previewTargets.set(report.id, report.grandBoulePreviewTargets);
+        } else {
+            previewTargets.delete(report.id);
+        }
     }
     nativeLiveGraphSession.nativeChainByStripId = next;
+    nativeLiveGraphSession.grandBoulePreviewTargetsByStripId = previewTargets;
 }

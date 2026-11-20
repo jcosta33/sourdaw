@@ -3,7 +3,9 @@ import {
     ensureTrackStrip,
     getTrackStrip,
     getAudioSampleRate,
+    isDeviceCarriedByNativeSession,
     sendNativeLiveMidiControl,
+    startNativeGrandBoulePreviewNote,
     writeNativeBuiltinParameters,
 } from '#/modules/AudioEngine/useCases';
 
@@ -82,7 +84,17 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     const controls = deviceNode.grandBouleControls;
     const engine: GrandBouleEngineHandle = {
         noteOn: (noteInput) => controls.noteOn(noteInput.midiNote, noteInput.velocity),
-        startPreviewNote: (noteInput) => controls.startPreviewNote(noteInput.midiNote, noteInput.velocity),
+        startPreviewNote: ({ midiNote, velocity }) => {
+            if (isDeviceCarriedByNativeSession(track.id, input.deviceId)) {
+                return startNativeGrandBoulePreviewNote({
+                    trackId: track.id,
+                    deviceId: input.deviceId,
+                    note: midiNote,
+                    velocity,
+                });
+            }
+            return controls.startPreviewNote(midiNote, velocity);
+        },
         noteOff: (noteInput) => controls.noteOff(noteInput.midiNote),
         noteOnMidi2: (noteInput) =>
             controls.noteOnMidi2(noteInput.midiNote, noteInput.velocity16bit, noteInput.pitchOffsetQ24),

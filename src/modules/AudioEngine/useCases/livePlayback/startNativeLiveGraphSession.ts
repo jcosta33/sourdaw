@@ -609,7 +609,7 @@ function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBac
  * name a graph nothing built, and the empty record the stop left is the truth
  * to restore — the same reason the unreconciled branch below clears.
  */
-function settleRefusedStartRecord(chainsTheStartFound: ReadonlyMap<string, readonly string[]>): void {
+function settleRefusedStartRecord(chainsTheStartFound: Parameters<typeof restoreNativeChains>[0]): void {
     if (nativeLiveGraphSession.backend === null) {
         clearNativeChains();
     } else {
@@ -1095,7 +1095,10 @@ export function startNativeLiveGraphSession(
                 // of the start that reopens the gates below also settles the
                 // record — dropping it, restoring it, or replacing it with the
                 // applied batch's reports.
-                const chainsTheStartFound = nativeLiveGraphSession.nativeChainByStripId;
+                const chainsTheStartFound = {
+                    nativeChainByStripId: nativeLiveGraphSession.nativeChainByStripId,
+                    grandBoulePreviewTargetsByStripId: nativeLiveGraphSession.grandBoulePreviewTargetsByStripId,
+                };
                 claimInitialNativeCarriers(prepared);
                 const started = await applyTopologyBatch({
                     transport: availability.transport,

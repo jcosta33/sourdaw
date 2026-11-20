@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    isDeviceCarriedByNativeSession: vi.fn(() => false),
+    startNativeGrandBoulePreviewNote: vi.fn(),
     sendNativeLiveMidiControl: vi.fn(async () => true),
     writeNativeBuiltinParameters: vi.fn(),
     controls: {
@@ -30,6 +32,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => {
         ensureTrackStrip: getStrip,
         getTrackStrip: getStrip,
         getAudioSampleRate: () => 48_000,
+        isDeviceCarriedByNativeSession: mocks.isDeviceCarriedByNativeSession,
+        startNativeGrandBoulePreviewNote: mocks.startNativeGrandBoulePreviewNote,
         sendNativeLiveMidiControl: mocks.sendNativeLiveMidiControl,
         writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
     };
@@ -38,10 +42,15 @@ vi.mock('../../repositories/grandBouleEngineHandle', () => ({
     createDisconnectedGrandBouleEngineHandle: vi.fn(() => ({ setCalibration: vi.fn() })),
 }));
 
+import { createGrandBouleStore } from '../../stores/grandBouleStore';
 import { resolveGrandBouleEngine } from '../resolveGrandBouleEngine';
+import { startGrandBoulePreviewNote } from '../startGrandBoulePreviewNote';
 
 describe('resolveGrandBouleEngine', () => {
     beforeEach(() => {
+        mocks.isDeviceCarriedByNativeSession.mockReset().mockReturnValue(false);
+        mocks.startNativeGrandBoulePreviewNote.mockReset();
+        mocks.controls.startPreviewNote.mockReset();
         mocks.sendNativeLiveMidiControl.mockClear();
         mocks.writeNativeBuiltinParameters.mockClear();
         mocks.controls.setParam.mockClear();
@@ -63,6 +72,38 @@ describe('resolveGrandBouleEngine', () => {
         const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
         expect(engine.startPreviewNote({ midiNote: 60, velocity: 0.4 })).toBe(release);
         expect(mocks.controls.startPreviewNote).toHaveBeenCalledWith(60, 0.4);
+    });
+
+    it('starts panel preview on the current native carrier even when the ready Worker twin is gated', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+        const release = vi.fn();
+        mocks.isDeviceCarriedByNativeSession.mockReturnValue(true);
+        mocks.startNativeGrandBoulePreviewNote.mockReturnValue(release);
+
+        const result = startGrandBoulePreviewNote({
+            engine,
+            store: createGrandBouleStore('grand-1'),
+            midiNote: 60,
+            velocity: 0.4,
+        });
+
+        expect(mocks.startNativeGrandBoulePreviewNote).toHaveBeenCalledExactlyOnceWith({
+            trackId: 'track-1',
+            deviceId: 'grand-1',
+            note: 60,
+            velocity: 0.4,
+        });
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
+        expect(result).toBe(release);
+    });
+
+    it('does not start the Worker while the native carrier is awaiting a realized target', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+        mocks.isDeviceCarriedByNativeSession.mockReturnValue(true);
+
+        expect(engine.startPreviewNote({ midiNote: 60, velocity: 0.4 })).toBeUndefined();
+        expect(mocks.startNativeGrandBoulePreviewNote).toHaveBeenCalledOnce();
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
     });
 
     it('sends a panel damper movement to the engine body as well as the Web Audio node', () => {

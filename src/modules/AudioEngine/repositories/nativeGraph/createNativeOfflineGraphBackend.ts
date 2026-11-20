@@ -156,6 +156,8 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
  * owe the caller the same answer.
  */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'start-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
+    'release-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
     'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
