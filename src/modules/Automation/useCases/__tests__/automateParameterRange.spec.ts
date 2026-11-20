@@ -850,7 +850,7 @@ describe('automateParameterRange', () => {
         it.each([
             ['a bar range', { startBar: 9, endBar: 10 }],
             ['the bars before a section', { section: 'Bridge', barsBefore: 2 }],
-        ])('refuses %s after a stretch ratio, which moves the clip end only in repitch mode', (_label, range) => {
+        ])('refuses %s after a stretch ratio, which can move the clip end', (_label, range) => {
             // The arrangement dimension is conditional on the clip's stretch mode, which an earlier
             // member can itself change, so the gate cannot read it from the batch-start project.
             const stretch: AppAction = { type: 'setClipStretchRatio', payload: { clipId: 'clip-last', ratio: 4 } };
@@ -863,6 +863,19 @@ describe('automateParameterRange', () => {
             expect(handler.validationRefusalReason?.(action, { actions: [stretch, action], actionIndex: 1 })).toContain(
                 'An earlier setClipStretchRatio in this batch can move the beats the pan range is resolved to'
             );
+        });
+
+        it('admits a section range after a stretch ratio, which never moves a section or marker', () => {
+            const stretch: AppAction = { type: 'setClipStretchRatio', payload: { clipId: 'clip-last', ratio: 4 } };
+            const action: Extract<AppAction, { type: 'automateParameterRange' }> = {
+                type: 'automateParameterRange',
+                payload: { trackId: VOCAL_ID, parameterId: 'pan', range: { section: 'Verse' }, value: 0.5 },
+            };
+            const handler = getAutomationHandlers().automateParameterRange;
+
+            expect(
+                handler.validationRefusalReason?.(action, { actions: [stretch, action], actionIndex: 1 })
+            ).toBeNull();
         });
 
         it('admits a bar range after a stretch mode change, which declares no arrangement dimension', () => {
