@@ -1,6 +1,6 @@
 {
     "$schema": "./node_modules/oxlint/configuration_schema.json",
-    "plugins": ["typescript", "vitest"],
+    "plugins": ["typescript", "unicorn", "vitest"],
     "jsPlugins": ["./scripts/oxlintCraft/plugin.mjs"],
     "categories": {
         "correctness": "off",
@@ -71,7 +71,9 @@
                 ],
                 "max-params": ["error", { "max": 4 }],
                 "sourdaw-craft/no-positional-boolean-flags": "error",
-                "typescript/no-non-null-assertion": "error"
+                "typescript/no-non-null-assertion": "error",
+                "typescript/require-array-sort-compare": ["error", { "ignoreStringArrays": true }],
+                "unicorn/no-invalid-remove-event-listener": "error"
             }
         },
         {
