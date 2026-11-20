@@ -136,4 +136,24 @@ describe('PadGrid', () => {
         fireEvent.keyUp(first!, { key: ' ' });
         expect(release).toHaveBeenCalledOnce();
     });
+    it('releases a held pad before reordering on drop', () => {
+        const release = vi.fn();
+        const reorder = vi.fn(() => expect(release).toHaveBeenCalledOnce());
+        render(
+            <PadGrid
+                pads={[makePad(0), makePad(1)]}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={() => release}
+                onReorderPad={reorder}
+            />
+        );
+        const [source, target] = screen.getAllByRole('button');
+        fireEvent.keyDown(source!, { key: 'Enter' });
+        fireEvent.dragStart(source!);
+        fireEvent.drop(target!);
+        expect(reorder).toHaveBeenCalledExactlyOnceWith(0, 1);
+        fireEvent.keyUp(source!, { key: 'Enter' });
+        expect(release).toHaveBeenCalledOnce();
+    });
 });

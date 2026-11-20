@@ -60,4 +60,37 @@ describe('triggerPadOn', () => {
         expect(mocks.on).toHaveBeenCalledWith('inst1', 60, 100);
         mocks.controls = true;
     });
+    it('logs native acquisition refusal and never releases a guessed receipt', async () => {
+        mocks.off.mockClear();
+        const error = new Error('native unavailable');
+        mocks.on.mockRejectedValueOnce(error);
+        const stop = vi.fn();
+        mocks.start.mockReturnValueOnce(stop);
+        const release = triggerPadOn('inst1', 0)!;
+        release();
+        await vi.waitFor(() => expect(mocks.warn).toHaveBeenCalledWith('Note trigger failed:', error));
+        expect(stop).toHaveBeenCalledOnce();
+        expect(mocks.off).not.toHaveBeenCalled();
+    });
+
+    it('does not send a native release when acquisition has no receipt', async () => {
+        mocks.off.mockClear();
+        mocks.on.mockResolvedValueOnce(undefined).mockResolvedValueOnce(55);
+        const releaseWithoutReceipt = triggerPadOn('inst1', 0)!;
+        const releaseWithReceipt = triggerPadOn('inst1', 0)!;
+
+        releaseWithoutReceipt();
+        releaseWithReceipt();
+
+        await vi.waitFor(() => expect(mocks.off).toHaveBeenCalledExactlyOnceWith('inst1', 55));
+    });
+
+    it('logs a native release rejection', async () => {
+        const error = new Error('release unavailable');
+        mocks.on.mockResolvedValueOnce(55);
+        mocks.off.mockRejectedValueOnce(error);
+        triggerPadOn('inst1', 0)!();
+        await vi.waitFor(() => expect(mocks.warn).toHaveBeenCalledWith('Note release failed:', error));
+        expect(mocks.off).toHaveBeenCalledWith('inst1', 55);
+    });
 });
