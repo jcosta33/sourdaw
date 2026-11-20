@@ -111,6 +111,7 @@ type RendererDeps = {
     clipId: string;
     trackId: string;
     beatWidth: number;
+    rowHeight?: number;
     gridSnap: number;
     scaleType: string;
     scaleRoot: number;
@@ -142,6 +143,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     const notesRef = useRef(deps.notes);
     const openedClipNotesRef = useRef(deps.openedClipNotes);
     const beatWidthRef = useRef(deps.beatWidth);
+    const rowHeightRef = useRef(deps.rowHeight ?? ROW_HEIGHT);
     const gridSnapRef = useRef(deps.gridSnap);
     const scaleTypeRef = useRef(deps.scaleType);
     const scaleRootRef = useRef(deps.scaleRoot);
@@ -162,6 +164,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
         notesRef.current = deps.notes;
         openedClipNotesRef.current = deps.openedClipNotes;
         beatWidthRef.current = deps.beatWidth;
+        rowHeightRef.current = deps.rowHeight ?? ROW_HEIGHT;
         gridSnapRef.current = deps.gridSnap;
         scaleTypeRef.current = deps.scaleType;
         scaleRootRef.current = deps.scaleRoot;
@@ -216,6 +219,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
             // Read current layout props from refs
             const bw = beatWidthRef.current;
+            const rowHeight = rowHeightRef.current;
             const gs = gridSnapRef.current;
             const st = scaleTypeRef.current;
             const sr = scaleRootRef.current;
@@ -243,8 +247,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             for (let index = 0; index < visiblePitches.length; index++) {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
-            const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            const height = getPianoRollContentHeight(visiblePitches.length);
+            const noteAreaHeight = visiblePitches.length * rowHeight;
+            const height = getPianoRollContentHeight(visiblePitches.length, rowHeight);
 
             // ── Viewport, not content extent ─────────────────────────────
             // The backing store covers what is on screen. The content extent
@@ -268,7 +272,6 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 canvas.width = targetW;
                 canvas.height = targetH;
                 canvas.style.width = `${viewportWidth}px`;
-                canvas.style.height = `${height}px`;
             }
 
             // Scroll offset snapped to whole device pixels, so the cached grid
@@ -284,7 +287,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             // input — rebuilds it around the new offset.
             const marginDevicePx = Math.round(targetW * GRID_CACHE_MARGIN_RATIO);
             const cacheDeviceWidth = targetW + marginDevicePx * 2;
-            const gridKey = `${bw}|${gs}|${st}|${sr}|${folded}|${targetW}|${targetH}|${dpr}`;
+            const gridKey = `${rowHeight}|${bw}|${gs}|${st}|${sr}|${folded}|${targetW}|${targetH}|${dpr}`;
             const cachedWindowStart = gridWindowStartRef.current;
             const gridDirty =
                 gridKey !== gridCacheKeyRef.current ||
@@ -359,7 +362,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     drawBeatRuler(gCtx, windowStartPx, cacheWidth, bw, gs);
                     gCtx.save();
                     gCtx.translate(0, getPianoRollRowTop(0));
-                    drawNoteGrid(gCtx, visiblePitches, windowStartPx, cacheWidth, bw, gs, st, sr);
+                    drawNoteGrid(gCtx, visiblePitches, windowStartPx, cacheWidth, bw, gs, st, sr, rowHeight);
                     gCtx.restore();
                     gridCacheRef.current = offscreen;
                     gridCacheKeyRef.current = gridKey;
@@ -386,7 +389,17 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 // spans, so no note layer is painted over.
                 drawSilentRegions(ctx, resolvePrimaryClipWindow(tracks, cId), bw, view, noteAreaHeight);
                 if (ghost && tracks) {
-                    drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId, view);
+                    drawGhostNotes(
+                        ctx,
+                        pitchToRow,
+                        bw,
+                        midiState?.notesByClipId ?? null,
+                        tracks,
+                        tId,
+                        cId,
+                        view,
+                        rowHeight
+                    );
                 }
                 // A9: draw notes from other simultaneously-open clips at 55% opacity
                 if (openedIds.length > 0 && openedNotes && tracks) {
@@ -400,7 +413,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                         openedIds,
                         selIds,
                         view,
-                        deps.dragPreviewRef.current
+                        deps.dragPreviewRef.current,
+                        rowHeight
                     );
                 }
                 drawActiveNotes(
@@ -413,12 +427,13 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     tId,
                     cId,
                     view,
-                    deps.dragPreviewRef.current
+                    deps.dragPreviewRef.current,
+                    rowHeight
                 );
                 if (si) {
-                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight);
+                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight, rowHeight);
                 }
-                drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current);
+                drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current, rowHeight);
                 drawRubberBand(ctx, deps.rubberBandRef.current);
                 ctx.restore();
             }
@@ -523,7 +538,8 @@ function drawNoteGrid(
     beatWidth: number,
     gridSnap: number,
     scaleType: string,
-    scaleRoot: number
+    scaleRoot: number,
+    rowHeight: number
 ): void {
     const scaleIntervals = getScaleIntervals(scaleType);
     const endPx = startPx + widthPx;
@@ -532,35 +548,35 @@ function drawNoteGrid(
         const pitch = visiblePitches[row]!;
         const noteIndex = pitch % 12;
         const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-        const y = row * ROW_HEIGHT;
+        const y = row * rowHeight;
 
         if (isBlack) {
             ctx.fillStyle = 'rgba(255,255,255,0.02)';
-            ctx.fillRect(startPx, y, widthPx, ROW_HEIGHT);
+            ctx.fillRect(startPx, y, widthPx, rowHeight);
         }
 
         const relativeNote = (noteIndex - scaleRoot + 12) % 12;
         if (!scaleIntervals.includes(relativeNote)) {
             ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(startPx, y, widthPx, ROW_HEIGHT);
+            ctx.fillRect(startPx, y, widthPx, rowHeight);
         }
 
         ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.beginPath();
-        ctx.moveTo(startPx, y + ROW_HEIGHT);
-        ctx.lineTo(endPx, y + ROW_HEIGHT);
+        ctx.moveTo(startPx, y + rowHeight);
+        ctx.lineTo(endPx, y + rowHeight);
         ctx.stroke();
 
         if (noteIndex === 0) {
             ctx.strokeStyle = 'rgba(255,255,255,0.12)';
             ctx.beginPath();
-            ctx.moveTo(startPx, y + ROW_HEIGHT);
-            ctx.lineTo(endPx, y + ROW_HEIGHT);
+            ctx.moveTo(startPx, y + rowHeight);
+            ctx.lineTo(endPx, y + rowHeight);
             ctx.stroke();
         }
     }
 
-    const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
+    const noteAreaHeight = visiblePitches.length * rowHeight;
     const firstBeat = Math.max(0, Math.floor(startPx / beatWidth));
     const lastBeat = Math.ceil(endPx / beatWidth);
     for (let beat = firstBeat; beat <= lastBeat; beat++) {
@@ -598,7 +614,8 @@ function drawGhostNotes(
     }>,
     trackId: string,
     clipId: string,
-    view: ViewportRange
+    view: ViewportRange,
+    rowHeight: number
 ): void {
     const otherMidiTracks = tracks.filter((time) => time.kind === 'midi' && time.id !== trackId);
     for (const otherTrack of otherMidiTracks) {
@@ -612,7 +629,7 @@ function drawGhostNotes(
             }
             const ghostClipColor = otherClip.color || otherTrack.color;
             for (const gn of otherNotes) {
-                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostClipColor, 0.06, 0.1, view);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostClipColor, 0.06, 0.1, view, rowHeight);
             }
         }
     }
@@ -629,7 +646,7 @@ function drawGhostNotes(
             }
             const ghostColor = sameTrackClip.color || activeTrack.color;
             for (const gn of ghostNotes) {
-                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostColor, 0.08, 0.12, view);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostColor, 0.08, 0.12, view, rowHeight);
             }
         }
     }
@@ -643,7 +660,8 @@ function drawGhostNote(
     color: string,
     fillAlpha: number,
     strokeAlpha: number,
-    view: ViewportRange
+    view: ViewportRange,
+    rowHeight: number
 ): void {
     const row = pitchToRow.get(note.pitch) ?? -1;
     if (row === -1) {
@@ -653,12 +671,12 @@ function drawGhostNote(
         return;
     }
     const x = note.startBeat * beatWidth;
-    const y = row * ROW_HEIGHT;
+    const y = row * rowHeight;
     const w = note.duration * beatWidth;
 
     ctx.fillStyle = colorWithAlpha(color, fillAlpha);
     ctx.beginPath();
-    ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
+    ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), rowHeight - 2, 2);
     ctx.fill();
 
     ctx.strokeStyle = colorWithAlpha(color, strokeAlpha);
@@ -685,7 +703,8 @@ function drawOpenedClipNotes(
     openedClipIds: string[],
     selectedNoteIds: Set<string>,
     view: ViewportRange,
-    dragPreview: DragPreview = null
+    dragPreview: DragPreview,
+    rowHeight: number
 ): void {
     for (const openedId of openedClipIds) {
         if (openedId === primaryClipId) {
@@ -730,14 +749,14 @@ function drawOpenedClipNotes(
                 continue;
             }
             const x = displayStartBeat * beatWidth;
-            const y = row * ROW_HEIGHT;
+            const y = row * rowHeight;
             const w = displayDuration * beatWidth;
             const isSelected = selectedNoteIds.has(note.id);
             const fillAlpha = isSelected ? 0.75 : 0.5;
             const strokeAlpha = isSelected ? 0.9 : 0.65;
             ctx.fillStyle = colorWithAlpha(clipColor, fillAlpha);
             ctx.beginPath();
-            ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
+            ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), rowHeight - 2, 2);
             ctx.fill();
             ctx.strokeStyle = colorWithAlpha(clipColor, strokeAlpha);
             ctx.lineWidth = isSelected ? 1 : 0.5;
@@ -769,7 +788,8 @@ function drawActiveNotes(
     trackId: string,
     clipId: string,
     view: ViewportRange,
-    dragPreview: DragPreview = null
+    dragPreview: DragPreview,
+    rowHeight: number
 ): void {
     const activeTrack = tracks?.find((time) => time.id === trackId);
     const activeClip = activeTrack?.clips.find((context) => context.id === clipId);
@@ -806,7 +826,7 @@ function drawActiveNotes(
         }
 
         const x = displayStartBeat * beatWidth;
-        const y = row * ROW_HEIGHT;
+        const y = row * rowHeight;
         const w = displayDuration * beatWidth;
 
         const isSelected = selectedNoteIds.has(note.id);
@@ -815,7 +835,7 @@ function drawActiveNotes(
 
         ctx.fillStyle = colorWithAlpha(noteColor, alpha);
         ctx.beginPath();
-        ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
+        ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), rowHeight - 2, 2);
         ctx.fill();
 
         if (isSelected) {
@@ -824,15 +844,15 @@ function drawActiveNotes(
             ctx.stroke();
         }
 
-        const velH = Math.max(1, (note.velocity / 127) * (ROW_HEIGHT - 4));
+        const velH = Math.max(1, (note.velocity / 127) * (rowHeight - 4));
         ctx.fillStyle = colorWithAlpha(noteColor, isSelected ? 0.3 : 0.25);
-        ctx.fillRect(x + 2, y + ROW_HEIGHT - 2 - velH, Math.max(2, w - 4), velH);
+        ctx.fillRect(x + 2, y + rowHeight - 2 - velH, Math.max(2, w - 4), velH);
 
         ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.fillRect(x + 1, y + 1, 4, ROW_HEIGHT - 2);
-        ctx.fillRect(x + w - 5, y + 1, 4, ROW_HEIGHT - 2);
+        ctx.fillRect(x + 1, y + 1, 4, rowHeight - 2);
+        ctx.fillRect(x + w - 5, y + 1, 4, rowHeight - 2);
 
-        if (w > 20) {
+        if (w > 20 && rowHeight >= 12) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = '9px system-ui';
             ctx.fillText(`${NOTE_NAMES[displayPitch % 12]}${Math.floor(displayPitch / 12) - 1}`, x + 6, y + 11);
@@ -920,16 +940,17 @@ function drawStepCursor(
     beatWidth: number,
     gridSnap: number,
     view: ViewportRange,
-    noteAreaHeight: number
+    noteAreaHeight: number,
+    rowHeight: number
 ): void {
     const sx = stepBeat * beatWidth;
     const row = pitchToRow.get(stepPitch) ?? -1;
 
     // Row highlight, across the drawn slice rather than the whole arrangement.
     if (row !== -1) {
-        const sy = row * ROW_HEIGHT;
+        const sy = row * rowHeight;
         ctx.fillStyle = 'rgba(160, 90, 120, 0.15)';
-        ctx.fillRect(view.leftPx, sy, view.rightPx - view.leftPx, ROW_HEIGHT);
+        ctx.fillRect(view.leftPx, sy, view.rightPx - view.leftPx, rowHeight);
     }
 
     // Column highlight
@@ -952,7 +973,8 @@ function drawPreview(
     ctx: CanvasRenderingContext2D,
     pitchToRow: Map<number, number>,
     beatWidth: number,
-    preview: { beat: number; pitch: number; duration: number } | null
+    preview: { beat: number; pitch: number; duration: number } | null,
+    rowHeight: number
 ): void {
     if (!preview) {
         return;
@@ -962,12 +984,12 @@ function drawPreview(
         return;
     }
     const dpX = preview.beat * beatWidth;
-    const dpY = dpRow * ROW_HEIGHT;
+    const dpY = dpRow * rowHeight;
     const dpW = preview.duration * beatWidth;
 
     ctx.fillStyle = 'rgba(200, 190, 170, 0.3)';
     ctx.beginPath();
-    ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), ROW_HEIGHT - 2, 2);
+    ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), rowHeight - 2, 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(200, 190, 170, 0.7)';
     ctx.lineWidth = 1;

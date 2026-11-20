@@ -97,6 +97,8 @@ type PianoRollToolbarProps = {
     onToggleNotePreview: () => void;
     zoom: number;
     onZoomChange: (v: number) => void;
+    rowHeight?: number;
+    onRowHeightChange?: (v: number) => void;
     /** A9: when multiple clips are open, show a selector for which clip receives new notes */
     openedClips?: ClipOption[];
     focusedClipId?: string;
@@ -236,6 +238,8 @@ export const PianoRollToolbar = ({
     onToggleNotePreview,
     zoom,
     onZoomChange,
+    rowHeight = 16,
+    onRowHeightChange,
     openedClips,
     focusedClipId,
     onFocusedClipIdChange,
@@ -458,7 +462,9 @@ export const PianoRollToolbar = ({
         ) : null}
 
         <div className="flex-1" />
-        <span className="text-[10px] text-muted-foreground">Zoom:</span>
+        <span id="piano-roll-horizontal-zoom" className="text-[10px] text-muted-foreground">
+            Horizontal zoom
+        </span>
         <Slider
             value={[zoom * 100]}
             onValueChange={([value]) => {
@@ -470,8 +476,23 @@ export const PianoRollToolbar = ({
             max={400}
             step={25}
             className="w-20 shrink-0"
-            aria-label="Piano roll zoom"
+            aria-labelledby="piano-roll-horizontal-zoom"
             data-testid="toolbar-zoom"
+        />
+        <span id="piano-roll-vertical-zoom" className="text-[10px] text-muted-foreground">
+            Vertical zoom
+        </span>
+        <Slider
+            value={[rowHeight]}
+            onValueChange={([value]) => {
+                if (value !== undefined) onRowHeightChange?.(value);
+            }}
+            min={8}
+            max={32}
+            step={1}
+            className="w-20 shrink-0"
+            aria-labelledby="piano-roll-vertical-zoom"
+            data-testid="toolbar-vertical-zoom"
         />
     </DawControlStrip>
 );

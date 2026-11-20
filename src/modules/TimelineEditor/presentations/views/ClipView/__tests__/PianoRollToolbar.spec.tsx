@@ -10,12 +10,14 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
         children,
         size,
         'aria-label': ariaLabel,
+        'aria-labelledby': ariaLabelledBy,
     }: {
         value: string | number;
         onChange: (e: { target: { value: string } }) => void;
         children: React.ReactNode;
         size: string;
         'aria-label'?: string;
+        'aria-labelledby'?: string;
     }) => (
         <select value={value} onChange={onChange} data-size={size} aria-label={ariaLabel}>
             {children}
@@ -36,6 +38,7 @@ vi.mock('#/components/ui/button', () => ({
         className,
         'aria-pressed': ariaPressed,
         'aria-label': ariaLabel,
+        'aria-labelledby': ariaLabelledBy,
     }: {
         children: React.ReactNode;
         onClick?: () => void;
@@ -44,6 +47,7 @@ vi.mock('#/components/ui/button', () => ({
         className?: string;
         'aria-pressed'?: boolean;
         'aria-label'?: string;
+        'aria-labelledby'?: string;
     }) => (
         <button
             type="button"
@@ -53,6 +57,7 @@ vi.mock('#/components/ui/button', () => ({
             data-size={size}
             aria-pressed={ariaPressed}
             aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
         >
             {children}
         </button>
@@ -68,6 +73,7 @@ vi.mock('#/components/ui/slider', () => ({
         step,
         className,
         'aria-label': ariaLabel,
+        'aria-labelledby': ariaLabelledBy,
     }: {
         value: number[];
         onValueChange: (v: number[]) => void;
@@ -76,6 +82,7 @@ vi.mock('#/components/ui/slider', () => ({
         step: number;
         className?: string;
         'aria-label'?: string;
+        'aria-labelledby'?: string;
     }) => (
         <input
             type="range"
@@ -85,6 +92,7 @@ vi.mock('#/components/ui/slider', () => ({
             step={step}
             className={className}
             aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
@@ -252,7 +260,7 @@ describe('PianoRollToolbar', () => {
 
     it('should render zoom slider', () => {
         render(<PianoRollToolbar {...defaultProps} />);
-        expect(screen.getByLabelText('Piano roll zoom')).toBeInTheDocument();
+        expect(screen.getByLabelText('Horizontal zoom')).toBeInTheDocument();
     });
 
     it('shows Velocity availability when instrument lanes are omitted', () => {

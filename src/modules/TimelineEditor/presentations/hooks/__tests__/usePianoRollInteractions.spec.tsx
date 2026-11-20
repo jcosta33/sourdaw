@@ -501,6 +501,16 @@ describe('usePianoRollInteractions', () => {
             return { current: element };
         };
 
+        it.each([8, 32])('hits the painted pitch row at height %i', (rowHeight) => {
+            const { canvas } = renderRoll({ rowHeight });
+            pinCanvasToContentEdge(canvas);
+            fireEvent.mouseDown(canvas, {
+                clientX: PITCH_RAIL_W + 100,
+                clientY: RULER + 67 * rowHeight + rowHeight / 2,
+            });
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['n1']));
+        });
+
         it('hits a note hundreds of beats in, scrolled into view at 400% zoom', () => {
             // 400% zoom → beatWidth 160. The note spans content x 40000–40320;
             // scrolled to 39500 it is painted 500–820px into the viewport.

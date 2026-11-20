@@ -34,7 +34,7 @@ const TOOLBAR_CONTROLS = [
     'Toggle paint mode',
     'Toggle magic lasso selection',
     'Toggle Expression View (I4)',
-    'Piano roll zoom',
+    'Horizontal zoom',
 ] as const;
 
 type Rect = { x: number; y: number; width: number; height: number };

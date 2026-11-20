@@ -9,6 +9,7 @@ function ControlledToolbar() {
     const [snap, setSnap] = useState(0.25);
     const [root, setRoot] = useState(0);
     const [scale, setScale] = useState('chromatic');
+    const [rowHeight, setRowHeight] = useState(16);
     return (
         <PianoRollToolbar
             gridSnap={snap}
@@ -37,6 +38,8 @@ function ControlledToolbar() {
             onToggleNotePreview={vi.fn()}
             zoom={1}
             onZoomChange={vi.fn()}
+            rowHeight={rowHeight}
+            onRowHeightChange={setRowHeight}
         />
     );
 }
@@ -46,7 +49,7 @@ describe('Piano roll toolbar controls', () => {
     it('renders the real slider and transitions the controlled snap', () => {
         render(<ControlledToolbar />);
         const zoom = screen.getByTestId('toolbar-zoom');
-        const slider = within(zoom).getByRole('slider', { name: 'Piano roll zoom' });
+        const slider = within(zoom).getByRole('slider', { name: 'Horizontal zoom' });
         expect(slider).toHaveAttribute('aria-valuemin', '25');
         expect(slider).toHaveAttribute('aria-valuemax', '400');
         expect(slider).toHaveAttribute('aria-valuenow', '100');
@@ -63,6 +66,18 @@ describe('Piano roll toolbar controls', () => {
         fireEvent.click(sixteenth);
         expect(sixteenth).toHaveAttribute('aria-pressed', 'true');
         expect(thirtySecond).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('offers a keyboard-operable vertical scale with both boundaries', () => {
+        render(<ControlledToolbar />);
+        const slider = screen.getByRole('slider', { name: 'Vertical zoom' });
+        expect(slider).toHaveAttribute('aria-valuenow', '16');
+        fireEvent.keyDown(slider, { key: 'Home' });
+        expect(slider).toHaveAttribute('aria-valuenow', '8');
+        fireEvent.keyDown(slider, { key: 'End' });
+        expect(slider).toHaveAttribute('aria-valuenow', '32');
+        fireEvent.keyDown(slider, { key: 'ArrowDown' });
+        expect(slider).toHaveAttribute('aria-valuenow', '31');
     });
 
     it('updates the real root and scale selectors', () => {
