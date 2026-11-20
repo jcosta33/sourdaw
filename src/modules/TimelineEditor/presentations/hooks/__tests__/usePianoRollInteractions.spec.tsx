@@ -302,6 +302,7 @@ describe('usePianoRollInteractions', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 
     describe('selected frozen take callbacks', () => {
@@ -1026,6 +1027,64 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('wheel and hover', () => {
+        it.each([1, 2].flatMap((dpr) => [4, 8, 12, 16, 24].map((width) => ({ dpr, width }))))(
+            'offers a body and both edges on a $width px painted note at DPR $dpr',
+            ({ width, dpr }) => {
+                vi.stubGlobal('devicePixelRatio', dpr);
+                const duration = (width === 4 ? 2 : width + 2) / BEAT_W;
+                const { canvas } = renderRoll({ notes: [makeNote('short', 60, 2, duration)] });
+                const left = 2 * BEAT_W + 1;
+
+                fireEvent.mouseMove(canvas, { clientX: left + 0.5, clientY: yForPitch(60) });
+                expect(latest.current?.hoverCursor).toBe('ew-resize');
+                fireEvent.mouseMove(canvas, { clientX: left + width / 2, clientY: yForPitch(60) });
+                expect(latest.current?.hoverCursor).toBe('grab');
+                fireEvent.mouseMove(canvas, { clientX: left + width - 0.5, clientY: yForPitch(60) });
+                expect(latest.current?.hoverCursor).toBe('ew-resize');
+            }
+        );
+
+        it('drags the center of a short note as a move, with snapped beat and pitch', () => {
+            const note = makeExpressiveNote('short', 60, 2, 14 / BEAT_W);
+            mocks.getNotesForClip.mockReturnValue([note]);
+            const { canvas } = renderRoll({ notes: [note] });
+
+            fireEvent.mouseDown(canvas, { clientX: 87, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 127, clientY: yForPitch(61) });
+            fireEvent.mouseUp(canvas, { clientX: 127, clientY: yForPitch(61) });
+
+            expect(mocks.moveMidiNote).toHaveBeenCalledWith('clip-1', 'short', 61, 3);
+            expect(mocks.resizeMidiNote).not.toHaveBeenCalled();
+        });
+
+        it('extends the left edge of a below-grid note to zero without moving its end', () => {
+            const note = makeNote('short', 60, 0.125, 0.0625);
+            const { canvas, args } = renderRoll({ notes: [note], gridSnap: 0.25 });
+            fireEvent.mouseDown(canvas, { clientX: 5.5, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: -4.5, clientY: yForPitch(60) });
+            expect(args.dragPreviewRef.current?.beatOverride?.get('short')).toEqual({ beat: 0, duration: 0.1875 });
+        });
+
+        it.each([0.0625, 0.1].flatMap((duration) => (['left', 'right'] as const).map((edge) => ({ duration, edge }))))(
+            'leaves a $duration-beat note unchanged on a sub-snap $edge drag',
+            ({ duration, edge }) => {
+                const note = makeNote('short', 60, 1, duration);
+                const { canvas, args } = renderRoll({ notes: [note], gridSnap: 0.25 });
+                const x = edge === 'left' ? 41.25 : 44.75;
+                fireEvent.mouseDown(canvas, { clientX: x, clientY: yForPitch(60) });
+                fireEvent.mouseMove(canvas, { clientX: x + 1, clientY: yForPitch(60) });
+                const actual = {
+                    left: args.dragPreviewRef.current?.beatOverride?.get('short'),
+                    right: args.dragPreviewRef.current?.durationOverride?.get('short'),
+                };
+                const expected = { left: { beat: 1, duration }, right: duration };
+                expect(actual[edge]).toEqual(expected[edge]);
+                fireEvent.mouseUp(canvas, { clientX: x + 1, clientY: yForPitch(60) });
+                expect(mocks.resizeMidiNote).not.toHaveBeenCalled();
+                expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            }
+        );
+
         // Issue #2302 removed the local scrollX state this hook used to feed on
         // plain deltaX wheel — nothing read it, and it re-rendered the editor
         // every scroll frame. Plain and shift+wheel are native scrolling of the

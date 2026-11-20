@@ -1,9 +1,12 @@
 import { createStore } from '#/infra/store/createStore';
+import { automationStore } from '#/modules/Automation/stores';
 
+import { getInlineAutomationRows } from '../models/InlineAutomationRows';
 import { getTimelineHorizontalContentWidth } from '../models/TimelineHorizontalExtent';
 import { type TimelineTrackHeightPreview } from '../models/TimelineTrackExtent';
 import { getTimelineContentHeight } from '../transformers/getTimelineContentHeight';
 
+import { timelineEditingStore } from './timelineEditingStore';
 import { getTimelineTrackHeightScale } from './timelineTrackHeightPreference';
 import { trackStore } from './trackStore';
 
@@ -63,8 +66,15 @@ function clampScrollY(
     viewportHeight: number,
     trackHeightPreview = timelineViewStore.value?.trackHeightPreview
 ): number {
+    const tracks = trackStore.value?.tracks ?? [];
+    const automationRows = getInlineAutomationRows(
+        tracks,
+        automationStore.value?.lanes ?? [],
+        timelineEditingStore.value
+    );
     const totalHeight = getTimelineContentHeight(
-        trackStore.value?.tracks ?? [],
+        tracks,
+        automationRows,
         getTimelineTrackHeightScale(),
         trackHeightPreview
     );

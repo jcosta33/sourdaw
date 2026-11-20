@@ -137,10 +137,14 @@ export const handleInsertAutomationLanePoints = createHandler<'insertAutomationL
     materializeCommandArgumentsAt: 'execution',
     describe: (action) => {
         const { insertion } = action.payload;
-        const label =
-            isLaneInsertion(insertion) && insertion.kind === 'shape'
-                ? 'Insert automation shape'
-                : 'Add automation point';
+        let label = 'Add automation point';
+        if (isLaneInsertion(insertion)) {
+            if (insertion.kind === 'shape') {
+                label = 'Insert automation shape';
+            } else if (insertion.kind === 'stroke') {
+                label = 'Draw automation';
+            }
+        }
         if (action.payload.direction !== undefined || !preparedAuthorities.has(action)) {
             return { label };
         }

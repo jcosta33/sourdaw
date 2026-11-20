@@ -1,6 +1,8 @@
+import { getInlineAutomationRows } from '../models/InlineAutomationRows';
 import {
+    getAutomationSubLaneTop,
     getTimelineTrackHeight,
-    getVariationLaneExtent,
+    getVariationLaneCount,
     type TimelineTrackHeightPreview,
     VARIATION_LANE_HEIGHT,
 } from '../models/TimelineTrackExtent';
@@ -12,6 +14,7 @@ import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTrac
 
 import { selectClipWithFocus } from './clipSelection/selectClipWithFocus';
 import { toggleFolderCollapse } from './folder/toggleFolderCollapse';
+import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
 import { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 const REVEAL_HORIZONTAL_MARGIN_PX = 32;
@@ -58,14 +61,20 @@ function expandOwningFolders(tracks: readonly Track[], track: Track): void {
 function getClipVerticalBounds(
     visibleTracks: readonly Track[],
     located: LocatedClip,
-    trackHeightScale: number,
     trackHeightPreview?: TimelineTrackHeightPreview | null
 ): { top: number; bottom: number } | null {
+    const trackHeightScale = getTimelineTrackHeightScale();
+    const { editing, lanes } = readInlineAutomationSnapshot(undefined);
+    const automationRows = getInlineAutomationRows(visibleTracks, lanes ?? [], editing);
     let trackTop = 0;
     for (const track of visibleTracks) {
         const trackHeight = getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview);
         if (track.id !== located.track.id) {
-            trackTop += trackHeight + getVariationLaneExtent(track);
+            trackTop += getAutomationSubLaneTop(
+                trackHeight,
+                getVariationLaneCount(track),
+                automationRows.get(track.id)?.length
+            );
             continue;
         }
         if (located.variationLaneIndex !== null) {
@@ -92,8 +101,7 @@ export function revealClip(clipId: string): boolean {
     }
 
     const visibleTracks = getVisibleTimelineTracks(trackStore.value?.tracks ?? []);
-    const trackHeightScale = getTimelineTrackHeightScale();
-    const bounds = getClipVerticalBounds(visibleTracks, located, trackHeightScale, view.trackHeightPreview);
+    const bounds = getClipVerticalBounds(visibleTracks, located, view.trackHeightPreview);
     if (!bounds) {
         return false;
     }

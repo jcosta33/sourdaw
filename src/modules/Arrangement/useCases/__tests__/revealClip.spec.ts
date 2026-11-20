@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { automationStore } from '#/modules/Automation/stores';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { setTrackHeight } from '#/modules/Preferences/useCases';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
-import { setTimelineTrackHeightPreview, timelineViewStore } from '../../stores/timelineViewStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
+import { setScrollY, setTimelineTrackHeightPreview, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { revealClip } from '../revealClip';
+import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
+import { hitTestAutomationSubLane } from '../timelineInteractions/hitTestAutomationSubLane';
+import { hitTestClip } from '../timelineInteractions/hitTestClip/hitTestClip';
 
 const targetClip: Clip = {
     id: 'clip-target',
@@ -99,34 +104,68 @@ describe('revealClip', () => {
     });
 
     it.each([
-        { mode: 'compact', preview: null, scrollY: 37.5 },
-        { mode: 'large', preview: null, scrollY: 160 },
-        { mode: 'large', preview: { trackId: 'track-first', height: 96 }, scrollY: 184 },
-        { mode: 'large', preview: { trackId: 'track-target', height: 84 }, scrollY: 196 },
-    ] as const)('reveals scaled rows in $mode mode with preview $preview', ({ mode, preview, scrollY }) => {
-        setTrackHeight(mode);
-        trackStore.set({
-            tracks: [
-                TrackDummy.create({ id: 'folder', kind: 'folder' }),
-                TrackDummy.create({
-                    id: 'track-first',
-                    height: 80,
-                    showVariationLanes: true,
-                    alternatives: [{ id: 'first-a', name: 'A', clips: [] }],
-                }),
-                TrackDummy.create({ id: 'track-target', height: 60, clips: [targetClip] }),
-                TrackDummy.create({ id: 'track-tail', height: 200 }),
-            ],
-            selectedTrackId: null,
-        });
-        if (preview) {
-            setTimelineTrackHeightPreview(preview.trackId, preview.height);
+        { mode: 'compact', preview: null, rowTop: 140, scrollY: 77.5, maxScrollY: 202.5 },
+        { mode: 'large', preview: null, rowTop: 210, scrollY: 200, maxScrollY: 500 },
+        { mode: 'large', preview: { trackId: 'track-first', height: 96 }, rowTop: 234, scrollY: 224, maxScrollY: 524 },
+        { mode: 'large', preview: { trackId: 'track-target', height: 84 }, rowTop: 210, scrollY: 236, maxScrollY: 536 },
+    ] as const)(
+        'aligns reveal, clip and automation hit targets, and scroll bounds in $mode mode with preview $preview',
+        ({ mode, preview, rowTop, scrollY, maxScrollY }) => {
+            setTrackHeight(mode);
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: 'folder', kind: 'folder' }),
+                    TrackDummy.create({
+                        id: 'track-first',
+                        height: 80,
+                        showVariationLanes: true,
+                        alternatives: [{ id: 'first-a', name: 'A', clips: [] }],
+                    }),
+                    TrackDummy.create({ id: 'track-target', height: 60, clips: [targetClip] }),
+                    TrackDummy.create({ id: 'track-tail', height: 200 }),
+                ],
+                selectedTrackId: null,
+            });
+            if (preview) {
+                setTimelineTrackHeightPreview(preview.trackId, preview.height);
+            }
+            const previousAutomation = automationStore.value;
+            const previousEditing = timelineEditingStore.value;
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'pan',
+                        trackId: 'track-first',
+                        parameterId: 'pan',
+                        parameterName: 'Pan',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: -1,
+                        maxValue: 1,
+                    },
+                ],
+            });
+            timelineEditingStore.set(defaultTimelineEditingState);
+            try {
+                toggleInlineAutomation();
+                expect(hitTestAutomationSubLane(1220, rowTop - 41)).toBeNull();
+                expect(hitTestAutomationSubLane(1220, rowTop - 40)?.lane.id).toBe('pan');
+                expect(hitTestClip(1220, rowTop - 1)).toBeNull();
+                expect(hitTestClip(1220, rowTop)).toEqual({ clipId: targetClip.id, trackId: targetClip.trackId });
+
+                expect(revealClip(targetClip.id)).toBe(true);
+                expect(timelineViewStore.value?.scrollY).toBe(scrollY);
+                setScrollY(10_000);
+                expect(timelineViewStore.value?.scrollY).toBe(maxScrollY);
+            } finally {
+                timelineEditingStore.set(previousEditing);
+                automationStore.set(previousAutomation);
+            }
         }
-
-        expect(revealClip(targetClip.id)).toBe(true);
-
-        expect(timelineViewStore.value?.scrollY).toBe(scrollY);
-    });
+    );
 
     it('expands a collapsed owning folder before selecting its clip', () => {
         trackStore.set({

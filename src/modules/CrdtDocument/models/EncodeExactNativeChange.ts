@@ -176,35 +176,35 @@ function restoreFloatValues(bytes: Uint8Array, repairs: ReadonlyMap<number, Floa
     }
 }
 
-function repairEncodedNativeChange(
-    change: NativeChange,
-    bytes: Uint8Array<ArrayBuffer>,
-    decodeChange: NativeChangeCodec['decodeChange']
-): { bytes: Uint8Array<ArrayBuffer>; hash: string } {
-    const encoded = decodeChange(bytes);
-    const repairs = readFloatRepairs(change.ops, encoded.ops);
+function restoreEncodedFloats(expected: Operations, encoded: Operations, bytes: Uint8Array<ArrayBuffer>): boolean {
+    const repairs = readFloatRepairs(expected, encoded);
     if (repairs.size === 0) {
+        return false;
+    }
+    restoreFloatValues(bytes, repairs, expected.length);
+    bytes.set(sha256Bytes(bytes.subarray(8)).subarray(0, 4), 4);
+    return true;
+}
+
+/** Preserve the native encoder's framing and restore only floats its decimal ingress rounded. */
+export function encodeExactNativeChange(change: NativeChange, codec: NativeChangeCodec) {
+    const bytes = Uint8Array.from(codec.encodeChange(change));
+    const encoded = codec.decodeChange(bytes);
+    if (!restoreEncodedFloats(change.ops, encoded.ops, bytes)) {
         return { bytes, hash: encoded.hash };
     }
-    restoreFloatValues(bytes, repairs, change.ops.length);
-    bytes.set(sha256Bytes(bytes.subarray(8)).subarray(0, 4), 4);
-    const repaired = decodeChange(bytes);
+    const repaired = codec.decodeChange(bytes);
     if (readFloatRepairs(change.ops, repaired.ops).size > 0) {
         throw new Error('Native change did not preserve exact floats');
     }
     return { bytes, hash: repaired.hash };
 }
 
-/** Preserve the native encoder's framing and restore only floats its decimal ingress rounded. */
-export function encodeExactNativeChange(change: NativeChange, codec: NativeChangeCodec) {
-    return repairEncodedNativeChange(change, Uint8Array.from(codec.encodeChange(change)), codec.decodeChange);
-}
-
 function equalChangeBytes(left: Uint8Array, right: Uint8Array): boolean {
     return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
-/** Identical canonical bytes already prove the round trip, without decoding that output again. */
+/** The caller must supply a change decoded from the validated original bytes. Full byte equality proves the round trip. */
 export function assertExactNativeChangeEncoding(
     change: NativeChange,
     original: Uint8Array<ArrayBuffer>,
@@ -214,8 +214,9 @@ export function assertExactNativeChangeEncoding(
     if (equalChangeBytes(encoded, original)) {
         return 'byte-equal';
     }
-    const repaired = repairEncodedNativeChange(change, encoded, codec.decodeChange);
-    if (!equalChangeBytes(repaired.bytes, original)) {
+    const decoded = codec.decodeChange(encoded);
+    restoreEncodedFloats(change.ops, decoded.ops, encoded);
+    if (!equalChangeBytes(encoded, original)) {
         throw new Error('Native sequence contains unsupported opaque metadata');
     }
     return 'exact-float-repair';

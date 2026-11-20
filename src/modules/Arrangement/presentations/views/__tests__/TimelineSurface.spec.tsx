@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { type Store } from '#/infra/store/types';
+import { automationStore } from '#/modules/Automation/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { setTrackHeight } from '#/modules/Preferences/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -10,6 +11,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
 import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
+import { toggleInlineAutomation } from '../../../useCases/timelineEditing/toggleInlineAutomation';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { createTimelineRenderer } from '../../renderers/createTimelineRenderer';
 import { TimelineSurface } from '../TimelineSurface';
@@ -104,7 +106,7 @@ vi.mock('../../renderers/createTimelineRenderer', () => ({
 }));
 
 const renderModelRef = vi.hoisted(() => ({
-    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[] }>,
+    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[]; automationLanes?: unknown[] }>,
 }));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: vi.fn(() => ({ tracks: renderModelRef.tracks })),
@@ -629,6 +631,52 @@ describe('TimelineSurface — marquee selection box', () => {
         expect(marquee).not.toBeNull();
         expect(marquee!.style.top).toBe('64px');
         expect(marquee!.style.height).toBe('50px');
+    });
+
+    it('moves the following marquee and presence with automation layout changes alone', async () => {
+        const track = { id: 'a', height: 40, variationLanes: [{}] };
+        const following = { id: 'b', height: 50 };
+        renderModelRef.tracks = [track, following];
+        const view = { scrollX: 0, scrollY: 10, pixelsPerBeat: 10, autoScrollEnabled: true };
+        zoomHandlers.timelineViewStoreRef.current?.set(view);
+        const trackSnapshot = zoomHandlers.trackStoreRef.current?.value;
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 2, endBeat: 4, trackIds: ['b'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        await screen.findByTestId('presence-overlay');
+        const marquee = container.querySelector<HTMLElement>('[style*="left: 20px"]');
+        const presenceY = () => {
+            const props = (globalThis as { __presenceProps?: { trackIdToCenterY: (id: string) => number | null } })
+                .__presenceProps;
+            return props?.trackIdToCenterY('b');
+        };
+        expect(marquee).toBeInTheDocument();
+        expect(marquee?.style.top).toBe('54px');
+        expect(presenceY()).toBe(79);
+
+        try {
+            act(() => {
+                renderModelRef.tracks = [{ ...track, automationLanes: [{}] }, following];
+                toggleInlineAutomation();
+            });
+            expect(marquee?.style.top).toBe('94px');
+            expect(presenceY()).toBe(119);
+
+            act(() => {
+                renderModelRef.tracks = [track, following];
+                automationStore.set({ lanes: [] });
+            });
+            expect(marquee?.style.top).toBe('54px');
+            expect(presenceY()).toBe(79);
+            expect(zoomHandlers.timelineViewStoreRef.current?.value).toBe(view);
+            expect(zoomHandlers.trackStoreRef.current?.value).toBe(trackSnapshot);
+        } finally {
+            act(toggleInlineAutomation);
+        }
     });
 
     it('renders no marquee box when the selection trackIds match no rendered track', () => {

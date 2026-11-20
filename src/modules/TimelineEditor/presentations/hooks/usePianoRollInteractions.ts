@@ -57,6 +57,8 @@ import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editP
 import {
     ROW_HEIGHT,
     RULER_HEIGHT,
+    NOTE_INSET_X,
+    getPaintedNoteWidth,
     type DragState,
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
@@ -556,11 +558,15 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const nx = note.startBeat * beatWidth;
                 const ny = row * ROW_HEIGHT;
                 const nw = note.duration * beatWidth;
-                if (x >= nx && x <= nx + nw && y >= ny && y <= ny + ROW_HEIGHT) {
-                    if (x <= nx + 8) {
+                const paintedLeft = nx + NOTE_INSET_X;
+                const paintedWidth = getPaintedNoteWidth(nw);
+                const paintedRight = paintedLeft + paintedWidth;
+                const edgeWidth = Math.min(8, paintedWidth / 4);
+                if (x >= nx && x <= Math.max(nx + nw, paintedRight) && y >= ny && y <= ny + ROW_HEIGHT) {
+                    if (x <= paintedLeft + edgeWidth) {
                         return { note, edge: 'left' as const, ownerClipId };
                     }
-                    if (x >= nx + nw - 8) {
+                    if (x >= paintedRight - edgeWidth) {
                         return { note, edge: 'right' as const, ownerClipId };
                     }
                     return { note, edge: 'body' as const, ownerClipId };
@@ -1030,14 +1036,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             draw();
         } else if (drag.mode === 'resize-left') {
             const deltaBeat = snap((x - drag.startX) / beatWidth);
-            const endBeat = drag.origBeat + drag.origDuration;
-            const clampedBeat = Math.min(Math.max(0, drag.origBeat + deltaBeat), endBeat - gridSnap);
-            const beatOverride = new Map([[drag.noteId!, { beat: clampedBeat, duration: endBeat - clampedBeat }]]);
+            const minimumDuration = Math.min(gridSnap, drag.origDuration);
+            const latestStart = drag.origBeat + (drag.origDuration - minimumDuration);
+            const clampedBeat = Math.min(Math.max(0, drag.origBeat + deltaBeat), latestStart);
+            const duration = drag.origDuration + (drag.origBeat - clampedBeat);
+            const beatOverride = new Map([[drag.noteId!, { beat: clampedBeat, duration }]]);
             dragPreviewRef.current = { noteIds: new Set([drag.noteId!]), beatDelta: 0, pitchDelta: 0, beatOverride };
             draw();
         } else if (drag.mode === 'resize-right') {
             const deltaBeat = snap((x - drag.startX) / beatWidth);
-            const newDuration = Math.max(gridSnap, drag.origDuration + deltaBeat);
+            const newDuration = Math.max(Math.min(gridSnap, drag.origDuration), drag.origDuration + deltaBeat);
             const durationOverride = new Map([[drag.noteId!, newDuration]]);
             dragPreviewRef.current = {
                 noteIds: new Set([drag.noteId!]),
