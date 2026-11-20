@@ -5543,7 +5543,7 @@
             "count": 6
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 7
+            "count": 5
         }
     },
     "src/modules/Arrangement/handlers/device/handleSetSend.ts": {

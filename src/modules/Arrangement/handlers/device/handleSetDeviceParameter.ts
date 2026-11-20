@@ -41,10 +41,14 @@ function resolveDeviceTarget(
 ) {
     if (context) {
         const { paramId } = action.payload;
+        const parameterIds = paramId ? [paramId] : [];
+        if (paramId === 'masterGain') {
+            parameterIds.push('master_gain');
+        }
         const planned = getPlannedDevicePatchState({
             deviceId: action.payload.deviceId,
             trackId: action.payload.expectedTrackId,
-            parameterIds: paramId === 'masterGain' ? [paramId, 'master_gain'] : paramId ? [paramId] : [],
+            parameterIds,
             context,
         });
         if (!planned) {

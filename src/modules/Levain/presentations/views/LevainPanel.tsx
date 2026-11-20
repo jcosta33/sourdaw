@@ -81,8 +81,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         index: number;
     } | null>(null);
     const expert = state.uiLevel === 6;
-    const master = useLevainMasterGesture(deviceId, expert);
-    const displayedMaster = master.preview ?? state.patch.masterGain;
+    const master = useLevainMasterGesture(deviceId, expert, state.patch.masterGain);
 
     const { patch, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
     const sampleLoadError = state.sampleLoadError ?? null;
@@ -417,7 +416,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
                                             key={deviceId}
-                                            value={displayedMaster}
+                                            value={master.displayedValue}
                                             onChange={master.change}
                                             gestureAuthority={master.authority}
                                             paramId="masterGain"
@@ -433,7 +432,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             Master
                                         </span>
                                         <span className="font-mono text-caption text-foreground/85">
-                                            {(displayedMaster * 100).toFixed(0)}%
+                                            {(master.displayedValue * 100).toFixed(0)}%
                                         </span>
                                     </Stack>
 

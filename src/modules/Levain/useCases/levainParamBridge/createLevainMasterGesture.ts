@@ -77,12 +77,13 @@ function captureOwner(deviceId: string) {
         );
     }
     const runtime = captureDeviceParameterRuntimeWriteAuthority(track.id, deviceId, PARAMETER);
-    const sendPreview = (value: number) =>
-        setDeviceParameter(deviceId, PARAMETER, value, {
+    function sendPreview(value: number): boolean {
+        return setDeviceParameter(deviceId, PARAMETER, value, {
             transient: true,
             automationRecordingPolicy: 'suppressed',
             runtimeOwner: runtime.owner,
         });
+    }
     return {
         access,
         hasCommittedOwner: () => !access || access.hasDevice(track.id, deviceId),
@@ -111,6 +112,24 @@ type Gesture = NonNullable<ReturnType<typeof captureOwner>> & {
     stop: () => void;
 };
 
+function createGesture(
+    owner: NonNullable<ReturnType<typeof captureOwner>>,
+    token: number,
+    unsubscribers: Array<() => void>
+): Gesture {
+    return {
+        ...owner,
+        token,
+        settling: false,
+        invalidated: false,
+        stop() {
+            for (const unsubscribe of unsubscribers.splice(0)) {
+                unsubscribe();
+            }
+        },
+    };
+}
+
 function restorePreview(current: Gesture): void {
     if (
         current.preview === undefined ||
@@ -130,6 +149,104 @@ function restorePreview(current: Gesture): void {
     }
 }
 
+function releaseRuntimeAuthority(current: Gesture, committed: boolean): void {
+    try {
+        if (!committed) {
+            restorePreview(current);
+        }
+    } catch (error) {
+        notifyUser(error instanceof Error ? error.message : 'Levain Master preview could not be restored', 'error');
+    } finally {
+        current.runtime.release();
+    }
+}
+
+function subscribeToGestureOwner(
+    current: Gesture,
+    unsubscribers: Array<() => void>,
+    invalidate: (gesture: Gesture) => void
+): void {
+    function observe(): void {
+        if (current.invalidated) {
+            return;
+        }
+        if (current.settling ? !current.readUnchangedTopology() : !current.valueIsUnchanged()) {
+            invalidate(current);
+        }
+    }
+    unsubscribers.push(trackStore.subscribe(observe), levainStore.subscribe(observe));
+    if (current.access) {
+        unsubscribers.push(
+            current.access.subscribe(() => {
+                if (!current.invalidated && !current.hasCommittedOwner()) {
+                    invalidate(current);
+                } else {
+                    observe();
+                }
+            })
+        );
+    }
+}
+
+function previewGesture(
+    current: Gesture,
+    value: number,
+    showPreview: (value?: number) => void,
+    invalidate: (gesture: Gesture) => void
+): void {
+    try {
+        if (current.sendPreview(value)) {
+            current.preview = value;
+            showPreview(value);
+        }
+    } catch (error) {
+        invalidate(current);
+        notifyUser(error instanceof Error ? error.message : 'Levain Master preview failed', 'error');
+    }
+}
+
+async function commitGesture(
+    deviceId: string,
+    current: Gesture,
+    value: number,
+    finish: (gesture: Gesture, committed: boolean) => void
+): Promise<void> {
+    current.settling = true;
+    let committed = false;
+    try {
+        await executeUserAppAction(
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId,
+                    paramId: PARAMETER,
+                    value,
+                    ...current.guards,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            {
+                shouldExecute: () => !current.invalidated && current.valueIsUnchanged() && current.runtime.canCommit(),
+                shouldCommit: () => !current.invalidated && current.readUnchangedTopology() !== undefined,
+                deviceParameterRuntimeAuthority: {
+                    trackId: current.guards.expectedTrackId,
+                    deviceId,
+                    paramId: PARAMETER,
+                    owner: current.runtime.owner,
+                    isCurrent: () => current.readOriginalOwner() !== undefined && current.runtime.canCommit(),
+                },
+                onCommitted: () => {
+                    committed = true;
+                },
+            }
+        );
+    } catch (error) {
+        notifyUser(error instanceof Error ? error.message : 'Levain Master change failed', 'error');
+    } finally {
+        finish(current, committed);
+    }
+}
+
 /** Own a mounted Desk control's transient display and its one terminal action. */
 export function createLevainMasterGesture(deviceId: string, showPreview: (value?: number) => void) {
     let sequence = 0;
@@ -141,15 +258,7 @@ export function createLevainMasterGesture(deviceId: string, showPreview: (value?
             gesture = undefined;
             showPreview();
         }
-        try {
-            if (!committed) {
-                restorePreview(current);
-            }
-        } catch (error) {
-            notifyUser(error instanceof Error ? error.message : 'Levain Master preview could not be restored', 'error');
-        } finally {
-            current.runtime.release();
-        }
+        releaseRuntimeAuthority(current, committed);
     }
 
     function invalidate(current: Gesture): void {
@@ -173,89 +282,14 @@ export function createLevainMasterGesture(deviceId: string, showPreview: (value?
             return -1;
         }
         const unsubscribers: Array<() => void> = [];
-        const current: Gesture = {
-            ...owner,
-            token: ++sequence,
-            settling: false,
-            invalidated: false,
-            stop: () => unsubscribers.splice(0).forEach((unsubscribe) => unsubscribe()),
-        };
+        const current = createGesture(owner, ++sequence, unsubscribers);
         gesture = current;
-        const observe = () => {
-            if (current.invalidated) {
-                return;
-            }
-            if (current.settling ? !current.readUnchangedTopology() : !current.valueIsUnchanged()) {
-                invalidate(current);
-            }
-        };
-        unsubscribers.push(trackStore.subscribe(observe), levainStore.subscribe(observe));
-        if (owner.access) {
-            unsubscribers.push(
-                owner.access.subscribe(() => {
-                    if (!current.invalidated && !current.hasCommittedOwner()) {
-                        invalidate(current);
-                    } else {
-                        observe();
-                    }
-                })
-            );
-        }
+        subscribeToGestureOwner(current, unsubscribers, invalidate);
         return current.token;
     }
 
     function isCurrent(token: string | number): boolean {
         return gesture?.token === token && !gesture.invalidated;
-    }
-
-    function preview(current: Gesture, value: number): void {
-        try {
-            if (current.sendPreview(value)) {
-                current.preview = value;
-                showPreview(value);
-            }
-        } catch (error) {
-            invalidate(current);
-            notifyUser(error instanceof Error ? error.message : 'Levain Master preview failed', 'error');
-        }
-    }
-
-    async function commit(current: Gesture, value: number): Promise<void> {
-        current.settling = true;
-        let committed = false;
-        try {
-            await executeUserAppAction(
-                {
-                    type: 'setDeviceParameter',
-                    payload: {
-                        deviceId,
-                        paramId: PARAMETER,
-                        value,
-                        ...current.guards,
-                        automationRecordingPolicy: 'suppressed',
-                    },
-                },
-                {
-                    shouldExecute: () =>
-                        !current.invalidated && current.valueIsUnchanged() && current.runtime.canCommit(),
-                    shouldCommit: () => !current.invalidated && current.readUnchangedTopology() !== undefined,
-                    deviceParameterRuntimeAuthority: {
-                        trackId: current.guards.expectedTrackId,
-                        deviceId,
-                        paramId: PARAMETER,
-                        owner: current.runtime.owner,
-                        isCurrent: () => current.readOriginalOwner() !== undefined && current.runtime.canCommit(),
-                    },
-                    onCommitted: () => {
-                        committed = true;
-                    },
-                }
-            );
-        } catch (error) {
-            notifyUser(error instanceof Error ? error.message : 'Levain Master change failed', 'error');
-        } finally {
-            finish(current, committed);
-        }
     }
 
     function change(value: number, transient = false): void {
@@ -275,11 +309,11 @@ export function createLevainMasterGesture(deviceId: string, showPreview: (value?
         }
         const bounded = clampDeviceParameterValue({ deviceType: 'levain', paramId: PARAMETER, value });
         if (transient) {
-            preview(current, bounded);
+            previewGesture(current, bounded, showPreview, invalidate);
         } else if (bounded === current.valueAtStart) {
             finish(current, false);
         } else {
-            void commit(current, bounded);
+            void commitGesture(deviceId, current, bounded, finish);
         }
     }
 
