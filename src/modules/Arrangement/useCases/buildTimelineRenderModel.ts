@@ -19,7 +19,6 @@ import {
     type AudioWaveformProgrammePart,
 } from '../models/TimelineRenderModel';
 import { getTimelineTrackHeight, getVariationLaneCount } from '../models/TimelineTrackExtent';
-import { type Track } from '../models/Track';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
@@ -274,11 +273,10 @@ export function buildTimelineRenderModel(
         const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
         const trackHeightScale = getTimelineTrackHeightScale(trackHeightMode);
         const automationRows = projectInlineAutomationLanes(visibleTracks, automation);
-        const getRowHeight = (track: Track): number =>
-            getTimelineTrackHeight(track, trackHeightScale, viewState?.trackHeightPreview);
+        const trackHeightPreview = viewState?.trackHeightPreview;
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
-            const baseHeight = getRowHeight(track);
+            const baseHeight = getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview);
             const compLane = takeLaneState?.lanes.find((lane) => lane.trackId === track.id);
             const hasAudibleProgramme =
                 compLane !== undefined &&
