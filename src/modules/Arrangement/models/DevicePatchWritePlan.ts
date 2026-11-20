@@ -184,6 +184,7 @@ const capturedPatchActions = new Set<AppAction['type']>([
     'setBacteriaFactoryPatch',
     'setGlutenFactoryPreset',
     'setLevainIdentity',
+    'setProofPatchSelection',
 ]);
 
 function projectCommandOwners(

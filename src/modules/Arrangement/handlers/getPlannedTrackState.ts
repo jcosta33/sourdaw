@@ -175,6 +175,7 @@ export const plannedTrackByActionType: {
     setToasterFactoryKit: noPlannedTrack,
     setBacteriaFactoryPatch: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
+    setProofPatchSelection: noPlannedTrack,
     createBus: planCreatedBus,
     createFolder: noPlannedTrack,
     setSend: noPlannedTrack,

@@ -33,7 +33,12 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
 }
 
 function createCapturedDeviceReplayContract(
-    actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
+    actionType:
+        | 'setBacteriaFactoryPatch'
+        | 'setGlutenFactoryPreset'
+        | 'setLevainIdentity'
+        | 'setProofPatchSelection'
+        | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -74,6 +79,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
