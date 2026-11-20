@@ -30,7 +30,9 @@
 //!
 //! Sourdaw's own audio thread reaches none of this.
 
-use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
+use crate::parameter_events::{
+    signal_pending_parameter_flush, PluginParameterEvent, PluginParameterEventQueue,
+};
 use crate::traits::{
     HostParameterUpdate, LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier,
 };
@@ -63,7 +65,7 @@ use vst3::{Class, ComPtr, ComWrapper, Interface};
 /// may allocate. A knob drag produces one gesture per parameter per pass — the
 /// slots coalesce by parameter id — so this is a ceiling on *distinct*
 /// parameters moved between two blocks, not on mouse events.
-const MAX_PARAMETER_GESTURES: usize = 64;
+pub(crate) const MAX_PARAMETER_GESTURES: usize = 64;
 
 /// The most off-thread `IConnectionPoint` messages the host will hold for the
 /// control path to deliver.
@@ -298,6 +300,15 @@ pub struct Vst3HostState {
     /// the user landed on and nothing in between. This queue keeps every event in
     /// order, because what it carries is the gesture's shape.
     parameter_events: Arc<PluginParameterEventQueue>,
+    /// Values the processor reported in a block's `outputParameterChanges`,
+    /// waiting for the control path to hand them to the edit controller.
+    ///
+    /// VST3 forbids the processor and the controller from talking to each
+    /// other, so a meter, a gain-reduction readout or a value the processor's
+    /// own modulation moved reaches the plugin's editor only if the host
+    /// carries it. Coalesced per parameter like `gestures`: the controller is
+    /// owed the value the processor last reported, not every block's.
+    controller_updates: ParameterGestureQueue,
     deferred_messages: [DeferredMessage; MAX_DEFERRED_MESSAGES],
 }
 
@@ -315,6 +326,7 @@ impl Default for Vst3HostState {
             request_notifier: OnceLock::new(),
             gestures: ParameterGestureQueue::new(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
+            controller_updates: ParameterGestureQueue::new(),
             deferred_messages: std::array::from_fn(|_| DeferredMessage::new()),
         }
     }
@@ -432,6 +444,29 @@ impl Vst3HostState {
     pub fn record_gesture_end(&self, param_id: ParamID) {
         self.parameter_events
             .push(PluginParameterEvent::gesture_end(param_id));
+    }
+
+    /// Record a value the processor reported for one of its parameters.
+    /// **Wait-free; called from the audio thread** after `process` returns.
+    ///
+    /// The controller is always owed it. The host's observers — the renderer's
+    /// parameter snapshot, dirty tracking, automation recording — are owed it
+    /// only when `observed`: a read-only parameter is a readout, and treating a
+    /// meter's every movement as an edit would mark the project dirty on every
+    /// block it moves.
+    pub fn record_processor_output(&self, param_id: ParamID, value: ParamValue, observed: bool) {
+        self.controller_updates.record(param_id, value);
+        signal_pending_parameter_flush();
+        if observed {
+            self.parameter_events
+                .push(PluginParameterEvent::value(param_id, value));
+        }
+    }
+
+    /// Move the processor's reported values waiting for the controller into
+    /// `out`, in ascending parameter id. Control path.
+    pub fn drain_controller_updates(&self, out: &mut [HostParameterUpdate]) -> usize {
+        self.controller_updates.drain(out)
     }
 
     /// The queue this plugin's own parameter events land in.

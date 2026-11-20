@@ -12,6 +12,7 @@
 mod allocation_counter;
 pub mod clap_host;
 pub mod clap_wrapper;
+pub mod output_notes;
 pub mod parameter_events;
 pub mod params;
 pub mod runtime;
