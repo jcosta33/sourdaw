@@ -1109,7 +1109,9 @@ mod tests {
         );
         assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
         let reopened = runtime.try_with_control(Duration::from_secs(1), |plugin| {
-            plugin.open_gui(std::ptr::null_mut())
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
         });
         assert!(
             reopened.is_ok(),
