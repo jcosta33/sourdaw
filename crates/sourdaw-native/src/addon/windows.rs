@@ -37,7 +37,7 @@ use napi_derive::napi;
 use crate::host::plugin_window::{
     apply_editor_size_on_ui_thread, native_handle_from_bytes, PluginEditorWindow, PluginWindowHost,
 };
-use crate::host::ui_thread::{PostedUiThread, UiThread, UiThreadTask};
+use crate::host::ui_thread::{call_on_ui_thread, PostedUiThread, UiThread, UiThreadTask};
 
 /// How long one JS round trip may take before the operation fails.
 ///
@@ -486,5 +486,17 @@ impl PluginEditorWindow for JsEditorWindow {
 
     fn destroy(&self) {
         fire(&self.callbacks.destroy, &self.label);
+    }
+
+    fn show(&self) {
+        fire(&self.callbacks.show, &self.label);
+    }
+
+    fn hide(&self) {
+        fire(&self.callbacks.hide, &self.label);
+    }
+
+    fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> std::result::Result<(), String> {
+        call_on_ui_thread(self.ui.as_ref(), work)
     }
 }

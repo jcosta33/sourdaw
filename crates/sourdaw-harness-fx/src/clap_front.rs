@@ -1,4 +1,4 @@
-//! The CLAP front end: `clap_entry`, a factory with four classes over the
+//! The CLAP front end: `clap_entry`, a factory with five classes over the
 //! same DSP, and the extensions the host's process-mode path reads.
 //!
 //! The second class differs only in its `clap.render` answer: it declares a
@@ -6,8 +6,13 @@
 //! instance must refuse. The third differs only in answering one process call
 //! ([`crate::FAILING_PROCESS_CALL`]) with `CLAP_PROCESS_ERROR`, and the fourth
 //! only in refusing `start_processing`: both are what a host must not let pass
-//! as processed audio.
+//! as processed audio. The fifth adds an embedded editor and a `Command`
+//! parameter that drives it (see [`crate::clap_gui`]).
+//!
+//! Every class records the smallest block `activate` promised and the smallest
+//! block `process` was then handed, so a host test can hold one to the other.
 
+use crate::clap_gui::{GuiFixture, COMMAND_PARAM_ID, GUI};
 use crate::echo::{
     Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN, LATENCY_FRAMES,
 };
@@ -21,6 +26,7 @@ use clap_sys::ext::audio_ports::{
     clap_audio_port_info, clap_plugin_audio_ports, CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS,
     CLAP_PORT_STEREO,
 };
+use clap_sys::ext::gui::CLAP_EXT_GUI;
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
@@ -52,6 +58,8 @@ pub const CLAP_HARD_REALTIME_PLUGIN_ID: &str = "com.sourdaw.harness-fx.hard-real
 pub const CLAP_PROCESS_ERROR_PLUGIN_ID: &str = "com.sourdaw.harness-fx.process-error";
 /// The class that refuses to start processing.
 pub const CLAP_START_REFUSED_PLUGIN_ID: &str = "com.sourdaw.harness-fx.start-refused";
+/// The class with an embedded editor.
+pub const CLAP_EDITOR_PLUGIN_ID: &str = "com.sourdaw.harness-fx.editor";
 /// The `Gain` parameter's id, in both formats.
 pub const GAIN_PARAM_ID: u32 = 0;
 
@@ -59,10 +67,12 @@ static PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx\0";
 static HARD_REALTIME_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.hard-realtime\0";
 static PROCESS_ERROR_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.process-error\0";
 static START_REFUSED_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.start-refused\0";
+static EDITOR_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.editor\0";
 static PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx\0";
 static HARD_REALTIME_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Hard Realtime\0";
 static PROCESS_ERROR_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Process Error\0";
 static START_REFUSED_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Start Refused\0";
+static EDITOR_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Editor\0";
 static PLUGIN_VENDOR: &[u8] = b"Sourdaw\0";
 static PLUGIN_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 static FEATURE_AUDIO_EFFECT: &[u8] = b"audio-effect\0";
@@ -104,6 +114,7 @@ static PROCESS_ERROR_DESCRIPTOR: clap_plugin_descriptor =
     descriptor(PROCESS_ERROR_PLUGIN_ID, PROCESS_ERROR_PLUGIN_NAME);
 static START_REFUSED_DESCRIPTOR: clap_plugin_descriptor =
     descriptor(START_REFUSED_PLUGIN_ID, START_REFUSED_PLUGIN_NAME);
+static EDITOR_DESCRIPTOR: clap_plugin_descriptor = descriptor(EDITOR_PLUGIN_ID, EDITOR_PLUGIN_NAME);
 
 /// One instance, boxed behind `clap_plugin.plugin_data`.
 struct ClapInstance {
@@ -111,6 +122,7 @@ struct ClapInstance {
     hard_realtime: bool,
     refuses_to_start_processing: bool,
     process_calls: ProcessCalls,
+    gui: Option<GuiFixture>,
 }
 
 /// How one class departs from the plain effect.
@@ -119,6 +131,7 @@ struct Departures {
     hard_realtime: bool,
     fails_a_process_call: bool,
     refuses_to_start_processing: bool,
+    has_editor: bool,
 }
 
 // ── Entry and factory ───────────────────────────────────────────────────
@@ -157,7 +170,7 @@ static FACTORY: clap_plugin_factory = clap_plugin_factory {
 };
 
 unsafe extern "C" fn plugin_count(_factory: *const clap_plugin_factory) -> u32 {
-    4
+    5
 }
 
 unsafe extern "C" fn plugin_descriptor(
@@ -169,13 +182,14 @@ unsafe extern "C" fn plugin_descriptor(
         1 => &raw const HARD_REALTIME_DESCRIPTOR,
         2 => &raw const PROCESS_ERROR_DESCRIPTOR,
         3 => &raw const START_REFUSED_DESCRIPTOR,
+        4 => &raw const EDITOR_DESCRIPTOR,
         _ => ptr::null(),
     }
 }
 
 unsafe extern "C" fn create_plugin(
     _factory: *const clap_plugin_factory,
-    _host: *const clap_host,
+    host: *const clap_host,
     plugin_id: *const c_char,
 ) -> *const clap_plugin {
     if plugin_id.is_null() {
@@ -203,6 +217,12 @@ unsafe extern "C" fn create_plugin(
             ..Departures::default()
         };
         (&raw const START_REFUSED_DESCRIPTOR, departures)
+    } else if requested == EDITOR_PLUGIN_ID {
+        let departures = Departures {
+            has_editor: true,
+            ..Departures::default()
+        };
+        (&raw const EDITOR_DESCRIPTOR, departures)
     } else {
         return ptr::null();
     };
@@ -212,6 +232,7 @@ unsafe extern "C" fn create_plugin(
         hard_realtime: departures.hard_realtime,
         refuses_to_start_processing: departures.refuses_to_start_processing,
         process_calls: ProcessCalls::new(departures.fails_a_process_call),
+        gui: departures.has_editor.then(|| GuiFixture::new(host)),
     }));
     Box::into_raw(Box::new(clap_plugin {
         desc,
@@ -249,7 +270,20 @@ unsafe fn instance_of<'a>(plugin: *const clap_plugin) -> Option<&'a ClapInstance
     Some(unsafe { &*(data as *const ClapInstance) })
 }
 
-unsafe extern "C" fn init(_plugin: *const clap_plugin) -> bool {
+/// The editor state of an instance of the editor class.
+///
+/// # Safety
+/// As [`instance_of`].
+pub(crate) unsafe fn gui_of<'a>(plugin: *const clap_plugin) -> Option<&'a GuiFixture> {
+    // SAFETY: the caller's contract.
+    unsafe { instance_of(plugin) }.and_then(|instance| instance.gui.as_ref())
+}
+
+unsafe extern "C" fn init(plugin: *const clap_plugin) -> bool {
+    // SAFETY: the host passes the plugin it created.
+    if let Some(gui) = unsafe { gui_of(plugin) } {
+        gui.bind_host_gui();
+    }
     true
 }
 
@@ -271,13 +305,14 @@ unsafe extern "C" fn destroy(plugin: *const clap_plugin) {
 unsafe extern "C" fn activate(
     plugin: *const clap_plugin,
     _sample_rate: f64,
-    _min_frames_count: u32,
+    min_frames_count: u32,
     _max_frames_count: u32,
 ) -> bool {
     // SAFETY: the host passes the plugin it created.
     match unsafe { instance_of(plugin) } {
         Some(instance) => {
             instance.echo.reset();
+            instance.echo.record_declared_min_frames(min_frames_count);
             true
         }
         None => false,
@@ -303,7 +338,7 @@ unsafe extern "C" fn reset(plugin: *const clap_plugin) {
 unsafe extern "C" fn on_main_thread(_plugin: *const clap_plugin) {}
 
 unsafe extern "C" fn get_extension(
-    _plugin: *const clap_plugin,
+    plugin: *const clap_plugin,
     extension_id: *const c_char,
 ) -> *const c_void {
     if extension_id.is_null() {
@@ -329,11 +364,16 @@ unsafe extern "C" fn get_extension(
     if id == CLAP_EXT_RENDER {
         return &raw const RENDER as *const c_void;
     }
+    // SAFETY: the host passes the plugin it created.
+    if id == CLAP_EXT_GUI && unsafe { gui_of(plugin) }.is_some() {
+        return &raw const GUI as *const c_void;
+    }
     ptr::null()
 }
 
-/// Apply the block's `Gain` writes, then render it. Allocation- and lock-free:
-/// pointer arithmetic over host-owned buffers only.
+/// Apply the block's parameter writes, then render it. Allocation- and
+/// lock-free — pointer arithmetic over host-owned buffers only — save for a
+/// `Command` the editor class carries out (see [`crate::clap_gui`]).
 unsafe extern "C" fn process(
     plugin: *const clap_plugin,
     process: *const clap_process,
@@ -345,13 +385,14 @@ unsafe extern "C" fn process(
     let Some(instance) = (unsafe { instance_of(plugin) }) else {
         return CLAP_PROCESS_ERROR;
     };
+    // SAFETY: `process` is valid for the duration of this call.
+    let process = unsafe { &*process };
+    instance.echo.record_block_frames(process.frames_count);
     if instance.process_calls.this_call_fails() {
         return CLAP_PROCESS_ERROR;
     }
-    // SAFETY: `process` is valid for the duration of this call.
-    let process = unsafe { &*process };
     // SAFETY: `in_events` is valid for the duration of this call.
-    unsafe { apply_parameter_events(&instance.echo, process.in_events) };
+    unsafe { apply_parameter_events(instance, process.in_events) };
     // SAFETY: the bus tables are valid for the duration of this call.
     unsafe { render_block(&instance.echo, process) };
     CLAP_PROCESS_CONTINUE
@@ -359,7 +400,7 @@ unsafe extern "C" fn process(
 
 /// # Safety
 /// `in_events`, when non-null, must be a live `clap_input_events`.
-unsafe fn apply_parameter_events(echo: &Echo, in_events: *const clap_input_events) {
+unsafe fn apply_parameter_events(instance: &ClapInstance, in_events: *const clap_input_events) {
     if in_events.is_null() {
         return;
     }
@@ -388,7 +429,11 @@ unsafe fn apply_parameter_events(echo: &Echo, in_events: *const clap_input_event
         // `clap_event_param_value`.
         let event = unsafe { &*(header as *const clap_event_param_value) };
         if event.param_id == GAIN_PARAM_ID {
-            echo.set_gain(event.value);
+            instance.echo.set_gain(event.value);
+        } else if event.param_id == COMMAND_PARAM_ID {
+            if let Some(gui) = instance.gui.as_ref() {
+                gui.run_command(event.value);
+            }
         }
     }
 }
@@ -495,21 +540,27 @@ static PARAMS: clap_plugin_params = clap_plugin_params {
     flush: Some(param_flush),
 };
 
-unsafe extern "C" fn param_count(_plugin: *const clap_plugin) -> u32 {
-    1
+unsafe extern "C" fn param_count(plugin: *const clap_plugin) -> u32 {
+    // SAFETY: the host passes the plugin it created.
+    match unsafe { gui_of(plugin) } {
+        Some(_) => 2,
+        None => 1,
+    }
 }
 
+/// The highest `Command` value; `0` issues nothing.
+const COMMAND_MAX: f64 = 4.0;
+
 unsafe extern "C" fn param_get_info(
-    _plugin: *const clap_plugin,
+    plugin: *const clap_plugin,
     index: u32,
     info: *mut clap_param_info,
 ) -> bool {
-    if info.is_null() || index != 0 {
+    if info.is_null() {
         return false;
     }
-    // SAFETY: `info` is a valid out parameter.
-    unsafe {
-        *info = clap_param_info {
+    let described = match index {
+        0 => clap_param_info {
             id: GAIN_PARAM_ID as clap_id,
             flags: CLAP_PARAM_IS_AUTOMATABLE,
             cookie: ptr::null_mut(),
@@ -518,8 +569,22 @@ unsafe extern "C" fn param_get_info(
             min_value: GAIN_MIN,
             max_value: GAIN_MAX,
             default_value: GAIN_DEFAULT,
-        }
+        },
+        // SAFETY: the host passes the plugin it created.
+        1 if unsafe { gui_of(plugin) }.is_some() => clap_param_info {
+            id: COMMAND_PARAM_ID as clap_id,
+            flags: CLAP_PARAM_IS_AUTOMATABLE,
+            cookie: ptr::null_mut(),
+            name: c_name(b"Command\0"),
+            module: [0; CLAP_PATH_SIZE],
+            min_value: 0.0,
+            max_value: COMMAND_MAX,
+            default_value: 0.0,
+        },
+        _ => return false,
     };
+    // SAFETY: `info` is a valid out parameter.
+    unsafe { *info = described };
     true
 }
 
@@ -528,15 +593,22 @@ unsafe extern "C" fn param_get_value(
     param_id: clap_id,
     out_value: *mut f64,
 ) -> bool {
-    if out_value.is_null() || param_id != GAIN_PARAM_ID {
+    if out_value.is_null() {
         return false;
     }
     // SAFETY: the host passes the plugin it created.
     let Some(instance) = (unsafe { instance_of(plugin) }) else {
         return false;
     };
+    let value = if param_id == GAIN_PARAM_ID {
+        instance.echo.gain()
+    } else if param_id == COMMAND_PARAM_ID && instance.gui.is_some() {
+        0.0
+    } else {
+        return false;
+    };
     // SAFETY: `out_value` is a valid out parameter.
-    unsafe { *out_value = instance.echo.gain() };
+    unsafe { *out_value = value };
     true
 }
 
@@ -570,7 +642,7 @@ unsafe extern "C" fn param_flush(
     // SAFETY: the host passes the plugin it created.
     if let Some(instance) = unsafe { instance_of(plugin) } {
         // SAFETY: the host passes a live event list.
-        unsafe { apply_parameter_events(&instance.echo, in_events) };
+        unsafe { apply_parameter_events(instance, in_events) };
     }
 }
 
@@ -593,7 +665,10 @@ unsafe extern "C" fn state_save(plugin: *const clap_plugin, stream: *const clap_
     let Some(write) = (unsafe { (*stream).write }) else {
         return false;
     };
-    let chunk = instance.echo.save();
+    let mut chunk = instance.echo.save();
+    if let Some(gui) = instance.gui.as_ref() {
+        gui.append_record(&mut chunk);
+    }
     let mut written = 0;
     while written < chunk.len() {
         let remaining = &chunk[written..];

@@ -1,7 +1,7 @@
 //! The effect itself, free of either format's vocabulary: per channel,
 //! `y[n] = g * (x[n - L] + 0.5 * x[n - L - E])`.
 
-use crate::state::{self, RecordedState, MODE_NEVER_SET};
+use crate::state::{self, RecordedState, FRAMES_NEVER_RECORDED, MODE_NEVER_SET};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 
@@ -54,13 +54,15 @@ impl ProcessCalls {
 /// lifecycle exclusion `sourdaw-harness-tone`'s `Tone` relies on, carried
 /// across threads by the host's own publication of the activated instance.
 /// Everything the main thread may read or write while the audio thread runs
-/// (the gain, the recorded modes) is atomic.
+/// (the gain, the recorded modes and frame counts) is atomic.
 pub(crate) struct Echo {
     gain: AtomicU64,
     history: [Box<[Cell<f32>]>; CHANNELS],
     write_position: Cell<usize>,
     configured_mode: AtomicI32,
     last_block_mode: AtomicI32,
+    declared_min_frames: AtomicU32,
+    smallest_block_frames: AtomicU32,
 }
 
 impl Echo {
@@ -71,6 +73,8 @@ impl Echo {
             write_position: Cell::new(0),
             configured_mode: AtomicI32::new(MODE_NEVER_SET),
             last_block_mode: AtomicI32::new(MODE_NEVER_SET),
+            declared_min_frames: AtomicU32::new(FRAMES_NEVER_RECORDED),
+            smallest_block_frames: AtomicU32::new(FRAMES_NEVER_RECORDED),
         }
     }
 
@@ -116,11 +120,25 @@ impl Echo {
         self.last_block_mode.store(mode, Ordering::Relaxed);
     }
 
+    /// Record the smallest block the host promised it would ever hand over.
+    pub(crate) fn record_declared_min_frames(&self, frames: u32) {
+        self.declared_min_frames.store(frames, Ordering::Relaxed);
+    }
+
+    /// Record one block's frame count, keeping the smallest. Allocation- and
+    /// lock-free.
+    pub(crate) fn record_block_frames(&self, frames: u32) {
+        self.smallest_block_frames
+            .fetch_min(frames, Ordering::Relaxed);
+    }
+
     pub(crate) fn save(&self) -> Vec<u8> {
         state::encode(RecordedState {
             gain: self.gain(),
             configured_mode: self.configured_mode.load(Ordering::Relaxed),
             last_block_mode: self.last_block_mode.load(Ordering::Relaxed),
+            declared_min_frames: self.declared_min_frames.load(Ordering::Relaxed),
+            smallest_block_frames: self.smallest_block_frames.load(Ordering::Relaxed),
         })
     }
 

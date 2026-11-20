@@ -66,6 +66,7 @@
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::all_engine_runtimes;
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::plugin_editor_asks::answer_pending_editor_window_asks;
 use crate::host::plugin_host_requests::apply_pending_editor_resizes;
 use crate::host::process_refusal_reporter::report_pending_process_refusals;
 use crate::host::tail_watcher::publish_pending_tail_changes;
@@ -339,6 +340,7 @@ fn run_tick(
 
     if take_pending_editor_resize_signal() {
         apply_pending_editor_resizes(engine_plugins);
+        answer_pending_editor_window_asks(engine_plugins);
     }
 }
 
@@ -369,6 +371,9 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_editor_asks::editor_window_host;
+    use crate::host::plugin_window::testing::DedicatedUiWindowHost;
+    use crate::host::plugin_window::{PluginEditorWindow, PluginWindowHost};
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
 
@@ -1074,5 +1079,51 @@ mod tests {
             ]
         );
         assert!(open.is_empty());
+    }
+
+    /// A plugin that reports its editor destroyed from its own thread is
+    /// answered on the next tick, and on the editor window's own thread: the
+    /// `gui.destroy` acknowledgement and the window's teardown both run where
+    /// the shell drains its editor work, never on the drain thread itself.
+    #[test]
+    fn a_tick_acknowledges_an_editor_the_plugin_destroyed_on_its_windows_thread() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let editor_calls = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("a fixture logs its editor calls");
+        let window: Arc<dyn PluginEditorWindow> = Arc::from(
+            shell
+                .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                .expect("the shell opens a window"),
+        );
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(true);
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(
+            editor_calls.lock().expect("editor call log").last(),
+            Some(&shell.thread_id),
+            "the acknowledgement must run on the window's thread"
+        );
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+        let reopened = runtime.try_with_control(Duration::from_secs(1), |plugin| {
+            plugin.open_gui(std::ptr::null_mut())
+        });
+        assert!(
+            reopened.is_ok(),
+            "the acknowledged session leaves room for a new editor: {reopened:?}"
+        );
     }
 }

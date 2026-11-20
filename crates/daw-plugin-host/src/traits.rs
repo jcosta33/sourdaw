@@ -76,6 +76,68 @@ pub type PluginHostRequestNotifier = Box<dyn Fn(PluginHostRequest) + Send + Sync
 /// request through. Called on the control path only.
 pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
 
+/// The host window an open editor is drawn into, as the control path
+/// addresses it when it answers what the plugin asked of that window.
+///
+/// The asks arrive from inside the plugin — CLAP's `gui.request_show`,
+/// `request_hide`, `closed` and `resize_hints_changed` are all
+/// `[thread-safe]` — so the backend only records them, and the host carries
+/// them out later. Answering takes both halves of this seam: plugin calls
+/// that belong to the thread owning the window, and window operations.
+pub trait EditorWindowHost: Send + Sync {
+    /// Make the window visible without taking focus from the DAW.
+    fn show(&self);
+
+    /// Hide the window, leaving the editor parented into it.
+    fn hide(&self);
+
+    /// Whether the user may drag this window's edges.
+    fn set_resizable(&self, resizable: bool);
+
+    /// End the window. Only after the editor has left it.
+    fn destroy(&self);
+
+    /// Run `work` on the thread that owns this window, and return once it has
+    /// run. `Err` means it did not run and never will.
+    fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
+}
+
+/// Shared because the backend keeps it for the editor's life and hands a clone
+/// to whoever answers the plugin's asks.
+pub type SharedEditorWindow = Arc<dyn EditorWindowHost>;
+
+/// What the plugin asked of its editor's window since the host last looked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EditorWindowAsks {
+    /// The newest show or hide request; an older one it overrides is moot.
+    pub visibility: Option<EditorVisibility>,
+    /// The plugin reported that its editor is gone.
+    pub closed: Option<EditorClosed>,
+    /// The plugin's resize constraints changed and must be read again.
+    pub resize_hints_changed: bool,
+}
+
+impl EditorWindowAsks {
+    pub fn is_empty(&self) -> bool {
+        self.visibility.is_none() && self.closed.is_none() && !self.resize_hints_changed
+    }
+}
+
+/// Which way a plugin asked its editor window to go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorVisibility {
+    Show,
+    Hide,
+}
+
+/// A plugin's report that its editor ended on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorClosed {
+    /// Whether the plugin already released its editor resources. When it has,
+    /// the host acknowledges with `destroy` and must not call into the view.
+    pub was_destroyed: bool,
+}
+
 /// The display scale a backend assumes until the host states one.
 ///
 /// One converts nothing, which is the right answer wherever a format's editor
@@ -389,6 +451,25 @@ pub trait AudioPlugin: Send + Sync {
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         None
     }
+
+    /// Install the window the editor is about to open into, so the asks the
+    /// plugin makes of it later have somewhere to go. Released when the editor
+    /// closes. The default ignores it: a format whose plugin cannot ask
+    /// anything of its window has nothing to route.
+    fn set_editor_window(&mut self, _window: SharedEditorWindow) {}
+
+    /// Take what the plugin asked of its editor window, with the window to
+    /// answer it through. **Control path only**; it makes no plugin call.
+    ///
+    /// `None` when nothing is pending or no window is installed.
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        None
+    }
+
+    /// Carry out asks taken by [`Self::take_editor_window_asks`]. **On the
+    /// thread that owns the editor's window**, because answering them calls
+    /// into the editor.
+    fn answer_editor_window_asks(&mut self, _asks: EditorWindowAsks) {}
 
     /// Read and clear the "plugin state changed" signal the plugin raised.
     /// **Control path only.**

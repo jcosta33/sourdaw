@@ -18,6 +18,15 @@
 /// clamp `num_samples` to `MAX_BUFFER`, so a larger callback would be
 /// silently truncated to this many frames per block.
 pub const MAX_BUFFER: usize = 4096;
+
+/// The fewest frames this host promises a `process` call will carry, stated
+/// to `activate` as `min_frames_count`.
+///
+/// One, the floor CLAP bounds the range by, because it is the only promise the
+/// engine keeps: a callback is split at a loop seam into spans as short as the
+/// distance to the loop end, and a device may run at any period. Promising more
+/// lets a plugin size scratch or assert from a bound the host then breaks.
+pub const MIN_PROCESS_FRAMES: u32 = 1;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
@@ -48,9 +57,10 @@ use crate::parameter_events::{
 use crate::params::PluginParameter;
 use crate::scanner::{category_from_clap_features, clap_library_path, owned_feature_list};
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginHostRequestNotifier,
-    ProcessMode, ProcessingGate, MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, AudioPlugin, EditorClosed, EditorVisibility, EditorWindowAsks,
+    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
+    MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -70,7 +80,8 @@ use clap_sys::ext::gui::CLAP_WINDOW_API_WIN32;
 #[cfg(target_os = "linux")]
 use clap_sys::ext::gui::CLAP_WINDOW_API_X11;
 use clap_sys::ext::gui::{
-    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
+    clap_gui_resize_hints, clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI,
+    CLAP_WINDOW_API_COCOA,
 };
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::note_ports::{
@@ -139,6 +150,9 @@ pub struct ClapWrapper {
     /// from inside the plugin after the open has returned. Dropped on close: a
     /// window that has gone away is not one to resize.
     editor_resizer: Option<EditorWindowResizer>,
+    /// The window this plugin's editor is drawn into, for answering what the
+    /// plugin asks of it. Installed and released with the resizer.
+    editor_window: Option<SharedEditorWindow>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -1089,6 +1103,7 @@ impl ClapWrapper {
             host_state,
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1137,6 +1152,7 @@ impl ClapWrapper {
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1681,6 +1697,7 @@ impl ClapWrapper {
                 return Err("GUI is already open".to_string());
             }
 
+            self.host_state.discard_editor_window_asks();
             self.gui_open = true;
             return Ok((800, 600));
         }
@@ -1692,6 +1709,9 @@ impl ClapWrapper {
         if self.gui_open {
             return Err("GUI is already open".to_string());
         }
+
+        // Anything a previous editor asked of its window is about that window.
+        self.host_state.discard_editor_window_asks();
 
         // SAFETY: non-null (checked above); `gui_ext` is the plugin's own extension
         // struct from load, valid while the instance `self` owns is alive.
@@ -1810,7 +1830,136 @@ impl ClapWrapper {
     /// stops existing.
     fn release_editor_window_resizer(&mut self) {
         self.editor_resizer = None;
+        self.editor_window = None;
         self.host_state.set_editor_resize_available(false);
+    }
+
+    /// Install the window this editor is drawn into, so what the plugin asks
+    /// of it — to be shown, hidden, or closed, or to have its resizability
+    /// re-read — has somewhere to go. Released with the resizer.
+    pub fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        self.editor_window = Some(window);
+    }
+
+    /// Take what the plugin asked of its editor window, with the window to
+    /// answer it through. Control path only; no plugin call.
+    ///
+    /// Nothing is taken while no window is installed: the asks wait for the
+    /// next open, which discards them as belonging to a window that is gone.
+    pub fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        let window = self.editor_window.clone()?;
+        let asks = self.host_state.take_editor_window_asks();
+        if asks.is_empty() {
+            return None;
+        }
+        Some((asks, window))
+    }
+
+    /// Carry out what the plugin asked of its editor window. **On the thread
+    /// that owns the window** — every answer calls into the editor.
+    ///
+    /// A closed editor is answered alone: the other asks were about a view
+    /// that no longer exists.
+    pub fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        if let Some(closed) = asks.closed {
+            self.acknowledge_editor_closed(closed);
+            return;
+        }
+        if let Some(visibility) = asks.visibility {
+            self.apply_editor_visibility(visibility);
+        }
+        if asks.resize_hints_changed {
+            let resizable = self.editor_can_resize();
+            if let Some(window) = self.editor_window.as_ref() {
+                window.set_resizable(resizable);
+            }
+        }
+    }
+
+    /// End the editor session the plugin ended. **Window thread only.**
+    ///
+    /// gui.h: with `was_destroyed` the host must call `destroy` to acknowledge,
+    /// and the view is already gone, so it is not hidden first. The window is
+    /// destroyed last, once the editor has left it; the shell's close path then
+    /// drops the editor record and tells the renderer the editor closed, as it
+    /// does for a window the user closed.
+    fn acknowledge_editor_closed(&mut self, closed: EditorClosed) {
+        let window = self.editor_window.clone();
+
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            self.gui_open = false;
+            self.release_editor_window_resizer();
+            if let Some(window) = window {
+                window.destroy();
+            }
+            return;
+        }
+
+        if self.gui_open && !self.gui_ext.is_null() && !self.plugin.is_null() {
+            // SAFETY: non-null (checked above); `gui_ext` is the plugin's own extension
+            // struct from load, valid while the instance `self` owns is alive.
+            let gui = unsafe { &*self.gui_ext };
+            if !closed.was_destroyed {
+                if let Some(hide) = gui.hide {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor the plugin reports closed but not destroyed.
+                    unsafe { hide(self.plugin) };
+                }
+            }
+            if let Some(destroy) = gui.destroy {
+                // SAFETY: the extension's callback, matched as `Some`, acknowledging the
+                // editor the plugin reported closed; `gui_open` is cleared below so no
+                // later close destroys it again.
+                unsafe { destroy(self.plugin) };
+            }
+        }
+
+        self.gui_open = false;
+        self.release_editor_window_resizer();
+        if let Some(window) = window {
+            window.destroy();
+        }
+    }
+
+    /// Show or hide the editor and its window together. **Window thread only.**
+    fn apply_editor_visibility(&mut self, visibility: EditorVisibility) {
+        let Some(window) = self.editor_window.clone() else {
+            return;
+        };
+
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            match visibility {
+                EditorVisibility::Show => window.show(),
+                EditorVisibility::Hide => window.hide(),
+            }
+            return;
+        }
+
+        // SAFETY: window thread, which is `open_gui_extension`'s contract; the
+        // extension outlives this borrow of `self`.
+        let gui = unsafe { self.open_gui_extension() };
+        match visibility {
+            EditorVisibility::Show => {
+                if let Some(show) = gui.and_then(|gui| gui.show) {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor is open (`open_gui_extension` returned it).
+                    unsafe { show(self.plugin) };
+                }
+                window.show();
+            }
+            EditorVisibility::Hide => {
+                if let Some(hide) = gui.and_then(|gui| gui.hide) {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor is open (`open_gui_extension` returned it).
+                    unsafe { hide(self.plugin) };
+                }
+                window.hide();
+            }
+        }
     }
 
     /// Resize the window this editor is drawn into, where the host gave one.
@@ -1858,12 +2007,38 @@ impl ClapWrapper {
         let Some(gui) = (unsafe { self.open_gui_extension() }) else {
             return false;
         };
-        match gui.can_resize {
-            // SAFETY: the extension's callback, matched as `Some`, on the live instance
-            // whose editor is open (`open_gui_extension` returned `Some`).
-            Some(can_resize) => unsafe { can_resize(self.plugin) },
-            None => false,
+        let Some(can_resize) = gui.can_resize else {
+            return false;
+        };
+        // SAFETY: the extension's callback, matched as `Some`, on the live instance
+        // whose editor is open (`open_gui_extension` returned `Some`).
+        if !unsafe { can_resize(self.plugin) } {
+            return false;
         }
+        self.resize_hints_allow_some_axis(gui)
+    }
+
+    /// Whether the plugin's resize hints leave the user an axis to drag along.
+    ///
+    /// A plugin with no hints has stated no constraint, so `can_resize` stands.
+    /// One that refuses both axes is not resizable whatever `can_resize` said.
+    fn resize_hints_allow_some_axis(&self, gui: &clap_plugin_gui) -> bool {
+        let Some(get_resize_hints) = gui.get_resize_hints else {
+            return true;
+        };
+        let mut hints = clap_gui_resize_hints {
+            can_resize_horizontally: true,
+            can_resize_vertically: true,
+            preserve_aspect_ratio: false,
+            aspect_ratio_width: 0,
+            aspect_ratio_height: 0,
+        };
+        // SAFETY: the extension's callback, matched as `Some`, on the live instance
+        // whose editor is open, with one live out-parameter.
+        if !unsafe { get_resize_hints(self.plugin, &mut hints) } {
+            return true;
+        }
+        hints.can_resize_horizontally || hints.can_resize_vertically
     }
 
     /// Resize the editor because the host's window was resized, reporting the
@@ -2796,7 +2971,9 @@ unsafe fn activate_plugin(plugin: *const clap_plugin, sample_rate: f64) -> bool 
         // SAFETY: the instance's own `activate`, matched as `Some`, on a live instance
         // not yet activated (this fn's contract); `MAX_BUFFER` is the block ceiling
         // `process_audio_internal` clamps every block to.
-        Some(activate) => unsafe { activate(plugin, sample_rate, 32, MAX_BUFFER as u32) },
+        Some(activate) => unsafe {
+            activate(plugin, sample_rate, MIN_PROCESS_FRAMES, MAX_BUFFER as u32)
+        },
         None => false,
     }
 }
@@ -3050,7 +3227,14 @@ impl ClapWrapper {
             // SAFETY: the instance's own callback, matched as `Some`, on an instance
             // deactivated above (or never active); `MAX_BUFFER` is the block ceiling
             // `process_audio_internal` clamps to.
-            if !unsafe { activate_fn(self.plugin, self.sample_rate, 32, MAX_BUFFER as u32) } {
+            if !unsafe {
+                activate_fn(
+                    self.plugin,
+                    self.sample_rate,
+                    MIN_PROCESS_FRAMES,
+                    MAX_BUFFER as u32,
+                )
+            } {
                 return Err(format!(
                     "[CLAP] reactivation for latency change failed for {}",
                     self.name
@@ -3395,6 +3579,18 @@ impl AudioPlugin for ClapWrapper {
 
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         ClapWrapper::apply_pending_editor_resize(self)
+    }
+
+    fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        ClapWrapper::set_editor_window(self, window)
+    }
+
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        ClapWrapper::take_editor_window_asks(self)
+    }
+
+    fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        ClapWrapper::answer_editor_window_asks(self, asks)
     }
 
     fn take_state_dirty(&mut self) -> bool {
@@ -3995,6 +4191,7 @@ mod tests {
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,

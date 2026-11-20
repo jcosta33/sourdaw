@@ -11,7 +11,7 @@ use clap_sys::host::clap_host;
 use clap_sys::version::CLAP_VERSION;
 use std::ffi::CStr;
 use std::os::raw::c_void;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::OnceLock;
 
 use crate::parameter_events::signal_pending_parameter_flush;
@@ -19,7 +19,20 @@ use crate::parameter_events::signal_pending_parameter_flush;
 /// Re-exported so every existing `clap_host::LatencyChangeNotifier` path still
 /// resolves. The type itself is seam vocabulary — see [`crate::traits`].
 pub use crate::traits::LatencyChangeNotifier;
+use crate::traits::{EditorClosed, EditorVisibility, EditorWindowAsks};
 pub use crate::traits::{PluginHostRequest, PluginHostRequestNotifier};
+
+/// The visibility slot's "nothing asked", and its two answers.
+const NO_VISIBILITY_ASK: u8 = 0;
+const SHOW_ASKED: u8 = 1;
+const HIDE_ASKED: u8 = 2;
+
+/// The closed slot's "not closed", and its two reports, ordered so that
+/// `fetch_max` keeps the stronger one: an editor reported destroyed stays
+/// destroyed whatever a second report says.
+const NOT_CLOSED: u8 = 0;
+const CLOSED_ALIVE: u8 = 1;
+const CLOSED_DESTROYED: u8 = 2;
 
 /// One editor size held in a single atomic, so the plugin's own callback can
 /// state both dimensions without a lock and without tearing them apart.
@@ -81,6 +94,12 @@ pub struct HostCallbackState {
     /// and no control visit has since done so. Set by `clap_host
     /// .request_callback`; cleared by the carrier that makes the call.
     main_thread_callback_pending: AtomicBool,
+    /// The newest show or hide the plugin asked of its editor window.
+    editor_visibility_ask: AtomicU8,
+    /// Whether the plugin reported its editor gone, and whether destroyed.
+    editor_closed_ask: AtomicU8,
+    /// Whether the plugin reported new resize constraints not yet re-read.
+    editor_resize_hints_changed: AtomicBool,
     /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty
     /// and parameter-rescan — which a plugin raises where allocating is
     /// ordinary. Its install also gates the `[thread-safe]` asks' acceptance:
@@ -121,6 +140,18 @@ impl std::fmt::Debug for HostCallbackState {
                 &self.main_thread_callback_pending.load(Ordering::Relaxed),
             )
             .field("tail_dirty", &self.tail_dirty.load(Ordering::Relaxed))
+            .field(
+                "editor_visibility_ask",
+                &self.editor_visibility_ask.load(Ordering::Relaxed),
+            )
+            .field(
+                "editor_closed_ask",
+                &self.editor_closed_ask.load(Ordering::Relaxed),
+            )
+            .field(
+                "editor_resize_hints_changed",
+                &self.editor_resize_hints_changed.load(Ordering::Relaxed),
+            )
             .field(
                 "has_request_notifier",
                 &self.request_notifier.get().is_some(),
@@ -269,6 +300,85 @@ impl HostCallbackState {
         true
     }
 
+    /// Record that the plugin asked for its editor window to be shown or
+    /// hidden, and report whether it will be.
+    ///
+    /// The same gates and the same wait-free recording as
+    /// [`Self::request_editor_resize`], for the same reason: CLAP marks
+    /// `gui.request_show` and `gui.request_hide` `[thread-safe]`. The newest
+    /// ask wins, because a hide the host has not reached yet is moot once the
+    /// plugin asks to be shown again.
+    pub fn request_editor_visibility(&self, visibility: EditorVisibility) -> bool {
+        if !self.editor_resize_available.load(Ordering::Acquire) {
+            return false;
+        }
+        if self.request_notifier.get().is_none() {
+            return false;
+        }
+
+        let asked = match visibility {
+            EditorVisibility::Show => SHOW_ASKED,
+            EditorVisibility::Hide => HIDE_ASKED,
+        };
+        self.editor_visibility_ask.store(asked, Ordering::Release);
+        signal_pending_editor_resize();
+        true
+    }
+
+    /// Record that the plugin's editor ended on its own. CLAP marks
+    /// `gui.closed` `[thread-safe]`, so this is atomics and the hint only.
+    pub fn mark_editor_closed(&self, was_destroyed: bool) {
+        let reported = if was_destroyed {
+            CLOSED_DESTROYED
+        } else {
+            CLOSED_ALIVE
+        };
+        self.editor_closed_ask.fetch_max(reported, Ordering::AcqRel);
+        signal_pending_editor_resize();
+    }
+
+    /// Record that the plugin's resize constraints changed. CLAP marks
+    /// `gui.resize_hints_changed` `[thread-safe & !floating]`.
+    pub fn mark_editor_resize_hints_changed(&self) {
+        self.editor_resize_hints_changed
+            .store(true, Ordering::Release);
+        signal_pending_editor_resize();
+    }
+
+    /// Drop whatever the plugin asked of a previous editor's window, so none of
+    /// it lands on the editor about to open.
+    pub fn discard_editor_window_asks(&self) {
+        let _ = self.take_editor_window_asks();
+    }
+
+    /// Read and clear everything the plugin asked of its editor window.
+    pub fn take_editor_window_asks(&self) -> EditorWindowAsks {
+        let visibility = match self
+            .editor_visibility_ask
+            .swap(NO_VISIBILITY_ASK, Ordering::AcqRel)
+        {
+            SHOW_ASKED => Some(EditorVisibility::Show),
+            HIDE_ASKED => Some(EditorVisibility::Hide),
+            _ => None,
+        };
+        let closed = match self.editor_closed_ask.swap(NOT_CLOSED, Ordering::AcqRel) {
+            CLOSED_DESTROYED => Some(EditorClosed {
+                was_destroyed: true,
+            }),
+            CLOSED_ALIVE => Some(EditorClosed {
+                was_destroyed: false,
+            }),
+            _ => None,
+        };
+        EditorWindowAsks {
+            visibility,
+            closed,
+            resize_hints_changed: self
+                .editor_resize_hints_changed
+                .swap(false, Ordering::AcqRel),
+        }
+    }
+
     /// Record that the plugin asked the host to call `on_main_thread` on it.
     ///
     /// Two release stores and nothing else, for the same reason
@@ -389,7 +499,8 @@ pub fn take_pending_tail_change_signal() -> bool {
     TAIL_CHANGE_PENDING.swap(false, Ordering::AcqRel)
 }
 
-/// Process-wide hint that some plugin asked for a different editor size.
+/// Process-wide hint that some plugin asked something of its editor window: a
+/// different size, to be shown or hidden, a closed editor, new resize hints.
 ///
 /// A hint, never the record — each instance's own packed size slot is that. A
 /// lost signal costs at most one drain interval, because the recorded size
@@ -664,8 +775,17 @@ static HOST_GUI: clap_host_gui = clap_host_gui {
     closed: Some(host_gui_closed),
 };
 
-unsafe extern "C" fn host_gui_resize_hints_changed(_host: *const clap_host) {
-    // Plugin's resize constraints changed — re-query can_resize/get_resize_hints
+/// The plugin's resize constraints changed.
+///
+/// Recorded and hinted, like `request_resize`: CLAP marks it
+/// `[thread-safe & !floating]`, and re-reading `can_resize` and the hints is
+/// editor work for the thread that owns the window.
+unsafe extern "C" fn host_gui_resize_hints_changed(host: *const clap_host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
+        state.mark_editor_resize_hints_changed();
+    }
 }
 
 /// The plugin asks for a different editor size.
@@ -693,19 +813,38 @@ unsafe extern "C" fn host_gui_request_resize(
     }
 }
 
-unsafe extern "C" fn host_gui_request_show(_host: *const clap_host) -> bool {
-    // Plugin wants us to show its GUI window
-    true
+/// The plugin asks for its editor window to be shown. `[thread-safe]`, so
+/// recorded and hinted; `false` when nothing is going to show it.
+unsafe extern "C" fn host_gui_request_show(host: *const clap_host) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    match unsafe { host_state(host) } {
+        Some(state) => state.request_editor_visibility(EditorVisibility::Show),
+        None => false,
+    }
 }
 
-unsafe extern "C" fn host_gui_request_hide(_host: *const clap_host) -> bool {
-    // Plugin wants us to hide its GUI window
-    true
+/// The plugin asks for its editor window to be hidden. `[thread-safe]`, so
+/// recorded and hinted; `false` when nothing is going to hide it.
+unsafe extern "C" fn host_gui_request_hide(host: *const clap_host) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    match unsafe { host_state(host) } {
+        Some(state) => state.request_editor_visibility(EditorVisibility::Hide),
+        None => false,
+    }
 }
 
-unsafe extern "C" fn host_gui_closed(_host: *const clap_host, _was_destroyed: bool) {
-    // Plugin closed its own GUI (e.g. user clicked X in the plugin).
-    // No logging here — this callback can arrive from a plugin's own thread.
+/// The plugin's editor ended on its own — its own close control, or a lost
+/// connection. `[thread-safe]`, so recorded and hinted: tearing the editor
+/// session down is window work, and with `was_destroyed` the host still owes
+/// the plugin a `gui.destroy` to acknowledge it.
+unsafe extern "C" fn host_gui_closed(host: *const clap_host, was_destroyed: bool) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
+        state.mark_editor_closed(was_destroyed);
+    }
 }
 
 // ── clap_host_state extension ──────────────────────────────────────────
@@ -1131,6 +1270,133 @@ mod tests {
         })));
         state.set_editor_resize_available(true);
         (state, requests)
+    }
+
+    fn resize_signal_guard() -> std::sync::MutexGuard<'static, ()> {
+        RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// #6567: CLAP marks `request_show`, `request_hide` and `closed`
+    /// `[thread-safe]` and `resize_hints_changed` `[thread-safe & !floating]`, so a
+    /// plugin may raise any of them from inside `process()`. The wake installed
+    /// here allocates the way the native host's does, so reaching it would
+    /// allocate on the calling thread.
+    #[test]
+    fn the_editor_window_callbacks_allocate_nothing_on_the_calling_thread() {
+        let _guard = resize_signal_guard();
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+        take_pending_editor_resize_signal();
+
+        let before = crate::allocation_counter::allocation_count();
+        for _ in 0..64 {
+            // SAFETY: `host` is a live local descriptor whose `host_data` points
+            // at a `state` that outlives each call.
+            unsafe { host_gui_request_hide(&host as *const clap_host) };
+            // SAFETY: as above.
+            unsafe { host_gui_request_show(&host as *const clap_host) };
+            // SAFETY: as above.
+            unsafe { host_gui_resize_hints_changed(&host as *const clap_host) };
+            // SAFETY: as above.
+            unsafe { host_gui_closed(&host as *const clap_host, false) };
+        }
+        let allocations = crate::allocation_counter::allocation_count() - before;
+
+        assert_eq!(
+            allocations, 0,
+            "the editor window callbacks allocated {allocations} times on the calling thread"
+        );
+        assert!(
+            requests.lock().expect("request log").is_empty(),
+            "the allocating channel wake is not reached"
+        );
+        assert!(
+            take_pending_editor_resize_signal(),
+            "the wait-free editor hint is the wake instead"
+        );
+        assert_eq!(
+            state.take_editor_window_asks(),
+            EditorWindowAsks {
+                visibility: Some(EditorVisibility::Show),
+                closed: Some(EditorClosed {
+                    was_destroyed: false
+                }),
+                resize_hints_changed: true,
+            },
+            "every ask is recorded, the newest visibility winning"
+        );
+    }
+
+    #[test]
+    fn a_show_or_hide_is_accepted_only_where_a_window_and_a_wake_will_carry_it() {
+        let _guard = resize_signal_guard();
+        let (state, _requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        assert!(unsafe { host_gui_request_hide(&host as *const clap_host) });
+        assert_eq!(
+            state.take_editor_window_asks().visibility,
+            Some(EditorVisibility::Hide)
+        );
+
+        state.set_editor_resize_available(false);
+        // SAFETY: as above.
+        assert!(!unsafe { host_gui_request_show(&host as *const clap_host) });
+        assert!(state.take_editor_window_asks().is_empty());
+
+        let unwoken = HostCallbackState::default();
+        unwoken.set_editor_resize_available(true);
+        let unwoken_host = host_with_state(&unwoken);
+        // SAFETY: as above, for `unwoken`.
+        assert!(!unsafe { host_gui_request_show(&unwoken_host as *const clap_host) });
+        assert!(unwoken.take_editor_window_asks().is_empty());
+    }
+
+    /// gui.h: with `was_destroyed` the host must acknowledge with `destroy`, so
+    /// a later report that the editor merely closed must not weaken it into a
+    /// hide on a view that is gone.
+    #[test]
+    fn a_destroyed_report_is_kept_over_a_later_closed_one() {
+        let _guard = resize_signal_guard();
+        let state = HostCallbackState::default();
+        state.mark_editor_closed(true);
+        state.mark_editor_closed(false);
+
+        assert_eq!(
+            state.take_editor_window_asks().closed,
+            Some(EditorClosed {
+                was_destroyed: true
+            })
+        );
+        assert!(state.take_editor_window_asks().is_empty(), "taking clears");
+    }
+
+    #[test]
+    fn asks_about_a_previous_editor_are_discarded_before_the_next_opens() {
+        let _guard = resize_signal_guard();
+        let state = HostCallbackState::default();
+        state.mark_editor_closed(true);
+        state.mark_editor_resize_hints_changed();
+
+        state.discard_editor_window_asks();
+
+        assert!(state.take_editor_window_asks().is_empty());
+    }
+
+    #[test]
+    fn the_editor_window_callbacks_tolerate_a_null_host_state() {
+        let host = create_host_descriptor();
+        // SAFETY: `host` is a live local descriptor with a null `host_data`.
+        assert!(!unsafe { host_gui_request_show(&host as *const clap_host) });
+        // SAFETY: as above.
+        assert!(!unsafe { host_gui_request_hide(&host as *const clap_host) });
+        // SAFETY: as above.
+        unsafe { host_gui_closed(&host as *const clap_host, true) };
+        // SAFETY: as above.
+        unsafe { host_gui_resize_hints_changed(&host as *const clap_host) };
     }
 
     /// The whole point of #2174: the dimensions the plugin asked for used to be

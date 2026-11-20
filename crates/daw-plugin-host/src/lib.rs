@@ -48,9 +48,10 @@ pub use params::PluginParameter;
 pub use runtime::HostedRuntime;
 pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
-    signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin,
-    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier, ProcessMode,
-    ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin, EditorClosed,
+    EditorVisibility, EditorWindowAsks, EditorWindowHost, EditorWindowResizer, HostMidiEvent,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    PluginHostRequest, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
+    DEFAULT_EDITOR_CONTENT_SCALE,
 };
 pub use vst3_wrapper::Vst3Wrapper;

@@ -19,13 +19,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, MutexGuard, TryLockError};
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::plugin_editor_asks::editor_window_host;
 use crate::host::plugin_window::{
     next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
     PluginWindowHost,
 };
 use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, EditorTeardownSignal, PluginInstanceData, PluginWindowRecords};
-use daw_plugin_host::{AudioPlugin, EditorWindowResizer, HostedRuntime};
+use daw_plugin_host::{AudioPlugin, EditorWindowResizer, HostedRuntime, SharedEditorWindow};
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
 pub const PLUGIN_GUI_CLOSED_EVENT: &str = "plugin-gui-closed";
@@ -74,6 +75,15 @@ pub struct PluginGuiInfo {
 pub struct PluginEditorSize {
     pub width: u32,
     pub height: u32,
+}
+
+/// Everything about the host window a plugin is told before its editor opens.
+struct HostWindow {
+    resize: EditorWindowResizer,
+    /// Where the plugin's later asks of its window — show, hide, closed, new
+    /// resize hints — are answered.
+    window: SharedEditorWindow,
+    scale_factor: f64,
 }
 
 /// What an editor that just opened tells the shell about the window it is in.
@@ -352,13 +362,22 @@ pub async fn open_plugin_gui(
     // 6. Give the plugin the host window — how to resize it, and what scale it
     //    runs at — then open its GUI.
     let resize_window = editor_window_resizer(&plugin_window);
+    let editor_window = editor_window_host(&plugin_window);
     let scale_factor = plugin_window.scale_factor();
     // Carried as an integer because a raw pointer cannot cross a thread, and
     // cast back on the far side — the same representation `JsEditorWindow` holds
     // it in for the same reason.
     let handle = handle_ptr as usize;
     let open_editor = move |plugin: &mut dyn AudioPlugin| -> Result<OpenedEditor, String> {
-        open_editor_reporting_resizability(plugin, resize_window, scale_factor, handle)
+        open_editor_reporting_resizability(
+            plugin,
+            HostWindow {
+                resize: resize_window,
+                window: editor_window,
+                scale_factor,
+            },
+            handle,
+        )
     };
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
         runtime
@@ -479,15 +498,15 @@ pub async fn open_plugin_gui(
 /// holds.
 fn open_editor_reporting_resizability(
     plugin: &mut dyn AudioPlugin,
-    resize_window: EditorWindowResizer,
-    scale_factor: f64,
+    host_window: HostWindow,
     handle: usize,
 ) -> Result<OpenedEditor, String> {
     let size = open_editor_or_release_host_window(
         plugin,
         |plugin| {
-            plugin.set_editor_window_resizer(resize_window);
-            plugin.set_editor_content_scale(scale_factor);
+            plugin.set_editor_window_resizer(host_window.resize);
+            plugin.set_editor_window(host_window.window);
+            plugin.set_editor_content_scale(host_window.scale_factor);
         },
         |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
     )?;
@@ -1322,6 +1341,20 @@ mod tests {
         }
     }
 
+    /// A host window nothing is ever asked of.
+    struct UnaddressedWindow;
+
+    impl daw_plugin_host::EditorWindowHost for UnaddressedWindow {
+        fn show(&self) {}
+        fn hide(&self) {}
+        fn set_resizable(&self, _resizable: bool) {}
+        fn destroy(&self) {}
+        fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            work();
+            Ok(())
+        }
+    }
+
     /// Where that answer comes from. The plugin is asked while its view is open
     /// — the only state in which either format defines the answer — so a host
     /// that read it before the open, or after the close, would report a default
@@ -1337,8 +1370,11 @@ mod tests {
 
             let opened = open_editor_reporting_resizability(
                 &mut plugin,
-                Arc::new(|_, _| {}),
-                1.0,
+                HostWindow {
+                    resize: Arc::new(|_, _| {}),
+                    window: Arc::new(UnaddressedWindow),
+                    scale_factor: 1.0,
+                },
                 std::ptr::null_mut::<std::ffi::c_void>() as usize,
             )
             .expect("the recording plugin's editor should open");
@@ -1645,6 +1681,18 @@ mod tests {
                 .expect("destroyed windows")
                 .push(self.label.clone());
             self.inner.destroy();
+        }
+
+        fn show(&self) {
+            self.inner.show();
+        }
+
+        fn hide(&self) {
+            self.inner.hide();
+        }
+
+        fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            self.inner.run_on_ui_thread(work)
         }
     }
 

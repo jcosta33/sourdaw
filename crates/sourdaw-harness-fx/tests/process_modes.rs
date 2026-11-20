@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap_sys::ext::render::CLAP_RENDER_OFFLINE;
+use daw_plugin_host::clap_wrapper::MIN_PROCESS_FRAMES;
 use daw_plugin_host::vst3_wrapper::{decode_state as decode_vst3_container, format_class_id};
 use daw_plugin_host::{
     AudioPlugin, ClapWrapper, HostParameterUpdate, HostedPluginRuntime, ProcessMode, Vst3Wrapper,
@@ -25,40 +26,15 @@ use sourdaw_harness_fx::{
 use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::ProcessModes_;
 
+mod support;
+use support::built_cdylib_path;
+
 const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 128;
 /// Enough whole blocks to carry the impulse, its echo, and silence after both.
 const BLOCKS: usize = (LATENCY_FRAMES + ECHO_FRAMES) / BLOCK_FRAMES + 2;
 const VST3_REALTIME: int32 = ProcessModes_::kRealtime as int32;
 const VST3_OFFLINE: int32 = ProcessModes_::kOffline as int32;
-
-/// The cdylib this crate's build produced, found the way
-/// `sourdaw-harness-tone`'s acceptance test finds its own: `deps/` first, the
-/// profile directory as the fallback.
-fn built_cdylib_path() -> PathBuf {
-    let test_binary = env::current_exe().expect("the test binary path should resolve");
-    let deps_dir = test_binary
-        .parent()
-        .expect("the test binary should live in a deps directory");
-    let in_deps = deps_dir.join(cdylib_file_name());
-    if in_deps.exists() {
-        return in_deps;
-    }
-    deps_dir
-        .parent()
-        .expect("the deps directory should live in a profile directory")
-        .join(cdylib_file_name())
-}
-
-fn cdylib_file_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "libsourdaw_harness_fx.dylib"
-    } else if cfg!(target_os = "windows") {
-        "sourdaw_harness_fx.dll"
-    } else {
-        "libsourdaw_harness_fx.so"
-    }
-}
 
 /// A fresh temp directory holding the dylib as a `.clap` file and as a `.vst3`
 /// bundle, torn down on drop.
@@ -352,4 +328,35 @@ fn a_clap_plugin_with_a_hard_realtime_requirement_is_refused_offline_by_name() {
     assert!(plugin
         .clap(CLAP_HARD_REALTIME_PLUGIN_ID, ProcessMode::Realtime)
         .is_ok());
+}
+
+// ── The block sizes activation promised ─────────────────────────────────
+
+/// Render one block of silence of `frames` frames.
+fn render_silence(plugin: &mut impl HostedPluginRuntime, frames: usize) {
+    let input = vec![0.0f32; frames];
+    let inputs: [&[f32]; 2] = [&input, &input];
+    let (mut left, mut right) = (vec![0.0f32; frames], vec![0.0f32; frames]);
+    let mut outputs: [&mut [f32]; 2] = [&mut left, &mut right];
+    plugin.process_with_parameter_updates(&inputs, &mut outputs, frames, &[]);
+}
+
+#[test]
+fn a_short_block_after_a_long_one_is_never_below_the_minimum_activation_promised() {
+    let plugin = InstalledPlugin::create("clap-min-frames");
+    let mut wrapper = plugin.clap(CLAP_PLUGIN_ID, ProcessMode::Realtime).unwrap();
+
+    // The shape a loop seam cuts a callback into: most of it, then the rest.
+    render_silence(&mut wrapper, 123);
+    render_silence(&mut wrapper, 5);
+
+    let recorded = clap_recorded_state(&wrapper);
+    assert_eq!(recorded.declared_min_frames, MIN_PROCESS_FRAMES);
+    assert_eq!(recorded.smallest_block_frames, 5);
+    assert!(
+        recorded.smallest_block_frames >= recorded.declared_min_frames,
+        "activate promised blocks of at least {} frames and process was handed {}",
+        recorded.declared_min_frames,
+        recorded.smallest_block_frames
+    );
 }
