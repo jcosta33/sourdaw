@@ -26,9 +26,9 @@ const context: ProjectContext = {
     playheadPosition: 0,
 };
 
-function createTrack(frozen: boolean): ProjectContextTrack {
+function createTrack(frozen: boolean, id = 'track-existing'): ProjectContextTrack {
     return {
-        id: 'track-existing',
+        id,
         name: 'Existing',
         kind: 'audio',
         muted: false,
@@ -67,5 +67,35 @@ describe('materializeActionStateGuards removeDevice', () => {
             status: 'accepted',
             actions: [{ type: 'removeDevice', payload: { deviceId: 'filter-a', expectedFrozen: false } }],
         });
+    });
+
+    it('reads a freeze change an earlier batch member makes before the removal', () => {
+        expect(
+            materializeActionStateGuards(
+                [
+                    { type: 'unfreezeTrack', payload: { trackId: 't1' } },
+                    { type: 'removeDevice', payload: { deviceId: 'filter-a' } },
+                ],
+                { ...context, tracks: [createTrack(true, 't1')] }
+            )
+        ).toEqual({
+            status: 'accepted',
+            actions: [
+                { type: 'unfreezeTrack', payload: { trackId: 't1' } },
+                { type: 'removeDevice', payload: { deviceId: 'filter-a', expectedFrozen: false } },
+            ],
+        });
+    });
+
+    it('refuses a removal from a track an earlier batch member freezes', () => {
+        expect(
+            materializeActionStateGuards(
+                [
+                    { type: 'freezeTrack', payload: { trackId: 't1' } },
+                    { type: 'removeDevice', payload: { deviceId: 'filter-a' } },
+                ],
+                { ...context, tracks: [createTrack(false, 't1')] }
+            )
+        ).toEqual({ status: 'rejected', reason: 'Track is frozen: t1' });
     });
 });

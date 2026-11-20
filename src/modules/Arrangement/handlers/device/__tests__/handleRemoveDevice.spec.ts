@@ -155,6 +155,70 @@ describe('handleRemoveDevice', () => {
             });
         });
 
+        describe('a track and device only earlier batch members create', () => {
+            const addsTrack = { type: 'addTrack', payload: { id: 'batch-track', kind: 'audio' } } as const;
+            const addsDevice = {
+                type: 'addDevice',
+                payload: { trackId: 'batch-track', deviceType: 'builtin-eq', deviceId: 'batch-device' },
+            } as const;
+            const removesIt = {
+                type: 'removeDevice',
+                payload: { deviceId: 'batch-device', expectedFrozen: false },
+            } as const;
+            const freezes = { type: 'freezeTrack', payload: { trackId: 'batch-track' } } as const;
+
+            it('validates the stamped removal while the planned track is unfrozen', () => {
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+                expect(
+                    handleRemoveDevice.validate?.(removesIt, {
+                        actionIndex: 2,
+                        actions: [addsTrack, addsDevice, removesIt],
+                    })
+                ).toBe(true);
+            });
+
+            it('rejects the stamped removal when the planned track is frozen', () => {
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+                expect(
+                    handleRemoveDevice.validate?.(removesIt, {
+                        actionIndex: 3,
+                        actions: [addsTrack, addsDevice, freezes, removesIt],
+                    })
+                ).toBe(false);
+            });
+        });
+
+        describe('a freeze change an earlier batch member makes', () => {
+            const unfreezes = { type: 'unfreezeTrack', payload: { trackId: 't1' } } as const;
+            const freezes = { type: 'freezeTrack', payload: { trackId: 't1' } } as const;
+            const removesUnfrozen = {
+                type: 'removeDevice',
+                payload: { deviceId: 'd1', expectedFrozen: false },
+            } as const;
+            const removesFrozen = { type: 'removeDevice', payload: { deviceId: 'd1', expectedFrozen: true } } as const;
+
+            it('validates a removal stamped unfrozen after an unfreeze of a frozen track', () => {
+                mocks.getTrackStoreState.mockReturnValue(chainWith(true));
+
+                expect(
+                    handleRemoveDevice.validate?.(removesUnfrozen, {
+                        actionIndex: 1,
+                        actions: [unfreezes, removesUnfrozen],
+                    })
+                ).toBe(true);
+            });
+
+            it('validates a removal stamped frozen after a freeze of an unfrozen track', () => {
+                mocks.getTrackStoreState.mockReturnValue(chainWith(false));
+
+                expect(
+                    handleRemoveDevice.validate?.(removesFrozen, { actionIndex: 1, actions: [freezes, removesFrozen] })
+                ).toBe(true);
+            });
+        });
+
         it('removes from a track whose freeze state matches', () => {
             mocks.getTrackStoreState.mockReturnValue(chainWith(false));
             mocks.prepareRemoveDevice.mockReturnValue('written');

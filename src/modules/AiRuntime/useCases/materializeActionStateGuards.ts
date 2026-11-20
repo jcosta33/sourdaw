@@ -18,6 +18,7 @@ import { materializeCopyMidiArticulations } from './actionStateGuards/materializ
 import { materializeCreatedBus } from './actionStateGuards/materializeCreatedBus';
 import { materializeDeviceParameter } from './actionStateGuards/materializeDeviceParameter';
 import { materializeDrumPreviewBranches } from './actionStateGuards/materializeDrumPreviewBranches';
+import { materializeFreezeChange } from './actionStateGuards/materializeFreezeChange';
 import { materializeParameterRange } from './actionStateGuards/materializeParameterRange';
 import { materializeRemovedDevice } from './actionStateGuards/materializeRemovedDevice';
 import { materializeSectionRenders } from './actionStateGuards/materializeSectionRenders';
@@ -74,8 +75,8 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     toggleSoloSafe: passThrough,
     setSoloSafe: passThrough,
     armTrack: passThrough,
-    freezeTrack: passThrough,
-    unfreezeTrack: passThrough,
+    freezeTrack: materializeFreezeChange,
+    unfreezeTrack: materializeFreezeChange,
     flattenTrack: passThrough,
     bounceInPlace: passThrough,
     reorderTrack: passThrough,
