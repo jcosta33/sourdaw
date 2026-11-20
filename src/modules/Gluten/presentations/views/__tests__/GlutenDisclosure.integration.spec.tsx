@@ -230,19 +230,23 @@ function expectButtonsThrough(level: number): void {
 }
 
 describe('Gluten cumulative disclosure through the real project action', () => {
+    const notify = vi.fn<(notification: NotifyPayload) => void>();
+    const notificationBus = createEventBus<{
+        'ui.notify': NotifyPayload;
+        'ui.confirm': ConfirmPayload;
+        'ui.prompt': PromptPayload;
+    }>();
+    let unsubscribeNotifications: () => void;
+
     beforeEach(async () => {
         updateDeviceParam.mockClear();
+        notify.mockClear();
         clearUndoHistory();
         sessionStorage.removeItem(SESSION_KEY);
         configureAutomergeStoragePort(null);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => {} });
-        setNotificationEventBus(
-            createEventBus<{
-                'ui.notify': NotifyPayload;
-                'ui.confirm': ConfirmPayload;
-                'ui.prompt': PromptPayload;
-            }>()
-        );
+        unsubscribeNotifications = notificationBus.on('ui.notify', notify);
+        setNotificationEventBus(notificationBus);
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
         expect(transition.activate()).toBe(true);
@@ -294,6 +298,7 @@ describe('Gluten cumulative disclosure through the real project action', () => {
     });
 
     afterEach(() => {
+        unsubscribeNotifications();
         cleanup();
         clearHandlerRegistry();
         trackStore.set({ ...defaultTrackState, tracks: [] });
@@ -410,6 +415,72 @@ describe('Gluten cumulative disclosure through the real project action', () => {
         expect(undoHistoryStore.value?.past).toEqual([]);
         expectPatchName('Init');
         expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('warns when the addressed device is missing and preserves the project and redo history', async () => {
+        await executeUserAppAction({ type: 'renameTrack', payload: { trackId: 'track', name: 'Drums' } });
+        await undo();
+        flushAutomergeStorageWrites();
+        const before = structuredClone(rawTrack());
+        const history = structuredClone(undoHistoryStore.value);
+        expect(history?.future).toHaveLength(1);
+        const witness = captureDurableDocumentWitness();
+
+        await selectGlutenFactoryPreset('removed-gluten', 'glue-gentle');
+
+        expect(notify).toHaveBeenCalledExactlyOnceWith({
+            message: 'Could not load the preset. The Gluten device is no longer editable.',
+            level: 'warning',
+            action: undefined,
+        });
+        expect(captureDurableDocumentWitness()).toBe(witness);
+        expect(rawTrack()).toEqual(before);
+        expect(trackStore.value?.tracks[0]).toEqual(before);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('warns when runtime delivery and recovery both fail after the preset commits', async () => {
+        const before = structuredClone(rawTrack());
+        const [device, neighbor] = before.devices;
+        if (!device || !neighbor) {
+            throw new Error('Expected both Gluten devices');
+        }
+        updateDeviceParam.mockImplementation(() => {
+            throw new Error('Runtime delivery unavailable');
+        });
+        try {
+            await selectGlutenFactoryPreset('a', 'glue-gentle');
+
+            expect(updateDeviceParam.mock.calls).toEqual([
+                ['track', 'a', 'style', 0],
+                ['track', 'a', 'style', 0],
+            ]);
+            expect(notify).toHaveBeenCalledExactlyOnceWith({
+                message: 'Gentle Glue was saved, but Gluten could not finish applying it.',
+                level: 'warning',
+                action: undefined,
+            });
+            const after = {
+                ...before,
+                devices: [{ ...device, parameterValues: GENTLE_GLUE_PARAMETERS }, neighbor],
+            };
+            expect(rawTrack()).toEqual(after);
+            expect(trackStore.value?.tracks[0]).toEqual(after);
+            expect(undoHistoryStore.value?.past).toMatchObject([
+                { label: 'Load Gentle Glue', action: { type: 'setGlutenFactoryPreset' } },
+            ]);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+        } finally {
+            updateDeviceParam.mockReset();
+        }
+
+        await undo();
+        expect(rawTrack()).toEqual(before);
+        expect(trackStore.value?.tracks[0]).toEqual(before);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+        expectRuntimePreset({ ...INIT_PARAMETERS, ...device.parameterValues });
     });
 
     it('refuses a queued load if the same-valued owner is replaced before admission', async () => {
