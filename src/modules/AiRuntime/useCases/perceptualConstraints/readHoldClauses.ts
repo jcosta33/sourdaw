@@ -62,6 +62,12 @@ const NOUN_CONTINUATION = new RegExp(
 
 type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
 
+/**
+ * Not after a negation earlier in the same clause ("you don't have to keep …", "there's no need to
+ * prevent …"), which may permit the move a keep, stop or prevent … from names, so no bound is read.
+ */
+const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!(?:\b(?:not|no|never|without)|n['’]t)\b(?:(?!\b(?:and|or|but|then)\b)[^,.;:!?])*)`;
+
 function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
     return { pattern: new RegExp(source, 'dgiu'), continuation };
 }
@@ -92,7 +98,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
     holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!any\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
     // "keep the mix from getting louder"; "don't stop the mix from getting wider" permits the move
     holdPattern(
-        String.raw`(?<permitted>\b${NEGATION}\s+)?\b(?:keep|keeping|stop|stopping|prevent|preventing)\s+${OBJECT_LIST}\s+from\s+(?:(?:getting|becoming|sounding|being)\s+)?(?:any\s+)?${DIRECTION_LIST}${CLAUSE_END}`,
+        String.raw`${NOT_AFTER_CLAUSE_NEGATION}(?<permitted>\b${NEGATION}\s+)?\b(?:keep|keeping|stop|stopping|prevent|preventing)\s+${OBJECT_LIST}\s+from\s+(?:(?:getting|becoming|sounding|being)\s+)?(?:any\s+)?${DIRECTION_LIST}${CLAUSE_END}`,
         null
     ),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"

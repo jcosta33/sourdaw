@@ -1875,6 +1875,8 @@ describe('reading only governed protections and whole object names', () => {
         ["don't prevent the vocal from getting brighter", [], []],
         // a negation or "no" that governs no measured word opens no protective clause
         ["don't forget to make the bass wider", [], []],
+        ["don't be afraid to make the bass wider", [], []],
+        ["don't be afraid to make the drums louder", [], []],
         ['no reverb on the drums and the volume up', [], []],
         // a track whose name holds a list separator is read as one object
         [
@@ -1899,6 +1901,18 @@ describe('reading only governed protections and whole object names', () => {
             expect(compilePerceptualConstraints(prompt, context)).toEqual({ constraints, unsupported });
         }
     );
+
+    // A negation earlier in the clause may permit the move, so the clause states no bound and is
+    // recorded unsupported rather than read either way.
+    it.each([
+        "you don't have to keep the mix from getting wider",
+        "there's no need to prevent the vocal from getting brighter",
+    ])('reads no bound from "%s"', (prompt) => {
+        const reading = compilePerceptualConstraints(prompt, grammarContext());
+        expect(reading.constraints).toEqual([]);
+        expect(reading.unsupported).toHaveLength(1);
+        expect(reading.unsupported[0]?.constraintId).toBe('unsupported');
+    });
 });
 
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';

@@ -12,8 +12,13 @@ export type ConsumedSpan = { start: number; end: number };
  */
 const MEASURED_WORD = String.raw`(?:levels?|loudness|volume|width|stereo\s+(?:image|field|spread)|brightness|dynamics|dynamic\s+range|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?|${DIRECTION})`;
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}(?![\p{L}\p{N}])`, 'giu');
-/** The verbs a negation governs a measured word through: a linking verb or one that moves a level. */
-const GOVERNED_VERB = String.raw`(?:make|making|get|getting|let|letting|become|becoming|be|sound|feel|seem|raise|raising|increase|increasing|boost|boosting|push|pushing|turn|turning|lower|lowering|reduce|reducing|decrease|decreasing|change|changing|alter|altering|touch|touching|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?)`;
+/**
+ * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
+ * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
+ */
+const LINKING_VERB = String.raw`(?:be|sound|feel|seem)\s+(?:(?:any|more|less|too|so)\s+)?${MEASURED_WORD}`;
+/** The verbs a negation governs a measured word through: one that moves a level or makes it become one. */
+const GOVERNED_VERB = String.raw`(?:${LINKING_VERB}|make|making|get|getting|let|letting|become|becoming|raise|raising|increase|increasing|boost|boosting|push|pushing|turn|turning|lower|lowering|reduce|reducing|decrease|decreasing|change|changing|alter|altering|touch|touching|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?)`;
 /**
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
  * it governs the quality through, or a direction ("isn't louder"); a keep-type verb; or "no" before
