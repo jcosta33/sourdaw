@@ -9034,7 +9034,7 @@
     },
     "src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts": {
         "eslint/complexity": {
-            "count": 5
+            "count": 4
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
@@ -10998,17 +10998,7 @@
             "count": 1
         }
     },
-    "src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 4
-        }
-    },
     "src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
-    "src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts": {
         "eslint/complexity": {
             "count": 1
         }
@@ -11020,9 +11010,6 @@
     },
     "src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "sourdaw-craft/no-positional-boolean-flags": {
             "count": 1
         },
         "typescript/no-non-null-assertion": {

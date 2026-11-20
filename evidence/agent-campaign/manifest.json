@@ -614,7 +614,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "b378dd27df075cd186132d2d558e8fbd583265d6bd4dd4e3b681c772145c8423"
+                    "digest": "0b84252f3f202201cc201fd325f8a9d558cbbccc628f12bce0c3fc9c90aea86b"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",

@@ -83,6 +83,7 @@ export const projectsDeviceChainByActionType: { readonly [Type in AppActionType]
     setLevainIdentity: true,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: true,
+    setBacteriaFactoryPatch: true,
     setGlutenFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,

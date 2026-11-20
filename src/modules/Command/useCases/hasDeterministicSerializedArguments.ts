@@ -102,6 +102,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setLevainIdentity: anyArguments,
     setGrandBouleDeviceState: anyArguments,
     setToasterFactoryKit: anyArguments,
+    setBacteriaFactoryPatch: anyArguments,
     setGlutenFactoryPreset: anyArguments,
     setProofPatchSelection: anyArguments,
     createBus: (value) =>

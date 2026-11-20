@@ -146,6 +146,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     setLevainIdentity: noHandlerMintedIds,
     setGrandBouleDeviceState: noHandlerMintedIds,
     setToasterFactoryKit: noHandlerMintedIds,
+    setBacteriaFactoryPatch: noHandlerMintedIds,
     setGlutenFactoryPreset: noHandlerMintedIds,
     setProofPatchSelection: noHandlerMintedIds,
     createBus: noHandlerMintedIds,

@@ -264,6 +264,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setLevainIdentity: readEffectDeclaredEdits,
     setGrandBouleDeviceState: readEffectDeclaredEdits,
     setToasterFactoryKit: readEffectDeclaredEdits,
+    setBacteriaFactoryPatch: readEffectDeclaredEdits,
     setGlutenFactoryPreset: readEffectDeclaredEdits,
     setProofPatchSelection: readEffectDeclaredEdits,
     createBus: readEffectDeclaredEdits,

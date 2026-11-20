@@ -442,6 +442,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
+    holdWebFallbackDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
     getToasterDeviceControls: noop,
@@ -602,6 +603,11 @@ vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
     getDawProjectHandlers: sentinelHandlers('DawProject'),
+}));
+
+vi.mock('#/modules/Bacteria/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Bacteria/useCases')>()),
+    getBacteriaHandlers: sentinelHandlers('Bacteria'),
 }));
 
 vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
@@ -976,6 +982,7 @@ describe('bootstrap', () => {
         'DawProject',
         'FinalFeature',
         'CvGate',
+        'Bacteria',
         'Fermenter',
         'GrandBoule',
         'Levain',

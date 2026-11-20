@@ -115,6 +115,7 @@ export const masterGainProjectionByActionType: {
     setLevainIdentity: keepMasterPercent,
     setGrandBouleDeviceState: keepMasterPercent,
     setToasterFactoryKit: keepMasterPercent,
+    setBacteriaFactoryPatch: keepMasterPercent,
     setGlutenFactoryPreset: keepMasterPercent,
     setProofPatchSelection: keepMasterPercent,
     createBus: keepMasterPercent,

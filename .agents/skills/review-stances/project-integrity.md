@@ -164,6 +164,11 @@ Split out (a stance matching one carries that file, not this one): replay agains
     rehydration, initialized live state, stale-owner refusal and live meters, with no engine or project write;
     unconditional UI admission and a genuine saved snapshot prevent a vacuous pass. UI evidence does not establish
     audible behavior or engine acceptance.
+    Bacteria Bitcrush Cascade serialized a 174-key parameter map above the generic 128-key
+    limit from #2035 that strip rehydration applied in #2083. Save through the real project
+    entry point and reopen that artifact cold. Require the target effect node to rebuild and
+    compare rendered PCM with a preset-configured reference and a bypassed control. Raw keys
+    and the first visible preset values only witness project and panel state.
     Full Fermenter patches include macro and mapping arrays (#6321; introducing source and unknown review
     provenance in `command-entry-and-state-oracles.md` probe 2). After real continuous macro/morph and scalar edits,
     compare the complete raw device chunk with fresh hydration, engine projection and declared history behavior;

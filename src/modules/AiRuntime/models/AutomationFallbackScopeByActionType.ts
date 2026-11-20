@@ -100,6 +100,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     setLevainIdentity: noFallbackScope,
     setGrandBouleDeviceState: noFallbackScope,
     setToasterFactoryKit: noFallbackScope,
+    setBacteriaFactoryPatch: noFallbackScope,
     setGlutenFactoryPreset: noFallbackScope,
     setProofPatchSelection: noFallbackScope,
     createBus: noFallbackScope,

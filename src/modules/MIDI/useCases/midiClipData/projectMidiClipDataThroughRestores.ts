@@ -129,6 +129,7 @@ const controllerRestoresByActionType: {
     setLevainIdentity: noControllerRestores,
     setGrandBouleDeviceState: noControllerRestores,
     setToasterFactoryKit: noControllerRestores,
+    setBacteriaFactoryPatch: noControllerRestores,
     setGlutenFactoryPreset: noControllerRestores,
     setProofPatchSelection: noControllerRestores,
     createBus: noControllerRestores,
