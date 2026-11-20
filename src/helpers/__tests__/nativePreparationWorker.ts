@@ -1,9 +1,31 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Worker as NativeWorker } from 'node:worker_threads';
+import { MessageChannel, Worker as NativeWorker } from 'node:worker_threads';
+
+import { vi } from 'vitest';
 
 const pendingTerminations: Promise<number>[] = [];
+let nextHold: ReturnType<typeof holdNextNativePreparation> | undefined;
+
+export function holdNextNativePreparation(): {
+    requested: Promise<void>;
+    release: () => void;
+    arrive: () => Promise<void>;
+} {
+    const requested = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const hold = {
+        requested: requested.promise,
+        release: () => released.resolve(),
+        arrive: () => {
+            requested.resolve();
+            return released.promise;
+        },
+    };
+    nextHold = hold;
+    return hold;
+}
 
 // Filesystem/module loading is the platform boundary. The entry, runtime,
 // reconciler, protocol and installed native WASM execute in the other isolate.
@@ -45,6 +67,7 @@ export class NativePreparationWorker {
     onerror: (() => void) | null = null;
     onmessageerror: (() => void) | null = null;
     private readonly worker: NativeWorker;
+    private releaseResponse: Promise<void> | undefined;
 
     constructor(url: URL) {
         const root = process.cwd();
@@ -76,13 +99,20 @@ export class NativePreparationWorker {
                 }
                 return value;
             };
-            this.onmessage?.(new MessageEvent('message', { data: rehome(data) }));
+            const deliver = () => this.onmessage?.(new MessageEvent('message', { data: rehome(data) }));
+            if (this.releaseResponse) {
+                void this.releaseResponse.then(deliver);
+            } else {
+                deliver();
+            }
         });
         this.worker.on('error', () => this.onerror?.());
         this.worker.on('messageerror', () => this.onmessageerror?.());
     }
 
     postMessage(data: unknown, transfer: ArrayBuffer[]): void {
+        this.releaseResponse = nextHold?.arrive();
+        nextHold = undefined;
         this.worker.postMessage(data, transfer);
     }
 
@@ -91,6 +121,13 @@ export class NativePreparationWorker {
     }
 }
 
+export function installNativePreparationWorker(): void {
+    vi.stubGlobal('Worker', NativePreparationWorker);
+    vi.stubGlobal('MessageChannel', MessageChannel);
+}
+
 export async function settleNativePreparationWorkers(): Promise<void> {
+    nextHold?.release();
+    nextHold = undefined;
     await Promise.all(pendingTerminations.splice(0));
 }

@@ -1,11 +1,16 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
 } from '#/infra/testing/installTransactionalIndexedDb';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 
 const mocks = vi.hoisted(() => ({
     downloadBlob: vi.fn<(data: Blob | BlobPart, filename: string, mimeType?: string) => void>(),
@@ -286,6 +291,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
     }, 20_000);
 
     beforeEach(() => {
+        installNativePreparationWorker();
         vi.clearAllMocks();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
@@ -302,6 +308,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         contracts.registerCrdtStorageRuntime();
         contracts.clearHandlerRegistry();
         contracts.registerHandlerMap(contracts.getArrangementHandlers());
+        contracts.registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         contracts.clearUndoHistory();
         contracts.resetActionReplayAuthority();
         contracts.setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -336,6 +343,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         contracts.agentProjectInspectionPort.setProvider(null);
         contracts.clearUndoHistory();
