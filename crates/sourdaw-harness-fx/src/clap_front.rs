@@ -257,15 +257,15 @@ unsafe extern "C" fn destroy(plugin: *const clap_plugin) {
     if plugin.is_null() {
         return;
     }
-    // SAFETY: CLAP calls `destroy` once per instance, so both boxes
-    // `create_plugin` leaked are reclaimed exactly once.
-    unsafe {
-        let data = (*plugin).plugin_data;
-        if !data.is_null() {
-            drop(Box::from_raw(data as *mut ClapInstance));
-        }
-        drop(Box::from_raw(plugin as *mut clap_plugin));
+    // SAFETY: `plugin` is non-null and live until `destroy` returns.
+    let data = unsafe { (*plugin).plugin_data };
+    if !data.is_null() {
+        // SAFETY: CLAP calls `destroy` once per instance, so the instance box
+        // `create_plugin` leaked is reclaimed exactly once.
+        drop(unsafe { Box::from_raw(data as *mut ClapInstance) });
     }
+    // SAFETY: as above, for the plugin box `create_plugin` leaked.
+    drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
 }
 
 unsafe extern "C" fn activate(
@@ -416,15 +416,27 @@ unsafe fn render_block(echo: &Echo, process: &clap_process) {
         let mut sample_in = [0.0; CHANNELS];
         if let Some(input) = input {
             for (channel, sample) in sample_in.iter_mut().enumerate() {
-                // SAFETY: `channel < CHANNELS <= channel_count` and
-                // `frame < frames_count`.
-                *sample = unsafe { *(*input.data32.add(channel)).add(frame) };
+                // SAFETY: `channel < CHANNELS <= channel_count`, so the entry
+                // is inside the channel table.
+                let entry = unsafe { input.data32.add(channel) };
+                // SAFETY: `entry` is a table slot, as above.
+                let channel_buffer = unsafe { *entry };
+                // SAFETY: `frame < frames_count`.
+                let source = unsafe { channel_buffer.add(frame) };
+                // SAFETY: `source` is inside the channel buffer, as above.
+                *sample = unsafe { *source };
             }
         }
         let sample_out = echo.next_frame(sample_in);
         for (channel, sample) in sample_out.iter().enumerate() {
             // SAFETY: as above, for the output bus.
-            unsafe { *(*output.data32.add(channel)).add(frame) = *sample };
+            let entry = unsafe { output.data32.add(channel) };
+            // SAFETY: `entry` is a table slot, as above.
+            let channel_buffer = unsafe { *entry };
+            // SAFETY: `frame < frames_count`, as above.
+            let target = unsafe { channel_buffer.add(frame) };
+            // SAFETY: `target` is inside the output channel buffer.
+            unsafe { *target = *sample };
         }
     }
 }
@@ -555,11 +567,10 @@ unsafe extern "C" fn param_flush(
     in_events: *const clap_input_events,
     _out_events: *const clap_output_events,
 ) {
-    // SAFETY: the host passes the plugin it created and a live event list.
-    unsafe {
-        if let Some(instance) = instance_of(plugin) {
-            apply_parameter_events(&instance.echo, in_events);
-        }
+    // SAFETY: the host passes the plugin it created.
+    if let Some(instance) = unsafe { instance_of(plugin) } {
+        // SAFETY: the host passes a live event list.
+        unsafe { apply_parameter_events(&instance.echo, in_events) };
     }
 }
 

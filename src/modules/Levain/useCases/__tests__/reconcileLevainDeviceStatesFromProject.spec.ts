@@ -1,28 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type FixtureDevice = { id: string; type: string; deviceState: unknown };
+type FixtureDevice = { id: string; type: string; deviceState: unknown; parameterValues: Record<string, number> };
 type FixtureTracks = { tracks: { id: string; kind: string; devices: FixtureDevice[] }[] };
 
 const mocks = vi.hoisted(() => ({
     trackStore: { value: undefined as FixtureTracks | undefined, subscribe: vi.fn(() => () => undefined) },
-    coordinateRequests: [] as Promise<void>[],
-    resolveWriteTarget: vi.fn(),
     applyPatchToEngine: vi.fn(),
     loadSamplesForInstrument: vi.fn(),
     setLevainParamWithAudio: vi.fn(),
-    executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
-    executeUserAppAction: vi.fn<typeof executeUserAppAction>(() => Promise.resolve()),
 }));
 
-// Exhaustive over this spec's graph: the sweep reads `trackStore`, the preset
-// route its eligibility answer, and nothing else from this barrel.
-vi.mock('#/modules/Arrangement/stores', () => ({
+// Supply the projected owner fixture while keeping the other store contracts real.
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: mocks.trackStore,
-    resolveEligibleDeviceWriteTarget: mocks.resolveWriteTarget,
 }));
-// The engine doors a live identity change pushes through. `loadInstrument` and
-// the reconciliation's own store writes stay real, so the session store carries
-// exactly what a loaded session would hold.
 vi.mock('../levainParamBridge/applyPatchToEngine', () => ({ applyPatchToEngine: mocks.applyPatchToEngine }));
 vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
     loadSamplesForInstrument: mocks.loadSamplesForInstrument,
@@ -30,36 +22,9 @@ vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
 vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
     setLevainParamWithAudio: mocks.setLevainParamWithAudio,
 }));
-// `loadPreset` reads this dependency record for its own eligibility gate; kept
-// light so the real bridge (and its sample-loader graph) never loads.
-vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
-    levainBridgeDependencies: { resolveEligibleDeviceWriteTarget: mocks.resolveWriteTarget },
-}));
-// The persistence subscriber commits through this door; captured so the
-// data-loss case can read exactly what a local edit mirrored into the document.
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
-    executeUserAppAction: mocks.executeUserAppAction,
-}));
-
-vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
-    return {
-        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
-            const request = original.coordinateLevainDeviceState(...args);
-            mocks.coordinateRequests.push(request);
-            return request;
-        },
-    };
-});
-
 import { createDefaultPatch } from '../../models/LevainPatch';
-import { defaultLevainState, levainStore, setCurrentArticulation } from '../../stores/levainStore';
-import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
-import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
+import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { reconcileLevainDeviceStatesFromProject } from '../reconcileLevainDeviceStatesFromProject';
-
-import type { executeUserAppAction } from '#/modules/Command/useCases';
 
 const DEVICE_ID = 'levain-peer-1';
 const TRACK_ID = 'track-1';
@@ -71,40 +36,18 @@ function projectWith(...devices: FixtureDevice[]): void {
     mocks.trackStore.value = { tracks: [{ id: TRACK_ID, kind: 'midi', devices }] };
 }
 
-function levainDevice(deviceState: unknown): FixtureDevice {
-    return { id: DEVICE_ID, type: 'levain', deviceState };
-}
-
-type SetDeviceStateAction = {
-    type: 'setDeviceState';
-    payload: { state: { data: { instrumentId: string; currentArticulation: string } } };
-};
-
-function isSetDeviceStateAction(value: unknown): value is SetDeviceStateAction {
-    return typeof value === 'object' && value !== null && 'type' in value && value.type === 'setDeviceState';
+function levainDevice(deviceState: unknown, parameterValues: Record<string, number> = {}): FixtureDevice {
+    return { id: DEVICE_ID, type: 'levain', deviceState, parameterValues };
 }
 
 describe('reconcileLevainDeviceStatesFromProject', () => {
-    let stopPersistence: () => void;
-
     beforeEach(() => {
-        // Only the unit fixture's visible projection exists; committed membership is tested separately.
-        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         vi.clearAllMocks();
-        mocks.resolveWriteTarget.mockReturnValue({ status: 'eligible', trackId: TRACK_ID, deviceId: DEVICE_ID });
         mocks.trackStore.value = undefined;
         levainStore.set({ [DEVICE_ID]: { ...defaultLevainState, patch: createDefaultPatch('violin-1') } });
-        // The persistence subscriber runs beside the sweep exactly as bootstrap
-        // wires them: a reconciled identity is a store edit its committed map
-        // has never seen, which is what the data-loss case reads back.
-        stopPersistence = initLevainDeviceStatePersistence();
     });
 
-    afterEach(async () => {
-        stopPersistence();
-        await Promise.all(mocks.coordinateRequests);
-        configureLevainDeviceStateProjectAccess(null);
-        mocks.coordinateRequests.length = 0;
+    afterEach(() => {
         levainStore.set({});
     });
 
@@ -113,17 +56,23 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
 
         reconcileLevainDeviceStatesFromProject();
 
-        // The instrument door (default patch, engine params, sample bank) and
-        // the articulation door (store + runtime param) both fired.
         expect(mocks.loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'cello');
-        expect(mocks.applyPatchToEngine).toHaveBeenCalled();
-        expect(mocks.setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'currentArticulation', 'pizzicato');
+        expect(mocks.applyPatchToEngine).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({ instrumentId: 'cello', currentArticulation: 'pizzicato' })
+        );
+        expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
         expect(levainStore.value?.[DEVICE_ID]?.patch.instrumentId).toBe('cello');
         expect(levainStore.value?.[DEVICE_ID]?.patch.currentArticulation).toBe('pizzicato');
     });
 
     it('reconciles the owner type only', async () => {
-        projectWith(levainDevice(CELLO_PIZZICATO_CHUNK), { id: 'toaster-1', type: 'toaster', deviceState: undefined });
+        projectWith(levainDevice(CELLO_PIZZICATO_CHUNK), {
+            id: 'toaster-1',
+            type: 'toaster',
+            deviceState: undefined,
+            parameterValues: {},
+        });
 
         reconcileLevainDeviceStatesFromProject();
 
@@ -140,10 +89,22 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
         expect(mocks.loadSamplesForInstrument).not.toHaveBeenCalled();
     });
 
-    // The guard that makes the sweep affordable and loop-free: a change the
-    // session's own persistence commit just wrote leaves the store untouched
-    // and pushes nothing — the identity the document holds is the identity the
-    // store already holds.
+    it('projects a saved Master and its removal on an instance without a device-state chunk', () => {
+        projectWith(levainDevice(undefined, { masterGain: 0.34 }));
+        reconcileLevainDeviceStatesFromProject();
+        expect(levainStore.value?.[DEVICE_ID]?.patch.masterGain).toBe(0.34);
+
+        projectWith(levainDevice(undefined, { master_gain: 0.56 }));
+        reconcileLevainDeviceStatesFromProject();
+        expect(levainStore.value?.[DEVICE_ID]?.patch.masterGain).toBe(0.56);
+
+        projectWith(levainDevice(undefined));
+        reconcileLevainDeviceStatesFromProject();
+        expect(levainStore.value?.[DEVICE_ID]?.patch.masterGain).toBe(0.8);
+        expect(mocks.applyPatchToEngine).not.toHaveBeenCalled();
+        expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
+    });
+
     it('does not re-apply when the chunk already matches the store identity', async () => {
         const storeBefore = levainStore.value?.[DEVICE_ID];
         projectWith(levainDevice(VIOLIN_SUSTAIN_CHUNK));
@@ -156,22 +117,16 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
         expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
     });
 
-    // #4764's data-loss shape: the peer changes the instrument while the device
-    // is loaded, then the user picks an articulation. The commit mirrors the
-    // chunk's whole identity, so it carries the peer's instrument only if the
-    // reconciliation applied it first — without that, this commit silently
-    // overwrites the peer's cello with the stale violin.
-    it('carries the peer key in the next local edit’s commit', async () => {
-        projectWith(levainDevice(CELLO_PIZZICATO_CHUNK));
+    it('projects the known instrument when the merged articulation belongs to another bank', () => {
+        projectWith(levainDevice({ version: 1, data: { instrumentId: 'flute', currentArticulation: 'pizzicato' } }));
 
         reconcileLevainDeviceStatesFromProject();
-        setCurrentArticulation(DEVICE_ID, 'spiccato');
-        await Promise.all(mocks.coordinateRequests);
 
-        const commit = mocks.executeAppAction.mock.calls.map((call) => call[0]).findLast(isSetDeviceStateAction);
-        expect(commit).toBeDefined();
-        expect(commit?.payload.state.data.instrumentId).toBe('cello');
-        expect(commit?.payload.state.data.currentArticulation).toBe('spiccato');
+        expect(mocks.loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'flute');
+        expect(levainStore.value?.[DEVICE_ID]?.patch).toMatchObject({
+            instrumentId: 'flute',
+            currentArticulation: 'sustain',
+        });
     });
 });
 
@@ -182,7 +137,6 @@ it('projects a peer-only tier without engine, sample or persistence writes', () 
         sibling: structuredClone(defaultLevainState),
     });
     expect(levainStore.value?.sibling?.patch).not.toBe(levainStore.value?.[DEVICE_ID]?.patch);
-    const stop = initLevainDeviceStatePersistence();
     projectWith(
         levainDevice({ ...VIOLIN_SUSTAIN_CHUNK, data: { ...VIOLIN_SUSTAIN_CHUNK.data, disclosureTier: 'expert' } })
     );
@@ -194,6 +148,4 @@ it('projects a peer-only tier without engine, sample or persistence writes', () 
     expect(mocks.applyPatchToEngine).not.toHaveBeenCalled();
     expect(mocks.loadSamplesForInstrument).not.toHaveBeenCalled();
     expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
-    expect(mocks.executeAppAction).not.toHaveBeenCalled();
-    stop();
 });

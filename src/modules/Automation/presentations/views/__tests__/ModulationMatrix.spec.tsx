@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -113,7 +113,12 @@ vi.mock('../../../stores/modulationStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { __id: 'track' },
+    trackStore: {
+        __id: 'track',
+        get value() {
+            return mocks.trackState;
+        },
+    },
     defaultTrackState: { tracks: [], selectedTrackId: null },
     // The action-routed graph reaches revertMappingsToBase, which imports this
     // from the barrel; the mock has to supply every name the graph imports.
@@ -131,6 +136,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
+    isAppActionCommittedError: () => false,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
@@ -262,7 +268,7 @@ describe('ModulationMatrix', () => {
         expect(currentAmount()).toBe(0.7);
     });
 
-    it('should resync the default track selection when tracks arrive after the form opened', () => {
+    it('should resync the default track selection when tracks arrive after the form opened', async () => {
         const view = render(<ModulationMatrix />);
         fireEvent.click(screen.getByRole('button', { name: /new modulator/i }));
 
@@ -273,13 +279,111 @@ describe('ModulationMatrix', () => {
         view.rerender(<ModulationMatrix />);
 
         expect(screen.getByLabelText('Modulator track scope')).toHaveValue('track-1');
-        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
 
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
         expect(vi.mocked(executeUserAppAction).mock.calls[0]![0]).toEqual({
             type: 'addModulator',
-            payload: { modulator: expect.objectContaining({ trackId: 'track-1', kind: 'lfo' }) },
+            payload: {
+                modulatorId: expect.any(String),
+                modulator: expect.objectContaining({ trackId: 'track-1', kind: 'lfo' }),
+            },
         });
+    });
+
+    it('keeps the first hydrated track and the draft after track reordering or removal', () => {
+        const view = render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
+        fireEvent.change(screen.getByLabelText('Modulator name'), { target: { value: 'Waiting for drums' } });
+        const drums = makeTrack('drums', 'Drums');
+        const keys = makeTrack('keys', 'Keys');
+        for (const tracks of [[drums, keys], [keys, drums], [keys]]) {
+            mocks.trackState = { tracks };
+            view.rerender(<ModulationMatrix />);
+            expect(screen.getByLabelText('Modulator track scope')).toHaveValue('drums');
+            expect(screen.getByLabelText('Modulator name')).toHaveValue('Waiting for drums');
+        }
+        expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+    });
+
+    it('keeps a named draft and mapped source when a dispatched creation commits nothing', async () => {
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        mocks.modState = { modulators: [makeModulatorWithMapping(-0.37)] };
+        render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
+        fireEvent.change(screen.getByLabelText('Modulator name'), { target: { value: 'Second source' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
+        expect(screen.getByLabelText('Modulator name')).toHaveValue('Second source');
+        expect(screen.getByLabelText(/Amount for LFO 1/)).toHaveValue('-0.37');
+    });
+
+    it('waits for its own source before closing and returning focus', async () => {
+        const pending = Promise.withResolvers<void>();
+        vi.mocked(executeUserAppAction).mockReturnValueOnce(pending.promise);
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+        const trigger = screen.getByRole('button', { name: 'New Modulator' });
+        fireEvent.click(trigger);
+        const submit = screen.getByRole('button', { name: 'Add' });
+        fireEvent.click(submit);
+        expect(submit).toBeDisabled();
+        fireEvent.click(submit);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        const action = vi.mocked(executeUserAppAction).mock.calls[0]![0];
+        if (action.type !== 'addModulator' || !action.payload.modulatorId) {
+            throw new Error('Expected creation with a stable source identity');
+        }
+        mocks.modState.modulators.push({ ...makeModulatorWithMapping(0.4), id: action.payload.modulatorId });
+        vi.mocked(executeUserAppAction).mock.calls[0]![1]?.onCommitted?.();
+        await act(async () => pending.resolve());
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(trigger).toHaveFocus();
+    });
+
+    it('withdraws commit authority if the selected track disappears and retains the draft', async () => {
+        const pending = Promise.withResolvers<void>();
+        vi.mocked(executeUserAppAction).mockReturnValueOnce(pending.promise);
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead'), makeTrack('track-2', 'Keys')] };
+        const view = render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        const options = vi.mocked(executeUserAppAction).mock.calls[0]![1];
+        expect(options?.shouldCommit?.()).toBe(true);
+        mocks.trackState = { tracks: [makeTrack('track-2', 'Keys')] };
+        view.rerender(<ModulationMatrix />);
+        expect(options?.shouldCommit?.()).toBe(false);
+        await act(async () => pending.resolve());
+        expect(screen.getByRole('alert')).toBeVisible();
+        expect(screen.getByLabelText('Modulator track scope')).toHaveValue('track-1');
+        expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Modulator track scope'), { target: { value: 'track-2' } });
+        expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
+    });
+
+    it('focuses native controls in the open creation form and the existing mapping list', () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
+
+        const form = within(screen.getByRole('region', { name: 'New modulator form' }));
+        const list = within(screen.getByRole('region', { name: 'Modulators and mappings' }));
+        expect(form.getByRole('textbox', { name: 'Modulator name' })).toHaveFocus();
+        for (const control of [
+            form.getByRole('button', { name: 'Add' }),
+            list.getByRole('button', { name: 'Add Mapping' }),
+            list.getByRole('slider', { name: /Amount for/ }),
+            list.getByRole('button', { name: 'Remove mapping' }),
+        ]) {
+            expect(control.tabIndex).toBe(0);
+            control.focus();
+            expect(control).toHaveFocus();
+        }
     });
 
     it('dispatches the modulator and mapping edits through the command path', () => {
@@ -319,26 +423,73 @@ describe('ModulationMatrix', () => {
         });
     });
 
-    it('dispatches a mapping add from the picker with the chosen destination', () => {
+    it('dispatches a mapping add from the picker with the chosen destination', async () => {
         mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
         mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
         render(<ModulationMatrix />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Add Mapping' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
 
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'addMapping',
-            payload: {
-                modulatorId: 'mod-1',
-                mapping: {
-                    targetTrackId: 'track-1',
-                    targetDeviceId: 'device-1',
-                    targetParamId: 'cutoff',
-                    amount: 0.5,
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'addMapping',
+                payload: {
+                    modulatorId: 'mod-1',
+                    mapping: {
+                        targetTrackId: 'track-1',
+                        targetDeviceId: 'device-1',
+                        targetParamId: 'cutoff',
+                        amount: 0.5,
+                    },
                 },
             },
+            expect.anything()
+        );
+    });
+
+    it('identifies a tuned destination, closes on an admitted duplicate and retains the picker on a lock', async () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(-0.37)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+        const trigger = screen.getByRole('button', { name: 'Add Mapping' });
+        fireEvent.click(trigger);
+        expect(screen.getByRole('status')).toHaveTextContent(/already mapped.*-0.37/i);
+        // A production lock resolves without reaching the materialized-action observer.
+        vi.mocked(executeUserAppAction).mockResolvedValueOnce();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
         });
+        expect(screen.getByRole('alert')).toHaveTextContent(/locks/i);
+        expect(screen.getByLabelText('Target parameter')).toHaveValue('cutoff');
+
+        // Admitted no-ops notify this observer, but never the committed observer.
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (action, options) => {
+            options?.observeMaterializedAction?.(action);
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        expect(screen.queryByLabelText('Target parameter')).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+        expect(screen.getByLabelText(/Amount for LFO 1/)).toHaveValue('-0.37');
+    });
+
+    it('keeps the chosen mapping target when its dispatch rejects', async () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(-0.37)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        vi.mocked(executeUserAppAction).mockRejectedValueOnce(new Error('Device unavailable'));
+        render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add Mapping' }));
+        fireEvent.change(screen.getByLabelText('Target parameter'), { target: { value: 'resonance' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(/Device unavailable.*try again/i);
+        expect(screen.getByLabelText('Target parameter')).toHaveValue('resonance');
+        expect(currentAmount()).toBe(-0.37);
     });
 
     it('should keep a second mapping drag off the first mapping’s active session', () => {

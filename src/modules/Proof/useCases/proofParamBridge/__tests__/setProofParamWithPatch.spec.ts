@@ -1,21 +1,32 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
-import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
 import { getProofState, loadProofPatch, proofStore } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
+import { proofLimiterCeiling } from '../proofLimiterCeiling';
+import { proofLimiterCeilingProjection } from '../reconcileProofLimiterCeiling';
 import { setProofParamWithPatch } from '../setProofParamWithPatch';
 
+const readTrackState = vi.hoisted(() => vi.fn<() => TrackStoreState | null>(() => null));
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: vi.fn(() => null),
+    getTrackStoreState: readTrackState,
     persistDevicePatch: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
+    trackStore: {
+        get value() {
+            return readTrackState();
+        },
+        subscribe: vi.fn(() => () => undefined),
+    },
 }));
 
 // The door every live Proof write reaches the DSP through, and the only one a
@@ -24,7 +35,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     updateDevicePatch: vi.fn(),
+    captureDeviceParameterRuntimeWriteAuthority: () => ({
+        owner: Symbol(),
+        canCommit: () => true,
+        isCurrent: () => true,
+        release: () => undefined,
+    }),
 }));
+
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn() }));
 
 type MockedProofBridge = {
     [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
@@ -93,6 +112,7 @@ function makeTrackState(
 
 describe('setProofParamWithPatch', () => {
     beforeEach(() => {
+        proofLimiterCeilingProjection.reset();
         bridges.clear();
         proofStore.set({});
         vi.clearAllMocks();
@@ -104,27 +124,54 @@ describe('setProofParamWithPatch', () => {
         }));
     });
 
-    it('updates the stored patch and persists the mapped scalar engine param', () => {
-        const bridge = makeBridge();
-        const persisted_patch_values: Array<number | undefined> = [];
-        bridges.set('dev-1', bridge);
-        vi.mocked(persistDevicePatch).mockImplementation((device_id) => {
-            persisted_patch_values.push(getProofState(device_id).patch.limCeiling);
+    it('previews the ceiling and releases through one owning action', async () => {
+        bridges.set('dev-1', makeBridge());
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState('dev-1', { lim_ceiling: -1 }));
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (_action, options) => {
+            expect(options?.shouldExecute?.()).toBe(true);
+            options?.onCommitted?.();
         });
 
-        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: -2 });
-
+        proofLimiterCeiling.change('dev-1', -2, true);
         expect(getProofState('dev-1').patch.limCeiling).toBe(-2);
-        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'lim_ceiling', -2);
-        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_ceiling: -2 });
-        expect(persisted_patch_values).toEqual([-2]);
+        expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith(
+            'track-1',
+            'dev-1',
+            'lim_ceiling',
+            -2,
+            expect.any(Symbol)
+        );
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+
+        proofLimiterCeiling.change('dev-1', -2, false);
+        await proofLimiterCeiling.settlement('dev-1')?.done;
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'dev-1',
+                    paramId: 'lim_ceiling',
+                    value: -2,
+                    automationRecordingPolicy: 'suppressed',
+                    expectedTrackId: 'track-1',
+                    expectedDeviceType: 'proof',
+                    expectedDeviceIds: ['dev-1'],
+                    expectedTrackFrozen: false,
+                    expectedValuePresent: true,
+                    expectedValue: -1,
+                },
+            },
+            expect.objectContaining({ onCommitted: expect.any(Function) })
+        );
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
     });
 
     it('rejects an out-of-range scalar before any write', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
 
-        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: 1 });
+        proofLimiterCeiling.change('dev-1', 1, false);
 
         expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
         expect(updateDeviceParam).not.toHaveBeenCalled();
@@ -357,27 +404,20 @@ describe('setProofParamWithPatch', () => {
         expect(persistDevicePatch).toHaveBeenCalledTimes(1);
     });
 
-    it('preserves preset identity during preview and clears it on commit', () => {
+    it('preserves preset identity during preview and clears it on commit', async () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
         loadProofPatch({ deviceId: 'dev-1', patch: { ...DEFAULT_PATCH, presetId: 'streaming' } });
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState('dev-1', { lim_ceiling: -1 }));
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (_action, options) => options?.onCommitted?.());
 
-        setProofParamWithPatch({
-            deviceId: 'dev-1',
-            key: 'limCeiling',
-            value: -2,
-            isTransient: true,
-        });
+        proofLimiterCeiling.change('dev-1', -2, true);
 
         expect(getProofState('dev-1').patch.presetId).toBe('streaming');
 
-        setProofParamWithPatch({
-            deviceId: 'dev-1',
-            key: 'limCeiling',
-            value: -2,
-            isTransient: false,
-        });
+        proofLimiterCeiling.change('dev-1', -2, false);
 
+        await proofLimiterCeiling.settlement('dev-1')?.done;
         expect(getProofState('dev-1').patch.presetId).toBeUndefined();
     });
 
@@ -429,7 +469,7 @@ describe('setProofParamWithPatch', () => {
             bridges.set('dev-1', bridge);
             vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
 
-            setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: -2 });
+            proofLimiterCeiling.change('dev-1', -2, false);
 
             expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
             expect(persistDevicePatch).not.toHaveBeenCalled();
@@ -637,7 +677,7 @@ describe('setProofParamWithPatch', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
 
-        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: DEFAULT_PATCH.limCeiling });
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'outputGain', value: DEFAULT_PATCH.outputGain });
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });

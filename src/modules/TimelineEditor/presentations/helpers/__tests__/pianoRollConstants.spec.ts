@@ -191,6 +191,11 @@ describe('piano roll vertical geometry law', () => {
         }
     });
 
+    it.each([8, 32])('maps the full pitch extent at row height %i', (height) => {
+        expect(getPianoRollContentHeight(TOTAL_ROWS, height)).toBe(RULER_HEIGHT + TOTAL_ROWS * height);
+        expect(getPianoRollRowAtY(getPianoRollRowTop(67, height) + height / 2, TOTAL_ROWS, height)).toBe(67);
+    });
+
     it('starts the rows under the ruler and ends the content at the last row', () => {
         expect(getPianoRollRowTop(0)).toBe(RULER_HEIGHT);
         expect(getPianoRollContentHeight(TOTAL_ROWS)).toBe(getPianoRollRowTop(TOTAL_ROWS));

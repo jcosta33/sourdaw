@@ -62,6 +62,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
         removeMapping: vi.fn(),
         removeModulator: vi.fn(),
         restoreAutomationLanes: vi.fn(),
+        restoreAutomationLanesAtPositions: vi.fn(),
         restoreClipAutomationMoveState: vi.fn(),
         restoreTrackModulationReferences: vi.fn(),
         shiftClipAutomation: vi.fn(),

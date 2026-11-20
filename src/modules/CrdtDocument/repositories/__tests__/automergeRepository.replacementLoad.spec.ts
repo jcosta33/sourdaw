@@ -12,6 +12,7 @@ import { EMPTY_PERSISTENCE_AUTHORITY } from '../crdtPersistence/persistenceAutho
 import {
     completePersistenceWritesUntilSettled,
     ControlledWorker,
+    respondToEncodeIncrementals,
     respondToLoad,
     respondToMerge,
     type LoadBundleRequest,
@@ -83,13 +84,6 @@ describe('AutomergeRepository replacement load authority', () => {
         baseTransaction.complete();
         await baseCompaction;
 
-        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
-            doc.oldGenerationEdit = true;
-        });
-        const oldSave = persistCrdtProject();
-        const oldTransaction = await persistence.waitForTransaction('readwrite', 2);
-        expect(oldTransaction.writes.some(({ kind }) => kind === 'add')).toBe(true);
-
         let resolveDeferredLoad: ((value: { worker: ControlledWorker; request: LoadBundleRequest }) => void) | null =
             null;
         const deferredLoad = new Promise<{ worker: ControlledWorker; request: LoadBundleRequest }>((resolve) => {
@@ -107,13 +101,23 @@ describe('AutomergeRepository replacement load authority', () => {
                     respondToLoad(worker, request);
                 } else if (request.type === 'mergeBundle') {
                     respondToMerge(worker, request);
+                } else if (request.type === 'encodeIncrementals') {
+                    respondToEncodeIncrementals(worker, request);
                 }
             });
         };
 
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.oldGenerationEdit = true;
+        });
+        const oldSave = persistCrdtProject();
+        const oldTransaction = await persistence.waitForTransaction('readwrite', 2);
+        expect(oldTransaction.writes.some(({ kind }) => kind === 'add')).toBe(true);
+
         const replacementLoad = loadCrdtProject();
         await persistence.waitForTransaction('readonly', 1);
         const delayedWorkerRequest = await deferredLoad;
+        expect(delayedWorkerRequest.worker.posted.filter(({ type }) => type === 'encodeIncrementals')).toHaveLength(1);
         oldTransaction.complete();
         respondToLoad(delayedWorkerRequest.worker, delayedWorkerRequest.request);
 
@@ -129,6 +133,8 @@ describe('AutomergeRepository replacement load authority', () => {
             persistence,
             startOccurrence: 3,
         });
+
+        expect(delayedWorkerRequest.worker.posted.filter(({ type }) => type === 'encodeIncrementals')).toHaveLength(2);
 
         const durableBundle = await loadAllFromIdb();
         if (!durableBundle) {

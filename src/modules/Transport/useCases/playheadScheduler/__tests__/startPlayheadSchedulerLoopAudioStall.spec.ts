@@ -2060,8 +2060,22 @@ describe('queued loop audio preservation and retirement', () => {
                 loopStart: 0,
                 loopEnd: 4e-15,
             };
-            startPlayheadScheduler();
-            await tickAt(0);
+            // The opening refill establishes the pass-budget precondition for recovery.
+            const scheduleModule = await import('../createLoopAudioSchedule');
+            const createSchedule = scheduleModule.createLoopAudioSchedule;
+            let admitting = true;
+            const factory = vi
+                .spyOn(scheduleModule, 'createLoopAudioSchedule')
+                .mockImplementationOnce((input) =>
+                    createSchedule({ ...input, monotonicTime: () => (admitting ? 0 : performance.now()) })
+                );
+            try {
+                startPlayheadScheduler();
+                await tickAt(0);
+            } finally {
+                admitting = false;
+                factory.mockRestore();
+            }
             expect(schedulerSession.loopAudioSchedule!.active).toBe(true);
             expect(schedulerSession.loopAudioSchedule!.coverage).toMatchObject({
                 windows: 64,

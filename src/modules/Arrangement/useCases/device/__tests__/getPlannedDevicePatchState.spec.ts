@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { plannedDeviceWriteStepByActionType } from '../getPlannedDevicePatchState';
 
@@ -11,7 +12,17 @@ describe('plannedDeviceWriteStepByActionType', () => {
             ([, entry]) => entry !== plain
         );
         const special = specialEntries.map(([type]) => type).sort();
-        expect(special).toEqual(['addTrack', 'createBus', 'setFermenterPatch', 'restoreTrack'].sort());
+        expect(special).toEqual(
+            [
+                'addTrack',
+                'createBus',
+                'setFermenterPatch',
+                'setToasterFactoryKit',
+                'setBacteriaFactoryPatch',
+                'setLevainIdentity',
+                'restoreTrack',
+            ].sort()
+        );
     });
 
     it('keeps an unrelated action as a command step and records no track id', () => {
@@ -103,6 +114,43 @@ describe('plannedDeviceWriteStepByActionType', () => {
             expectedTrackFrozen: true,
             expected: { deviceState: chunk, parameterValues: { mix: 0.1 } },
             after: { deviceState: { version: 1, data: { patch: 'after' } }, parameterValues: { mix: 0.9 } },
+        });
+        expect(trackIds.size).toBe(0);
+    });
+
+    it('plans a Levain identity patch bound to its owner and captured state', () => {
+        const trackIds = new Set<string>();
+        const missingDeviceState = { version: 1, data: { instrumentId: 'violin-1' } };
+        const before = { deviceState: null, parameterValues: { gain: null } };
+        const after = { deviceState: { version: 1, data: { instrumentId: 'bank' } }, parameterValues: { gain: 0.4 } };
+        const action = {
+            type: 'setLevainIdentity',
+            payload: {
+                kind: 'instrument',
+                trackId: 'track-7',
+                deviceId: 'device-1',
+                deviceIds: ['device-1', 'device-2'],
+                label: 'Load instrument',
+                missingDeviceState,
+                before,
+                after,
+            },
+        } satisfies AppAction;
+
+        expect(plannedDeviceWriteStepByActionType.setLevainIdentity(action, trackIds)).toEqual({
+            kind: 'patch',
+            trackId: 'track-7',
+            deviceId: 'device-1',
+            expectedDeviceIds: ['device-1', 'device-2'],
+            expectedTrackFrozen: false,
+            expectedDeviceType: DEVICE_TYPE_IDS.levain,
+            expected: before,
+            after,
+            preservedMetadata: {
+                field: 'disclosureTier',
+                allowedValues: ['basic', 'expert'],
+                missingChunk: missingDeviceState,
+            },
         });
         expect(trackIds.size).toBe(0);
     });

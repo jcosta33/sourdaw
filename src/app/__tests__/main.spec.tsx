@@ -149,6 +149,9 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    readPianoRollSelection: vi.fn(),
+    locatePianoRollSelectionWindows: vi.fn(),
+    projectPianoRollTakeNotes: vi.fn(),
     prepareRecordedControllersCommit: () => {
         throw new Error('Startup fixture must not prepare recorded controller commits');
     },

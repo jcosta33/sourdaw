@@ -41,11 +41,38 @@ const CLAUSE_BOUNDARY = /[,;.!?:()\n]/u;
 
 type FamilyWordUse = 'head' | 'modifier';
 
-function readFamilyWordUses(tokens: readonly string[], words: readonly string[]): FamilyWordUse[] {
+/** A hyphen joining two words into one compound modifier ("bass-heavy", "drum-like"). */
+const COMPOUND_HYPHEN = /(?<=[\p{L}\p{N}])-(?=[\p{L}\p{N}])/u;
+
+/** A clause's normalized words, and the positions of those a hyphen joins to the next word. */
+type ClauseWords = { tokens: string[]; hyphenated: ReadonlySet<number> };
+
+function readClauseWords(clause: string): ClauseWords {
+    const tokens: string[] = [];
+    const hyphenated = new Set<number>();
+    const parts = clause.split(COMPOUND_HYPHEN);
+    for (const [index, part] of parts.entries()) {
+        tokens.push(
+            ...normalizeAgentReferenceText(part)
+                .split(' ')
+                .filter((word) => word !== '')
+        );
+        if (index < parts.length - 1 && tokens.length > 0) {
+            hyphenated.add(tokens.length - 1);
+        }
+    }
+    return { tokens, hyphenated };
+}
+
+/** A family word heads its phrase unless a word continuing the phrase, or a hyphen into a compound, follows it. */
+function readFamilyWordUses({ tokens, hyphenated }: ClauseWords, words: readonly string[]): FamilyWordUse[] {
     const plural = words[1];
     return tokens.flatMap((token, index): FamilyWordUse[] => {
         if (!words.includes(token)) {
             return [];
+        }
+        if (hyphenated.has(index)) {
+            return ['modifier'];
         }
         const next = tokens[index + 1];
         if (next === undefined || PHRASE_ENDERS.has(next)) {
@@ -58,10 +85,10 @@ function readFamilyWordUses(tokens: readonly string[], words: readonly string[])
 function readUses<TRole extends string>(text: string, roles: readonly TRole[], use: FamilyWordUse): TRole[] {
     const clauses = text
         .split(CLAUSE_BOUNDARY)
-        .map((clause) => normalizeAgentReferenceText(clause).split(' '))
-        .filter((tokens) => tokens.length > 0 && tokens[0] !== '');
+        .map(readClauseWords)
+        .filter((clause) => clause.tokens.length > 0);
     return roles.filter((role) =>
-        clauses.some((tokens) => readFamilyWordUses(tokens, readRoleFamilyWords(role)).includes(use))
+        clauses.some((clause) => readFamilyWordUses(clause, readRoleFamilyWords(role)).includes(use))
     );
 }
 
@@ -70,7 +97,8 @@ function readUses<TRole extends string>(text: string, roles: readonly TRole[], u
  * mentions as a modifier. A family word names its family only when it heads its noun phrase ("tighten
  * up the drums", "the bass is too muddy"); one that modifies the next word ("drum machine", "bus
  * compression", "bass boost") names an object or a quality of something else, so the request is about
- * that other thing. The caller masks what must not count first (track names, quoted text, protection
+ * that other thing, as does one a hyphen joins to the next word ("bass-heavy guitar", "drum-like keys").
+ * The caller masks what must not count first (track names, quoted text, protection
  * clauses), since a word inside a name such as "Drum Bus" names that track and not the family.
  */
 export function findNamedRoleFamilies<TRole extends string>(

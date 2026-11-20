@@ -43,6 +43,21 @@ export default class VitestProgressReporter implements Reporter {
         recordVitestModuleFailure(module.moduleId);
     }
 
+    onTestCaseResult(test: TestCase): void {
+        try {
+            const result = test.result();
+            if (result.state !== 'failed') {
+                return;
+            }
+            const errors = result.errors.slice(0, 5).map((error) => {
+                return `${error.name ?? 'Error'}: ${error.message}\n${error.stack ?? ''}`.slice(0, 2048);
+            });
+            process.stderr.write(`vitest case failure: ${test.fullName.slice(0, 1024)}\n${errors.join('\n')}\n`);
+        } catch {
+            // An unavailable diagnostic must not alter the test result.
+        }
+    }
+
     onTestCaseReady(test: TestCase): void {
         recordVitestProgress('case-ready', test.fullName, undefined, {
             state: test.result().state,

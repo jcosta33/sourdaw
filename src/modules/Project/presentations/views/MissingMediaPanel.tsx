@@ -5,18 +5,31 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { readRelinkAudioSourceEligibility, revealClip } from '#/modules/Arrangement/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     defaultMissingMediaStoreState,
     type MissingMediaItem,
     missingMediaStore,
 } from '../../stores/missingMediaStore';
+import { locateMissingMedia } from '../../useCases/locateMissingMedia';
 
-/** Frozen tracks have no relink affordance — the repair is to unfreeze and
- * re-render — so the two kinds get different guidance. */
-function describeRepair(item: MissingMediaItem): string {
+/** Frozen renders require re-rendering; a missing source can be relinked only
+ * when every clip owner is editable. */
+function describeRepair(
+    item: MissingMediaItem,
+    eligibility: ReturnType<typeof readRelinkAudioSourceEligibility>
+): string {
     if (item.kind === 'frozenTrack') {
         return 'Unfreeze the track to re-render its audio';
+    }
+    if (eligibility === 'frozen') {
+        return 'Unfreeze every track using this source, then locate the replacement file';
+    }
+    if (eligibility !== 'eligible') {
+        return 'This source cannot be relinked until its clip owners are editable';
     }
     return 'Drop a replacement file on the clip to relink it';
 }
@@ -32,14 +45,100 @@ function rowKey(item: MissingMediaItem): string {
     return `clip:${item.clipId ?? item.bufferId}`;
 }
 
-export const MissingMediaPanel = (): ReactElement | null => {
-    const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
-    const [open, setOpen] = useState(false);
+type MissingMediaRowProps = {
+    item: MissingMediaItem;
+    eligibility: ReturnType<typeof readRelinkAudioSourceEligibility>;
+    primary: boolean;
+    locatingBufferId: string | null;
+    onLocate: (item: MissingMediaItem) => Promise<void>;
+};
 
-    const items = missingMedia.items;
-    if (items.length === 0) {
+const MissingMediaRowControls = ({
+    item,
+    eligibility,
+    primary,
+    locatingBufferId,
+    onLocate,
+}: MissingMediaRowProps): ReactElement | null => {
+    if (item.kind !== 'clip') {
         return null;
     }
+    let locateButton: ReactElement | null = null;
+    if (primary && eligibility === 'eligible') {
+        locateButton = (
+            <Button
+                size="sm"
+                variant="outline"
+                disabled={locatingBufferId !== null}
+                onClick={() => {
+                    void onLocate(item);
+                }}
+            >
+                {locatingBufferId === item.bufferId ? 'Locating…' : 'Locate…'}
+            </Button>
+        );
+    }
+    const clipId = item.clipId;
+    let revealButton: ReactElement | null = null;
+    if (clipId) {
+        revealButton = (
+            <Button size="sm" variant="ghost" onClick={() => revealClip(clipId)}>
+                Reveal clip
+            </Button>
+        );
+    }
+    return (
+        <div className="mt-1 flex gap-1">
+            {locateButton}
+            {revealButton}
+        </div>
+    );
+};
+
+const MissingMediaRow = (props: MissingMediaRowProps): ReactElement => {
+    const { item, eligibility } = props;
+    return (
+        <li className="px-2 py-1.5">
+            <p className="text-sm">{item.label}</p>
+            <p className="text-xs text-muted-foreground">{item.trackName}</p>
+            <p className="text-xs text-muted-foreground/80">{describeRepair(item, eligibility)}</p>
+            <MissingMediaRowControls {...props} />
+        </li>
+    );
+};
+
+export const MissingMediaPanel = (): ReactElement | null => {
+    const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
+    if (missingMedia.items.length === 0) {
+        return null;
+    }
+    return <MissingMediaPanelContent items={missingMedia.items} />;
+};
+
+const MissingMediaPanelContent = ({ items }: { items: MissingMediaItem[] }): ReactElement => {
+    const tracks = useStore(trackStore, defaultTrackState);
+    const [open, setOpen] = useState(false);
+    const [locatingBufferId, setLocatingBufferId] = useState<string | null>(null);
+
+    const primaryRowByBuffer = new Map<string, string>();
+    const eligibilityByBuffer = new Map<string, ReturnType<typeof readRelinkAudioSourceEligibility>>();
+    for (const item of items) {
+        if (item.kind === 'clip' && !primaryRowByBuffer.has(item.bufferId)) {
+            primaryRowByBuffer.set(item.bufferId, rowKey(item));
+            eligibilityByBuffer.set(item.bufferId, readRelinkAudioSourceEligibility(item.bufferId, tracks));
+        }
+    }
+
+    const handleLocate = async (item: MissingMediaItem): Promise<void> => {
+        setLocatingBufferId(item.bufferId);
+        try {
+            await locateMissingMedia({ sourceBufferId: item.bufferId, label: item.label });
+        } catch {
+            notifyUser('Could not finish relinking missing media. Unresolved files remain listed.', 'error');
+        } finally {
+            setLocatingBufferId(null);
+        }
+    };
 
     // The headline counts *files*, not references: a clip split in two is one
     // file the user has to find, not two. The row count can exceed it, so the
@@ -71,11 +170,14 @@ export const MissingMediaPanel = (): ReactElement | null => {
                     {referenceNote ? <p className="px-2 py-1 text-xs text-muted-foreground">{referenceNote}</p> : null}
                     <ul className="max-h-64 overflow-y-auto">
                         {items.map((item) => (
-                            <li className="px-2 py-1.5" key={rowKey(item)}>
-                                <p className="text-sm">{item.label}</p>
-                                <p className="text-xs text-muted-foreground">{item.trackName}</p>
-                                <p className="text-xs text-muted-foreground/80">{describeRepair(item)}</p>
-                            </li>
+                            <MissingMediaRow
+                                key={rowKey(item)}
+                                item={item}
+                                eligibility={eligibilityByBuffer.get(item.bufferId) ?? 'missing'}
+                                primary={primaryRowByBuffer.get(item.bufferId) === rowKey(item)}
+                                locatingBufferId={locatingBufferId}
+                                onLocate={handleLocate}
+                            />
                         ))}
                     </ul>
                 </PopoverContent>

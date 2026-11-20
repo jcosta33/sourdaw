@@ -19,6 +19,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return getTrackStoreState();
+        },
+        subscribe: () => () => undefined,
+    } satisfies Pick<typeof import('#/modules/Arrangement/stores').trackStore, 'value' | 'subscribe'>,
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
