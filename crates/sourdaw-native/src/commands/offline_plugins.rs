@@ -414,6 +414,10 @@ pub(crate) struct OfflinePluginSeams {
     /// free again, just before its live state is restored into it.
     #[cfg(test)]
     pub(crate) before_restore: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run for each instance just before its build waits on the runtime gate,
+    /// so a test can cancel the render while it waits there.
+    #[cfg(test)]
+    pub(crate) before_runtime_gate: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl OfflinePluginSeams {
@@ -450,6 +454,8 @@ impl OfflinePluginSeams {
             after_mapping: None,
             #[cfg(test)]
             before_restore: None,
+            #[cfg(test)]
+            before_runtime_gate: None,
         }
     }
 }
@@ -727,8 +733,9 @@ fn refusal(bound: &BoundHostedInstance, reason: &str) -> String {
 /// Every live state is captured first, at render start, so the print is one
 /// moment of the session rather than a smear across the constructions. A
 /// refusal partway releases whatever was already built. So does a cancel of
-/// `render`, read before each construction and each restore: a render
-/// cancelled at quit builds nothing more on the thread waiting for it to end.
+/// `render`, read before each state read, before each construction and again
+/// once the runtime gate is taken, and before each restore: a render cancelled
+/// at quit reads and builds nothing more on the thread waiting for it to end.
 pub(crate) async fn build_offline_instances<'a>(
     bound: &[BoundHostedInstance],
     sample_rate: f64,
@@ -763,6 +770,11 @@ pub(crate) async fn build_offline_instances<'a>(
     let mut captured = Vec::with_capacity(bound.len());
     let mut refused = None;
     for (instance, record) in bound.iter().zip(records.by_ref()) {
+        if render.control().is_cancelled() {
+            return_live_runtime(&record.instance_id, record.runtime, state);
+            refused = Some(render.cancelled());
+            break;
+        }
         let chunk = capture_live_state(instance, &record.runtime, state, seams);
         return_live_runtime(&record.instance_id, record.runtime, state);
         match chunk {
@@ -789,8 +801,16 @@ pub(crate) async fn build_offline_instances<'a>(
         // The gate spans this instance's vet and construction only: released
         // here, before the state restore and before any refusal tears down the
         // instances already built — the order a load's refusal keeps.
+        #[cfg(test)]
+        if let Some(before_runtime_gate) = &seams.before_runtime_gate {
+            before_runtime_gate();
+        }
         let runtime = {
             let _runtime_gate = hold_plugin_runtime_gate().await;
+            // A cancel can land while the build waits its turn at the gate.
+            if render.control().is_cancelled() {
+                return Err(render.cancelled());
+            }
             construct_runtime_on_ui_thread(
                 ui,
                 backend,

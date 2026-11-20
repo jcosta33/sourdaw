@@ -167,6 +167,7 @@ impl InstalledFx {
             after_admission: None,
             after_mapping: None,
             before_restore: None,
+            before_runtime_gate: None,
         }
     }
 }
@@ -1423,6 +1424,173 @@ fn a_cancel_while_building_constructs_no_further_instance() {
         .lock()
         .expect("retired")
         .is_empty());
+}
+
+/// A cancel that lands while the build waits its turn on the runtime gate,
+/// behind an exclusive holder, is read once the gate is taken: nothing is
+/// constructed for it. The seam runs after the check ahead of the wait, so
+/// only a read behind the gate can see this cancel.
+#[test]
+fn a_cancel_while_the_build_waits_on_the_runtime_gate_constructs_no_instance() {
+    let fx = InstalledFx::create("cancel-at-gate");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let gate_hold = crate::commands::plugins::hold_plugin_runtime_gate_exclusively();
+    let (waiting, wait_reached) = mpsc::channel::<()>();
+    let waiting = Mutex::new(waiting);
+    let mut seams = fx.seams();
+    seams.before_runtime_gate = Some(Box::new(move || {
+        waiting
+            .lock()
+            .expect("waiting")
+            .send(())
+            .expect("the test is watching the gate");
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-gated"),
+            )
+        });
+        wait_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build reaches the runtime gate");
+        cancel_graph_offline("render-gated".to_string(), &state).expect("the cancel lands");
+        drop(gate_hold);
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled at the gate returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+const CAPTURE_CANCELLED_RENDER: &str = "render-capturing";
+
+/// Live state reads by [`capture_then_cancel_the_render`]. A process static,
+/// because the capture seam is a plain function; only one test reads it.
+static CANCELLING_CAPTURES: AtomicUsize = AtomicUsize::new(0);
+
+/// Read the live state, then cancel the render reading it.
+fn capture_then_cancel_the_render(
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+) -> Result<Vec<u8>, String> {
+    CANCELLING_CAPTURES.fetch_add(1, Ordering::SeqCst);
+    let chunk = read_live_state(runtime, state)?;
+    cancel_graph_offline(CAPTURE_CANCELLED_RENDER.to_string(), state).expect("the cancel lands");
+    Ok(chunk)
+}
+
+/// A cancel that lands while the live states are read stops the reads there:
+/// no further live state is read, every live runtime the render took is given
+/// back, and nothing is constructed.
+#[test]
+fn a_cancel_during_the_live_state_capture_reads_no_further_state_and_returns_every_runtime() {
+    let fx = InstalledFx::create("cancel-while-capturing");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let second_fx_device = attach_second_live_fx(&fx, &state);
+    let ui = RecordingUiThread::start();
+    CANCELLING_CAPTURES.store(0, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.capture_state = capture_then_cancel_the_render;
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device(), second_fx_device]))),
+        &state,
+        &ui,
+        &seams,
+        Some(CAPTURE_CANCELLED_RENDER),
+    )
+    .expect_err("a render cancelled while capturing returns no print");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        CANCELLING_CAPTURES.load(Ordering::SeqCst),
+        1,
+        "the second instance's live state was not read"
+    );
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+    let engine_plugins = state.engine_plugins.lock().expect("engine plugins");
+    assert_eq!(
+        Arc::strong_count(&engine_plugins[INSTANCE].runtime),
+        2,
+        "the first runtime is held by its record and this test alone"
+    );
+    assert!(Arc::ptr_eq(&engine_plugins[INSTANCE].runtime, &live));
+    assert_eq!(
+        Arc::strong_count(&engine_plugins[SECOND_INSTANCE].runtime),
+        1,
+        "the second runtime is held by its record alone"
+    );
+    assert!(state
+        .retired_engine_plugins
+        .lock()
+        .expect("retired")
+        .is_empty());
+}
+
+/// A cancel that lands once the final instance is constructed, before its
+/// state is restored, refuses the build there: the restore does not run, so
+/// the build never reaches the look every restored instance gets.
+#[test]
+fn a_cancel_before_the_final_instances_restore_refuses_the_build_without_restoring_it() {
+    let fx = InstalledFx::create("cancel-before-final-restore");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let (restoring, restore_reached) = mpsc::channel::<()>();
+    let (release_restore, restore_released) = mpsc::channel::<()>();
+    let restore_handshake = Mutex::new((restoring, restore_released));
+    let restored_builds = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&restored_builds);
+    let mut seams = fx.seams();
+    seams.before_restore = Some(Box::new(move || {
+        let (restoring, restore_released) = &*restore_handshake.lock().expect("handshake");
+        restoring.send(()).expect("the test is watching the build");
+        restore_released
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the restore");
+    }));
+    seams.after_build = Some(Box::new(move |_: &[Arc<SharedHostedPlugin>]| {
+        counted.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-final-restore"),
+            )
+        });
+        restore_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build constructs its only instance");
+        cancel_graph_offline("render-final-restore".to_string(), &state).expect("the cancel lands");
+        release_restore.send(()).expect("the build is waiting");
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal =
+        outcome.expect_err("a render cancelled before its final restore returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        restored_builds.load(Ordering::SeqCst),
+        0,
+        "the build stopped before restoring its final instance"
+    );
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the instance's construction and release ran"
+    );
 }
 
 #[test]
