@@ -13,7 +13,8 @@
 //!   asks for a restart the way a plugin's controller does: widening its
 //!   output to stereo (`kIoChanged`), moving to a six-channel output no stereo
 //!   host can feed (`kIoChanged`), or publishing one more parameter
-//!   (`kReloadComponent`).
+//!   (`kReloadComponent`). Its output gain, `Level`, is held by the processor
+//!   alone, so the output shows which writes reached `process`.
 //!
 //! Like the rest of the crate, test-only.
 
@@ -24,9 +25,10 @@ use std::sync::Mutex;
 use vst3::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, BusInfo_::BusFlags_, BusTypes_, IAudioProcessor,
     IAudioProcessorTrait, IComponent, IComponentHandler, IComponentHandlerTrait, IComponentTrait,
-    IEditController, IEditControllerTrait, IoMode, MediaType, MediaTypes_, ParamID, ParamValue,
-    ParameterInfo, ParameterInfo_::ParameterFlags_, ProcessData, ProcessSetup, RestartFlags_,
-    RoutingInfo, SpeakerArr, SpeakerArrangement, String128, SymbolicSampleSizes_, TChar,
+    IEditController, IEditControllerTrait, IParamValueQueueTrait, IParameterChanges,
+    IParameterChangesTrait, IoMode, MediaType, MediaTypes_, ParamID, ParamValue, ParameterInfo,
+    ParameterInfo_::ParameterFlags_, ProcessData, ProcessSetup, RestartFlags_, RoutingInfo,
+    SpeakerArr, SpeakerArrangement, String128, SymbolicSampleSizes_, TChar,
 };
 use vst3::Steinberg::{
     int32, kInvalidArgument, kNotImplemented, kResultFalse, kResultOk, tresult, uint32, FIDString,
@@ -53,7 +55,8 @@ pub(crate) const PROBE_CLASSES: int32 = 4;
 /// `kIoChanged`.
 pub const WIDEN_OUTPUT_PARAM_ID: ParamID = 10;
 /// Writing this above one half moves the output to six channels — which this
-/// class then refuses to narrow — and asks for `kIoChanged`.
+/// class then refuses to narrow — and asks for `kIoChanged`; writing it back
+/// below one half returns the output to its width and asks again.
 pub const SURROUND_OUTPUT_PARAM_ID: ParamID = 11;
 /// Writing this above one half publishes [`ADDED_PARAM_ID`] and asks for
 /// `kReloadComponent`.
@@ -63,11 +66,15 @@ pub const ADDED_PARAM_ID: ParamID = 13;
 /// Writing this above one half asks for `kIoChanged`, and from then on every
 /// activation asks for it again from inside `setActive`.
 pub const RESTART_FOREVER_PARAM_ID: ParamID = 14;
-const TRIGGER_PARAMS: [ParamID; 4] = [
+/// The output gain, held by the processor: it changes only through the
+/// parameter changes a `process` call carries, starting at unity.
+pub const LEVEL_PARAM_ID: ParamID = 15;
+const TRIGGER_PARAMS: [ParamID; 5] = [
     WIDEN_OUTPUT_PARAM_ID,
     SURROUND_OUTPUT_PARAM_ID,
     ADD_PARAMETER_PARAM_ID,
     RESTART_FOREVER_PARAM_ID,
+    LEVEL_PARAM_ID,
 ];
 
 /// One byte per lifecycle call in the log the state chunk carries.
@@ -128,6 +135,10 @@ struct Probe {
     extra_parameter: AtomicBool,
     /// Whether every activation asks for another bus restart.
     restarts_forever: AtomicBool,
+    /// `Level` as the processor holds it.
+    level: AtomicU64,
+    /// Whether the host has this class in the processing state.
+    processing: AtomicBool,
     trigger_values: [AtomicU64; TRIGGER_PARAMS.len()],
     handler: AtomicPtr<IComponentHandler>,
     log: Mutex<Vec<u8>>,
@@ -145,6 +156,8 @@ impl Probe {
             surround: AtomicBool::new(false),
             extra_parameter: AtomicBool::new(false),
             restarts_forever: AtomicBool::new(false),
+            level: AtomicU64::new(1f64.to_bits()),
+            processing: AtomicBool::new(false),
             trigger_values: std::array::from_fn(|_| AtomicU64::new(0f64.to_bits())),
             handler: AtomicPtr::new(ptr::null_mut()),
             log: Mutex::new(Vec::new()),
@@ -199,6 +212,47 @@ impl Probe {
             _ => return,
         };
         self.ask_for_restart(flag);
+    }
+
+    /// Undo the reconfiguration `id` names when its value falls back below
+    /// one half, and ask for the restart that needs.
+    fn release(&self, id: ParamID) {
+        if id == SURROUND_OUTPUT_PARAM_ID {
+            self.surround.store(false, Ordering::Relaxed);
+            self.ask_for_restart(RestartFlags_::kIoChanged);
+        }
+    }
+
+    /// Adopt the last `Level` the call's parameter changes carry.
+    ///
+    /// # Safety
+    /// `changes` must be the live input list of the current `process` call.
+    unsafe fn adopt_level(&self, changes: ComRef<'_, IParameterChanges>) {
+        // SAFETY: the list is live for this call.
+        let count = unsafe { changes.getParameterCount() };
+        for index in 0..count {
+            // SAFETY: `index` is below the count the list reported.
+            let queue = unsafe { changes.getParameterData(index) };
+            // SAFETY: a queue pointer the list just handed out, live for the call.
+            let Some(queue) = (unsafe { ComRef::from_raw(queue) }) else {
+                continue;
+            };
+            // SAFETY: a live queue.
+            if unsafe { queue.getParameterId() } != LEVEL_PARAM_ID {
+                continue;
+            }
+            // SAFETY: a live queue.
+            let points = unsafe { queue.getPointCount() };
+            if points <= 0 {
+                continue;
+            }
+            let (mut offset, mut value) = (0, 0.0);
+            // SAFETY: `points - 1` is the last point; both out parameters are locals.
+            let read = unsafe { queue.getPoint(points - 1, &mut offset, &mut value) };
+            if read == kResultOk {
+                self.level.store(value.to_bits(), Ordering::Relaxed);
+            }
+        }
     }
 
     /// Call the host's `restartComponent`, as a plugin does from its own call.
@@ -398,22 +452,38 @@ impl IAudioProcessorTrait for Probe {
         kResultOk
     }
 
-    unsafe fn setProcessing(&self, _state: TBool) -> tresult {
+    /// A start while already processing is a host leaving the state behind,
+    /// which VST3 does not allow, so it is refused: a host that forgot a
+    /// `setProcessing(0)` hears this class pass its next blocks through.
+    unsafe fn setProcessing(&self, state: TBool) -> tresult {
+        if state == 0 {
+            self.processing.store(false, Ordering::Relaxed);
+            return kResultOk;
+        }
+        if self.processing.swap(true, Ordering::Relaxed) {
+            return kResultFalse;
+        }
         kResultOk
     }
 
-    /// Copy each input channel to the output channel of the same index, and
-    /// silence any output channel past the input's width. Allocation- and
-    /// lock-free.
+    /// Copy each input channel, scaled by `Level`, to the output channel of the
+    /// same index, and silence any output channel past the input's width.
+    /// Allocation- and lock-free.
     unsafe fn process(&self, data: *mut ProcessData) -> tresult {
         if data.is_null() {
             return kInvalidArgument;
         }
         // SAFETY: the host passes a live `ProcessData` for this call.
         let data = unsafe { &*data };
+        // SAFETY: the input list is live for this call, or null.
+        if let Some(changes) = unsafe { ComRef::from_raw(data.inputParameterChanges) } {
+            // SAFETY: the current call's live input list.
+            unsafe { self.adopt_level(changes) };
+        }
         if data.numOutputs < 1 || data.outputs.is_null() || data.numSamples <= 0 {
             return kResultOk;
         }
+        let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
         // SAFETY: the output bus array holds `numOutputs` entries.
         let output = unsafe { &*data.outputs };
         // SAFETY: reading the union's 32-bit arm, the only size this class accepts.
@@ -455,7 +525,9 @@ impl IAudioProcessorTrait for Probe {
             }
             // SAFETY: the host's channel buffer holds `numSamples` frames.
             let source = unsafe { std::slice::from_raw_parts(source, frames) };
-            target.copy_from_slice(source);
+            for (out, sample) in target.iter_mut().zip(source) {
+                *out = sample * level;
+            }
         }
         kResultOk
     }
@@ -495,10 +567,10 @@ impl IEditControllerTrait for Probe {
         // SAFETY: `info` is a valid out parameter.
         let info = unsafe { &mut *info };
         info.id = id;
-        let title = if id == ADDED_PARAM_ID {
-            "Added"
-        } else {
-            "Trigger"
+        let title = match id {
+            ADDED_PARAM_ID => "Added",
+            LEVEL_PARAM_ID => "Level",
+            _ => "Trigger",
         };
         write_tchar(&mut info.title, title);
         write_tchar(&mut info.shortTitle, title);
@@ -555,6 +627,8 @@ impl IEditControllerTrait for Probe {
             f64::from_bits(self.trigger_values[slot].swap(value.to_bits(), Ordering::Relaxed));
         if previous <= 0.5 && value > 0.5 {
             self.trigger(id);
+        } else if previous > 0.5 && value <= 0.5 {
+            self.release(id);
         }
         kResultOk
     }

@@ -219,6 +219,69 @@ impl ParameterGestureQueue {
         out[..count].sort_unstable_by_key(|update| update.param_id);
         count
     }
+
+    /// Copy every waiting value into `out`, in ascending parameter id, and
+    /// leave each one waiting. Pair with [`settle`](Self::settle) once the
+    /// processor has taken them. **Control path only, under the exclusive
+    /// access seam.**
+    ///
+    /// Read without claiming the slot: a claimed slot is invisible to a
+    /// concurrent [`record`](Self::record) for the same parameter, which would
+    /// then open a second slot for it. With the audio thread excluded nothing
+    /// drains or re-labels a ready slot, so its id is stable while it is read,
+    /// and its value is whichever one the last overwrite left.
+    fn peek(&self, out: &mut [HostParameterUpdate]) -> usize {
+        let mut count = 0;
+        for slot in &self.slots {
+            if count >= out.len() {
+                break;
+            }
+            if slot.state.load(Ordering::Acquire) != SLOT_READY {
+                continue;
+            }
+            out[count] = HostParameterUpdate {
+                param_id: slot.param_id.load(Ordering::Relaxed),
+                value: f64::from_bits(slot.value_bits.load(Ordering::Acquire)),
+            };
+            count += 1;
+        }
+        out[..count].sort_unstable_by_key(|update| update.param_id);
+        count
+    }
+
+    /// Clear the value waiting for `param_id` if it is still `value`, the one
+    /// the processor was just handed. A newer value recorded since the peek
+    /// stays waiting, so it is never lost to an older delivery.
+    fn settle(&self, param_id: ParamID, value: ParamValue) {
+        let delivered = value.to_bits();
+        for slot in &self.slots {
+            if slot.state.load(Ordering::Acquire) != SLOT_READY
+                || slot.param_id.load(Ordering::Relaxed) != param_id
+            {
+                continue;
+            }
+            if slot
+                .state
+                .compare_exchange(
+                    SLOT_READY,
+                    SLOT_WRITING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                continue;
+            }
+            let still_waiting = slot.value_bits.load(Ordering::Relaxed) == delivered;
+            let next = if still_waiting {
+                SLOT_EMPTY
+            } else {
+                SLOT_READY
+            };
+            slot.state.store(next, Ordering::Release);
+            return;
+        }
+    }
 }
 
 // ── Deferred connection-point messages ──────────────────────────────────
@@ -477,6 +540,20 @@ impl Vst3HostState {
     /// Move waiting gestures into `out`. **Audio thread.** Allocation-free.
     pub fn drain_parameter_edits(&self, out: &mut [HostParameterUpdate]) -> usize {
         self.gestures.drain(out)
+    }
+
+    /// Copy waiting gestures into `out` and leave them waiting. **Control
+    /// path**, for a delivery that may not be taken.
+    pub fn peek_parameter_edits(&self, out: &mut [HostParameterUpdate]) -> usize {
+        self.gestures.peek(out)
+    }
+
+    /// Clear each peeked value the processor took, unless a newer one has
+    /// replaced it since.
+    pub fn settle_parameter_edits(&self, delivered: &[HostParameterUpdate]) {
+        for update in delivered {
+            self.gestures.settle(update.param_id, update.value);
+        }
     }
 
     /// Record what `restartComponent` asked for.
@@ -1148,6 +1225,44 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use vst3::com_scrape_types::Unknown;
     use vst3::Steinberg::kNoInterface;
+
+    fn waiting(queue: &ParameterGestureQueue) -> Vec<(ParamID, ParamValue)> {
+        let mut out = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        let count = queue.peek(&mut out);
+        out[..count]
+            .iter()
+            .map(|update| (update.param_id, update.value))
+            .collect()
+    }
+
+    #[test]
+    fn a_peek_leaves_every_value_waiting_and_a_settle_clears_what_was_delivered() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(7, 0.25);
+        queue.record(3, 0.5);
+
+        assert_eq!(waiting(&queue), [(3, 0.5), (7, 0.25)]);
+        assert_eq!(
+            waiting(&queue),
+            [(3, 0.5), (7, 0.25)],
+            "a peek takes nothing"
+        );
+
+        queue.settle(7, 0.25);
+        assert_eq!(waiting(&queue), [(3, 0.5)]);
+    }
+
+    #[test]
+    fn a_settle_keeps_a_value_recorded_after_the_peek() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(7, 0.25);
+        let _ = waiting(&queue);
+
+        queue.record(7, 0.8);
+        queue.settle(7, 0.25);
+
+        assert_eq!(waiting(&queue), [(7, 0.8)], "the newer edit is not lost");
+    }
 
     thread_local! {
         static ATTRIBUTE_LIST_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

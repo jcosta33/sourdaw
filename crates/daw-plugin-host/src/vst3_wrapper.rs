@@ -5,7 +5,10 @@
 //! `IEditController` → connect them → `setupProcessing` → `setActive(true)` →
 //! `setProcessing(true)` on the processing thread → `IAudioProcessor::process`.
 //! The processing thread is the audio thread, or an offline instance's render
-//! thread.
+//! thread. Two control-path exceptions, each made under the exclusive access
+//! seam so no processing thread is inside the plugin: a forced stop before a
+//! lifecycle call, and the zero-sample parameter flush of an idle instance,
+//! which enters and leaves the processing state around its one `process`.
 //!
 //! RT-safety: every buffer, parameter queue, bus array and event the processing
 //! thread hands the plugin is allocated while activating — including the
@@ -1595,18 +1598,8 @@ impl Vst3Wrapper {
             );
         }
 
-        if let Some(reason) = self
-            .layout_refusal
-            .as_ref()
-            .filter(|_| !self.layout_refusal_reported)
-        {
-            self.layout_refusal_reported = true;
-            let handling = if self.fails_silent() {
-                "its blocks are silenced"
-            } else {
-                "its blocks pass through unprocessed"
-            };
-            eprintln!("{reason}; {handling}");
+        if let Some(report) = self.take_layout_refusal_report() {
+            eprintln!("{report}");
         }
 
         let unhandled = self.instance.host.state.unhandled_restart_flags();
@@ -1798,6 +1791,24 @@ impl Vst3Wrapper {
         self.is_instrument || self.bus_layout.main_input_channels() == 0
     }
 
+    /// The line saying this slot is out of service for a layout the host
+    /// refused, the first time it is asked after the refusal; `None` once it
+    /// has been taken, or while no refusal stands. **Control path only.**
+    pub fn take_layout_refusal_report(&mut self) -> Option<String> {
+        if self.layout_refusal_reported {
+            return None;
+        }
+        let reason = self.layout_refusal.as_ref()?;
+        let handling = if self.fails_silent() {
+            "its blocks are silenced"
+        } else {
+            "its blocks pass through unprocessed"
+        };
+        let report = format!("{reason}; {handling}");
+        self.layout_refusal_reported = true;
+        Some(report)
+    }
+
     /// Hand the plugin the parameter writes waiting for it, with no audio, while
     /// nothing else will. **Control path only.**
     ///
@@ -1811,8 +1822,10 @@ impl Vst3Wrapper {
     ///
     /// Only while the instance is active and not in the processing state, which
     /// with the caller's exclusive access means no processing thread is inside
-    /// or about to enter the plugin. A plugin that refuses the flush keeps the
-    /// writes queued for its first real block.
+    /// or about to enter the plugin. The writes are read without being taken
+    /// and cleared only once the plugin has processed them, so a plugin that
+    /// refuses the flush keeps them queued for its first real block, and an
+    /// editor edit made meanwhile is never replaced by the older value.
     fn flush_parameters_while_idle(&mut self) {
         if !self.activated || self.processing.is_processing() {
             return;
@@ -1821,16 +1834,24 @@ impl Vst3Wrapper {
             return;
         };
 
-        self.stage_parameter_updates(&[]);
-        if self.parameter_changes.is_empty() {
+        self.parameter_changes.reset();
+        let peeked = self
+            .instance
+            .host
+            .state
+            .peek_parameter_edits(self.gesture_scratch.as_mut_slice());
+        if peeked == 0 {
             return;
+        }
+        for update in &self.gesture_scratch[..peeked] {
+            self.parameter_changes.stage(update.param_id, update.value);
         }
 
         // SAFETY: exclusive control access, the claim every control-path
         // lifecycle call is made under; the component is active and not
         // processing, so no processing thread is inside the plugin.
         if !entered_processing(unsafe { processor.setProcessing(1) }) {
-            self.requeue_staged_parameters();
+            self.parameter_changes.reset();
             return;
         }
 
@@ -1848,11 +1869,14 @@ impl Vst3Wrapper {
         // SAFETY: as for the `setProcessing(1)` above.
         unsafe { processor.setProcessing(0) };
 
-        if !flushed {
-            self.requeue_staged_parameters();
-            return;
+        if flushed {
+            self.forward_processor_output();
+            self.instance
+                .host
+                .state
+                .settle_parameter_edits(&self.gesture_scratch[..peeked]);
         }
-        self.forward_processor_output();
+        self.parameter_changes.reset();
     }
 
     /// Carry what the processor reported in this call's
@@ -1888,16 +1912,19 @@ impl Vst3Wrapper {
         Arc::clone(&self.output_notes)
     }
 
-    /// Put every staged parameter value back on the processor's queue, for a
-    /// flush the plugin did not take.
-    fn requeue_staged_parameters(&self) {
-        for (param_id, value) in self.parameter_changes.staged() {
+    /// Queue the engine's writes for a block the plugin is not handed, so they
+    /// land on the first block that reaches the processor. They go in as host
+    /// writes, which take precedence over a gesture for the same parameter
+    /// exactly as they would have inside the block.
+    ///
+    /// RT-safe: the queue coalesces into preallocated slots without a lock.
+    fn hold_host_parameter_updates(&self, parameter_updates: &[HostParameterUpdate]) {
+        for update in parameter_updates {
             self.instance
                 .host
                 .state
-                .queue_host_parameter_write(param_id, value);
+                .queue_host_parameter_write(update.param_id, update.value);
         }
-        self.parameter_changes.reset();
     }
 
     /// Write silence over the engine's bus, for a block whose output the plugin
@@ -1960,13 +1987,25 @@ impl Vst3Wrapper {
     ///
     /// RT-safe: no allocation, no lock, no I/O. Everything it hands the plugin
     /// was allocated in `from_factory` and is refilled in place.
-    fn process_block(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        if self.layout_refusal.is_some() {
-            self.pass_failed_block(inputs, outputs, num_samples);
-            return;
-        }
-        if !self.activated {
-            Self::pass_through(inputs, outputs, num_samples);
+    ///
+    /// The waiting parameter writes are taken only once the block is known to
+    /// reach the plugin: a block it is not handed leaves the editor's gestures
+    /// queued and queues the engine's writes behind them, so nothing is lost
+    /// and nothing older is put back over a newer edit.
+    fn process_block(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        parameter_updates: &[HostParameterUpdate],
+    ) {
+        if self.layout_refusal.is_some() || !self.activated {
+            self.hold_host_parameter_updates(parameter_updates);
+            if self.layout_refusal.is_some() {
+                self.pass_failed_block(inputs, outputs, num_samples);
+            } else {
+                Self::pass_through(inputs, outputs, num_samples);
+            }
             return;
         }
 
@@ -1978,9 +2017,13 @@ impl Vst3Wrapper {
             if self.processing.wants_processing() {
                 self.processing_start_refused = true;
             }
+            self.hold_host_parameter_updates(parameter_updates);
             Self::pass_through(inputs, outputs, num_samples);
             return;
         }
+
+        // An active instance always holds its processor: activation needs it.
+        self.stage_parameter_updates(parameter_updates);
 
         // Borrowed, not cloned: cloning would put an `AddRef`/`Release` pair —
         // vendor code, and an atomic each — on every block. Bound once here so
@@ -2127,9 +2170,8 @@ impl Drop for Vst3Wrapper {
 
 impl AudioPlugin for Vst3Wrapper {
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        self.stage_parameter_updates(&[]);
         self.stage_midi(&[]);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, &[]);
     }
 
     /// Write a parameter the way VST3 requires a host to: the controller is told
@@ -2351,8 +2393,9 @@ impl HostedPluginRuntime for Vst3Wrapper {
         Arc::clone(&self.processing)
     }
 
-    /// **Audio thread only** — the caller's thread affinity is what makes
-    /// `setProcessing` legal.
+    /// **Audio thread only.** The processing thread is where the engine's
+    /// intent to start or stop lands; the control path enters the processing
+    /// state only around an idle flush (see the module note).
     ///
     /// A plugin that keeps refusing to start is asked a bounded number of times
     /// and then left alone. Retrying on every block spends an unbounded number of
@@ -2419,9 +2462,8 @@ impl HostedPluginRuntime for Vst3Wrapper {
         num_samples: usize,
         parameter_updates: &[HostParameterUpdate],
     ) {
-        self.stage_parameter_updates(parameter_updates);
         self.stage_midi(&[]);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, parameter_updates);
     }
 
     fn process_with_midi_and_parameters(
@@ -2432,9 +2474,8 @@ impl HostedPluginRuntime for Vst3Wrapper {
         midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
-        self.stage_parameter_updates(parameter_updates);
         self.stage_midi(midi_events);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, parameter_updates);
     }
 
     fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {

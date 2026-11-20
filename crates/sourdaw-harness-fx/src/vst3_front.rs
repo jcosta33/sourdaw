@@ -17,7 +17,7 @@ use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATEN
 use crate::state::CHUNK_BYTES;
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use vst3::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, BusInfo_::BusFlags_, BusTypes_, IAudioProcessor,
     IAudioProcessorTrait, IComponent, IComponentHandler, IComponentTrait, IEditController,
@@ -54,12 +54,18 @@ const PROCESSOR_TRUTH_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth";
 pub const VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID: TUID =
     uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A6);
 const PROCESSOR_TRUTH_FAILING_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth Failing";
+/// The class id of the processor-truth variant that refuses its first
+/// `setProcessing(1)` and accepts every later one.
+pub const VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A7);
+const PROCESSOR_TRUTH_LATE_START_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth Late Start";
 
 /// How one class departs from the plain effect.
 #[derive(Clone, Copy, Default)]
 struct Departures {
     fails_a_process_call: bool,
     refuses_to_start_processing: bool,
+    refuses_first_processing_start: bool,
     controller_defers_to_processor: bool,
 }
 
@@ -71,6 +77,8 @@ struct Vst3Echo {
     controller_gain: AtomicU64,
     process_calls: ProcessCalls,
     refuses_to_start_processing: bool,
+    /// Set while the first `setProcessing(1)` is still to be refused.
+    refusing_first_start: AtomicBool,
     /// Whether the controller refuses host writes and answers every read from
     /// the processor's own value, with `setProcessing` left at the SDK default.
     controller_defers_to_processor: bool,
@@ -87,6 +95,7 @@ impl Vst3Echo {
             controller_gain: AtomicU64::new(GAIN_DEFAULT.to_bits()),
             process_calls: ProcessCalls::new(departures.fails_a_process_call),
             refuses_to_start_processing: departures.refuses_to_start_processing,
+            refusing_first_start: AtomicBool::new(departures.refuses_first_processing_start),
             controller_defers_to_processor: departures.controller_defers_to_processor,
         }
     }
@@ -255,6 +264,9 @@ impl IAudioProcessorTrait for Vst3Echo {
 
     unsafe fn setProcessing(&self, state: TBool) -> tresult {
         if state != 0 && self.refuses_to_start_processing {
+            return kResultFalse;
+        }
+        if state != 0 && self.refusing_first_start.swap(false, Ordering::Relaxed) {
             return kResultFalse;
         }
         if self.controller_defers_to_processor {
@@ -579,6 +591,10 @@ fn class_entry(index: int32) -> Option<(TUID, &'static str)> {
             VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
             PROCESSOR_TRUTH_FAILING_CLASS_NAME,
         )),
+        5 => Some((
+            VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+            PROCESSOR_TRUTH_LATE_START_CLASS_NAME,
+        )),
         probe => crate::vst3_probe::class_at(probe - ECHO_CLASSES),
     }
 }
@@ -651,6 +667,12 @@ impl IPluginFactoryTrait for Factory {
                 fails_a_process_call: true,
                 ..Departures::default()
             }
+        } else if requested == VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID {
+            Departures {
+                controller_defers_to_processor: true,
+                refuses_first_processing_start: true,
+                ..Departures::default()
+            }
         } else if let Some(probe) = crate::vst3_probe::create(&requested) {
             // SAFETY: the caller's `iid` and `obj` are checked non-null above.
             return unsafe { hand_out(probe, iid, obj) };
@@ -697,7 +719,7 @@ impl IPluginFactory2Trait for Factory {
 }
 
 /// The number of [`Vst3Echo`] classes the factory lists before the probes.
-const ECHO_CLASSES: int32 = 5;
+const ECHO_CLASSES: int32 = 6;
 
 /// Answer a `createInstance` with the interface `iid` names on `instance`.
 ///

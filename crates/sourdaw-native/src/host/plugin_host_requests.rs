@@ -508,20 +508,33 @@ fn serve_channel_wake(
 
     let again = serve_queued_request(
         queued,
-        |instance_id, request| match request {
-            PluginHostRequest::StateDirty => report_state_change(&runtime, instance_id, events),
-            PluginHostRequest::ParametersRescan => {
-                rescan_parameters(&runtime, instance_id, engine_plugins, events)
-            }
-            PluginHostRequest::ComponentRestart => {
-                restart_component(&runtime, registered_ui_thread().as_deref())
-            }
+        |instance_id, request| {
+            carry_request(&runtime, instance_id, request, engine_plugins, events)
         },
         || runtime.ensure_public_control_allowed().is_ok(),
     );
 
     if let Some(queued) = again {
         queue_request(queued);
+    }
+}
+
+/// Carry one ask out to the follow-up that answers it.
+fn carry_request(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    request: PluginHostRequest,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) -> Result<(), String> {
+    match request {
+        PluginHostRequest::StateDirty => report_state_change(runtime, instance_id, events),
+        PluginHostRequest::ParametersRescan => {
+            rescan_parameters(runtime, instance_id, engine_plugins, events)
+        }
+        PluginHostRequest::ComponentRestart => {
+            restart_component(runtime, registered_ui_thread().as_deref())
+        }
     }
 }
 
@@ -569,16 +582,58 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_component_restart_with_no_ui_thread_is_not_run_and_asks_again() {
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
-        let runtime = SharedHostedPlugin::new(wrapper.into());
+    /// The registered UI thread is process-wide, so every test here that
+    /// registers or clears it takes this first.
+    static UI_THREAD_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-        assert!(restart_component(&runtime, None).is_err());
+    fn registered_ui_thread_guard(
+        ui: Option<Arc<dyn UiThread>>,
+    ) -> std::sync::MutexGuard<'static, ()> {
+        let guard = UI_THREAD_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *UI_THREAD
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ui;
+        guard
+    }
+
+    #[test]
+    fn a_component_restart_wake_reaches_the_registered_ui_thread() {
+        let ui = Arc::new(CountingUiThread::default());
+        let _registered = registered_ui_thread_guard(None);
+        use_ui_thread(Arc::clone(&ui) as Arc<dyn UiThread>);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
+        assert_eq!(
+            carry_request(
+                &runtime,
+                "inst-1",
+                PluginHostRequest::ComponentRestart,
+                &engine_plugins,
+                &events,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the wake carries the restart to the thread the shell registered"
+        );
+    }
+
+    #[test]
+    fn a_component_restart_wake_with_no_ui_thread_registered_is_retried() {
+        let _registered = registered_ui_thread_guard(None);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
         let again = serve_queued_request(
             ("inst-1".to_string(), PluginHostRequest::ComponentRestart, 0),
-            |_, _| restart_component(&runtime, None),
+            |instance_id, request| {
+                carry_request(&runtime, instance_id, request, &engine_plugins, &events)
+            },
             || runtime.ensure_public_control_allowed().is_ok(),
         );
         assert_eq!(
