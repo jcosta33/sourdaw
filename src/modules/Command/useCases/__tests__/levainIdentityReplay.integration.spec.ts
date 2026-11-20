@@ -33,7 +33,7 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
-import { clearHandlerRegistry } from '../../stores/handlerRegistry';
+import { clearHandlerRegistry, getHandlerByType } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
 import { undoStore } from '../../stores/undoStore';
 import { clearUndoHistory } from '../clearUndoHistory';
@@ -233,6 +233,74 @@ describe('Levain identity history through production Command and document storag
         expectChunk(after);
         expect(undoStore.value?.past).toMatchObject([entry]);
         expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('refuses invalid captured arguments through the registered session validator', () => {
+        const validate = getHandlerByType('setLevainIdentity')?.validateSessionActionArguments;
+        if (!validate) {
+            throw new Error('Expected the registered Levain session validator');
+        }
+        const staccato = articulation('staccato');
+        const payload = selection(articulation('sustain'), staccato, 'Select Staccato').payload;
+        const after = payload.after;
+        expect(validate(payload)).toBe(true);
+        const invalid = {
+            'fallback witness with an authored articulation': {
+                ...payload,
+                missingDeviceState: articulation('sustain'),
+            },
+            'future chunk version': { ...payload, after: { ...after, deviceState: { ...staccato, version: 2 } } },
+            'unknown articulation': {
+                ...payload,
+                after: { ...after, deviceState: articulation('unknown-articulation') },
+            },
+            'extra owned parameter key': { ...payload, after: { ...after, parameterValues: { masterGain: 0.41 } } },
+            'changed unowned metadata': {
+                ...payload,
+                after: { ...after, deviceState: { ...staccato, data: { ...staccato.data, peerLabel: 'new' } } },
+            },
+            'duplicate device in the captured chain': { ...payload, deviceIds: [DEVICE.id, DEVICE.id] },
+            'noncanonical restore marker': { ...payload, restore: false },
+        };
+        for (const [name, candidate] of Object.entries(invalid)) {
+            expect(validate(candidate), name).toBe(false);
+        }
+    });
+
+    it('refuses stale chain captures and a later removal before either batch writes', async () => {
+        seed();
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Recorded baseline' } });
+        const history = undoStore.value;
+        expect(history?.past).toHaveLength(1);
+        const original = structuredClone(track());
+        const action = selection(null, articulation('staccato'), 'Select Staccato');
+        const stale: IdentityAction = {
+            ...action,
+            payload: { ...action.payload, deviceIds: [NEIGHBOR.id, DEVICE.id] },
+        };
+        const rename = {
+            type: 'renameTrack',
+            payload: { trackId: TRACK_ID, name: 'Refused rename' },
+        } satisfies AppAction;
+        const remove = { type: 'removeDevice', payload: { deviceId: DEVICE.id } } satisfies AppAction;
+        const canReapply = getHandlerByType(action.type)?.canReapplyAfterDivergence;
+        expect(canReapply?.(action)).toBe(true);
+        expect(canReapply?.(stale)).toBe(false);
+        expect(canReapply?.(action, { actions: [action, remove], actionIndex: 0 })).toBe(false);
+
+        for (const actions of [
+            [rename, stale],
+            [action, remove],
+        ]) {
+            await expect(executeAppActionBatch(actions)).resolves.toEqual({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setLevainIdentity',
+                actions: [],
+            });
+            expectChunk(null);
+            expect(track()).toEqual(original);
+            expect(undoStore.value).toEqual(history);
+        }
     });
 
     it('preserves a later disclosure edit through a mixed rename and two-action identity group', async () => {
