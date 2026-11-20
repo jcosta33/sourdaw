@@ -1447,6 +1447,8 @@ type ExecutedRead = {
     metricRecipe?: MetricRecipeSource;
     /** Set only by a preview measurement; it is what makes the entry the loop retains a measured preview. */
     measuredPreview?: MeasuredPreview | null;
+    prefixPreviews?: readonly MeasuredPreview[];
+    adoptedRecipes?: readonly AdoptedRecipe[];
     /** Set only by the brief compiler; it is what makes the entry the loop retains a brief. */
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
@@ -1473,7 +1475,13 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
-        return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
+        return {
+            kind: 'preview',
+            ...retainable,
+            measuredPreview: executed.measuredPreview,
+            ...(executed.prefixPreviews === undefined ? {} : { prefixPreviews: executed.prefixPreviews }),
+            ...(executed.adoptedRecipes === undefined ? {} : { adoptedRecipes: executed.adoptedRecipes }),
+        };
     }
     if (executed.recipe !== undefined && executed.recipe !== null) {
         return { kind: 'recipe', ...retainable, recipe: executed.recipe, metricRecipe: executed.metricRecipe };
@@ -2648,7 +2656,8 @@ export async function runApplicationOwnedToolLoop(
                     (call.name === ANALYSIS_MEASURE_TOOL_NAME &&
                         (call.arguments.subject === 'preview' ||
                             call.arguments.proposal !== undefined ||
-                            call.arguments.recipeCallId !== undefined))
+                            call.arguments.recipeCallId !== undefined ||
+                            call.arguments.recipeCallIds !== undefined))
             )
         ) {
             return {

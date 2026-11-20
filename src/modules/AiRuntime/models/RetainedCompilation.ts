@@ -43,7 +43,18 @@ export type RetainedCompilation = RetainedCommandSet &
     (
         | { kind: 'transform' }
         | { kind: 'recipe'; recipe: AdoptedRecipe; metricRecipe?: MetricRecipeSource }
-        | { kind: 'preview'; measuredPreview: MeasuredPreview }
+        | {
+              kind: 'preview';
+              measuredPreview: MeasuredPreview;
+              /**
+               * A preview of several retained recipes also measures each shorter cumulative prefix of
+               * its batch, in step order, because admission reads every step's goals between that
+               * step's own prefixes; these are those measurements, absent for a one-source preview.
+               */
+              prefixPreviews?: readonly MeasuredPreview[];
+              /** The recipes a several-recipe preview holds, in batch order; one recipe rides `measuredPreview.recipeSource`. */
+              adoptedRecipes?: readonly AdoptedRecipe[];
+          }
         /**
          * The one `setProductionBrief` the application composed from the request, and the lines that
          * describe its change. It is confirmed alone and never grounded with other commands. `brief` is

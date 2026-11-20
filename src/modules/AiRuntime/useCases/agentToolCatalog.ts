@@ -36,6 +36,7 @@ import {
 import {
     ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS,
     ANALYSIS_MEASURE_MAX_ID_LENGTH,
+    ANALYSIS_MEASURE_MAX_PREVIEW_RECIPES,
     ANALYSIS_MEASURE_MAX_TARGETS,
 } from '../models/AnalysisMeasureLimits';
 import {
@@ -304,11 +305,18 @@ function getProjectMeasurementProperties(maxTargets: number) {
 function getAnalysisMeasureSchema(): ToolSchema {
     return tool(
         ANALYSIS_MEASURE_TOOL_NAME,
-        `Measure loudness, peak, dynamics, spectral, stereo and transient figures at the current revision; never audio. Scope master/project applies mute/solo; up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks/buses render isolated with inserts/send returns, without solo. Range: sectionId or startBeat/endBeat. Project takes neither proposal nor recipeCallId. Preview takes exactly one: recipeCallId from a successful earlier-turn recipe.expand receipt in this run, or proposal in command.batch.propose list form. Validate and preview exact commands without project changes; return baseline, preview and deltas over that scope/range. Adopt via this callId in command.batch.propose compiledCallIds.`,
+        `Measure loudness, peak, dynamics, spectral, stereo and transient figures at the current revision; never audio. Scope master/project applies mute/solo; up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks/buses render isolated with inserts/send returns, without solo. Range: sectionId or startBeat/endBeat. Project takes no proposal, recipeCallId or recipeCallIds. Preview takes exactly one: recipeCallId from a successful earlier-turn recipe.expand receipt in this run, recipeCallIds listing several such receipts (one per target of a multi-target change) to measure as one cumulative batch, or proposal in command.batch.propose list form. Validate and preview exact commands without project changes; return baseline, preview and deltas over that scope/range. Adopt via this callId in command.batch.propose compiledCallIds.`,
         {
             subject: { type: 'string', enum: ['project', 'preview'] },
             proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
             recipeCallId: { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH },
+            recipeCallIds: {
+                type: 'array',
+                minItems: 1,
+                maxItems: ANALYSIS_MEASURE_MAX_PREVIEW_RECIPES,
+                uniqueItems: true,
+                items: { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH },
+            },
             ...getProjectMeasurementProperties(ANALYSIS_MEASURE_MAX_TARGETS),
         },
         ['scope', 'range']
