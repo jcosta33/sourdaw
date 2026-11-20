@@ -104,11 +104,7 @@ describe('trackStrategy', () => {
         const bridge = (name: string, args: Record<string, unknown>, context = folderContext) =>
             bridgeTrackToolCall({ call: { name, arguments: args }, context, index: 0 });
 
-        it('bridges hide, fold, height and zoom to their payloads', () => {
-            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toEqual({
-                type: 'hideTrack',
-                payload: { trackId: 'track-vox', hidden: true },
-            });
+        it('bridges fold, height and zoom to their payloads', () => {
             expect(bridge('foldTrack', { trackId: 'track-drums-folder', folded: true })).toEqual({
                 type: 'foldTrack',
                 payload: { trackId: 'track-drums-folder', folded: true },
@@ -123,9 +119,11 @@ describe('trackStrategy', () => {
             });
         });
 
+        it('leaves hideTrack to no provider route while a hide has no visible effect', () => {
+            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toBeNull();
+        });
+
         it.each([
-            ['hideTrack', { trackId: 'ghost', hidden: true }],
-            ['hideTrack', { trackId: 'track-vox', hidden: 'yes' }],
             ['foldTrack', { trackId: 'track-vox', folded: true }],
             ['foldTrack', { trackId: 'ghost', folded: true }],
             ['setTrackHeight', { trackId: 'track-vox', height: 29 }],

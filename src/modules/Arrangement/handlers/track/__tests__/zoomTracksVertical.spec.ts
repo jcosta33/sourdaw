@@ -224,4 +224,57 @@ describe('handleZoomTracksVertical', () => {
             expect(handleZoomTracksVertical.validateSessionEntry?.({ ...entry, redoAction: undefined })).toBe(false);
         });
     });
+
+    describe('batch track list', () => {
+        const zoom = { type: 'zoomTracksVertical', payload: { delta: 10 } } as const;
+        const heightsOf = (description: ReturnType<typeof handleZoomTracksVertical.describe>) => {
+            const inverse = description.inverseAction;
+            if (inverse?.type !== 'restoreTrackHeights') {
+                return [];
+            }
+            return inverse.payload.replacement.map((entry) => `${entry.trackId}:${entry.height}`);
+        };
+
+        it('names a folder an earlier createFolder creates, and a copy an earlier duplicateTrack creates', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 64, devices: [] }] });
+            const create = { type: 'createFolder', payload: { name: 'F', folderTrackId: 'folder' } } as const;
+            const duplicate = { type: 'duplicateTrack', payload: { trackId: 't1', targetTrackId: 'copy' } } as const;
+
+            const description = handleZoomTracksVertical.describe(zoom, {
+                actions: [create, duplicate, zoom],
+                actionIndex: 2,
+            });
+
+            expect(heightsOf(description)).toEqual(['t1:64', 'folder:80', 'copy:64']);
+        });
+
+        it('leaves out a track an earlier removeTrack removes', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 't1', height: 64, devices: [] },
+                    { id: 't2', height: 80, devices: [] },
+                ],
+            });
+            const remove = { type: 'removeTrack', payload: { trackId: 't2' } } as const;
+
+            const description = handleZoomTracksVertical.describe(zoom, { actions: [remove, zoom], actionIndex: 1 });
+
+            expect(heightsOf(description)).toEqual(['t1:64']);
+        });
+
+        it.each([
+            [
+                'an action whose track id is minted when it runs',
+                { type: 'loadTrackTemplate', payload: { templateId: 'x' } },
+            ],
+            ['an addTrack that names no id', { type: 'addTrack', payload: { kind: 'audio' } }],
+            ['a duplicateTrack that names no target', { type: 'duplicateTrack', payload: { trackId: 't1' } }],
+        ] as const)('refuses a batch holding %s, naming its type', (_name, creator) => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 64, devices: [] }] });
+
+            expect(() => handleZoomTracksVertical.describe(zoom, { actions: [creator, zoom], actionIndex: 1 })).toThrow(
+                `${creator.type} creates a track whose id is not known`
+            );
+        });
+    });
 });

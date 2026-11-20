@@ -92,7 +92,7 @@ export type ExecutableAppActionValueRule =
           keywords?: readonly string[];
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           levelForm?: 'linear' | 'absolute-decibel' | 'relative-decibel';
-          direction?: 'pan';
+          direction?: 'pan' | 'vertical-zoom';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
           unit?: 'beat-duration' | 'stretch-ratio';
           descriptorUnitSource?: {

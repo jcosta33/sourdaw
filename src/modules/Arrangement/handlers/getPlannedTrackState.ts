@@ -84,6 +84,38 @@ function planCreatedBus(
     );
 }
 
+function planCreatedFolder(
+    action: ActionOf<'createFolder'>,
+    context: HandlerValidationContext,
+    _actionIndex: number,
+    trackId: string
+): Track | null {
+    if (action.payload.folderTrackId !== trackId) {
+        return null;
+    }
+    return projectTrackThroughPriorBatchActions(
+        createPlannedTrack({ id: trackId, name: action.payload.name, kind: 'folder', gain: 0.8 }),
+        context
+    );
+}
+
+function planDuplicatedTrack(
+    action: ActionOf<'duplicateTrack'>,
+    context: HandlerValidationContext,
+    actionIndex: number,
+    trackId: string
+): Track | null {
+    if (action.payload.targetTrackId !== trackId) {
+        return null;
+    }
+    // The copy starts as the source stands when the duplicate runs, so the source is read through the actions before it.
+    const source = getPlannedTrackState({ ...context, actionIndex }, action.payload.trackId);
+    if (source === null) {
+        return null;
+    }
+    return projectTrackThroughPriorBatchActions({ ...structuredClone(source), id: trackId }, context);
+}
+
 function planRestoredTrack(
     action: ActionOf<'restoreTrack'>,
     context: HandlerValidationContext,
@@ -159,7 +191,7 @@ export const plannedTrackByActionType: {
     restoreClipPlacement: noPlannedTrack,
     duplicateClip: noPlannedTrack,
     duplicateClipToNextBar: noPlannedTrack,
-    duplicateTrack: noPlannedTrack,
+    duplicateTrack: planDuplicatedTrack,
     removeClip: noPlannedTrack,
     renameClip: noPlannedTrack,
     splitClip: noPlannedTrack,
@@ -190,7 +222,7 @@ export const plannedTrackByActionType: {
     setBacteriaFactoryPatch: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
     createBus: planCreatedBus,
-    createFolder: noPlannedTrack,
+    createFolder: planCreatedFolder,
     setSend: noPlannedTrack,
     setWorkspaceMode: noPlannedTrack,
     openPreferencesDialog: noPlannedTrack,

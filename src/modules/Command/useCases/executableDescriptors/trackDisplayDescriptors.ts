@@ -15,28 +15,6 @@ const existingFolderTargetRules = [
 /** Track display edits change what the arrangement shows, never what plays. */
 export const trackDisplayDescriptors = [
     {
-        actionType: 'hideTrack',
-        risk: 'bounded-reversible',
-        description: 'Hide a track from the arrangement, or show it again. Playback is unchanged.',
-        intentPhrases: ['hide track', 'hide the track', 'show track', 'show the track', 'unhide track'],
-        targetRules: existingTrackTargetRules,
-        valueRules: [
-            {
-                argument: 'hidden',
-                kind: 'boolean-intent',
-                truePhrases: ['hide track', 'hide the track'],
-                falsePhrases: ['show track', 'show the track', 'unhide track'],
-            },
-        ],
-        parameters: {
-            properties: {
-                trackId: { type: 'string', description: 'Existing track ID' },
-                hidden: { type: 'boolean', description: 'true=hide, false=show' },
-            },
-            required: ['trackId', 'hidden'],
-        },
-    },
-    {
         actionType: 'foldTrack',
         risk: 'bounded-reversible',
         description: "Fold a folder track to hide its children's rows, or unfold it.",
@@ -93,7 +71,9 @@ export const trackDisplayDescriptors = [
         description: `Make every track row taller or shorter by one pixel delta, keeping each between ${MIN_TRACK_HEIGHT} and ${MAX_TRACK_HEIGHT}.`,
         intentPhrases: ['zoom tracks vertically', 'zoom tracks vertical'],
         targetRules: [],
-        valueRules: [{ argument: 'delta', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [
+            { argument: 'delta', kind: 'number-if-present', requiredInPrompt: true, direction: 'vertical-zoom' },
+        ],
         parameters: {
             properties: {
                 delta: {
@@ -109,7 +89,6 @@ export const trackDisplayDescriptors = [
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
 export const trackDisplayMutationIdentityRulesByType = {
-    hideTrack: TRACK_MUTATION_IDENTITY,
     foldTrack: TRACK_MUTATION_IDENTITY,
     setTrackHeight: TRACK_MUTATION_IDENTITY,
     zoomTracksVertical: SINGLETON_MUTATION_IDENTITY,
@@ -117,7 +96,6 @@ export const trackDisplayMutationIdentityRulesByType = {
 
 /** Whether applying the same command twice leaves the state one application leaves. */
 export const trackDisplayMutationIdempotenceByType = {
-    hideTrack: true,
     foldTrack: true,
     setTrackHeight: true,
     zoomTracksVertical: false,

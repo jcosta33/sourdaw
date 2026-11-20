@@ -1645,17 +1645,6 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
-        'hideTrack',
-        'Hide a track from the arrangement, or show it again. Playback is unchanged.',
-        {
-            trackId: { type: 'string', description: 'Existing track ID' },
-            hidden: { type: 'boolean', description: 'true=hide, false=show' },
-        },
-        ['trackId', 'hidden'],
-        'bounded-reversible',
-        false
-    ),
-    expectedCommand(
         'foldTrack',
         "Fold a folder track to hide its children's rows, or unfold it.",
         {
@@ -3065,19 +3054,6 @@ const EXPECTED_GROUNDING = [
         valueRules: [],
     },
     {
-        actionType: 'hideTrack',
-        intentPhrases: ['hide track', 'hide the track', 'show track', 'show the track', 'unhide track'],
-        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
-        valueRules: [
-            {
-                argument: 'hidden',
-                kind: 'boolean-intent',
-                truePhrases: ['hide track', 'hide the track'],
-                falsePhrases: ['show track', 'show the track', 'unhide track'],
-            },
-        ],
-    },
-    {
         actionType: 'foldTrack',
         intentPhrases: [
             'fold folder',
@@ -3109,7 +3085,9 @@ const EXPECTED_GROUNDING = [
         actionType: 'zoomTracksVertical',
         intentPhrases: ['zoom tracks vertically', 'zoom tracks vertical'],
         targetRules: [],
-        valueRules: [{ argument: 'delta', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [
+            { argument: 'delta', kind: 'number-if-present', requiredInPrompt: true, direction: 'vertical-zoom' },
+        ],
     },
 ] as const;
 

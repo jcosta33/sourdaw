@@ -137,7 +137,6 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setTrackGain', 'track', 'Arrangement'],
     ['setTrackPan', 'track', 'Arrangement'],
     ['setTrackColor', 'track', 'Arrangement'],
-    ['hideTrack', 'track', 'Arrangement'],
     ['foldTrack', 'track', 'Arrangement'],
     ['setTrackHeight', 'track', 'Arrangement'],
     ['zoomTracksVertical', 'track', 'Arrangement'],
@@ -375,6 +374,13 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
             'autoOrganizeProject',
             'loadTrackTemplate',
         ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'track',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Track.hidden is saved but no arrangement or mixer view reads it, so a hide has no visible effect; the command is registered once hidden tracks leave the arrangement.',
+        actionTypes: ['hideTrack'],
     },
     {
         kind: 'interim-unsupported',

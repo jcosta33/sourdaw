@@ -6,6 +6,7 @@ import { createTrack } from '../../models/Track';
 import { defaultTrackState, trackStore } from '../../stores/trackStore';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getPlannedTrackState, plannedTrackByActionType } from '../getPlannedTrackState';
+import { trackCreationByActionType } from '../trackCreationByActionType';
 
 function plan(prior: readonly AppAction[], trackId: string) {
     return getPlannedTrackState(
@@ -23,7 +24,12 @@ describe('getPlannedTrackState', () => {
         const none = plannedTrackByActionType.selectTrack;
         const creatingEntries = Object.entries(plannedTrackByActionType).filter(([, entry]) => entry !== none);
         const creating = creatingEntries.map(([type]) => type).sort();
-        expect(creating).toEqual(['addTrack', 'createBus', 'restoreTrack']);
+        expect(creating).toEqual(['addTrack', 'createBus', 'createFolder', 'duplicateTrack', 'restoreTrack']);
+        const classifiedEntries = Object.entries(trackCreationByActionType).filter(
+            ([, creation]) => creation === 'planned'
+        );
+        const classifiedPlanned = classifiedEntries.map(([type]) => type).sort();
+        expect(classifiedPlanned).toEqual(creating);
     });
 
     it('plans a track an earlier restoreTrack restores from its snapshot, through the actions after it', () => {
@@ -60,6 +66,41 @@ describe('getPlannedTrackState', () => {
         }
 
         expect(plan([{ type: 'restoreTrack', payload: snapshot }], 'other')).toBeNull();
+    });
+
+    it('plans a folder an earlier createFolder creates, under its payload id', () => {
+        const planned = plan([{ type: 'createFolder', payload: { name: 'Drums', folderTrackId: 'folder' } }], 'folder');
+
+        expect(planned).toMatchObject({ id: 'folder', kind: 'folder', name: 'Drums' });
+        expect(plan([{ type: 'createFolder', payload: { name: 'Drums' } }], 'folder')).toBeNull();
+    });
+
+    it('plans a duplicate as its source stands before it, copied under the target id', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 'source', name: 'Source', kind: 'audio', gain: 0.5 }), height: 120 }],
+        });
+
+        const planned = plan(
+            [
+                { type: 'setTrackHeight', payload: { trackId: 'source', height: 150 } },
+                { type: 'duplicateTrack', payload: { trackId: 'source', targetTrackId: 'copy' } },
+                { type: 'setTrackHeight', payload: { trackId: 'copy', height: 200 } },
+            ],
+            'copy'
+        );
+
+        expect(planned).toMatchObject({ id: 'copy', gain: 0.5, height: 200 });
+        expect(
+            plan(
+                [
+                    { type: 'setTrackHeight', payload: { trackId: 'source', height: 150 } },
+                    { type: 'duplicateTrack', payload: { trackId: 'source', targetTrackId: 'copy' } },
+                ],
+                'copy'
+            )?.height
+        ).toBe(150);
+        expect(plan([{ type: 'duplicateTrack', payload: { trackId: 'source' } }], 'copy')).toBeNull();
     });
 
     it('plans a track an earlier addTrack creates, under its name and gain', () => {
