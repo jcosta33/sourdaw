@@ -77,12 +77,14 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
             candidateNode.grandBouleControls?.ready &&
             (input.runtimeControls === undefined || candidateNode.grandBouleControls === input.runtimeControls)
     )?.grandBouleControls;
+    const trackId = track.id;
     // Native carriage can change while the same handle is mounted, including before
     // the Worker loads and publishes a connected handle.
-    const startPreviewNote: GrandBouleEngineHandle['startPreviewNote'] = ({ midiNote, velocity }) => {
-        if (isDeviceCarriedByNativeSession(track.id, input.deviceId)) {
+    function startPreviewNote(noteInput: Parameters<GrandBouleEngineHandle['startPreviewNote']>[0]) {
+        const { midiNote, velocity } = noteInput;
+        if (isDeviceCarriedByNativeSession(trackId, input.deviceId)) {
             return startNativeGrandBoulePreviewNote({
-                trackId: track.id,
+                trackId,
                 deviceId: input.deviceId,
                 note: midiNote,
                 velocity,
@@ -92,7 +94,7 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
             return controls.startPreviewNote(midiNote, velocity);
         }
         return undefined;
-    };
+    }
     if (controls === undefined) {
         return { ...createDisconnectedGrandBouleEngineHandle(), startPreviewNote };
     }

@@ -61,14 +61,16 @@ export function readNativeStripReports(value: unknown, command: string): AudioGr
         throw new TypeError(`${command} answered without reports: ${JSON.stringify(value)}`);
     }
     return (value as readonly unknown[]).map((entry) => {
-        const report = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
-        const kind = report?.kind;
-        const id = report?.id;
-        const deviceIds = readStringArray(report?.deviceIds);
+        if (typeof entry !== 'object' || entry === null) {
+            throw new Error(`${command} answered a malformed strip report: ${JSON.stringify(entry)}`);
+        }
+        const report = entry as Record<string, unknown>;
+        const { kind, id } = report;
+        const deviceIds = readStringArray(report.deviceIds);
         if ((kind !== 'track' && kind !== 'bus') || typeof id !== 'string' || deviceIds === null) {
             throw new Error(`${command} answered a malformed strip report: ${JSON.stringify(entry)}`);
         }
-        const rawTargets = report?.grandBoulePreviewTargets;
+        const rawTargets = report.grandBoulePreviewTargets;
         if (rawTargets === undefined) {
             return { kind, id, deviceIds };
         }
