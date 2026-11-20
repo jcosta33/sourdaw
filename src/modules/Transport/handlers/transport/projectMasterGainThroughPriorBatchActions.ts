@@ -114,6 +114,7 @@ export const masterGainProjectionByActionType: {
     setFermenterPatch: keepMasterPercent,
     setGrandBouleDeviceState: keepMasterPercent,
     setToasterFactoryKit: keepMasterPercent,
+    setGlutenFactoryPreset: keepMasterPercent,
     createBus: keepMasterPercent,
     createFolder: keepMasterPercent,
     setSend: keepMasterPercent,

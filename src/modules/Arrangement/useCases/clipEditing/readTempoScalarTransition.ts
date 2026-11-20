@@ -102,6 +102,7 @@ const tempoScalarTransitionByActionType: {
     setFermenterPatch: notATempoAction,
     setGrandBouleDeviceState: notATempoAction,
     setToasterFactoryKit: notATempoAction,
+    setGlutenFactoryPreset: notATempoAction,
     createBus: notATempoAction,
     createFolder: notATempoAction,
     setSend: notATempoAction,

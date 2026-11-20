@@ -52,6 +52,16 @@ const toasterFactoryKitReplayContract: SessionActionContract = {
     validateEntry: (entry) => getHandlerByType('setToasterFactoryKit')?.validateSessionEntry?.(entry) === true,
 };
 
+const glutenFactoryPresetReplayContract: SessionActionContract = {
+    actionType: 'setGlutenFactoryPreset',
+    operationVersion: 1,
+    role: 'forward',
+    validateArguments: (payload: unknown) =>
+        validateVersionedCommandArguments('setGlutenFactoryPreset', payload) &&
+        getHandlerByType('setGlutenFactoryPreset')?.validateSessionActionArguments?.(payload) === true,
+    validateEntry: (entry) => getHandlerByType('setGlutenFactoryPreset')?.validateSessionEntry?.(entry) === true,
+};
+
 /**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
@@ -79,6 +89,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         },
         grandBouleDeviceStateReplayContract,
         toasterFactoryKitReplayContract,
+        glutenFactoryPresetReplayContract,
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

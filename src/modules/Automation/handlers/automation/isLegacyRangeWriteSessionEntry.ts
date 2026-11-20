@@ -100,6 +100,7 @@ export const legacyRangeRemovalByActionType: {
     setFermenterPatch: notLegacyRangeWrite,
     setGrandBouleDeviceState: notLegacyRangeWrite,
     setToasterFactoryKit: notLegacyRangeWrite,
+    setGlutenFactoryPreset: notLegacyRangeWrite,
     createBus: notLegacyRangeWrite,
     createFolder: notLegacyRangeWrite,
     setSend: notLegacyRangeWrite,

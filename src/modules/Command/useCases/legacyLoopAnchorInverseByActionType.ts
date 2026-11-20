@@ -101,6 +101,7 @@ export const legacyLoopAnchorInverseByActionType: {
     setFermenterPatch: keepAction,
     setGrandBouleDeviceState: keepAction,
     setToasterFactoryKit: keepAction,
+    setGlutenFactoryPreset: keepAction,
     createBus: keepAction,
     createFolder: keepAction,
     setSend: keepAction,

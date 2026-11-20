@@ -263,6 +263,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setFermenterPatch: readEffectDeclaredEdits,
     setGrandBouleDeviceState: readEffectDeclaredEdits,
     setToasterFactoryKit: readEffectDeclaredEdits,
+    setGlutenFactoryPreset: readEffectDeclaredEdits,
     createBus: readEffectDeclaredEdits,
     createFolder: readEffectDeclaredEdits,
     setSend: readSendRoutingEdits,
