@@ -258,9 +258,10 @@ function assembledProof(
     cargoHome: string,
     carried: readonly string[] | undefined
 ): ProofAttempt {
-    return record.ecosystem === 'cargo'
-        ? cargoAssembledProof(root, record, sourceDirectory, cargoHome, carried)
-        : npmAssembledProof(root, record, carried);
+    if (record.ecosystem === 'cargo') {
+        return cargoAssembledProof(root, record, sourceDirectory, cargoHome, carried);
+    }
+    return npmAssembledProof(root, record, carried);
 }
 
 function archiveProofRefusal(

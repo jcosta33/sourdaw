@@ -19,6 +19,12 @@ import { getCommandInapplicabilityReason } from '../../useCases/getCommandInappl
 
 import { discoverCommands, searchCommands, updateRecentCommandIds, type CommandEntry } from './commandRegistry';
 
+const handlePaletteOpenChange = (open: boolean): void => {
+    if (!open) {
+        closeCommandPalette();
+    }
+};
+
 type CommandOptionProps = {
     cmd: CommandEntry;
     inapplicabilityReason: string | null;
@@ -191,8 +197,6 @@ export const CommandPalette = (): ReactElement | null => {
         }
     }
 
-    const close = closeCommandPalette;
-
     const execute = (entry: CommandEntry) => {
         if (getCommandInapplicabilityReason(entry) !== null) {
             return;
@@ -200,7 +204,7 @@ export const CommandPalette = (): ReactElement | null => {
         const onCommitted = () => {
             setRecentCommandIds((recentIds) => updateRecentCommandIds(recentIds, entry.id));
         };
-        close();
+        closeCommandPalette();
         if (typeof entry.action === 'function') {
             entry.action(onCommitted);
         } else {
@@ -209,6 +213,9 @@ export const CommandPalette = (): ReactElement | null => {
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.nativeEvent.isComposing) {
+            return;
+        }
         if (event.key === 'ArrowDown') {
             event.preventDefault();
             setSelectedIndex((index) => Math.min(index + 1, flattenedResults.length - 1));
@@ -222,14 +229,7 @@ export const CommandPalette = (): ReactElement | null => {
     };
 
     return (
-        <Dialog
-            open={commandPaletteOpen}
-            onOpenChange={(open) => {
-                if (!open) {
-                    close();
-                }
-            }}
-        >
+        <Dialog open={commandPaletteOpen} onOpenChange={handlePaletteOpenChange}>
             <DialogContent
                 className="max-w-md gap-0 overflow-hidden p-0"
                 aria-describedby={undefined}

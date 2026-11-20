@@ -45,6 +45,13 @@ boundaries.
    commit keeps its proven settlement. Missing-capture MIDI inverses refuse in any mode; saved audio stays replayable;
    history snapshots keep callback identity. Pair the group revert with an unrelated later musician edit and real
    Redo, from panel and thread callers.
+   Exercise no-op admission with a nonempty Redo stack. In #4962 (`5a2f81045f`), a duplicate modulation
+   destination retained its tuned amount but recorded a null-inverse entry and cleared Redo. The introducing
+   review stance is unknown. Map source A with a nondefault amount, create B, then Undo B. Submit A's same
+   destination at a different amount and repeat with a missing source. Each input must preserve raw CRDT heads,
+   projected mappings and both history stacks. Redo must restore B's original identity, and the unique mapping
+   must still undo and redo independently. Remove the mapping handler's `isNoop` predicate and
+   `src/modules/Automation/useCases/modulation/__tests__/modulationMatrixUndo.integration.spec.ts` must fail.
 3. **Transaction terminals and queued writes honor current authority (#576, #806, #229, #4071, #1949).** Failure: a
    scope or listener re-enters after commit, a terminal installs an older value, a trim outlives abort, or a
    null-journal write supersedes newer scoped truth. Probe: atomic port that publishes document A then calls a

@@ -31,6 +31,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     readMusicalRange: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: mocks.captureProjectIdentity,
     captureProjectRevision: mocks.captureProjectRevision,
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
 }));

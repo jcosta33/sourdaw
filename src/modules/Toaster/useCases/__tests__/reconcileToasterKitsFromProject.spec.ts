@@ -34,9 +34,10 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 import { createDefaultKit } from '../../models/ToasterKit';
-import { toToasterKitState } from '../../models/ToasterKitState';
-import { registerToasterDevice, toasterStore, updatePad } from '../../stores/toasterStore';
+import { fromToasterKitState, toToasterKitState } from '../../models/ToasterKitState';
+import { registerToasterDevice, selectPad, toasterStore, updateKit, updatePad } from '../../stores/toasterStore';
 import { initToasterKitPersistence } from '../initToasterKitPersistence';
+import { reconcileToasterKitFromProject } from '../reconcileToasterKitFromProject';
 import { reconcileToasterKitsFromProject } from '../reconcileToasterKitsFromProject';
 
 const DEVICE_ID = 'toaster-peer-1';
@@ -98,6 +99,38 @@ describe('reconcileToasterKitsFromProject', () => {
         expect(mocks.writeNative).toHaveBeenCalledTimes(1);
     });
 
+    it('restores the effective default on chunk removal without resetting the selected pad or mirroring the default', () => {
+        projectWith(toasterDevice(peerChunk()));
+        reconcileToasterKitsFromProject();
+        selectPad(DEVICE_ID, 3);
+        mocks.writeNative.mockClear();
+        mocks.controls.setPadParam.mockClear();
+
+        projectWith(toasterDevice(undefined));
+        reconcileToasterKitsFromProject();
+        reconcileToasterKitsFromProject();
+
+        expect(toasterStore.value?.[DEVICE_ID]?.kit).toEqual(createDefaultKit());
+        expect(toasterStore.value?.[DEVICE_ID]?.selectedPadIndex).toBe(3);
+        expect(mocks.controls.setPadParam).toHaveBeenCalledWith(3, 'engine_type', expect.any(Number));
+        expect(mocks.writeNative).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('keeps an ordinary session edit across an unrelated sweep while the chunk stays absent', () => {
+        projectWith(toasterDevice(undefined));
+        reconcileToasterKitsFromProject();
+        updatePad(DEVICE_ID, 3, { muted: true });
+        const preview = toasterStore.value?.[DEVICE_ID]?.kit;
+
+        projectWith(toasterDevice(undefined));
+        reconcileToasterKitsFromProject();
+
+        expect(preview?.pads[3]?.muted).toBe(true);
+        expect(toasterStore.value?.[DEVICE_ID]?.kit).toBe(preview);
+        expect(mocks.writeNative).not.toHaveBeenCalled();
+    });
+
     it('accepts a peer morph and B edit without echoing the peer chunk', () => {
         const kit = createDefaultKit();
         const target = structuredClone(kit.patterns[0]!);
@@ -132,6 +165,22 @@ describe('reconcileToasterKitsFromProject', () => {
 
         expect(toasterStore.value?.[DEVICE_ID]).toBeUndefined();
         expect(mocks.writeNative).not.toHaveBeenCalled();
+    });
+
+    it('fences a queued kit edit when the factory replacement commits before device registration', () => {
+        toasterStore.set({});
+        updateKit(DEVICE_ID, { masterGain: 0 });
+        const chunk = peerChunk();
+        projectWith(toasterDevice(chunk));
+
+        reconcileToasterKitFromProject(DEVICE_ID, { committedReplacement: true });
+        registerToasterDevice(DEVICE_ID, fromToasterKitState(chunk));
+
+        expect(toasterStore.value?.[DEVICE_ID]?.kit.masterGain).toBe(1);
+        expect(mocks.writeNative).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ trackId: TRACK_ID, deviceId: DEVICE_ID })
+        );
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     // The guard that makes the sweep affordable and loop-free: a change the

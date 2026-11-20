@@ -30,6 +30,7 @@ describe('changesCompSourceByActionType', () => {
             'moveClips',
             'nudgeClip',
             'pasteClip',
+            'relinkClipAudioSources',
             'removeClip',
             'removeTrack',
             'restoreClip',
