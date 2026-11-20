@@ -632,6 +632,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     // ── Mouse handlers ───────────────────────────────────────────────
     const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
+        if (dragRef.current.mode === 'lasso') {
+            return;
+        }
         // R-A13: cancel hover preview timer on mousedown
         if (hoverTimerRef.current !== null) {
             clearTimeout(hoverTimerRef.current);
@@ -736,6 +739,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 pendingStampRef.current = null;
                 return;
             } else if (lassoMode) {
+                if (event.button !== 0) {
+                    return;
+                }
                 lassoPathRef.current = [{ x, y: noteY }];
                 pendingStampRef.current = null;
                 setSelectedNoteIds(new Set());
@@ -1063,11 +1069,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>): void => {
+        const drag = dragRef.current;
+        if (drag.mode === 'lasso' && event.button !== 0) {
+            return;
+        }
         if (auditionRef.current) {
             auditionRef.current();
             auditionRef.current = null;
         }
-        const drag = dragRef.current;
 
         if (drag.mode === 'rubber-band') {
             const rb = rubberBandRef.current;
@@ -2002,6 +2011,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
         event.preventDefault();
+        cancelLasso();
         const canvas = canvasRef.current;
         if (!canvas) {
             return;

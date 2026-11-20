@@ -990,12 +990,60 @@ describe('usePianoRollInteractions', () => {
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
 
+        it.each([1, 2])('only starts the lasso on a primary press, not button %i', (button) => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            const origin = { clientX: 60, clientY: yForPitch(61), button };
+
+            fireEvent.mouseDown(canvas, origin);
+            fireEvent.mouseMove(canvas, { clientX: 180, clientY: yForPitch(61) });
+            fireEvent.mouseUp(canvas, origin);
+
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            [1, 4],
+            [2, 2],
+        ])('keeps the lasso active when button %i is pressed and released over a note', (button, mask) => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            const origin = { clientX: 60, clientY: yForPitch(61) };
+            fireEvent.mouseDown(canvas, { ...origin, buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(61), buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(59), buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(59), buttons: 1 });
+            const path = args.lassoPathRef.current;
+            setSelectedNoteIds.mockClear();
+
+            const noteBody = { clientX: 120, clientY: yForPitch(60), button };
+            fireEvent.mouseDown(canvas, { ...noteBody, buttons: 1 | mask });
+            fireEvent.mouseUp(canvas, { ...noteBody, buttons: 1 });
+
+            expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+            expect(args.lassoPathRef.current).toBe(path);
+            fireEvent.mouseUp(canvas, origin);
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['n1']));
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
         it.each([
             ['Escape', (canvas: HTMLElement) => expect(fireEvent.keyDown(canvas, { key: 'Escape' })).toBe(false)],
             ['canvas exit', (canvas: HTMLElement) => fireEvent.mouseLeave(canvas)],
             ['pointer cancellation', (canvas: HTMLElement) => fireEvent.pointerCancel(canvas)],
             ['canvas blur', (canvas: HTMLElement) => fireEvent.blur(canvas)],
             ['window blur', () => fireEvent.blur(window)],
+            [
+                'context menu',
+                (canvas: HTMLElement) => {
+                    const clientY = yForPitch(60);
+                    fireEvent.contextMenu(canvas, { clientX: 120, clientY, button: 2, buttons: 3 });
+                    expect(latest.current?.ctxMenu).toEqual({ x: 120, y: clientY, beat: 3 });
+                },
+            ],
         ])('cancels a lasso on %s and ignores a subsequent move and release', (_eventName, cancel) => {
             const { canvas, args } = renderRoll({ lassoMode: true });
             fireEvent.mouseDown(canvas, { clientX: 60, clientY: yForPitch(61) });
@@ -1006,7 +1054,8 @@ describe('usePianoRollInteractions', () => {
             setSelectedNoteIds.mockClear();
 
             cancel(canvas);
-            fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(61) });
+            fireEvent.mouseMove(canvas, { clientX: 120, clientY: yForPitch(60), buttons: 1 });
+            expect(latest.current?.hoverCursor).toBe('grab');
             fireEvent.mouseUp(canvas, { clientX: 60, clientY: yForPitch(61) });
 
             expect(args.lassoPathRef.current).toBeNull();
