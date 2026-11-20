@@ -5895,11 +5895,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/models/DeviceChainActionProjection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/models/DeviceParameter.ts": {
         "typescript/no-non-null-assertion": {
             "count": 1
@@ -5907,7 +5902,7 @@
     },
     "src/modules/Arrangement/models/DevicePatchWritePlan.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/Arrangement/models/InlineMidiGeometry.ts": {
