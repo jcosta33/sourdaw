@@ -1,8 +1,16 @@
 use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
 use clap_sys::ext::latency::{clap_host_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
+#[cfg(target_os = "linux")]
+use clap_sys::ext::posix_fd_support::CLAP_EXT_POSIX_FD_SUPPORT;
+#[cfg(any(target_os = "linux", all(unix, test)))]
+use clap_sys::ext::posix_fd_support::{clap_host_posix_fd_support, clap_posix_fd_flags};
 use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
 use clap_sys::ext::tail::{clap_host_tail, CLAP_EXT_TAIL};
+#[cfg(any(target_os = "linux", all(unix, test)))]
+use clap_sys::ext::timer_support::clap_host_timer_support;
+#[cfg(target_os = "linux")]
+use clap_sys::ext::timer_support::CLAP_EXT_TIMER_SUPPORT;
 /// CLAP Host implementation — provides the `clap_host_t` and host extensions.
 ///
 /// The CLAP spec requires the host to provide callback function pointers
@@ -12,7 +20,14 @@ use clap_sys::version::CLAP_VERSION;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+#[cfg(unix)]
+use std::sync::Arc;
 use std::sync::OnceLock;
+
+#[cfg(unix)]
+use crate::clap_run_loop::ClapRunLoop;
+#[cfg(any(target_os = "linux", all(unix, test)))]
+use clap_sys::id::clap_id;
 
 use crate::parameter_events::signal_pending_parameter_flush;
 
@@ -107,6 +122,11 @@ pub struct HostCallbackState {
     /// exactly the set the drain thread serves, so an instance with no install
     /// is one whose recorded ask nothing would ever carry.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
+    /// The timers and descriptors this instance registered through
+    /// `clap.timer-support` and `clap.posix-fd-support`. Shared with the
+    /// editor pump, which the wrapper joins once construction succeeds.
+    #[cfg(unix)]
+    run_loop: Arc<ClapRunLoop>,
 }
 
 impl std::fmt::Debug for HostCallbackState {
@@ -161,6 +181,12 @@ impl std::fmt::Debug for HostCallbackState {
 }
 
 impl HostCallbackState {
+    /// This instance's CLAP run loop.
+    #[cfg(unix)]
+    pub fn run_loop(&self) -> &Arc<ClapRunLoop> {
+        &self.run_loop
+    }
+
     /// Install the wake fired on a latency change. First install wins; a second
     /// call changes nothing and reports `false` so the caller can flag the bug.
     pub fn set_latency_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
@@ -663,6 +689,19 @@ unsafe extern "C" fn host_get_extension(
     if id == CLAP_EXT_TAIL {
         return &HOST_TAIL as *const clap_host_tail as *const c_void;
     }
+    // Offered on Linux alone. macOS and Windows editors run on the OS's own
+    // event loop and never ask, the shell pumps editor run loops only on Linux
+    // (`needsEditorRunLoopPump` in `electron/pluginGui.ts`), and POSIX
+    // descriptors do not exist on Windows. Offering either where nothing pumps
+    // would accept registrations that never fire.
+    #[cfg(target_os = "linux")]
+    if id == CLAP_EXT_TIMER_SUPPORT {
+        return &HOST_TIMER_SUPPORT as *const clap_host_timer_support as *const c_void;
+    }
+    #[cfg(target_os = "linux")]
+    if id == CLAP_EXT_POSIX_FD_SUPPORT {
+        return &HOST_POSIX_FD_SUPPORT as *const clap_host_posix_fd_support as *const c_void;
+    }
 
     std::ptr::null()
 }
@@ -904,6 +943,83 @@ unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
     if let Some(state) = unsafe { host_state(host) } {
         state.mark_tail_dirty();
     }
+}
+
+// ── clap_host_timer_support / clap_host_posix_fd_support extensions ─────
+//
+// Compiled where they are offered (Linux) and, for the unit tests, on every
+// unix; `host_get_extension` offers them only on Linux. Each routes to the
+// instance's `ClapRunLoop`, and a descriptor with no per-instance state has
+// nowhere to keep a registration, so it is refused.
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+pub(crate) static HOST_TIMER_SUPPORT: clap_host_timer_support = clap_host_timer_support {
+    register_timer: Some(host_register_timer),
+    unregister_timer: Some(host_unregister_timer),
+};
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+pub(crate) static HOST_POSIX_FD_SUPPORT: clap_host_posix_fd_support = clap_host_posix_fd_support {
+    register_fd: Some(host_register_fd),
+    modify_fd: Some(host_modify_fd),
+    unregister_fd: Some(host_unregister_fd),
+};
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+unsafe extern "C" fn host_register_timer(
+    host: *const clap_host,
+    period_ms: u32,
+    timer_id: *mut clap_id,
+) -> bool {
+    if timer_id.is_null() {
+        return false;
+    }
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    let Some(state) = (unsafe { host_state(host) }) else {
+        return false;
+    };
+    let id = state.run_loop().register_timer(period_ms);
+    // SAFETY: non-null (checked above); CLAP has the plugin pass a writable
+    // `clap_id` for the host to fill.
+    unsafe { timer_id.write(id) };
+    true
+}
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+unsafe extern "C" fn host_unregister_timer(host: *const clap_host, timer_id: clap_id) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    unsafe { host_state(host) }.is_some_and(|state| state.run_loop().unregister_timer(timer_id))
+}
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+unsafe extern "C" fn host_register_fd(
+    host: *const clap_host,
+    fd: i32,
+    flags: clap_posix_fd_flags,
+) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    unsafe { host_state(host) }.is_some_and(|state| state.run_loop().register_fd(fd, flags))
+}
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+unsafe extern "C" fn host_modify_fd(
+    host: *const clap_host,
+    fd: i32,
+    flags: clap_posix_fd_flags,
+) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    unsafe { host_state(host) }.is_some_and(|state| state.run_loop().modify_fd(fd, flags))
+}
+
+#[cfg(any(target_os = "linux", all(unix, test)))]
+unsafe extern "C" fn host_unregister_fd(host: *const clap_host, fd: i32) -> bool {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    unsafe { host_state(host) }.is_some_and(|state| state.run_loop().unregister_fd(fd))
 }
 
 #[cfg(test)]

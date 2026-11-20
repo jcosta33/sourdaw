@@ -51,6 +51,8 @@ const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
+#[cfg(unix)]
+use crate::editor_run_loop::{register_editor_run_loop, EditorRunLoopRegistration};
 use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
@@ -155,6 +157,14 @@ pub struct ClapWrapper {
     /// The window this plugin's editor is drawn into, for answering what the
     /// plugin asks of it. Installed and released with the resizer.
     editor_window: Option<SharedEditorWindow>,
+    /// This instance's place in the shared editor pump, which services the
+    /// timers and descriptors it registered through `clap.timer-support` and
+    /// `clap.posix-fd-support`. Taken only once construction has succeeded, so a
+    /// failed load leaves nothing behind in the pump, and given up first in
+    /// `Drop`, so no pass can call into the instance while it is torn down.
+    /// The shell pumps only on Linux, and only while an editor is open.
+    #[cfg(unix)]
+    run_loop_registration: Option<EditorRunLoopRegistration>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -1318,6 +1328,13 @@ impl ClapWrapper {
 
         eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
 
+        // Last, so every failure exit above leaves nothing in the pump.
+        // SAFETY: `plugin` is the live instance initialised above, on the loading
+        // (main) thread, and the wrapper built below gives the registration up
+        // before it destroys the instance.
+        #[cfg(unix)]
+        let run_loop_registration = Some(unsafe { join_editor_pump(&host_state, plugin) });
+
         Ok(Self {
             _library: None,
             entry: entry_ptr,
@@ -1335,6 +1352,8 @@ impl ClapWrapper {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1384,6 +1403,8 @@ impl ClapWrapper {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -3171,6 +3192,25 @@ unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
     }
 }
 
+/// Hand an instance's run loop the plugin it delivers to, then put it in the
+/// shared editor pump. Timers and descriptors the plugin registered during
+/// `init` are already in the run loop, and fire from the next pass.
+///
+/// # Safety
+/// `plugin` must be the live, initialised instance whose `host_data` is
+/// `host_state`, called on its main thread, and the returned registration must
+/// be dropped before the instance is destroyed.
+#[cfg(unix)]
+unsafe fn join_editor_pump(
+    host_state: &HostCallbackState,
+    plugin: *const clap_plugin,
+) -> EditorRunLoopRegistration {
+    // SAFETY: the live, initialised instance on its main thread, outliving the
+    // registration returned below (this fn's contract).
+    unsafe { host_state.run_loop().attach(plugin) };
+    register_editor_run_loop(Arc::clone(host_state.run_loop()))
+}
+
 /// Destroy an instance a load is abandoning before the wrapper takes ownership
 /// of it, so the entry's later `deinit` never runs with a live instance.
 ///
@@ -3997,6 +4037,13 @@ impl Drop for ClapWrapper {
             observe();
         }
 
+        // Out of the editor pump before any teardown, and waiting out a pass
+        // already inside this instance: a pass calls `on_timer` and `on_fd`,
+        // which must not overlap `destroy`. The run loop itself lives on in
+        // `host_state` until the fields drop, after `destroy`.
+        #[cfg(unix)]
+        drop(self.run_loop_registration.take());
+
         // Close GUI if it's still open
         if self.gui_open {
             self.close_gui();
@@ -4428,6 +4475,8 @@ mod tests {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,

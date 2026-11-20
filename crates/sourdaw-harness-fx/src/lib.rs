@@ -16,6 +16,8 @@
 
 mod clap_front;
 mod clap_gui;
+#[cfg(unix)]
+mod clap_run_loop;
 mod echo;
 pub mod state;
 mod vst3_front;

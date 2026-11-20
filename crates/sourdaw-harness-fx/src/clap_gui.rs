@@ -9,7 +9,9 @@
 //! [`crate::state::GuiRecord`]).
 
 use crate::clap_front::gui_of;
-use crate::state::{self, GuiCall, GUI_CALLS_KEPT};
+#[cfg(unix)]
+use crate::clap_run_loop::RunLoopFixture;
+use crate::state::{self, GuiCall, RunLoopRecord, GUI_CALLS_KEPT};
 use clap_sys::ext::gui::{
     clap_gui_resize_hints, clap_host_gui, clap_plugin_gui, clap_window, CLAP_EXT_GUI,
 };
@@ -87,6 +89,9 @@ pub(crate) struct GuiFixture {
     call_count: AtomicUsize,
     show_answer: AtomicU8,
     hide_answer: AtomicU8,
+    /// The editor's timers and descriptor, registered with the host's run loop.
+    #[cfg(unix)]
+    run_loop: RunLoopFixture,
 }
 
 impl GuiFixture {
@@ -99,12 +104,37 @@ impl GuiFixture {
             call_count: AtomicUsize::new(0),
             show_answer: AtomicU8::new(state::encode_answer(None)),
             hide_answer: AtomicU8::new(state::encode_answer(None)),
+            #[cfg(unix)]
+            run_loop: RunLoopFixture::new(host),
         }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn run_loop(&self) -> &RunLoopFixture {
+        &self.run_loop
+    }
+
+    /// From `plugin.init`: bind the host's `clap.gui`, and its run-loop
+    /// extensions where it offers them.
+    pub(crate) fn bind_host(&self) {
+        self.bind_host_gui();
+        #[cfg(unix)]
+        self.run_loop.bind_and_register_init_timer();
+    }
+
+    #[cfg(unix)]
+    fn run_loop_record(&self) -> RunLoopRecord {
+        self.run_loop.record()
+    }
+
+    #[cfg(not(unix))]
+    fn run_loop_record(&self) -> RunLoopRecord {
+        RunLoopRecord::default()
     }
 
     /// Ask the host for its `clap.gui`. From `plugin.init`, where gui.h
     /// expects a plugin to query host extensions.
-    pub(crate) fn bind_host_gui(&self) {
+    fn bind_host_gui(&self) {
         let host = self.host.get();
         if host.is_null() {
             return;
@@ -147,6 +177,7 @@ impl GuiFixture {
             self.call_count.load(Ordering::Relaxed),
             answers,
             self.can_resize.load(Ordering::Relaxed),
+            self.run_loop_record(),
         );
     }
 
@@ -256,12 +287,25 @@ unsafe extern "C" fn gui_create(
     is_floating: bool,
 ) -> bool {
     // SAFETY: the host passes the plugin it created.
-    !is_floating && unsafe { record(plugin, GuiCall::Create) }
+    let created = !is_floating && unsafe { record(plugin, GuiCall::Create) };
+    #[cfg(unix)]
+    if created {
+        // SAFETY: as above.
+        if let Some(gui) = unsafe { gui_of(plugin) } {
+            gui.run_loop.register_editor();
+        }
+    }
+    created
 }
 
 unsafe extern "C" fn gui_destroy(plugin: *const clap_plugin) {
     // SAFETY: the host passes the plugin it created.
     unsafe { record(plugin, GuiCall::Destroy) };
+    #[cfg(unix)]
+    // SAFETY: as above.
+    if let Some(gui) = unsafe { gui_of(plugin) } {
+        gui.run_loop.unregister_editor();
+    }
 }
 
 unsafe extern "C" fn gui_set_scale(_plugin: *const clap_plugin, _scale: f64) -> bool {

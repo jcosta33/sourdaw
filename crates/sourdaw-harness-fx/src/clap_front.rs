@@ -31,11 +31,15 @@ use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
 };
+#[cfg(unix)]
+use clap_sys::ext::posix_fd_support::CLAP_EXT_POSIX_FD_SUPPORT;
 use clap_sys::ext::render::{
     clap_plugin_render, clap_plugin_render_mode, CLAP_EXT_RENDER, CLAP_RENDER_REALTIME,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
 use clap_sys::ext::tail::{clap_plugin_tail, CLAP_EXT_TAIL};
+#[cfg(unix)]
+use clap_sys::ext::timer_support::CLAP_EXT_TIMER_SUPPORT;
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
 use clap_sys::id::{clap_id, CLAP_INVALID_ID};
@@ -282,7 +286,7 @@ pub(crate) unsafe fn gui_of<'a>(plugin: *const clap_plugin) -> Option<&'a GuiFix
 unsafe extern "C" fn init(plugin: *const clap_plugin) -> bool {
     // SAFETY: the host passes the plugin it created.
     if let Some(gui) = unsafe { gui_of(plugin) } {
-        gui.bind_host_gui();
+        gui.bind_host();
     }
     true
 }
@@ -367,6 +371,16 @@ unsafe extern "C" fn get_extension(
     // SAFETY: the host passes the plugin it created.
     if id == CLAP_EXT_GUI && unsafe { gui_of(plugin) }.is_some() {
         return &raw const GUI as *const c_void;
+    }
+    #[cfg(unix)]
+    // SAFETY: as above.
+    if id == CLAP_EXT_TIMER_SUPPORT && unsafe { gui_of(plugin) }.is_some() {
+        return &raw const crate::clap_run_loop::TIMER_SUPPORT as *const c_void;
+    }
+    #[cfg(unix)]
+    // SAFETY: as above.
+    if id == CLAP_EXT_POSIX_FD_SUPPORT && unsafe { gui_of(plugin) }.is_some() {
+        return &raw const crate::clap_run_loop::POSIX_FD_SUPPORT as *const c_void;
     }
     ptr::null()
 }
