@@ -117,12 +117,17 @@ pub const MAX_OFFLINE_RENDERS_IN_FLIGHT: usize = 2;
 /// The text a render refused for want of a slot starts with.
 pub const OFFLINE_RENDER_LIMIT_REACHED: &str = "offline-render-limit-reached";
 
+/// The text a render refused once quit has cancelled every render starts with.
+pub const OFFLINE_RENDER_CLOSED: &str = "offline-render-closed";
+
 /// The offline renders in flight — every admitted one, and by the id their
 /// caller named the ones that have one — the cancels that arrived before their
 /// render did, and the ids that recently finished.
 #[derive(Debug, Default)]
 pub struct OfflineRenders {
     admitted: Vec<Arc<OfflineRenderControl>>,
+    /// Set once quit has cancelled every render: nothing is admitted after.
+    closed: bool,
     in_flight: HashMap<String, Arc<OfflineRenderControl>>,
     pending_cancels: VecDeque<String>,
     recently_finished: VecDeque<String>,
@@ -133,6 +138,11 @@ impl OfflineRenders {
     /// registering it under `render_id` when it has one. Refused by name, with
     /// nothing taken, when every slot is held or the id is in use.
     fn admit(&mut self, render_id: Option<&str>) -> Result<Arc<OfflineRenderControl>, String> {
+        if self.closed {
+            return Err(format!(
+                "{OFFLINE_RENDER_CLOSED}: the application is quitting, so no offline render starts"
+            ));
+        }
         if self.admitted.len() >= MAX_OFFLINE_RENDERS_IN_FLIGHT {
             return Err(format!(
                 "{OFFLINE_RENDER_LIMIT_REACHED}: {MAX_OFFLINE_RENDERS_IN_FLIGHT} offline renders \
@@ -145,6 +155,20 @@ impl OfflineRenders {
         };
         self.admitted.push(Arc::clone(&control));
         Ok(control)
+    }
+
+    /// Cancel every admitted render, named or not, and admit none after: what
+    /// quit does, so nothing renders on past the plugin drain.
+    fn cancel_all(&mut self) {
+        self.closed = true;
+        for control in &self.admitted {
+            control.cancel();
+        }
+    }
+
+    /// How many renders hold a slot.
+    fn admitted_count(&self) -> usize {
+        self.admitted.len()
     }
 
     /// Give back the slot [`Self::admit`] handed `control`, and finish its id.
@@ -313,6 +337,30 @@ pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), S
         .map_err(|error| format!("Failed to lock offline renders: {error}"))?
         .cancel(&render_id);
     Ok(())
+}
+
+/// Cancel every offline render in flight and refuse every later one: the first
+/// step of the quit cascade (`shutdown::shutdown`). A poisoned registry is
+/// still cancelled: quit must not leave a render running because another
+/// panicked.
+pub(crate) fn cancel_every_offline_render(state: &AppState) {
+    match state.offline_renders.lock() {
+        Ok(mut renders) => renders.cancel_all(),
+        Err(poisoned) => poisoned.into_inner().cancel_all(),
+    }
+}
+
+/// How many offline renders still hold a slot, or `None` while a render holds
+/// the registry: the quit cascade polls this rather than wait on a lock a
+/// render needs to give its slot back.
+pub(crate) fn offline_renders_in_flight(state: &AppState) -> Option<usize> {
+    match state.offline_renders.try_lock() {
+        Ok(renders) => Some(renders.admitted_count()),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+            Some(poisoned.into_inner().admitted_count())
+        }
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
 }
 
 /// How an offline render reads a live instance's state, from the very runtime

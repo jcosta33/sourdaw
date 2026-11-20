@@ -111,6 +111,12 @@ pub trait UiThread: Send + Sync {
         task.run();
         Ok(())
     }
+
+    /// Run the work other threads have posted and are waiting on, when the
+    /// caller is the UI thread and is holding its turn — the quit cascade,
+    /// which waits on renders whose teardown is posted here. Does nothing
+    /// anywhere else, and nothing for a host with no queue of its own.
+    fn run_posted_work(&self) {}
 }
 
 /// A UI thread reached by posting work to a queue that an external pump drains.

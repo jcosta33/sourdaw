@@ -1705,6 +1705,76 @@ fn a_render_past_the_in_flight_limit_is_refused_by_name_until_a_slot_is_released
     });
 }
 
+/// Quit's first step cancels a hosted-effect render mid-flight, whatever its
+/// caller named it, and returns once the render has released its offline
+/// instance on the UI thread — well inside the stop budget.
+#[test]
+fn the_quit_step_cancels_an_offline_render_in_flight_and_returns_within_its_budget() {
+    let fx = InstalledFx::create("quit-cancel");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(None));
+
+    let (outcome, left_running, stopped_in, charged) = thread::scope(|scope| {
+        let rendering = scope.spawn(|| {
+            block_on_test(render_graph_offline_with(
+                batch(impulse_track(json!([fx_device()]))),
+                LONG_RENDER_FRAMES,
+                EXPORT_RATE,
+                Some("export-at-quit".to_string()),
+                &ui,
+                &state,
+                &seams,
+            ))
+        });
+        // The observable: the render is registered and has rendered a block.
+        loop {
+            let started = state
+                .offline_renders
+                .lock()
+                .expect("renders")
+                .in_flight("export-at-quit")
+                .is_some_and(|control| control.rendered_frames() > 0);
+            if started {
+                break;
+            }
+            assert!(
+                !rendering.is_finished(),
+                "the render ended before quit cancelled it"
+            );
+            thread::yield_now();
+        }
+        let mut charged = Duration::ZERO;
+        let started = std::time::Instant::now();
+        let left_running = crate::shutdown::stop_offline_renders(&state, &ui, &mut |poll| {
+            thread::sleep(poll);
+            charged += poll;
+            poll
+        });
+        let stopped_in = started.elapsed();
+        let outcome = rendering.join().expect("the render thread returns");
+        (outcome, left_running, stopped_in, charged)
+    });
+
+    let refusal = outcome
+        .map(|bytes| bytes.len())
+        .expect_err("a render cancelled at quit returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(left_running, 0, "the render gave its slot back");
+    assert!(
+        charged < crate::shutdown::OFFLINE_RENDER_STOP_BUDGET,
+        "the step stopped waiting before its budget ran out: {charged:?}"
+    );
+    assert!(
+        stopped_in < crate::shutdown::SHELL_FORCE_EXIT_DEADLINE,
+        "the step returned inside the shell's force-exit deadline: {stopped_in:?}"
+    );
+    watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
+}
+
 #[test]
 fn a_cancel_mid_render_stops_it_and_releases_its_clap_instance_on_the_ui_thread() {
     a_cancel_mid_render_stops_the_render_of(Format::Clap);

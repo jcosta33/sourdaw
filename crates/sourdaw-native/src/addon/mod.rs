@@ -279,9 +279,9 @@ impl SourdawNative {
         );
     }
 
-    /// Run the process-exit cascade: retire discovery, close every plugin
-    /// editor, sweep the retirement vec, then terminate every instance still
-    /// loaded.
+    /// Run the process-exit cascade: cancel every offline render and wait for
+    /// it, retire discovery, close every plugin editor, sweep the retirement
+    /// vec, then terminate every instance still loaded.
     ///
     /// A shell must call this on its quit path. The Tauri shell got the same
     /// steps from `RunEvent::Exit`; a Node shell has no equivalent hook, so the
