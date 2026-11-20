@@ -32,14 +32,19 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn<(message: string) => void>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
-    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
-    getTrackStrip: mocks.getTrackStrip,
-    matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
-    createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
-    mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
+        getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+        getTrackStrip: mocks.getTrackStrip,
+        matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
+        createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+        mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isDrumDevice: actual.isDrumDevice,
+    };
+});
 
 vi.mock('../../projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: mocks.projectTrackToLiveStrip }));
 

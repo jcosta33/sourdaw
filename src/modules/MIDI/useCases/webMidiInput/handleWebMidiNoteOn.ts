@@ -1,8 +1,14 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
-import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
+import {
+    applyNoteExpression,
+    audioEngine,
+    isBypassedNoteReceiver,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
+    startFaustNote,
+} from '#/modules/AudioEngine/useCases';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { type AdmittedChannelWheels } from '../../repositories/webMidi/captureAdmittedWheels';

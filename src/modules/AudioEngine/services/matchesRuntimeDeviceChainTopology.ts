@@ -1,6 +1,5 @@
-import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
-
 import type { TrackChannelStrip } from '../models/AudioEngineState';
+import { isBuiltinSynthDevice, isDrumDevice } from '../models/noteInputKindByDeviceType';
 import type { RuntimeGraphDeltaNode } from '../models/RuntimeGraphDelta';
 
 /** Selects persistent Web Audio slots without changing full project/native device records. */
