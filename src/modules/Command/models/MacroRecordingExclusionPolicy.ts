@@ -81,6 +81,7 @@ export const macroRecordingExcludesActionType: { readonly [Type in AppActionType
     setDeviceState: false,
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
+    setToasterFactoryKit: true,
     createBus: false,
     createFolder: false,
     setSend: false,

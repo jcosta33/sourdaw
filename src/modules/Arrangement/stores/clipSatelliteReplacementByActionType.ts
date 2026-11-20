@@ -90,6 +90,7 @@ export const clipSatelliteReplacementByActionType: {
     setDeviceState: noReplacements,
     setFermenterPatch: noReplacements,
     setGrandBouleDeviceState: noReplacements,
+    setToasterFactoryKit: noReplacements,
     createBus: noReplacements,
     createFolder: noReplacements,
     setSend: noReplacements,

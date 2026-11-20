@@ -14,6 +14,7 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
+import { ROW_HEIGHT } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 /**
@@ -189,6 +190,7 @@ const renderRoll = (overrides: Partial<HarnessArgs> = {}): { canvas: HTMLElement
         clipId: 'clip-1',
         trackId: 'track-1',
         beatWidth: BEAT_W,
+        rowHeight: ROW_HEIGHT,
         gridSnap: 1,
         scaleType: 'chromatic',
         scaleRoot: 0,
@@ -207,6 +209,7 @@ const renderRoll = (overrides: Partial<HarnessArgs> = {}): { canvas: HTMLElement
         notePreviewEnabled: false,
         drawPreviewRef: { current: null },
         rubberBandRef: { current: null },
+        lassoPathRef: { current: null },
         dragPreviewRef: { current: null },
         ...overrides,
     };

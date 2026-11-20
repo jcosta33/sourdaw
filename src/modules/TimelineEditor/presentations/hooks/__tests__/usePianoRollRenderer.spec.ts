@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
+import { ROW_HEIGHT, getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -111,6 +111,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     clipId: 'clip-1',
     trackId: 'track-1',
     beatWidth: BEAT_W,
+    rowHeight: ROW_HEIGHT,
     gridSnap: 1,
     scaleType: 'chromatic',
     scaleRoot: 0,
@@ -122,6 +123,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     showGhostNotes: false,
     drawPreviewRef: { current: null },
     rubberBandRef: { current: null },
+    lassoPathRef: { current: null },
     dragPreviewRef: { current: null },
     ...overrides,
 });
@@ -158,7 +160,57 @@ describe('usePianoRollRenderer', () => {
         expect(canvas.width).toBe(VIEWPORT_W);
         expect(canvas.height).toBe(2070);
         expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
-        expect(canvas.style.height).toBe('2070px');
+        expect(canvas.style.height).toBe('');
+    });
+
+    it('paints the live lasso in the scrolled note frame until the path is cleared', () => {
+        const path = [{ x: 100, y: 30 }];
+        const deps = buildDeps({ lassoPathRef: { current: path } });
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const lineTo = vi.spyOn(ctx, 'lineTo');
+        const setTransform = vi.spyOn(ctx, 'setTransform');
+        const setLineDash = vi.spyOn(ctx, 'setLineDash');
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+        vi.clearAllMocks();
+
+        path.push({ x: 190, y: 30 });
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(190, 30);
+        expect(setLineDash).toHaveBeenCalledWith([4, 3]);
+        vi.clearAllMocks();
+
+        runTick();
+        expect(drawImage).not.toHaveBeenCalled();
+
+        deps.scrollRef.current!.scrollLeft = 48;
+        runTick();
+        expect(setTransform).toHaveBeenLastCalledWith(1, 0, 0, 1, -48, 0);
+        expect(lineTo).toHaveBeenCalledWith(190, 30);
+        vi.clearAllMocks();
+
+        path.push({ x: 188, y: 81 });
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(188, 81);
+        vi.clearAllMocks();
+
+        deps.lassoPathRef.current = [
+            { x: 110, y: 30 },
+            { x: 176, y: 28 },
+            { x: 182, y: 77 },
+        ];
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(182, 77);
+        expect(lineTo).not.toHaveBeenCalledWith(188, 81);
+        vi.clearAllMocks();
+
+        deps.lassoPathRef.current = null;
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(setLineDash).not.toHaveBeenCalledWith([4, 3]);
     });
 
     // Issue #2299. A backing store sized to the whole arrangement made the
@@ -480,6 +532,18 @@ describe('usePianoRollRenderer', () => {
         runTick();
         expect(drawImage).toHaveBeenCalledTimes(5);
         expect(roundRect).not.toHaveBeenCalledWith(...rect(8, 66));
+    });
+
+    it.each([8, 32])('draws notes and resizes the backing store at row height %i', (height) => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const deps = buildDeps({
+            rowHeight: height,
+            notes: [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+        expect(deps.canvasRef.current!.height).toBe(22 + 128 * height);
+        expect(roundRect).toHaveBeenCalledWith(21, 67 * height + 1, 18, height - 2, 2);
     });
 
     it('draws each active note of the clip at its beat/pitch cell', () => {

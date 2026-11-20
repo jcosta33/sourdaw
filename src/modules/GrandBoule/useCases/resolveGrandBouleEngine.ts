@@ -1,6 +1,7 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import {
     ensureTrackStrip,
+    getTrackStrip,
     getAudioSampleRate,
     sendNativeLiveMidiControl,
     writeNativeBuiltinParameters,
@@ -11,6 +12,8 @@ import {
     createDisconnectedGrandBouleEngineHandle,
     type GrandBouleEngineHandle,
 } from '../repositories/grandBouleEngineHandle';
+
+import { type GrandBouleRuntimeControls } from './readGrandBouleRuntimeControls';
 
 /** The three pedals' controller numbers, as the wire carries them. */
 const CC_SUSTAIN_PEDAL = 64;
@@ -44,6 +47,7 @@ type ResolveGrandBouleEngineInput = {
      * store. Non-render callers can omit this; we fall back to a live read.
      */
     tracks?: readonly GrandBouleResolverTrack[];
+    runtimeControls?: GrandBouleRuntimeControls | null;
 };
 
 export type ResolvedGrandBouleEngine = GrandBouleEngineHandle;
@@ -57,13 +61,19 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         return createDisconnectedGrandBouleEngineHandle();
     }
 
-    const strip = ensureTrackStrip(track.id);
+    const strip = input.runtimeControls === undefined ? ensureTrackStrip(track.id) : getTrackStrip(track.id);
+    if (!strip) {
+        return createDisconnectedGrandBouleEngineHandle();
+    }
     // Scope to the addressed piano. `input.deviceId` located the owning track
     // above and was then discarded here, so on a track hosting two GrandBoules
     // the whole returned handle — noteOn, setParam, setSustain
     // — drove the first instance.
     const deviceNode = strip.deviceNodes.find(
-        (candidateNode) => candidateNode.deviceId === input.deviceId && candidateNode.grandBouleControls?.ready
+        (candidateNode) =>
+            candidateNode.deviceId === input.deviceId &&
+            candidateNode.grandBouleControls?.ready &&
+            (input.runtimeControls === undefined || candidateNode.grandBouleControls === input.runtimeControls)
     );
     if (deviceNode?.grandBouleControls === undefined) {
         return createDisconnectedGrandBouleEngineHandle();

@@ -11,7 +11,9 @@ describe('plannedDeviceWriteStepByActionType', () => {
             ([, entry]) => entry !== plain
         );
         const special = specialEntries.map(([type]) => type).sort();
-        expect(special).toEqual(['addTrack', 'createBus', 'setFermenterPatch', 'restoreTrack'].sort());
+        expect(special).toEqual(
+            ['addTrack', 'createBus', 'setFermenterPatch', 'setToasterFactoryKit', 'restoreTrack'].sort()
+        );
     });
 
     it('keeps an unrelated action as a command step and records no track id', () => {

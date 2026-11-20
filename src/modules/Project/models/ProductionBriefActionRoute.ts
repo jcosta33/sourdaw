@@ -86,6 +86,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setDeviceState: 'content',
     setFermenterPatch: 'content',
     setGrandBouleDeviceState: 'content',
+    setToasterFactoryKit: 'content',
     createBus: 'content',
     createFolder: 'content',
     setSend: 'content',

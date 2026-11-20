@@ -236,6 +236,7 @@ vi.mock('#/modules/Project/useCases', async () => {
         newProject: actual.newProject,
         pendingProjectReplacements: actual.pendingProjectReplacements,
         pickFiles: actual.pickFiles,
+        prepareProjectSaveSnapshot: actual.prepareProjectSaveSnapshot,
         saveProject: actual.saveProject,
         saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,
     };

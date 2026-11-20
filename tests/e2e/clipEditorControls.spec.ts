@@ -140,7 +140,7 @@ test.describe('Piano-roll — zoom', () => {
     });
 
     test('Zoom slider exposes a numeric value', async ({ page }) => {
-        const zoom = page.getByRole('slider', { name: /Piano roll zoom/i });
+        const zoom = page.getByRole('slider', { name: /Horizontal zoom/i });
         await expect(zoom).toBeVisible();
         // PianoRoll.tsx defaults `zoom` to 1 (`useState(1)`), rendered by
         // PianoRollToolbar.tsx as `zoom * 100`.

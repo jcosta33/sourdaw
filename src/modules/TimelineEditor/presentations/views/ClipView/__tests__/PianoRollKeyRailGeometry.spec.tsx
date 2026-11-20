@@ -84,10 +84,24 @@ vi.mock('../../../hooks/usePianoRollInteractions', () => ({
 }));
 
 vi.mock('../PianoRollToolbar', () => ({
-    PianoRollToolbar: ({ onToggleFolded }: { onToggleFolded: () => void }) => (
-        <button type="button" onClick={onToggleFolded}>
-            fold
-        </button>
+    PianoRollToolbar: ({
+        onToggleFolded,
+        onRowHeightChange,
+    }: {
+        onToggleFolded: () => void;
+        onRowHeightChange: (height: number) => void;
+    }) => (
+        <>
+            <button type="button" onClick={onToggleFolded}>
+                fold
+            </button>
+            <button type="button" onClick={() => onRowHeightChange(32)}>
+                large rows
+            </button>
+            <button type="button" onClick={() => onRowHeightChange(8)}>
+                small rows
+            </button>
+        </>
     ),
 }));
 
@@ -131,6 +145,34 @@ const expectLabelBesideRow = (label: HTMLElement, pitch: number, visiblePitches:
 };
 
 describe('PianoRoll key rail geometry', () => {
+    it('scales the rail and canvas together while preserving the visible row and horizontal scroll', () => {
+        const { rail, scroller } = renderRoll();
+        const canvas = screen.getByLabelText('Piano roll editor');
+        Object.defineProperty(scroller, 'scrollHeight', { value: 5000, configurable: true });
+        Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+        scroller.scrollTop = 22 + 67 * 16 + 15;
+        scroller.scrollLeft = 120;
+        fireEvent.click(screen.getByText('large rows'));
+        expect(scroller.scrollTop).toBe(22 + 67 * 32 + 30);
+        expect(scroller.scrollLeft).toBe(120);
+        expect(pxOf(rail.style.height)).toBe(22 + 128 * 32);
+        expect(pxOf(canvas.style.height)).toBe(22 + 128 * 32);
+        scroller.scrollTop = 22 + 67 * 32 + 31;
+        fireEvent.click(screen.getByText('small rows'));
+        expect(scroller.scrollTop).toBe(22 + 67 * 8 + 7);
+        expect(pxOf(rail.style.height)).toBe(22 + 128 * 8);
+        expect(pxOf(canvas.style.height)).toBe(22 + 128 * 8);
+    });
+
+    it('keeps the viewport position inside the ruler', () => {
+        const { scroller } = renderRoll();
+        Object.defineProperty(scroller, 'scrollHeight', { value: 5000, configurable: true });
+        Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+        scroller.scrollTop = 12;
+        fireEvent.click(screen.getByText('small rows'));
+        expect(scroller.scrollTop).toBe(12);
+    });
+
     it('places each key label on the canvas row of its pitch and sizes the rail to the canvas', () => {
         projectState.scaleName = 'chromatic';
         projectState.keyRoot = 0;

@@ -41,6 +41,7 @@ import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
@@ -673,8 +674,87 @@ async function createDivergedRelinkSourceAction(edit: 'source' | 'owner'): Promi
     return inverse;
 }
 
+function createToasterConflictFixture(): DivergedFixture {
+    type ToasterRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setToasterFactoryKit refuses after a validated kit source diverges',
+        actionType: 'setToasterFactoryKit',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Toaster registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const deviceId = 'toaster-conflict';
+            const trackId = 'toaster-owner';
+            const rawDevice = () => getCrdtDoc<ToasterRoot>('root')?.tracks.tracks[0]?.devices[0];
+            const before = getToasterPresetDeviceState('909-punchy');
+            const peer = getToasterPresetDeviceState('trap-heavy');
+            if (!before || !peer) {
+                throw new Error('Expected both factory kits');
+            }
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Toaster', kind: 'midi', withoutDefaultDevice: true }),
+                        devices: [
+                            {
+                                id: deviceId,
+                                name: 'Toaster',
+                                type: 'toaster',
+                                bypassed: false,
+                                parameterValues: {},
+                                deviceState: before,
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.deviceState).toEqual(before);
+
+            const inverse = {
+                type: 'setToasterFactoryKit',
+                payload: { trackId, deviceId, deviceIds: [deviceId], label: 'Load Rye 909', before, after: null },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<ToasterRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected the Toaster before the peer write');
+                    }
+                    device.deviceState = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.deviceState).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.deviceState).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Toaster fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
+    createToasterConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
         actionType: 'relinkClipAudioSources',

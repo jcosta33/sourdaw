@@ -1,10 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
+import { type MidiNoteOffPayload, type MidiNoteOnPayload, type MidiPedalCcPayload } from '#/modules/MIDI/events';
 
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
+import { initGrandBouleSubscribers } from '../../../useCases/grandBouleSubscriber';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 const projectTrackState = vi.hoisted(() => ({
@@ -13,6 +16,11 @@ const projectTrackState = vi.hoisted(() => ({
         selectedTrackId: string | null;
         ghostClips: never[];
     },
+}));
+
+const runtime = vi.hoisted(() => ({
+    nodes: [] as { deviceId: string; grandBouleControls: unknown }[],
+    read: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -46,13 +54,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     quantiseDeviceParameterValue: ({ value }: { value: number }) => value,
 }));
 
-// Non-spread listing of ensureTrackStrip, getAudioSampleRate, sendNativeLiveMidiControl and
-// writeNativeBuiltinParameters — resolveGrandBouleEngine imports the first two for the engine
-// readiness tile, the third to mirror a panel pedal onto the engine's own body, and the fourth to
-// mirror a calibration write onto the native body (#4302). `ensureTrackStrip` answers no device
-// nodes here, so the resolved handle is always disconnected and never calls it.
+// The strip seam holds only the runtime nodes each case installs; native writes remain observable
+// through the existing panel tests without constructing an audio engine.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
+    ensureTrackStrip: () => ({ deviceNodes: runtime.nodes, analyserNode: null }),
+    getTrackStrip: () => {
+        runtime.read();
+        return { deviceNodes: runtime.nodes, analyserNode: null };
+    },
     getAudioSampleRate: () => 44100,
     sendNativeLiveMidiControl: async () => true,
     writeNativeBuiltinParameters: () => {},
@@ -118,6 +127,7 @@ describe('GrandBoulePanel', () => {
         setGrandBouleEventBus(mockEventBus);
         resetGrandBouleStores();
         projectTrackState.current = null;
+        runtime.nodes = [];
         vi.clearAllMocks();
     });
 
@@ -131,6 +141,107 @@ describe('GrandBoulePanel', () => {
     it('renders the engine readiness tile as "idle" with no live engine', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
         expect(screen.getByText('idle')).toBeInTheDocument();
+    });
+
+    it('refreshes the first open panel when its addressed runtime becomes ready', async () => {
+        const bus = createEventBus<{
+            'audioDevice.loaded': { deviceId: string; deviceType: string };
+            'audioDevice.removed': { deviceId: string; deviceType: string };
+            'midi.noteOn': MidiNoteOnPayload;
+            'midi.noteOff': MidiNoteOffPayload;
+            'midi.pedalCc': MidiPedalCcPayload;
+        }>();
+        setGrandBouleEventBus(bus);
+        const stopSubscriber = initGrandBouleSubscribers({ eventBus: bus, logger: { info: vi.fn() } });
+        projectTrackState.current = {
+            tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', parameterValues: {} }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        };
+        const tracks = projectTrackState.current.tracks;
+        const retirement = new AbortController();
+        const controls = {
+            retirement: retirement.signal,
+            ready: true,
+            noteOn: vi.fn<(note: number, velocity: number) => void>(),
+            noteOff: vi.fn<(note: number) => void>(),
+            noteOnMidi2: vi.fn(),
+            setParam: vi.fn(),
+            setSustain: vi.fn(),
+            setUnaCorda: vi.fn(),
+            setSostenuto: vi.fn(),
+            setTemperament: vi.fn(),
+            allNotesOff: vi.fn(),
+        };
+        const view = render(<GrandBoulePanel deviceId="dev-1" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Piano keyboard' }));
+        expect(screen.getByText('Piano audio is unavailable.')).toBeInTheDocument();
+        runtime.nodes = [{ deviceId: 'dev-1', grandBouleControls: controls }];
+        await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
+        expect(screen.getByText('Click the piano keys to audition notes.')).toBeInTheDocument();
+        const canvas = screen.getByLabelText('Grand Boule interactive piano');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+        expect(controls.noteOn).toHaveBeenCalledOnce();
+        expect(controls.noteOff).toHaveBeenCalledWith(controls.noteOn.mock.calls[0]?.[0]);
+        const paramsBefore = controls.setParam.mock.calls.length;
+        await act(() => bus.emit('audioDevice.loaded', { deviceId: 'other', deviceType: 'grand-boule' }));
+        await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'other' }));
+        await act(() => bus.emit('audioDevice.removed', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
+        expect(controls.setParam).toHaveBeenCalledTimes(paramsBefore);
+        expect(screen.getByText('ready')).toBeInTheDocument();
+        const replacementRetirement = new AbortController();
+        const replacement = {
+            ...controls,
+            retirement: replacementRetirement.signal,
+            setParam: vi.fn(),
+            noteOn: vi.fn<(note: number, velocity: number) => void>(),
+            noteOff: vi.fn<(note: number) => void>(),
+        };
+        runtime.nodes = [{ deviceId: 'dev-1', grandBouleControls: replacement }];
+        await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
+        expect(replacement.setParam).toHaveBeenCalled();
+        fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 220, clientY: 400 });
+        fireEvent.pointerUp(canvas, { pointerId: 2 });
+        expect(replacement.noteOn).toHaveBeenCalledOnce();
+        expect(replacement.noteOff).toHaveBeenCalledWith(replacement.noteOn.mock.calls[0]?.[0]);
+        act(() => retirement.abort()); // a retired old body must not invalidate its successor
+        expect(screen.getByText('ready')).toBeInTheDocument();
+        replacement.ready = false;
+        act(() => replacementRetirement.abort());
+        expect(screen.getByText('Piano audio is unavailable.')).toBeInTheDocument();
+        expect(projectTrackState.current.tracks).toBe(tracks);
+        expect(executeAppAction).not.toHaveBeenCalled();
+        view.unmount();
+        const reopenedRetirement = new AbortController();
+        runtime.nodes = [
+            {
+                deviceId: 'dev-1',
+                grandBouleControls: { ...replacement, ready: true, retirement: reopenedRetirement.signal },
+            },
+        ];
+        const reopened = render(<GrandBoulePanel deviceId="dev-1" />);
+        expect(screen.getByText('ready')).toBeInTheDocument();
+        reopened.unmount();
+        runtime.read.mockClear();
+        act(() => reopenedRetirement.abort());
+        expect(runtime.read).not.toHaveBeenCalled();
+        runtime.nodes = [
+            {
+                deviceId: 'dev-1',
+                grandBouleControls: { ...replacement, ready: true, retirement: new AbortController().signal },
+            },
+        ];
+        const switched = render(<GrandBoulePanel deviceId="dev-1" />);
+        expect(screen.getByText('ready')).toBeInTheDocument();
+        switched.rerender(<GrandBoulePanel deviceId="another-device" />);
+        expect(screen.getByText('idle')).toBeInTheDocument();
+        switched.unmount();
+        runtime.read.mockClear();
+        await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
+        expect(runtime.read).not.toHaveBeenCalled();
+        stopSubscriber();
     });
 
     it('renders interactive control elements (buttons, knobs, or sliders)', () => {

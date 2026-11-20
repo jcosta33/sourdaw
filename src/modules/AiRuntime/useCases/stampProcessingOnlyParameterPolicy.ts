@@ -121,6 +121,7 @@ const stampByActionType: Stamp = {
     setDeviceState: leaveUnstamped,
     setFermenterPatch: leaveUnstamped,
     setGrandBouleDeviceState: leaveUnstamped,
+    setToasterFactoryKit: leaveUnstamped,
     createBus: leaveUnstamped,
     createFolder: leaveUnstamped,
     setSend: leaveUnstamped,

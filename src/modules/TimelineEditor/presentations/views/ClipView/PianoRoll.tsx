@@ -54,10 +54,13 @@ import {
     RULER_HEIGHT,
     EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
+    type PianoRollLassoPath,
     getVisiblePitches,
     getPianoRollExtentBeats,
     getPianoRollContentHeight,
     getPianoRollRowTop,
+    getPianoRollZoomAnchor,
+    clampPianoRollScrollTop,
 } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
@@ -162,6 +165,26 @@ export const PianoRoll = ({
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
+    const [rowHeight, setRowHeight] = useState(ROW_HEIGHT);
+    const zoomAnchorRef = useRef<number | null>(null);
+    const changeRowHeight = (height: number): void => {
+        openingScroll.settle();
+        if (height === rowHeight) {
+            return;
+        }
+        const viewport = scrollRef.current;
+        if (viewport) {
+            zoomAnchorRef.current = getPianoRollZoomAnchor(viewport.scrollTop, rowHeight, height);
+        }
+        setRowHeight(height);
+    };
+    useLayoutEffect(() => {
+        const viewport = scrollRef.current;
+        if (viewport && zoomAnchorRef.current !== null) {
+            viewport.scrollTop = clampPianoRollScrollTop(zoomAnchorRef.current, viewport);
+            zoomAnchorRef.current = null;
+        }
+    }, [rowHeight]);
     const setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>> = (change) => {
         let projections: Parameters<typeof setPianoRollSelection>[3] = [];
         if (takeProjections.size <= 256) {
@@ -356,6 +379,7 @@ export const PianoRoll = ({
     // ── Refs shared with interactions ────────────────────────────────
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
     const rubberBandRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+    const lassoPathRef = useRef<PianoRollLassoPath | null>(null);
     const dragPreviewRef = useRef<{
         noteIds: Set<string>;
         beatDelta: number;
@@ -374,6 +398,7 @@ export const PianoRoll = ({
         trackId,
         openedClipIds,
         beatWidth,
+        rowHeight,
         gridSnap,
         scaleType,
         scaleRoot: keyRoot,
@@ -385,6 +410,7 @@ export const PianoRoll = ({
         showGhostNotes,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
     });
 
@@ -393,6 +419,8 @@ export const PianoRoll = ({
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
+        cancelLasso,
         handleDoubleClick,
         handleKeyDown,
         handleContextMenu,
@@ -409,6 +437,7 @@ export const PianoRoll = ({
         takeProjections,
         focusedClipId,
         beatWidth,
+        rowHeight,
         gridSnap,
         scaleType,
         scaleRoot: keyRoot,
@@ -426,6 +455,7 @@ export const PianoRoll = ({
         draw,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
         constrainToScale,
         notePreviewEnabled,
@@ -466,7 +496,8 @@ export const PianoRoll = ({
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
-    const openingScroll = usePianoRollOpeningScroll({ scrollRef, clipId, notes, visiblePitches, beatWidth });
+    const contentHeight = getPianoRollContentHeight(visiblePitches.length, rowHeight);
+    const openingScroll = usePianoRollOpeningScroll({ scrollRef, clipId, notes, visiblePitches, beatWidth, rowHeight });
     // MPE lanes the edited track's instrument actually sounds — the toolbar's
     // documented per-track truth (audit MD-2), derived from the same engine
     // registry `AutomationLane` gates its lanes on.
@@ -516,6 +547,8 @@ export const PianoRoll = ({
                     onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
                     zoom={zoom}
                     onZoomChange={setZoom}
+                    rowHeight={rowHeight}
+                    onRowHeightChange={changeRowHeight}
                     openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
                     focusedClipId={focusedClipId}
                     onFocusedClipIdChange={setFocusedClipId}
@@ -546,7 +579,7 @@ export const PianoRoll = ({
                     {/* Piano keys sidebar */}
                     <DawSideRail
                         className="sticky left-0 z-10"
-                        style={{ width: PITCH_RAIL_WIDTH, height: getPianoRollContentHeight(visiblePitches.length) }}
+                        style={{ width: PITCH_RAIL_WIDTH, height: contentHeight }}
                     >
                         <DawGridHeaderCell className="absolute inset-x-0 top-0 px-0" style={{ height: RULER_HEIGHT }} />
                         {visiblePitches.map((pitch, row) => {
@@ -557,13 +590,13 @@ export const PianoRoll = ({
                                 <div
                                     key={row}
                                     className={cn(
-                                        'absolute inset-x-0 flex items-center justify-end pr-1 text-[10px]',
+                                        'absolute inset-x-0 flex items-center justify-end overflow-hidden pr-1 text-[10px] leading-none',
                                         isBlack
                                             ? 'bg-surface-base text-muted-foreground/40'
                                             : 'text-muted-foreground/60',
                                         isInScale && 'text-accent-primary/80 font-bold'
                                     )}
-                                    style={{ top: getPianoRollRowTop(row), height: ROW_HEIGHT }}
+                                    style={{ top: getPianoRollRowTop(row, rowHeight), height: rowHeight }}
                                 >
                                     {KEY_NAMES[noteIndex]}
                                     {Math.floor(pitch / 12) - 1}
@@ -592,7 +625,7 @@ export const PianoRoll = ({
                         <canvas
                             ref={canvasRef}
                             className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-                            style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor }}
+                            style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor, height: contentHeight }}
                             tabIndex={0}
                             // Marks this surface as a canvas editor. The global
                             // keyboard contract reads
@@ -609,7 +642,9 @@ export const PianoRoll = ({
                             }}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
+                            onMouseLeave={handleMouseLeave}
+                            onPointerCancel={cancelLasso}
+                            onBlur={cancelLasso}
                             onDoubleClick={handleDoubleClick}
                             onKeyDown={(event) => {
                                 openingScroll.settle();

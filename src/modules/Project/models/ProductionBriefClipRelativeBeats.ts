@@ -85,6 +85,7 @@ export const carriesClipRelativeBeatsByActionType: { readonly [Type in AppAction
     setDeviceState: false,
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
+    setToasterFactoryKit: false,
     createBus: false,
     createFolder: false,
     setSend: false,
