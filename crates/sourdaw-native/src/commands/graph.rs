@@ -3890,7 +3890,9 @@ fn map_batch(
     }
 
     if let Some(lease) = &batch.timeline_lease {
-        let owner = samples.timeline_lease_owner(lease)?;
+        let owner = samples
+            .timeline_lease_owner(lease)
+            .map_err(|e| e.to_string())?;
         if !batch.replace_topology
             && registry
                 .timeline_owner
@@ -3911,7 +3913,12 @@ fn map_batch(
         ops.extend(registry.take_topology_down());
     }
     if let Some(lease) = &batch.timeline_lease {
-        registry.timeline_owner = Some(samples.timeline_lease_owner(lease)?.into());
+        registry.timeline_owner = Some(
+            samples
+                .timeline_lease_owner(lease)
+                .map_err(|e| e.to_string())?
+                .into(),
+        );
     }
     let mut touched: Vec<String> = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
@@ -5191,11 +5198,13 @@ fn map_schedule_clip(
         ));
     }
     let native_track_id = strip.native_id;
-    let sample = samples.resolve_timeline_sample(
-        timeline_lease,
-        &playback.source.source_id,
-        playback.source.material_version.as_deref(),
-    )?;
+    let sample = samples
+        .resolve_timeline_sample(
+            timeline_lease,
+            &playback.source.source_id,
+            playback.source.material_version.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
     if rate <= 0.0 {
@@ -5600,7 +5609,7 @@ pub async fn apply_graph_commands(
         let samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
         if let Some(lease) = &batch.timeline_lease {
             if let Err(reason) = samples.timeline_lease_owner(lease) {
-                return result_json(&GraphApplyResultPayload::rejected(reason));
+                return result_json(&GraphApplyResultPayload::rejected(reason.to_string()));
             }
         } else if samples.residency.fenced() {
             return result_json(&GraphApplyResultPayload::rejected(
@@ -5877,13 +5886,16 @@ pub async fn apply_graph_commands(
     // revision or fence. Keep this exact lease alive through publication and
     // residency recording, rather than trusting only the generation check.
     let material_admission = if let Some(lease) = &batch.timeline_lease {
-        samples.timeline_lease_owner(lease).and_then(|owner| {
-            if working.timeline_owner.as_deref() == Some(owner) {
-                Ok(())
-            } else {
-                Err("Timeline graph belongs to another project owner".into())
-            }
-        })
+        samples
+            .timeline_lease_owner(lease)
+            .map_err(|e| e.to_string())
+            .and_then(|owner| {
+                if working.timeline_owner.as_deref() == Some(owner) {
+                    Ok(())
+                } else {
+                    Err("Timeline graph belongs to another project owner".into())
+                }
+            })
     } else if samples.residency.fenced() {
         Err("Graph batch requires a timeline material lease".into())
     } else {

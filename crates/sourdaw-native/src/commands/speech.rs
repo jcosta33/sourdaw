@@ -452,7 +452,8 @@ pub async fn load_whisper_model(
     model_path: String,
     state: &DictationState,
 ) -> Result<AsrStatus, String> {
-    let model_path = filesystem::resolve_existing_file_path(&model_path)?;
+    let model_path =
+        filesystem::resolve_existing_file_path(&model_path).map_err(|e| e.to_string())?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
     let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())

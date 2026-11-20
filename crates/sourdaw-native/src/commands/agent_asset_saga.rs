@@ -417,7 +417,9 @@ pub(crate) fn with_handles_for_test<T>(
 /// Where staged export bytes live: inside the IPC scratch root, which is the
 /// app's own storage rather than anywhere the user keeps work.
 fn staging_root() -> Result<PathBuf, String> {
-    Ok(ipc_temp_dir()?.join(STAGING_DIR_NAME))
+    Ok(ipc_temp_dir()
+        .map_err(|e| e.to_string())?
+        .join(STAGING_DIR_NAME))
 }
 
 fn staged_path_for(saga_id: &str) -> Result<PathBuf, String> {
@@ -595,7 +597,7 @@ pub async fn agent_asset_register_handle(
                 OPERATION_REGISTER_HANDLE,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::NotNeeded,
-                message,
+                message.to_string(),
             ));
         }
     };
@@ -660,7 +662,7 @@ pub async fn agent_asset_import(
     let size = fs::metadata(&path)
         .map_err(|error| format!("Failed to read asset metadata: {error}"))?
         .len();
-    ensure_file_ipc_size(size, "agent_asset_import")?;
+    ensure_file_ipc_size(size, "agent_asset_import").map_err(|e| e.to_string())?;
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -733,7 +735,8 @@ pub async fn agent_asset_stage_export(
     let owner = parse_owner(owner)?;
     validate_handle_id(&destination_handle_id)?;
     validate_sha256(&expected_sha256)?;
-    ensure_file_ipc_size(data.len() as u64, "agent_asset_stage_export")?;
+    ensure_file_ipc_size(data.len() as u64, "agent_asset_stage_export")
+        .map_err(|e| e.to_string())?;
     let saga_id = new_saga_id();
 
     if let Err(refusal) = resolve_handle(&destination_handle_id, AssetHandleMode::ReadWrite) {
@@ -1003,7 +1006,7 @@ fn finalize_claimed_saga(
                 AgentAssetSagaState::Failed,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::Available,
-                message,
+                message.to_string(),
             );
         }
     };
@@ -1031,7 +1034,7 @@ fn finalize_claimed_saga(
             AgentAssetSagaState::Failed,
             failure,
             AgentAssetCompensation::Available,
-            message,
+            message.to_string(),
         );
     }
 
