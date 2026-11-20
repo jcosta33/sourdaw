@@ -490,6 +490,41 @@ describe('handleSetDeviceParameter', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledExactlyOnceWith('t1', 'd1', 'masterGain', 0.42);
     });
 
+    it('keeps the recorded replay value when deleting another device’s Master parameter', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [{ id: 'd1', type: 'toaster', parameterValues: { masterGain: 0.61, master_gain: 0.42 } }],
+                },
+            ],
+        });
+        const result = handleSetDeviceParameter.execute({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'masterGain',
+                value: 0.77,
+                deleteParameter: true,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'toaster',
+                expectedDeviceIds: ['d1'],
+                expectedTrackFrozen: false,
+                expectedValuePresent: true,
+                expectedValue: 0.61,
+                automationRecordingPolicy: 'suppressed',
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mocks.setDeviceParameter).toHaveBeenCalledExactlyOnceWith('d1', 'masterGain', 0.77, {
+            deleteParameter: true,
+            automationRecordingPolicy: 'suppressed',
+        });
+    });
+
     it('detects an unchanged parameter value as a semantic no-op', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.5 } }] }],
