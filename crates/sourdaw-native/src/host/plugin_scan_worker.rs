@@ -3409,6 +3409,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     const ORPHAN_HELPER_PID_FILE_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER_PID_FILE";
     const DEADLINE_CHILD_MARKER_ENV: &str = "SOURDAW_TEST_DEADLINE_WATCHDOG_CHILD";
     const PLAIN_SPAWNER_PID_FILE_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_HELPER_PID_FILE";
+    const PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_LEAVES_GROUP";
 
     /// The stand-in spawner for the Linux kernel tie: runs a plain `sh`
     /// helper, which arms no watchdog, through the real bounded spawn. The
@@ -3418,10 +3419,20 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let Some(pid_file) = std::env::var_os(PLAIN_SPAWNER_PID_FILE_ENV) else {
             return;
         };
-        let mut command = Command::new("sh");
-        command
-            .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
-            .arg(pid_file);
+        let mut command = if std::env::var_os(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV).is_some() {
+            let mut perl = Command::new("perl");
+            // Joins the supervisor's group, so only its own pid still names it.
+            perl.args([
+                "-e",
+                "setpgrp(0, getppid()) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
+            ]);
+            perl
+        } else {
+            let mut sh = Command::new("sh");
+            sh.args(["-c", "echo $$ > \"$0\"; exec sleep 30"]);
+            sh
+        };
+        command.arg(pid_file);
         let _ = run_bounded_in(
             &HelperRegistry::new(),
             &TreeSupervisorLaunch::TestEntry,
@@ -3437,18 +3448,49 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     #[test]
     fn a_killed_spawner_takes_a_plain_helper_with_it() {
+        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(false);
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "plain helper {helper} outlived its killed spawner"
+        );
+    }
+
+    /// The helper's group no longer names it, so only a signal to its own
+    /// pid ends it, and until it ends the supervisor cannot reap it.
+    #[cfg(unix)]
+    #[test]
+    fn a_killed_spawner_takes_a_helper_that_left_its_group_with_it() {
+        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(true);
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "helper {helper} that left its group outlived its killed spawner"
+        );
+    }
+
+    /// Start [`plain_helper_spawner_child`], wait for its helper, kill the
+    /// spawner and return the helper's pid with the cleanup that still ends
+    /// the helper if an assertion fails; the caller holds it past its
+    /// assertions.
+    #[cfg(unix)]
+    fn plain_helper_of_a_killed_spawner(leaves_group: bool) -> (i32, Stragglers) {
         let pid_file =
             std::env::temp_dir().join(format!("sourdaw-plain-helper-{}", uuid::Uuid::new_v4()));
         let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
-        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+        let mut spawner =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        spawner
             .arg("--exact")
             .arg("host::plugin_scan_worker::tests::plain_helper_spawner_child")
             .env(PLAIN_SPAWNER_PID_FILE_ENV, &pid_file)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("the stand-in spawner should start");
+            .stderr(Stdio::null());
+        if leaves_group {
+            spawner.env(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV, "1");
+        }
+        let spawner = spawner.spawn().expect("the stand-in spawner should start");
         let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
         stragglers.children.push(spawner);
 
@@ -3461,11 +3503,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         for child in &mut stragglers.children {
             let _ = child.wait();
         }
-
-        assert!(
-            process_has_exited_within(helper, Duration::from_secs(3)),
-            "plain helper {helper} outlived its killed spawner"
-        );
+        (helper, stragglers)
     }
 
     /// The stand-in spawner: scans the hanging fixture through the real
