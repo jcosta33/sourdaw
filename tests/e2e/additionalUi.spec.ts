@@ -65,7 +65,7 @@ test.describe('Browser and prompt input', () => {
     });
 
     test('Prompt bar accepts typed text', async ({ page }) => {
-        const prompt = page.getByRole('textbox', { name: 'Prompt command input' });
+        const prompt = page.getByRole('combobox', { name: 'Prompt command input' });
         await prompt.fill('add a beat');
         await expect(prompt).toHaveValue('add a beat');
     });

@@ -1,9 +1,20 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { TrackAutomationSection } from '../TrackAutomationSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
+}));
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: () => ({ isCurrent: () => true }),
+}));
 
 // Mock external dependencies
 const mockGetBuiltinPlugins = vi.fn(() => []);
@@ -178,7 +189,59 @@ describe('TrackAutomationSection', () => {
         expect(mockRemoveAutomationLane).toHaveBeenCalledWith('lane-1');
     });
 
-    it('opens popover menu when clicking add button and adds automation lane on selecting gain', () => {
+    it('identifies an existing Gain lane and leaves it alone', () => {
+        mockUseStore.mockReturnValue({
+            lanes: [{ id: 'gain-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
+        });
+        render(<TrackAutomationSection track={mockTrack} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add automation lane' }));
+        const existing = screen.getByRole('menuitem', { name: /Gain.*existing lane/i });
+        expect(existing).toBeDisabled();
+        fireEvent.click(existing);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('distinguishes a track control from the same parameter on an instrument and identifies equivalent device targets', () => {
+        const track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'sampler-a',
+                    name: 'Crumbs',
+                    type: 'cRuMbS',
+                    parameterValues: { gain: 0, tune: 0 },
+                    bypassed: false,
+                },
+            ],
+        };
+        mockUseStore.mockReturnValue({
+            lanes: [
+                {
+                    id: 'sampler-gain',
+                    trackId: track.id,
+                    parameterId: 'sampler-a:gain',
+                    parameterName: 'Sampler gain',
+                    visible: true,
+                },
+                {
+                    id: 'sampler-tune',
+                    trackId: track.id,
+                    parameterId: 'cRuMbS:tune',
+                    parameterName: 'Sampler tune',
+                    visible: true,
+                },
+            ],
+        });
+        render(<TrackAutomationSection track={track} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add automation lane' }));
+        const trackGain = screen.getByText('Track').nextElementSibling;
+        expect(trackGain).toHaveAccessibleName('Gain');
+        expect(trackGain).toBeEnabled();
+        expect(screen.getByRole('menuitem', { name: /Tune.*existing lane/i })).toBeDisabled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('dispatches the selected target and explains a refused creation', async () => {
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
@@ -189,7 +252,14 @@ describe('TrackAutomationSection', () => {
         expect(gainOption).toBeInTheDocument();
 
         fireEvent.click(gainOption);
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
-        expect(screen.queryByRole('menu', { name: /Add automation lane/i })).not.toBeInTheDocument();
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'addAutomationLane',
+                payload: expect.objectContaining({ trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' }),
+            },
+            expect.anything()
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent(/Gain.*try again/i);
+        expect(screen.getByText('No automation lanes yet')).toBeInTheDocument();
     });
 });

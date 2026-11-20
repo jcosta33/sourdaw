@@ -482,12 +482,13 @@
           },
           {
             "name": "Run Browser AI WebGPU admission",
+            "id": "webgpu-admission",
             "timeout-minutes": 20,
             "shell": "bash",
             "env": {
               "DEBUG": "pw:api,pw:browser"
             },
-            "run": "set -o pipefail\nlog=browser-ai-webgpu-admission.log\nprintf '[browser-ai-webgpu] started %s\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" | tee \"$log\"\nset +e\npnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a \"$log\"\nstatuses=(\"${PIPESTATUS[@]}\")\nset -e\nprintf '[browser-ai-webgpu] completed %s command=%s log=%s\\n' \\\n  \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"${statuses[0]}\" \"${statuses[1]}\" | tee -a \"$log\"\nif [ \"${statuses[0]}\" -ne 0 ]; then\n  exit \"${statuses[0]}\"\nfi\nexit \"${statuses[1]}\"\n"
+            "run": "set -o pipefail\nlog=browser-ai-webgpu-admission.log\ncrash_dir=\nif runner_temp=$(cd -P -- \"${RUNNER_TEMP:-}\" 2>/dev/null && pwd -P) &&\n   staging=$(umask 077 && mktemp -d \"$runner_temp/sourdaw-webgpu.XXXXXXXX\" 2>/dev/null); then\n  crash_dir=\"$staging\"\nfi\nprintf '[browser-ai-webgpu] started %s\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" | tee \"$log\"\nset +e\nSOURDAW_BROWSER_AI_CRASH_DIRECTORY=\"$crash_dir\" pnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a \"$log\"\nstatuses=(\"${PIPESTATUS[@]}\")\nset -e\nfooter_status=0\nprintf '[browser-ai-webgpu] completed %s command=%s log=%s\\n' \\\n  \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"${statuses[0]}\" \"${statuses[1]}\" | tee -a \"$log\" || footer_status=$?\nif [ \"${statuses[0]}\" -ne 0 ]; then\n  if [ -n \"$crash_dir\" ] &&\n     SOURDAW_BROWSER_AI_CRASH_DIRECTORY=\"$crash_dir\" node scripts/browserAiMacCrashSummary.ts 2>/dev/null &&\n     [ -f vite-native-crash.json ] && [ ! -L vite-native-crash.json ]; then\n    # A checkout-relative path preserves the existing upload archive layout.\n    printf 'crash-summary=vite-native-crash.json\\n' 2>/dev/null >> \"${GITHUB_OUTPUT:-}\" || true\n  fi\n  exit \"${statuses[0]}\"\nfi\nif [ \"${statuses[1]}\" -ne 0 ]; then\n  exit \"${statuses[1]}\"\nfi\nexit \"$footer_status\"\n"
           },
           {
             "name": "Upload Browser AI WebGPU diagnostics",
@@ -496,7 +497,7 @@
             "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "browser-ai-webgpu-diagnostics",
-              "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n",
+              "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n${{ steps.webgpu-admission.outputs.crash-summary }}\n",
               "retention-days": 7,
               "if-no-files-found": "warn"
             }
@@ -845,7 +846,7 @@
         "needs": "decide",
         "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 45,
+        "timeout-minutes": 55,
         "strategy": {
           "fail-fast": false,
           "matrix": {
@@ -863,7 +864,8 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
               "fetch-depth": 0,
-              "persist-credentials": false
+              "persist-credentials": false,
+              "ref": "${{ github.sha }}"
             }
           },
           {
@@ -900,7 +902,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
@@ -909,7 +911,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 2
             },
-            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts coverage-shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
@@ -918,6 +920,86 @@
               "SHARD": "${{ matrix.shard }}"
             },
             "run": "printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### Unit suite shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Upload unit coverage shard",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "unit-coverage-shard-${{ github.run_attempt }}-${{ matrix.shard }}",
+              "path": "${{ runner.temp }}/unit-coverage-shard/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "unit-coverage": {
+        "name": "PR unit coverage",
+        "needs": [
+          "decide",
+          "unit"
+        ],
+        "if": "(needs.decide.outputs.web == 'true')",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Download unit coverage shards",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "pattern": "unit-coverage-shard-${{ github.run_attempt }}-*",
+              "merge-multiple": true,
+              "path": "${{ runner.temp }}/unit-coverage-input/"
+            }
+          },
+          {
+            "name": "Enforce PR coverage",
+            "id": "enforce",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "COVERAGE_SHARDS": "${{ runner.temp }}/unit-coverage-input/",
+              "COVERAGE_REPORT": "${{ runner.temp }}/unit-coverage-report/"
+            },
+            "run": "node scripts/unitCoverageGate.ts"
+          },
+          {
+            "name": "Upload unit coverage report",
+            "if": "${{ !cancelled() && steps.enforce.outcome != 'skipped' }}",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "pr-unit-coverage-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/unit-coverage-report/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
           }
         ]
       },
@@ -1413,6 +1495,7 @@
           "lint",
           "boundaries",
           "unit",
+          "unit-coverage",
           "tooling-unit",
           "smoke",
           "build",
@@ -1433,7 +1516,7 @@
               "RESULTS": "${{ toJSON(needs) }}",
               "PULL_REQUEST": "${{ github.event.pull_request != null }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"unit-coverage\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"unit-coverage\"].result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }
@@ -1728,7 +1811,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
@@ -1978,6 +2061,13 @@
             "run": "pnpm desktop:build"
           },
           {
+            "name": "Capture the Fermenter build receipt",
+            "id": "capture-fermenter",
+            "if": "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}",
+            "continue-on-error": true,
+            "run": "node scripts/proveDesktopFermenter.ts --capture --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\""
+          },
+          {
             "name": "Measure the packaged app",
             "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
           },
@@ -2004,6 +2094,75 @@
               "name": "desktop-agent-workspace-${{ github.sha }}",
               "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
               "retention-days": 90
+            }
+          },
+          {
+            "name": "Prove Fermenter in the packaged app",
+            "id": "prove-fermenter",
+            "if": "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}",
+            "continue-on-error": true,
+            "timeout-minutes": 8,
+            "env": {
+              "FERMENTER_CAPTURE_OUTCOME": "${{ steps.capture-fermenter.outcome }}"
+            },
+            "run": "status=0\nnode scripts/proveDesktopFermenter.ts --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" \\\n  --json \"$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" || status=$?\ncase \"$status\" in\n  0) verdict=proven ;;\n  1) verdict=failed ;;\n  *) verdict=not-run ;;\nesac\nprintf 'Fermenter packaged proof — **%s**\\n' \"$verdict\" >> \"$GITHUB_STEP_SUMMARY\"\nif [ \"$status\" -ne 0 ]; then\n  echo \"::warning::Fermenter packaged proof reported $verdict\"\nfi\nexit \"$status\"\n"
+          },
+          {
+            "name": "Upload the Fermenter proof record",
+            "if": "${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}",
+            "continue-on-error": true,
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "desktop-fermenter-${{ github.sha }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/sourdaw-fermenter-proof-${{ github.run_id }}-${{ github.run_attempt }}.json",
+              "retention-days": 7,
+              "if-no-files-found": "error"
+            }
+          },
+          {
+            "name": "Prove premium editor mounts in the packaged app",
+            "id": "prove-premium-editors",
+            "if": "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}",
+            "continue-on-error": true,
+            "timeout-minutes": 15,
+            "env": {
+              "FERMENTER_CAPTURE_OUTCOME": "${{ steps.capture-fermenter.outcome }}"
+            },
+            "run": "node scripts/proveDesktopFermenter.ts --family --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" \\\n  --json \"$RUNNER_TEMP/sourdaw-premium-editors-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\"\n"
+          },
+          {
+            "name": "Upload the premium editor proof record",
+            "if": "${{ !cancelled() && (steps.prove-premium-editors.outcome == 'success' || steps.prove-premium-editors.outcome == 'failure') }}",
+            "continue-on-error": true,
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "desktop-premium-editors-${{ github.sha }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/sourdaw-premium-editors-${{ github.run_id }}-${{ github.run_attempt }}.json",
+              "retention-days": 7,
+              "if-no-files-found": "error"
+            }
+          },
+          {
+            "name": "Prove premium editor workspace in the packaged app",
+            "id": "prove-editor-workspace",
+            "if": "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}",
+            "continue-on-error": true,
+            "timeout-minutes": 15,
+            "env": {
+              "FERMENTER_CAPTURE_OUTCOME": "${{ steps.capture-fermenter.outcome }}"
+            },
+            "run": "node scripts/proveDesktopFermenter.ts --workspace --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" \\\n  --json \"$RUNNER_TEMP/sourdaw-editor-workspace-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\"\n"
+          },
+          {
+            "name": "Upload the premium editor workspace proof record",
+            "if": "${{ !cancelled() && (steps.prove-editor-workspace.outcome == 'success' || steps.prove-editor-workspace.outcome == 'failure') }}",
+            "continue-on-error": true,
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "desktop-editor-workspace-${{ github.sha }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/sourdaw-editor-workspace-${{ github.run_id }}-${{ github.run_attempt }}.json",
+              "retention-days": 7,
+              "if-no-files-found": "error"
             }
           }
         ]

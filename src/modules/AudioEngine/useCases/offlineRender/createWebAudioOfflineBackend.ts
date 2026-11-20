@@ -91,6 +91,8 @@ export type WebAudioOfflineBackend = AudioGraphBackend & {
 
 /** Command kinds an offline render cannot answer, with the reason a caller needs. */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'start-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
+    'release-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
     'set-grinder-model': 'native prepared NAM operations cannot be executed by the web offline backend',
     'insert-device': 'an offline render builds each device chain once, at strip creation',
     'remove-device': 'an offline render builds each device chain once, at strip creation',
@@ -398,6 +400,8 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 return null;
             case 'insert-device':
             case 'remove-device':
+            case 'start-grand-boule-preview':
+            case 'release-grand-boule-preview':
             case 'set-transport':
             case 'set-monitor-shadow':
             case 'set-master-gain':

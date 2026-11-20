@@ -646,6 +646,63 @@ describe('the bacteria body', () => {
         });
     });
 
+    it('projects the saved Bacteria band override without a later native broadcast', () => {
+        const saved = {
+            bitDepth: 16,
+            band2_bitDepth: 4,
+            band4_bitDepth: 8,
+            inputGain: 2,
+            band2_inputGain: 10,
+            unfamiliarControl: 7,
+        };
+
+        expect(bodyOf('bacteria').projectPatch(saved)).toEqual({
+            band0_bitDepth: 16,
+            band1_bitDepth: 16,
+            band2_bitDepth: 4,
+            band3_bitDepth: 16,
+            band4_bitDepth: 8,
+            band5_bitDepth: 16,
+            inputGain: 2,
+            band2_inputGain: 10,
+            unfamiliarControl: 7,
+        });
+    });
+
+    it('protects the saved active Bacteria crossover from dormant neighbors in native replay', () => {
+        const saved = Object.freeze({
+            bandCount: 3,
+            crossoverFreq2: 4000,
+            crossoverFreq3: 2500,
+            crossoverFreq4: 3000,
+        });
+
+        expect(bodyOf('bacteria').projectPatch(saved)).toEqual({
+            bandCount: 3,
+            crossoverFreq2: 4000,
+            crossoverFreq3: 4000,
+            crossoverFreq4: 4000,
+        });
+        expect(saved.crossoverFreq3).toBe(2500);
+    });
+
+    it('leaves non-finite Bacteria values for native wire validation', () => {
+        const saved = {
+            bitDepth: Number.NaN,
+            band0_bitDepth: 16,
+            band1_bitDepth: 16,
+            band2_bitDepth: 4,
+            band3_bitDepth: 16,
+            band4_bitDepth: 16,
+            band5_bitDepth: 16,
+            bandCount: 3,
+            crossoverFreq2: 4000,
+            crossoverFreq3: Number.NEGATIVE_INFINITY,
+        };
+
+        expect(bodyOf('bacteria').projectPatch(saved)).toEqual(saved);
+    });
+
     // The wire narrows every value to an `f32`, and shape is the whole of what
     // the carrier refuses by: a non-number has no value to send, and a key a
     // hyphen or a space breaks the shape would refuse the whole batch if it

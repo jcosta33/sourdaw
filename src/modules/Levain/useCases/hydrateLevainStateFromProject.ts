@@ -8,24 +8,9 @@ import { hydrateLevainStateFromDevice } from './hydrateLevainStateFromDevice';
  * Read back the Levain state project truth holds for a device, or `null` when it
  * holds none.
  *
- * The counterpart to `commitLevainDeviceState`, and the half that makes an
- * instrument choice survive a reload: registration alone gives every device the
- * default patch, so without this the document could hold a perfectly good
- * instrument id that nothing ever reads back — which is exactly why a reopened
- * orchestral arrangement played violin-1 on the cello, horn and timpani tracks.
- *
- * A pure read on purpose, matching `hydrateToasterKitFromProject`. The resolved
- * state is handed to the caller so the device's session entry is *created* holding
- * it, in one store write. Loading it afterwards would work too, but the second
- * change is indistinguishable from a user edit, so the persistence subscriber would
- * mirror the freshly loaded patch straight back into the document and dirty a
- * project nobody had touched.
- *
- * Instrument identity comes from `Device.deviceState` when the user selected one;
- * otherwise the module default remains the identity. Numeric patch values come from
- * `Device.parameterValues` and overlay that instrument's defaults, so reopening a
- * project reconstructs the same engine state that live registration and offline
- * rendering apply even when an older file has no opaque Levain chunk.
+ * Registration and offline rendering initialize from this same projection.
+ * Numeric project settings overlay the chosen instrument's defaults. A device
+ * with no saved identity uses the default instrument without authoring a chunk.
  */
 export function hydrateLevainStateFromProject(deviceId: string): LevainState | null {
     const tracks = trackStore.value?.tracks;

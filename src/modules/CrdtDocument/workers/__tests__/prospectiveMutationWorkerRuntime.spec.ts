@@ -19,7 +19,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
-import { parseProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
+import { encodeBoundedMutationSequence } from '../encodeBoundedMutationSequence';
+import { parseProspectiveMutationWorkerRequest } from '../parseProspectiveMutationWorkerRequest';
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
 
 vi.mock('@automerge/automerge/slim', async (importOriginal) => {
@@ -60,6 +61,136 @@ function fixture() {
 }
 
 describe('private canonical materialization Worker runtime', () => {
+    it('keeps a bounded no-op on the original native heads with no changes', () => {
+        const { initial, mutation } = fixture();
+        const encoding = clone(initial, { actor });
+        try {
+            const heads = getHeads(initial);
+            expect(
+                materializeProspectiveMutation({
+                    seed: save(encoding),
+                    actor,
+                    heads,
+                    preparationPolicy: 'bounded-native-sequence-v1',
+                    mutation: { ...mutation, value: mutation.baseValue },
+                })
+            ).toEqual({ changes: [], heads, sequence: { changeCount: 0, operationCount: 0 } });
+        } finally {
+            native.free(encoding);
+            native.free(initial);
+        }
+    });
+
+    it('refuses to split a native history with two edits since capture', () => {
+        const initial = native.from({ markers: 0 }, { actor });
+        const heads = native.getHeads(initial);
+        const first = native.change(native.clone(initial, { actor }), (draft) => {
+            draft.markers = 1;
+        });
+        const second = native.change(first, (draft) => {
+            draft.markers = 2;
+        });
+        try {
+            expect(native.getChangesSince(second, heads)).toHaveLength(2);
+            expect(() => encodeBoundedMutationSequence(second, heads)).toThrow(
+                'Bounded native preparation requires one canonical no-author change'
+            );
+        } finally {
+            native.free(second);
+            native.free(initial);
+        }
+    });
+
+    it('refuses an indivisible native string operation above the uncompressed bound', () => {
+        const initial = native.from({ text: new native.ImmutableString('') }, { actor });
+        const heads = native.getHeads(initial);
+        const changed = native.change(native.clone(initial, { actor }), (draft) => {
+            draft.text = new native.ImmutableString('x'.repeat(65_536));
+        });
+        try {
+            const [bytes] = native.getChangesSince(changed, heads);
+            if (!bytes) {
+                throw new Error('Expected one actual native string change');
+            }
+            expect(native.decodeChange(bytes).ops).toHaveLength(1);
+            expect(() => encodeBoundedMutationSequence(changed, heads)).toThrow(
+                'Native sequence change exceeds its uncompressed bound'
+            );
+        } finally {
+            native.free(changed);
+            native.free(initial);
+        }
+    });
+
+    it('bounds an explicitly requested native sequence while retaining the actual canonical target', () => {
+        const initial = from({ slot: { text: '' } }, { actor });
+        const result = materializeProspectiveMutation({
+            seed: save(clone(initial)),
+            actor,
+            heads: getHeads(initial),
+            preparationPolicy: 'bounded-native-sequence-v1',
+            message: 'Capture arrangement',
+            mutation: {
+                kind: 'canonical-json-slot-v1',
+                key: 'slot',
+                baseValue: { text: '' },
+                value: { text: 'native sequence '.repeat(300) },
+                documentPresence: { slot: { text: '' } },
+            },
+        });
+        expect(result.changes.length).toBeGreaterThan(1);
+        let replay = clone(initial, { actor });
+        for (const bytes of result.changes) {
+            expect(bytes.byteLength).toBeLessThanOrEqual(65_536);
+            expect(decodeChange(bytes).ops.length).toBeLessThanOrEqual(128);
+            [replay] = applyChanges(replay, [bytes]);
+        }
+        expect(replay).toEqual({ slot: { text: 'native sequence '.repeat(300) } });
+        expect(getHeads(replay)).toEqual(result.heads);
+    });
+
+    it('preserves Detect confidence exactly across bounded changes with mixed scalars and peer edits', () => {
+        const base = { markers: [] };
+        const initial = from({ slot: base, collaborative: { title: 'Original', revision: 7 } }, { actor });
+        const peer = change(clone(initial, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
+            doc.collaborative.title = 'Peer edit';
+            doc.collaborative.revision = 340;
+        });
+        const source = merge(clone(initial, { actor }), peer);
+        const confidence = 0.9517297589061063;
+        const target = {
+            markers: [
+                { id: 'warp-auto', confidence, originalBeat: 2.453333333333333, locked: false, rank: 300 },
+                { id: 'warp-later', confidence, originalBeat: 4.125, locked: true, rank: -17 },
+            ],
+            description: 'native sequence '.repeat(300),
+        };
+        const request = {
+            seed: save(clone(source)),
+            actor,
+            heads: getHeads(source),
+            message: 'Detect transients',
+            time: 7,
+            mutation: {
+                kind: 'canonical-json-slot-v1' as const,
+                key: 'slot',
+                baseValue: base,
+                value: target,
+                documentPresence: { slot: base },
+            },
+        };
+        const single = materializeProspectiveMutation(request);
+        const [ordinary] = applyChanges(clone(source, { actor }), single.changes);
+        const bounded = materializeProspectiveMutation({ ...request, preparationPolicy: 'bounded-native-sequence-v1' });
+        expect(bounded.changes.length).toBeGreaterThan(1);
+        const [replayed] = applyChanges(clone(source, { actor }), bounded.changes);
+
+        expect(ordinary.slot).toEqual(target);
+        expect(replayed.slot).toEqual(ordinary.slot);
+        expect(replayed.collaborative).toEqual({ title: 'Peer edit', revision: 340 });
+        expect(getHeads(replayed)).toEqual(bounded.heads);
+    });
+
     it.each([
         {},
         { message: undefined, time: undefined },

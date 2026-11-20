@@ -73,6 +73,31 @@ describe('PromptDialog', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
+    it('keeps the focused prompt open without canceling the browser default for composing Escape', async () => {
+        const fire = await renderAndGetHandler();
+        const resolve = vi.fn();
+        act(() => {
+            fire(makePayload({ resolve, initialValue: 'Old Track' }));
+        });
+        const input = screen.getByRole('textbox');
+        await waitFor(() => {
+            expect(input).toHaveFocus();
+        });
+
+        const composingEscape = new KeyboardEvent('keydown', {
+            key: 'Escape',
+            isComposing: true,
+            bubbles: true,
+            cancelable: true,
+        });
+        fireEvent(input, composingEscape);
+
+        expect(resolve).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(input).toHaveFocus();
+        expect(composingEscape.defaultPrevented).toBe(false);
+    });
+
     it('resolves null on Escape and closes', async () => {
         const fire = await renderAndGetHandler();
         const resolve = vi.fn();
