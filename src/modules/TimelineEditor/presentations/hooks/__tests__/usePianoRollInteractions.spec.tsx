@@ -219,7 +219,9 @@ const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
             onMouseDown={handlers.handleMouseDown}
             onMouseMove={handlers.handleMouseMove}
             onMouseUp={handlers.handleMouseUp}
-            onMouseLeave={handlers.handleMouseUp}
+            onMouseLeave={handlers.handleMouseLeave}
+            onPointerCancel={handlers.cancelLasso}
+            onBlur={handlers.cancelLasso}
             onDoubleClick={handlers.handleDoubleClick}
             onKeyDown={handlers.handleKeyDown}
             onContextMenu={handlers.handleContextMenu}
@@ -257,6 +259,7 @@ const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
     notePreviewEnabled: false,
     drawPreviewRef: { current: null },
     rubberBandRef: { current: null },
+    lassoPathRef: { current: null },
     dragPreviewRef: { current: null },
     ...overrides,
 });
@@ -1011,18 +1014,115 @@ describe('usePianoRollInteractions', () => {
             expect(advance(4)).toBe(5);
         });
 
-        it('lasso mode selects notes enclosed by the drawn polygon', () => {
-            const { canvas } = renderRoll({ lassoMode: true });
+        it('selects the lassoed primary and opened notes by corner or vertex on release', () => {
+            const { canvas, args } = renderRoll({
+                lassoMode: true,
+                notes: [makeNote('primary', 60, 2, 2), makeNote('crossing', 60, 1, 8)],
+                openedClipNotes: {
+                    'clip-2': [makeNote('opened', 59, 1, 8), makeNote('outside', 59, 6, 1)],
+                },
+            });
 
             const above = yForPitch(61);
             const below = yForPitch(59);
             fireEvent.mouseDown(canvas, { clientX: 60, clientY: above });
-            fireEvent.mouseMove(canvas, { clientX: 200, clientY: above });
-            fireEvent.mouseMove(canvas, { clientX: 200, clientY: below });
+            fireEvent.mouseMove(canvas, { clientX: 150, clientY: above });
+            fireEvent.mouseMove(canvas, { clientX: 150, clientY: below });
             fireEvent.mouseMove(canvas, { clientX: 60, clientY: below });
             fireEvent.mouseUp(canvas, { clientX: 60, clientY: above });
 
-            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set(['n1']));
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set(['primary', 'opened']));
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('clears a lasso released before it has enough points to enclose an area', () => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            fireEvent.mouseDown(canvas, { clientX: 60, clientY: yForPitch(61) });
+            fireEvent.mouseMove(canvas, { clientX: 80, clientY: yForPitch(61) });
+            expect(args.lassoPathRef.current).toHaveLength(2);
+
+            fireEvent.mouseUp(canvas);
+
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set());
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it.each([1, 2])('only starts the lasso on a primary press, not button %i', (button) => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            const origin = { clientX: 60, clientY: yForPitch(61), button };
+
+            fireEvent.mouseDown(canvas, origin);
+            fireEvent.mouseMove(canvas, { clientX: 180, clientY: yForPitch(61) });
+            fireEvent.mouseUp(canvas, origin);
+
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            [1, 4],
+            [2, 2],
+        ])('keeps the lasso active when button %i is pressed and released over a note', (button, mask) => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            const origin = { clientX: 60, clientY: yForPitch(61) };
+            fireEvent.mouseDown(canvas, { ...origin, buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(61), buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(59), buttons: 1 });
+            fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(59), buttons: 1 });
+            const path = args.lassoPathRef.current;
+            setSelectedNoteIds.mockClear();
+
+            const noteBody = { clientX: 120, clientY: yForPitch(60), button };
+            fireEvent.mouseDown(canvas, { ...noteBody, buttons: 1 | mask });
+            fireEvent.mouseUp(canvas, { ...noteBody, buttons: 1 });
+
+            expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+            expect(args.lassoPathRef.current).toBe(path);
+            fireEvent.mouseUp(canvas, origin);
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['n1']));
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['Escape', (canvas: HTMLElement) => expect(fireEvent.keyDown(canvas, { key: 'Escape' })).toBe(false)],
+            ['canvas exit', (canvas: HTMLElement) => fireEvent.mouseLeave(canvas)],
+            ['pointer cancellation', (canvas: HTMLElement) => fireEvent.pointerCancel(canvas)],
+            ['canvas blur', (canvas: HTMLElement) => fireEvent.blur(canvas)],
+            ['window blur', () => fireEvent.blur(window)],
+            [
+                'context menu',
+                (canvas: HTMLElement) => {
+                    const clientY = yForPitch(60);
+                    fireEvent.contextMenu(canvas, { clientX: 120, clientY, button: 2, buttons: 3 });
+                    expect(latest.current?.ctxMenu).toEqual({ x: 120, y: clientY, beat: 3 });
+                },
+            ],
+        ])('cancels a lasso on %s and ignores a subsequent move and release', (_eventName, cancel) => {
+            const { canvas, args } = renderRoll({ lassoMode: true });
+            fireEvent.mouseDown(canvas, { clientX: 60, clientY: yForPitch(61) });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(61) });
+            fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(59) });
+            fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(59) });
+            expect(args.lassoPathRef.current).toHaveLength(4);
+            setSelectedNoteIds.mockClear();
+
+            cancel(canvas);
+            fireEvent.mouseMove(canvas, { clientX: 120, clientY: yForPitch(60), buttons: 1 });
+            expect(latest.current?.hoverCursor).toBe('grab');
+            fireEvent.mouseUp(canvas, { clientX: 60, clientY: yForPitch(61) });
+
+            expect(args.lassoPathRef.current).toBeNull();
+            expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
 
         it('constrainToScale snaps a stamped pitch to the nearest scale degree', () => {
