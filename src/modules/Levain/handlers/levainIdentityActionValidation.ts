@@ -54,13 +54,17 @@ function validPayloadKeys(payload: Record<string, unknown>): boolean {
     return payload.restore === true && Object.keys(payload).length === 9;
 }
 
+function validCaptureAddress(payload: unknown): payload is Record<string, unknown> {
+    return (
+        isRecord(payload) &&
+        validPayloadKeys(payload) &&
+        validAddress(payload) &&
+        valuesEqual(payload.missingDeviceState, LEVAIN_MISSING_DEVICE_STATE)
+    );
+}
+
 export function validLevainIdentityCapture(payload: unknown): payload is SetLevainIdentityAction['payload'] {
-    if (
-        !isRecord(payload) ||
-        !validPayloadKeys(payload) ||
-        !validAddress(payload) ||
-        !valuesEqual(payload.missingDeviceState, LEVAIN_MISSING_DEVICE_STATE)
-    ) {
+    if (!validCaptureAddress(payload)) {
         return false;
     }
     const before = readSnapshot(payload.before);

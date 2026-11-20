@@ -102,6 +102,13 @@ function parameterSourceMatches(
     );
 }
 
+function projectPlannedPatch(device: Device, step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>): Device | null {
+    if (step.preservedMetadata) {
+        return projectCapturedDevicePatchWithMetadata(device, step.expected, step.after, step.preservedMetadata);
+    }
+    return projectCapturedDevicePatch(device, step.expected, step.after);
+}
+
 function projectCapturedStep(
     owners: Owner[],
     step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>
@@ -118,9 +125,7 @@ function projectCapturedStep(
     ) {
         return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
     }
-    const device = step.preservedMetadata
-        ? projectCapturedDevicePatchWithMetadata(target.device, step.expected, step.after, step.preservedMetadata)
-        : projectCapturedDevicePatch(target.device, step.expected, step.after);
+    const device = projectPlannedPatch(target.device, step);
     if (!device) {
         return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
     }

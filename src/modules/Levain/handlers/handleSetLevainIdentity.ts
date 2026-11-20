@@ -70,6 +70,22 @@ function instrumentOf(device: Device | undefined) {
     return fromLevainDeviceState(device?.deviceState)?.instrumentId ?? DEFAULT_LEVAIN_INSTRUMENT_ID;
 }
 
+function readCommittedLevainOwner(trackId: string, deviceId: string): { current: Track; device: Device } | null {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible' || target.trackId !== trackId) {
+        return null;
+    }
+    const current = trackStore.value?.tracks.find(({ id }) => id === trackId);
+    if (!current || current.frozen) {
+        return null;
+    }
+    const device = current.devices.find(({ id }) => id === deviceId);
+    if (device?.type !== 'levain') {
+        return null;
+    }
+    return { current, device };
+}
+
 function createRuntimeEffect(action: SetLevainIdentityAction, before: Track, context?: HandlerValidationContext) {
     const { deviceId, kind, trackId } = action.payload;
     const transition = projectTransitionEpoch.captureEditAuthority();
@@ -87,18 +103,11 @@ function createRuntimeEffect(action: SetLevainIdentityAction, before: Track, con
         if (!transition.isCurrent() || captureProjectRootIdentity() !== root) {
             return;
         }
-        const target = resolveEligibleDeviceWriteTarget(deviceId);
-        if (target.status !== 'eligible' || target.trackId !== trackId) {
+        const eligible = readCommittedLevainOwner(trackId, deviceId);
+        if (!eligible) {
             return;
         }
-        const current = trackStore.value?.tracks.find(({ id }) => id === trackId);
-        if (!current || current.frozen) {
-            return;
-        }
-        const device = current.devices.find(({ id }) => id === deviceId);
-        if (device?.type !== 'levain') {
-            return;
-        }
+        const { current, device } = eligible;
         const sameBankReset =
             kind === 'instrument' && !priorInstrumentEdit && instrumentOf(previous) === instrumentOf(device);
         reconcileLevainDeviceStateFromProject(deviceId, { projectPatch: sameBankReset });

@@ -216,7 +216,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
-                                        onClick={() => void loadInstrument(deviceId, instrument.id, instrument.label)}
+                                        onClick={() => {
+                                            void loadInstrument(deviceId, instrument.id, instrument.label);
+                                        }}
                                     >
                                         <Row justify="between" wrap gap={1} className="w-full">
                                             <span className="wrap-anywhere text-compact font-medium text-foreground">
@@ -240,7 +242,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <ArticulationList
                                 articulations={patch.articulations}
                                 current={patch.currentArticulation}
-                                onSelect={(type) => void selectLevainArticulation(deviceId, type)}
+                                onSelect={(type) => {
+                                    void selectLevainArticulation(deviceId, type);
+                                }}
                             />
                         </section>
                     ) : null}
@@ -301,7 +305,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             labels={{ play: 'Basic', lab: 'Expert' }}
                             groupLabel="Levain control detail"
                             tone="amber"
-                            onChange={(tier) => void setLevainPanelUiLevel(deviceId, tier === 'lab' ? 6 : 1)}
+                            onChange={(tier) => {
+                                void setLevainPanelUiLevel(deviceId, tier === 'lab' ? 6 : 1);
+                            }}
                         />
                     </fieldset>
                     <section aria-label="Selection detail" className="levain-window shrink-0 p-3">

@@ -458,11 +458,6 @@
       "count": 1
     }
   },
-  "src/modules/Levain/presentations/views/LevainPanel.tsx": {
-    "no-void": {
-      "count": 1
-    }
-  },
   "src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts": {
     "no-restricted-syntax": {
       "count": 3
