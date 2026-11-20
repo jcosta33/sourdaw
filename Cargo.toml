@@ -31,9 +31,9 @@ windows = "0.62.2"
 # A lint with zero violations is denied. PR clippy enforces it per target:
 # Linux host code for every crate but sourdaw-native, and wasm32 library code
 # for the wasm packages (both in health-gates-rust.sh); macOS for
-# sourdaw-native (native-macos); cfg(windows) code in daw-engine and
-# daw-plugin-host (native-windows). No entry sits at `warn`: a lint either
-# fails the build or is not in the table (#6525).
+# sourdaw-native (native-macos); cfg(windows) code in daw-engine,
+# daw-plugin-host and sourdaw-harness-fx (native-windows). No entry sits
+# at `warn`: a lint either fails the build or is not in the table (#6525).
 [workspace.lints.rust]
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }

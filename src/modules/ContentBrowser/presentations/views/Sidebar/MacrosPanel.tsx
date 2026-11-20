@@ -140,6 +140,9 @@ export const MacrosPanel = (): ReactElement => {
                                         onChange={(event) => setEditName(event.target.value)}
                                         onBlur={commitRename}
                                         onKeyDown={(event) => {
+                                            if (event.nativeEvent.isComposing) {
+                                                return;
+                                            }
                                             if (event.key === 'Enter') {
                                                 commitRename();
                                             }

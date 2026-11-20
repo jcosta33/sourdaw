@@ -105,6 +105,14 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 
 **Enforced by:** `src/modules/Command/useCases/__tests__/actionLabels.spec.ts` for the label map; inverse exactness and label quality are review only.
 
+### 10. A grouped inverse is captured from the owning action prefix
+
+`executeAppActionBatch` calls applicable `describe()` handlers before executing any member. When a description captures an inverse from project state, project the earlier siblings in order through the owning domain before reading that state. Use the same projection for batch validation.
+
+**Why:** capturing from the live pre-batch state restores the wrong value on grouped undo and redo.
+
+**Enforced by:** review only. See the [grouped replay test rule](../test-design/SKILL.md#12-prefix-dependent-inverses-need-real-grouped-replay) and the probe in [replay authority](../review-stances/replay-authority.md).
+
 ## References
 
 - Review probes for this area: `../review-stances/project-integrity.md`, `../review-stances/replay-authority.md`, `../review-stances/session-lifecycle.md` and `../review-stances/collaboration-teardown.md`.

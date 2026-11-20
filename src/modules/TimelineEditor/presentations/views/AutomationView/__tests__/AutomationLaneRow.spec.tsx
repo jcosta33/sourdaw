@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     addAutomationPoint,
     removeAutomationPoint,
-    insertAutomationShape,
     deleteSelectedPoints,
     adjustYZoom,
     zoomToUsedRange,
@@ -12,7 +11,7 @@ import {
     removeAutomationLane,
     restoreAutomationLanes,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
@@ -96,7 +95,7 @@ vi.mock('../AutomationContextMenu', () => ({
     }) => (
         <div data-testid="context-menu" data-beat={props.beat} data-section={String(props.section)}>
             <button onClick={() => props.onCurveSelect('exponential')}>select-curve</button>
-            <button onClick={() => props.onShapeInsert('sine')}>insert-shape</button>
+            <button onClick={() => props.onShapeInsert('random')}>insert-shape</button>
             <button onClick={props.onClose}>close-menu</button>
         </div>
     ),
@@ -161,7 +160,6 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     toggleAutomationVisibility: vi.fn(),
     removeAutomationLane: vi.fn(),
     restoreAutomationLanes: vi.fn(),
-    insertAutomationShape: vi.fn(),
     deleteSelectedPoints: vi.fn(),
     adjustYZoom: vi.fn(),
     zoomToUsedRange: vi.fn(),
@@ -403,6 +401,22 @@ describe('AutomationLaneRow', () => {
         expect(container.querySelector('line[stroke-dasharray="4 3"]')).not.toBeInTheDocument();
     });
 
+    it.each(['oklch(68% 0.2 35)', '#579aca', 'var(--color-palette-steel)'])(
+        'paints the marquee with its lane color %s and a translucent interior',
+        (trackColor) => {
+            vi.mocked(onRubberBandStart).mockImplementationOnce((_event, _lane, changeBand) => {
+                changeBand({ x1: 40, y1: 45, x2: 15, y2: 10 });
+                return () => undefined;
+            });
+            const { container } = render(<AutomationLaneRow {...defaultProps} trackColor={trackColor} />);
+            fireEvent.mouseDown(container.querySelector('svg')!, { button: 0 });
+            const band = container.querySelector('rect[stroke-dasharray="3 2"]');
+            expect(band).toHaveAttribute('fill', trackColor);
+            expect(Number(band?.getAttribute('fill-opacity'))).toBeGreaterThan(0);
+            expect(Number(band?.getAttribute('fill-opacity'))).toBeLessThan(0.25);
+        }
+    );
+
     it('should dispatch draw or rubber-band handlers based on the active tool and ignore secondary buttons', () => {
         const { container, rerender } = render(<AutomationLaneRow {...defaultProps} />);
         const svg = container.querySelector('svg')!;
@@ -454,7 +468,17 @@ describe('AutomationLaneRow', () => {
 
         fireEvent.contextMenu(svg, { clientX: 120, clientY: 20 });
         fireEvent.click(screen.getByText('insert-shape'));
-        expect(insertAutomationShape).toHaveBeenCalledWith('lane-1', 'sine', 10, 14);
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'insertAutomationLanePoints',
+                payload: {
+                    laneId: 'lane-1',
+                    owner: { trackId: 'track-1', parameterId: 'volume' },
+                    insertion: { kind: 'shape', shape: 'random', startBeat: 10, endBeat: 14 },
+                },
+            },
+            expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
+        );
     });
 
     it('should open a point context menu on right-click and remove the point with an undoable entry on double-click', () => {
@@ -761,6 +785,18 @@ describe('AutomationLaneRow', () => {
                 const menu = screen.getByTestId('context-menu');
                 expect(menu).toHaveAttribute('data-section', 'shape');
                 expect(menu).toHaveAttribute('data-beat', '3');
+                fireEvent.click(screen.getByText('insert-shape'));
+                expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+                    {
+                        type: 'insertAutomationLanePoints',
+                        payload: {
+                            laneId: 'lane-1',
+                            owner: { trackId: 'track-1', parameterId: 'volume' },
+                            insertion: { kind: 'shape', shape: 'random', startBeat: 3, endBeat: 7 },
+                        },
+                    },
+                    expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
+                );
             }
         );
 

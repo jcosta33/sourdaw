@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
+import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
@@ -17,6 +18,7 @@ import { deriveAudibleImpact } from '../deriveAudibleImpact';
 import { NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { readMetricCreativeAuthorityIds } from '../readMetricCreativeAuthorityIds';
 
 import { createPromptConfirmationId } from './createPromptConfirmationId';
 
@@ -148,6 +150,18 @@ function recordConfirmationMetricGoalPlan(
     });
 }
 
+function describeProposedPromptContent(
+    input: PersistPromptActionConfirmationInput,
+    metricGoalState: string | null | undefined
+): string {
+    const interpretation = readPublicCreativeInterpretation(
+        agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? [],
+        readMetricCreativeAuthorityIds(metricGoalState) ?? []
+    );
+    const publicReading = interpretation === null ? '' : `\n\nInterpretation: ${interpretation}`;
+    return `${describeBatchPosition(input.batchPosition)}${input.content}${publicReading}\n\n${describeAgentRiskApproval(input.agentApproval)}`;
+}
+
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = input.confirmationId ?? createPromptConfirmationId();
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
@@ -212,7 +226,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,
             pendingActionConfirmationStatus: 'proposed',
-            content: `${describeBatchPosition(input.batchPosition)}${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
+            content: describeProposedPromptContent(input, confirmation.approvalSnapshot.metricGoalState),
         });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,

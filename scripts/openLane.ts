@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -102,6 +102,7 @@ export type OpenLanePort = {
     /** Realpath of the lane's node_modules when it is a symlink; undefined when absent or a real directory. */
     nodeModulesLinkTarget: (lanePath: string) => string | undefined;
     lock: (path: string) => void;
+    guidanceWarning: (lanePath: string) => string | undefined;
     log: (message: string) => void;
 };
 
@@ -260,6 +261,10 @@ export function openLane(
     // The declaring session sees its own attribution; the path stays the final line because
     // consumers parse it from the tail of the output.
     port.log(`authoring model: ${model}`);
+    const guidanceWarning = port.guidanceWarning(lanePath);
+    if (guidanceWarning !== undefined) {
+        port.log(guidanceWarning);
+    }
     // lane:open stays offline by design — no credential is minted or read here — so the claim is
     // the trusted script the operator runs next, from the protected primary checkout this command
     // itself ran in.
@@ -268,6 +273,80 @@ export function openLane(
     }
     port.log(lanePath);
     return lanePath;
+}
+
+function guidanceFileSize(path: string): number | undefined {
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat === undefined) {
+        return undefined;
+    }
+    if (!stat.isFile() || realpathSync(path) !== path) {
+        fail('agent guidance is not a regular file under its tracked path');
+    }
+    return stat.size;
+}
+
+const GUIDANCE_READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+
+function trackedGuidancePaths(root: string, revision: string, capture: typeof spawnCapture): string[] {
+    // Include paths in either the commit or the index so a staged addition or deletion stays visible.
+    return capture(
+        'git',
+        [
+            '--no-optional-locks',
+            '-c',
+            'core.fsmonitor=false',
+            'ls-files',
+            '--cached',
+            '--deduplicate',
+            `--with-tree=${revision}`,
+            '-z',
+            '--',
+            ':(top,glob)**/AGENTS.md',
+            ':(top,glob).agents/skills/**/*.md',
+        ],
+        { cwd: root, trim: false }
+    )
+        .split('\0')
+        .filter(Boolean);
+}
+
+function compareGuidance(primaryRoot: string, lanePath: string, capture: typeof spawnCapture): string | undefined {
+    let revision = 'HEAD';
+    const readAdvice = () =>
+        `Read AGENTS.md and applicable nested AGENTS.md and .agents/skills Markdown at ${revision} in ${JSON.stringify(lanePath)} before proceeding.`;
+    try {
+        const head = capture('git', ['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: lanePath });
+        if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(head)) {
+            fail('could not resolve the opened lane commit');
+        }
+        revision = head;
+        const lanePaths = new Set(trackedGuidancePaths(lanePath, head, capture));
+        const paths = new Set([...lanePaths, ...trackedGuidancePaths(primaryRoot, 'HEAD', capture)]);
+        // Compare the actual files in each checkout without running Git content filters.
+        for (const path of paths) {
+            const primaryFile = join(primaryRoot, path);
+            const laneFile = join(lanePath, path);
+            const primarySize = guidanceFileSize(primaryFile);
+            const laneTracksFile = lanePaths.has(path);
+            const laneSize = laneTracksFile ? guidanceFileSize(laneFile) : undefined;
+            if (laneTracksFile && laneSize === undefined) {
+                fail('tracked agent guidance is missing from the opened lane');
+            }
+            if (
+                primarySize !== laneSize ||
+                (primarySize !== undefined &&
+                    !readFileSync(primaryFile, { flag: GUIDANCE_READ_FLAGS }).equals(
+                        readFileSync(laneFile, { flag: GUIDANCE_READ_FLAGS })
+                    ))
+            ) {
+                return `warning: agent guidance in the primary checkout differs from the opened lane at ${JSON.stringify(path)}. ${readAdvice()}`;
+            }
+        }
+        return undefined;
+    } catch {
+        return `warning: could not compare agent guidance in the primary checkout with the opened lane. ${readAdvice()}`;
+    }
 }
 
 export function shellPort(
@@ -364,6 +443,7 @@ export function shellPort(
         lock: (path) => {
             run('git', ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, path], { cwd: primaryRoot });
         },
+        guidanceWarning: (path) => compareGuidance(primaryRoot, path, capture),
         log: (message) => {
             console.log(message);
         },

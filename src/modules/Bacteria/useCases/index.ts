@@ -1,3 +1,4 @@
+export { getBacteriaHandlers } from './getBacteriaHandlers';
 export { initBacteriaSubscribers } from './bacteriaSubscriber';
 export { captureOfflineBacteria } from './captureOfflineBacteria';
 export { initBacteriaModAssignmentsPersistence } from './initBacteriaModAssignmentsPersistence';
