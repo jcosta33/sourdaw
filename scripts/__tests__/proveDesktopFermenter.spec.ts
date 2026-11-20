@@ -477,6 +477,30 @@ describe('packaged editor workspace proof', () => {
         },
         { label: 'forward jump eight to sixteen', clickReadout: 'Bars3.1.000', paused: 16, verdict: 'failed' },
         { label: 'advance before actual click', clickReadout: 'Bars3.2.000', paused: 9.1, verdict: 'proven' },
+        {
+            label: 'one-tick rewind from progressed click',
+            clickReadout: 'Bars3.2.000',
+            paused: 9 - 1 / 480,
+            verdict: 'proven',
+        },
+        {
+            label: 'two-tick rewind from progressed click',
+            clickReadout: 'Bars3.2.000',
+            paused: 9 - 2 / 480,
+            verdict: 'failed',
+        },
+        {
+            label: 'click two ticks behind latest advance with valid parking',
+            clickReadout: 'Bars2.4.478',
+            paused: 8,
+            verdict: 'failed',
+        },
+        {
+            label: 'cumulative one-tick rewinds exceed latest advance allowance',
+            clickReadout: 'Bars2.4.479',
+            paused: 8 - 2 / 480,
+            verdict: 'failed',
+        },
         { label: 'rewind from actual click', clickReadout: 'Bars3.2.000', paused: 8.25, verdict: 'failed' },
     ] as const)(
         'requires valid click-bound parking for $label before proof can be $verdict',
