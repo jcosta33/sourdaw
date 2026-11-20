@@ -42,8 +42,8 @@ const ModelSelector = ({
     selectedId: string;
     onSelect: (id: string) => void;
 }): ReactElement => (
-    <Stack gap={1}>
-        <div className="text-micro uppercase tracking-[0.2em] text-neutral-400/50">{label}</div>
+    <Stack gap={1} className="min-w-0" role="group" aria-label={label}>
+        <div className="text-micro uppercase tracking-[0.2em] text-neutral-400/70">{label}</div>
         <Stack gap={0.5}>
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
@@ -53,8 +53,9 @@ const ModelSelector = ({
                         size="bare"
                         key={model.id}
                         type="button"
+                        aria-pressed={active}
                         onClick={() => onSelect(model.id)}
-                        className={`rounded-sm px-2 py-1 text-left text-dense transition-colors ${
+                        className={`justify-start rounded-sm whitespace-normal wrap-anywhere px-2 py-1 text-left text-dense transition-colors ${
                             active
                                 ? 'bg-neutral-300/15 text-neutral-200 font-medium'
                                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
@@ -120,10 +121,10 @@ const BlendIndicator = ({
     modelBName: string;
 }): ReactElement => (
     <Stack gap={1}>
-        <Row justify="between" className="text-micro text-muted-foreground/50">
-            <span className="truncate max-w-[5rem]">{modelAName}</span>
-            <span className="truncate max-w-[5rem] text-right">{modelBName}</span>
-        </Row>
+        <Grid cols={2} gap={2} className="items-end text-caption text-muted-foreground">
+            <span className="wrap-anywhere">{modelAName}</span>
+            <span className="wrap-anywhere text-right">{modelBName}</span>
+        </Grid>
         <div className="relative h-2 w-full overflow-hidden rounded-full">
             <div
                 className="absolute inset-0 rounded-full"
@@ -166,7 +167,7 @@ export const MorphPanel = ({
 
     return (
         <DawPluginSectionCard
-            className="grand-boule-window shrink-0"
+            className="grand-boule-window @container shrink-0"
             title="Morph"
             detail="Blend between piano models."
             titleClassName="text-neutral-400/80"
@@ -185,7 +186,7 @@ export const MorphPanel = ({
                 </Row>
 
                 {/* Model selectors */}
-                <Grid cols={2} gap={2}>
+                <Grid cols={1} gap={2} className="@[13rem]:grid-cols-2">
                     <ModelSelector label="Model A" selectedId={modelA?.id ?? morph.modelA} onSelect={onModelAChange} />
                     <ModelSelector label="Model B" selectedId={modelB?.id ?? morph.modelB} onSelect={onModelBChange} />
                 </Grid>

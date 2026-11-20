@@ -46,6 +46,8 @@ import {
 } from '../../stores/proofStore';
 import { hydrateProofDisclosureFromProject } from '../../useCases/hydrateProofDisclosureFromProject';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
+import { proofLimiterCeiling } from '../../useCases/proofParamBridge/proofLimiterCeiling';
+import { proofLimiterCeilingProjection } from '../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
 import { rehydrateRestoredPatch } from '../../useCases/proofParamBridge/rehydrateRestoredPatch';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
@@ -62,6 +64,7 @@ import { ProofImagerSection } from '../components/ProofImagerSection';
 import { ProofLimiterSection } from '../components/ProofLimiterSection';
 import { TonalBalance } from '../components/TonalBalance';
 import { useProofAnalyser } from '../hooks/useProofAnalyser';
+import { useProofCeilingSettlement } from '../hooks/useProofCeilingSettlement';
 import { useProofLoudnessHistory } from '../hooks/useProofLoudnessHistory';
 import { useProofMeter } from '../hooks/useProofMeter';
 
@@ -406,8 +409,11 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         return device ? proofDisclosureLevelFromState(device.deviceState) : null;
     });
     useEffect(() => {
-        if (projectLevel !== null && !projectPatchHydrated) {
-            rehydrateRestoredPatch(deviceId);
+        if (projectLevel !== null) {
+            if (!projectPatchHydrated) {
+                rehydrateRestoredPatch(deviceId);
+            }
+            proofLimiterCeilingProjection.ensure(deviceId);
         }
         if (projectLevel !== null && projectLevel !== uiLevel) {
             hydrateProofDisclosureFromProject(deviceId);
@@ -418,6 +424,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
     const activeGestureTokenRef = useRef(0);
     const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
+    const ceilingPreviewTokenRef = useRef<number | null>(null);
     const gestureDeviceIdRef = useRef(deviceId);
     const patchSnapshotRef = useRef(patchSnapshot);
     const acceptedPatchSnapshotRef = useRef<string | null>(null);
@@ -430,6 +437,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     };
 
     const invalidateGesture = (): void => {
+        proofLimiterCeiling.discard(deviceId);
         acceptedPatchSnapshotRef.current = null;
         activeGestureFinalizerRef.current = null;
         advanceGestureOwner();
@@ -460,12 +468,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         isCurrent: (token) => Object.is(activeGestureTokenRef.current, token),
     };
 
+    const afterCeilingSettlement = useProofCeilingSettlement(deviceId);
+
     useLayoutEffect(() => {
         const previousDeviceId = gestureDeviceIdRef.current;
         gestureDeviceIdRef.current = deviceId;
         const previousPatchSnapshot = patchSnapshotRef.current;
         patchSnapshotRef.current = patchSnapshot;
         if (previousDeviceId !== deviceId) {
+            proofLimiterCeiling.cancelHeld(previousDeviceId);
+            ceilingPreviewTokenRef.current = null;
             acceptedPatchSnapshotRef.current = null;
             activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
@@ -474,51 +486,72 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         const acceptedPatch = acceptedPatchSnapshotRef.current === patchSnapshot;
         acceptedPatchSnapshotRef.current = null;
         if (previousPatchSnapshot !== patchSnapshot && !acceptedPatch) {
+            if (!proofLimiterCeiling.settlement(deviceId)) {
+                proofLimiterCeiling.discard(deviceId);
+            }
             activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
         }
     }, [deviceId, patchSnapshot]);
 
     const handlePatchChange: ProofPatchChange = (edit) => {
+        const token = activeGestureTokenRef.current;
         if (edit.isTransient !== true) {
             finalizeActiveGesture();
         }
-        setProofParamWithPatch({ deviceId, ...edit });
-        if (edit.isTransient === true) {
-            acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
-            return;
-        }
-        acceptedPatchSnapshotRef.current = null;
+        afterCeilingSettlement(() => {
+            if (edit.isTransient === true && token !== activeGestureTokenRef.current) {
+                return;
+            }
+            const acceptPatch = () => {
+                acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+            };
+            if (edit.isTransient !== true) {
+                acceptedPatchSnapshotRef.current = null;
+            }
+            if (edit.key === 'limCeiling') {
+                const requiresPreview = ceilingPreviewTokenRef.current === token;
+                ceilingPreviewTokenRef.current = edit.isTransient === true ? token : null;
+                proofLimiterCeiling.change(deviceId, edit.value, edit.isTransient === true, {
+                    requiresPreview,
+                    onCommitted: acceptPatch,
+                });
+            } else {
+                setProofParamWithPatch({ deviceId, ...edit });
+            }
+            if (edit.isTransient === true) {
+                acceptPatch();
+            }
+        });
     };
 
     const handleTargetSelection = (target: ProofTarget): void => {
         finalizeActiveGesture();
-        setProofTarget({ deviceId, target });
+        afterCeilingSettlement(() => setProofTarget({ deviceId, target }));
     };
 
-    // Routed through the chain-order use case rather than a raw patch write, so
-    // the module's own door owns the engine reorder and the persisted order.
-    // A pending knob preview still commits first, as it does for every other
-    // committing gesture in the panel.
+    // The order use case owns the engine reorder and its persisted record.
     const handleChainReorder = (order: ProofPatch['chainOrder']): void => {
         finalizeActiveGesture();
-        reorderChain({ deviceId, order });
-        acceptedPatchSnapshotRef.current = null;
+        afterCeilingSettlement(() => {
+            reorderChain({ deviceId, order });
+            acceptedPatchSnapshotRef.current = null;
+        });
     };
 
     const levelMeta = getLevelMeta(uiLevel);
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
     return (
-        <div className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3">
-            {/* The desk column never shrinks below the EQ surface, so the grid
-                overflows a narrower panel sideways and the faceplate scrolls
-                like a plugin window in any host instead of crushing the
-                controls into unreachable slivers. The faceplate carries no
-                min-height floor: a floor makes the rail taller than the panel,
-                and a chip scrolled into view then lands under whatever is
-                drawn over the dock. */}
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
+        <div
+            role="region"
+            aria-label="Proof mastering panel"
+            className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3"
+        >
+            {/* Keep the EQ surface usable by scrolling the grid horizontally
+                in narrow panels. No height floor lets the rails scroll within
+                the available panel height. */}
+            <div className="grid h-full min-h-0 grid-cols-[12rem_minmax(34rem,1fr)_13rem] gap-3">
                 <DawPluginRail>
                     <SideCard
                         title="Mission"

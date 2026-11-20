@@ -5,6 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
 import { findFollowerLaneRefusal } from './followerLaneRefusal';
+import { isLaneTransformSessionEntry } from './validateAutomationSessionEntries';
 
 export const handleQuantizeAutomation = createHandler<'quantizeAutomation'>({
     execute: (alpha) => {
@@ -26,6 +27,7 @@ export const handleQuantizeAutomation = createHandler<'quantizeAutomation'>({
             type: 'quantize',
             gridSize: alpha.payload.gridSize,
         }),
+    validateSessionEntry: isLaneTransformSessionEntry,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

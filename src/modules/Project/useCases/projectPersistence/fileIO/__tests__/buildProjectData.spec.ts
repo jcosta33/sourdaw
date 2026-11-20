@@ -295,6 +295,24 @@ describe('buildProjectData', () => {
         expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
     });
 
+    it('refuses a prepared snapshot when a deferred edit moves its exact revision', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        const preparedRevision = 'snapshot-revision';
+        await expect(buildProjectData({ preparedRevision })).resolves.toHaveProperty(
+            'snapshotRevision',
+            preparedRevision
+        );
+        flushAutomergeStorageWritesMock.mockImplementationOnce(() => {
+            captureProjectRevisionMock.mockReturnValue('later-revision');
+        });
+
+        await expect(buildProjectData({ preparedRevision })).resolves.toBeNull();
+        expect(syncCurrentArrangementToStoreMock).not.toHaveBeenCalled();
+    });
+
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
     // encoder is never entered and the snapshot carries no audio payload.
     // Mutation: making `includeAudioBuffers` unconditional (or defaulting the

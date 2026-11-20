@@ -34,6 +34,7 @@ export type CrumbsNodeResult = {
      */
     noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
+    startPadAudition: (note: number, velocity: number) => (() => void) | undefined;
     allNotesOff: () => void;
     allSoundOff: () => void;
     setParam: (name: string, value: number) => void;
@@ -99,6 +100,7 @@ export async function createCrumbsNode(
 
     let bypassed = false;
     let destroyed = false;
+    let nextAuditionId = 1;
 
     const handshake = createReadyHandshake({ pluginName: 'CrumbsNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
@@ -135,6 +137,22 @@ export async function createCrumbsNode(
 
     const noteOff = (note: number, sampleFrame?: number): void => {
         node.port.postMessage({ type: 'noteOff', note, sampleFrame });
+    };
+
+    const startPadAudition = (note: number, velocity: number): (() => void) | undefined => {
+        if (bypassed || destroyed || nextAuditionId > 0xffff_ffff) {
+            return undefined;
+        }
+
+        const auditionId = nextAuditionId++;
+        node.port.postMessage({ type: 'padAuditionOn', note, velocity, auditionId });
+        let released = false;
+        return () => {
+            if (!released && !destroyed) {
+                released = true;
+                node.port.postMessage({ type: 'padAuditionOff', auditionId });
+            }
+        };
     };
 
     const allNotesOff = (): void => {
@@ -187,6 +205,7 @@ export async function createCrumbsNode(
         workletNode: node,
         noteOn,
         noteOff,
+        startPadAudition,
         allNotesOff,
         allSoundOff,
         setParam,

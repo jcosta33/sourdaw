@@ -255,6 +255,49 @@ describe('AutomergeRepository worker lifecycle', () => {
         expect(ControlledWorker.instances).toHaveLength(2);
     });
 
+    it('preserves a synchronous postMessage failure as the cause for every pending request', async () => {
+        const { automergeRepository } = await import('../automergeRepository');
+        const rootBytes = save(init());
+        const pendingInspection = automergeRepository.inspectCheckpointRootMedia({ rootBytes });
+        const worker = ControlledWorker.instances[0];
+        if (!worker) {
+            throw new Error('Expected the first worker');
+        }
+        expect(worker.posted).toHaveLength(1);
+
+        const postFailure = new DOMException('Controlled clone failure', 'DataCloneError');
+        ControlledWorker.onPostMessage = () => {
+            throw postFailure;
+        };
+        const failedInspection = automergeRepository.inspectCheckpointRootMedia({ rootBytes });
+        const outcomes = await Promise.allSettled([pendingInspection, failedInspection]);
+
+        for (const outcome of outcomes) {
+            if (outcome.status !== 'rejected' || !(outcome.reason instanceof Error)) {
+                throw new Error('Expected the inspection to reject with an Error');
+            }
+            expect(outcome.reason.message).toBe(
+                'crdtWorker postMessage failed: DataCloneError: Controlled clone failure'
+            );
+            expect(outcome.reason.cause).toBe(postFailure);
+        }
+        expect(worker.terminated).toBe(true);
+
+        ControlledWorker.onPostMessage = (replacement, request) => {
+            if (request.type === 'inspectCheckpointRootMedia') {
+                replacement.emitMessage({
+                    id: request.id,
+                    type: 'checkpointRootMediaInspected',
+                    audioBufferIds: ['buffer'],
+                });
+            }
+        };
+        await expect(automergeRepository.inspectCheckpointRootMedia({ rootBytes })).resolves.toEqual({
+            audioBufferIds: ['buffer'],
+        });
+        expect(ControlledWorker.instances).toHaveLength(2);
+    });
+
     it('settles every concurrent request when their shared worker fails', async () => {
         const { automergeRepository } = await import('../automergeRepository');
         const bundle = createRootBundle();

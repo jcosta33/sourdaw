@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap_sys::ext::render::CLAP_RENDER_OFFLINE;
+use daw_plugin_host::clap_wrapper::ClapError;
 use daw_plugin_host::vst3_wrapper::{decode_state as decode_vst3_container, format_class_id};
 use daw_plugin_host::{
     AudioPlugin, ClapWrapper, HostParameterUpdate, HostedPluginRuntime, ProcessMode, Vst3Wrapper,
@@ -22,14 +23,15 @@ use sourdaw_harness_fx::{
     CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, ECHO_FRAMES, GAIN_DEFAULT, GAIN_PARAM_ID,
     LATENCY_FRAMES, VST3_CLASS_ID,
 };
+use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::ProcessModes_;
 
 const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 128;
 /// Enough whole blocks to carry the impulse, its echo, and silence after both.
 const BLOCKS: usize = (LATENCY_FRAMES + ECHO_FRAMES) / BLOCK_FRAMES + 2;
-const VST3_REALTIME: i32 = ProcessModes_::kRealtime as i32;
-const VST3_OFFLINE: i32 = ProcessModes_::kOffline as i32;
+const VST3_REALTIME: int32 = ProcessModes_::kRealtime as int32;
+const VST3_OFFLINE: int32 = ProcessModes_::kOffline as int32;
 
 /// The cdylib this crate's build produced, found the way
 /// `sourdaw-harness-tone`'s acceptance test finds its own: `deps/` first, the
@@ -97,7 +99,7 @@ impl InstalledPlugin {
         }
     }
 
-    fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, String> {
+    fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
         let path = self.clap_path.to_str().expect("the path should be utf8");
         ClapWrapper::new_with_mode(path, plugin_id, SAMPLE_RATE, mode)
     }
@@ -344,9 +346,13 @@ fn a_clap_plugin_with_a_hard_realtime_requirement_is_refused_offline_by_name() {
         .expect("an offline instance of a hard-realtime plugin must be refused");
 
     assert!(
-        error.contains("Sourdaw Harness Fx Hard Realtime")
-            && error.contains("requires real-time rendering and cannot render offline"),
+        matches!(&error, ClapError::RequiresRealtime { name } if name == "Sourdaw Harness Fx Hard Realtime"),
         "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[CLAP] 'Sourdaw Harness Fx Hard Realtime' requires real-time rendering and cannot \
+         render offline"
     );
     assert!(plugin
         .clap(CLAP_HARD_REALTIME_PLUGIN_ID, ProcessMode::Realtime)

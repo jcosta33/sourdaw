@@ -242,7 +242,10 @@ fn remove_runtimes_from_scheduler(
 /// scheduler's, and the report names it if the wait expires. Swallowing the
 /// refusal silently would leave the one case that produces an abandoned
 /// instance — the scheduler keeping its `Arc` forever — with no trace at all.
-fn report_refused_scheduler_removal(removal: Result<(), String>, plugin_name: &str) {
+fn report_refused_scheduler_removal(
+    removal: Result<(), daw_engine::CommandError>,
+    plugin_name: &str,
+) {
     if let Err(error) = removal {
         eprintln!("[Shutdown] scheduler removal refused for '{plugin_name}': {error}");
     }
@@ -297,6 +300,13 @@ fn reclaim_until_waiting_budget_is_spent(
     let mut remaining_budget = SCHEDULER_RELEASE_BUDGET;
 
     loop {
+        // This cascade holds the UI thread, so a worker sweep's teardown hop
+        // posted before the quit cannot be pumped until it returns. Run it
+        // here, or the worker waits out its deadline and the process exits
+        // with that runtime never torn down.
+        if editor_thread.is_ui_thread() {
+            editor_thread.run_posted_releases();
+        }
         app_state.sweep_retired_engine_plugins(editor_thread);
 
         // The whole vec, not just this pass's own entries: waiting on those
@@ -307,7 +317,7 @@ fn reclaim_until_waiting_budget_is_spent(
         // second `shutdown()`, which finds nothing new to do and waits anyway.
         // That is an abnormal exit already, and the budget is a tenth of the
         // shell's force-exit deadline, so it buys the ordinary case its sweep.
-        if retirement_count(app_state) == 0 || remaining_budget.is_zero() {
+        if app_state.unreclaimed_retirement_count() == 0 || remaining_budget.is_zero() {
             return;
         }
 
@@ -347,21 +357,19 @@ fn record_reclamation(
         report.abandoned_instances.push(instance.name);
     }
 
-    report.unreclaimed_retirements = retirement_count(app_state);
-}
-
-fn retirement_count(app_state: &AppState) -> usize {
-    locked_or_poisoned(&app_state.retired_engine_plugins).len()
+    report.unreclaimed_retirements = app_state.unreclaimed_retirement_count();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
+    use crate::host::ui_thread::PostedUiThread;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ProcessingGate;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc, Mutex};
+    use std::thread;
 
     /// Records what the stores held at `destroy_window` time.
     ///
@@ -918,6 +926,252 @@ mod tests {
         assert_eq!(report.unreclaimed_retirements, 1);
         assert_eq!(Arc::strong_count(&scheduler_reference), 2);
         assert!(retirement_vec_holds(&state, &scheduler_reference));
+    }
+
+    /// A shell whose UI thread is the thread that built it and whose loop pumps
+    /// only when told to, which is the cascade's situation: the cascade holds the
+    /// UI thread, so nothing posted from a worker runs until the cascade drains.
+    struct PostedShellHost {
+        ui_thread: thread::ThreadId,
+        posted: PostedUiThread,
+        /// Told that a worker is about to post its hop, before the gate.
+        hop_requested: Mutex<mpsc::Sender<()>>,
+        /// Told once the hop sits in the queue, unpumped.
+        hop_queued: Mutex<mpsc::Sender<()>>,
+        /// When set, the next hop waits for this before it posts.
+        hop_gate: Mutex<Option<mpsc::Receiver<()>>>,
+    }
+
+    impl crate::host::ui_thread::UiThread for PostedShellHost {
+        fn is_ui_thread(&self) -> bool {
+            thread::current().id() == self.ui_thread
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), String> {
+            let _ = self.hop_requested.lock().expect("hop_requested").send(());
+            let gate = self.hop_gate.lock().expect("hop_gate").take();
+            if let Some(gate) = gate {
+                gate.recv_timeout(Duration::from_secs(5))
+                    .map_err(|_| "the gate was never opened".to_string())?;
+            }
+            self.posted.post_and_wait(task, || {
+                let _ = self.hop_queued.lock().expect("hop_queued").send(());
+                Ok(())
+            })
+        }
+
+        fn run_posted_releases(&self) {
+            self.posted.drain_releases();
+        }
+    }
+
+    impl PluginWindowHost for PostedShellHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("test host creates no windows".to_string())
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
+
+    struct PostedShell {
+        host: PostedShellHost,
+        hop_requested: mpsc::Receiver<()>,
+        hop_queued: mpsc::Receiver<()>,
+    }
+
+    /// The shell's UI thread is the calling thread; a worker's hop waits up to a
+    /// deadline well past the cascade's waiting budget, so an unpumped hop shows
+    /// as an abandoned runtime rather than as a worker that gave up.
+    fn posted_shell() -> PostedShell {
+        let (requested, hop_requested) = mpsc::channel();
+        let (queued, hop_queued) = mpsc::channel();
+        PostedShell {
+            host: PostedShellHost {
+                ui_thread: thread::current().id(),
+                posted: PostedUiThread::new(Duration::from_secs(3)),
+                hop_requested: Mutex::new(requested),
+                hop_queued: Mutex::new(queued),
+                hop_gate: Mutex::new(None),
+            },
+            hop_requested,
+            hop_queued,
+        }
+    }
+
+    /// A retired runtime, held by nothing but the retirement vec, that records
+    /// the thread its teardown ran on.
+    fn retire_runtime_recording_teardown_thread(
+        state: &AppState,
+    ) -> Arc<Mutex<Vec<thread::ThreadId>>> {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "Retired Fixture",
+            Vec::new(),
+            false,
+        );
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(thread::current().id());
+        }));
+        state.retain_retired_engine_plugin(Arc::new(SharedHostedPlugin::new(wrapper.into())));
+        torn_down_on
+    }
+
+    /// A worker sweep has posted its teardown hop, and the shell's loop has not
+    /// pumped it when the quit begins. The cascade holds the UI thread, so it
+    /// is the only thing that can run the hop, and it has to: otherwise the
+    /// vec reads empty and the process exits with that plugin never torn down.
+    #[test]
+    fn a_teardown_hop_posted_before_the_quit_is_run_by_the_cascade() {
+        let state = AppState::default();
+        let shell = posted_shell();
+        let torn_down_on = retire_runtime_recording_teardown_thread(&state);
+        let ui_thread = thread::current().id();
+
+        let report = thread::scope(|scope| {
+            let worker = scope.spawn(|| state.sweep_retired_engine_plugins(&shell.host));
+            shell
+                .hop_queued
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must post its teardown hop");
+
+            let report = shutdown_with_wait(
+                &CollabState::default(),
+                &MidiState::default(),
+                &state,
+                Some(&shell.host),
+                sleep_one_poll,
+            );
+            worker.join().expect("the sweeping worker must not panic");
+            report
+        });
+
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert_eq!(
+            torn_down,
+            [ui_thread],
+            "the posted teardown must have run, on the UI thread, before the cascade returned"
+        );
+        assert!(report.abandoned_instances.is_empty());
+        assert_eq!(report.unreclaimed_retirements, 0);
+    }
+
+    /// The cascade runs releases and nothing else. Any other posted task is an
+    /// editor call a worker made under its control claim; running it during the
+    /// quit would open an editor after the close pass, or hold the cascade on a
+    /// plugin call it cannot bound. It stays queued for the pump.
+    #[test]
+    fn the_cascade_runs_a_posted_release_and_leaves_a_posted_editor_call_queued() {
+        let state = AppState::default();
+        let shell = posted_shell();
+        let torn_down_on = retire_runtime_recording_teardown_thread(&state);
+        let ui_thread = thread::current().id();
+        let call_ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        thread::scope(|scope| {
+            let ran = Arc::clone(&call_ran);
+            let call = scope.spawn(|| {
+                crate::host::ui_thread::call_on_ui_thread(&shell.host, move || {
+                    ran.store(true, Ordering::SeqCst);
+                })
+            });
+            shell
+                .hop_queued
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must post its editor call");
+            let sweep = scope.spawn(|| state.sweep_retired_engine_plugins(&shell.host));
+            shell
+                .hop_queued
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must post its release");
+
+            let report = shutdown_with_wait(
+                &CollabState::default(),
+                &MidiState::default(),
+                &state,
+                Some(&shell.host),
+                sleep_one_poll,
+            );
+
+            let torn_down = torn_down_on.lock().expect("teardown log").clone();
+            let call_ran_during_quit = call_ran.load(Ordering::SeqCst);
+            assert_eq!(torn_down, [ui_thread], "the release must run");
+            assert!(
+                !call_ran_during_quit,
+                "an editor call posted before the quit must not run inside the cascade"
+            );
+            assert!(report.abandoned_instances.is_empty());
+
+            // Still queued: the pump, once the cascade returns, runs it.
+            shell.host.posted.drain();
+            sweep.join().expect("the sweeping worker must not panic");
+            call.join()
+                .expect("the calling worker must not panic")
+                .expect("the pump ran the call it was left");
+            assert!(call_ran.load(Ordering::SeqCst));
+        });
+    }
+
+    /// The window before the hop is even posted: the worker has taken the
+    /// runtime out of the vec and not yet reached the UI thread's queue, so the
+    /// runtime is in neither place. The cascade has to count it and wait.
+    #[test]
+    fn a_runtime_a_sweep_has_taken_but_not_yet_posted_is_waited_for() {
+        let state = AppState::default();
+        let shell = posted_shell();
+        let (open_gate, gate) = mpsc::channel();
+        *shell.host.hop_gate.lock().expect("hop_gate") = Some(gate);
+        let torn_down_on = retire_runtime_recording_teardown_thread(&state);
+        let ui_thread = thread::current().id();
+        let mut waits = 0;
+
+        let report = thread::scope(|scope| {
+            let worker = scope.spawn(|| state.sweep_retired_engine_plugins(&shell.host));
+            shell
+                .hop_requested
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the worker must take the runtime and ask for the UI thread");
+
+            let report = shutdown_with_wait(
+                &CollabState::default(),
+                &MidiState::default(),
+                &state,
+                Some(&shell.host),
+                |poll| {
+                    waits += 1;
+                    // The worker reaches the queue only once the cascade is
+                    // already waiting on it.
+                    let _ = open_gate.send(());
+                    sleep_one_poll(poll)
+                },
+            );
+            worker.join().expect("the sweeping worker must not panic");
+            report
+        });
+
+        assert!(waits > 0, "the cascade must wait for the in-flight release");
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert_eq!(torn_down, [ui_thread]);
+        assert!(report.abandoned_instances.is_empty());
+        assert_eq!(report.unreclaimed_retirements, 0);
     }
 
     /// The MIDI step is the one place the open input device is ever released

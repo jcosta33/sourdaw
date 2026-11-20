@@ -645,9 +645,16 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         tailViewLed = 'Flow open';
     }
 
-    return (
-        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-[440px] p-3">
-            <DawPluginRail className="h-full w-[248px] shrink-0">
+    const faceplate = (
+        <Row
+            align="stretch"
+            gap={3}
+            role="region"
+            aria-label="Dutch Oven controls"
+            tabIndex={0}
+            className="proof-chamber-faceplate h-full min-h-0 flex-col overflow-y-auto p-3 @3xl:flex-row"
+        >
+            <DawPluginRail scrollable={false} className="h-auto w-full shrink-0 @3xl:w-[248px]">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>
                         <div className="text-[18px] font-semibold text-text-primary">Dutch Oven</div>
@@ -766,7 +773,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 ) : null}
             </DawPluginRail>
 
-            <Stack as="section" grow gap={3} className="min-w-0 overflow-y-auto pr-1">
+            <Stack as="section" grow gap={3} className="min-w-0 shrink-0 @3xl:shrink">
                 <Row as="header" wrap gap={2.5} shrink={false} className="proof-chamber-window px-3 py-2">
                     <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
@@ -806,7 +813,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     </DawPluginMetricStrip>
                 </Row>
 
-                <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1.1fr)_280px] gap-3">
+                <div className="grid min-h-0 shrink-0 grid-cols-1 gap-3 @5xl:grid-cols-[minmax(0,1.1fr)_280px]">
                     <div className="proof-chamber-window min-h-[280px] overflow-hidden">
                         <Stack className="h-full">
                             <Row justify="between" className="px-3 py-2">
@@ -1241,6 +1248,8 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             </Stack>
         </Row>
     );
+
+    return <div className="@container h-full min-h-0">{faceplate}</div>;
 };
 
 const ReverbSpectrogram = ({ decay, damping }: { decay: number; damping: number }): ReactElement => {

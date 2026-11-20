@@ -3,7 +3,7 @@
  * Large interactive filter response as hero. Model/mode selectors integrated.
  * Knobs below for precision. No isolated sub-tabs.
  */
-import { type ReactElement } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
@@ -13,6 +13,8 @@ import { Row, Stack } from '#/components/layout';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
+
+const MAX_GRAPH_WIDTH = 500;
 
 type FilterSectionProps = {
     rotaryKnob?: RotaryKnobComponent;
@@ -49,6 +51,25 @@ export const FilterSection = ({
     onDriveChange,
     onKeytrackChange,
 }: FilterSectionProps): ReactElement => {
+    const graphRef = useRef<HTMLDivElement>(null);
+    const [graphWidth, setGraphWidth] = useState(MAX_GRAPH_WIDTH);
+
+    useEffect(() => {
+        const graph = graphRef.current;
+        if (!graph) {
+            return undefined;
+        }
+        // The response graph uses this same width to map pointer input to frequency.
+        const observer = new ResizeObserver(([entry]) => {
+            const width = Math.floor(entry?.contentRect.width ?? 0);
+            if (width > 0) {
+                setGraphWidth(Math.min(width, MAX_GRAPH_WIDTH));
+            }
+        });
+        observer.observe(graph);
+        return () => observer.disconnect();
+    }, []);
+
     const isSvf = model === 0;
     let description: string;
     if (model === 1) {
@@ -66,55 +87,46 @@ export const FilterSection = ({
     }
 
     return (
-        <Stack gap={2} className="w-full">
-            {/* Model + mode selectors in one row */}
-            <DawPluginSectionHeader
-                title="Filter"
-                titleClassName="shrink-0 text-muted-foreground"
-                className="gap-3"
-                actions={
-                    <>
-                        <Row align="stretch" gap={0.5}>
-                            {FILTER_MODEL_NAMES.map((name, i) => (
-                                <DawPluginChip
-                                    key={name}
-                                    active={model === i}
-                                    tone="cyan"
-                                    size="xs"
-                                    onClick={() => onModelChange(i)}
-                                >
-                                    {name}
-                                </DawPluginChip>
-                            ))}
-                        </Row>
-                        {isSvf ? (
-                            <Row align="stretch" gap={0.5} className="ml-auto">
-                                {FILTER_MODE_NAMES.map((name, i) => (
-                                    <DawPluginChip
-                                        key={name}
-                                        active={mode === i}
-                                        tone="cyan"
-                                        size="xs"
-                                        onClick={() => onModeChange(i)}
-                                    >
-                                        {name}
-                                    </DawPluginChip>
-                                ))}
-                            </Row>
-                        ) : (
-                            <span className="ml-auto text-[7px] text-muted-foreground/50">{description}</span>
-                        )}
-                    </>
-                }
-            />
+        <Stack gap={2} className="w-full min-w-0">
+            <DawPluginSectionHeader title="Filter" titleClassName="text-muted-foreground" />
+            <Row align="stretch" wrap gap={0.5}>
+                {FILTER_MODEL_NAMES.map((name, i) => (
+                    <DawPluginChip
+                        key={name}
+                        active={model === i}
+                        tone="cyan"
+                        size="xs"
+                        onClick={() => onModelChange(i)}
+                    >
+                        {name}
+                    </DawPluginChip>
+                ))}
+            </Row>
+            {isSvf ? (
+                <Row align="stretch" wrap gap={0.5}>
+                    {FILTER_MODE_NAMES.map((name, i) => (
+                        <DawPluginChip
+                            key={name}
+                            active={mode === i}
+                            tone="cyan"
+                            size="xs"
+                            onClick={() => onModeChange(i)}
+                        >
+                            {name}
+                        </DawPluginChip>
+                    ))}
+                </Row>
+            ) : (
+                <span className="text-[7px] text-muted-foreground/50">{description}</span>
+            )}
 
             {/* HERO: Large interactive filter curve */}
-            <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
+            <div ref={graphRef} className="rounded-md overflow-hidden border border-border/20 bg-black/20">
                 <FilterResponse
                     cutoff={cutoff}
                     resonance={resonance}
                     filterType={mode}
-                    width={500}
+                    width={graphWidth}
                     height={120}
                     onParamChange={(id, val) => {
                         if (id === 'filterCutoff') {
@@ -127,8 +139,7 @@ export const FilterSection = ({
                 />
             </div>
 
-            {/* Knobs — all in one row */}
-            <Row align="end" gap={3}>
+            <Row align="end" wrap gap={3}>
                 <Stack align="center">
                     <Knob
                         paramId="filterCutoff"

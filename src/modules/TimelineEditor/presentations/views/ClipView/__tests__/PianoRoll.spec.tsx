@@ -128,6 +128,8 @@ vi.mock('../../../hooks/usePianoRollInteractions', () => ({
         handleMouseDown: vi.fn(),
         handleMouseMove: vi.fn(),
         handleMouseUp: vi.fn(),
+        handleMouseLeave: vi.fn(),
+        cancelLasso: vi.fn(),
         handleDoubleClick: vi.fn(),
         handleKeyDown: vi.fn(),
         handleContextMenu: vi.fn(),
@@ -376,6 +378,8 @@ describe('PianoRoll', () => {
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
+            handleMouseLeave: vi.fn(),
+            cancelLasso: vi.fn(),
             handleDoubleClick: vi.fn(),
             handleKeyDown: vi.fn(),
             handleContextMenu: vi.fn(),
@@ -431,9 +435,9 @@ describe('PianoRoll', () => {
         const canvas = screen.getByLabelText('Piano roll editor');
 
         expect(dispatchCanvasEditorCommand(canvas, 'edit:select-all')).toBe(true);
-        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(['note-1']));
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(['note-1']), []);
         expect(dispatchCanvasEditorCommand(canvas, 'edit:deselect-all')).toBe(true);
-        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set());
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(), []);
         expect(dispatchCanvasEditorCommand(canvas, 'edit:undo')).toBe(false);
         expect(dispatchCanvasEditorCommand(canvas, 'edit:cut')).toBe(false);
         expect(dispatchCanvasEditorCommand(canvas, 'edit:copy')).toBe(false);
@@ -525,6 +529,8 @@ describe('PianoRoll', () => {
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
+            handleMouseLeave: vi.fn(),
+            cancelLasso: vi.fn(),
             handleDoubleClick: vi.fn(),
             handleKeyDown: vi.fn(),
             handleContextMenu: vi.fn(),
@@ -547,10 +553,10 @@ describe('PianoRoll', () => {
         // notes is empty in this mocked store, so both resolve to an empty selection —
         // the point is proving the callbacks are wired to the selection setter at all.
         onSelectAll();
-        expect(defaultProps.onSelectedNoteIdsChange).toHaveBeenCalledWith(new Set());
+        expect(defaultProps.onSelectedNoteIdsChange).toHaveBeenCalledWith(new Set(), []);
 
         onClearSelection();
-        expect(defaultProps.onSelectedNoteIdsChange).toHaveBeenCalledWith(new Set());
+        expect(defaultProps.onSelectedNoteIdsChange).toHaveBeenCalledWith(new Set(), []);
     });
 
     it('toggles each independent toolbar boolean flag', () => {

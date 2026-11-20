@@ -23,6 +23,7 @@ import {
 const SUP = 'eslint-suppressions.json';
 const OXC = '.oxlintrc.json';
 const CRAFT = 'oxlint.craft-baseline.mjs';
+const QUALITY = 'oxlint-quality-baseline.json';
 const SIZE = 'eslint.size-baseline.mjs';
 const CEIL = 'scripts/lintSizeCeilings.json';
 const PLG = '.oxlint-plugins.json';
@@ -160,6 +161,15 @@ describe('lint ledger crossing decision', () => {
             name: 'a suppression count lowered',
             base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
             edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 } } }) },
+        },
+        {
+            name: 'a quality violation count lowered',
+            base: {
+                [QUALITY]: JSON.stringify({ 'src/x.ts': { 'sourdaw-craft/no-invalid-vitest-expect': { count: 2 } } }),
+            },
+            edited: {
+                [QUALITY]: JSON.stringify({ 'src/x.ts': { 'sourdaw-craft/no-invalid-vitest-expect': { count: 1 } } }),
+            },
         },
         {
             name: 'one of two rules suppressed at the same figure removed',
@@ -671,6 +681,7 @@ describe('lint ledger crossing over a real repository', () => {
             content: "export const craftBaselineFiles = {\n    'r': [\n        'x.ts',\n    ],\n};\n",
         },
         { ledger: 'eslint.size-baseline.mjs', content: "export const sizeBaselineFiles = [\n    'x.ts',\n];\n" },
+        { ledger: QUALITY, content: JSON.stringify({ 'x.ts': { 'sourdaw-craft/no-silent-catch': { count: 1 } } }) },
         { ledger: 'scripts/lintSizeCeilings.json', content: JSON.stringify({ 'x.ts': 700 }) },
     ])('reads $ledger from the repository and reports a file only it binds', ({ ledger, content }) => {
         const { git, write } = scratchRepository();

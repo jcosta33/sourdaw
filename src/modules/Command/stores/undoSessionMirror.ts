@@ -16,7 +16,10 @@ export type SessionActionContract = {
     readonly operationVersion: number;
     /**
      * Forward contracts are allowed to begin a persisted undo entry. Internal
-     * replay contracts exist solely as an inverse or redo of such an entry.
+     * replay contracts exist as an inverse or redo of such an entry, and begin
+     * one only when they carry `validateEntry`: an entry a local write records
+     * with an internal action as its forward (a recorded automation pass) is
+     * kept only when its owner recognises the whole entry.
      */
     readonly role: 'forward' | 'internal-replay';
     readonly validateArguments: (payload: unknown) => boolean;
@@ -71,12 +74,21 @@ function getActionContract(action: unknown): SessionActionContract | null {
     return sessionActionContracts?.get(action.type) ?? null;
 }
 
-function getCurrentOperationVersion(action: unknown, role?: SessionActionContract['role']): number | null {
+function canBeginEntry(contract: SessionActionContract): boolean {
+    return contract.role === 'forward' || contract.validateEntry !== undefined;
+}
+
+/** The contract a stored action replays under, or null; a forward action needs one that may begin an entry. */
+function getReplayContract(action: unknown, beginsEntry: boolean): SessionActionContract | null {
     const contract = getActionContract(action);
-    if (contract === null || (role !== undefined && contract.role !== role)) {
+    if (contract === null || (beginsEntry && !canBeginEntry(contract))) {
         return null;
     }
-    return contract.operationVersion;
+    return contract;
+}
+
+function getCurrentOperationVersion(action: unknown, beginsEntry = false): number | null {
+    return getReplayContract(action, beginsEntry)?.operationVersion ?? null;
 }
 
 function getStoredOperationVersion(value: Record<string, unknown>, key: string): number | null | undefined {
@@ -102,17 +114,13 @@ function getStoredOperationVersion(value: Record<string, unknown>, key: string):
 function actionMatchesCurrentContract(
     action: unknown,
     storedVersion: number | undefined,
-    role?: SessionActionContract['role']
+    beginsEntry = false
 ): action is AppAction {
     if (!isRecord(action)) {
         return false;
     }
-    const contract = getActionContract(action);
-    if (
-        contract === null ||
-        (role !== undefined && contract.role !== role) ||
-        (storedVersion ?? 1) !== contract.operationVersion
-    ) {
+    const contract = getReplayContract(action, beginsEntry);
+    if (contract === null || (storedVersion ?? 1) !== contract.operationVersion) {
         return false;
     }
     return contract.validateArguments(action.payload === undefined ? {} : action.payload);
@@ -122,7 +130,7 @@ function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntr
     if (!isActionEntry(entry)) {
         return null;
     }
-    const actionOperationVersion = getCurrentOperationVersion(entry.action, 'forward');
+    const actionOperationVersion = getCurrentOperationVersion(entry.action, true);
     if (actionOperationVersion === null) {
         return null;
     }
@@ -199,7 +207,7 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 
     const action = value.action;
     const actionOperationVersion = getStoredOperationVersion(value, 'actionOperationVersion');
-    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion, 'forward')) {
+    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion, true)) {
         return null;
     }
 

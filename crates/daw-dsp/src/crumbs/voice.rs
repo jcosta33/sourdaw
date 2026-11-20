@@ -45,6 +45,7 @@ pub struct CrumbsVoice {
     // Voice state
     pub active: bool,
     pub note: u8,
+    pub(super) pad_audition_id: Option<u32>,
     pub velocity: f32,
     pub age: u32,
 
@@ -121,6 +122,7 @@ impl CrumbsVoice {
         Self {
             active: false,
             note: 0,
+            pad_audition_id: None,
             velocity: 1.0,
             age: 0,
             sample_id: 0,
@@ -163,8 +165,17 @@ impl CrumbsVoice {
     // ── Trigger / Release ──────────────────────────────────────────────
 
     pub fn trigger(&mut self, params: &VoiceTriggerParams) {
+        self.trigger_owned(params, None);
+    }
+
+    pub(super) fn trigger_owned(
+        &mut self,
+        params: &VoiceTriggerParams,
+        pad_audition_id: Option<u32>,
+    ) {
         self.active = true;
         self.note = params.note;
+        self.pad_audition_id = pad_audition_id;
         self.velocity = params.velocity as f32 / 127.0;
         self.age = 0;
         self.sample_id = params.sample_id;
@@ -230,6 +241,14 @@ impl CrumbsVoice {
             return;
         }
         self.amp_envelope.note_off();
+    }
+
+    pub(super) fn release_pad_audition(&mut self) {
+        if self.playback_mode == PlaybackMode::OneShot {
+            self.begin_steal_fade();
+        } else {
+            self.release();
+        }
     }
 
     /// Begin a linear fade-out for voice stealing.

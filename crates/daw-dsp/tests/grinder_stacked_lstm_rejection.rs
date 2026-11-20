@@ -40,7 +40,9 @@ fn stacked_wide_lstm_is_rejected_without_loading_or_panicking() {
         .load_neural_model(&lstm_capture(2, 2))
         .expect_err("a stacked hidden-size-2 LSTM must be rejected before prewarm");
 
-    assert!(error.contains("stacked wide LSTM unsupported by current runtime"));
+    assert!(error
+        .to_string()
+        .contains("stacked wide LSTM unsupported by current runtime"));
     assert!(!engine.has_loaded_neural_model());
 }
 
@@ -89,7 +91,9 @@ fn rejected_replacement_keeps_the_previously_loaded_capture_available() {
         .load_neural_model(&lstm_capture(2, 2))
         .expect_err("a replacement with unsupported topology must be rejected");
 
-    assert!(error.contains("stacked wide LSTM unsupported by current runtime"));
+    assert!(error
+        .to_string()
+        .contains("stacked wide LSTM unsupported by current runtime"));
     assert!(engine.has_loaded_neural_model());
     let input = std::array::from_fn::<_, 128, _>(|index| (index as f32 * 0.07).sin() * 0.1);
     let mut actual_left = input;

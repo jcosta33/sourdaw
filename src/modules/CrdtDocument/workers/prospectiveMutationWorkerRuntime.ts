@@ -1,11 +1,14 @@
-import { change, free, getHeads, getMissingDeps, load, save, type Doc } from '@automerge/automerge/slim';
+import { change, free, getChangesSince, getHeads, getMissingDeps, load, type Doc } from '@automerge/automerge/slim';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
 import {
-    parseProspectiveMutationWorkerRequest,
+    BOUNDED_NATIVE_SEQUENCE_POLICY,
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
+
+import { encodeBoundedMutationSequence } from './encodeBoundedMutationSequence';
+import { parseProspectiveMutationWorkerRequest } from './parseProspectiveMutationWorkerRequest';
 
 export function materializeProspectiveMutation(request: unknown): ProspectiveMutationWorkerResult {
     const input = parseProspectiveMutationWorkerRequest(request);
@@ -26,8 +29,11 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
         if (getMissingDeps(document, []).length > 0) {
             throw new Error('Prospective mutation candidate has missing dependencies');
         }
+        if (input.preparationPolicy === BOUNDED_NATIVE_SEQUENCE_POLICY) {
+            return encodeBoundedMutationSequence(document, input.heads);
+        }
         return {
-            bytes: Uint8Array.from(save(document)),
+            changes: getChangesSince(document, [...input.heads]).map((bytes) => Uint8Array.from(bytes)),
             heads: getHeads(document),
         };
     } finally {

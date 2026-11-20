@@ -71,7 +71,9 @@ export async function executeOfflineRender(
         const input = capture();
         const { sampleRate, historyFrameCount, outputFrameCount } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
-        let buffer = await tryNativeOfflineRender(input, plan, callbacks);
+        // The native render stops mid-flight on the same signal instrument
+        // setup does, so an export's Cancel reaches a render already running.
+        let buffer = await tryNativeOfflineRender(input, plan, { ...callbacks, abortSignal: cancellationSignal });
         if (!buffer) {
             const offlineCtx = new OfflineAudioContext(2, plan.frameCount, sampleRate);
             // Device construction and every track share this context’s frame scheduler.
