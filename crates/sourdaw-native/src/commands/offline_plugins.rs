@@ -108,16 +108,54 @@ fn check_render_id(render_id: &str) -> Result<(), String> {
 /// renderer side matches on.
 pub const OFFLINE_RENDER_CANCELLED: &str = "offline-render-cancelled";
 
-/// The offline renders in flight, by the id their caller named, the cancels
-/// that arrived before their render did, and the ids that recently finished.
+/// How many offline renders may be in flight at once, named or not.
+///
+/// One export plus one agent render are the most the renderer's render lock
+/// lets run together, and each may hold a full-length output buffer.
+pub const MAX_OFFLINE_RENDERS_IN_FLIGHT: usize = 2;
+
+/// The text a render refused for want of a slot starts with.
+pub const OFFLINE_RENDER_LIMIT_REACHED: &str = "offline-render-limit-reached";
+
+/// The offline renders in flight — every admitted one, and by the id their
+/// caller named the ones that have one — the cancels that arrived before their
+/// render did, and the ids that recently finished.
 #[derive(Debug, Default)]
 pub struct OfflineRenders {
+    admitted: Vec<Arc<OfflineRenderControl>>,
     in_flight: HashMap<String, Arc<OfflineRenderControl>>,
     pending_cancels: VecDeque<String>,
     recently_finished: VecDeque<String>,
 }
 
 impl OfflineRenders {
+    /// Take one of the [`MAX_OFFLINE_RENDERS_IN_FLIGHT`] slots for a render,
+    /// registering it under `render_id` when it has one. Refused by name, with
+    /// nothing taken, when every slot is held or the id is in use.
+    fn admit(&mut self, render_id: Option<&str>) -> Result<Arc<OfflineRenderControl>, String> {
+        if self.admitted.len() >= MAX_OFFLINE_RENDERS_IN_FLIGHT {
+            return Err(format!(
+                "{OFFLINE_RENDER_LIMIT_REACHED}: {MAX_OFFLINE_RENDERS_IN_FLIGHT} offline renders \
+                 are already in flight; this one was refused before anything was allocated for it"
+            ));
+        }
+        let control = match render_id {
+            Some(render_id) => self.begin(render_id)?,
+            None => Arc::new(OfflineRenderControl::default()),
+        };
+        self.admitted.push(Arc::clone(&control));
+        Ok(control)
+    }
+
+    /// Give back the slot [`Self::admit`] handed `control`, and finish its id.
+    fn release(&mut self, control: &Arc<OfflineRenderControl>, render_id: Option<&str>) {
+        self.admitted
+            .retain(|admitted| !Arc::ptr_eq(admitted, control));
+        if let Some(render_id) = render_id {
+            self.finish(render_id);
+        }
+    }
+
     /// Register a render under `render_id`, cancelled already if its cancel
     /// arrived first. Refused when a render under that id is still in flight:
     /// a cancel could not say which of the two it meant.
@@ -191,37 +229,45 @@ impl OfflineRenders {
     }
 }
 
-/// One render's hold on its control: registered under its id while it runs,
-/// and taken out of the registry however the render ends.
+/// One render's hold on its slot and its control: admitted, and registered
+/// under its id when it has one, while it runs, and given back however the
+/// render ends.
 pub(crate) struct InFlightRender<'a> {
     control: Arc<OfflineRenderControl>,
-    registration: Option<(&'a AppState, String)>,
+    admission: Option<Admission<'a>>,
+}
+
+/// The registry a render was admitted to, and the id it was registered under.
+struct Admission<'a> {
+    state: &'a AppState,
+    render_id: Option<String>,
 }
 
 impl<'a> InFlightRender<'a> {
-    /// A render the caller named, so it can be cancelled; or, with no id, one
-    /// nothing can cancel.
+    /// Admit a render, refused by name past [`MAX_OFFLINE_RENDERS_IN_FLIGHT`].
+    /// One the caller named can be cancelled by that id.
     pub(crate) fn begin(state: &'a AppState, render_id: Option<String>) -> Result<Self, String> {
-        let Some(render_id) = render_id else {
-            return Ok(Self::uncancellable());
-        };
-        check_render_id(&render_id)?;
+        if let Some(render_id) = &render_id {
+            check_render_id(render_id)?;
+        }
         let control = state
             .offline_renders
             .lock()
             .map_err(|error| format!("Failed to lock offline renders: {error}"))?
-            .begin(&render_id)?;
+            .admit(render_id.as_deref())?;
         Ok(Self {
             control,
-            registration: Some((state, render_id)),
+            admission: Some(Admission { state, render_id }),
         })
     }
 
-    /// A render no caller named, which nothing can cancel.
+    /// A render outside the registry, which takes no slot and nothing can
+    /// cancel.
+    #[cfg(test)]
     pub(crate) fn uncancellable() -> Self {
         Self {
             control: Arc::new(OfflineRenderControl::default()),
-            registration: None,
+            admission: None,
         }
     }
 
@@ -232,9 +278,10 @@ impl<'a> InFlightRender<'a> {
     /// The refusal a cancelled render answers with, once it has stopped.
     pub(crate) fn cancelled(&self) -> String {
         let id = self
-            .registration
+            .admission
             .as_ref()
-            .map_or(String::new(), |(_, id)| format!(" '{id}'"));
+            .and_then(|admission| admission.render_id.as_ref())
+            .map_or(String::new(), |id| format!(" '{id}'"));
         format!(
             "{OFFLINE_RENDER_CANCELLED}: render{id} was cancelled after {} frames; nothing was \
              returned",
@@ -245,11 +292,13 @@ impl<'a> InFlightRender<'a> {
 
 impl Drop for InFlightRender<'_> {
     fn drop(&mut self) {
-        if let Some((state, render_id)) = self.registration.take() {
-            match state.offline_renders.lock() {
-                Ok(mut renders) => renders.finish(&render_id),
-                Err(poisoned) => poisoned.into_inner().finish(&render_id),
-            }
+        let Some(admission) = self.admission.take() else {
+            return;
+        };
+        let render_id = admission.render_id.as_deref();
+        match admission.state.offline_renders.lock() {
+            Ok(mut renders) => renders.release(&self.control, render_id),
+            Err(poisoned) => poisoned.into_inner().release(&self.control, render_id),
         }
     }
 }
@@ -304,6 +353,10 @@ pub(crate) struct OfflinePluginSeams {
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
     pub(crate) after_build: Option<AfterBuild>,
+    /// Run once the render holds its slot and before it maps anything, so a
+    /// test can hold the slot.
+    #[cfg(test)]
+    pub(crate) after_admission: Option<Box<dyn Fn() + Send + Sync>>,
     /// Run once the batch is mapped against the hosted instances and before
     /// any is built, so a test can change the live records in between.
     #[cfg(test)]
@@ -342,6 +395,8 @@ impl OfflinePluginSeams {
             construct: create_hosted_runtime,
             #[cfg(test)]
             after_build: None,
+            #[cfg(test)]
+            after_admission: None,
             #[cfg(test)]
             after_mapping: None,
             #[cfg(test)]

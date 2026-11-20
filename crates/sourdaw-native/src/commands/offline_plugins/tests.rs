@@ -164,6 +164,7 @@ impl InstalledFx {
             capture_state: read_live_state,
             construct: create_hosted_runtime,
             after_build: None,
+            after_admission: None,
             after_mapping: None,
             before_restore: None,
         }
@@ -1507,6 +1508,99 @@ fn a_live_instance_with_parameter_writes_pending_refuses_the_render_by_that_reas
         live.has_pending_parameter_writes(),
         "the render leaves the live writes for the live engine"
     );
+}
+
+// ── (e2) Admission ──────────────────────────────────────────────────────
+
+/// The seams of a render that holds its slot until `release` sends, after
+/// announcing on `admitted` that it holds one.
+fn holding_its_slot(
+    fx: &InstalledFx,
+    admitted: mpsc::Sender<()>,
+    release: Arc<Mutex<mpsc::Receiver<()>>>,
+) -> OfflinePluginSeams {
+    let mut seams = fx.seams();
+    let admitted = Mutex::new(admitted);
+    seams.after_admission = Some(Box::new(move || {
+        admitted
+            .lock()
+            .expect("admitted")
+            .send(())
+            .expect("the test is watching admission");
+        release
+            .lock()
+            .expect("release")
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the slot");
+    }));
+    seams
+}
+
+/// Renders in flight are bounded, the ones nobody can cancel included: past
+/// the limit a render is refused by name before it maps or builds anything,
+/// and a slot given back admits the next one.
+#[test]
+fn a_render_past_the_in_flight_limit_is_refused_by_name_until_a_slot_is_released() {
+    let fx = InstalledFx::create("admission-limit");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let (admitted, admissions) = mpsc::channel();
+    let (release_unnamed, unnamed_released) = mpsc::channel();
+    let (release_named, named_released) = mpsc::channel();
+    let holding_unnamed = holding_its_slot(
+        &fx,
+        admitted.clone(),
+        Arc::new(Mutex::new(unnamed_released)),
+    );
+    let holding_named = holding_its_slot(&fx, admitted, Arc::new(Mutex::new(named_released)));
+    let plain = fx.seams();
+    let with_the_fx = || batch(impulse_track(json!([fx_device()])));
+    let built_in_only = || batch(impulse_track(json!([])));
+
+    thread::scope(|scope| {
+        let unnamed = scope.spawn(|| render(built_in_only(), &state, &ui, &holding_unnamed, None));
+        let named =
+            scope.spawn(|| render(built_in_only(), &state, &ui, &holding_named, Some("held")));
+        for _ in 0..MAX_OFFLINE_RENDERS_IN_FLIGHT {
+            admissions
+                .recv_timeout(Duration::from_secs(10))
+                .expect("each held render is admitted");
+        }
+
+        let refusal = render(with_the_fx(), &state, &ui, &plain, Some("over"))
+            .map(|print| print.len())
+            .expect_err("a render past the limit is refused");
+        assert!(
+            refusal.starts_with(OFFLINE_RENDER_LIMIT_REACHED),
+            "{refusal}"
+        );
+        assert_eq!(ui.tasks_run(), 0, "the refused render built nothing");
+        assert!(
+            state
+                .offline_renders
+                .lock()
+                .expect("renders")
+                .in_flight("over")
+                .is_none(),
+            "a refused render is not registered"
+        );
+
+        release_unnamed
+            .send(())
+            .expect("the unnamed render is waiting");
+        unnamed
+            .join()
+            .expect("the unnamed render returns")
+            .expect("the unnamed render prints");
+        render(with_the_fx(), &state, &ui, &plain, Some("after"))
+            .expect("a released slot admits the next render");
+
+        release_named.send(()).expect("the named render is waiting");
+        named
+            .join()
+            .expect("the named render returns")
+            .expect("the named render prints");
+    });
 }
 
 #[test]

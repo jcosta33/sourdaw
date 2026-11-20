@@ -6513,7 +6513,10 @@ fn render_offline_batch(
 ///
 /// `render_id` names the render so `cancel_graph_offline` can stop it between
 /// blocks; a cancelled render answers an error starting
-/// `offline-render-cancelled`. It runs on the calling worker, never on `ui`,
+/// `offline-render-cancelled`. At most `MAX_OFFLINE_RENDERS_IN_FLIGHT` renders,
+/// named or not, run at once: one past that is refused with
+/// `offline-render-limit-reached` before anything is mapped, allocated or
+/// built for it. It runs on the calling worker, never on `ui`,
 /// which is only ever asked to build and tear down instances.
 pub async fn render_graph_offline(
     batch: Value,
@@ -6565,6 +6568,10 @@ pub(crate) async fn render_graph_offline_with(
     }
 
     let render = InFlightRender::begin(state, render_id)?;
+    #[cfg(test)]
+    if let Some(after_admission) = &seams.after_admission {
+        after_admission();
+    }
     let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
