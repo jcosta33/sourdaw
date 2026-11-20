@@ -12,8 +12,8 @@ mod support;
 
 use daw_plugin_host::vst3_wrapper::decode_state as decode_vst3_container;
 use daw_plugin_host::{
-    take_pending_process_refusal_signal, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
-    ProcessMode, Vst3Wrapper,
+    take_pending_process_refusal_signal, AudioPlugin, HostParameterUpdate, HostedPluginRuntime,
+    PluginHostRequest, ProcessMode, Vst3Wrapper,
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
@@ -21,7 +21,8 @@ use sourdaw_harness_fx::{
     LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
     RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID,
     VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
-    VST3_RECONFIGURING_CLASS_ID, VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
+    VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID, VST3_RECONFIGURING_CLASS_ID,
+    VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
 };
 use std::sync::{Arc, Mutex};
 use support::InstalledPlugin;
@@ -313,10 +314,9 @@ fn the_reporter_reports_a_refused_layout_once() {
     );
 }
 
-/// A write made while the slot is out of service waits for the processor:
-/// the blocks that skip the plugin hand it back to the queue, and once a
-/// restart the host can route brings the slot back, the first block the
-/// plugin is handed carries it.
+/// An engine write carried by a block the slot skips while out of service
+/// waits for the processor: once a restart the host can route brings the
+/// slot back, the first block the plugin is handed carries it.
 #[test]
 fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
     let _hint = refusal_hint_guard();
@@ -329,8 +329,15 @@ fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
     wrapper
         .apply_component_restart()
         .expect_err("six output channels cannot be routed");
-    wrapper.set_parameter(LEVEL_PARAM_ID, 0.5);
-    process(&mut wrapper, &left, &right);
+    let level = HostParameterUpdate {
+        param_id: LEVEL_PARAM_ID,
+        value: 0.5,
+    };
+    let inputs: [&[f32]; 2] = [&left, &right];
+    let (mut skipped_left, mut skipped_right) =
+        (vec![0.0f32; BLOCK_FRAMES], vec![0.0f32; BLOCK_FRAMES]);
+    let mut outputs: [&mut [f32]; 2] = [&mut skipped_left, &mut skipped_right];
+    wrapper.process_with_parameter_updates(&inputs, &mut outputs, BLOCK_FRAMES, &[level]);
     process(&mut wrapper, &left, &right);
 
     wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 0.0);
@@ -426,6 +433,72 @@ fn a_write_to_an_idle_instance_whose_processor_is_the_truth_lands() {
     assert_eq!(gain, 0.25);
     let (component, _controller) = decode_vst3_container(&wrapper.get_state().unwrap()).unwrap();
     assert_eq!(decode(&component).unwrap().gain, 0.25);
+}
+
+/// A write the flush delivered is taken off the queue: a preset loaded
+/// afterwards keeps its own value through the next block instead of having
+/// the already-delivered write played back over it.
+#[test]
+fn a_flushed_write_is_not_delivered_again_over_a_later_preset() {
+    let plugin = InstalledPlugin::create("vst3-processor-truth-flush-settles");
+    let preset = {
+        let mut donor = plugin.vst3_class(&VST3_PROCESSOR_TRUTH_CLASS_ID, ProcessMode::Realtime);
+        donor.set_parameter(GAIN_PARAM_ID, 0.7);
+        donor.get_state().unwrap()
+    };
+    let mut wrapper = plugin.vst3_class(&VST3_PROCESSOR_TRUTH_CLASS_ID, ProcessMode::Realtime);
+
+    wrapper.set_parameter(GAIN_PARAM_ID, 0.25);
+    wrapper.set_state(&preset).unwrap();
+    let (left, right) = distinct_pair();
+    process(&mut wrapper, &left, &right);
+
+    let (component, _controller) = decode_vst3_container(&wrapper.get_state().unwrap()).unwrap();
+    assert_eq!(decode(&component).unwrap().gain, 0.7);
+}
+
+/// An engine write carried by a block whose processing start the plugin
+/// refused is not lost with that block: it reaches the processor on the first
+/// block the plugin does process.
+#[test]
+fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_block() {
+    let plugin = InstalledPlugin::create("vst3-processor-truth-late-start");
+    let mut wrapper = plugin.vst3_class(
+        &VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+        ProcessMode::Realtime,
+    );
+    let (left, right) = distinct_pair();
+    let gain = |wrapper: &Vst3Wrapper| {
+        wrapper
+            .get_parameters()
+            .into_iter()
+            .find(|parameter| parameter.id == GAIN_PARAM_ID)
+            .expect("the class publishes Gain")
+            .value
+    };
+    let block = |wrapper: &mut Vst3Wrapper, updates: &[HostParameterUpdate]| {
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let (mut out_left, mut out_right) =
+            (vec![0.0f32; BLOCK_FRAMES], vec![0.0f32; BLOCK_FRAMES]);
+        let mut outputs: [&mut [f32]; 2] = [&mut out_left, &mut out_right];
+        wrapper.process_with_parameter_updates(&inputs, &mut outputs, BLOCK_FRAMES, updates);
+    };
+
+    block(
+        &mut wrapper,
+        &[HostParameterUpdate {
+            param_id: GAIN_PARAM_ID,
+            value: 0.25,
+        }],
+    );
+    assert_ne!(
+        gain(&wrapper),
+        0.25,
+        "the refused block reached no processor"
+    );
+
+    block(&mut wrapper, &[]);
+    assert_eq!(gain(&wrapper), 0.25);
 }
 
 /// A write whose flush the processor refuses stays queued for the processor's
