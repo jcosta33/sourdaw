@@ -1,7 +1,9 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { initDeviceStateReconciliation } from '#/app/initDeviceStateReconciliation';
 import { initLevainDeviceStateProjectAccess } from '#/app/initLevainDeviceStateProjectAccess';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import {
     configureAutomergeStoragePort,
@@ -15,15 +17,20 @@ import {
     trackStore,
 } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { captureDeviceParameterRuntimeWriteAuthority, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { levainStore } from '../../../stores/levainStore';
 import { configureLevainDeviceStateProjectAccess } from '../../../useCases/configureLevainDeviceStateProjectAccess';
@@ -34,15 +41,35 @@ import { LevainPanel } from '../LevainPanel';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...original,
+        captureDeviceParameterRuntimeWriteAuthority: vi.fn(original.captureDeviceParameterRuntimeWriteAuthority),
+        updateDeviceParam: vi.fn(),
+    };
+});
+
 const deviceId = 'levain-init';
 const saved = {
     version: 1,
     data: { instrumentId: 'cello', currentArticulation: 'pizzicato', disclosureTier: 'basic' },
 };
 let channel: MessageChannel;
+let stopReconciliation: () => void;
+let stopProjection: () => void;
+const emitNotification = vi.fn(() => Promise.resolve());
+
+function projectTracks() {
+    return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks;
+}
+
+function projectDevice() {
+    return projectTracks()?.[0]?.devices[0];
+}
 
 function projectState() {
-    return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks[0]?.devices[0]?.deviceState;
+    return projectDevice()?.deviceState;
 }
 
 beforeEach(() => {
@@ -51,6 +78,13 @@ beforeEach(() => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
+    stopReconciliation = initDeviceStateReconciliation();
+    stopProjection = setupProjectionBridge();
+    vi.mocked(captureDeviceParameterRuntimeWriteAuthority).mockReset();
+    vi.mocked(updateDeviceParam).mockReset();
+    emitNotification.mockClear();
+    clearUndoHistory();
     agentProjectRepairStateStore.set(null);
     clearHandlerRegistry();
     registerHandlerMap(getArrangementHandlers());
@@ -72,6 +106,20 @@ beforeEach(() => {
                     },
                 ],
             },
+            {
+                id: 'track-2',
+                name: 'Other instrument',
+                kind: 'midi',
+                devices: [
+                    {
+                        id: 'levain-other',
+                        name: 'Second Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: { masterGain: 0.37 },
+                    },
+                ],
+            },
         ],
         selectedTrackId: null,
     }).tracks;
@@ -87,9 +135,14 @@ beforeEach(() => {
         writeNativeBuiltinParameters: vi.fn(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
     });
+    setNotificationEventBus({ emit: emitNotification, on: vi.fn() });
 });
 
 afterEach(() => {
+    cleanup();
+    stopReconciliation();
+    stopProjection();
+    vi.unstubAllGlobals();
     configureLevainDeviceStateProjectAccess(null);
     trackStore.set({ ...defaultTrackState, tracks: [] });
     flushAutomergeStorageWrites();
@@ -98,6 +151,382 @@ afterEach(() => {
     configureAutomergeStoragePort(null);
     channel.port1.close();
     channel.port2.close();
+});
+
+async function mountExpertMaster() {
+    await registerLevainDevice(deviceId, { setParam: vi.fn(), handleCc: vi.fn() }, channel.port1);
+    render(<LevainPanel deviceId={deviceId} />);
+    await act(async () => screen.getByRole('button', { name: 'Expert' }).click());
+    await waitFor(() => expect(projectState()?.data.disclosureTier).toBe('expert'));
+    const master = await screen.findByRole('slider', { name: 'Master' });
+    Object.defineProperties(master, {
+        setPointerCapture: { value: vi.fn() },
+        releasePointerCapture: { value: vi.fn() },
+    });
+    return master;
+}
+
+function beginMasterDrag(master: HTMLElement): void {
+    fireEvent.pointerDown(master, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 124 });
+}
+
+/** Exercise confirmed synchronous writes at the controller boundary without a worklet. */
+function installRuntimeWriteFixture() {
+    const writes = new Map<string, { value: number; owner: symbol | undefined }>();
+
+    function address(trackId: string, targetId: string, paramId: string): string {
+        return JSON.stringify([trackId, targetId, paramId]);
+    }
+
+    vi.mocked(captureDeviceParameterRuntimeWriteAuthority).mockImplementation((trackId, targetId, paramId) => {
+        const key = address(trackId, targetId, paramId);
+        const startingWrite = writes.get(key);
+        const owner = Symbol('runtime fixture write owner');
+        function isCurrent(): boolean {
+            return writes.get(key)?.owner === owner;
+        }
+        return {
+            owner,
+            isCurrent,
+            canCommit: () => isCurrent() || writes.get(key) === startingWrite,
+            release() {
+                const write = writes.get(key);
+                if (write?.owner === owner) {
+                    write.owner = undefined;
+                }
+            },
+        };
+    });
+    vi.mocked(updateDeviceParam).mockImplementation((trackId, targetId, paramId, value, owner) => {
+        writes.set(address(trackId, targetId, paramId), { value, owner });
+    });
+
+    return (trackId: string, targetId: string) => writes.get(address(trackId, targetId, 'masterGain'));
+}
+
+function holdAnimationFrames(): () => void {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    return () => {
+        for (const callback of frames.splice(0)) {
+            callback(0);
+        }
+        flushAutomergeStorageWrites();
+    };
+}
+
+it('previews Desk Master across animation frames and commits one replayable canonical scalar on release', async () => {
+    const releaseFrame = holdAnimationFrames();
+    const master = await mountExpertMaster();
+    await act(async () => {
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track-2', name: 'Name before drag' } });
+    });
+    const historyBefore = undoStore.value?.past;
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    expect(projectDevice()?.parameterValues).not.toHaveProperty('masterGain');
+
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    await act(async () => releaseFrame());
+
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).not.toHaveProperty('masterGain');
+    expect(projectDevice()?.parameterValues).not.toHaveProperty('masterGain');
+    expect(undoStore.value?.past).toEqual(historyBefore);
+    expect(levainStore.value?.[deviceId]?.patch.masterGain).toBe(0.8);
+    expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith(
+        'track-1',
+        deviceId,
+        'masterGain',
+        0.48,
+        expect.any(Symbol)
+    );
+
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(projectDevice()?.parameterValues).toEqual({ masterGain: 0.48 });
+    expect(undoStore.value?.past).toHaveLength((historyBefore?.length ?? 0) + 1);
+    expect(levainStore.value?.[deviceId]?.patch.masterGain).toBe(0.48);
+    expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+
+    await act(async () => undo());
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).not.toHaveProperty('masterGain');
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', 0.8);
+    expect(updateDeviceParam).toHaveBeenCalledTimes(3);
+    expect(projectTracks()?.[1]).toMatchObject({
+        name: 'Name before drag',
+        devices: [{ id: 'levain-other', parameterValues: { masterGain: 0.37 } }],
+    });
+
+    await act(async () => redo());
+    expect(projectDevice()?.parameterValues).toEqual({ masterGain: 0.48 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', 0.48);
+    expect(updateDeviceParam).toHaveBeenCalledTimes(4);
+    expect(projectState()?.data).toMatchObject({ instrumentId: 'cello', currentArticulation: 'pizzicato' });
+});
+
+it('lets an existing queued Master edit and mic edit settle when Desk Master is pressed', async () => {
+    const releaseFrame = holdAnimationFrames();
+    const master = await mountExpertMaster();
+    act(() => {
+        levainBridge().setLevainParamWithAudio(deviceId, 'masterGain', 0.62);
+        levainBridge().sendMicParamToEngine(deviceId, 0, 'volume', 0.33);
+    });
+    await act(async () => {
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track-2', name: 'While queued' } });
+    });
+    expect(master).toHaveAttribute('aria-valuenow', '0.62');
+
+    beginMasterDrag(master);
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(master).toHaveAttribute('aria-valuenow', '0.62');
+    expect(updateDeviceParam).not.toHaveBeenCalled();
+    await act(async () => releaseFrame());
+    expect(projectDevice()?.parameterValues).toEqual({ masterGain: 0.62, mic0Volume: 0.33 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.62');
+});
+
+it('retires an old drag after a different committed Master value arrives', async () => {
+    const master = await mountExpertMaster();
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    await act(async () => {
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track-2', name: 'While holding' } });
+    });
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    await act(async () => {
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId, paramId: 'masterGain', value: 0.64 },
+        });
+    });
+    expect(master).toHaveAttribute('aria-valuenow', '0.64');
+    const historyBeforeRelease = undoStore.value?.past;
+    vi.mocked(updateDeviceParam).mockClear();
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 145 });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(projectDevice()?.parameterValues).toEqual({ masterGain: 0.64 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.64');
+    expect(undoStore.value?.past).toEqual(historyBeforeRelease);
+    expect(updateDeviceParam).not.toHaveBeenCalled();
+});
+
+it.each<{ caseName: string; legacy: Record<string, number>; effectiveValue: number }>([
+    { caseName: 'retained', legacy: { master_gain: 0.42 }, effectiveValue: 0.42 },
+    { caseName: 'changed', legacy: { master_gain: 0.55 }, effectiveValue: 0.55 },
+    { caseName: 'removed', legacy: {}, effectiveValue: 0.8 },
+])('replays the current Master when the legacy value was $caseName', async ({ legacy, effectiveValue }) => {
+    const tracks = trackStore.value;
+    if (!tracks) {
+        throw new Error('Expected the Levain project fixture');
+    }
+    trackStore.set({
+        ...tracks,
+        tracks: tracks.tracks.map((track) => ({
+            ...track,
+            devices: track.devices.map((device) =>
+                device.id === deviceId ? { ...device, parameterValues: { master_gain: 0.42 } } : device
+            ),
+        })),
+    });
+    flushAutomergeStorageWrites();
+    const master = await mountExpertMaster();
+    expect(master).toHaveAttribute('aria-valuenow', '0.42');
+
+    await act(async () => fireEvent.keyDown(master, { key: 'ArrowUp' }));
+    expect(projectDevice()?.parameterValues).toEqual({ master_gain: 0.42, masterGain: 0.43 });
+    expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith(
+        'track-1',
+        deviceId,
+        'masterGain',
+        0.43,
+        expect.any(Symbol)
+    );
+    const historyBefore = undoStore.value?.past;
+    await act(async () => {
+        mutateCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>({
+            id: 'root',
+            changeFn: (document) => {
+                const device = document.tracks.tracks[0]?.devices[0];
+                if (device?.id !== deviceId) {
+                    throw new Error('Expected the Levain project fixture');
+                }
+                device.parameterValues = { ...legacy, masterGain: 0.43 };
+            },
+        });
+    });
+    expect(projectDevice()?.parameterValues).toEqual({ ...legacy, masterGain: 0.43 });
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({ ...legacy, masterGain: 0.43 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.43');
+    expect(undoStore.value?.past).toEqual(historyBefore);
+
+    await act(async () => undo());
+    expect(projectDevice()?.parameterValues).toEqual(legacy);
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual(legacy);
+    expect(master).toHaveAttribute('aria-valuenow', String(effectiveValue));
+    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', effectiveValue);
+    expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+});
+
+it('invalidates the held gesture when its owner freezes', async () => {
+    const master = await mountExpertMaster();
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    const historyBefore = undoStore.value?.past;
+    const tracks = trackStore.value;
+    if (!tracks) {
+        throw new Error('Expected the Levain project fixture');
+    }
+    await act(async () => {
+        trackStore.set({
+            ...tracks,
+            tracks: tracks.tracks.map((track) => (track.id === 'track-1' ? { ...track, frozen: true } : track)),
+        });
+        flushAutomergeStorageWrites();
+    });
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 145 });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(undoStore.value?.past).toEqual(historyBefore);
+    expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith(
+        'track-1',
+        deviceId,
+        'masterGain',
+        0.48,
+        expect.any(Symbol)
+    );
+});
+
+it('restores its addressed runtime write when the held Master unmounts', async () => {
+    const readRuntime = installRuntimeWriteFixture();
+    const master = await mountExpertMaster();
+    const history = undoStore.value;
+    beginMasterDrag(master);
+    const owner = readRuntime('track-1', deviceId)?.owner;
+    expect(owner).toEqual(expect.any(Symbol));
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.48, owner });
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+
+    cleanup();
+    expect(screen.queryByRole('slider', { name: 'Master' })).toBeNull();
+    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', 0.8, owner);
+    expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.8, owner: undefined });
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({});
+    expect(undoStore.value).toEqual(history);
+});
+
+it('restores Master after a preview write throws and accepts the next edit', async () => {
+    const readRuntime = installRuntimeWriteFixture();
+    const master = await mountExpertMaster();
+    const history = undoStore.value;
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    expect(readRuntime('track-1', deviceId)?.value).toBe(0.48);
+    vi.mocked(updateDeviceParam).mockImplementationOnce(() => {
+        throw new Error('Master preview write refused by runtime');
+    });
+
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 145 });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.8, owner: undefined });
+    expect(updateDeviceParam).toHaveBeenCalledTimes(3);
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({});
+    expect(undoStore.value).toEqual(history);
+    expect(emitNotification).toHaveBeenCalledExactlyOnceWith(
+        'ui.notify',
+        expect.objectContaining({ level: 'error', message: 'Master preview write refused by runtime' })
+    );
+
+    await act(async () => fireEvent.keyDown(master, { key: 'ArrowUp' }));
+    expect(master).toHaveAttribute('aria-valuenow', '0.81');
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.81, owner: undefined });
+    expect(projectDevice()?.parameterValues).toEqual({ masterGain: 0.81 });
+    expect(undoStore.value?.past).toHaveLength((history?.past.length ?? 0) + 1);
+});
+
+it('does not commit a drag returned to the opening Master value', async () => {
+    const readRuntime = installRuntimeWriteFixture();
+    const master = await mountExpertMaster();
+    const history = undoStore.value;
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    const owner = readRuntime('track-1', deviceId)?.owner;
+    expect(owner).toEqual(expect.any(Symbol));
+
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 100 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.8, owner });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(readRuntime('track-1', deviceId)).toEqual({ value: 0.8, owner: undefined });
+    expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({});
+    expect(undoStore.value).toEqual(history);
+});
+
+it('discards a held preview when a successor registers under the same device id', async () => {
+    const readRuntime = installRuntimeWriteFixture();
+    const master = await mountExpertMaster();
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    expect(readRuntime('track-1', deviceId)?.value).toBe(0.48);
+
+    const successor = { setParam: vi.fn(), handleCc: vi.fn() };
+    await act(async () => {
+        await registerLevainDevice(deviceId, successor, channel.port2);
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track-2', name: 'After replacement' } });
+    });
+    expect(successor.setParam).toHaveBeenCalledWith('master_gain', 0.8);
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    const history = undoStore.value;
+
+    fireEvent.pointerMove(master, { pointerId: 1, clientY: 145 });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith(
+        'track-1',
+        deviceId,
+        'masterGain',
+        0.48,
+        expect.any(Symbol)
+    );
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({});
+    expect(undoStore.value).toEqual(history);
+});
+
+it('clears the held display when project admission refuses a release', async () => {
+    const master = await mountExpertMaster();
+    beginMasterDrag(master);
+    expect(master).toHaveAttribute('aria-valuenow', '0.48');
+    const historyBefore = undoStore.value?.past;
+    act(() => {
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'repair-required-test',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+    });
+    await act(async () => fireEvent.pointerUp(master, { pointerId: 1 }));
+    expect(master).toHaveAttribute('aria-valuenow', '0.8');
+    expect(projectDevice()?.parameterValues).toEqual({});
+    expect(undoStore.value?.past).toEqual(historyBefore);
+    expect(emitNotification).toHaveBeenCalledExactlyOnceWith(
+        'ui.notify',
+        expect.objectContaining({ level: 'warning' })
+    );
 });
 
 it('exposes family filters as checked radios without pressed-button semantics', () => {

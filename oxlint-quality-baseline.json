@@ -5543,7 +5543,7 @@
             "count": 6
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 7
+            "count": 5
         }
     },
     "src/modules/Arrangement/handlers/device/handleSetSend.ts": {
@@ -14361,11 +14361,6 @@
             "count": 1
         },
         "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
-    "src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts": {
-        "eslint/complexity": {
             "count": 1
         }
     },
