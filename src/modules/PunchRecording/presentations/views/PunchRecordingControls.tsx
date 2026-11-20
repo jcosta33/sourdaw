@@ -75,6 +75,9 @@ const NumberField = ({
                         onChange={(event) => setDraft(event.target.value)}
                         onBlur={commit}
                         onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing) {
+                                return;
+                            }
                             if (event.key === 'Enter') {
                                 commit();
                             }

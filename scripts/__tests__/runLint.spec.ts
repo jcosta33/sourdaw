@@ -10,6 +10,7 @@ import {
     buildEslintArgv,
     buildOxlintArgv,
     buildPublicPluginsArgv,
+    buildQualityLintArgv,
     ensureServerDependencies,
     ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
@@ -156,13 +157,31 @@ describe('public plugin pass coverage', () => {
 });
 
 describe('full run through the entrypoint', () => {
-    function runFull(options: { lintedFiles: number; trackedFiles: string[] }) {
+    function runFull(options: { lintedFiles: number; trackedFiles: string[]; qualityFiles?: number }) {
         const directory = mkdtempSync(join(tmpdir(), 'run-lint-full-'));
         try {
             const argsFile = join(directory, 'git-args');
+            for (const file of ['.oxlint-plugins.json', '.oxlint-quality.json']) {
+                writeFileSync(join(directory, file), readFileSync(file));
+            }
+            writeFileSync(join(directory, 'oxlint-quality-baseline.json'), '{}\n');
             writeFileSync(
                 join(directory, 'pnpm'),
-                `#!/bin/sh\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then echo "plugins-args=$*"; echo "Finished in 1s on ${options.lintedFiles} files with 1 rules using 1 threads."; else echo "$2 output"; if [ "$2" = "eslint" ]; then echo "eslint-args=$*"; fi; fi\n`
+                `#!/bin/sh
+case "$3" in
+    --config=.oxlint-plugins.json)
+        echo "plugins-args=$*"
+        echo "Finished in 1s on ${options.lintedFiles} files with 1 rules using 1 threads."
+        ;;
+    --config=.oxlint-quality.json)
+        printf '%s\\n' '{"number_of_files":${options.qualityFiles ?? options.lintedFiles},"diagnostics":[]}'
+        ;;
+    *)
+        echo "$2 output"
+        if [ "$2" = "eslint" ]; then echo "eslint-args=$*"; fi
+        ;;
+esac
+`
             );
             // The full run lints server/, whose dependencies the real run installs with npm when absent.
             writeFileSync(join(directory, 'npm'), '#!/bin/sh\nexit 0\n');
@@ -172,6 +191,7 @@ describe('full run through the entrypoint', () => {
             chmodSync(join(directory, 'pnpm'), 0o755);
             chmodSync(join(directory, 'git'), 0o755);
             const result = spawnSync(process.execPath, [resolve('scripts/runLint.ts'), '--full'], {
+                cwd: directory,
                 encoding: 'utf8',
                 env: { ...process.env, PATH: directory },
             });
@@ -228,6 +248,118 @@ describe('full run through the entrypoint', () => {
         expect(result.stdout).toContain('plugins-args=exec oxlint --config=.oxlint-plugins.json --quiet');
         expect(result.stdout).toMatch(/plugins-args=.* src scripts electron tests\/e2e server\n/);
         expect(result.stdout).toContain('lint: eslint passed');
+        expect(result.stdout).toMatch(/lint: eslint e2e-server passed[^]*lint: oxlint-quality passed/);
+    });
+
+    it('refuses an incomplete quality pass after the other engines pass', () => {
+        const { result } = runFull({ lintedFiles: 5, trackedFiles, qualityFiles: 4 });
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('lint: eslint e2e-server passed');
+        expect(result.stderr).toContain('oxlint-quality linted 4 files but 5 tracked source files');
+    });
+});
+
+describe('quality lint argv', () => {
+    it('always asks for diagnostics without enabling a writer', () => {
+        expect(buildQualityLintArgv(['src/a.ts'], {})).toEqual([
+            'exec',
+            'oxlint',
+            '--config=.oxlint-quality.json',
+            '--disable-nested-config',
+            '--no-error-on-unmatched-pattern',
+            '--threads=2',
+            '--format=json',
+            'src/a.ts',
+        ]);
+    });
+});
+
+describe('focused run through the entrypoint', () => {
+    const target = 'src/untracked.ts';
+    const violation = {
+        filename: target,
+        severity: 'error',
+        code: 'sourdaw-craft(no-useless-clone-spread)',
+        message: 'Do not clone with spread.',
+    };
+    const budget = JSON.stringify({ [target]: { 'sourdaw-craft/no-useless-clone-spread': { count: 1 } } });
+
+    function run(fix: boolean, output: string, exitCommand: string, ledger?: string) {
+        const directory = mkdtempSync(join(tmpdir(), 'run-lint-quality-'));
+        try {
+            const ledgerPath = join(directory, 'oxlint-quality-baseline.json');
+            if (ledger !== undefined) {
+                writeFileSync(ledgerPath, ledger);
+            }
+            writeFileSync(join(directory, 'report.json'), output);
+            const shim = join(directory, 'pnpm');
+            writeFileSync(
+                shim,
+                `#!/bin/sh
+if [ "$3" = "--config=.oxlint-quality.json" ]; then
+    echo "quality-args=$*" >&2
+    /bin/cat report.json
+    ${exitCommand}
+fi
+echo "other-pass=$*"
+`
+            );
+            chmodSync(shim, 0o755);
+            const args = [resolve('scripts/runLint.ts'), target];
+            if (fix) {
+                args.push('--fix');
+            }
+            const result = spawnSync(process.execPath, args, {
+                cwd: directory,
+                encoding: 'utf8',
+                env: { ...process.env, PATH: directory },
+            });
+            const ledgerAfter = existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8') : undefined;
+            return { ...result, ledgerAfter };
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }
+
+    it.each([false, true])('enforces identical counts with an unmodified ledger (fix=%s)', (fix) => {
+        const equal = run(fix, JSON.stringify({ number_of_files: 1, diagnostics: [violation] }), 'exit 1', budget);
+        expect(equal.status, equal.stderr).toBe(0);
+        expect(equal.ledgerAfter).toBe(budget);
+        expect(equal.stdout).toMatch(/lint: eslint passed[^]*lint: oxlint-quality passed/);
+        expect(equal.stderr).toMatch(/quality-args=.* --format=json src\/untracked\.ts/);
+        expect(equal.stderr).not.toContain('--fix');
+
+        const stale = run(fix, '{"number_of_files":1,"diagnostics":[]}', 'exit 0', budget);
+        expect(stale.status).toBe(1);
+        expect(stale.stderr).toContain('1 recorded, 0 observed');
+        expect(stale.ledgerAfter).toBe(budget);
+
+        const higher = run(
+            fix,
+            JSON.stringify({ number_of_files: 1, diagnostics: [violation, violation] }),
+            'exit 1',
+            budget
+        );
+        expect(higher.status).toBe(1);
+        expect(higher.stderr).toContain('Do not clone with spread.');
+        expect(higher.ledgerAfter).toBe(budget);
+    });
+
+    it('fails closed for missing or malformed ledger and non-diagnostic process failures', () => {
+        const goodReport = '{"number_of_files":1,"diagnostics":[]}';
+        const missing = run(false, goodReport, 'exit 0');
+        const malformed = run(false, goodReport, 'exit 0', '[]');
+        const processFailure = run(false, goodReport, 'exit 1', '{}');
+        const killed = run(false, goodReport, 'kill -TERM $$', '{}');
+        const badReport = run(false, 'Failed to load configuration.', 'exit 1', '{}');
+        expect(missing.status).toBe(1);
+        expect(missing.stderr).toContain('oxlint-quality-baseline.json');
+        expect(malformed.stderr).toContain('must contain counts');
+        expect(processFailure.stderr).toContain('oxlint-quality failed');
+        expect(killed.stderr).toContain('SIGTERM');
+        expect(badReport.stderr).toContain('Failed to load configuration.');
+        expect(badReport.status).toBe(1);
     });
 });
 
@@ -403,7 +535,18 @@ describe('lint entrypoint phase reporting', () => {
             const executable = join(directory, 'pnpm');
             writeFileSync(
                 executable,
-                '#!/bin/sh\nengine="$2"\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then engine="oxlint-plugins"; fi\necho "$engine output"\nif [ "$engine" = "$FAIL_ENGINE" ]; then exit 2; fi\nif [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "eslint" ]; then echo "cofix=$SOURDAW_LINT_COFIX args=$*"; fi\nif [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "oxlint-plugins" ]; then echo "public-args=$*"; fi\n'
+                `#!/bin/sh
+engine="$2"
+if [ "$3" = "--config=.oxlint-plugins.json" ]; then engine="oxlint-plugins"; fi
+if [ "$3" = "--config=.oxlint-quality.json" ]; then
+    echo '{"number_of_files":1,"diagnostics":[]}'
+    exit 0
+fi
+echo "$engine output"
+if [ "$engine" = "$FAIL_ENGINE" ]; then exit 2; fi
+if [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "eslint" ]; then echo "cofix=$SOURDAW_LINT_COFIX args=$*"; fi
+if [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "oxlint-plugins" ]; then echo "public-args=$*"; fi
+`
             );
             chmodSync(executable, 0o755);
             const args = [resolve('scripts/runLint.ts'), 'src/a.ts'];
@@ -431,7 +574,7 @@ describe('lint entrypoint phase reporting', () => {
         expect(result.status).toBe(0);
         expect(result.stderr).toBe('');
         expect(result.stdout).toMatch(
-            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: oxlint-plugins started\noxlint-plugins output\nlint: oxlint-plugins passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
+            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: oxlint-plugins started\noxlint-plugins output\nlint: oxlint-plugins passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\nlint: oxlint-quality started\nlint: oxlint-quality passed \(\d+ ms\)\n$/
         );
     });
 
@@ -440,6 +583,7 @@ describe('lint entrypoint phase reporting', () => {
         expect(result.status, result.stderr).toBe(0);
         expect(result.stdout).toMatch(/lint: oxlint passed[^]*lint: eslint started/);
         expect(result.stdout).toMatch(/lint: eslint passed[^]*lint: oxlint-plugins started/);
+        expect(result.stdout).toMatch(/lint: oxlint-plugins passed[^]*lint: oxlint-quality passed/);
         expect(result.stdout).toContain('cofix=1 args=exec eslint');
         expect(result.stdout).toContain('node_modules/.cache/eslint/cofix/');
         expect(result.stdout).toContain('--fix src/a.ts');

@@ -15,6 +15,7 @@ function fakeEngine(): { handle: GrandBouleEngineHandle; setParam: Mock<GrandBou
         setParam,
         handle: {
             noteOn: vi.fn(),
+            startPreviewNote: vi.fn(),
             noteOnMidi2: vi.fn(),
             noteOff: vi.fn(),
             setParam,

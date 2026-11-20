@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
@@ -20,10 +20,6 @@ vi.mock('../../../stores/markerStore', () => ({
 // the bare use cases.
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
-}));
-
-vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
-    useContextMenuDismiss: vi.fn(),
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
@@ -116,16 +112,27 @@ describe('ArrangementBar', () => {
         expect(verse.style.backgroundColor).not.toBe('rgb(255, 0, 0)');
     });
 
-    it('adds a section when the empty-bar context menu Add Section is clicked', () => {
-        const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
-        const bar = container.querySelector('[role="region"]')!;
-        fireEvent.contextMenu(bar, { clientX: 50, clientY: 10 });
-        fireEvent.click(screen.getByText('Add Section'));
-        // beat = (localX + scrollX) / pixelsPerBeat; localX derived from rect left 0.
-        // addSection(startBeat=floor(beat), endBeat=startBeat+16, name).
-        expect(executeUserAppAction).toHaveBeenCalledWith({
+    it('anchors Add Section outside the clipped bar and retains the clicked beat across scrolling', () => {
+        const view = (scrollX: number) => (
+            <div style={{ contain: 'content', overflow: 'hidden' }}>
+                <ArrangementBar pixelsPerBeat={12} scrollX={scrollX} />
+            </div>
+        );
+        const { rerender } = render(view(72));
+        const bar = screen.getByRole('region', { name: 'Arrangement sections' });
+        vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue(new DOMRect(170, 90, 510, 22));
+
+        fireEvent.contextMenu(bar, { clientX: 225, clientY: 104 });
+        const menu = screen.getByRole('menu');
+        expect(bar.parentElement).not.toContainElement(menu);
+        expect(menu).toHaveStyle({ left: '225px', top: '104px' });
+
+        rerender(view(120));
+        fireEvent.contextMenu(menu, { clientX: 245, clientY: 130 });
+        fireEvent.click(within(menu).getByRole('button', { name: 'Add Section' }));
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
             type: 'addSection',
-            payload: { startBeat: 4, endBeat: 20, name: 'New Section' },
+            payload: { startBeat: 10, endBeat: 26, name: 'New Section' },
         });
     });
 
@@ -222,13 +229,57 @@ describe('ArrangementBar', () => {
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
-    it('enters editing on section double-click', () => {
+    it.each(['menu', 'double-click'])('preserves the section draft and caret after %s rename entry', (entry) => {
         setSections([section({ id: 's1', name: 'Intro', startBeat: 0, endBeat: 16 })]);
-        const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
-        const named = container.querySelectorAll('[title]');
-        const intro = Array.from(named).find((el) => el.getAttribute('title') === 'Intro') as HTMLElement;
-        fireEvent.doubleClick(intro);
-        expect(screen.getByDisplayValue('Intro')).toBeInTheDocument();
+        render(
+            <>
+                <button type="button">Prior control</button>
+                <ArrangementBar pixelsPerBeat={12} scrollX={0} />
+            </>
+        );
+        if (entry === 'menu') {
+            screen.getByRole('button', { name: 'Prior control' }).focus();
+            fireEvent.contextMenu(screen.getByRole('region', { name: 'Arrangement sections' }), {
+                clientX: 50,
+                clientY: 10,
+            });
+            const rename = screen.getByRole('button', { name: 'Rename' });
+            act(() => rename.focus());
+            fireEvent.click(rename);
+        } else {
+            fireEvent.doubleClick(screen.getByTitle('Intro'));
+        }
+
+        const input = screen.getByRole<HTMLInputElement>('textbox');
+        expect(input).toHaveFocus();
+        expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
+
+        // Apply each key to the browser selection before notifying React, as a real input edit does.
+        const typeCharacter = (character: string) => {
+            input.setRangeText(character, input.selectionStart!, input.selectionEnd!, 'end');
+            fireEvent.input(input, { data: character, inputType: 'insertText' });
+        };
+        for (const character of 'Verse') {
+            typeCharacter(character);
+        }
+        expect(input).toHaveValue('Verse');
+        expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
+
+        input.setSelectionRange(2, 2);
+        typeCharacter('X');
+        typeCharacter('Y');
+        expect(input).toHaveValue('VeXYrse');
+        expect([input.selectionStart, input.selectionEnd]).toEqual([4, 4]);
+        fireEvent.doubleClick(input);
+        expect(input).toHaveValue('VeXYrse');
+
+        input.setSelectionRange(2, 4);
+        typeCharacter('-');
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'renameSection',
+            payload: { sectionId: 's1', name: 'Ve-rse' },
+        });
     });
 
     it('deletes the section from the section context menu', () => {

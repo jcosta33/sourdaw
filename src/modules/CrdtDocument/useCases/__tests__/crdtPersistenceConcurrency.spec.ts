@@ -1,6 +1,11 @@
 import { clone as cloneDoc } from '@automerge/automerge';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    ControlledWorker,
+    respondToEncodeIncrementals,
+    respondToLoad,
+} from '../../repositories/__tests__/automergeWorkerTestHarness';
 import { type CrdtPersistenceSnapshot } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
@@ -61,6 +66,26 @@ async function importContext(): Promise<PersistenceContext> {
     };
 }
 
+async function installContextSnapshot(
+    context: PersistenceContext,
+    snapshot: CrdtPersistenceSnapshot,
+    shouldCommit: () => boolean
+) {
+    const bundle = snapshot.bundle;
+    if (!bundle) {
+        throw new Error('Expected a snapshot bundle to load');
+    }
+    let durableHeadsByDoc: Map<string, string[]> | undefined;
+    const loaded = await context.repository.automergeRepository.loadAll({
+        bundle,
+        shouldCommit,
+        onInstalled: (heads) => {
+            durableHeadsByDoc = heads;
+        },
+    });
+    return { loaded, snapshot, durableHeadsByDoc };
+}
+
 async function loadContextSnapshot({
     context,
     snapshot,
@@ -68,17 +93,9 @@ async function loadContextSnapshot({
     context: PersistenceContext;
     snapshot: CrdtPersistenceSnapshot;
 }): Promise<void> {
-    const bundle = snapshot.bundle;
-    if (!bundle) {
-        throw new Error('Expected a snapshot bundle to load');
-    }
-    const loaded = await context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
-        const committed = await context.repository.automergeRepository.loadAll({
-            bundle,
-            shouldCommit,
-        });
-        return { loaded: committed, snapshot };
-    });
+    const loaded = await context.queue.runCrdtPersistenceLoad(({ shouldCommit }) =>
+        installContextSnapshot(context, snapshot, shouldCommit)
+    );
     expect(loaded).toBe(true);
 }
 
@@ -203,6 +220,28 @@ async function expectDurableDocumentPresence({
     }
 }
 
+function holdFirstIncrementalReply(): Promise<() => void> {
+    const held = Promise.withResolvers<() => void>();
+    let holdFirst = true;
+    ControlledWorker.reset();
+    vi.stubGlobal('Worker', ControlledWorker);
+    ControlledWorker.onPostMessage = (worker, request) => {
+        if (request.type === 'loadBundle') {
+            queueMicrotask(() => respondToLoad(worker, request));
+        }
+        if (request.type === 'encodeIncrementals') {
+            const reply = (): void => respondToEncodeIncrementals(worker, request);
+            if (holdFirst) {
+                holdFirst = false;
+                held.resolve(reply);
+            } else {
+                queueMicrotask(reply);
+            }
+        }
+    };
+    return held.promise;
+}
+
 describe('CRDT persistence across independent queue contexts', () => {
     let persistence: TransactionalPersistence;
 
@@ -217,6 +256,74 @@ describe('CRDT persistence across independent queue contexts', () => {
                 }
             }
         );
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('lets a new generation load and save before a superseded encoding receives its reply', async () => {
+        const { first: context } = await createSharedContexts({ persistence });
+        const repository = context.repository.automergeRepository;
+        const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        if (!snapshot?.bundle) {
+            throw new Error('Expected the durable base before the held encoding');
+        }
+        const held = holdFirstIncrementalReply();
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.supersededCapture = true;
+        });
+        const superseded = context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject();
+        });
+        const replyToSuperseded = await held;
+
+        await loadContextSnapshot({ context, snapshot });
+        await expect(superseded).resolves.toMatchObject({ status: 'superseded', durable: { write: 'none' } });
+        expect(persistence.getTransactions('readwrite')).toHaveLength(1);
+
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.successorCapture = true;
+        });
+        const save = context.queue.runCrdtPersistenceOperation('incremental');
+        (await persistence.waitForTransaction('readwrite', 2)).complete();
+        await save;
+        replyToSuperseded();
+
+        const durable = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        if (!durable?.bundle) {
+            throw new Error('Expected the successor persistence snapshot');
+        }
+        await loadContextSnapshot({ context, snapshot: durable });
+        expect(repository.getDoc('root')).toMatchObject({ successorCapture: true });
+        expect(repository.getDoc('root')).not.toHaveProperty('supersededCapture');
+        expect(persistence.getTransactions('readwrite')).toHaveLength(2);
+    });
+
+    it('rejects a capture when its document is structurally replaced in the same generation', async () => {
+        const { first: context } = await createSharedContexts({ persistence });
+        const repository = context.repository.automergeRepository;
+        const held = holdFirstIncrementalReply();
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.noLongerCurrent = true;
+        });
+        const save = context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject();
+        });
+        const reply = await held;
+        const current = repository.getDoc('root');
+        if (!current) {
+            throw new Error('Expected root before same-generation replacement');
+        }
+        repository.insertDoc('root', cloneDoc(current));
+        reply();
+
+        await expect(save).resolves.toMatchObject({
+            status: 'failed',
+            durable: { write: 'none' },
+            error: new Error('[CrdtPersistence] Document identity changed during incremental capture'),
+        });
+        expect(persistence.getTransactions('readwrite')).toHaveLength(1);
     });
 
     it('reports a committed exact-head failure after conflict merge persistence', async () => {
@@ -289,13 +396,15 @@ describe('CRDT persistence across independent queue contexts', () => {
         const transaction = await persistence.waitForTransaction('readwrite', 2);
         expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
         transaction.complete();
-        // An ordinary project load supersedes the in-flight generation without
-        // pending a replacement: the live documents already are the durable
-        // project, so this load only re-adopts its authority.
-        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
-            loaded: true,
-            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
-        }));
+        // An ordinary project load installs the exact committed snapshot and
+        // supplies its durable frontier to the successor generation.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
+            const durable = await context.snapshot.loadPersistenceSnapshotFromIdb();
+            if (!durable) {
+                throw new Error('Expected the committed snapshot during supersession');
+            }
+            return installContextSnapshot(context, durable, shouldCommit);
+        });
 
         await expect(superseded).resolves.toMatchObject({
             status: 'superseded',

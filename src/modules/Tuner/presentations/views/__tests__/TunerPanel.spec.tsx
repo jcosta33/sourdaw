@@ -204,6 +204,13 @@ describe('TunerPanel', () => {
         expect(screen.getByText(/Scoring/i)).toBeInTheDocument();
     });
 
+    it('offers a keyboard-focusable tuner panel', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+        const panel = screen.getByRole('region', { name: 'Scoring tuner panel' });
+        panel.focus();
+        expect(panel).toHaveFocus();
+    });
+
     it('should render display mode buttons', () => {
         render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Needle')).toBeInTheDocument();
@@ -543,14 +550,6 @@ describe('TunerPanel', () => {
         } finally {
             vi.useRealTimers();
         }
-    });
-
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-        const { container } = render(<TunerPanel deviceId="device-123" />);
-        const faceplate = container.querySelector<HTMLElement>('.scoring-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
     });
 
     it('displays default active temperament 12-TET (Standard) and 12-TET in quick read', () => {

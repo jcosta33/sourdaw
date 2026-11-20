@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactElement } from 'react';
+import { type KeyboardEvent, type ReactElement, useId } from 'react';
 
 import { Stack } from '#/components/layout';
 
@@ -21,7 +21,12 @@ export const DawMenuInlineEditor = ({
     onCancel,
     autoFocus = true,
 }: DawMenuInlineEditorProps): ReactElement => {
+    const inputId = useId();
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+        if (event.nativeEvent.isComposing) {
+            event.stopPropagation();
+            return;
+        }
         if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();
@@ -36,8 +41,11 @@ export const DawMenuInlineEditor = ({
 
     return (
         <Stack gap={1} className="mx-1 my-0.5 rounded bg-surface-raised/80 px-2 py-1.5">
-            <div className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
+            <label htmlFor={inputId} className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                {label}
+            </label>
             <DawCompactInput
+                id={inputId}
                 type="text"
                 autoFocus={autoFocus}
                 value={value}

@@ -190,13 +190,11 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
     });
 
-    it('keeps cancel_graph_offline registered but denied until a src caller invokes it', () => {
-        // The export's cancel is the caller this waits for; exposing it first
-        // would widen the surface ahead of the need.
-        expect(registeredCommands()).toContain('cancel_graph_offline');
-        expect(DENIED_COMMANDS).toContain('cancel_graph_offline');
-        expect(isExposedCommand('cancel_graph_offline')).toBe(false);
-        expect(SOURDAW_COMMAND_ARGUMENTS.has('cancel_graph_offline')).toBe(false);
+    it('exposes cancel_graph_offline, which the export Cancel invokes for a native render in flight', () => {
+        expect(EXPOSED_COMMANDS).toContain('cancel_graph_offline');
+        expect(DENIED_COMMANDS).not.toContain('cancel_graph_offline');
+        expect(isExposedCommand('cancel_graph_offline')).toBe(true);
+        expect(SOURDAW_COMMAND_ARGUMENTS.get('cancel_graph_offline')).toEqual(['render_id']);
     });
 
     it('keeps grant_plugin_folder denied while its list and revoke commands stay exposed', () => {
@@ -395,6 +393,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['arm_retrospective_capture', ['track_id', 'channels']],
     ['begin_export_file', ['path']],
     ['begin_levain_bank', ['bank_key', 'instrument_id']],
+    ['cancel_graph_offline', ['render_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
@@ -405,8 +404,8 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['commit_pitch_edit', ['request']],
     ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
-    ['crumbs_note_off', ['instance_id', 'note']],
-    ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
+    ['crumbs_pad_audition_off', ['instance_id', 'audition_id']],
+    ['crumbs_pad_audition_on', ['instance_id', 'note', 'velocity']],
     ['denoise_audio', ['request', 'samples']],
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],

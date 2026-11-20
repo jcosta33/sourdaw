@@ -14,9 +14,9 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import {
     configureAutomergeStoragePort,
@@ -67,6 +67,7 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     type TransientOnsetWorkerRequest,
@@ -87,78 +88,64 @@ const worker = vi.hoisted(() =>
     vi.fn<(input: TransientOnsetWorkerRequest & { signal?: AbortSignal }) => Promise<TransientOnsetWorkerResult>>()
 );
 vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: worker }));
-type MaterializationRequest = {
-    seed: Uint8Array<ArrayBuffer>;
-    heads: readonly string[];
-    actor: string;
-    message?: string;
-    time?: number;
-    mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
-};
-type MaterializationResult = { bytes: Uint8Array<ArrayBuffer>; heads: string[] };
-const materialization = vi.hoisted(() =>
-    vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<MaterializationResult>>()
-);
-class MaterializationWorker {
+const materialization = vi.hoisted(() => vi.fn<(reply: MessageEvent<unknown>) => Promise<void>>());
+
+function holdMaterializationReply() {
+    const received = Promise.withResolvers<MessageEvent<unknown>>();
+    const release = Promise.withResolvers<void>();
+    materialization.mockImplementationOnce((reply) => {
+        received.resolve(reply);
+        return release.promise;
+    });
+    return { received: received.promise, release: release.resolve };
+}
+
+class MaterializationWorker extends NativePreparationWorker {
     static instances: MaterializationWorker[] = [];
-    static recordedReceivingRealm = false;
-    onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
-    onerror: ((event: Event) => void) | null = null;
-    onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
-    private readonly lifetime = new AbortController();
     lateErrors: unknown[] = [];
     completion: Promise<void> = Promise.resolve();
     terminated = false;
-    terminate = vi.fn(() => {
+    override terminate = vi.fn(() => {
         this.terminated = true;
-        this.lifetime.abort();
+        super.terminate();
     });
 
     constructor(url: URL, options: WorkerOptions) {
         expect(url.pathname).toMatch(/\/workers\/prospectiveMutationWorker\.ts$/);
         expect(options).toEqual({ type: 'module' });
+        super(url);
         MaterializationWorker.instances.push(this);
     }
 
-    postMessage(request: MaterializationRequest, transfer: Transferable[]): void {
-        const received = structuredClone(request, { transfer });
+    override postMessage(request: unknown, transfer: ArrayBuffer[]): void {
+        if (!isRecord(request) || !(request.seed instanceof Uint8Array)) {
+            throw new TypeError('Expected a real native preparation seed');
+        }
+        const dispatch = this.onmessage;
+        this.onmessage = (reply) => {
+            this.completion = materialization(reply)
+                .then(() => {
+                    const { data } = reply;
+                    if (isRecord(data) && data.status === 'complete' && Array.isArray(data.changes)) {
+                        const changes: unknown[] = data.changes;
+                        for (const bytes of changes) {
+                            expect(bytes).toBeInstanceOf(Uint8Array);
+                            if (bytes instanceof Uint8Array) {
+                                expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                            }
+                        }
+                    }
+                    if (!this.terminated) {
+                        dispatch?.(reply);
+                    }
+                })
+                .catch((error: unknown) => {
+                    this.lateErrors.push(error);
+                    this.onerror?.();
+                });
+        };
+        super.postMessage(request, transfer);
         expect(request.seed.byteLength).toBe(0);
-        this.completion = materialization(received, this.lifetime.signal)
-            .then(
-                (result) => {
-                    const response = structuredClone(
-                        { status: 'complete', ...result },
-                        { transfer: [result.bytes.buffer] }
-                    );
-                    expect(result.bytes.byteLength).toBe(0);
-                    if (!MaterializationWorker.recordedReceivingRealm) {
-                        console.info('Controlled Worker host-clone receiving realm:', {
-                            typedArray: response.bytes instanceof Uint8Array,
-                            arrayBuffer: response.bytes.buffer instanceof ArrayBuffer,
-                        });
-                        MaterializationWorker.recordedReceivingRealm = true;
-                    }
-                    // Node's clone returns host-realm views; a browser message adopts the receiver's intrinsics.
-                    const bytes = Uint8Array.from(response.bytes);
-                    expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
-                    this.onmessage?.(new MessageEvent('message', { data: { ...response, bytes } }));
-                },
-                (error: unknown) => {
-                    if (this.terminated) {
-                        this.lateErrors.push(error);
-                        return;
-                    }
-                    this.onmessage?.(
-                        new MessageEvent('message', {
-                            data: { status: 'failed', message: error instanceof Error ? error.message : String(error) },
-                        })
-                    );
-                }
-            )
-            .catch((error: unknown) => {
-                this.lateErrors.push(error);
-                this.onerror?.(new Event('error'));
-            });
     }
 }
 
@@ -330,14 +317,16 @@ function holdCompletionTasks(shouldHold: () => boolean, failures: { scheduling?:
                 const held = shouldHold();
                 const post = channel.port2.postMessage.bind(channel.port2);
                 vi.spyOn(channel.port2, 'postMessage').mockImplementation((message) => {
-                    if (!held) {
+                    const failedReceiver = channel.port1.onmessageerror;
+                    // Only completion installs a delivery-failure callback.
+                    // Keep the frame and native admission yields on real host tasks.
+                    if (!held || typeof failedReceiver !== 'function') {
                         post(message);
                         return;
                     }
                     const receiver = channel.port1.onmessage;
-                    const failedReceiver = channel.port1.onmessageerror;
                     tasks.push({
-                        failDelivery: () => failedReceiver?.call(channel.port1, new MessageEvent('messageerror')),
+                        failDelivery: () => failedReceiver.call(channel.port1, new MessageEvent('messageerror')),
                         deliver: () => receiver?.call(channel.port1, new MessageEvent('message', { data: message })),
                         closeFirst: vi.spyOn(channel.port1, 'close'),
                         closeSecond: vi.spyOn(channel.port2, 'close'),
@@ -358,21 +347,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         MaterializationWorker.instances = [];
         vi.stubGlobal('Worker', MaterializationWorker);
         materialization.mockReset();
-        materialization.mockImplementation(async (request) => {
-            // Only transport is substituted; the same canonical helper and native codec remain real.
-            const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
-            const candidate = change(seed, { message: request.message }, (draft) =>
-                applyCanonicalStorageSlotMutation(draft, request.mutation)
-            );
-            try {
-                return {
-                    bytes: Uint8Array.from(save(candidate)),
-                    heads: getHeads(candidate),
-                };
-            } finally {
-                free(candidate);
-            }
-        });
+        materialization.mockResolvedValue(undefined);
         resetPreferences();
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
@@ -440,7 +415,7 @@ describe('locked transient markers through the real Elastic editor', () => {
     afterEach(async () => {
         for (const instance of MaterializationWorker.instances) {
             if (!instance.terminated) {
-                instance.onerror?.(new Event('error'));
+                instance.onerror?.();
             }
             await instance.completion;
             expect(instance.terminated).toBe(true);
@@ -449,6 +424,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(instance.onmessageerror).toBeNull();
             expect(instance.lateErrors).toEqual([]);
         }
+        await settleNativePreparationWorkers();
         resetPreferences();
         cleanup();
         vi.restoreAllMocks();
@@ -1332,7 +1308,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             flushAutomergeStorageWrites();
             const before = toJS(getCrdtDoc('root')!);
             const history = structuredClone(undoHistoryStore.value);
-            const entered = Promise.withResolvers<void>();
+            const entered = Promise.withResolvers<unknown>();
             const release = Promise.withResolvers<void>();
             const invalidate = (): void => {
                 clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
@@ -1340,36 +1316,32 @@ describe('locked transient markers through the real Elastic editor', () => {
             };
             if (phase === 'Worker') {
                 worker.mockImplementationOnce(async () => {
-                    entered.resolve();
+                    entered.resolve(undefined);
                     await release.promise;
                     return { status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] };
                 });
             } else if (phase === 'materialization') {
-                const canonical = materialization.getMockImplementation();
-                if (!canonical) {
-                    throw new Error('Expected real native materialization fixture');
-                }
-                materialization.mockImplementationOnce(async (request, signal) => {
-                    const result = await canonical(request, signal);
-                    entered.resolve();
-                    await release.promise;
-                    return result;
+                materialization.mockImplementationOnce(({ data }) => {
+                    entered.resolve(data);
+                    return release.promise;
                 });
             } else {
                 const set = warpStateStore.set.bind(warpStateStore);
                 vi.spyOn(warpStateStore, 'set').mockImplementationOnce((value) => {
                     set(value);
                     invalidate();
-                    entered.resolve();
+                    entered.resolve(undefined);
                 });
             }
             const pending = setElasticSensitivity(0.82);
-            await entered.promise;
+            const reply = await entered.promise;
             if (phase !== 'commit') {
                 invalidate();
             }
             release.resolve();
             await pending;
+            const completedReply = expect.objectContaining({ status: 'complete', changes: expect.any(Array) });
+            expect(reply).toEqual(phase === 'materialization' ? completedReply : undefined);
             flushAutomergeStorageWrites();
             expect(toJS(getCrdtDoc('root')!)).toEqual(before);
             expect(undoHistoryStore.value).toEqual(history);
@@ -1806,43 +1778,39 @@ describe('locked transient markers through the real Elastic editor', () => {
     it('keeps the materialization await private and captures a fresh inverse after its stale result', async () => {
         supplyBuffer(burstSamples());
         const frames = holdAnimationFrames();
-        const complete = materialization.getMockImplementation();
-        if (!complete) {
-            throw new Error('Expected real native codec transport fixture');
-        }
-        const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
-        const result = Promise.withResolvers<MaterializationResult>();
-        materialization.mockImplementationOnce((request, signal) => {
-            entered.resolve({ request, signal });
-            return result.promise;
-        });
+        const held = holdMaterializationReply();
         const before = JSON.stringify(getCrdtDoc('root'));
         const projection = getWarpState(CLIP_ID);
         const pending = storageRuntime.countPendingAutomergeStorageWrites();
         const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         (await frames.next())(performance.now());
         (await frames.next())(performance.now());
-        const request = await entered.promise;
-        expect(materialization).toHaveBeenCalledTimes(1);
-        expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
-        expect(getWarpState(CLIP_ID)).toBe(projection);
-        expect(storageRuntime.countPendingAutomergeStorageWrites()).toBe(pending);
-        expect(undoHistoryStore.value?.past).toHaveLength(0);
-        addManualMarker(CLIP_ID, 1.5);
-        flushAutomergeStorageWrites();
-        const latest = structuredClone(rawWarpState());
-        const priorHistoryLength = undoHistoryStore.value?.past.length ?? 0;
-        result.resolve(await complete(request.request, request.signal));
-        await frames.complete(execution);
-        const after = structuredClone(rawWarpState());
-        for (const marker of latest.markers) {
-            expect(after.markers).toContainEqual(marker);
+        const { data } = await held.received;
+        try {
+            expect(data).toMatchObject({ status: 'complete', changes: expect.any(Array) });
+            expect(materialization).toHaveBeenCalledTimes(1);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+            expect(getWarpState(CLIP_ID)).toBe(projection);
+            expect(storageRuntime.countPendingAutomergeStorageWrites()).toBe(pending);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            addManualMarker(CLIP_ID, 1.5);
+            flushAutomergeStorageWrites();
+            const latest = structuredClone(rawWarpState());
+            const priorHistoryLength = undoHistoryStore.value?.past.length ?? 0;
+            held.release();
+            await frames.complete(execution);
+            const after = structuredClone(rawWarpState());
+            for (const marker of latest.markers) {
+                expect(after.markers).toContainEqual(marker);
+            }
+            expect(undoHistoryStore.value?.past).toHaveLength(priorHistoryLength + 1);
+            await undo();
+            expect(rawWarpState()).toEqual(latest);
+            await redo();
+            expect(rawWarpState()).toEqual(after);
+        } finally {
+            held.release();
         }
-        expect(undoHistoryStore.value?.past).toHaveLength(priorHistoryLength + 1);
-        await undo();
-        expect(rawWarpState()).toEqual(latest);
-        await redo();
-        expect(rawWarpState()).toEqual(after);
     });
 
     it.each(['abort', 'root'] as const)(
@@ -1850,36 +1818,40 @@ describe('locked transient markers through the real Elastic editor', () => {
         async (kind) => {
             supplyBuffer(burstSamples());
             const frames = holdAnimationFrames();
-            const complete = materialization.getMockImplementation();
-            if (!complete) {
-                throw new Error('Expected native codec fixture');
-            }
-            const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
-            const result = Promise.withResolvers<MaterializationResult>();
-            materialization.mockImplementationOnce((request, signal) => {
-                entered.resolve({ request, signal });
-                return result.promise;
-            });
+            const held = holdMaterializationReply();
             const controller = new AbortController();
             const execution = executeAppAction(
                 { type: 'detectTransients', payload: { clipId: CLIP_ID } },
                 { signal: controller.signal }
             );
-            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            const settled = execution.then(
+                () => ({ status: 'fulfilled' as const }),
+                (error: unknown) => ({ status: 'rejected' as const, error })
+            );
             (await frames.next())(performance.now());
             (await frames.next())(performance.now());
-            const request = await entered.promise;
-            expect(materialization).toHaveBeenCalledTimes(1);
-            if (kind === 'abort') {
-                controller.abort();
-            } else {
-                createCrdtDoc('root');
+            const { data } = await held.received;
+            try {
+                expect(data).toMatchObject({ status: 'complete', changes: expect.any(Array) });
+                expect(materialization).toHaveBeenCalledTimes(1);
+                if (kind === 'abort') {
+                    controller.abort();
+                } else {
+                    createCrdtDoc('root');
+                }
+                const current = JSON.stringify(getCrdtDoc('root'));
+                held.release();
+                expect(await settled).toMatchObject({
+                    status: 'rejected',
+                    error: { message: expect.stringMatching(/cancelled|changed/) },
+                });
+                expect(MaterializationWorker.instances).toHaveLength(1);
+                await MaterializationWorker.instances[0]!.completion;
+                expect(JSON.stringify(getCrdtDoc('root'))).toBe(current);
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+            } finally {
+                held.release();
             }
-            const current = JSON.stringify(getCrdtDoc('root'));
-            result.resolve(await complete(request.request, request.signal));
-            await rejected;
-            expect(JSON.stringify(getCrdtDoc('root'))).toBe(current);
-            expect(undoHistoryStore.value?.past).toHaveLength(0);
         }
     );
 

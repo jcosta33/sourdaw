@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+import { getPluginById, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type GlutenPatch } from '../../../models/GlutenPatch';
+import { GLUTEN_PRESETS } from '../../glutenPresets';
 import { paramBatcher } from '../helpers';
 import { loadGlutenPatchWithAudio } from '../loadGlutenPatchWithAudio';
 
@@ -61,6 +63,32 @@ describe('loadGlutenPatchWithAudio', () => {
         // A representative encodable enum and number both reach the engine.
         expect(pushedValueFor('topology')).toBe(0); // 'vca'
         expect(pushedValueFor('threshold')).toBe(DEFAULT_PATCH.threshold);
+    });
+
+    it('emits each declared parameter in all factory presets and matches the declared absence defaults', () => {
+        const descriptor = getPluginById('gluten');
+        if (!descriptor) {
+            throw new Error('Expected the Gluten device descriptor');
+        }
+        const defaults = Object.fromEntries(descriptor.parameters.map(({ id, defaultValue }) => [id, defaultValue]));
+        const declaredKeys = Object.keys(defaults).sort();
+        expect(declaredKeys).toHaveLength(43);
+
+        loadGlutenPatchWithAudio('dev', DEFAULT_PATCH);
+        const emittedDefaults = pushParamImmediately.mock.calls.map(([, key, value]) => [key, value] as const);
+        expect(emittedDefaults.map(([key]) => key).sort()).toEqual(declaredKeys);
+        expect(Object.fromEntries(emittedDefaults)).toEqual(defaults);
+
+        for (const preset of GLUTEN_PRESETS) {
+            pushParamImmediately.mockClear();
+            loadGlutenPatchWithAudio('dev', preset.patch);
+            const keys = pushParamImmediately.mock.calls.map(([, key]) => key);
+            expect([...keys].sort(), preset.name).toEqual(declaredKeys);
+            expect(keys.slice(0, 5), preset.name).toEqual(['style', 'topology', 'amount', 'threshold', 'ratio']);
+            for (const [, paramId, value] of pushParamImmediately.mock.calls) {
+                expect(quantiseDeviceParameterValue({ deviceType: 'gluten', paramId, value }), preset.name).toBe(value);
+            }
+        }
     });
 
     // #4709: the engine's `style` write is a macro that also selects the
