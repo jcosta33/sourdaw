@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, type RefObject, useEffect, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -9,6 +9,24 @@ import { cn } from '#/utils/Styles/cn';
 import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
 import { useFocusEachRequest } from './useFocusEachRequest';
 import { usePromptDialog } from './usePromptDialog';
+
+function usePreserveComposingEscape(open: boolean, inputRef: RefObject<HTMLInputElement | null>): void {
+    useEffect(() => {
+        if (!open) {
+            return undefined;
+        }
+
+        function stopComposingEscape(event: KeyboardEvent) {
+            if (event.key === 'Escape' && event.isComposing && event.target === inputRef.current) {
+                event.stopPropagation();
+            }
+        }
+
+        // Window capture runs before Radix's document capture and preserves the IME's default action.
+        window.addEventListener('keydown', stopComposingEscape, true);
+        return () => window.removeEventListener('keydown', stopComposingEscape, true);
+    }, [open, inputRef]);
+}
 
 /**
  * Async single-field text-prompt dialog. Subscribes to the `ui.prompt` event
@@ -27,21 +45,7 @@ export const PromptDialog = (): ReactElement => {
     });
 
     const open = Boolean(pending);
-    useEffect(() => {
-        if (!open) {
-            return undefined;
-        }
-
-        function stopComposingEscape(event: KeyboardEvent) {
-            if (event.key === 'Escape' && event.isComposing && event.target === inputRef.current) {
-                event.stopPropagation();
-            }
-        }
-
-        // Window capture runs before Radix's document capture and preserves the IME's default action.
-        window.addEventListener('keydown', stopComposingEscape, true);
-        return () => window.removeEventListener('keydown', stopComposingEscape, true);
-    }, [open]);
+    usePreserveComposingEscape(open, inputRef);
 
     return (
         <Dialog
