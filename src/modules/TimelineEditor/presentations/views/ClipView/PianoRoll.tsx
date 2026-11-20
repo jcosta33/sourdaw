@@ -16,6 +16,7 @@ import {
     type SetStateAction,
     useEffect,
     useEffectEvent,
+    useId,
     useRef,
     useLayoutEffect,
     useState,
@@ -23,7 +24,8 @@ import {
 
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
@@ -68,6 +70,7 @@ import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';
+import { PianoRollNoteNavigator } from './PianoRollNoteNavigator';
 import { PianoRollToolbar } from './PianoRollToolbar';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
@@ -148,6 +151,9 @@ export const PianoRoll = ({
     onContentWidthChange,
 }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const navigatorTrigger = useRef<HTMLButtonElement>(null);
+    const navigatorId = useId();
+    const [navigatorOpen, setNavigatorOpen] = useState(false);
     // The scroll container is the piano roll's viewport: the renderer sizes the
     // canvas backing store from its `clientWidth` and draws from its
     // `scrollLeft`, and the interaction handlers add that same `scrollLeft` to
@@ -515,11 +521,8 @@ export const PianoRoll = ({
         : new Set(Array.from(selectedNoteIds, (id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
 
     return (
-        <Stack grow className="min-w-0 overflow-hidden">
-            <div
-                className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden"
-                onFocusCapture={revealFocusedToolbarControl}
-            >
+        <Grid className="min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+            <div className="min-w-0 overflow-x-auto overflow-y-hidden" onFocusCapture={revealFocusedToolbarControl}>
                 <PianoRollToolbar
                     gridSnap={gridSnap}
                     onGridSnapChange={setGridSnap}
@@ -559,7 +562,42 @@ export const PianoRoll = ({
                     mpeExpressionLanes={mpeExpressionLanes}
                 />
             </div>
-            <Stack grow className="min-h-0 overflow-hidden">
+            <Button
+                id={`${navigatorId}-trigger`}
+                ref={navigatorTrigger}
+                type="button"
+                size="xs"
+                variant={navigatorOpen ? 'secondary' : 'ghost'}
+                className="mr-2 self-center"
+                aria-haspopup="dialog"
+                aria-expanded={navigatorOpen}
+                aria-controls={navigatorOpen ? navigatorId : undefined}
+                onClick={() => setNavigatorOpen((open) => !open)}
+            >
+                Note navigator
+            </Button>
+            <Stack className="relative col-span-2 min-h-0 overflow-hidden">
+                {navigatorOpen ? (
+                    <PianoRollNoteNavigator
+                        id={navigatorId}
+                        triggerId={`${navigatorId}-trigger`}
+                        clipId={clipId}
+                        notes={notes}
+                        openedClipNotes={openedClipNotes}
+                        clips={editedClips}
+                        selectedNoteIds={selectedNoteIds}
+                        setSelectedNoteIds={setSelectedNoteIds}
+                        onDismiss={() => setNavigatorOpen(false)}
+                        onEscape={() => {
+                            setNavigatorOpen(false);
+                            navigatorTrigger.current?.focus({ preventScroll: true });
+                        }}
+                        onCommit={() => {
+                            setNavigatorOpen(false);
+                            canvasRef.current?.focus({ preventScroll: true });
+                        }}
+                    />
+                ) : null}
                 <Row
                     align="stretch"
                     grow
@@ -769,6 +807,6 @@ export const PianoRoll = ({
                     onClearSelection={() => setSelectedNoteIds(new Set())}
                 />
             ) : null}
-        </Stack>
+        </Grid>
     );
 };

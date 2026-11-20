@@ -233,7 +233,7 @@ describe('PianoRoll', () => {
         expect(screen.getByTestId('toolbar')).toBeInTheDocument();
     });
 
-    it('hands mixed selected-pass occurrences to the real piano roll renderer and interaction boundary', () => {
+    it('exposes the same take-projected notes to the canvas and note navigator', () => {
         // Two passes of a loop [0, 4) recording, each comped over one loop of the looping clip. Live
         // reads the second region from a pass past the second pass's row and wraps it into the loop.
         pianoRollStoreState.tracks = {
@@ -328,6 +328,89 @@ describe('PianoRoll', () => {
         expect(
             interactionArgs?.takeProjections?.get('clip-1')?.ownersByViewId.get(interactionArgs.notes[1]!.id)?.row
         ).toEqual(second);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Note navigator' }));
+        const list = screen.getByRole('listbox', { name: 'Piano roll notes' });
+        const secondOption = screen.getByRole('option', { name: 'D4, starts at clip beat 4.5, duration 1 beat' });
+        fireEvent.keyDown(list, { key: 'End' });
+        expect(list).toHaveAttribute('aria-activedescendant', secondOption.id);
+        fireEvent.keyDown(list, { key: 'Enter' });
+        expect(defaultProps.onSelectedNoteIdsChange).toHaveBeenLastCalledWith(
+            new Set([interactionArgs?.notes[1]?.id]),
+            [
+                {
+                    clipId: 'clip-1',
+                    projection: expect.objectContaining({
+                        ownersByViewId: interactionArgs?.takeProjections?.get('clip-1')?.ownersByViewId,
+                    }),
+                },
+            ]
+        );
+    });
+
+    it('keeps note navigation bounded and active identity valid across edits', () => {
+        const primary = Array.from({ length: 20 }, (_, index) => ({
+            id: `note-${index}`,
+            pitch: 60,
+            startBeat: index,
+            duration: 0.5,
+            velocity: 100,
+        }));
+        const secondary = { ...primary[0]!, id: 'secondary', pitch: 61, startBeat: 32 };
+        pianoRollStoreState.midi.notesByClipId = {
+            'clip-1': [...primary].reverse(),
+            'clip-2': [secondary],
+            'ghost-clip': [{ ...secondary, id: 'ghost', pitch: 62 }],
+        };
+        const props = { ...defaultProps, openedClipIds: ['clip-2'] };
+        const { rerender } = render(<PianoRoll {...props} />);
+        expect(screen.queryByRole('option')).not.toBeInTheDocument();
+        const trigger = screen.getByRole('button', { name: 'Note navigator' });
+        fireEvent.click(trigger);
+        const list = screen.getByRole('listbox', { name: 'Piano roll notes' });
+        const mounted = screen.getAllByRole('option');
+        expect(mounted).toHaveLength(9);
+        expect(mounted[0]).toHaveAttribute('aria-posinset', '1');
+        expect(mounted[0]).toHaveAttribute('aria-setsize', '21');
+        expect(mounted[0]).toHaveAccessibleName('C4, starts at clip beat 0, duration 0.5 beats, Clip 1');
+        expect(list).toHaveAttribute('aria-activedescendant', mounted[0]?.id);
+        expect(list).toHaveFocus();
+
+        expect(fireEvent.keyDown(list, { key: 'End', isComposing: true })).toBe(true);
+        expect(list).toHaveAttribute('aria-activedescendant', mounted[0]?.id);
+
+        fireEvent.keyDown(list, { key: 'ArrowDown' });
+        expect(list).toHaveAttribute('aria-activedescendant', mounted[1]?.id);
+        fireEvent.keyDown(list, { key: 'ArrowUp' });
+        expect(list).toHaveAttribute('aria-activedescendant', mounted[0]?.id);
+
+        fireEvent.keyDown(list, { key: 'End' });
+        const last = screen.getByRole('option', {
+            name: 'C sharp 4, starts at clip beat 32, duration 0.5 beats, Clip 2',
+        });
+        expect(last).toHaveAttribute('aria-posinset', '21');
+        expect(list).toHaveAttribute('aria-activedescendant', last.id);
+        expect(defaultProps.onSelectedNoteIdsChange).not.toHaveBeenCalled();
+
+        pianoRollStoreState.midi.notesByClipId = {
+            'clip-1': primary,
+            'clip-2': [{ ...secondary, startBeat: 5.5 }],
+        };
+        rerender(<PianoRoll {...props} />);
+        expect(list).toHaveAttribute('aria-activedescendant', last.id);
+        expect(screen.getByRole('option', { name: /C sharp 4, starts at clip beat 5.5/ })).toHaveAttribute(
+            'aria-posinset',
+            '7'
+        );
+
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': primary };
+        rerender(<PianoRoll {...props} />);
+        const replacement = screen.getByRole('option', { name: /C4, starts at clip beat 6,/ });
+        expect(list).toHaveAttribute('aria-activedescendant', replacement.id);
+        expect(replacement).toHaveAttribute('aria-setsize', '20');
+        fireEvent.keyDown(list, { key: 'Escape' });
+        expect(trigger).toHaveFocus();
+        expect(screen.queryByRole('option')).not.toBeInTheDocument();
     });
 
     it('keeps base-gap context actions addressed to the original base row', () => {
