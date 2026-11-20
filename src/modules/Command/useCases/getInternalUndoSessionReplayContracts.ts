@@ -33,7 +33,7 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
 }
 
 function createFactoryPatchReplayContract(
-    actionType: 'setToasterFactoryKit' | 'setBacteriaFactoryPatch'
+    actionType: 'setToasterFactoryKit' | 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset'
 ): SessionActionContract {
     return {
         actionType,
@@ -73,6 +73,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         },
         createFactoryPatchReplayContract('setToasterFactoryKit'),
         createFactoryPatchReplayContract('setBacteriaFactoryPatch'),
+        createFactoryPatchReplayContract('setGlutenFactoryPreset'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

@@ -259,6 +259,7 @@ const addActionSourceOwnersByActionType: {
     setGrandBouleDeviceState: addNoOwners,
     setToasterFactoryKit: addNoOwners,
     setBacteriaFactoryPatch: addNoOwners,
+    setGlutenFactoryPreset: addNoOwners,
     createBus: addNoOwners,
     createFolder: addNoOwners,
     setSend: addNoOwners,

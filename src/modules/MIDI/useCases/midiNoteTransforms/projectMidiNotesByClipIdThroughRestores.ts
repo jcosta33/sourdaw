@@ -146,6 +146,7 @@ const notesProjectionByActionType: {
     setGrandBouleDeviceState: noNotesProjection,
     setToasterFactoryKit: noNotesProjection,
     setBacteriaFactoryPatch: noNotesProjection,
+    setGlutenFactoryPreset: noNotesProjection,
     createBus: noNotesProjection,
     createFolder: noNotesProjection,
     setSend: noNotesProjection,

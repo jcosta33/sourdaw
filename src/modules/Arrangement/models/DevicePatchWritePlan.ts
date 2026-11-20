@@ -171,16 +171,19 @@ function projectMaterializedTrack(
     return { status: 'projected', owners };
 }
 
+const capturedPatchActions = new Set<AppAction['type']>([
+    'setFermenterPatch',
+    'setToasterFactoryKit',
+    'setBacteriaFactoryPatch',
+    'setGlutenFactoryPreset',
+]);
+
 function projectCommandOwners(
     owners: Owner[],
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (
-        action.type === 'setFermenterPatch' ||
-        action.type === 'setToasterFactoryKit' ||
-        action.type === 'setBacteriaFactoryPatch'
-    ) {
+    if (capturedPatchActions.has(action.type)) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

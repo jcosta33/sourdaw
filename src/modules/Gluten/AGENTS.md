@@ -4,7 +4,7 @@ Multi-topology compressor audio effect (VCA, Opto, FET, Diode models with Thrust
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The only public use case is `resetGlutenForProject`, the project-switch reset the composition root registers with Project's lifecycle; the param bridge and presets are consumed locally by `GlutenPanel`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, and `presentations/views/index.ts`. The composition root registers `resetGlutenForProject` with Project's lifecycle and `getGlutenHandlers` with Command. The param bridge and preset picker stay local to Gluten.
 
 ## Key Subsystems
 

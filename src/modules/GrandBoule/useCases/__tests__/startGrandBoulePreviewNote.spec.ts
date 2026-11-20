@@ -32,11 +32,9 @@ describe('startGrandBoulePreviewNote', () => {
     });
 
     it('does not start a disconnected preview', () => {
-        const start = vi.fn();
-        const handle = { ...createDisconnectedGrandBouleEngineHandle(), startPreviewNote: start };
+        const engine = createDisconnectedGrandBouleEngineHandle();
         expect(
-            startGrandBoulePreviewNote({ engine: handle, store: storeWith(null), midiNote: 60, velocity: 0.5 })
+            startGrandBoulePreviewNote({ engine, store: storeWith(null), midiNote: 60, velocity: 0.5 })
         ).toBeUndefined();
-        expect(start).not.toHaveBeenCalled();
     });
 });

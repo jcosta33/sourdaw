@@ -51,7 +51,11 @@ beforeEach(() => {
         deviceType: DEVICE_TYPE_IDS.toaster,
         state: { deviceState: null, parameterValues: {} },
     });
-    vi.mocked(captureDevicePatchCommitValidation).mockReturnValue({ isCurrent: () => true, start });
+    vi.mocked(captureDevicePatchCommitValidation).mockReturnValue({
+        isCurrent: () => true,
+        matchesCommittedParameters: () => false,
+        start,
+    });
     vi.mocked(applyDevicePatchState).mockReturnValue(true);
     captureWrittenState.mockReturnValue(true);
 });

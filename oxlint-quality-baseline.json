@@ -9034,7 +9034,7 @@
     },
     "src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts": {
         "eslint/complexity": {
-            "count": 5
+            "count": 4
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
@@ -11010,9 +11010,6 @@
     },
     "src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "sourdaw-craft/no-positional-boolean-flags": {
             "count": 1
         },
         "typescript/no-non-null-assertion": {
@@ -13908,11 +13905,6 @@
     },
     "src/modules/Gluten/useCases/glutenParamBridge/helpers.ts": {
         "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
-    "src/modules/Gluten/useCases/glutenParamBridge/hydrateGlutenPatchFromProject.ts": {
-        "eslint/complexity": {
             "count": 1
         }
     },

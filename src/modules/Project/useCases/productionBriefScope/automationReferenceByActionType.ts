@@ -97,6 +97,7 @@ export const automationReferenceByActionType: {
     setGrandBouleDeviceState: automationReferenceRules.namesLaneOrContent,
     setToasterFactoryKit: automationReferenceRules.namesLaneOrContent,
     setBacteriaFactoryPatch: automationReferenceRules.namesLaneOrContent,
+    setGlutenFactoryPreset: automationReferenceRules.namesLaneOrContent,
     createBus: automationReferenceRules.namesLaneOrContent,
     createFolder: automationReferenceRules.namesLaneOrContent,
     setSend: automationReferenceRules.namesLaneOrContent,

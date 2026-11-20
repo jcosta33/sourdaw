@@ -42,7 +42,11 @@ const current: NonNullable<ReturnType<typeof mocks.planned>> = {
     state: { deviceState: before, parameterValues: { gain: 0.7 } },
 };
 const isCurrent = vi.fn(() => true);
-const authority: NonNullable<ReturnType<typeof mocks.capture>> = { isCurrent, start: () => null };
+const authority: NonNullable<ReturnType<typeof mocks.capture>> = {
+    isCurrent,
+    matchesCommittedParameters: () => false,
+    start: () => null,
+};
 
 beforeEach(() => {
     vi.clearAllMocks();

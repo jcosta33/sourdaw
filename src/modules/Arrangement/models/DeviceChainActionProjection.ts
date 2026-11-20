@@ -109,6 +109,20 @@ function projectToasterFactoryKit(
     });
 }
 
+function projectDeviceParameter(
+    device: Device | undefined,
+    { paramId, value, deleteParameter }: Extract<AppAction, { type: 'setDeviceParameter' }>['payload']
+): void {
+    if (!device) {
+        return;
+    }
+    if (deleteParameter) {
+        delete device.parameterValues[paramId];
+        return;
+    }
+    device.parameterValues[paramId] = clampDeviceParameterValue({ deviceType: device.type, paramId, value });
+}
+
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
 export function projectDeviceChainAction(
     trackId: string,
@@ -149,18 +163,10 @@ export function projectDeviceChainAction(
         return devices;
     }
     if (action.type === 'setDeviceParameter') {
-        const device = devices.find((candidate) => candidate.id === action.payload.deviceId);
-        if (device) {
-            if (action.payload.deleteParameter) {
-                delete device.parameterValues[action.payload.paramId];
-            } else {
-                device.parameterValues[action.payload.paramId] = clampDeviceParameterValue({
-                    deviceType: device.type,
-                    paramId: action.payload.paramId,
-                    value: action.payload.value,
-                });
-            }
-        }
+        projectDeviceParameter(
+            devices.find((candidate) => candidate.id === action.payload.deviceId),
+            action.payload
+        );
         return devices;
     }
     if (action.type === 'setDeviceState') {

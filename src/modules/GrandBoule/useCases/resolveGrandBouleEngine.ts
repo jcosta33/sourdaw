@@ -3,7 +3,9 @@ import {
     ensureTrackStrip,
     getTrackStrip,
     getAudioSampleRate,
+    isDeviceCarriedByNativeSession,
     sendNativeLiveMidiControl,
+    startNativeGrandBoulePreviewNote,
     writeNativeBuiltinParameters,
 } from '#/modules/AudioEngine/useCases';
 
@@ -69,20 +71,37 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     // above and was then discarded here, so on a track hosting two GrandBoules
     // the whole returned handle — noteOn, setParam, setSustain
     // — drove the first instance.
-    const deviceNode = strip.deviceNodes.find(
+    const controls = strip.deviceNodes.find(
         (candidateNode) =>
             candidateNode.deviceId === input.deviceId &&
             candidateNode.grandBouleControls?.ready &&
             (input.runtimeControls === undefined || candidateNode.grandBouleControls === input.runtimeControls)
-    );
-    if (deviceNode?.grandBouleControls === undefined) {
-        return createDisconnectedGrandBouleEngineHandle();
+    )?.grandBouleControls;
+    const trackId = track.id;
+    // Native carriage can change while the same handle is mounted, including before
+    // the Worker loads and publishes a connected handle.
+    function startPreviewNote(noteInput: Parameters<GrandBouleEngineHandle['startPreviewNote']>[0]) {
+        const { midiNote, velocity } = noteInput;
+        if (isDeviceCarriedByNativeSession(trackId, input.deviceId)) {
+            return startNativeGrandBoulePreviewNote({
+                trackId,
+                deviceId: input.deviceId,
+                note: midiNote,
+                velocity,
+            });
+        }
+        if (controls?.ready) {
+            return controls.startPreviewNote(midiNote, velocity);
+        }
+        return undefined;
+    }
+    if (controls === undefined) {
+        return { ...createDisconnectedGrandBouleEngineHandle(), startPreviewNote };
     }
 
-    const controls = deviceNode.grandBouleControls;
     const engine: GrandBouleEngineHandle = {
         noteOn: (noteInput) => controls.noteOn(noteInput.midiNote, noteInput.velocity),
-        startPreviewNote: (noteInput) => controls.startPreviewNote(noteInput.midiNote, noteInput.velocity),
+        startPreviewNote,
         noteOff: (noteInput) => controls.noteOff(noteInput.midiNote),
         noteOnMidi2: (noteInput) =>
             controls.noteOnMidi2(noteInput.midiNote, noteInput.velocity16bit, noteInput.pitchOffsetQ24),

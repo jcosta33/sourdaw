@@ -101,6 +101,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setGrandBouleDeviceState: noSupportPath,
     setToasterFactoryKit: noSupportPath,
     setBacteriaFactoryPatch: noSupportPath,
+    setGlutenFactoryPreset: noSupportPath,
     createBus: noSupportPath,
     createFolder: noSupportPath,
     setSend: noSupportPath,

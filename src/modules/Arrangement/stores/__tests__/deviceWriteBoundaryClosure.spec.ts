@@ -268,6 +268,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // persistDeviceParam 2, persistDevicePatch 0, updateDevicePatch 0.
         'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Gluten/useCases/glutenParamBridge/helpers.ts': 8,
+        // The factory preset handler calls this runtime sink after the guarded project commit.
+        'src/modules/Gluten/useCases/glutenParamBridge/syncGlutenPresetRuntime.ts': 1,
         // Count provenance: 0 in code, was 2 lexical — both matches were
         // doc-comment prose in the header explaining why a drag is one edit
         // rather than ninety: it names `persistDeviceParam` as what the
@@ -1054,7 +1056,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
-        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
+        // Device-list admission extracts a pure compiler helper and its call.
+        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
         // UI: compileLoadPresetActions / compileReorderDevicesAction /

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Device, trackStore } from '#/modules/Arrangement/stores';
 
 import { decodeBacteriaBody, NO_BODY_INDEX } from '../models/BacteriaBodyIndex';
 import { fromBacteriaModAssignmentsState, rowsEqual } from '../models/BacteriaModAssignmentsState';
@@ -163,10 +163,6 @@ function hydrateNumericGlobalFields(patch: BacteriaPatch, parameters: Record<str
 /**
  * The patch with its routing table replaced by the device's decoded chunk, or
  * the same patch reference when there is nothing to project.
- *
- * Split out of `hydrateBacteriaPatchFromProject` to keep that function's
- * complexity under the project ceiling; the two decision points here (a null
- * decode, an already-equal table) are one self-contained projection.
  */
 function projectRoutingTable(
     patch: BacteriaPatch,
@@ -197,6 +193,45 @@ function hydrateGlobalModes(patch: BacteriaPatch, parameterValues: Record<string
         next = { ...next, globalRouting: globalRouting as BacteriaRoutingMode };
     }
     return next;
+}
+
+function projectPatchParameters(patch: BacteriaPatch, parameterValues: Record<string, number>): BacteriaPatch {
+    let next = hydrateNumericGlobalFields(patch, parameterValues);
+    for (const field of BOOLEAN_GLOBAL_FIELDS) {
+        const stored = parameterValues[field];
+        if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
+            next = { ...next, [field]: isStoredTrue(stored) };
+        }
+    }
+
+    for (let bandIndex = 0; bandIndex < next.bands.length; bandIndex++) {
+        const hydrated = hydrateBandFromProject(next.bands[bandIndex]!, bandIndex, parameterValues);
+        if (hydrated !== next.bands[bandIndex]) {
+            next = {
+                ...next,
+                bands: next.bands.map((band, index) => (index === bandIndex ? hydrated : band)),
+            };
+        }
+    }
+    return hydrateGlobalModes(next, parameterValues);
+}
+
+function projectDevicePatch(
+    current: BacteriaPatch,
+    device: Device,
+    factory?: FactoryProjection
+): { patch: BacteriaPatch; routingChanged: boolean } {
+    const named = factory && factory.name !== current.name ? { ...current, name: factory.name } : current;
+    const routed = projectRoutingTable(named, device.deviceState, factory?.modAssignments);
+    let patch = routed;
+    let parameterValues = device.parameterValues;
+    if (factory) {
+        parameterValues = { ...parameterValues, ...factory.parameterValues };
+    }
+    if (parameterValues) {
+        patch = projectPatchParameters(routed, parameterValues);
+    }
+    return { patch, routingChanged: factory === undefined && routed !== named };
 }
 
 /**
@@ -245,61 +280,8 @@ export function hydrateBacteriaPatchFromProject(deviceId: string, factory?: Fact
     }
 
     const current = getBacteriaState(deviceId).patch;
-    let patch = factory && factory.name !== current.name ? { ...current, name: factory.name } : current;
-    let changed = patch !== current;
-    let routingChanged = false;
-
-    const routed = projectRoutingTable(patch, device.deviceState, factory?.modAssignments);
-    if (routed !== patch) {
-        patch = routed;
-        changed = true;
-        routingChanged = factory === undefined;
-    }
-
-    let parameterValues = device.parameterValues;
-    if (factory) {
-        parameterValues = { ...parameterValues, ...factory.parameterValues };
-    }
-    if (parameterValues) {
-        const globals = hydrateNumericGlobalFields(patch, parameterValues);
-        changed ||= globals !== patch;
-        patch = globals;
-
-        for (const field of BOOLEAN_GLOBAL_FIELDS) {
-            const stored = parameterValues[field];
-            if (isFiniteNumber(stored) && !Object.is(patch[field], isStoredTrue(stored))) {
-                patch = { ...patch, [field]: isStoredTrue(stored) };
-                changed = true;
-            }
-        }
-
-        for (let bandIndex = 0; bandIndex < patch.bands.length; bandIndex++) {
-            const hydrated = hydrateBandFromProject(patch.bands[bandIndex]!, bandIndex, parameterValues);
-            if (hydrated !== patch.bands[bandIndex]) {
-                patch = {
-                    ...patch,
-                    bands: patch.bands.map((band, index) => (index === bandIndex ? hydrated : band)),
-                };
-                changed = true;
-            }
-        }
-
-        const modes = hydrateGlobalModes(patch, parameterValues);
-        changed ||= modes !== patch;
-        patch = modes;
-    }
-
-    commitHydratedPatch(deviceId, patch, changed, routingChanged);
-}
-
-/**
- * Store-only unless the routing projection itself changed: an ineligible
- * target must still take the projected rows so a later edit builds on them
- * (#4756), but only a table the projection actually changed is worth a push —
- * an equal or absent chunk pushes nothing new to the engine.
- */
-function commitHydratedPatch(deviceId: string, patch: BacteriaPatch, changed: boolean, routingChanged: boolean): void {
-    if (changed) {
+    const { patch, routingChanged } = projectDevicePatch(current, device, factory);
+    if (patch !== current) {
         loadBacteriaPatch(deviceId, patch);
     }
     if (routingChanged) {
