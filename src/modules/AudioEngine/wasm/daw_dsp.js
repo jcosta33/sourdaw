@@ -450,7 +450,7 @@ export class CrumbsInstance {
         return this;
     }
     /**
-     * Release every voice sounding at `note`.
+     * Release ordinary held voices sounding at `note`.
      * @param {number} note
      */
     note_off(note) {
@@ -463,6 +463,22 @@ export class CrumbsInstance {
      */
     note_on(note, velocity) {
         wasm.crumbsinstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Release voices created by this pad audition.
+     * @param {number} audition_id
+     */
+    pad_audition_off(audition_id) {
+        wasm.crumbsinstance_pad_audition_off(this.__wbg_ptr, audition_id);
+    }
+    /**
+     * Trigger a pad audition whose voices can be released together by id.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} audition_id
+     */
+    pad_audition_on(note, velocity, audition_id) {
+        wasm.crumbsinstance_pad_audition_on(this.__wbg_ptr, note, velocity, audition_id);
     }
     /**
      * Render a block. Returns a pointer to the left channel; the right channel
