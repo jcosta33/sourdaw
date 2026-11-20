@@ -256,13 +256,13 @@ function drawInlineAutomation(
     viewportHeight: number
 ): void {
     const tops = getRenderedTrackTops(model.tracks);
-    model.tracks.forEach((track, index) => {
-        track.automationLanes?.forEach((lane, laneIndex) => {
+    for (const [index, track] of model.tracks.entries()) {
+        for (const [laneIndex, lane] of (track.automationLanes ?? []).entries()) {
             const top =
                 tops[index]! + getAutomationSubLaneTop(track.height, track.variationLanes?.length ?? 0, laneIndex);
             const bottom = top + AUTOMATION_SUB_LANE_HEIGHT;
             if (bottom <= model.scrollY || top >= model.scrollY + viewportHeight) {
-                return;
+                continue;
             }
             ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
             ctx.fillRect(0, top, width, AUTOMATION_SUB_LANE_HEIGHT);
@@ -276,8 +276,8 @@ function drawInlineAutomation(
                 ctx.lineTo(to.x, top + to.y);
             });
             ctx.stroke();
-        });
-    });
+        }
+    }
 }
 
 function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, height: number): void {

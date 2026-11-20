@@ -483,14 +483,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const laneTop = trackY + th + lane * VARIATION_LANE_HEIGHT * dpr;
                     addRect(0, laneTop, w, laneTop + VARIATION_LANE_HEIGHT * dpr, '#000000', 0.15);
                 }
-                track.automationLanes?.forEach((lane, laneIndex) => {
+                for (const [laneIndex, lane] of (track.automationLanes ?? []).entries()) {
                     const laneTop = trackY + getAutomationSubLaneTop(track.height, laneCount, laneIndex) * dpr;
                     const laneBottom = laneTop + AUTOMATION_SUB_LANE_HEIGHT * dpr;
                     if (laneBottom <= 0 || laneTop >= h) {
-                        return;
+                        continue;
                     }
                     automationRows.push({ lane, top: laneTop });
-                });
+                }
                 trackY += getRenderedTrackExtent(track) * dpr;
             }
 

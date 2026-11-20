@@ -6,7 +6,10 @@ import { trackStore } from '../stores/trackStore';
 
 /** Keep shared scroll offsets in bounds when their content extents change. */
 export function initTimelineScrollClamp(): () => void {
-    const clampY = () => setScrollY(timelineViewStore.value?.scrollY ?? 0);
+    function clampY(): void {
+        setScrollY(timelineViewStore.value?.scrollY ?? 0);
+    }
+
     const stopTracks = trackStore.subscribe(() => {
         setScrollX(timelineViewStore.value?.scrollX ?? 0);
         clampY();

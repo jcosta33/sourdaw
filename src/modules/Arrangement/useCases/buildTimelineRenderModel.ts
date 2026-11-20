@@ -26,8 +26,10 @@ import {
     type TrackRenderModel,
     type ClipRenderModel,
     type AudioWaveformProgrammePart,
+    type AutomationSubLaneRenderModel,
 } from '../models/TimelineRenderModel';
 import { getVariationLaneCount } from '../models/TimelineTrackExtent';
+import { type Track } from '../models/Track';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
@@ -249,6 +251,58 @@ type InlineAutomationSnapshot = {
     lanes: AutomationStoreState['lanes'] | null;
 };
 
+function readInlineAutomationSnapshot(supplied: InlineAutomationSnapshot | undefined): InlineAutomationSnapshot {
+    const editing = supplied ? supplied.editing : timelineEditingStore.value;
+    if (editing?.automationVisibility !== 'overlay') {
+        return { editing: null, lanes: null };
+    }
+    if (supplied) {
+        return supplied;
+    }
+    return { editing, lanes: automationStore.value?.lanes ?? null };
+}
+
+function updateLaneRenderCache(
+    takeLaneState: typeof takeLaneStore.value,
+    { editing, lanes }: InlineAutomationSnapshot
+): boolean {
+    const automationSubLanes = editing?.automationSubLanes ?? null;
+    const changed =
+        takeLaneState !== renderCache.takeLane ||
+        lanes !== renderCache.automation ||
+        automationSubLanes !== renderCache.automationSubLanes;
+    renderCache.takeLane = takeLaneState;
+    renderCache.automation = lanes;
+    renderCache.automationSubLanes = automationSubLanes;
+    return changed;
+}
+
+function projectInlineAutomationLanes(
+    tracks: readonly Track[],
+    { editing, lanes }: InlineAutomationSnapshot
+): ReadonlyMap<string, readonly AutomationSubLaneRenderModel[]> {
+    const snapshot = lanes ?? [];
+    const visitedLaneIds = new Set<string>();
+    const rows = new Map<string, readonly AutomationSubLaneRenderModel[]>();
+    for (const [trackId, trackLanes] of getInlineAutomationRows(tracks, snapshot, editing)) {
+        rows.set(
+            trackId,
+            trackLanes.map((lane) => ({
+                id: lane.id,
+                trackId: lane.trackId,
+                parameterId: lane.parameterId,
+                parameterName: lane.parameterName,
+                minValue: lane.minValue,
+                maxValue: getAutomationLaneCeiling(lane),
+                color: lane.color,
+                linkedLaneId: lane.linkedLaneId,
+                valueAtBeat: (beat) => getAutomationValueAtBeat(lane.id, beat, visitedLaneIds, snapshot),
+            }))
+        );
+    }
+    return rows;
+}
+
 export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnapshot): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
@@ -259,14 +313,8 @@ export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnap
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
-    const editing = inlineAutomation ? inlineAutomation.editing : timelineEditingStore.value;
-    const inlineAutomationVisible = editing?.automationVisibility === 'overlay';
-    const automation = inlineAutomationVisible
-        ? inlineAutomation
-            ? inlineAutomation.lanes
-            : automationStore.value?.lanes
-        : null;
-    const automationSubLanes = inlineAutomationVisible ? editing.automationSubLanes : null;
+    const automation = readInlineAutomationSnapshot(inlineAutomation);
+    const lanesChanged = updateLaneRenderCache(takeLaneState, automation);
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -279,9 +327,7 @@ export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnap
         transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig ||
         tempoMapState !== renderCache.tempoMap ||
-        takeLaneState !== renderCache.takeLane ||
-        automation !== renderCache.automation ||
-        automationSubLanes !== renderCache.automationSubLanes;
+        lanesChanged;
 
     if (dataChanged) {
         renderCache.track = trackState;
@@ -292,9 +338,6 @@ export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnap
         renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
         renderCache.tempoMap = tempoMapState;
-        renderCache.takeLane = takeLaneState;
-        renderCache.automation = automation;
-        renderCache.automationSubLanes = automationSubLanes;
 
         const timeline = captureWaveformTimeline(
             transportState?.tempo ?? DEFAULT_TEMPO_BPM,
@@ -306,9 +349,7 @@ export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnap
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
         const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
-        const automationSnapshot = automation ?? [];
-        const automationRows = getInlineAutomationRows(visibleTracks, automationSnapshot, editing);
-        const visitedLaneIds = new Set<string>();
+        const automationRows = projectInlineAutomationLanes(visibleTracks, automation);
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
             const baseHeight = getTimelineTrackHeight(track);
@@ -415,17 +456,7 @@ export function buildTimelineRenderModel(inlineAutomation?: InlineAutomationSnap
                 height: baseHeight,
                 automationMode: track.automationMode,
                 clips: mappedClips,
-                automationLanes: automationRows.get(track.id)?.map((lane) => ({
-                    id: lane.id,
-                    trackId: lane.trackId,
-                    parameterId: lane.parameterId,
-                    parameterName: lane.parameterName,
-                    minValue: lane.minValue,
-                    maxValue: getAutomationLaneCeiling(lane),
-                    color: lane.color,
-                    linkedLaneId: lane.linkedLaneId,
-                    valueAtBeat: (beat) => getAutomationValueAtBeat(lane.id, beat, visitedLaneIds, automationSnapshot),
-                })),
+                automationLanes: automationRows.get(track.id),
                 variationLanes:
                     getVariationLaneCount(track) > 0
                         ? track.alternatives.map((alt) => ({
