@@ -1477,18 +1477,8 @@ impl Vst3Wrapper {
             );
         }
 
-        if let Some(reason) = self
-            .layout_refusal
-            .as_ref()
-            .filter(|_| !self.layout_refusal_reported)
-        {
-            self.layout_refusal_reported = true;
-            let handling = if self.fails_silent() {
-                "its blocks are silenced"
-            } else {
-                "its blocks pass through unprocessed"
-            };
-            eprintln!("{reason}; {handling}");
+        if let Some(report) = self.take_layout_refusal_report() {
+            eprintln!("{report}");
         }
 
         let unhandled = self.instance.host.state.unhandled_restart_flags();
@@ -1675,6 +1665,24 @@ impl Vst3Wrapper {
         self.is_instrument || self.bus_layout.main_input_channels() == 0
     }
 
+    /// The line saying this slot is out of service for a layout the host
+    /// refused, the first time it is asked after the refusal; `None` once it
+    /// has been taken, or while no refusal stands. **Control path only.**
+    pub fn take_layout_refusal_report(&mut self) -> Option<String> {
+        if self.layout_refusal_reported {
+            return None;
+        }
+        let reason = self.layout_refusal.as_ref()?;
+        let handling = if self.fails_silent() {
+            "its blocks are silenced"
+        } else {
+            "its blocks pass through unprocessed"
+        };
+        let report = format!("{reason}; {handling}");
+        self.layout_refusal_reported = true;
+        Some(report)
+    }
+
     /// Hand the plugin the parameter writes waiting for it, with no audio, while
     /// nothing else will. **Control path only.**
     ///
@@ -1728,7 +1736,9 @@ impl Vst3Wrapper {
     }
 
     /// Put every staged parameter value back on the processor's queue, for a
-    /// flush the plugin did not take.
+    /// block or flush the plugin did not take.
+    ///
+    /// RT-safe: the queue coalesces into preallocated slots without a lock.
     fn requeue_staged_parameters(&self) {
         for (param_id, value) in self.parameter_changes.staged() {
             self.instance
@@ -1800,11 +1810,16 @@ impl Vst3Wrapper {
     /// RT-safe: no allocation, no lock, no I/O. Everything it hands the plugin
     /// was allocated in `from_factory` and is refilled in place.
     fn process_block(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
+        // A block the plugin is not handed carries no write: each staged one
+        // goes back to the queue, so it lands on the first block that reaches
+        // the processor rather than being lost with this one.
         if self.layout_refusal.is_some() {
+            self.requeue_staged_parameters();
             self.pass_failed_block(inputs, outputs, num_samples);
             return;
         }
         if !self.activated {
+            self.requeue_staged_parameters();
             Self::pass_through(inputs, outputs, num_samples);
             return;
         }
@@ -1817,6 +1832,7 @@ impl Vst3Wrapper {
             if self.processing.wants_processing() {
                 self.processing_start_refused = true;
             }
+            self.requeue_staged_parameters();
             Self::pass_through(inputs, outputs, num_samples);
             return;
         }

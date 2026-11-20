@@ -17,8 +17,8 @@ use daw_plugin_host::{
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
-    ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_PARAM_ID, LATENCY_FRAMES, LOG_ACTIVATE,
-    LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
+    ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_PARAM_ID, LATENCY_FRAMES, LEVEL_PARAM_ID,
+    LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
     RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID,
     VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
     VST3_RECONFIGURING_CLASS_ID, VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
@@ -276,6 +276,74 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
         !wrapper.is_activated(),
         "a latency change does not bring back a layout the host refused"
     );
+
+    let report = wrapper
+        .take_layout_refusal_report()
+        .expect("a standing refusal is reported");
+    assert!(
+        report.contains("Sourdaw Harness Fx Reconfiguring")
+            && report.ends_with("its blocks pass through unprocessed"),
+        "{report}"
+    );
+    assert_eq!(
+        wrapper.take_layout_refusal_report(),
+        None,
+        "the refusal is reported once"
+    );
+}
+
+/// The control path's reporter is what takes the refusal's one report, so a
+/// slot out of service says so in the running app and only once.
+#[test]
+fn the_reporter_reports_a_refused_layout_once() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-io-unroutable-reported");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
+    wrapper
+        .apply_component_restart()
+        .expect_err("six output channels cannot be routed");
+    wrapper.report_plugin_observations();
+
+    assert_eq!(
+        wrapper.take_layout_refusal_report(),
+        None,
+        "the reporter already took the refusal's report"
+    );
+}
+
+/// A write made while the slot is out of service waits for the processor:
+/// the blocks that skip the plugin hand it back to the queue, and once a
+/// restart the host can route brings the slot back, the first block the
+/// plugin is handed carries it.
+#[test]
+fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-io-recovers");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+    let (left, right) = distinct_pair();
+    let (unity, _) = process(&mut wrapper, &left, &right);
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
+    wrapper
+        .apply_component_restart()
+        .expect_err("six output channels cannot be routed");
+    wrapper.set_parameter(LEVEL_PARAM_ID, 0.5);
+    process(&mut wrapper, &left, &right);
+    process(&mut wrapper, &left, &right);
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 0.0);
+    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert!(wrapper.is_activated());
+
+    let halved: Vec<f32> = unity.iter().map(|sample| sample * 0.5).collect();
+    let (out_left, out_right) = process(&mut wrapper, &left, &right);
+    assert_eq!(
+        out_left, halved,
+        "the write made out of service reached the processor"
+    );
+    assert_eq!(out_right, halved);
 }
 
 /// The same refusal on a class the factory lists as an instrument silences
