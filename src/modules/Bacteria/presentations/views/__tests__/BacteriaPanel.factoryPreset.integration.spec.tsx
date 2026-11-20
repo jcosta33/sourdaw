@@ -37,7 +37,6 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { toBacteriaModAssignmentsState } from '../../../models/BacteriaModAssignmentsState';
-import { mapBacteriaModAssignments } from '../../../models/BacteriaModulationIds';
 import { type BacteriaModAssignment } from '../../../models/BacteriaPatch';
 import { bacteriaStore, getBacteriaState } from '../../../stores/bacteriaStore';
 import { paramBatcher } from '../../../useCases/bacteriaParamBridge/helpers';
@@ -191,18 +190,19 @@ describe('Bacteria factory preset history', () => {
         patch.mockClear();
         scalar.mockClear();
 
+        const factoryScalars = { bandCount: 3, crossoverFreq1: 400, crossoverFreq2: 4000, band2_bitDepth: 4 };
+        const factoryPatch = expect.objectContaining({ ...factoryScalars, modAssignments: [] });
         fireEvent.click(screen.getByRole('button', { name: /Bitcrush Cascade/ }));
-        await waitFor(() => expect(rawDevice().parameterValues).toHaveProperty('band2_bitDepth', 4));
+        await waitFor(() =>
+            expect(rawDevice().parameterValues).toHaveProperty('band2_bitDepth', factoryScalars.band2_bitDepth)
+        );
         expect(undoDepth()).toBe(2);
         const factory = rawDevice();
         expect(factory.parameterValues).toMatchObject({
-            bandCount: 3,
-            crossoverFreq1: 400,
-            crossoverFreq2: 4000,
+            ...factoryScalars,
             crossoverFreq4: 7100,
             band0_bitDepth: 12,
             band1_bitDepth: 8,
-            band2_bitDepth: 4,
             bitDepth: 11,
             band4_bitDepth: 13,
             inputGain: 0,
@@ -210,9 +210,10 @@ describe('Bacteria factory preset history', () => {
         expect(projectedDevice()).toEqual(factory);
         expect(factory.deviceState?.data).toEqual({ modAssignments: [], exportMetadata: { label: 'Guitar' } });
         expect(getBacteriaState(DEVICE).patch.name).toBe('Bitcrush Cascade');
-        expect(patch).toHaveBeenCalledExactlyOnceWith(TRACK, DEVICE, expect.objectContaining({ modAssignments: [] }));
+        expect(patch).toHaveBeenCalledExactlyOnceWith(TRACK, DEVICE, factoryPatch);
         expect(scalar).not.toHaveBeenCalledWith(TRACK, DEVICE, 'crossoverFreq4', expect.any(Number));
         patch.mockClear();
+        scalar.mockClear();
 
         await act(undo);
         expect(rawDevice()).toEqual(before);
@@ -223,7 +224,13 @@ describe('Bacteria factory preset history', () => {
         expect(patch).toHaveBeenCalledExactlyOnceWith(
             TRACK,
             DEVICE,
-            expect.objectContaining({ modAssignments: mapBacteriaModAssignments(ROWS) })
+            expect.objectContaining({
+                bandCount: 1,
+                crossoverFreq1: 200,
+                crossoverFreq2: 800,
+                band2_bitDepth: 11,
+                modAssignments: [{ sourceId: 6, targetParam: 1, amount: 0.4 }],
+            })
         );
 
         await act(undo);
@@ -235,7 +242,7 @@ describe('Bacteria factory preset history', () => {
         expect(rawDevice()).toEqual(factory);
         expect(projectedDevice()).toEqual(factory);
         expect(rawDevice(SENTINEL)).toEqual(sentinel);
-        expect(patch).toHaveBeenCalledExactlyOnceWith(TRACK, DEVICE, expect.objectContaining({ modAssignments: [] }));
+        expect(patch).toHaveBeenCalledExactlyOnceWith(TRACK, DEVICE, factoryPatch);
         expect(scalar).not.toHaveBeenCalledWith(TRACK, SENTINEL, expect.any(String), expect.any(Number));
     });
 
