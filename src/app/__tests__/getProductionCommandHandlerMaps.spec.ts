@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getBacteriaHandlers } from '#/modules/Bacteria/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
+import { getGlutenHandlers } from '#/modules/Gluten/useCases';
+import { getLevainHandlers } from '#/modules/Levain/useCases';
+import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
 
@@ -77,7 +81,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(38);
+        expect(handlerMaps).toHaveLength(42);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -91,6 +95,18 @@ describe('getProductionCommandHandlerMaps', () => {
         }
         expect(actionTypes).toContain('editTempoMap');
         expect(actionTypes).toContain('restoreTempoMapEdit');
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setBacteriaFactoryPatch')).toEqual([
+            { actionType: 'setBacteriaFactoryPatch', handler: getBacteriaHandlers().setBacteriaFactoryPatch },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setToasterFactoryKit')).toEqual([
+            { actionType: 'setToasterFactoryKit', handler: getToasterHandlers().setToasterFactoryKit },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
+            { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setLevainIdentity')).toEqual([
+            { actionType: 'setLevainIdentity', handler: getLevainHandlers().setLevainIdentity },
+        ]);
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)
         ).toEqual([]);
@@ -112,6 +128,10 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(registrations.map(({ actionType }) => actionType)).toContain('setProductionBrief');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setBacteriaFactoryPatch');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setLevainIdentity');
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);
         expect(
             registrations

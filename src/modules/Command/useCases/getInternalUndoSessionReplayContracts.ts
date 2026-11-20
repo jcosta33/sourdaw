@@ -32,6 +32,20 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
+function createCapturedDeviceReplayContract(
+    actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
+): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) =>
+            validateVersionedCommandArguments(actionType, payload) &&
+            getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
+
 /**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
@@ -46,6 +60,21 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
             validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
         },
+        {
+            actionType: 'insertAutomationLanePoints',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('insertAutomationLanePoints', payload) &&
+                getHandlerByType('insertAutomationLanePoints')?.validateSessionActionArguments?.(payload) === true,
+            validateEntry: (entry) =>
+                getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
+            restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
+        },
+        createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
+        createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {
@@ -54,6 +83,19 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             role: 'forward',
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('editTempoMap', payload),
             validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
+        },
+        {
+            actionType: 'relinkClipAudioSources',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('relinkClipAudioSources', payload),
+            validateEntry: (entry) =>
+                [entry.action, entry.inverseAction, entry.redoAction].every(
+                    (action) =>
+                        action?.type === 'relinkClipAudioSources' &&
+                        validateVersionedCommandArguments('relinkClipAudioSources', action.payload)
+                ) && getHandlerByType('relinkClipAudioSources')?.validateSessionEntry?.(entry) === true,
         },
         {
             actionType: 'deleteTime',

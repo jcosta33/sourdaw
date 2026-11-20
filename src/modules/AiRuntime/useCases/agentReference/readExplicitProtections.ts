@@ -17,6 +17,7 @@ import {
     type Token,
 } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection } from './readRoleFamilyProtection';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
@@ -531,27 +532,6 @@ function readVcaMemberTracks(
         .flatMap((reference) => Array.from(reference.denotes).flatMap((id) => vcaGroups.get(id) ?? []));
 }
 
-/** The tracks the request names outside every protection slot: what "it" can point at. */
-function readTargetTrackIds(
-    references: readonly NamedRange[],
-    slots: readonly Range[],
-    context: ProjectContext
-): Set<string> {
-    const trackIds = new Set(context.tracks.map((track) => track.id));
-    const targets = new Set<string>();
-    for (const reference of references) {
-        if (slots.some((slot) => reference.start >= slot.start && reference.end <= slot.end)) {
-            continue;
-        }
-        for (const id of reference.denotes) {
-            if (trackIds.has(id)) {
-                targets.add(id);
-            }
-        }
-    }
-    return targets;
-}
-
 /**
  * What a bound track name protects: the whole track, or only the operations its controls name. A role
  * family beside a track the request names as its target means the rest of that family ("brighten the
@@ -636,7 +616,7 @@ export function readExplicitProtections(
     const objects = protectionCandidates.protectableObjects(context);
     const familyTrackIds: FamilyTrackIds = (family) =>
         resolveWorkflowTrackIds(context, `protection-role-${family}`, { all: [{ roleFamily: family }] });
-    const targetTrackIds = readTargetTrackIds(references, slots, context);
+    const targetTrackIds = readRequestTargetTrackIds(references, slots, context, scanned);
     let wholeBeforeCarveOut: string[] = [];
     for (const slot of slots) {
         if (!slot.exempts) {

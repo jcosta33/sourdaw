@@ -249,15 +249,15 @@
     --color-gray-500: #686868;
 
     /* == Layer 12: Legible DAW typography and semantic roles == */
-    --text-nano: 11px;
-    --text-micro: 11px;
-    --text-caption: 11px;
-    --text-dense: 12px;
-    --text-compact: 12px;
-    --text-metadata: 11px;
-    --text-label: 12px;
-    --text-value: 12px;
-    --text-body: 12px;
+    --text-nano: 0.6875rem;
+    --text-micro: 0.6875rem;
+    --text-caption: 0.6875rem;
+    --text-dense: 0.75rem;
+    --text-compact: 0.75rem;
+    --text-metadata: 0.6875rem;
+    --text-label: 0.75rem;
+    --text-value: 0.75rem;
+    --text-body: 0.75rem;
 }
 
 :root {

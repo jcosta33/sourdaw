@@ -1,6 +1,7 @@
 import { type LevainPatch } from '../models/LevainPatch';
 
 import { getLevainProjectParameterId } from './getLevainProjectParameterId';
+import { readLevainMasterGain } from './readLevainMasterGain';
 
 type ReadParameterInput = {
     fallback: number;
@@ -95,13 +96,7 @@ export function hydrateLevainPatchFromParameterValues({
 
     return {
         ...patch,
-        masterGain: readEngineParameter({
-            parameterValues,
-            engineParameterName: 'master_gain',
-            fallback: patch.masterGain,
-            min: 0,
-            max: 2,
-        }),
+        masterGain: readLevainMasterGain(parameterValues, patch.masterGain),
         legato: {
             ...patch.legato,
             enabled:

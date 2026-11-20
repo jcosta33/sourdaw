@@ -695,10 +695,8 @@ impl GrinderEngine {
     /// Load a real .nam capture into the neural stage. Control-path only:
     /// parsing and prewarming allocate, so this must never run inside the
     /// render callback.
-    pub fn load_neural_model(&mut self, json: &str) -> Result<(), String> {
-        self.neural
-            .load_model_json(json)
-            .map_err(|error| error.to_string())
+    pub fn load_neural_model(&mut self, json: &str) -> Result<(), super::nam::NamModelError> {
+        self.neural.load_model_json(json)
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn swap_native_neural_model(

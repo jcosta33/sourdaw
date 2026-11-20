@@ -7,8 +7,14 @@ import {
     forgetProjectLatchedPedals,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { clearUndoHistory, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
+import {
+    captureDurableDocumentWitness,
+    captureProjectRootIdentity,
+    compactProject,
+    projectActionHistoryToStore,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
 import { settleProjectSwitchPluginTeardown, unloadPluginsBeforeProjectSwitch } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -40,6 +46,8 @@ type NewProjectOptions = {
     /** The caller keeps this true only while the user still wants this replacement. */
     readonly shouldProceed?: () => boolean;
 };
+
+type NewProjectAuthority = Pick<ReplacedProject, 'finalize'> & { rootIdentity: string | undefined };
 
 type ActivateNewProjectInput = {
     name: string;
@@ -138,10 +146,11 @@ async function switchToNewProject({
     previousTransientState,
     shouldProceed,
     transaction,
-}: ActivateNewProjectInput): Promise<ReplacedProject | null> {
+}: ActivateNewProjectInput): Promise<NewProjectAuthority | null> {
     let graphTeardownStarted = false;
     let previousPersistenceStopped = false;
     let authorityReplaced = false;
+    let rootIdentity: string | undefined;
     // Hoisted out of the try: a throw past the switch has to be able to settle
     // the reset this activation began.
     let replaced: ReplacedProject | null = null;
@@ -178,6 +187,7 @@ async function switchToNewProject({
                 name,
                 () => {
                     authorityReplaced = true;
+                    rootIdentity = captureProjectRootIdentity();
                 },
                 shouldContinue,
                 outgoingProject
@@ -194,7 +204,7 @@ async function switchToNewProject({
             // Point of no return: the fresh project owns the document now, so
             // the old project's latched pedals can no longer be replayed.
             forgetProjectLatchedPedals();
-            return reset;
+            return { finalize: reset.finalize, rootIdentity };
         } finally {
             releaseRuntimeTransition();
         }
@@ -214,11 +224,23 @@ async function switchToNewProject({
     }
 }
 
+function bindFreshUndoHistory(projectId: string | undefined, rootIdentity: string | undefined): void {
+    if (
+        rootIdentity !== undefined &&
+        rootIdentity === captureProjectRootIdentity() &&
+        projectId !== undefined &&
+        projectStore.value?.projectId === projectId
+    ) {
+        reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+    }
+}
+
 /** Populate, publish and make durable the project the authority switch installed. */
 async function commitNewProject({
     name,
     finalize,
-}: { name: string } & Pick<ReplacedProject, 'finalize'>): Promise<true> {
+    rootIdentity,
+}: { name: string } & NewProjectAuthority): Promise<true> {
     let degraded = false;
     function runCommittedStep(step: string, operation: () => void): void {
         try {
@@ -251,16 +273,21 @@ async function commitNewProject({
             loading: false,
             initialized: true,
         });
-        publishedProjectId = metadata.projectId;
         projectStore.set({
             ...metadata,
             // Publication barrier: the minted identity is not durable until the
             // initial compaction below persists it. Cleared only on that success.
             identityPersistencePending: true,
         });
+        publishedProjectId = metadata.projectId;
     });
     runCommittedStep('project cache removal', removeProjectJson);
     runCommittedStep('undo history reset', clearUndoHistory);
+    // Bind the empty history before persistence can stamp it or another edit
+    // can arrive. The old stacks were cleared when the new identity took over.
+    if (!degraded) {
+        runCommittedStep('undo history ownership', () => bindFreshUndoHistory(publishedProjectId, rootIdentity));
+    }
 
     try {
         await compactProject();
@@ -302,7 +329,7 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
     if (replaced === null) {
         return false;
     }
-    const committed = await commitNewProject({ name: input.name, finalize: replaced.finalize });
+    const committed = await commitNewProject({ name: input.name, ...replaced });
     if (!committed) {
         return false;
     }

@@ -22,3 +22,5 @@ export {
     defaultExternalPluginParameterState,
     readExternalPluginParameterReadIssue,
 } from './externalPluginParameterStore';
+export type { ExternalPluginTailState } from './externalPluginTailStore';
+export { externalPluginTailStore, defaultExternalPluginTailState } from './externalPluginTailStore';

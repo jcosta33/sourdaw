@@ -129,4 +129,51 @@ describe('shipped Crumbs sample commit and audio', () => {
         expect(source.left).toEqual(originalLeft);
         expect(source.right).toEqual(originalRight);
     });
+    it('ends the pad audition while both transport pitches keep rendering', async () => {
+        const { registry } = installWorkletGlobals<CrumbsProcessorLike>();
+        await import('../crumbsProcessor');
+        const Processor = registry.get('crumbs-processor');
+        if (!Processor) {
+            throw new Error('The production Crumbs processor did not register');
+        }
+        processor = new Processor({ processorOptions: { wasmModule } });
+        const target = processor;
+        send(target, { type: 'init' });
+        send(target, { type: 'param', name: 'attack', value: 0 });
+        send(target, { type: 'param', name: 'release', value: 0 });
+        send(target, {
+            type: 'loadSample',
+            loadToken: 1,
+            data: new Float32Array(4096).fill(0.25),
+            channels: 1,
+            sampleRate: SAMPLE_RATE,
+        });
+        expect(target.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleLoaded',
+            loadToken: 1,
+            droppedWrites: 0,
+        });
+
+        function renderLastFrame() {
+            const output = makeChannels(2, FRAMES);
+            expect(target.process([], [output])).toBe(true);
+            return output[0]?.[FRAMES - 1];
+        }
+
+        send(target, { type: 'noteOn', note: 67, velocity: 70 });
+        const sentinel = renderLastFrame()!;
+        expect(sentinel).toBeGreaterThan(0.05);
+        send(target, { type: 'noteOn', note: 60, velocity: 40 });
+        const transport = renderLastFrame()!;
+        expect(transport).toBeGreaterThan(sentinel + 0.02);
+        send(target, { type: 'padAuditionOn', note: 60, velocity: 127, auditionId: 1 });
+        expect(renderLastFrame()).toBeGreaterThan(transport + 0.1);
+
+        send(target, { type: 'padAuditionOff', auditionId: 1 });
+        expect(renderLastFrame()).toBeCloseTo(transport, 5);
+        send(target, { type: 'noteOff', note: 60 });
+        expect(renderLastFrame()).toBeCloseTo(sentinel, 5);
+        send(target, { type: 'noteOff', note: 67 });
+        expect(renderLastFrame()).toBe(0);
+    });
 });

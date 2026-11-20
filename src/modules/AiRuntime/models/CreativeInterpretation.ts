@@ -1,7 +1,69 @@
+import { isRecord } from '#/utils/structuralEquality';
+
 import { type ProjectContext } from './ProjectContext';
 import { type ToolSchema } from './ToolDefinitions';
 
 export const CREATIVE_INTERPRETATION_TOOL_NAME = 'selectCreativeInterpretation';
+export const PUBLIC_CREATIVE_INTERPRETATION_MAX_BYTES = 512;
+
+/** Public musical reading only; never model reasoning or execution authority. */
+export function isPublicCreativeInterpretation(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.trim().length > 0 &&
+        new TextEncoder().encode(value).byteLength <= PUBLIC_CREATIVE_INTERPRETATION_MAX_BYTES
+    );
+}
+
+type CreativeReadingReceipt = { toolName: string; status: string; data: unknown };
+
+function readMatchingCreativeIntake(receipt: CreativeReadingReceipt, authorityIds?: readonly string[]) {
+    if (
+        receipt.toolName !== CREATIVE_INTERPRETATION_TOOL_NAME ||
+        receipt.status !== 'success' ||
+        !isRecord(receipt.data)
+    ) {
+        return null;
+    }
+    const { kind, authorityId, creativeInterpretation } = receipt.data;
+    if (
+        kind !== 'metric-intent' ||
+        typeof authorityId !== 'string' ||
+        authorityId.length === 0 ||
+        (authorityIds !== undefined && !authorityIds.includes(authorityId))
+    ) {
+        return null;
+    }
+    return { authorityId, creativeInterpretation };
+}
+
+/** Read only a successfully admitted creative intake, never a receipt summary or request. */
+export function readPublicCreativeInterpretation(
+    receipts: readonly CreativeReadingReceipt[],
+    authorityIds?: readonly string[]
+): string | null {
+    if (authorityIds !== undefined && new Set(authorityIds).size !== 1) {
+        return null;
+    }
+    const candidates = new Map<string, Set<string>>();
+    for (const receipt of receipts) {
+        const data = readMatchingCreativeIntake(receipt, authorityIds);
+        if (!data) {
+            continue;
+        }
+        if (!isPublicCreativeInterpretation(data.creativeInterpretation)) {
+            return null;
+        }
+        const readings = candidates.get(data.authorityId) ?? new Set<string>();
+        readings.add(data.creativeInterpretation);
+        candidates.set(data.authorityId, readings);
+    }
+    if (candidates.size !== 1) {
+        return null;
+    }
+    const [readings] = candidates.values();
+    return readings?.size === 1 ? ([...readings][0] ?? null) : null;
+}
 
 /**
  * `brief` asks to write the project's production brief rather than to change its sound: it selects no

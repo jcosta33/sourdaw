@@ -1,18 +1,19 @@
+import { type Preferences } from '#/modules/Preferences/stores';
+
+import { getTimelineTrackHeight } from '../models/TimelineTrackExtent';
 import { type Track } from '../models/Track';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+import { getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
+import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
-export function getTimelineSurfaceMinimumHeight(tracks: readonly Track[], selectedTrackId: string | null): number {
+export function getTimelineSurfaceMinimumHeight(
+    tracks: readonly Track[],
+    selectedTrackId: string | null,
+    heightMode?: Preferences['trackHeight']
+): number {
     const visibleTracks = getVisibleTimelineTracks(tracks);
-    const selectedTrack = visibleTracks.find((track) => track.id === selectedTrackId && track.kind !== 'folder');
-    if (selectedTrack) {
-        return getTimelineTrackHeight(selectedTrack);
-    }
-
-    const firstNonFolderTrack = visibleTracks.find((track) => track.kind !== 'folder');
-    if (firstNonFolderTrack) {
-        return getTimelineTrackHeight(firstNonFolderTrack);
-    }
-
-    const firstVisibleTrack = visibleTracks[0];
-    return firstVisibleTrack ? getTimelineTrackHeight(firstVisibleTrack) : 0;
+    const track =
+        visibleTracks.find((track) => track.id === selectedTrackId && track.kind !== 'folder') ??
+        visibleTracks.find((track) => track.kind !== 'folder') ??
+        visibleTracks[0];
+    return track ? getTimelineTrackHeight(track, getTimelineTrackHeightScale(heightMode)) : 0;
 }

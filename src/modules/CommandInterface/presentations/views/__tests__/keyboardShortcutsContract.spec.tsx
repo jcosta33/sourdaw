@@ -75,7 +75,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     }
 
-    function dispatchKey(target: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
+    function dispatchKey(target: EventTarget, init: KeyboardEventInit): KeyboardEvent {
         const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
         target.dispatchEvent(event);
         return event;
@@ -154,6 +154,45 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes Space dispatched at window as a workspace shortcut', () => {
+        openSessionWithCommandHandlers();
+        mocks.handleKeydown.mockReturnValueOnce(true);
+        render(<Host />);
+
+        const event = dispatchKey(window, { key: ' ' });
+
+        expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ key: ' ', keyTarget: 'workspace' })
+        );
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('recognizes the floating editor only while a device control owns focus', () => {
+        openSessionWithCommandHandlers();
+        render(<Host />);
+        const editor = mount(document.createElement('div'));
+        editor.setAttribute('role', 'dialog');
+        editor.setAttribute('aria-modal', 'false');
+        const control = editor.appendChild(document.createElement('button'));
+        control.focus();
+        dispatchKey(control, { key: 'z', metaKey: true });
+        expect(lastKeyTarget()).toBe('textEntry');
+        editor.setAttribute('data-device-editor', '');
+        dispatchKey(control, { key: 'z', metaKey: true });
+        expect(lastKeyTarget()).toBe('deviceEditor');
+        const nested = editor.appendChild(document.createElement('div'));
+        nested.setAttribute('role', 'menu');
+        for (const target of [
+            editor.appendChild(document.createElement('input')),
+            editor.appendChild(document.createElement('select')),
+            nested.appendChild(document.createElement('button')),
+        ]) {
+            target.focus();
+            dispatchKey(target, { key: 'z', metaKey: true });
+            expect(lastKeyTarget()).toBe('textEntry');
+        }
     });
 
     it('routes undo to the global layer while a [data-canvas-editor] has focus', () => {
@@ -527,6 +566,23 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
     });
 
     describe('modal and menu portal surfaces (#3618)', () => {
+        it('classifies Delete from an SVG child of a dialog as text entry', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockImplementationOnce(({ keyTarget }) => keyTarget === 'workspace');
+            render(<Host />);
+            const dialog = mount(document.createElement('div'));
+            dialog.setAttribute('role', 'dialog');
+            const icon = dialog.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
+            const path = icon.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+
+            const event = dispatchKey(path, { key: 'Delete' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key: 'Delete', keyTarget: 'textEntry' })
+            );
+            expect(event.defaultPrevented).toBe(false);
+        });
+
         it('gates the global shortcut (isInput=true) when Delete fires inside a [role="dialog"] surface', () => {
             openSessionWithCommandHandlers();
             render(<Host />);

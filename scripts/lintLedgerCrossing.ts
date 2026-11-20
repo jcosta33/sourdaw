@@ -55,8 +55,9 @@ export const LINT_LEDGER_FILES = [
     '.oxlintrc.json',
     // The native oxlint plugin config: its size-warning override must list exactly the size baseline.
     '.oxlint-plugins.json',
-    // Craft-plugin burn-down exemptions per rule, the same hazard as the oxlint baselines.
+    // Historical ancestry still binds whole-file craft exemptions during the migration.
     'oxlint.craft-baseline.mjs',
+    'oxlint-quality-baseline.json',
     // Files downgraded to warn for the size ceilings.
     'eslint.size-baseline.mjs',
     // Per-file line ceilings: two growths each within the ceiling can exceed it together.

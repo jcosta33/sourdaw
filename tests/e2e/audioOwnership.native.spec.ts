@@ -90,6 +90,7 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
                 metadata,
                 collaboration,
                 command,
+                workspace,
             ] = await Promise.all([
                 import('/src/modules/AudioEngine/useCases/index.ts'),
                 import('/src/modules/Arrangement/useCases/index.ts'),
@@ -101,6 +102,7 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
                 import('/src/modules/Project/useCases/createFreshProjectMetadata.ts'),
                 import('/src/modules/Collaboration/useCases/index.ts'),
                 import('/src/modules/Command/stores/index.ts'),
+                import('/src/modules/WorkspaceShell/useCases/index.ts'),
             ]);
             const [
                 { registerProjectSlotProjections },
@@ -120,6 +122,7 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
             arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
             command.clearHandlerRegistry();
             command.registerHandlerMap(arrangement.getArrangementHandlers());
+            command.registerHandlerMap({ saveProject: workspace.getWorkspaceHandlers().saveProject });
             crdt.registerCrdtStorageRuntime();
             registerProjectSlotProjections();
             registerProjectLifecycle();

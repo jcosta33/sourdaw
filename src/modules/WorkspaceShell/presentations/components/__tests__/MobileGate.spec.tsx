@@ -219,7 +219,7 @@ describe('MobileGate — mobile view content', () => {
         );
         expectExternalProjectLink(
             screen.getByRole('link', { name: /Report a bug/ }),
-            'https://github.com/jcosta33/sourdaw/issues'
+            'https://github.com/jcosta33/sourdaw/discussions/categories/general'
         );
     });
 });

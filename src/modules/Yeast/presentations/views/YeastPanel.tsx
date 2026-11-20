@@ -520,10 +520,17 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
     const effectiveDeviceId = deviceId ?? selectedTrack?.devices.find((device) => device.type === 'yeast')?.id ?? null;
     const previewBinding = resolvePreviewBinding(trackState, effectiveDeviceId);
 
-    return (
-        <div className="yeast-faceplate h-full min-h-[440px] rounded-[26px] p-3">
-            <Grid gap={3} className="h-full min-h-[440px] grid-cols-[15rem_minmax(0,1fr)_16rem]">
-                <aside className="min-h-0 overflow-y-auto pr-1">
+    const faceplate = (
+        <div
+            role="region"
+            aria-label="Yeast rack panel"
+            className="yeast-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3"
+        >
+            <Grid
+                gap={3}
+                className="min-h-0 grid-cols-1 @[900px]:h-full @[900px]:grid-cols-[12rem_minmax(0,1fr)_13rem]"
+            >
+                <aside className="min-h-0 pr-1 @[900px]:overflow-y-auto">
                     <Stack gap={3}>
                         <SideCard
                             title="Rack frame"
@@ -572,7 +579,7 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                     </Stack>
                 </aside>
 
-                <Stack gap={3} className="min-h-0">
+                <Stack gap={3} className="min-h-0 min-w-0">
                     <div className="yeast-window p-3">
                         <Row justify="between" align="start" gap={3}>
                             <Stack gap={2}>
@@ -614,12 +621,12 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                         onSoundingNotesChange={setSoundingNotes}
                     />
 
-                    <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">
+                    <div className="yeast-window min-h-[360px] flex-1 overflow-auto p-3">
                         {renderDeck(state, soundingNotes)}
                     </div>
                 </Stack>
 
-                <aside className="min-h-0 overflow-y-auto pr-1">
+                <aside className="min-h-0 pr-1 @[900px]:overflow-y-auto">
                     <SideCard title="Rack read" detail="Transforms stay visible even when you are focused on one deck.">
                         <Stack gap={1.5}>
                             {state.processors.length > 0 ? (
@@ -654,6 +661,8 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
             </Grid>
         </div>
     );
+
+    return <div className="@container h-full min-h-0">{faceplate}</div>;
 };
 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
@@ -921,7 +930,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     return (
-        <Row grow className="min-h-0 overflow-hidden">
+        <Row grow wrap className="min-h-0">
             {/* Left: Rack + generative tools */}
             <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto [&>*]:shrink-0">
                 {/* Rack chain with params */}
@@ -965,7 +974,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
                 </Stack>
             </Stack>
             {/* Right: Pattern editor + keyboard */}
-            <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
+            <Stack gap={2} className="w-[280px] max-w-full shrink-0 border-l border-border/20 p-2 overflow-y-auto">
                 <span className="text-nano text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
                 <ArpPatternDeck state={state} />
 

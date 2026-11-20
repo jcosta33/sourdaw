@@ -2,6 +2,11 @@
 
 ## Thread resolution
 
+`review:repair` and `review:confirm` act only on threads whose root comment the reviewer App or
+the owner wrote. The optional `review:repair --evidence <path-to-json>` takes an array of up to
+eight `{ "observable", "verification", "observed" }` entries. Each field is a trimmed single-line
+string. Omit the flag to record no evidence.
+
 Push the fix, then record it with `review:repair`, which runs as the author App
 and leaves the thread open. It reads the thread live and refuses one already
 resolved, a `--head` that is not the pull request's live head, or a `--commit`
