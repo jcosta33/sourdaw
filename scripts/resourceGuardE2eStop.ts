@@ -19,9 +19,12 @@ function endedByStopRequest(result: Pick<GuardedCommandResult, 'code' | 'signal'
  * guard-issued stop (timeout, memory, leak) never qualifies.
  */
 export function isVerifiedE2eServerStop(
-    result: Pick<GuardedCommandResult, 'code' | 'signal' | 'reason'>,
+    result: Pick<GuardedCommandResult, 'code' | 'signal' | 'reason' | 'cleanupUnproved' | 'retainedStorage'>,
     observation: { observed: boolean; mismatch?: string }
 ): boolean {
+    if (result.cleanupUnproved === true || result.retainedStorage !== undefined) {
+        return false;
+    }
     return (
         (result.reason === undefined || result.reason === 'signal') &&
         observation.observed &&

@@ -3900,6 +3900,20 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             { label: 'guard memory stop', result: { code: null, signal: 'SIGTERM', reason: 'memory' } },
             { label: 'non-signal failure', result: { code: 2, signal: null } },
             { label: 'kill signal', result: { code: null, signal: 'SIGKILL' } },
+            {
+                label: 'interrupt whose process-tree exit is unproved',
+                result: { code: null, signal: 'SIGINT', reason: 'signal', cleanupUnproved: true },
+            },
+            {
+                label: 'interrupt that left guard storage retained',
+                result: {
+                    code: null,
+                    signal: 'SIGTERM',
+                    reason: 'signal',
+                    cleanupUnproved: true,
+                    retainedStorage: { path: '/tmp/retained-guard-storage', reason: 'census unknown' },
+                },
+            },
         ] as const)('keeps a node E2E receipt after a verified server ends with $label', async ({ label, result }) => {
             const fixture = await createStoppedE2eServerFixture(
                 `recover-node-e2e-verified-${label.replaceAll(' ', '-')}`

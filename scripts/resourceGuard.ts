@@ -135,6 +135,9 @@ export type GuardedCommandResult = {
     retainedStorage?: { path: string; reason: string };
     // The census that left storage retained as a leak, recorded in the guard-failure receipt.
     census?: string;
+    // Set when the process-tree exit or the storage release could not be proved, whatever the
+    // reported reason: an operator interrupt keeps reason 'signal' but must not discharge a proof.
+    cleanupUnproved?: true;
     // Set when disk pressure refused the command before it started and the guard storage was
     // released: nothing ran and nothing leaked, so the refusal is not a lane-stopping guard failure.
     // Held storage is a leak and keeps its receipt.
@@ -2455,7 +2458,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         );
     }
     const tail = output.result();
-    return {
+    const guarded: GuardedCommandResult = {
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
@@ -2466,6 +2469,10 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         maxRssBytes,
         durationMs: Date.now() - startedAt,
     };
+    if (!storageRemoved || (child.pid !== undefined && !treeExitProved)) {
+        guarded.cleanupUnproved = true;
+    }
+    return guarded;
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {
