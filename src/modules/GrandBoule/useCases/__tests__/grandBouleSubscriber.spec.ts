@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { subscribeToGrandBouleRuntime } from '../../stores/grandBouleRuntimeNotifications';
+import {
+    notifyGrandBouleRuntimeReady,
+    subscribeToGrandBouleRuntime,
+} from '../../stores/grandBouleRuntimeNotifications';
 
 const mocks = vi.hoisted(() => ({ reconcile: vi.fn() }));
 
@@ -11,6 +14,31 @@ vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
 import { initGrandBouleSubscribers } from '../grandBouleSubscriber';
 
 describe('initGrandBouleSubscribers', () => {
+    it('keeps a successor subscription when an old unsubscribe is called again', () => {
+        const unsubscribe = subscribeToGrandBouleRuntime('grand-reused', vi.fn());
+        unsubscribe();
+        const successor = vi.fn();
+        const unsubscribeSuccessor = subscribeToGrandBouleRuntime('grand-reused', successor);
+        unsubscribe();
+
+        notifyGrandBouleRuntimeReady('grand-reused');
+        expect(successor).toHaveBeenCalledOnce();
+        unsubscribeSuccessor();
+    });
+
+    it('does not visit a listener added during the current notification', () => {
+        const later = vi.fn();
+        let unsubscribeLater = () => {};
+        const unsubscribe = subscribeToGrandBouleRuntime('grand-dispatch', () => {
+            unsubscribeLater = subscribeToGrandBouleRuntime('grand-dispatch', later);
+        });
+
+        notifyGrandBouleRuntimeReady('grand-dispatch');
+        expect(later).not.toHaveBeenCalled();
+        unsubscribe();
+        unsubscribeLater();
+    });
+
     it('hydrates a ready live node without mounting the panel', () => {
         mocks.reconcile.mockClear();
         let loaded: ((payload: { deviceId: string; deviceType: string }) => void) | undefined;

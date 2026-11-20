@@ -5,15 +5,14 @@ export function subscribeToGrandBouleRuntime(deviceId: string, listener: () => v
     listeners.set(deviceId, deviceListeners);
     deviceListeners.add(listener);
     return () => {
-        deviceListeners.delete(listener);
-        if (deviceListeners.size === 0) {
+        if (deviceListeners.delete(listener) && deviceListeners.size === 0) {
             listeners.delete(deviceId);
         }
     };
 }
 
 export function notifyGrandBouleRuntimeReady(deviceId: string): void {
-    for (const listener of listeners.get(deviceId) ?? []) {
+    for (const listener of [...(listeners.get(deviceId) ?? [])]) {
         listener();
     }
 }

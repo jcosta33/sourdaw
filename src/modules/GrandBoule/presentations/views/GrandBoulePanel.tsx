@@ -163,13 +163,20 @@ const MICROPHONE_POSITIONS = [
     { value: 2, label: 'Room' },
 ] as const;
 
+function findProjectDevice(tracks: typeof defaultTrackState.tracks, deviceId: string) {
+    for (const track of tracks) {
+        const device = track.devices.find((candidate) => candidate.id === deviceId);
+        if (device) {
+            return { trackId: track.id, projectParameterValues: device.parameterValues };
+        }
+    }
+    return { trackId: undefined, projectParameterValues: undefined };
+}
+
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Project ownership and runtime readiness change independently.
     const trackState = useStore(trackStore, defaultTrackState);
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
-    const trackId = trackState.tracks.find((track) => track.devices.some((device) => device.id === deviceId))?.id;
+    const { trackId, projectParameterValues } = findProjectDevice(trackState.tracks, deviceId);
     const runtimeControls = useGrandBouleRuntime(trackId, deviceId);
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({
         deviceId,
