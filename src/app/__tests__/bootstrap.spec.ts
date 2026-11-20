@@ -444,6 +444,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
+    holdWebFallbackDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
     getToasterDeviceControls: noop,
