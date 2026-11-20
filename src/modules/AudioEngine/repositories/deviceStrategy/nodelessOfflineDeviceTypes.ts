@@ -1,4 +1,4 @@
-import { isBuiltinSynthDevice, isDrumDevice } from '../../models/noteInputKindByDeviceType';
+import { isBuiltinSynthDevice, isDrumDevice } from '../../models/NoteInputKindByDeviceType';
 
 /**
  * Device types that legitimately contribute no node to the offline device
@@ -14,7 +14,7 @@ import { isBuiltinSynthDevice, isDrumDevice } from '../../models/noteInputKindBy
  * `getDrumKitDefByIndex` and renders correctly. Two hand-maintained lists that
  * must agree is the defect, not the row that was missing, so the drum and synth
  * families now come straight from the note-input table in
- * `models/noteInputKindByDeviceType.ts` — the same answers the live and offline
+ * `models/NoteInputKindByDeviceType.ts` — the same answers the live and offline
  * schedulers select on.
  *
  * Anything that is *not* one of those families needs an individual entry below,

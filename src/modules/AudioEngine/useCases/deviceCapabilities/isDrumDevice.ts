@@ -1,4 +1,4 @@
-import { isDrumDevice as isDrumDeviceType } from '../../models/noteInputKindByDeviceType';
+import { isDrumDevice as isDrumDeviceType } from '../../models/NoteInputKindByDeviceType';
 
 /** True for the drum family, voiced by the kit schedulers rather than a chain node. */
 export function isDrumDevice(deviceType: string): boolean {

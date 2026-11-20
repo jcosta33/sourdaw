@@ -7,7 +7,7 @@ import {
     isBuiltinSynthDevice,
     isDrumDevice,
     type NoteReceivingInstrumentKind,
-} from '../noteInputKindByDeviceType';
+} from '../NoteInputKindByDeviceType';
 
 // A registry-shaped Faust predicate: registered Faust modules carry `faust-` ids,
 // and only the one registered as an instrument answers true.

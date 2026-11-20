@@ -8,7 +8,7 @@ owner: The Sourdaw team
 sources:
     - src/utils/builtinDeviceTypes.ts
     - src/utils/nativeDspDeviceTypes.ts
-    - src/modules/AudioEngine/models/noteInputKindByDeviceType.ts
+    - src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts
     - src/modules/Arrangement/models/DeviceParameter.ts
     - .dependency-cruiser.module-tiers.cjs
     - crates/daw-engine/src/scheduler.rs
@@ -73,5 +73,5 @@ modules that could not reach each other could share it.
 Adding a built-in device means adding its id to the vocabulary, which fails compilation in every
 concern table until each of its rows is decided. A catalog weld spec in Arrangement keeps the
 vocabulary and the catalog equal. The note-input concern moved first: `src/utils/deviceTypeMatching.ts`
-is gone and AudioEngine answers it from `models/noteInputKindByDeviceType.ts`. Later slices move the
+is gone and AudioEngine answers it from `models/NoteInputKindByDeviceType.ts`. Later slices move the
 remaining concerns into their owners' tables.

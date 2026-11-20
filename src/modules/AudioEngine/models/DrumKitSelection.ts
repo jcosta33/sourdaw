@@ -1,6 +1,6 @@
 import { dbToGain } from '#/utils/audioLevelLaw';
 
-import { isDrumDevice } from './noteInputKindByDeviceType';
+import { isDrumDevice } from './NoteInputKindByDeviceType';
 
 type DrumKitDeviceValues = { type: string; parameterValues: Record<string, number> };
 

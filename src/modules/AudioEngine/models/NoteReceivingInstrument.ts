@@ -1,4 +1,4 @@
-import { classifyNoteReceivingDevice, type NoteReceivingInstrumentKind } from './noteInputKindByDeviceType';
+import { classifyNoteReceivingDevice, type NoteReceivingInstrumentKind } from './NoteInputKindByDeviceType';
 
 export type NoteReceivingInstrument<TDevice> = Readonly<{
     device: TDevice;
