@@ -49,6 +49,11 @@ const START_REFUSED_CLASS_NAME: &str = "Sourdaw Harness Fx Start Refused";
 pub const VST3_PROCESSOR_TRUTH_CLASS_ID: TUID =
     uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A5);
 const PROCESSOR_TRUTH_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth";
+/// The class id of the processor-truth class that also fails one `process`
+/// call, flush or block alike.
+pub const VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A6);
+const PROCESSOR_TRUTH_FAILING_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth Failing";
 
 /// How one class departs from the plain effect.
 #[derive(Clone, Copy, Default)]
@@ -570,6 +575,10 @@ fn class_entry(index: int32) -> Option<(TUID, &'static str)> {
         1 => Some((VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME)),
         2 => Some((VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME)),
         3 => Some((VST3_PROCESSOR_TRUTH_CLASS_ID, PROCESSOR_TRUTH_CLASS_NAME)),
+        4 => Some((
+            VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
+            PROCESSOR_TRUTH_FAILING_CLASS_NAME,
+        )),
         probe => crate::vst3_probe::class_at(probe - ECHO_CLASSES),
     }
 }
@@ -636,6 +645,12 @@ impl IPluginFactoryTrait for Factory {
                 controller_defers_to_processor: true,
                 ..Departures::default()
             }
+        } else if requested == VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID {
+            Departures {
+                controller_defers_to_processor: true,
+                fails_a_process_call: true,
+                ..Departures::default()
+            }
         } else if let Some(probe) = crate::vst3_probe::create(&requested) {
             // SAFETY: the caller's `iid` and `obj` are checked non-null above.
             return unsafe { hand_out(probe, iid, obj) };
@@ -682,7 +697,7 @@ impl IPluginFactory2Trait for Factory {
 }
 
 /// The number of [`Vst3Echo`] classes the factory lists before the probes.
-const ECHO_CLASSES: int32 = 4;
+const ECHO_CLASSES: int32 = 5;
 
 /// Answer a `createInstance` with the interface `iid` names on `instance`.
 ///

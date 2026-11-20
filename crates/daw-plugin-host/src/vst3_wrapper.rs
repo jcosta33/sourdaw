@@ -1601,7 +1601,12 @@ impl Vst3Wrapper {
             .filter(|_| !self.layout_refusal_reported)
         {
             self.layout_refusal_reported = true;
-            eprintln!("{reason}; blocks pass through it unprocessed");
+            let handling = if self.fails_silent() {
+                "its blocks are silenced"
+            } else {
+                "its blocks pass through unprocessed"
+            };
+            eprintln!("{reason}; {handling}");
         }
 
         let unhandled = self.instance.host.state.unhandled_restart_flags();
@@ -1651,6 +1656,11 @@ impl Vst3Wrapper {
         let Some(processor) = self.processor.clone() else {
             return Ok(0);
         };
+        // An instance a component restart took out of service holds a layout
+        // the host refused; only a restart that routes can bring it back.
+        if self.layout_refusal.is_some() {
+            return Ok(0);
+        }
 
         if self.activated {
             self.force_stop_processing_off_audio_thread();
@@ -1746,6 +1756,8 @@ impl Vst3Wrapper {
         if let Err(reason) = unsafe { self.configure_and_activate(&processor) } {
             self.layout_refusal = Some(reason.clone());
             self.layout_refusal_reported = false;
+            // The control path's failure reporter is what prints it.
+            signal_pending_process_refusal();
             return Err(reason);
         }
         self.layout_refusal = None;
@@ -1773,11 +1785,17 @@ impl Vst3Wrapper {
     ///
     /// The CLAP backend splits on the same two, for the same reasons.
     fn pass_failed_block(&self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        if self.is_instrument || self.bus_layout.main_input_channels() == 0 {
+        if self.fails_silent() {
             Self::silence_outputs(outputs, num_samples);
         } else {
             Self::pass_through(inputs, outputs, num_samples);
         }
+    }
+
+    /// Whether a failed slot is silenced rather than passed dry: see
+    /// [`Self::pass_failed_block`].
+    fn fails_silent(&self) -> bool {
+        self.is_instrument || self.bus_layout.main_input_channels() == 0
     }
 
     /// Hand the plugin the parameter writes waiting for it, with no audio, while
@@ -1808,9 +1826,9 @@ impl Vst3Wrapper {
             return;
         }
 
-        // SAFETY: exclusive control access; the component is active and not
-        // processing, and VST3 allows `setProcessing` from the UI or the
-        // processing thread.
+        // SAFETY: exclusive control access, the claim every control-path
+        // lifecycle call is made under; the component is active and not
+        // processing, so no processing thread is inside the plugin.
         if !entered_processing(unsafe { processor.setProcessing(1) }) {
             self.requeue_staged_parameters();
             return;

@@ -12,19 +12,33 @@ mod support;
 
 use daw_plugin_host::vst3_wrapper::decode_state as decode_vst3_container;
 use daw_plugin_host::{
-    AudioPlugin, HostedPluginRuntime, PluginHostRequest, ProcessMode, Vst3Wrapper,
+    take_pending_process_refusal_signal, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
+    ProcessMode, Vst3Wrapper,
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
     ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_PARAM_ID, LATENCY_FRAMES, LOG_ACTIVATE,
     LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
-    SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID,
+    RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID,
+    VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
     VST3_RECONFIGURING_CLASS_ID, VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
 };
 use std::sync::{Arc, Mutex};
 use support::InstalledPlugin;
 
 const BLOCK_FRAMES: usize = 64;
+
+/// The process-refusal hint is process-wide, so every test here that raises
+/// or reads it takes this first.
+static REFUSAL_HINT: Mutex<()> = Mutex::new(());
+
+fn refusal_hint_guard() -> std::sync::MutexGuard<'static, ()> {
+    let guard = REFUSAL_HINT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    take_pending_process_refusal_signal();
+    guard
+}
 
 /// A left and a right channel no sum or copy of one can pass for the other.
 fn distinct_pair() -> (Vec<f32>, Vec<f32>) {
@@ -230,6 +244,7 @@ fn a_reload_reactivates_and_asks_for_a_parameter_rescan() {
 /// geometry it had before.
 #[test]
 fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
+    let _hint = refusal_hint_guard();
     let plugin = InstalledPlugin::create("vst3-io-unroutable");
     let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
     let (left, right) = distinct_pair();
@@ -238,6 +253,10 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
     let refusal = wrapper
         .apply_component_restart()
         .expect_err("six output channels cannot be routed");
+    assert!(
+        take_pending_process_refusal_signal(),
+        "the refusal wakes the control path's failure reporter"
+    );
 
     assert!(
         refusal.contains("Sourdaw Harness Fx Reconfiguring")
@@ -251,6 +270,12 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
         (left, right),
         "an effect out of service passes its dry input"
     );
+
+    assert_eq!(wrapper.reactivate_for_latency(), Ok(0));
+    assert!(
+        !wrapper.is_activated(),
+        "a latency change does not bring back a layout the host refused"
+    );
 }
 
 /// The same refusal on a class the factory lists as an instrument silences
@@ -258,6 +283,7 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
 /// was fed would play routed audio out of a voice slot at unity.
 #[test]
 fn an_instrument_whose_bus_change_cannot_be_routed_falls_silent() {
+    let _hint = refusal_hint_guard();
     let plugin = InstalledPlugin::create("vst3-io-unroutable-instrument");
     let mut wrapper = plugin.vst3_class(
         &VST3_RECONFIGURING_INSTRUMENT_CLASS_ID,
@@ -275,6 +301,39 @@ fn an_instrument_whose_bus_change_cannot_be_routed_falls_silent() {
         process(&mut wrapper, &left, &right),
         (silence.clone(), silence),
         "an instrument out of service is silenced, never fed through"
+    );
+}
+
+/// A plugin that asks for another bus restart from inside every activation
+/// is chased only so far: one call runs a bounded number of cycles, drops the
+/// last ask, and the next call has nothing to run.
+#[test]
+fn a_plugin_that_asks_for_a_restart_on_every_activation_is_cycled_a_bounded_number_of_times() {
+    let plugin = InstalledPlugin::create("vst3-io-restart-forever");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+    let activations = |wrapper: &Vst3Wrapper| {
+        lifecycle_log(wrapper)
+            .iter()
+            .filter(|call| **call == LOG_ACTIVATE)
+            .count()
+    };
+
+    wrapper.set_parameter(RESTART_FOREVER_PARAM_ID, 1.0);
+    let before = activations(&wrapper);
+
+    assert_eq!(wrapper.apply_component_restart(), Ok(true));
+    assert_eq!(
+        activations(&wrapper) - before,
+        4,
+        "one call runs the bounded number of reactivations"
+    );
+    assert!(wrapper.is_activated());
+
+    assert_eq!(wrapper.apply_component_restart(), Ok(false));
+    assert_eq!(
+        activations(&wrapper) - before,
+        4,
+        "the dropped ask runs no cycle"
     );
 }
 
@@ -299,6 +358,40 @@ fn a_write_to_an_idle_instance_whose_processor_is_the_truth_lands() {
     assert_eq!(gain, 0.25);
     let (component, _controller) = decode_vst3_container(&wrapper.get_state().unwrap()).unwrap();
     assert_eq!(decode(&component).unwrap().gain, 0.25);
+}
+
+/// A write whose flush the processor refuses stays queued for the processor's
+/// next block, rather than being dropped with the failed call.
+#[test]
+fn a_write_whose_flush_the_processor_refuses_lands_on_the_next_block() {
+    let plugin = InstalledPlugin::create("vst3-processor-truth-refused-flush");
+    let mut wrapper = plugin.vst3_class(
+        &VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
+        ProcessMode::Realtime,
+    );
+    let gain = |wrapper: &Vst3Wrapper| {
+        wrapper
+            .get_parameters()
+            .into_iter()
+            .find(|parameter| parameter.id == GAIN_PARAM_ID)
+            .expect("the class publishes Gain")
+            .value
+    };
+
+    // The class fails its third `process` call; each idle write is one flush.
+    wrapper.set_parameter(GAIN_PARAM_ID, 0.1);
+    wrapper.set_parameter(GAIN_PARAM_ID, 0.2);
+    wrapper.set_parameter(GAIN_PARAM_ID, 0.25);
+    assert_eq!(gain(&wrapper), 0.2, "the refused flush did not land");
+
+    let silence = vec![0.0f32; BLOCK_FRAMES];
+    process(&mut wrapper, &silence, &silence);
+
+    assert_eq!(
+        gain(&wrapper),
+        0.25,
+        "the held write reaches the next block"
+    );
 }
 
 /// `setProcessing` answering the SDK's default `kNotImplemented` is a plugin

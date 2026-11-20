@@ -60,10 +60,14 @@ pub const SURROUND_OUTPUT_PARAM_ID: ParamID = 11;
 pub const ADD_PARAMETER_PARAM_ID: ParamID = 12;
 /// The parameter a reload publishes.
 pub const ADDED_PARAM_ID: ParamID = 13;
-const TRIGGER_PARAMS: [ParamID; 3] = [
+/// Writing this above one half asks for `kIoChanged`, and from then on every
+/// activation asks for it again from inside `setActive`.
+pub const RESTART_FOREVER_PARAM_ID: ParamID = 14;
+const TRIGGER_PARAMS: [ParamID; 4] = [
     WIDEN_OUTPUT_PARAM_ID,
     SURROUND_OUTPUT_PARAM_ID,
     ADD_PARAMETER_PARAM_ID,
+    RESTART_FOREVER_PARAM_ID,
 ];
 
 /// One byte per lifecycle call in the log the state chunk carries.
@@ -115,6 +119,8 @@ struct Probe {
     /// Whether the class runs only its six-channel output.
     surround: AtomicBool,
     extra_parameter: AtomicBool,
+    /// Whether every activation asks for another bus restart.
+    restarts_forever: AtomicBool,
     trigger_values: [AtomicU64; TRIGGER_PARAMS.len()],
     handler: AtomicPtr<IComponentHandler>,
     log: Mutex<Vec<u8>>,
@@ -131,6 +137,7 @@ impl Probe {
             outputs: AtomicUsize::new(outputs),
             surround: AtomicBool::new(false),
             extra_parameter: AtomicBool::new(false),
+            restarts_forever: AtomicBool::new(false),
             trigger_values: std::array::from_fn(|_| AtomicU64::new(0f64.to_bits())),
             handler: AtomicPtr::new(ptr::null_mut()),
             log: Mutex::new(Vec::new()),
@@ -178,12 +185,22 @@ impl Probe {
                 self.extra_parameter.store(true, Ordering::Relaxed);
                 RestartFlags_::kReloadComponent
             }
+            RESTART_FOREVER_PARAM_ID => {
+                self.restarts_forever.store(true, Ordering::Relaxed);
+                RestartFlags_::kIoChanged
+            }
             _ => return,
         };
+        self.ask_for_restart(flag);
+    }
+
+    /// Call the host's `restartComponent`, as a plugin does from its own call.
+    fn ask_for_restart(&self, flag: int32) {
         // SAFETY: the host handed this pointer to `setComponentHandler` and
         // keeps the handler alive until it clears it.
         if let Some(handler) = unsafe { ComRef::from_raw(self.handler.load(Ordering::Acquire)) } {
-            // SAFETY: a live handler, called from the controller's own call.
+            // SAFETY: a live handler, called from inside one of this plugin's
+            // own calls.
             unsafe { handler.restartComponent(flag) };
         }
     }
@@ -292,6 +309,9 @@ impl IComponentTrait for Probe {
         } else {
             LOG_DEACTIVATE
         });
+        if state != 0 && self.restarts_forever.load(Ordering::Relaxed) {
+            self.ask_for_restart(RestartFlags_::kIoChanged);
+        }
         kResultOk
     }
 
