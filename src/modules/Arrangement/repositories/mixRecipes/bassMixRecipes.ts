@@ -338,10 +338,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when a release shorter than the lowest note period would modulate that note.',
             'Skip when the part is already a constant-level synth bass with nothing to settle.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'rms', direction: 'increase' }],
         source: 'A bass glues to a track by holding a constant floor under it, which needs a release long enough to span several notes rather than to track each one. A release shorter than one cycle of the lowest note would modulate that note as distortion instead.',
     },
     {

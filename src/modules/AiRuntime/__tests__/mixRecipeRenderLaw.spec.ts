@@ -5,8 +5,8 @@ import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRec
 import { type Track } from '#/modules/Arrangement/stores';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 
-import { readRecipeExpectationTolerance } from '../useCases/metricHoldTolerances';
 import { createTrack } from '../useCases/__tests__/trackFixture';
+import { readRecipeExpectationTolerance } from '../useCases/metricHoldTolerances';
 
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
@@ -75,17 +75,19 @@ function recipeTrack(recipe: MixRecipe | null, position: number, stage: Stage = 
         name: step.deviceType,
         type: step.deviceType,
         bypassed: false,
-        parameterValues:
-            stage === 'after'
-                ? Object.fromEntries(
-                      step.parameters.map((parameter) => [
-                          parameter.paramId,
-                          (parameter.minimum + parameter.maximum) / 2,
-                      ])
-                  )
-                : {},
+        parameterValues: stagedParameterValues(step, stage),
     }));
     return createTrack({ id: `track-${position}`, devices });
+}
+
+/** A step's parameter midpoints once the recipe has run; before it, the device's own starting values. */
+function stagedParameterValues(step: MixRecipe['steps'][number], stage: Stage): Record<string, number> {
+    if (stage === 'before') {
+        return {};
+    }
+    return Object.fromEntries(
+        step.parameters.map((parameter) => [parameter.paramId, (parameter.minimum + parameter.maximum) / 2])
+    );
 }
 
 function measure(recipe: MixRecipe | null, position: number, stage: Stage = 'after') {
@@ -110,7 +112,16 @@ function measure(recipe: MixRecipe | null, position: number, stage: Stage = 'aft
         }
         return entry.value;
     };
-    return Object.fromEntries(DYNAMICS_METRICS.map((id) => [id, value(id)])) as Record<DynamicsMetric, number>;
+    const figures: Record<DynamicsMetric, number> = {
+        rms: value('rms'),
+        crestFactor: value('crestFactor'),
+        dynamicRangeEstimate: value('dynamicRangeEstimate'),
+        truePeak: value('truePeak'),
+        integratedLoudness: value('integratedLoudness'),
+        shortTermLoudnessMax: value('shortTermLoudnessMax'),
+        transientDensity: value('transientDensity'),
+    };
+    return figures;
 }
 
 function isDynamicsMetric(metric: string): metric is DynamicsMetric {
@@ -164,8 +175,8 @@ function isMeantFor(recipe: MixRecipe, metric: DynamicsMetric, dryTruePeakDb: nu
 }
 
 function dynamicsClaims(recipe: MixRecipe) {
-    return recipe.metrics.filter(
-        (claim): claim is typeof claim & { metric: DynamicsMetric } => isDynamicsMetric(claim.metric)
+    return recipe.metrics.filter((claim): claim is typeof claim & { metric: DynamicsMetric } =>
+        isDynamicsMetric(claim.metric)
     );
 }
 
@@ -174,7 +185,10 @@ function dynamicsClaims(recipe: MixRecipe) {
  * law cannot check them. Asserted equal to what the catalog holds, so no claim leaves the checked set
  * unnoticed.
  */
-const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [];
+const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [
+    'master-glued:dynamicRangeEstimate',
+    'master-controlled:dynamicRangeEstimate',
+];
 
 describe('mix recipe metric claims against the acceptance render law', () => {
     // The drum recipes are left out: #6947 and the drums lane own their claims and their rows.
@@ -191,6 +205,13 @@ describe('mix recipe metric claims against the acceptance render law', () => {
         return figures;
     };
     const dryPeak = (position: (typeof SOURCE_POSITIONS)[number]): number => dryFigures(position).truePeak;
+    /** The figures before the recipe runs: the devices its edit steps change, or the dry source when it only inserts. */
+    const beforeFigures = (recipe: MixRecipe, position: (typeof SOURCE_POSITIONS)[number]) => {
+        if (recipe.steps.some((step) => step.kind === 'edit')) {
+            return measure(recipe, position, 'before');
+        }
+        return dryFigures(position);
+    };
 
     it('names every recipe the law cannot render, and only those, with the device it has no rule for', () => {
         const unrenderable = Object.fromEntries(
@@ -205,7 +226,9 @@ describe('mix recipe metric claims against the acceptance render law', () => {
     it('names every claim no law source drives the compressor for, and only those', () => {
         const undriven = claimed.flatMap((recipe) =>
             dynamicsClaims(recipe)
-                .filter((claim) => SOURCE_POSITIONS.every((position) => !isMeantFor(recipe, claim.metric, dryPeak(position))))
+                .filter((claim) =>
+                    SOURCE_POSITIONS.every((position) => !isMeantFor(recipe, claim.metric, dryPeak(position)))
+                )
                 .map((claim) => `${recipe.id}:${claim.metric}`)
         );
         expect(undriven).toEqual(CLAIMS_NO_LAW_SOURCE_DRIVES);
@@ -222,9 +245,7 @@ describe('mix recipe metric claims against the acceptance render law', () => {
         it.each(rows.map((row) => [row.recipe.id, row] as const))(
             '%s moves every dynamics metric it claims the way it claims',
             (_id, { recipe, claims }) => {
-                const before = recipe.steps.some((step) => step.kind === 'edit')
-                    ? measure(recipe, position, 'before')
-                    : dryFigures(position);
+                const before = beforeFigures(recipe, position);
                 const after = measure(recipe, position);
                 expect(
                     claims.map((claim) => ({

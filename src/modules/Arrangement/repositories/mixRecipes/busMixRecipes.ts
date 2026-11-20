@@ -89,10 +89,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group is the only low-frequency source in the mix.',
             'Skip when one source in the group is loud enough that the compressor only ever tracks that one.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'decrease' },
-            { metric: 'truePeak', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'truePeak', direction: 'increase' }],
         source: 'Summing several sources stacks their low-frequency shoulders, so trimming that region before compression stops it dominating the detector. The shorter release then shortens the decay of the group as a whole, which is what tightness means at bus level.',
     },
     {
@@ -321,10 +318,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when one source dominates the detector and pulls the whole group down with it.',
             'Skip when a compressor already sits on this bus; retune that one instead.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'truePeak', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'truePeak', direction: 'increase' }],
         source: 'Glue is the audible consequence of every source on a bus sharing one slow gain envelope, which needs a soft knee and a release long enough to span a bar rather than a beat. Two or three decibels of reduction is the working range; past that the envelope itself becomes the thing you hear.',
     },
     {
@@ -428,7 +422,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip one dominant source pulling the entire group down or intentionally wide group dynamics.',
             'Retune an existing equivalent bus compressor instead of stacking another.',
         ],
-        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        metrics: [{ metric: 'rms', direction: 'increase' }],
         source: 'The existing gentle shared-envelope bus window moderates group-level swings after source balance is settled. Reusing that compression technique makes no new glue mechanism, numeric headroom, or loudness claim.',
     },
 ];

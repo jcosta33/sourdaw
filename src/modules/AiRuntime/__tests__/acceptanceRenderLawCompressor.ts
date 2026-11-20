@@ -123,10 +123,14 @@ function gainReductionDb(peak: number, curve: StaticCurve): number {
  * makeup, the inverse of its gain at full scale raised to 0.6 (the Web Audio specification's
  * DynamicsCompressorNode processing).
  *
- * Remaining gap, measured on the law's sources at recipe parameter midpoints against Chromium: Blink
- * smooths in a warped gain domain with a release rate that varies with the reduction still held, which
- * one-pole decibel smoothing does not follow, and its automatic makeup lands within about 1.5 dB of the
- * figure here.
+ * Remaining gap against Chromium: Blink smooths in a warped gain domain with a release rate that varies
+ * with the reduction still held, which one-pole smoothing does not follow. On a steady 1 kHz sine at
+ * threshold -20 dB, ratio 4 and knee 0, the law's gain is -1.47 dB for a -6 dBFS input where Chromium's
+ * is -1.31 dB, and -5.96 dB against -5.79 dB at 0 dBFS. On the law's sources the crest factor parts
+ * where the compressor works hardest: vocal-controlled at its midpoints takes source 3 from 7.92 dB to
+ * 8.75 dB here and to 7.01 dB in Chromium. Below the threshold Chromium still raises crest: bass-glued
+ * takes source 0 from 15.38 dB to 15.56 dB, where the law leaves it at 15.38 dB. No recipe claims crest
+ * factor on those points.
  */
 export function compress(signal: Stereo, settings: LawCompressorSettings, sampleRate: number): Stereo {
     const curve = staticCurve(settings);
