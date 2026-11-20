@@ -1,4 +1,4 @@
-import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { type getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -20,28 +20,23 @@ import {
     type VibeRunPlan,
     type VibeRunUnplannedRole,
 } from '../../models/VibeRunPlan';
-import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
-import { readExplicitProtections } from '../agentReference/readExplicitProtections';
-import { agentRunLifecycle } from '../agentRunLifecycle';
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
-import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
-import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
-import { readArrangementRange } from '../readArrangementRange';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
 
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
-import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
+import { prepareVibeRunSchedule } from './prepareVibeRunSchedule';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
-import { readVibeRunCandidates } from './readVibeRunCandidates';
-import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
+import { type readVibeRunCandidates } from './readVibeRunCandidates';
+import { readVibeRunInitialGoals } from './readVibeRunInitialGoals';
 import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
-import { withBriefRoleContext } from './withBriefRoleContext';
+import { readVibeRunWholeFit } from './readVibeRunWholeFit';
+import { toScheduledVibeRunBatch } from './toScheduledVibeRunBatch';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -73,17 +68,6 @@ const UNPLANNED_REASONS: Readonly<Record<VibeRunUnplannedRole['reason'], string>
     'no-expected-deltas': 'no requested character has a measurable recipe for them',
     'target-exceeds-batch-cap': 'their recipes alone expand past one batch',
 };
-
-function toScheduledBatch(batch: VibeRunPlan['batches'][number]): ScheduledVibeRunBatch {
-    return {
-        id: batch.id,
-        ordinal: batch.ordinal,
-        objective: structuredClone(batch.objective),
-        targetIds: [...batch.targetIds],
-        targets: structuredClone(batch.targets),
-        commandCount: batch.commandCount,
-    };
-}
 
 function trackName(context: ProjectContext, trackId: string): string {
     return context.tracks.find((track) => track.id === trackId)?.name ?? trackId;
@@ -145,36 +129,6 @@ type ScheduleInput = {
 };
 type Catalog = ReturnType<typeof getMixRecipeCatalog>;
 type Collected = Extract<Awaited<ReturnType<typeof collectVibeRunInitialBaselines>>, { status: 'collected' }>;
-
-function validSections(context: ProjectContext): boolean {
-    const sections = context.sections ?? [];
-    return (
-        new Set(sections.map((section) => section.id)).size === sections.length &&
-        sections.every(
-            (section) =>
-                Number.isFinite(section.startBeat) &&
-                Number.isFinite(section.endBeat) &&
-                section.startBeat >= 0 &&
-                section.endBeat > section.startBeat
-        )
-    );
-}
-
-function readInitialGoals(
-    batches: readonly ScheduledVibeRunBatch[],
-    catalog: Catalog,
-    range: VibeRunVerificationRange
-) {
-    const goals: MetricGoal[] = [];
-    for (const batch of batches) {
-        const read = readVibeBatchRecipeGoals({ batch, catalog, range });
-        if (read.status === 'refused') {
-            return read;
-        }
-        goals.push(...read.goals);
-    }
-    return { status: 'read' as const, goals };
-}
 
 /** The admitted initial receipts of the source revision that measured one target over exactly one range. */
 function readExactRangeReceipts(
@@ -269,7 +223,7 @@ function readMeasuredSilences(
     };
     const batches = plan.batches.map((batch): ScheduledVibeRunBatch => {
         const silentRanges = batch.silentRanges.flatMap((cell) => bind(cell.targetId, cell.range));
-        const scheduled = { ...toScheduledBatch(batch), verificationRanges: ranges };
+        const scheduled = { ...toScheduledVibeRunBatch(batch), verificationRanges: ranges };
         if (silentRanges.length === 0) {
             return scheduled;
         }
@@ -396,7 +350,7 @@ function completeMeasuredSchedule(input: {
         };
     }
     const measured = readMeasuredSilences(input.source, input.collected, measuredPlan, input.ranges);
-    const goals = readInitialGoals(measured.batches, input.catalog, input.arrangementRange);
+    const goals = readVibeRunInitialGoals(measured.batches, input.catalog, input.arrangementRange);
     if (goals.status === 'refused') {
         return {
             status: 'unscheduled',
@@ -463,94 +417,22 @@ function completeMeasuredSchedule(input: {
     };
 }
 
-function readWholeRunFit(
+/** Preparation, sequential collection, then complete measured decomposition. */
+async function planSchedule(
     input: ScheduleInput,
-    batches: readonly ScheduledVibeRunBatch[],
-    reading: PerceptualConstraintReading,
-    initialReads: Parameters<typeof planMetricMeasurementRequests>[0]['reads']
-): string[] {
-    const run = agentRunLifecycle.get(input.runId);
-    if (run === null) {
-        return ['this run no longer exists'];
+    expectedPlanDigest: string | undefined
+): Promise<PlannedVibeRunSchedule> {
+    const prepared = prepareVibeRunSchedule(input);
+    if (prepared.status !== 'prepared') {
+        return prepared;
     }
-    const refusals = readVibeRunFitRefusals({
-        batches,
-        context: input.context,
-        reading,
-        budgets: run.budgets,
-        initialReads,
-        priorReceipts: input.priorReceipts.length,
-    });
-    if (run.activeSince !== null && Date.now() - run.activeSince > readAgentResourceLimits().runDurationMs) {
-        refusals.push('runDurationMs: this run has no active time left');
-    }
-    return refusals;
-}
-
-/** Inventory, whole-run preflight, sequential collection, then complete measured decomposition. */
-async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedule> {
-    const catalog = getMixRecipeCatalog();
-    if (input.mixIntent.requestedDescriptors.length === 0) {
-        return { status: 'none' };
-    }
-    if (!validSections(input.context)) {
+    if (expectedPlanDigest !== undefined && expectedPlanDigest !== prepared.planDigest) {
         return {
             status: 'unscheduled',
-            lines: [
-                'No batches were scheduled after the brief: the section map has invalid bounds or duplicate identities.',
-            ],
+            lines: ['No batches were scheduled after the brief: the project no longer plans this reading as offered.'],
         };
     }
-    // The protection reads the roles the run plans by, so a family it keeps holds every track the brief places in it.
-    const protections = readExplicitProtections(input.prompt, withBriefRoleContext(input.context, input.brief));
-    if (protections.unresolved.length > 0) {
-        return {
-            status: 'unscheduled',
-            lines: [
-                `No batches were scheduled after the brief: unresolved original-request protection: ${protections.unresolved.join(', ')}.`,
-            ],
-        };
-    }
-    const candidate = readVibeRunCandidates(
-        { context: input.context, brief: input.brief, descriptors: input.mixIntent.requestedDescriptors },
-        catalog,
-        protections.protectedTrackIds
-    );
-    if (candidate.plan.batches.length === 0) {
-        return { status: 'none' };
-    }
-    const arrangementRange = readArrangementRange(input.context);
-    if (arrangementRange === null) {
-        return {
-            status: 'unscheduled',
-            lines: ['No batches were scheduled after the brief: the arrangement holds no audio to measure.'],
-        };
-    }
-    const ranges = [
-        arrangementRange,
-        ...(candidate.plan.batches[0]?.objective.sections ?? []).map((section) => ({
-            startBeat: section.startBeat,
-            endBeat: section.endBeat,
-            sectionId: section.id,
-        })),
-    ];
-    const batches = candidate.plan.batches.map((batch) => ({ ...toScheduledBatch(batch), verificationRanges: ranges }));
-    const initial = readInitialGoals(batches, catalog, arrangementRange);
-    if (initial.status === 'refused') {
-        return { status: 'unscheduled', lines: [`No batches were scheduled after the brief: ${initial.reason}.`] };
-    }
-    const initialReads = initial.goals.flatMap((goal) => {
-        if (goal.metricId === null || goal.range === null) {
-            return [];
-        }
-        return [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }];
-    });
-    const initialRequests = planMetricMeasurementRequests({ context: input.context, reads: initialReads });
-    const reading = compilePerceptualConstraints(input.prompt, input.context);
-    const refusals = readWholeRunFit(input, batches, reading, initialReads);
-    if (refusals.length > 0) {
-        return { status: 'unscheduled', lines: [`No batches were scheduled after the brief: ${refusals.join('; ')}.`] };
-    }
+    const { batches, reading, catalog, candidate, ranges, arrangementRange } = prepared;
     const collected = await collectVibeRunInitialBaselines({
         runId: input.runId,
         sourceRevision: input.sourceRevision,
@@ -558,7 +440,7 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
         signal: input.signal,
         admit: input.admit,
         priorReceipts: input.priorReceipts,
-        requests: initialRequests,
+        requests: prepared.initialRequests,
         onProgress: input.onProgress,
     });
     if (collected.status === 'refused') {
@@ -568,7 +450,7 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
             receipts: collected.receipts,
         };
     }
-    const remainingRefusals = readWholeRunFit(input, batches, reading, []);
+    const remainingRefusals = readVibeRunWholeFit(input, batches, reading, []);
     if (remainingRefusals.length > 0) {
         return {
             status: 'unscheduled',
@@ -588,8 +470,13 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
 }
 
 /** Only this application path classifies its admitted initial reads as optional for the brief. */
-export async function planVibeRunSchedule(input: Parameters<typeof planSchedule>[0]): Promise<PlannedVibeRunSchedule> {
-    const planned = await planSchedule(input);
+export async function planVibeRunSchedule(
+    input: ScheduleInput & {
+        /** The plan the caller was shown; a prepared plan with another digest is refused before anything is measured. */
+        expectedPlanDigest?: string;
+    }
+): Promise<PlannedVibeRunSchedule> {
+    const planned = await planSchedule(input, input.expectedPlanDigest);
     if (planned.status !== 'unscheduled') {
         return planned;
     }

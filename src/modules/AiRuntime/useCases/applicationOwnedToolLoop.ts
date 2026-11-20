@@ -37,7 +37,7 @@ import {
 } from '../models/ApplicationOwnedTool';
 import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
-import { type BriefMixAlternative } from '../models/BriefReading';
+import { type PlannedBriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
@@ -1451,7 +1451,7 @@ type ExecutedRead = {
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
-    mixAlternatives?: readonly BriefMixAlternative[];
+    mixAlternatives?: readonly PlannedBriefMixAlternative[];
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {

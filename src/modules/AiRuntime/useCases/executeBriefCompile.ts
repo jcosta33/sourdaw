@@ -3,13 +3,16 @@ import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/m
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type BriefCompileResult } from '../models/BriefCompileResult';
+import { type PlannedBriefMixAlternative } from '../models/BriefReading';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 import { type CatalogBriefMixAlternative, readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
-import { countVibeRunCandidateBatches } from './vibeRun/countVibeRunCandidateBatches';
+import { readBriefMixIntent } from './readBriefMixIntent';
+import { prepareVibeRunSchedule } from './vibeRun/prepareVibeRunSchedule';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];
@@ -153,25 +156,96 @@ function readRequestHardConstraints(prompt: string, context: ProjectContext): Br
     });
 }
 
+type ReadingPreparation =
+    { status: 'prepared'; alternatives: PlannedBriefMixAlternative[] } | { status: 'refused'; reason: string };
+
+function refuseReading(alternative: CatalogBriefMixAlternative, why: string): ReadingPreparation {
+    return {
+        status: 'refused',
+        reason: `mixIntent.alternatives: "${alternative.name}" (${alternative.requestedDescriptors.join(', ')}) ${why}; offer readings the project can take.`,
+    };
+}
+
 /**
- * The refusal for the first reading no authored recipe plans on this project, judged by the same
- * candidate step a vibe run begins with and before anything is measured, or `null` when every one does.
+ * Prepares every reading the way a vibe run begins, before anything is measured, and retains each
+ * one's plan. The first reading no plan can be prepared for is refused with the stage's own reason.
+ * Preparation is CPU only: it renders nothing, reserves no budget and writes nothing.
  */
-function describeUnservedReading(
-    alternatives: readonly CatalogBriefMixAlternative[],
-    prompt: string,
-    context: ProjectContext,
-    brief: ProjectContextProductionBrief
-): string | null {
-    const unserved = alternatives.find(
-        (alternative) =>
-            countVibeRunCandidateBatches({ prompt, context, brief, descriptors: alternative.requestedDescriptors }) ===
-            0
-    );
-    if (unserved === undefined) {
-        return null;
+function prepareReadings(input: {
+    alternatives: readonly CatalogBriefMixAlternative[];
+    catalogId: string;
+    prompt: string;
+    context: ProjectContext;
+    brief: ProjectContextProductionBrief;
+    sourceRunId: string | null;
+}): ReadingPreparation {
+    const run = input.sourceRunId === null ? null : agentRunLifecycle.get(input.sourceRunId);
+    if (input.sourceRunId === null || run === null) {
+        return {
+            status: 'refused',
+            reason: 'mixIntent.alternatives: readings are planned against the run that offers them, and this request has no live run; offer one selection in requestedDescriptors instead.',
+        };
     }
-    return `mixIntent.alternatives: "${unserved.name}" (${unserved.requestedDescriptors.join(', ')}) has no authored recipe that plans on this project's tracks; offer readings the project can take.`;
+    const priorReceipts = run.plan?.applicationToolReceipts ?? [];
+    const planned: PlannedBriefMixAlternative[] = [];
+    for (const alternative of input.alternatives) {
+        const mixIntent = readBriefMixIntent({
+            catalogId: input.catalogId,
+            requestedDescriptors: alternative.requestedDescriptors,
+        });
+        if (mixIntent === null) {
+            return refuseReading(alternative, 'is not a selection from the current catalog');
+        }
+        const prepared = prepareVibeRunSchedule({
+            prompt: input.prompt,
+            context: input.context,
+            brief: input.brief,
+            mixIntent,
+            runId: input.sourceRunId,
+            priorReceipts,
+        });
+        if (prepared.status === 'none') {
+            return refuseReading(alternative, "has no authored recipe that plans on this project's tracks");
+        }
+        if (prepared.status === 'unscheduled') {
+            return refuseReading(alternative, `cannot be planned on this project: ${prepared.lines.join(' ')}`);
+        }
+        planned.push({
+            ...alternative,
+            plan: {
+                batches: prepared.batches,
+                planDigest: prepared.planDigest,
+                trackNames: Object.fromEntries(
+                    prepared.batches
+                        .flatMap((batch) => batch.targetIds)
+                        .map((trackId) => [trackId, trackName(input.context, trackId)])
+                ),
+            },
+        });
+    }
+    return { status: 'prepared', alternatives: planned };
+}
+
+function trackName(context: ProjectContext, trackId: string): string {
+    return context.tracks.find((track) => track.id === trackId)?.name ?? trackId;
+}
+
+/** The one `setProductionBrief` a composed brief is retained as. */
+function buildBriefCommand(
+    callId: string,
+    expectedRevision: number,
+    brief: ProjectContextProductionBrief
+): RetainedCommand {
+    return {
+        key: `${callId}:brief`,
+        stepId: 'brief',
+        operation: 'setProductionBrief',
+        arguments: { expectedRevision, brief },
+        reason: 'Record the project intent the request describes in the production brief.',
+        expectedEffect: `The production brief moves to revision ${String(brief.revision)}.`,
+        binding: null,
+        dependencyKeys: [],
+    };
 }
 
 /** A refused `brief.compile`: no command, and a failure receipt naming what the provider can correct. */
@@ -264,9 +338,16 @@ export function executeBriefCompile(input: {
     if (composed.status === 'refused') {
         return failure('invalid-tool-arguments', `${composed.field}: ${composed.reason}`, true);
     }
-    const unserved = describeUnservedReading(alternatives, input.prompt, input.context, composed.brief);
-    if (unserved !== null) {
-        return failure('invalid-tool-arguments', unserved, true);
+    const readings = prepareReadings({
+        alternatives,
+        catalogId: mixIntent.catalogId,
+        prompt: input.prompt,
+        context: input.context,
+        brief: composed.brief,
+        sourceRunId: input.sourceRunId,
+    });
+    if (readings.status === 'refused') {
+        return failure('invalid-tool-arguments', readings.reason, true);
     }
     const changeLines = describeProductionBriefChange({
         before,
@@ -277,16 +358,7 @@ export function executeBriefCompile(input: {
     if (changeLines === null) {
         return failure('invalid-tool-arguments', 'update: the composed brief could not be described.', false);
     }
-    const command: RetainedCommand = {
-        key: `${callId}:brief`,
-        stepId: 'brief',
-        operation: 'setProductionBrief',
-        arguments: { expectedRevision: before.revision, brief: composed.brief },
-        reason: 'Record the project intent the request describes in the production brief.',
-        expectedEffect: `The production brief moves to revision ${String(composed.brief.revision)}.`,
-        binding: null,
-        dependencyKeys: [],
-    };
+    const command = buildBriefCommand(callId, before.revision, composed.brief);
     const result: BriefCompileResult = {
         commands: [command],
         briefChangeLines: changeLines,
@@ -307,7 +379,7 @@ export function executeBriefCompile(input: {
         },
     };
     if (alternatives.length > 0) {
-        result.mixAlternatives = alternatives;
+        result.mixAlternatives = readings.alternatives;
     }
     return result;
 }

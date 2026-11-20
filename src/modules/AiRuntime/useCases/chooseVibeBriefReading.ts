@@ -36,6 +36,8 @@ import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailabi
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
+import { readRetainedPlanDigestDrift } from './vibeRun/readRetainedPlanDigestDrift';
+import { readRetainedPlanReferenceDrift } from './vibeRun/readRetainedPlanReferenceDrift';
 
 type ChooseVibeBriefReadingInput = {
     confirmationId: string;
@@ -135,6 +137,11 @@ export async function chooseVibeBriefReading(
     if (offer.catalogId !== getBriefMixIntentCatalog().catalogId) {
         return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
     }
+    const liveContext = getProjectContext();
+    const missing = readRetainedPlanReferenceDrift(reading, liveContext);
+    if (missing !== null) {
+        return refuse(missing);
+    }
     const stale = readStaleness(confirmation, briefAction);
     if (stale !== null) {
         return refuse(stale);
@@ -142,6 +149,17 @@ export async function chooseVibeBriefReading(
     const mixIntent = readBriefMixIntent({ catalogId: offer.catalogId, requestedDescriptors: reading.descriptors });
     if (mixIntent === null) {
         return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
+    }
+    const changedPlan = readRetainedPlanDigestDrift({
+        reading,
+        run,
+        prompt: run.request,
+        context: liveContext,
+        brief: offer.brief,
+        mixIntent,
+    });
+    if (changedPlan !== null) {
+        return refuse(changedPlan);
     }
     const claimed = claimReadingPlanWork(run.runId);
     if (claimed.status !== 'claimed') {
@@ -298,6 +316,7 @@ async function planAfterRetire(input: {
         signal: input.signal,
         admit: agentWorkBudget.admitMeasurement(run.runId),
         priorReceipts,
+        expectedPlanDigest: reading.plan.planDigest,
         onProgress: (progress) =>
             updateChatMessage(assistantMessageId, { content: describeInitialMeasurementProgress(context, progress) }),
     });
