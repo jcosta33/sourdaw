@@ -170,6 +170,7 @@ export const rangeOverlapByActionType: {
     setClipFade: rangeOverlapRules.none,
     importMidiFile: rangeOverlapRules.none,
     normalizeClip: rangeOverlapRules.none,
+    relinkClipAudioSources: rangeOverlapRules.none,
     reverseClip: rangeOverlapRules.none,
     restoreReversedClip: rangeOverlapRules.none,
     glueClips: rangeOverlapRules.gluedClips,

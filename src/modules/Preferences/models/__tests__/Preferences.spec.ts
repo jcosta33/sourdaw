@@ -99,7 +99,7 @@ describe('defaultPreferences', () => {
     it('should default grid snap and theme for new sessions', () => {
         expect(defaultPreferences.snapToGrid).toBe(true);
         expect(defaultPreferences.gridSubdivision).toBe('1/4');
-        expect(defaultPreferences.theme).toBe('dark');
+        expect(defaultPreferences.theme).toBe('system');
     });
 
     it('defaults Elastic transient sensitivity to 50%', () => {

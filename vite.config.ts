@@ -18,7 +18,13 @@ import {
 } from './scripts/e2eServerIdentity.ts';
 import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
 import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses.ts';
+import { createPrUnitCoverageSequencer, PR_UNIT_COVERAGE_SHARD_ENV } from './scripts/prUnitCoverageSequencer.ts';
 import { unitCoverageExclude, unitCoverageInclude } from './scripts/unitCoveragePaths.ts';
+
+const prUnitCoverageSequencer =
+    env[PR_UNIT_COVERAGE_SHARD_ENV] === '1'
+        ? createPrUnitCoverageSequencer((await import('vitest/node')).BaseSequencer)
+        : undefined;
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -216,7 +222,9 @@ export default defineConfig({
         setupFiles: env.SOURDAW_VITEST_PROGRESS
             ? ['./scripts/vitestProgressSetup.ts', './src/setupTests.ts']
             : ['./src/setupTests.ts'],
-        sequence: { setupFiles: 'list' },
+        sequence: { setupFiles: 'list', sequencer: prUnitCoverageSequencer },
+        // Tests that spawn their own Vitest process must collect with its normal sequencer.
+        env: prUnitCoverageSequencer ? { [PR_UNIT_COVERAGE_SHARD_ENV]: '' } : undefined,
         globals: true,
         /**
          * Agent worktrees and review probe trees mirror `src/` — exclude so `vitest run`

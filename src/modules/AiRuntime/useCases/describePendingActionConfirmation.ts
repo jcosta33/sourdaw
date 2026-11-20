@@ -232,6 +232,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     setClipFade: describeAsPlanned,
     importMidiFile: describeAsPlanned,
     normalizeClip: describeAsPlanned,
+    relinkClipAudioSources: describeAsPlanned,
     reverseClip: describeAsPlanned,
     restoreReversedClip: describeAsPlanned,
     glueClips: describeAsPlanned,

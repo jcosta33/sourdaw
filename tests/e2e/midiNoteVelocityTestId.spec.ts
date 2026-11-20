@@ -66,7 +66,9 @@ test.describe('MIDI note velocity and piano-roll chrome', () => {
 
     test('Expression view opens the velocity lane by default', async ({ page }) => {
         const toggle = page.getByRole('button', { name: /Toggle Expression View/i });
-        const lane = page.getByRole('combobox', { name: 'Active expression lane' });
+        const selector = page.getByRole('combobox', { name: 'Active expression lane' });
+        const readout = page.getByText('Velocity only for this instrument', { exact: true });
+        const lane = page.getByRole('group', { name: 'velocity lane', exact: true });
 
         await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
         await expect(lane).toHaveCount(0);
@@ -74,12 +76,13 @@ test.describe('MIDI note velocity and piano-roll chrome', () => {
         await toggle.click();
         await expect(toggle).toHaveAttribute('aria-pressed', 'true');
         await expect(lane).toBeVisible();
-        await expect(lane).toHaveValue('velocity');
-        await expect(lane.getByRole('option', { name: 'Velocity', exact: true })).toHaveCount(1);
+        await expect(readout).toBeVisible();
+        await expect(selector).toHaveCount(0);
 
         await toggle.click();
         await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
         await expect(lane).toHaveCount(0);
+        await expect(readout).toHaveCount(0);
     });
 
     test('scale root and type selectors hold a value', async ({ page }) => {

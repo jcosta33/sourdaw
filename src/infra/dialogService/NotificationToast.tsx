@@ -164,6 +164,17 @@ const NotificationHistory = ({
     );
 };
 
+const NotificationLiveRegions = ({ current }: { current: AppNotification | undefined }): ReactElement => (
+    <>
+        <div role="status" className="sr-only">
+            {current?.level !== 'error' ? current?.message : null}
+        </div>
+        <div role="alert" className="sr-only">
+            {current?.level === 'error' ? current.message : null}
+        </div>
+    </>
+);
+
 export const NotificationToast = (): ReactElement | null => {
     const { items, history, unreadCount, dismissCurrent, dismissNotification, markAllRead, runAction } =
         useNotificationQueue();
@@ -184,15 +195,15 @@ export const NotificationToast = (): ReactElement | null => {
                 markAllRead={markAllRead}
                 runAction={runAction}
             />
+            <NotificationLiveRegions current={current} />
             {current ? (
                 <div
+                    data-testid="notification-toast"
                     className={cn(
                         'pointer-events-none fixed top-14 right-4 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-top-2',
                         DIALOG_SERVICE_LAYER,
                         levelSurface
                     )}
-                    role="alert"
-                    aria-live="assertive"
                 >
                     <Row align="start" gap={2}>
                         <AlertTriangle
@@ -203,7 +214,9 @@ export const NotificationToast = (): ReactElement | null => {
                                     : 'text-[var(--color-state-warning)]'
                             )}
                         />
-                        <p className="flex-1 text-xs text-foreground">{current.message}</p>
+                        <p aria-hidden="true" className="flex-1 text-xs text-foreground">
+                            {current.message}
+                        </p>
                         <Button
                             variant="ghost"
                             size="xs"

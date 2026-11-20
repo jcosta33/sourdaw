@@ -162,6 +162,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     setClipFade: 'none',
     importMidiFile: 'none',
     normalizeClip: 'none',
+    relinkClipAudioSources: 'none',
     reverseClip: 'none',
     restoreReversedClip: 'none',
     glueClips: 'glue',

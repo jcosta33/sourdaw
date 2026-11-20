@@ -75,7 +75,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     }
 
-    function dispatchKey(target: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
+    function dispatchKey(target: EventTarget, init: KeyboardEventInit): KeyboardEvent {
         const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
         target.dispatchEvent(event);
         return event;
@@ -154,6 +154,19 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes Space dispatched at window as a workspace shortcut', () => {
+        openSessionWithCommandHandlers();
+        mocks.handleKeydown.mockReturnValueOnce(true);
+        render(<Host />);
+
+        const event = dispatchKey(window, { key: ' ' });
+
+        expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ key: ' ', keyTarget: 'workspace' })
+        );
+        expect(event.defaultPrevented).toBe(true);
     });
 
     it('recognizes the floating editor only while a device control owns focus', () => {
@@ -553,6 +566,23 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
     });
 
     describe('modal and menu portal surfaces (#3618)', () => {
+        it('classifies Delete from an SVG child of a dialog as text entry', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockImplementationOnce(({ keyTarget }) => keyTarget === 'workspace');
+            render(<Host />);
+            const dialog = mount(document.createElement('div'));
+            dialog.setAttribute('role', 'dialog');
+            const icon = dialog.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
+            const path = icon.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+
+            const event = dispatchKey(path, { key: 'Delete' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key: 'Delete', keyTarget: 'textEntry' })
+            );
+            expect(event.defaultPrevented).toBe(false);
+        });
+
         it('gates the global shortcut (isInput=true) when Delete fires inside a [role="dialog"] surface', () => {
             openSessionWithCommandHandlers();
             render(<Host />);

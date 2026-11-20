@@ -19,6 +19,12 @@ import { basename, dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import {
+    familyFailure,
+    freshFamilyObservations,
+    type EditorFamilyDrive,
+    type FamilyObservations,
+} from './desktopEditorFamilyEvidence.ts';
+import {
     FermenterDriveError,
     FERMENTER_OBSERVATIONS,
     type FermenterDrive,
@@ -32,7 +38,7 @@ const COMMIT = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
 const MAX_RECEIPT_BYTES = 1024;
-const USAGE = 'Expected either --capture --receipt PATH or --receipt PATH --json PATH';
+const USAGE = 'Expected either --capture --receipt PATH or [--family] --receipt PATH --json PATH';
 
 type RunIdentity = { sourceSha: string; runId: string; runAttempt: string };
 type Digests = { payloadSha256: string; executableSha256: string };
@@ -51,18 +57,22 @@ type FailureCode =
     | 'build-receipt-digest-mismatch'
     | FermenterDriveError['code']
     | 'observations-incomplete'
+    | NonNullable<ReturnType<typeof familyFailure>>
     | 'checkout-changed'
     | 'bundle-changed'
     | 'driver-failed';
 
-type ProofRecord = {
+type BoundRecord = {
     schemaVersion: 1;
-    scope: 'one-packaged-fermenter-popup';
     expected: RunIdentity | null;
     build: BuildReceipt | null;
-    observations: FermenterObservation[];
     verdict: Verdict;
     failureCode: FailureCode | null;
+};
+
+type ProofRecord = BoundRecord & {
+    scope: 'one-packaged-fermenter-popup';
+    observations: FermenterObservation[];
 };
 
 class FermenterProofError extends Error {
@@ -268,36 +278,31 @@ function checkAfterDrive(options: Options, build: BuildReceipt): void {
     }
 }
 
-export async function runProof(options: Options, env: NodeJS.ProcessEnv, ports: ProofPorts): Promise<ProofRecord> {
+async function runBoundObservation(
+    options: Options,
+    env: NodeJS.ProcessEnv,
+    hostSupported: boolean,
+    drive: (binary: string) => Promise<void>
+): Promise<BoundRecord> {
     const expected = readRunIdentity(env);
-    const record: ProofRecord = {
+    const record: BoundRecord = {
         schemaVersion: 1,
-        scope: 'one-packaged-fermenter-popup',
         expected,
         build: null,
-        observations: [],
         verdict: 'not-run',
         failureCode: null,
     };
     try {
-        const run = requireRun(expected, ports.hostSupported);
+        const run = requireRun(expected, hostSupported);
         if (env.FERMENTER_CAPTURE_OUTCOME !== 'success') {
             throw new FermenterProofError('build-receipt-unavailable-or-invalid');
         }
         const { build, binary } = admitBuild(options, run);
         record.build = build;
         try {
-            await ports.drive(binary, (observation) => {
-                if (observation !== FERMENTER_OBSERVATIONS[record.observations.length]) {
-                    throw new FermenterProofError('observations-incomplete');
-                }
-                record.observations.push(observation);
-            });
+            await drive(binary);
         } finally {
             checkAfterDrive(options, build);
-        }
-        if (record.observations.length !== FERMENTER_OBSERVATIONS.length) {
-            throw new FermenterProofError('observations-incomplete');
         }
         return { ...record, verdict: 'proven' };
     } catch (error) {
@@ -306,6 +311,43 @@ export async function runProof(options: Options, env: NodeJS.ProcessEnv, ports: 
         const verdict = record.build === null || failureCode === 'launch-unavailable' ? 'not-run' : 'failed';
         return { ...record, verdict, failureCode };
     }
+}
+
+export async function runProof(options: Options, env: NodeJS.ProcessEnv, ports: ProofPorts): Promise<ProofRecord> {
+    const observations: FermenterObservation[] = [];
+    const record = await runBoundObservation(options, env, ports.hostSupported, async (binary) => {
+        await ports.drive(binary, (observation) => {
+            if (observation !== FERMENTER_OBSERVATIONS[observations.length]) {
+                throw new FermenterProofError('observations-incomplete');
+            }
+            observations.push(observation);
+        });
+        if (observations.length !== FERMENTER_OBSERVATIONS.length) {
+            throw new FermenterProofError('observations-incomplete');
+        }
+    });
+    return { ...record, scope: 'one-packaged-fermenter-popup', observations };
+}
+
+type FamilyRecord = BoundRecord & {
+    scope: 'packaged-premium-editor-mount-and-lifecycle';
+    observations: FamilyObservations;
+};
+
+export async function runEditorFamilyProof(
+    options: Options,
+    env: NodeJS.ProcessEnv,
+    ports: { hostSupported: boolean; drive: EditorFamilyDrive }
+): Promise<FamilyRecord> {
+    const observations = freshFamilyObservations();
+    const record = await runBoundObservation(options, env, ports.hostSupported, async (binary) => {
+        await ports.drive(binary, observations);
+        const failure = familyFailure(observations);
+        if (failure !== null) {
+            throw new FermenterProofError(failure);
+        }
+    });
+    return { ...record, scope: 'packaged-premium-editor-mount-and-lifecycle', observations };
 }
 
 /** Publish a fully written private file under its final name, without overwriting prior evidence. */
@@ -327,11 +369,16 @@ function writeFinalJson(path: string, value: object): void {
 
 async function main(): Promise<number> {
     const { values } = parseArgs({
-        options: { capture: { type: 'boolean' }, receipt: { type: 'string' }, json: { type: 'string' } },
+        options: {
+            capture: { type: 'boolean' },
+            family: { type: 'boolean' },
+            receipt: { type: 'string' },
+            json: { type: 'string' },
+        },
     });
     const checkout = process.cwd();
-    const { capture, receipt, json } = values;
-    if (!receipt || (capture && json !== undefined)) {
+    const { capture, family, receipt, json } = values;
+    if (!receipt || (capture && (family || json !== undefined))) {
         throw new TypeError(USAGE);
     }
     const options = { checkout, app: join(checkout, APP_PATH), receipt };
@@ -344,16 +391,28 @@ async function main(): Promise<number> {
     if (!json) {
         throw new TypeError(USAGE);
     }
-    const record = await runProof(options, process.env, {
-        hostSupported,
-        async drive(binary, report) {
-            const { driveDesktopFermenter } = await import('./desktopFermenterDrive.ts');
-            await driveDesktopFermenter(binary, report);
-        },
-    });
+    let record: FamilyRecord | ProofRecord;
+    if (family) {
+        record = await runEditorFamilyProof(options, process.env, {
+            hostSupported,
+            async drive(binary, observations) {
+                const { driveDesktopEditorFamily } = await import('./desktopEditorFamilyDrive.ts');
+                await driveDesktopEditorFamily(binary, observations);
+            },
+        });
+    } else {
+        record = await runProof(options, process.env, {
+            hostSupported,
+            async drive(binary, report) {
+                const { driveDesktopFermenter } = await import('./desktopFermenterDrive.ts');
+                await driveDesktopFermenter(binary, report);
+            },
+        });
+    }
     writeFinalJson(json, record);
+    const label = family ? 'Premium editor family' : 'Fermenter';
     process.stdout.write(
-        `Fermenter packaged proof: ${record.verdict}${record.failureCode ? ` (${record.failureCode})` : ''}.\n`
+        `${label} packaged proof: ${record.verdict}${record.failureCode ? ` (${record.failureCode})` : ''}.\n`
     );
     if (record.verdict === 'proven') {
         return 0;
