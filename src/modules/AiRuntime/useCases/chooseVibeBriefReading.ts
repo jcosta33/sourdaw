@@ -33,7 +33,7 @@ import { getProjectContext } from './getProjectContext';
 import { type readBriefMixIntent } from './readBriefMixIntent';
 import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailability';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
-import { MIX_CATALOGUE_CHANGED } from './vibeRun/briefReadingRefusals';
+import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './vibeRun/briefReadingRefusals';
 import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
 import { readChosenReadingDrift } from './vibeRun/readChosenReadingDrift';
@@ -79,7 +79,7 @@ function admitChoice(confirmation: PendingAppActionConfirmation, readingId: stri
         return { status: 'refused', reason: availability.reason };
     }
     if (offer === undefined || run === null || !isLive(run) || !confirmation.actions.some(isBriefAction)) {
-        return { status: 'refused', reason: 'The card no longer holds a brief to plan readings for.' };
+        return { status: 'refused', reason: CARD_HOLDS_NO_BRIEF };
     }
     const interactionMode = run.mode;
     if (interactionMode !== 'apply' && interactionMode !== 'macro') {

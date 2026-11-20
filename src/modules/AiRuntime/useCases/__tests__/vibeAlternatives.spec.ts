@@ -5,6 +5,8 @@ import { registerSupportingServicePorts } from '#/app/registerSupportingServiceP
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
 
 import {
     BASS_ID,
@@ -38,6 +40,7 @@ import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunP
 import { pendingActionResourceSettlement } from '../agentRequestOrchestration/pendingActionResourceSettlement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
+import { toggleChat } from '../aiPanelActions/toggleChat';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { chooseVibeBriefReading } from '../chooseVibeBriefReading';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -227,6 +230,9 @@ describe('a brief request whose characters admit more than one reading', () => {
             expect(content.split('\n')).toContain(`- ${name}: ${requestedDescriptors.join(', ')}`);
         }
         expect(content).toMatch(/more than one way/u);
+        expect(content.split('\n')).toContain(
+            'Confirm records the brief only. Choosing a reading runs the plan shown for it; a track measured silent after the choice is left out.'
+        );
         expect(getAgentApprovalView({ confirmationId: card.id })?.readings.map((reading) => reading.name)).toEqual(
             alternatives.map(({ name }) => name)
         );
@@ -255,6 +261,61 @@ describe('a brief request whose characters admit more than one reading', () => {
         const [first, second] = offer.readings;
         expect(planShape(first?.plan.batches ?? [])).not.toEqual(planShape(second?.plan.batches ?? []));
         expect(first?.plan.planDigest).not.toBe(second?.plan.planDigest);
+    });
+
+    it("states each reading's plan in these exact lines on the real approval view", async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+
+        const planLines = getAgentApprovalView({ confirmationId: card.id })?.readings.map(
+            (reading) => reading.planLines
+        );
+
+        expect(planLines).toEqual([
+            [
+                'Batch 2 of 4: dark drums',
+                'Drums: Cymbal shelf and attack region pulled down. Expected: spectral centroid down, frequency-band energy (presence) down.',
+                'Batch 3 of 4: dark vocal',
+                'Vocal: Upper shelf cut with an upper-mid dip. Expected: spectral centroid down, frequency-band energy (presence) down.',
+                'Batch 4 of 4: dark bass',
+                'Bass: Harmonic top removed above the note region. Expected: spectral centroid down, frequency-band energy (high-mid) down.',
+            ],
+            [
+                'Batch 2 of 4: warm drums',
+                'Drums: Shell weight lifted, cymbal shelf eased. Expected: frequency-band energy (bass) up, spectral centroid down.',
+                'Batch 3 of 4: warm vocal',
+                'Vocal: Chest-register lift with a softened upper shelf. Expected: frequency-band energy (bass) up, spectral centroid down.',
+                'Batch 4 of 4: warm bass',
+                'Bass: Fundamental weight with string noise eased. Expected: frequency-band energy (bass) up, spectral centroid down.',
+            ],
+            [
+                'Batch 2 of 4: warm and vintage drums',
+                'Drums: Shell weight lifted, cymbal shelf eased, Saturated body with reduced bandwidth. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+                'Batch 3 of 4: warm and vintage vocal',
+                'Vocal: Chest-register lift with a softened upper shelf, Low-drive saturation under a rolled top end. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+                'Batch 4 of 4: warm and vintage bass',
+                'Bass: Fundamental weight with string noise eased, Harmonic drive with the top rolled away. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+            ],
+        ]);
+    });
+
+    it('keeps the readings, their plans and their choice after the chat is closed and reopened', async () => {
+        updateWorkspaceState({ chatPanelOpen: true });
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const before = getAgentApprovalView({ confirmationId: card.id })?.readings;
+
+        toggleChat();
+        expect(workspaceStore.value?.chatPanelOpen).toBe(false);
+        toggleChat();
+        expect(workspaceStore.value?.chatPanelOpen).toBe(true);
+
+        const after = getAgentApprovalView({ confirmationId: card.id })?.readings;
+        expect(before?.map((reading) => reading.name)).toEqual(THREE_READINGS.map(({ name }) => name));
+        expect(after).toEqual(before);
+        expect(requireOnlyProposedCard().id).toBe(card.id);
+        updateWorkspaceState({ chatPanelOpen: false });
+        await expect(
+            chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'More low-mid body') })
+        ).resolves.toEqual({ status: 'chosen' });
     });
 
     it('is inert: offering the readings renders, measures, reserves and writes nothing, and asks no provider', async () => {

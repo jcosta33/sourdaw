@@ -7,7 +7,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { readBriefMixIntent } from '../readBriefMixIntent';
 
-import { MIX_CATALOGUE_CHANGED } from './briefReadingRefusals';
+import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './briefReadingRefusals';
 import { readRetainedPlanDigestDrift } from './readRetainedPlanDigestDrift';
 import { readRetainedPlanReferenceDrift } from './readRetainedPlanReferenceDrift';
 
@@ -52,7 +52,7 @@ export function readChosenReadingDrift(input: {
         (action): action is BriefAction => action.type === 'setProductionBrief'
     );
     if (briefAction === undefined) {
-        return drifted('The card no longer holds a brief to plan readings for.');
+        return drifted(CARD_HOLDS_NO_BRIEF);
     }
     const missing = readRetainedPlanReferenceDrift(reading, context);
     if (missing !== null) {
