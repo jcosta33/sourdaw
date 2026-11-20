@@ -103,8 +103,10 @@ pub struct PedalState {
     una_corda: bool,
     /// Sostenuto pedal on/off.
     sostenuto: bool,
-    /// Keys currently held by the performer.
-    keys_held: KeyBitset,
+    /// MIDI and preview strikes share the physical key state. Their voices
+    /// use independent key ownership for release damping.
+    midi_keys_held: KeyBitset,
+    preview_keys_held: KeyBitset,
     /// Calibrated lower edge of the half-pedal smoothstep — the pedal
     /// position at which the dampers begin to lift.
     half_pedal_low: f32,
@@ -123,7 +125,8 @@ impl PedalState {
             sustain_position: 0.0,
             una_corda: false,
             sostenuto: false,
-            keys_held: KeyBitset::EMPTY,
+            midi_keys_held: KeyBitset::EMPTY,
+            preview_keys_held: KeyBitset::EMPTY,
             half_pedal_low: DEFAULT_HALF_PEDAL_LOW,
             smoothed_sustain: 0.0,
             // Unsmoothed until a host calibrates it, so an engine driven
@@ -249,22 +252,35 @@ impl PedalState {
     }
 
     pub fn clear_playing_keys(&mut self) {
-        self.keys_held.clear_all();
+        self.midi_keys_held.clear_all();
+        self.preview_keys_held.clear_all();
     }
 
     /// Record that a key has been pressed.
     pub fn press_key(&mut self, key: u32) {
-        self.keys_held.set(key);
+        self.midi_keys_held.set(key);
     }
 
     /// Record that a key has been released.
     pub fn release_key(&mut self, key: u32) {
-        self.keys_held.clear(key);
+        self.midi_keys_held.clear(key);
     }
 
-    /// Whether the performer is currently holding `key` down.
+    pub(super) fn set_preview_key_held(&mut self, key: u32, held: bool) {
+        if held {
+            self.preview_keys_held.set(key);
+        } else {
+            self.preview_keys_held.clear(key);
+        }
+    }
+
+    pub(super) fn midi_key_is_held(&self, key: u32) -> bool {
+        self.midi_keys_held.contains(key)
+    }
+
+    /// Whether MIDI or a preview is holding this physical key down.
     pub fn key_is_held(&self, key: u32) -> bool {
-        self.keys_held.contains(key)
+        self.midi_key_is_held(key) || self.preview_keys_held.contains(key)
     }
 
     /// Damper bandwidth (Hz) applied to `key` given the current pedal state

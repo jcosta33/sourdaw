@@ -41,6 +41,10 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
                 onChange={(event) => setValue(event.target.value)}
                 onBlur={commit}
                 onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) {
+                        event.stopPropagation();
+                        return;
+                    }
                     if (event.key === 'Enter') {
                         event.preventDefault();
                         event.stopPropagation();

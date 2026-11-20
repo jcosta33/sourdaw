@@ -13,7 +13,7 @@
  * playing a topology the app thinks it stopped.
  */
 
-import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
+import { type AudioGraphBackend, type AudioGraphGrandBoulePreviewTarget } from '../../models/AudioGraphBackend';
 import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 import { type NativeRecordingAdmission } from '../../models/NativeRecordingCapture';
 
@@ -152,6 +152,8 @@ export type NativeLiveGraphSession = {
      * into.
      */
     nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
+    /** Realized preview bodies from applied reports. An optimistic carrier claim has no generations. */
+    grandBoulePreviewTargetsByStripId: ReadonlyMap<string, readonly AudioGraphGrandBoulePreviewTarget[]>;
     /**
      * Whether this play has already spent its one automatic re-arm (#3960).
      *
@@ -228,6 +230,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     lastDeferredChainNotice: null,
     livenessWatch: null,
     nativeChainByStripId: new Map(),
+    grandBoulePreviewTargetsByStripId: new Map(),
     rearmClaimed: false,
     rearmEpoch: 0,
     startsPending: 0,

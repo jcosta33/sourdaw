@@ -59,6 +59,8 @@
  * has no runtime, so the wire result deliberately carries none.
  */
 
+import { logger } from '#/infra/logger/appLogger';
+
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
@@ -118,6 +120,16 @@ export type NativeOfflineGraphBackendDeps = Readonly<{
     acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
+export type NativeOfflineRenderOptions = Readonly<{
+    /**
+     * Stops the render while it is in flight: the backend names the render it
+     * starts, and an abort cancels exactly that one on the native side, which
+     * then rejects it as cancelled. Nothing is sent for an abort before the
+     * render starts or after it settles.
+     */
+    abortSignal?: AbortSignal;
+}>;
+
 export type NativeOfflineGraphBackend = AudioGraphBackend &
     Readonly<{
         /**
@@ -126,7 +138,7 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
          * are: the contract routes commands, and what a caller then does with
          * the built graph is the implementation's vocabulary.
          */
-        render: (frames: number) => Promise<PlanarStereo>;
+        render: (frames: number, options?: NativeOfflineRenderOptions) => Promise<PlanarStereo>;
     }>;
 
 /**
@@ -144,6 +156,8 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
  * owe the caller the same answer.
  */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'start-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
+    'release-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
     'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
@@ -182,6 +196,40 @@ function readMappedResult(value: unknown): MappedOutcome {
         return { outcome: 'mapped', reports: readNativeStripReports(payload.reports, 'map_graph_batch') };
     }
     throw new Error(`map_graph_batch answered an unknown outcome: ${JSON.stringify(value)}`);
+}
+
+/**
+ * Cancel `renderId` on the native side when `abortSignal` fires, until
+ * released. A cancel that fails is logged and nothing more: the render it did
+ * not reach finishes or fails on its own, and the caller's checkpoint after it
+ * still ends a cancelled export.
+ */
+/** Asks the native side to stop `renderId`; a cancel that cannot reach it is logged, never thrown. */
+function cancelListener(cancel: (renderId: string) => Promise<void>, renderId: string): () => void {
+    return () => {
+        void cancel(renderId).catch((error: unknown) => {
+            logger.warn(`cancel_graph_offline did not reach render ${renderId}: ${reasonOf(error)}`);
+        });
+    };
+}
+
+function cancelOnAbort(input: {
+    transport: NativeGraphTransport;
+    renderId: string;
+    abortSignal: AbortSignal | undefined;
+}): { release: () => void } {
+    const { transport, renderId, abortSignal } = input;
+    const cancel = transport.cancelGraphOfflineRender;
+    if (abortSignal === undefined || cancel === undefined) {
+        return { release: () => {} };
+    }
+    const onAbort = cancelListener(cancel, renderId);
+    if (abortSignal.aborted) {
+        onAbort();
+        return { release: () => {} };
+    }
+    abortSignal.addEventListener('abort', onAbort, { once: true });
+    return { release: () => abortSignal.removeEventListener('abort', onAbort) };
 }
 
 export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendDeps): NativeOfflineGraphBackend {
@@ -358,7 +406,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 });
         },
 
-        async render(frames: number): Promise<PlanarStereo> {
+        async render(frames: number, options: NativeOfflineRenderOptions = {}): Promise<PlanarStereo> {
             if (disposed) {
                 throw new Error('native offline backend disposed');
             }
@@ -373,13 +421,20 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             // wire schema this file speaks — `apply` refused anything else.
             return material.run(async () => {
                 const context = material.context();
-                const bytes = await transport.renderGraphOffline({
-                    batch: { schemaVersion: 1, timelineLease: context.lease, commands: wireCommands },
-                    frames,
-                    sampleRate,
-                });
-                material.assertOpen();
-                return deinterleaveStereoPcm({ bytes, frames });
+                const renderId = crypto.randomUUID();
+                const stopRender = cancelOnAbort({ transport, renderId, abortSignal: options.abortSignal });
+                try {
+                    const bytes = await transport.renderGraphOffline({
+                        batch: { schemaVersion: 1, timelineLease: context.lease, commands: wireCommands },
+                        frames,
+                        sampleRate,
+                        renderId,
+                    });
+                    material.assertOpen();
+                    return deinterleaveStereoPcm({ bytes, frames });
+                } finally {
+                    stopRender.release();
+                }
             });
         },
 

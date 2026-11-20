@@ -10,7 +10,6 @@ import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
 import { type Clip } from '../../models/Track';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
@@ -36,7 +35,10 @@ import { setMarqueeSelection } from '../../useCases/clipSelection/setMarqueeSele
 import { toggleClipInSelection } from '../../useCases/clipSelection/toggleClipInSelection';
 import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
 import { clipDropRejectionReason } from '../../useCases/timelineInteractions/clipDropRejectionReason';
-import { commitInlineAutomationPaint } from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
+import {
+    commitInlineAutomationPaint,
+    type CommitInlineAutomationPaintInput,
+} from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { commitInlineMidiNoteMove } from '../../useCases/timelineInteractions/commitInlineMidiNoteMove';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
@@ -123,13 +125,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
     const pointersRef = useRef<Map<number, PointerEvent>>(new Map());
-    const autoDragRef = useRef<{
-        laneId?: string;
-        trackId: string;
-        parameterId: string;
-        parameterName: string;
-        points: AutomationPoint[];
-    } | null>(null);
+    const autoDragRef = useRef<CommitInlineAutomationPaintInput | null>(null);
     const drawDragRef = useRef<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>(null);
     const slipDragRef = useRef<{
         clipId: string;
@@ -329,11 +325,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         const beat = getBeatFromX(x);
         const tool = getActiveTool();
 
-        // Sub-lane paint when automation panel is visible (any tool)
-        if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
-            if (tryPaintSubLane(x, y, autoDragRef)) {
-                return;
-            }
+        const automationVisibility = timelineEditingStore.value?.automationVisibility;
+        if (automationVisibility === 'overlay' && tryPaintSubLane(x, y, autoDragRef)) {
+            return;
         }
 
         if (tool === 'cut') {
@@ -345,11 +339,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
         if (tool === 'automation') {
-            // Only paint when the automation lane is actually visible — otherwise
-            // the tool writes points onto a hidden lane (finding #88). This mirrors
-            // the sub-lane paint guard above.
-            if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
-                handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
+            if (automationVisibility === 'panel') {
+                handleAutomationTool(y, beat, getScrollY(), autoDragRef);
             }
             return;
         }

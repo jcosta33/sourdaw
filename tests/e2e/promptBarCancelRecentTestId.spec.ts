@@ -145,6 +145,26 @@ test.describe('PromptBar cancel-processing control', () => {
 });
 
 test.describe('LaunchScreen recent-project cards', () => {
+    test('ambient glows respect reduced motion', async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+        await setupWorkspace(page);
+        const launch = page.getByLabel('Sourdaw — start a project');
+        await expect(launch).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
+        const glows = launch.locator('[aria-hidden="true"] > div[style*="animation-duration"]');
+        await expect(glows).toHaveCount(3);
+        await expect
+            .poll(() =>
+                glows.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationName))
+            )
+            .toEqual(['pulse', 'pulse', 'pulse']);
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await expect
+            .poll(() =>
+                glows.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationName))
+            )
+            .toEqual(['none', 'none', 'none']);
+    });
+
     test('fresh profile renders no recent-project cards', async ({ page }) => {
         await setupWorkspace(page);
 
@@ -178,8 +198,11 @@ test.describe('LaunchScreen recent-project cards', () => {
         // 'not-found': an error notice fires and the launch screen returns home.
         await recent_card.click();
 
-        const error_notice = page.getByRole('alert').filter({ hasText: 'Failed to open "Recent Mix"' });
+        const error_notice = page.getByTestId('notification-toast');
         await expect(error_notice).toBeVisible({ timeout: 15_000 });
+        await expect(error_notice).toContainText('Failed to open "Recent Mix"');
+        await expect(error_notice.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+        await expect(page.getByRole('alert')).toContainText('Failed to open "Recent Mix"');
         await expect(page.locator('#launch-new-project')).toBeVisible({ timeout: 15_000 });
     });
 });

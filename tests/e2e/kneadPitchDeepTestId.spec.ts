@@ -108,7 +108,9 @@ test.describe('Knead pitch-correction editor — deep', () => {
         // Correct All notifies on success; the toast carries the message.
         const correctAll = page.getByRole('button', { name: /Correct All/i });
         await correctAll.click();
-        await expect(page.getByText(/Pitch corrected to scale/i)).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByTestId('notification-toast').getByText(/Pitch corrected to scale/i)).toBeVisible({
+            timeout: 10_000,
+        });
     });
 
     test('Formants checkbox toggles its checked state', async ({ page }) => {

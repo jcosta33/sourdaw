@@ -788,32 +788,20 @@
 }
 
 /* ── Global scrollbar styling ───────────────────────────────────────────── */
-/* Firefox */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 249, 242, 0.12) transparent;
+    scrollbar-color: var(--color-muted-foreground) var(--color-background);
 }
 
-/* Chromium's scrollbar pseudo-elements; every renderer this app ships on. */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+@media (prefers-contrast: more) {
+    * {
+        scrollbar-color: var(--color-foreground) var(--color-background);
+    }
 }
 
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background: rgba(255, 249, 242, 0.12);
-    border-radius: 9999px;
-    transition: background 120ms ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 249, 242, 0.25);
-}
-
-::-webkit-scrollbar-corner {
-    background: transparent;
+@media (forced-colors: active) {
+    * {
+        scrollbar-color: auto;
+        scrollbar-width: auto;
+    }
 }

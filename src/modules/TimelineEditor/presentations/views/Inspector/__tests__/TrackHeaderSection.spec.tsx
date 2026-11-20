@@ -222,6 +222,23 @@ describe('TrackHeaderSection', () => {
         });
     });
 
+    it('keeps the name editor open during composing Enter and commits on ordinary Enter', () => {
+        render(<TrackHeaderSection track={mockTrack} />);
+        fireEvent.click(screen.getByText('Test Track'));
+        const input = screen.getByTestId('compact-input');
+        fireEvent.change(input, { target: { value: 'New Name' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(screen.getByTestId('compact-input')).toHaveValue('New Name');
+
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: false });
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'New Name' },
+        });
+        expect(screen.queryByTestId('compact-input')).not.toBeInTheDocument();
+    });
+
     it('dispatches freezeTrack through executeUserAppAction when freeze button is clicked on unfrozen track', () => {
         render(<TrackHeaderSection track={mockTrack} />);
         fireEvent.click(screen.getByText(/Freeze/i));

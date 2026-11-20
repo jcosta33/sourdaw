@@ -93,7 +93,8 @@ type ModSourceId = (typeof MOD_SOURCES)[number]['id'];
 /** Sources whose native output swings both ways; the rest rest at zero, not centre. */
 const BIPOLAR_SOURCES: ReadonlySet<string> = new Set<ModSourceId>(['lfo1', 'lfo2', 'env', 'lorenz']);
 
-const selectClasses = 'h-5 rounded-micro border border-border-soft bg-black/30 px-1 text-nano text-foreground';
+const selectClasses =
+    'h-5 max-w-full rounded-micro border border-border-soft bg-black/30 px-1 text-nano text-foreground';
 
 function SourcePills({ patch, modValues }: { patch: BacteriaPatch; modValues: number[] }): ReactElement {
     return (
@@ -223,21 +224,21 @@ function AssignmentRow({
 }): ReactElement {
     const source = MOD_SOURCES.find((s) => s.id === assignment.sourceId);
     return (
-        <Row gap={1} className="text-nano">
+        <Row wrap gap={1} className="text-nano">
             <span style={{ color: source?.textColor ?? 'var(--color-text-primary)' }}>
                 {source?.label ?? assignment.sourceId}
             </span>
             <span className="text-muted-foreground">→</span>
-            <span className="text-foreground">{assignment.targetParam}</span>
+            <span className="wrap-anywhere text-foreground">{assignment.targetParam}</span>
             <span className="text-muted-foreground font-mono">
                 {assignment.amount > 0 ? '+' : ''}
                 {(assignment.amount * 100).toFixed(0)}%
             </span>
             <Button
                 variant="bare"
-                size="bare"
+                size="xs"
                 type="button"
-                className="text-[6px] text-muted-foreground hover:text-state-danger ml-auto"
+                className="ml-auto text-muted-foreground hover:text-state-danger"
                 onClick={onRemove}
             >
                 ×

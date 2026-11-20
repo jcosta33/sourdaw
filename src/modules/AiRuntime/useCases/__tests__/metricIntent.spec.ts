@@ -133,7 +133,9 @@ describe('positive whole-request metric intent', () => {
         const value = fixture();
         const projected = projectOpenAiStrictToolSchema(value.schema);
         expect(matchesJsonSchema(value.call.arguments, value.schema.function.parameters)).toBe(true);
-        expect(matchesJsonSchema(value.call.arguments, projected.function.parameters)).toBe(true);
+        expect(
+            matchesJsonSchema({ ...value.call.arguments, creativeInterpretation: null }, projected.function.parameters)
+        ).toBe(true);
         const admitted = admitPlanningInterpretation({
             ...value,
             call: value.call,
@@ -670,7 +672,9 @@ describe('bounded metric control admission', () => {
                 },
             };
             const schema = provider === 'hosted' ? projectOpenAiStrictToolSchema(value.schema) : value.schema;
-            expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
+            const wireArguments =
+                provider === 'hosted' ? { ...call.arguments, creativeInterpretation: null } : call.arguments;
+            expect(matchesJsonSchema(wireArguments, schema.function.parameters)).toBe(true);
             const admission = admitPlanningInterpretation({
                 ...value,
                 call,

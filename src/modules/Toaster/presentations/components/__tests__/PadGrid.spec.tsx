@@ -53,6 +53,37 @@ describe('PadGrid (Toaster)', () => {
         expect(onTriggerPad).toHaveBeenCalledWith(1);
     });
 
+    it('releases a held keyboard pad once when focus moves to another control', () => {
+        const onTriggerPad = vi.fn();
+        const onReleasePad = vi.fn();
+        render(
+            <>
+                <PadGrid
+                    pads={[makePad(0), makePad(1)]}
+                    selectedIndex={0}
+                    onSelectPad={vi.fn()}
+                    onTriggerPad={onTriggerPad}
+                    onReleasePad={onReleasePad}
+                />
+                <button type="button">Another control</button>
+            </>
+        );
+        const pad = screen.getByRole('button', { name: 'Trigger P1' });
+        act(() => pad.focus());
+        fireEvent.keyDown(pad, { key: ' ' });
+        expect(onTriggerPad.mock.calls).toEqual([[1]]);
+
+        const nextControl = screen.getByRole('button', { name: 'Another control' });
+        act(() => nextControl.focus());
+        expect(nextControl).toHaveFocus();
+        expect(onReleasePad.mock.calls).toEqual([[1]]);
+
+        fireEvent.keyUp(nextControl, { key: ' ' });
+        fireEvent.keyUp(pad, { key: ' ' });
+        fireEvent.keyUp(screen.getByRole('button', { name: 'Trigger P0' }), { key: ' ' });
+        expect(onReleasePad.mock.calls).toEqual([[1]]);
+    });
+
     it('should not re-trigger on a held key repeat', () => {
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
@@ -105,7 +136,7 @@ describe('PadGrid — selection and aria', () => {
         const pad2 = screen.getByRole('button', { name: /trigger p2/i });
         fireEvent.mouseDown(pad2, { button: 0 });
         fireEvent.mouseUp(pad2);
-        fireEvent.click(pad2);
+        fireEvent.click(pad2, { detail: 1 });
         expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(2);
         expect(onSelectPad).toHaveBeenCalledTimes(1);
@@ -121,7 +152,7 @@ describe('PadGrid — selection and aria', () => {
 });
 
 describe('PadGrid — pad state display', () => {
-    it('keeps a complete pad name available when its compact label is truncated', () => {
+    it('keeps the complete pad name and its voice metadata available', () => {
         const name = 'Closed hi-hat with a long name';
         const pads = [makePad(0, { name, engineType: 'hihat-closed', chokeGroup: 1 })];
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
@@ -262,13 +293,45 @@ describe('PadGrid — 16 Levels mode', () => {
         const pad1 = screen.getByRole('button', { name: /trigger level 2/i });
         fireEvent.mouseDown(pad1, { button: 0 });
         fireEvent.mouseUp(pad1);
-        fireEvent.click(pad1);
+        fireEvent.click(pad1, { detail: 1 });
 
         expect(onSelectPad).not.toHaveBeenCalled();
         expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(1);
         expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(1);
+    });
+
+    it('ignores a canceled mouse click while accepting independent buttons and fresh presses', () => {
+        const onTriggerPad = vi.fn();
+        const onReleasePad = vi.fn();
+        render(
+            <PadGrid
+                pads={[makePad(0), makePad(1)]}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={onTriggerPad}
+                onReleasePad={onReleasePad}
+                sixteenLevelsTarget="velocity"
+            />
+        );
+        const pad = screen.getByRole('button', { name: /trigger level 1/i });
+        const nextPad = screen.getByRole('button', { name: /trigger level 2/i });
+        fireEvent.mouseDown(pad, { button: 0 });
+        fireEvent.blur(window);
+        fireEvent.mouseLeave(pad);
+        fireEvent.mouseUp(pad, { button: 0 });
+        fireEvent.click(pad, { detail: 0 });
+        fireEvent.click(pad, { detail: 1 });
+        expect(onTriggerPad.mock.calls).toEqual([[0], [0]]);
+        expect(onReleasePad.mock.calls).toEqual([[0]]);
+
+        fireEvent.mouseDown(pad, { button: 0 });
+        fireEvent.mouseUp(pad, { button: 0 });
+        fireEvent.click(pad, { detail: 1 });
+        fireEvent.click(nextPad, { detail: 0 });
+        expect(onTriggerPad.mock.calls).toEqual([[0], [0], [0], [1]]);
+        expect(onReleasePad.mock.calls).toEqual([[0], [0]]);
     });
 
     it('triggers exactly once during a Space key cycle in 16-levels mode', () => {
@@ -338,7 +401,27 @@ describe('PadGrid — 16 Levels mode', () => {
 });
 
 describe('PadGrid — release events', () => {
-    it('fires onReleasePad on mouseUp when pressed', () => {
+    it('releases the current hold once on window blur through the latest callback', () => {
+        const oldRelease = vi.fn();
+        const latestRelease = vi.fn();
+        const props = { pads: [makePad(0)], selectedIndex: 0, onSelectPad: vi.fn(), onTriggerPad: vi.fn() };
+        const { rerender } = render(<PadGrid {...props} onReleasePad={oldRelease} />);
+        const pad = screen.getByRole('button', { name: 'Trigger P0' });
+        fireEvent.mouseDown(pad, { button: 0 });
+        rerender(<PadGrid {...props} onReleasePad={latestRelease} />);
+
+        fireEvent.blur(window);
+        expect(oldRelease).not.toHaveBeenCalled();
+        expect(latestRelease).toHaveBeenCalledExactlyOnceWith(0);
+
+        fireEvent.blur(window);
+        fireEvent.mouseUp(pad, { button: 0 });
+        fireEvent.mouseLeave(pad);
+        expect(oldRelease).not.toHaveBeenCalled();
+        expect(latestRelease).toHaveBeenCalledExactlyOnceWith(0);
+    });
+
+    it('releases the held pad on its primary mouseUp', () => {
         const onReleasePad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(
@@ -353,7 +436,10 @@ describe('PadGrid — release events', () => {
 
         const pad = screen.getByRole('button', { name: /trigger p1/i });
         fireEvent.mouseDown(pad, { button: 0 });
-        fireEvent.mouseUp(pad);
+        fireEvent.mouseUp(pad, { button: 2 });
+        fireEvent.mouseUp(screen.getByRole('button', { name: 'Trigger P2' }), { button: 0 });
+        expect(onReleasePad).not.toHaveBeenCalled();
+        fireEvent.mouseUp(pad, { button: 0 });
 
         expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(1);
