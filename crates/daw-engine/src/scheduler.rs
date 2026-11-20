@@ -39,6 +39,7 @@ use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
 use daw_dsp::proof::parameter_registry::{self as proof_parameters, NativeAdmission};
+use daw_dsp::toaster::transient::TransientShaperError;
 use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
@@ -1172,7 +1173,10 @@ impl PluginCore {
     /// actually opened at, so no two producers can construct the same
     /// built-in against different clocks. Fails when the body refuses the
     /// sample rate.
-    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
+    pub fn builtin(
+        plugin_type: BuiltinEffectType,
+        sample_rate: f32,
+    ) -> Result<Self, TransientShaperError> {
         Ok(match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
@@ -1420,7 +1424,7 @@ impl PluginCore {
     pub fn transient_shaper_with_patch(
         sample_rate: f32,
         patch: &[(BuiltinParamName, f32)],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, TransientShaperError> {
         let mut body = TransientShaperBody {
             engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
             attack_gain: 1.0,

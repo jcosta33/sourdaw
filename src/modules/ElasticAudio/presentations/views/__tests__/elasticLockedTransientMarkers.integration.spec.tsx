@@ -5,6 +5,7 @@ import {
     save,
     getActorId,
     getChangesMetaSince,
+    getChangesSince,
     getHeads,
     getObjectId,
     load,
@@ -95,7 +96,7 @@ type MaterializationRequest = {
     time?: number;
     mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
 };
-type MaterializationResult = { bytes: Uint8Array<ArrayBuffer>; heads: string[] };
+type MaterializationResult = { changes: Uint8Array<ArrayBuffer>[]; heads: string[] };
 const materialization = vi.hoisted(() =>
     vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<MaterializationResult>>()
 );
@@ -128,20 +129,20 @@ class MaterializationWorker {
                 (result) => {
                     const response = structuredClone(
                         { status: 'complete', ...result },
-                        { transfer: [result.bytes.buffer] }
+                        { transfer: result.changes.map((bytes) => bytes.buffer) }
                     );
-                    expect(result.bytes.byteLength).toBe(0);
+                    expect(result.changes.every((bytes) => bytes.byteLength === 0)).toBe(true);
                     if (!MaterializationWorker.recordedReceivingRealm) {
                         console.info('Controlled Worker host-clone receiving realm:', {
-                            typedArray: response.bytes instanceof Uint8Array,
-                            arrayBuffer: response.bytes.buffer instanceof ArrayBuffer,
+                            typedArray: response.changes.every((bytes) => bytes instanceof Uint8Array),
+                            arrayBuffer: response.changes.every((bytes) => bytes.buffer instanceof ArrayBuffer),
                         });
                         MaterializationWorker.recordedReceivingRealm = true;
                     }
                     // Node's clone returns host-realm views; a browser message adopts the receiver's intrinsics.
-                    const bytes = Uint8Array.from(response.bytes);
-                    expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
-                    this.onmessage?.(new MessageEvent('message', { data: { ...response, bytes } }));
+                    const changes = response.changes.map((bytes) => Uint8Array.from(bytes));
+                    expect(changes.every((bytes) => bytes.buffer instanceof ArrayBuffer)).toBe(true);
+                    this.onmessage?.(new MessageEvent('message', { data: { ...response, changes } }));
                 },
                 (error: unknown) => {
                     if (this.terminated) {
@@ -366,7 +367,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             );
             try {
                 return {
-                    bytes: Uint8Array.from(save(candidate)),
+                    changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
                     heads: getHeads(candidate),
                 };
             } finally {

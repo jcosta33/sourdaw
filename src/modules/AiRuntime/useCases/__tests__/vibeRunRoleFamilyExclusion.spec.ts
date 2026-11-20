@@ -13,8 +13,10 @@ import { chatStore } from '../../stores/chatStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { sendChatMessage } from '../sendChatMessage';
+import { countVibeRunCandidateBatches } from '../vibeRun/countVibeRunCandidateBatches';
 
 import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoalWorkflowFixture';
 import {
@@ -183,9 +185,12 @@ const TRACKS = [
     { id: 'track-guitar', name: 'Guitar', role: 'guitar' },
     { id: 'track-keys', name: 'Keys', role: 'keys' },
     { id: 'track-music-bus', name: 'Music Bus', role: 'bus' },
+    // No canonical role: only a brief that assigns one places it in a family.
+    { id: 'track-parallel-crush', name: 'Parallel Crush', role: 'unknown' },
 ];
 const DRUM_IDS = ['track-kick', 'track-snare', 'track-hi-hat', 'track-overheads'];
 const DRUM_NAMES = ['Kick', 'Snare', 'Hi-Hat', 'Overheads'];
+const CRUSH_ID = 'track-parallel-crush';
 /** A whole song of tracks renders through the real measurement path, which takes longer than a unit case. */
 const RUN_TIMEOUT_MS = 120_000;
 
@@ -196,8 +201,12 @@ function projectTracks() {
     });
 }
 
+function trackBytes(ids: readonly string[]): string {
+    return JSON.stringify(trackStore.value?.tracks.filter((track) => ids.includes(track.id)));
+}
+
 function drumTrackBytes(): string {
-    return JSON.stringify(trackStore.value?.tracks.filter((track) => DRUM_IDS.includes(track.id)));
+    return trackBytes(DRUM_IDS);
 }
 
 beforeEach(() => {
@@ -283,6 +292,80 @@ describe('a vibe run whose request excludes a role family', () => {
                     status: 'executed',
                 });
                 expect(drumTrackBytes()).toEqual(before);
+            }
+
+            expect(proposedVibeCards()).toEqual([]);
+            expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('completed');
+        },
+        RUN_TIMEOUT_MS
+    );
+
+    it('counts no candidate batch for a track the brief places in a family the request protects', () => {
+        const live = getProjectContext();
+        const brief = live.productionBrief;
+        if (brief === undefined) {
+            throw new Error('Expected the seeded production brief in the project context.');
+        }
+        const context = { ...live, tracks: live.tracks.filter((track) => track.id === CRUSH_ID) };
+        const count = (prompt: string) =>
+            countVibeRunCandidateBatches({
+                prompt,
+                context,
+                brief: {
+                    ...brief,
+                    trackRoles: [{ id: 'role-crush', trackId: CRUSH_ID, role: 'drums', createdAt: 100 }],
+                },
+                descriptors: ['warm'],
+            });
+
+        expect(count('make the mix warmer')).toBe(1);
+        expect(count("make the mix warmer, but don't touch the drums")).toBe(0);
+    });
+
+    it(
+        'protects a track the compiled brief places in the drums family, exactly as the run plans it',
+        async () => {
+            admission.admitsOutOfTolerance = true;
+            const protectedIds = [...DRUM_IDS, CRUSH_ID];
+            scriptVibeBriefRoute({
+                descriptors: ['warm'],
+                protectedTargetIds: protectedIds,
+                trackRoles: [{ trackId: CRUSH_ID, role: 'drums' }],
+            });
+            await sendVibeMessage("make the mix warmer, but don't touch the drums", (prompt) =>
+                sendChatMessage(prompt)
+            );
+
+            const brief = requireOnlyProposedVibeCard();
+            const content = vibeCardContent(brief);
+            const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
+            if (schedule?.kind !== 'vibe-run') {
+                throw new Error(`Expected a scheduled vibe run: ${content}`);
+            }
+            const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
+            const batched = plan?.batches.flatMap((batch) => batch.targetIds) ?? [];
+            expect(batched.length).toBeGreaterThan(0);
+            expect(batched.filter((id) => protectedIds.includes(id))).toEqual([]);
+            expect(content).toContain('Not planned: Parallel Crush, because the request or brief protects it.');
+            expect(brief.protectedUnchanged.map((object) => object.id)).toEqual(expect.arrayContaining(protectedIds));
+            const protectedLine = content.split('\n').find((line) => line.startsWith('Protected unchanged: '));
+            expect(protectedLine).toContain(`"Parallel Crush" (${CRUSH_ID})`);
+
+            const before = trackBytes(protectedIds);
+            await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const batchCount = plan?.batches.length ?? 0;
+            for (let position = 2; position <= batchCount + 1; position += 1) {
+                const card = requireOnlyProposedVibeCard();
+                expect(card.approvalSnapshot.batchPosition?.index).toBe(position);
+                expect(card.protectedUnchanged.map((object) => object.id)).toEqual(
+                    expect.arrayContaining(protectedIds)
+                );
+                await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({
+                    status: 'executed',
+                });
+                expect(trackBytes(protectedIds)).toEqual(before);
             }
 
             expect(proposedVibeCards()).toEqual([]);

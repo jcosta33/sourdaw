@@ -1653,7 +1653,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     const windowsConsumer = jobAt(consumer, 'native-windows');
     const windowsLint = stepNamed(windowsConsumer, 'Lint the Windows audio crates');
     expect(windowsLint.run).toBe(
-        'cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features'
+        'cargo clippy --package daw-engine --package daw-plugin-host --package sourdaw-harness-fx --all-targets --all-features'
     );
     expect(recordAt(windowsLint, 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
     const windowsNames = arrayAt(windowsConsumer, 'steps').map((step) => asRecord(step, 'step').name);

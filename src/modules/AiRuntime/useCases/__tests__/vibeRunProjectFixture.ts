@@ -151,25 +151,27 @@ const proposeBrief =
     ];
 
 /**
- * The provider admits a brief, compiles it with these characters, and proposes it, stating the
- * objects the request protects as the application-owned scope it must echo.
+ * The provider admits a brief, compiles it with these characters and track roles, and proposes it,
+ * stating the objects the request protects as the application-owned scope it must echo.
  */
 export function scriptVibeBriefRoute(input: {
     descriptors: readonly string[];
     protectedTargetIds?: readonly string[];
+    /** Roles the compiled brief states for tracks that have none. */
+    trackRoles?: ReadonlyArray<{ trackId: string; role: string }>;
 }): void {
-    const compile: ScriptedPlanningTurn = () => [
-        {
-            id: 'brief-compile',
-            name: 'brief.compile',
-            arguments: {
-                vision: 'A chosen sound',
-                mixIntent: {
-                    catalogId: getBriefMixIntentCatalog().catalogId,
-                    requestedDescriptors: [...input.descriptors],
-                },
-            },
+    const compileArguments: Record<string, unknown> = {
+        vision: 'A chosen sound',
+        mixIntent: {
+            catalogId: getBriefMixIntentCatalog().catalogId,
+            requestedDescriptors: [...input.descriptors],
         },
+    };
+    if (input.trackRoles !== undefined) {
+        compileArguments.trackRoles = structuredClone(input.trackRoles);
+    }
+    const compile: ScriptedPlanningTurn = () => [
+        { id: 'brief-compile', name: 'brief.compile', arguments: structuredClone(compileArguments) },
     ];
     const turns = [briefIntake, compile, proposeBrief(input.protectedTargetIds ?? [])];
     let calls = 0;

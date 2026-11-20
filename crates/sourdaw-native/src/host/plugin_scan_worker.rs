@@ -624,6 +624,7 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let Some(backend) = scan_backend(format) else {
         return Some(2);
     };
+    adopt_orphaned_descendants();
     arm_helper_watchdog(helper_deadline());
     let result = match plugin_id {
         Some(plugin_id) => write_response(
@@ -641,6 +642,7 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
             },
         ),
     };
+    kill_own_descendants();
     Some(if result.is_ok() {
         0
     } else {
@@ -840,8 +842,12 @@ fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
 /// it, whichever the kernel completes first. A helper in
 /// someone else's group, such as a test runner's, never signals that group
 /// and ends by `_exit` alone.
+///
+/// Every descendant is killed first ([`kill_own_descendants`]), which reaches
+/// one that left the group with `setsid`.
 #[cfg(unix)]
 fn terminate_current_process(code: i32) {
+    kill_own_descendants();
     // SAFETY: getpid has no preconditions and cannot fail.
     let pid = unsafe { libc::getpid() };
     // SAFETY: getpgrp has no preconditions and cannot fail.
@@ -858,8 +864,12 @@ fn terminate_current_process(code: i32) {
 #[cfg(windows)]
 fn terminate_current_process(code: i32) {
     use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
-    // SAFETY: the pseudo-handle for the current process is always valid.
-    let terminated = unsafe { TerminateProcess(GetCurrentProcess(), code as u32) };
+    // SAFETY: GetCurrentProcess has no preconditions and returns a
+    // pseudo-handle that needs no closing.
+    let current = unsafe { GetCurrentProcess() };
+    // SAFETY: the pseudo-handle for the current process is always valid and
+    // carries PROCESS_TERMINATE.
+    let terminated = unsafe { TerminateProcess(current, code as u32) };
     if terminated.is_err() {
         std::process::exit(code);
     }
@@ -868,6 +878,159 @@ fn terminate_current_process(code: i32) {
 #[cfg(not(any(unix, windows)))]
 fn terminate_current_process(code: i32) {
     std::process::exit(code);
+}
+
+/// Make this helper the reaper of every orphan in its tree, so a plugin's
+/// descendant whose parent exits reparents here rather than to init and
+/// stays reachable by [`kill_own_descendants`]. A refusal leaves only the
+/// orphan case uncovered, so the scan goes ahead.
+#[cfg(target_os = "linux")]
+fn adopt_orphaned_descendants() {
+    // SAFETY: prctl with PR_SET_CHILD_SUBREAPER takes plain values and
+    // touches no memory of ours.
+    let _ = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1) };
+}
+
+#[cfg(not(target_os = "linux"))]
+fn adopt_orphaned_descendants() {}
+
+/// How many stop-then-kill sweeps one descendant kill makes at most.
+///
+/// Each sweep stops every process it finds, parents before their children,
+/// so a process can fork only between its parent's sweep and its own stop;
+/// the next sweep catches what it forked. The kill ends after the first
+/// sweep that finds nothing new. The cap keeps a plugin that forks without
+/// end from holding the helper's exit, the watchdog's included, past a
+/// bounded number of process-table walks.
+#[cfg(unix)]
+const DESCENDANT_SWEEP_PASSES: usize = 8;
+
+/// The most processes one sweep visits, bounding each walk the same way.
+#[cfg(unix)]
+const DESCENDANT_SWEEP_MAX_PROCESSES: usize = 4096;
+
+/// Kill every process descended from this helper.
+///
+/// `setsid` moves a plugin's child out of the helper's process group, so
+/// the group kills (this process's own on its watchdog exit, the spawner's
+/// after any exit) miss it; it does not move the child out of the helper's
+/// parentage, which is what this walks. On Linux the helper is also the
+/// subreaper of its tree ([`adopt_orphaned_descendants`]), so an orphan
+/// stays in it.
+///
+/// Residual limit: macOS has no unprivileged subreaper. A descendant that
+/// double-forks, and whose intermediate parent exits before this walk,
+/// reparents to launchd and escapes every sweep. Plugin code runs with the
+/// user's own rights in any case, so the bound contains accident and
+/// carelessness, not a plugin set on escaping.
+#[cfg(unix)]
+fn kill_own_descendants() {
+    // SAFETY: getpid has no preconditions and cannot fail.
+    kill_descendants(unsafe { libc::getpid() });
+}
+
+#[cfg(not(unix))]
+fn kill_own_descendants() {}
+
+/// Stop and kill every descendant of `root`, in at most
+/// [`DESCENDANT_SWEEP_PASSES`] sweeps.
+#[cfg(unix)]
+fn kill_descendants(root: libc::pid_t) {
+    let mut killed = BTreeSet::new();
+    for _ in 0..DESCENDANT_SWEEP_PASSES {
+        let found = stop_unkilled_descendants(root, &killed);
+        if found.is_empty() {
+            return;
+        }
+        for pid in found {
+            send_signal(pid, libc::SIGKILL);
+            killed.insert(pid);
+        }
+    }
+}
+
+/// One sweep: walk `root`'s tree top-down, stopping each descendant not
+/// already killed before reading its children, and return those.
+#[cfg(unix)]
+fn stop_unkilled_descendants(
+    root: libc::pid_t,
+    killed: &BTreeSet<libc::pid_t>,
+) -> Vec<libc::pid_t> {
+    let mut found = Vec::new();
+    let mut visited = BTreeSet::from([root]);
+    let mut pending = vec![root];
+    while let Some(parent) = pending.pop() {
+        for child in child_pids(parent) {
+            if visited.len() >= DESCENDANT_SWEEP_MAX_PROCESSES {
+                return found;
+            }
+            if !visited.insert(child) {
+                continue;
+            }
+            if !killed.contains(&child) {
+                send_signal(child, libc::SIGSTOP);
+                found.push(child);
+            }
+            pending.push(child);
+        }
+    }
+    found
+}
+
+/// Signal one process. Never a group: a pid that is not positive is refused
+/// rather than read as one.
+#[cfg(unix)]
+fn send_signal(pid: libc::pid_t, signal: libc::c_int) {
+    if pid <= 0 {
+        return;
+    }
+    // SAFETY: kill takes plain values; a positive pid names one process.
+    let _ = unsafe { libc::kill(pid, signal) };
+}
+
+/// The children of `parent`, from every one of its threads: a child is
+/// listed under the thread that forked it.
+#[cfg(target_os = "linux")]
+fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
+    let Ok(tasks) = fs::read_dir(format!("/proc/{parent}/task")) else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .filter_map(|task| fs::read_to_string(task.path().join("children")).ok())
+        .flat_map(|children| {
+            children
+                .split_ascii_whitespace()
+                .filter_map(|pid| pid.parse().ok())
+                .collect::<Vec<libc::pid_t>>()
+        })
+        .collect()
+}
+
+/// The children of `parent`. `proc_listchildpids` fills at most the buffer
+/// and returns how many pids it wrote; a child past the buffer is left to
+/// the next sweep.
+#[cfg(target_os = "macos")]
+fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
+    let mut pids: Vec<libc::pid_t> = vec![0; DESCENDANT_SWEEP_MAX_PROCESSES];
+    let Ok(buffer_bytes) = libc::c_int::try_from(std::mem::size_of_val(pids.as_slice())) else {
+        return Vec::new();
+    };
+    // SAFETY: `pids` is a writable buffer of exactly `buffer_bytes` bytes
+    // that outlives the call.
+    let written =
+        unsafe { libc::proc_listchildpids(parent, pids.as_mut_ptr().cast(), buffer_bytes) };
+    let Ok(written) = usize::try_from(written) else {
+        return Vec::new();
+    };
+    pids.truncate(written.min(DESCENDANT_SWEEP_MAX_PROCESSES));
+    pids.retain(|pid| *pid > 0 && *pid != parent);
+    pids
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn child_pids(_parent: libc::pid_t) -> Vec<libc::pid_t> {
+    Vec::new()
 }
 
 /// Write the helper's answer, returning `Err` only when the response file
@@ -1445,9 +1608,11 @@ impl HelperRegistry {
     }
 
     /// Reap the helper if it has exited, deregistering it under the same lock.
+    /// Whatever the plugin left running in the helper's tree is killed first,
+    /// on a clean exit as on any other (see [`reap_exited_helper`]).
     fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
         let mut state = self.lock_unless_stopped();
-        let Some(status) = child.try_wait()? else {
+        let Some(status) = reap_exited_helper(child)? else {
             return Ok(None);
         };
         state.live.remove(&child.id());
@@ -1624,12 +1789,67 @@ fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Reap the helper once it has exited, after killing its process group.
+///
+/// The group is killed while the helper is still an unreaped zombie: a zombie
+/// keeps its pid, so the group id cannot yet belong to an unrelated process.
+/// Killing after the reap would race the pid's reuse. `waitid` with `WNOWAIT`
+/// observes the exit without reaping, and `try_wait` then reaps it.
+#[cfg(unix)]
+fn reap_exited_helper(child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+    if !helper_has_exited(child.id())? {
+        return Ok(None);
+    }
+    kill_helper_tree(child.id());
+    child.try_wait()
+}
+
+#[cfg(not(unix))]
+fn reap_exited_helper(child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+    child.try_wait()
+}
+
+/// Whether the helper has exited, leaving it waitable.
+#[cfg(unix)]
+fn helper_has_exited(pid: u32) -> std::io::Result<bool> {
+    let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+    // SAFETY: `info` is a writable siginfo_t that outlives the call, and
+    // WNOHANG keeps the call from blocking; WNOWAIT leaves the child unreaped.
+    let observed = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid,
+            info.as_mut_ptr(),
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if observed == -1 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            return Ok(false);
+        }
+        return Err(error);
+    }
+    // SAFETY: an all-zero siginfo_t is a valid value, and waitid either left
+    // it so (nothing has exited yet) or filled it in.
+    let info = unsafe { info.assume_init() };
+    Ok(info.si_signo != 0)
+}
+
 /// Every helper leads its own process group, so its pid is the group's id.
+///
+/// The helper is stopped and its descendants are swept first: a descendant
+/// that called `setsid` has left the group, but not the helper's tree, while
+/// the helper is unreaped. Stopping the helper keeps it from reaping, and so
+/// from freeing a descendant's pid, during the sweep. ESRCH from any of the
+/// signals means that process or group is already gone.
 #[cfg(unix)]
 fn kill_helper_tree(pid: u32) {
     let Ok(group) = libc::pid_t::try_from(pid) else {
         return;
     };
+    send_signal(group, libc::SIGSTOP);
+    kill_descendants(group);
     // SAFETY: kill takes plain values; the group is unreaped while registered.
     let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
 }
@@ -1951,7 +2171,19 @@ mod tests {
             r#"use std::ffi::{c_char,c_void};
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
-#[cfg(unix)] unsafe extern "C" { fn fork()->i32; }
+#[cfg(unix)] unsafe extern "C" { fn fork()->i32; fn setsid()->i32; fn _exit(code:i32)->!; }
+#[cfg(unix)] fn fork_a_lingering_child(pid_file:std::ffi::OsString){
+ let marker=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_MARKER");
+ let leaves_group=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_SETSID").is_some();
+ let child=unsafe{fork()};
+ if child==0{
+  if leaves_group{unsafe{setsid();}}
+  std::thread::sleep(std::time::Duration::from_secs(30));
+  if let Some(marker)=marker{let _=std::fs::File::create(marker);}
+  unsafe{_exit(0)}
+ }
+ let _=std::fs::write(pid_file,child.to_string());
+}
 #[cfg(unix)] fn fork_a_spinning_child_then_hang(pid_file:std::ffi::OsString)->!{
  let child=unsafe{fork()};
  if child==0{loop{std::hint::spin_loop();}}
@@ -1960,6 +2192,7 @@ mod tests {
 }
 unsafe extern "C" fn init(_: *const c_char)->bool{
  #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_PID_FILE"){fork_a_lingering_child(pid_file);return false;}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  if let Some(code)=std::env::var("SOURDAW_TEST_PLUGIN_EXIT_CODE").ok().and_then(|code|code.parse().ok()){std::process::exit(code);}
  std::process::abort();
@@ -2536,6 +2769,78 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             process_has_exited_within(forked, Duration::from_secs(2)),
             "the plugin's forked child {forked} outlived its helper"
         );
+    }
+
+    /// A helper that answers and exits 0 still takes the child it left in its
+    /// process group with it: the spawner kills the group on a clean exit too.
+    #[cfg(unix)]
+    #[test]
+    fn a_clean_helper_exit_also_ends_the_child_left_in_its_group() {
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-clean-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 30 & echo $! > \"$0\"; exit 0"])
+            .arg(&pid_file);
+
+        let status = run_bounded_in(&HelperRegistry::new(), &mut command, WORKER_TIMEOUT)
+            .expect("the helper should exit within its bound");
+        let lingering = read_pid_within(&pid_file, Duration::ZERO)
+            .expect("the helper writes its child's pid before it exits");
+        stragglers.pids.push(lingering);
+
+        assert!(status.success(), "the helper must exit cleanly: {status:?}");
+        assert!(
+            process_has_exited_within(lingering, Duration::from_secs(2)),
+            "the child {lingering} outlived its cleanly exited helper"
+        );
+    }
+
+    /// A plugin's child that left the helper's process group with `setsid`
+    /// is out of reach of every group kill; the helper's own descendant kill
+    /// on its clean exit is what ends it.
+    #[cfg(unix)]
+    #[test]
+    fn a_clean_helper_exit_also_ends_a_child_that_left_its_group() {
+        let fixture = build_hostile_clap("linger-setsid");
+        let scratch =
+            std::env::temp_dir().join(format!("sourdaw-setsid-child-{}", uuid::Uuid::new_v4()));
+        let pid_file = scratch.with_extension("pid");
+        let response_path = scratch.with_extension("json");
+        let marker = scratch.with_extension("marker");
+        let mut stragglers = Stragglers::cleaning(vec![
+            pid_file.clone(),
+            response_path.clone(),
+            marker.clone(),
+        ]);
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        command
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::real_worker_entry_child")
+            .env(REAL_WORKER_PLUGIN_ENV, &fixture.plugin_path)
+            .env(REAL_WORKER_RESPONSE_ENV, &response_path)
+            .env("SOURDAW_TEST_PLUGIN_LINGER_PID_FILE", &pid_file)
+            .env("SOURDAW_TEST_PLUGIN_LINGER_SETSID", "1")
+            .env("SOURDAW_TEST_PLUGIN_LINGER_MARKER", &marker)
+            .env_remove(SCAN_PARENT_PID_ENV)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let status = run_bounded_in(&HelperRegistry::new(), &mut command, WORKER_TIMEOUT)
+            .expect("the helper should exit within its bound");
+        let lingering = read_pid_within(&pid_file, Duration::ZERO)
+            .expect("the plugin writes its child's pid before the helper answers");
+        stragglers.pids.push(lingering);
+
+        assert_eq!(status.code(), Some(0), "the helper must exit cleanly");
+        assert!(
+            process_has_exited_within(lingering, Duration::from_secs(2)),
+            "the setsid child {lingering} outlived its cleanly exited helper"
+        );
+        assert!(!marker.exists(), "the setsid child ran to completion");
     }
 
     /// The Windows parent watch exits only on proof the parent is gone; a
@@ -3335,10 +3640,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
         // SAFETY: `path` is NUL-terminated and outlives the call, and `stats`
         // is writable storage for one `statvfs`.
-        assert_eq!(
-            unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) },
-            0
-        );
+        let status = unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) };
+        assert_eq!(status, 0);
         // SAFETY: `statvfs` returned 0, so it filled `stats`.
         let stats = unsafe { stats.assume_init() };
         widened(stats.f_bavail) * widened(stats.f_frsize)

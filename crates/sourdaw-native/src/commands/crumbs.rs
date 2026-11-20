@@ -512,7 +512,7 @@ fn register_crumbs_slot(
             GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
         ])
         .map_err(|error| match error {
-            GraphBatchError::Refused(reason) => reason,
+            GraphBatchError::Refused(reason) => reason.to_string(),
             // Unreachable by construction, and deliberately not unwound:
             // the only route to the audio thread is the ring that just
             // failed, so a removal command would have nowhere to go.
@@ -1052,7 +1052,9 @@ pub async fn destroy_crumbs(
         // and off the callback's input bus with the slot it belongs to, so an
         // unregister here would be a second release of a consumer that is
         // already gone.
-        engine_handle.remove_plugin(plugin_id)?;
+        engine_handle
+            .remove_plugin(plugin_id)
+            .map_err(|error| error.to_string())?;
     }
 
     // Once queued, scheduler retirement is inevitable. No fallible work may
@@ -1641,23 +1643,25 @@ pub async fn arm_recording(
     let engine = engine_guard
         .as_mut()
         .ok_or_else(|| "Native engine is not running".to_string())?;
-    engine.adopt_capture_completion_service(Box::new(NativeTakeCompletion {
-        instances: Arc::downgrade(&state.instances),
-        engine: Arc::downgrade(&app_state.engine),
-        plugin_id,
-        take: Arc::clone(&take),
-        retired_reference: None,
-        prepared: None,
-        recycle: None,
-        last_emitted: 0,
-    }))?;
+    engine
+        .adopt_capture_completion_service(Box::new(NativeTakeCompletion {
+            instances: Arc::downgrade(&state.instances),
+            engine: Arc::downgrade(&app_state.engine),
+            plugin_id,
+            take: Arc::clone(&take),
+            retired_reference: None,
+            prepared: None,
+            recycle: None,
+            last_emitted: 0,
+        }))
+        .map_err(|error| error.to_string())?;
     ends.recording.take = Some(Arc::clone(&take));
     let preparation = match engine.prepare_capture_consumer_registration(plugin_id) {
         Ok(preparation) => preparation,
         Err(error) => {
             take.valid.store(false, Ordering::Release);
             take.failure.store(3, Ordering::Release);
-            return Err(error);
+            return Err(error.to_string());
         }
     };
     let _ = take.period.set(preparation.period().clone());
@@ -1680,7 +1684,7 @@ pub async fn arm_recording(
         take.valid.store(false, Ordering::Release);
         take.cancel_requested.store(true, Ordering::Release);
         take.failure.store(3, Ordering::Release);
-        return Err(error);
+        return Err(error.to_string());
     }
     take.admitted.store(true, Ordering::Release);
     Ok(ArmRecordingResult {
@@ -2221,7 +2225,7 @@ pub(crate) mod tests {
         f.driver.service_owner_commands();
         assert_eq!(
             f.driver.deliver_input(&[0.0; 1024], 2),
-            Err("Fixture input is not open".to_string()),
+            Err(daw_engine::audio_thread::CaptureFixtureError::InputNotOpen),
             "reattaching an idle sampler must not acquire input"
         );
 
@@ -2253,7 +2257,7 @@ pub(crate) mod tests {
         assert!(f.period(instance_id).snapshot().closed);
         assert_eq!(
             f.driver.deliver_input(&[0.0; 1024], 2),
-            Err("Fixture input is not open".to_string()),
+            Err(daw_engine::audio_thread::CaptureFixtureError::InputNotOpen),
             "the replacement must close input after its last take holder"
         );
         assert!(instance_is_attached(&f.state, instance_id));
@@ -3244,7 +3248,7 @@ pub(crate) mod tests {
                 .expect("the sentinel must fill the final scheduler position");
             assert_eq!(
                 engine.set_bypass(original_engine_plugin_id, false),
-                Err("Audio command queue full".to_string()),
+                Err(daw_engine::CommandError::QueueFull),
                 "a second sentinel independently proves admission is full"
             );
         }
