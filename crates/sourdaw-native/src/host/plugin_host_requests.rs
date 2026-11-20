@@ -438,15 +438,16 @@ fn report_state_change(
 /// editor commands use.
 static UI_THREAD: RwLock<Option<Arc<dyn UiThread>>> = RwLock::new(None);
 
-/// Name the thread component restarts are carried to. The shell's window host
-/// is that thread; registering a later one replaces the first.
+/// Name the thread a plugin's restarts are carried to: a bus or reload restart
+/// here, and a latency restart in `host/latency_watcher.rs`. The shell's window
+/// host is that thread; registering a later one replaces the first.
 pub fn use_ui_thread(ui: Arc<dyn UiThread>) {
     *UI_THREAD
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ui);
 }
 
-fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
+pub(crate) fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
     UI_THREAD
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -458,12 +459,21 @@ fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
 /// A layout the host cannot route is not a failed follow-up: the instance
 /// latches the refusal, reports it and passes its blocks dry, and asking again
 /// would refuse the same layout. Only not reaching the plugin is retried.
+///
+/// With no UI thread registered the restart is refused and reported, and not
+/// retried: no later attempt has a thread to run it on either. The plugin's flag
+/// stays standing, so its next ask is carried once a thread is registered.
 fn restart_component(
     runtime: &SharedHostedPlugin,
+    instance_id: &str,
     ui: Option<&dyn UiThread>,
 ) -> Result<(), String> {
     let Some(ui) = ui else {
-        return Err("no UI thread is registered to carry a component restart".to_string());
+        eprintln!(
+            "[Plugin] instance {instance_id} asked for a component restart, but no UI thread is \
+             registered to run it on; it is not carried until the plugin asks again"
+        );
+        return Ok(());
     };
     runtime
         .with_control(CONTROL_TIMEOUT, |plugin| {
@@ -564,7 +574,7 @@ fn carry_request(
             rescan_parameters(runtime, instance_id, engine_plugins, events)
         }
         PluginHostRequest::ComponentRestart => {
-            restart_component(runtime, registered_ui_thread().as_deref())
+            restart_component(runtime, instance_id, registered_ui_thread().as_deref())
         }
     }
 }
@@ -604,7 +614,7 @@ mod tests {
         let runtime = SharedHostedPlugin::new(wrapper.into());
         let ui = CountingUiThread::default();
 
-        assert_eq!(restart_component(&runtime, Some(&ui)), Ok(()));
+        assert_eq!(restart_component(&runtime, "inst-1", Some(&ui)), Ok(()));
 
         assert_eq!(
             ui.lent.load(std::sync::atomic::Ordering::SeqCst),
@@ -655,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn a_component_restart_wake_with_no_ui_thread_registered_is_retried() {
+    fn a_component_restart_wake_with_no_ui_thread_registered_is_refused_not_parked() {
         let _registered = registered_ui_thread_guard(None);
         let (engine_plugins, runtime) = rescan_fixture(vec![], false);
         let events = RecordingEventSink::default();
@@ -668,9 +678,8 @@ mod tests {
             || runtime.ensure_public_control_allowed().is_ok(),
         );
         assert_eq!(
-            again,
-            Some(("inst-1".to_string(), PluginHostRequest::ComponentRestart, 1)),
-            "the wake is queued again for when a UI thread is registered"
+            again, None,
+            "an ask no thread can carry is reported once, not queued to spin"
         );
     }
 
