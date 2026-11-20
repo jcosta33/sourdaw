@@ -156,17 +156,21 @@ function acquireGesture(control: InputControl): number {
     return control.token;
 }
 
+function gestureOwnerMatches(gesture: InputGesture, current: InputOwner | undefined): boolean {
+    // Our own queued edits may publish intermediate baselines. While waiting
+    // for their receipt, this gesture can update only its local display.
+    if (gesture.predecessor) {
+        return sameOwner(gesture.owner, current);
+    }
+    return baselineMatches(gesture.owner, current);
+}
+
 function gestureIsCurrent(control: InputControl, token: string | number): boolean {
     const { gesture } = control;
     if (!gesture || gesture.token !== token) {
         return false;
     }
-    const current = readInputOwner(control.deviceId);
-    // Our own queued edits may publish intermediate baselines. While waiting
-    // for their receipt, this gesture can update only its local display.
-    const ownerMatches = gesture.predecessor
-        ? sameOwner(gesture.owner, current)
-        : baselineMatches(gesture.owner, current);
+    const ownerMatches = gestureOwnerMatches(gesture, readInputOwner(control.deviceId));
     if (!gesture.hasEditAuthority() || !ownerMatches || !gesture.runtime.canCommit()) {
         cancelHeldGesture(control);
         return false;
