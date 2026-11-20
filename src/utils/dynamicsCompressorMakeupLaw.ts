@@ -136,11 +136,16 @@ export function dynamicsCompressorStaticOutputDb(curve: DynamicsCompressorStatic
 }
 
 /**
+ * The Auto Makeup value a compressor stored before the switch existed is read
+ * as: on, because every such compressor sounded with Chromium's hidden gain.
+ */
+export const COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE = 1;
+
+/**
  * Whether a stored Auto Makeup value leaves Chromium's hidden gain in the
- * output. An absent value is on: every compressor written before the switch
- * existed sounded with it. A stored value reads as the nearest setting, the
- * way the parameter law quantises a `bool` on delivery.
+ * output. An absent value reads as the legacy value. A stored value reads as
+ * the nearest setting, the way the parameter law quantises a `bool` on delivery.
  */
 export function isCompressorAutoMakeupEngaged(storedValue: number | undefined): boolean {
-    return storedValue === undefined || Math.round(storedValue) !== 0;
+    return Math.round(storedValue ?? COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE) !== 0;
 }

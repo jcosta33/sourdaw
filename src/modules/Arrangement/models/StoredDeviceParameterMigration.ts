@@ -1,3 +1,5 @@
+import { COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE } from '#/utils/dynamicsCompressorMakeupLaw';
+
 /**
  * Stored device parameter values that predate a change to a parameter's
  * declaration. Two kinds of change are read here: a declared unit that moved
@@ -73,7 +75,11 @@ type StoredParameterFill = {
 };
 
 const STORED_PARAMETER_FILLS: readonly StoredParameterFill[] = [
-    { deviceType: 'builtin-compressor', paramId: 'comp-auto-makeup', legacyValue: 1 },
+    {
+        deviceType: 'builtin-compressor',
+        paramId: 'comp-auto-makeup',
+        legacyValue: COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE,
+    },
 ];
 
 /**
