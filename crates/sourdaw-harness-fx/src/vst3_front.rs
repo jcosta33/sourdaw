@@ -29,7 +29,8 @@ use vst3::Steinberg::Vst::{
 use vst3::Steinberg::{
     int32, kInvalidArgument, kNotImplemented, kResultFalse, kResultOk, tresult, uint32, FIDString,
     FUnknown, IBStream, IBStreamTrait, IPlugView, IPluginBaseTrait, IPluginFactory,
-    IPluginFactoryTrait, PClassInfo, PClassInfo_::ClassCardinality_, PFactoryInfo, TBool, TUID,
+    IPluginFactory2, IPluginFactory2Trait, IPluginFactoryTrait, PClassInfo, PClassInfo2,
+    PClassInfo_::ClassCardinality_, PFactoryInfo, TBool, TUID,
 };
 use vst3::{uid, Class, ComRef, ComWrapper};
 
@@ -559,7 +560,18 @@ fn write_char8(target: &mut [c_char], value: &str) {
 struct Factory;
 
 impl Class for Factory {
-    type Interfaces = (IPluginFactory,);
+    type Interfaces = (IPluginFactory2,);
+}
+
+/// The id and name of the class at `index` in the factory's list.
+fn class_entry(index: int32) -> Option<(TUID, &'static str)> {
+    match index {
+        0 => Some((VST3_CLASS_ID, CLASS_NAME)),
+        1 => Some((VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME)),
+        2 => Some((VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME)),
+        3 => Some((VST3_PROCESSOR_TRUTH_CLASS_ID, PROCESSOR_TRUTH_CLASS_NAME)),
+        probe => crate::vst3_probe::class_at(probe - ECHO_CLASSES),
+    }
 }
 
 impl IPluginFactoryTrait for Factory {
@@ -581,15 +593,8 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        let (cid, name) = match index {
-            0 => (VST3_CLASS_ID, CLASS_NAME),
-            1 => (VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME),
-            2 => (VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME),
-            3 => (VST3_PROCESSOR_TRUTH_CLASS_ID, PROCESSOR_TRUTH_CLASS_NAME),
-            probe => match crate::vst3_probe::class_at(probe - ECHO_CLASSES) {
-                Some(class) => class,
-                None => return kInvalidArgument,
-            },
+        let Some((cid, name)) = class_entry(index) else {
+            return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
@@ -643,6 +648,36 @@ impl IPluginFactoryTrait for Factory {
         };
         // SAFETY: the caller's `iid` and `obj` are checked non-null above.
         unsafe { hand_out(instance, iid, obj) }
+    }
+}
+
+impl IPluginFactory2Trait for Factory {
+    /// The same list with sub-categories, which is where VST3 says whether a
+    /// class is an instrument or an effect.
+    unsafe fn getClassInfo2(&self, index: int32, info: *mut PClassInfo2) -> tresult {
+        let Some((cid, name)) = class_entry(index) else {
+            return kInvalidArgument;
+        };
+        if info.is_null() {
+            return kInvalidArgument;
+        }
+        // SAFETY: `info` is a valid out parameter.
+        let info = unsafe { &mut *info };
+        info.cid = cid;
+        info.cardinality = ClassCardinality_::kManyInstances as int32;
+        info.classFlags = 0;
+        write_char8(&mut info.category, "Audio Module Class");
+        write_char8(&mut info.name, name);
+        let sub_categories = if crate::vst3_probe::is_instrument_class(&cid) {
+            "Instrument"
+        } else {
+            "Fx"
+        };
+        write_char8(&mut info.subCategories, sub_categories);
+        write_char8(&mut info.vendor, "Sourdaw");
+        write_char8(&mut info.version, "1.0.0");
+        write_char8(&mut info.sdkVersion, "VST 3.7");
+        kResultOk
     }
 }
 

@@ -39,11 +39,15 @@ pub const VST3_MONO_COPY_CLASS_ID: TUID = uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2
 /// The class id of the class that reconfigures itself on a trigger write.
 pub const VST3_RECONFIGURING_CLASS_ID: TUID =
     uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4B2);
+/// The class id of the same reconfiguring class, listed as an instrument.
+pub const VST3_RECONFIGURING_INSTRUMENT_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4B3);
 const MONO_COPY_CLASS_NAME: &str = "Sourdaw Harness Fx Mono Copy";
 const RECONFIGURING_CLASS_NAME: &str = "Sourdaw Harness Fx Reconfiguring";
+const RECONFIGURING_INSTRUMENT_CLASS_NAME: &str = "Sourdaw Harness Fx Reconfiguring Instrument";
 
 /// How many classes this module adds to the factory's list.
-pub(crate) const PROBE_CLASSES: int32 = 2;
+pub(crate) const PROBE_CLASSES: int32 = 3;
 
 /// Writing this above one half widens the output to stereo and asks for
 /// `kIoChanged`.
@@ -76,15 +80,26 @@ pub(crate) fn class_at(index: int32) -> Option<(TUID, &'static str)> {
     match index {
         0 => Some((VST3_MONO_COPY_CLASS_ID, MONO_COPY_CLASS_NAME)),
         1 => Some((VST3_RECONFIGURING_CLASS_ID, RECONFIGURING_CLASS_NAME)),
+        2 => Some((
+            VST3_RECONFIGURING_INSTRUMENT_CLASS_ID,
+            RECONFIGURING_INSTRUMENT_CLASS_NAME,
+        )),
         _ => None,
     }
+}
+
+/// Whether the factory lists `class_id` under the `Instrument` sub-category.
+pub(crate) fn is_instrument_class(class_id: &TUID) -> bool {
+    *class_id == VST3_RECONFIGURING_INSTRUMENT_CLASS_ID
 }
 
 /// A fresh instance of the probe `class_id` names, or `None` for another id.
 pub(crate) fn create(class_id: &TUID) -> Option<ComPtr<FUnknown>> {
     let (inputs, outputs) = if *class_id == VST3_MONO_COPY_CLASS_ID {
         (1, 1)
-    } else if *class_id == VST3_RECONFIGURING_CLASS_ID {
+    } else if *class_id == VST3_RECONFIGURING_CLASS_ID
+        || *class_id == VST3_RECONFIGURING_INSTRUMENT_CLASS_ID
+    {
         (2, 1)
     } else {
         return None;

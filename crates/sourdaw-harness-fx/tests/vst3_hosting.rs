@@ -19,7 +19,7 @@ use sourdaw_harness_fx::{
     ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_PARAM_ID, LATENCY_FRAMES, LOG_ACTIVATE,
     LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
     SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID,
-    VST3_RECONFIGURING_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
+    VST3_RECONFIGURING_CLASS_ID, VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
 };
 use std::sync::{Arc, Mutex};
 use support::InstalledPlugin;
@@ -250,6 +250,31 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
         process(&mut wrapper, &left, &right),
         (left, right),
         "an effect out of service passes its dry input"
+    );
+}
+
+/// The same refusal on a class the factory lists as an instrument silences
+/// the slot: an instrument has no dry signal of its own, and passing what it
+/// was fed would play routed audio out of a voice slot at unity.
+#[test]
+fn an_instrument_whose_bus_change_cannot_be_routed_falls_silent() {
+    let plugin = InstalledPlugin::create("vst3-io-unroutable-instrument");
+    let mut wrapper = plugin.vst3_class(
+        &VST3_RECONFIGURING_INSTRUMENT_CLASS_ID,
+        ProcessMode::Realtime,
+    );
+    let (left, right) = distinct_pair();
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
+    wrapper
+        .apply_component_restart()
+        .expect_err("six output channels cannot be routed");
+
+    let silence = vec![0.0f32; BLOCK_FRAMES];
+    assert_eq!(
+        process(&mut wrapper, &left, &right),
+        (silence.clone(), silence),
+        "an instrument out of service is silenced, never fed through"
     );
 }
 
