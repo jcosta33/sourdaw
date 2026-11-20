@@ -47,7 +47,7 @@ input, state or mutation to run, and the check that must go red. Report the conc
    or historical timing figure does not establish this configured load. Review draw history was
    unavailable, so do not invent model, tier or stance claims.
    For Bacteria, exercise the compiled DSP through the native ordered keys from #4127 and
-   the Bacteria body setup from blank in #4152. Give a bare parameter and its active band
+   the empty Bacteria precedence table introduced by #4152. Give a bare parameter and its active band
    override distinct values, then require PCM to match the explicitly resolved band reference
    and differ from the bare-only control. Vary a saved crossover outside the active band count
    and require unchanged PCM until the corresponding split is active.
