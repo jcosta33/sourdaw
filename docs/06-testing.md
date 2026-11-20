@@ -1010,6 +1010,12 @@ its result to the required `Gate`. The unit coverage artifact contains the HTML 
 covered/total counts, the uncovered changed file and line list in `gate.json`, and shard
 wall-clock durations.
 
+The isolated PR coverage child computes all file assignments using Vitest's default sharder, then
+assigns `src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts` to shard four to spread the
+work of the Agent acceptance corpus. It requires exactly one collected copy of that file and the
+four-shard matrix. Every other file keeps its default assignment, and Vitest still orders the selected
+files for dispatch. Nightly and local runs use Vitest's default sequencer.
+
 Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
 specs and test helpers, the test setup and the app bootstrap entry point. The coverage configuration
 includes files the shards never import. The PR must cover at least 90% of changed executable lines,
