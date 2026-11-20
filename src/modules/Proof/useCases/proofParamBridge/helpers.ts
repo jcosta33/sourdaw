@@ -25,10 +25,11 @@ export const bridges = new Map<string, ProofAudioBridge>();
  * directly instead would reach the web twin alone and leave a natively carried
  * Proof on the value it was mapped with.
  */
-export function sendProofParam(deviceId: string, name: string, value: number): void {
+export function sendProofParam(deviceId: string, name: string, value: number, runtimeOwner?: symbol): void {
     const target = resolveEligibleDeviceWriteTarget(deviceId);
     if (target.status !== 'eligible') {
         return;
     }
-    updateDeviceParam(target.trackId, deviceId, name, value);
+    const owner: [] | [symbol] = runtimeOwner === undefined ? [] : [runtimeOwner];
+    updateDeviceParam(target.trackId, deviceId, name, value, ...owner);
 }

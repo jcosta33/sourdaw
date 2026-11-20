@@ -194,7 +194,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // touches a store directly.
         'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 6,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
+        // The committed factory reconcile sends one patch batch to the runtime.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
         // Count provenance: 0 in code, was 1 — #4756 extracted the engine half
@@ -267,6 +268,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // persistDeviceParam 2, persistDevicePatch 0, updateDevicePatch 0.
         'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Gluten/useCases/glutenParamBridge/helpers.ts': 8,
+        // The factory preset handler calls this runtime sink after the guarded project commit.
+        'src/modules/Gluten/useCases/glutenParamBridge/syncGlutenPresetRuntime.ts': 1,
         // Count provenance: 0 in code, was 2 lexical — both matches were
         // doc-comment prose in the header explaining why a drag is one edit
         // rather than ninety: it names `persistDeviceParam` as what the
@@ -734,8 +737,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
-        'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         // Event contract and subscription re-apply the persisted modulation
         // routing to a freshly loaded Bacteria worklet; neither writes project truth.
         'src/modules/Bacteria/useCases/bacteriaSubscriber.ts': 2,
@@ -769,13 +770,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/index.ts': 1,
         'src/modules/Grinder/presentations/views/GrinderPanel.tsx': 3,
+        // The declaration and call compile a selection for the guarded Command write.
+        'src/modules/Levain/useCases/commitLevainIdentity.ts': 2,
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
-        'src/modules/Levain/useCases/loadPreset.ts': 4,
-        // Count provenance (#4764): new file entry, measured 2 — the
-        // `loadInstrument` named import and its single call; same law as the
-        // Toaster reconcile above.
-        'src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts': 2,
+        // The adapter declares loadInstrument and delegates to commitLevainIdentity.
+        'src/modules/Levain/useCases/loadPreset.ts': 1,
+        // Named import, module specifier and call load the committed bank into the registered runtime.
+        'src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts': 3,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         // Count provenance: the helper declaration and the caller's import
         // identifier, import path, declaration, and invocation compile Faust
@@ -814,12 +816,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
-        // Count provenance (#3471, #3476): measured 7 — 2 from `loadToasterKitPreset`
-        // (import and preset load call) plus 5 from `setPadParamImmediate`
+        // Count provenance (#3471, #3476): 5 from `setPadParamImmediate`
         // (2 lexical from import identifier and module path, 3 runtime immediate
         // parameter writes for 16-levels note repeat auditioning on tune, decay,
         // and filterCutoff).
-        'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 7,
+        'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 5,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to the sibling offline compiler
         // `compileAutomationEvents` from the AU-1 shared curve kernel (#747) —
@@ -1057,7 +1058,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
-        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
+        // Device-list admission extracts a pure compiler helper and its call.
+        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
         // UI: compileLoadPresetActions / compileReorderDevicesAction /
@@ -1113,6 +1115,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
+        'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
+        // The typed patch helpers operate on detached chains. Toaster's kit
+        // snapshots declare two empty scalar footprints.
+        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 6,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
@@ -1190,6 +1197,9 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 1 — devices in the sole updateTrack
         // publication, after eligible-owner/frozen guards and all scalar laws.
         'src/modules/Arrangement/useCases/device/applyDevicePatchState.ts': 1,
+        // The two Toaster patch snapshots declare the same empty scalar
+        // footprint when adapting a prior batch action into the owner plan.
+        'src/modules/Arrangement/useCases/device/getPlannedDevicePatchState.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
@@ -1367,7 +1377,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts',
     'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/createFlushParam.ts',
-    'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts',
+    'src/modules/Bacteria/useCases/bacteriaParamBridge/reconcileBacteriaFactoryPatch.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
@@ -1389,8 +1399,8 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts',
     'src/modules/Grinder/useCases/grinderParamBridge/setGrinderPedalParamWithAudio.ts',
     'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts',
+    'src/modules/Levain/useCases/commitLevainIdentity.ts',
     'src/modules/Levain/useCases/levainParamBridge/helpers.ts',
-    'src/modules/Levain/useCases/loadPreset.ts',
     'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',

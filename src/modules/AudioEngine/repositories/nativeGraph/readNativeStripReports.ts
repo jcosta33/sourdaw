@@ -12,7 +12,7 @@
  * a strip that built nothing.
  */
 
-import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
+import { type AudioGraphGrandBoulePreviewTarget, type AudioGraphStripReport } from '../../models/AudioGraphBackend';
 
 function readStringArray(value: unknown): string[] | null {
     if (!Array.isArray(value)) {
@@ -28,19 +28,56 @@ function readStringArray(value: unknown): string[] | null {
     return out;
 }
 
+function readGrandBoulePreviewTargets(
+    value: unknown,
+    deviceIds: readonly string[]
+): AudioGraphGrandBoulePreviewTarget[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const targets: AudioGraphGrandBoulePreviewTarget[] = [];
+    const unclaimedDeviceIds = new Set(deviceIds);
+    for (const entry of value as readonly unknown[]) {
+        if (typeof entry !== 'object' || entry === null) {
+            return null;
+        }
+        const { deviceId, generation } = entry as Record<string, unknown>;
+        if (
+            typeof deviceId !== 'string' ||
+            typeof generation !== 'string' ||
+            generation.length === 0 ||
+            !unclaimedDeviceIds.delete(deviceId)
+        ) {
+            return null;
+        }
+        targets.push({ deviceId, generation });
+    }
+    return targets;
+}
+
 /** `command` names the answering command in the failure, so a seam defect says which wire broke. */
 export function readNativeStripReports(value: unknown, command: string): AudioGraphStripReport[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${command} answered without reports: ${JSON.stringify(value)}`);
     }
     return (value as readonly unknown[]).map((entry) => {
-        const report = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
-        const kind = report?.kind;
-        const id = report?.id;
-        const deviceIds = readStringArray(report?.deviceIds);
+        if (typeof entry !== 'object' || entry === null) {
+            throw new Error(`${command} answered a malformed strip report: ${JSON.stringify(entry)}`);
+        }
+        const report = entry as Record<string, unknown>;
+        const { kind, id } = report;
+        const deviceIds = readStringArray(report.deviceIds);
         if ((kind !== 'track' && kind !== 'bus') || typeof id !== 'string' || deviceIds === null) {
             throw new Error(`${command} answered a malformed strip report: ${JSON.stringify(entry)}`);
         }
-        return { kind, id, deviceIds };
+        const rawTargets = report.grandBoulePreviewTargets;
+        if (rawTargets === undefined) {
+            return { kind, id, deviceIds };
+        }
+        const grandBoulePreviewTargets = readGrandBoulePreviewTargets(rawTargets, deviceIds);
+        if (grandBoulePreviewTargets === null) {
+            throw new Error(`${command} answered malformed Grand Boule preview targets: ${JSON.stringify(entry)}`);
+        }
+        return { kind, id, deviceIds, grandBoulePreviewTargets };
     });
 }

@@ -8,7 +8,6 @@ import { describe, it, expect } from 'vitest';
  * integration tests elsewhere.
  */
 
-import { loadBacteriaPatchWithAudio } from '../bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaParamWithAudio } from '../bacteriaParamBridge/setBacteriaParamWithAudio';
 
@@ -16,6 +15,5 @@ describe('bacteriaParamBridge module surface', () => {
     it('exports are defined functions', () => {
         expect(typeof setBacteriaParamWithAudio).toBe('function');
         expect(typeof setBacteriaBandParamWithAudio).toBe('function');
-        expect(typeof loadBacteriaPatchWithAudio).toBe('function');
     });
 });

@@ -12,6 +12,10 @@ import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { getProofPatchParameterValues } from '../getProofPatchParameterValues';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        value: null,
+        subscribe: () => () => undefined,
+    } satisfies Pick<typeof import('#/modules/Arrangement/stores').trackStore, 'value' | 'subscribe'>,
     resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
         status: 'eligible',
         trackId: 'track-registry',

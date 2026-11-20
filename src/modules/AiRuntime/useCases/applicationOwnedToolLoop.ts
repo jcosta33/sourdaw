@@ -12,6 +12,8 @@ import {
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import {
+    bindMusicalContentQuery,
+    type captureMusicalContentBinding,
     parseAgentDiscoveryInput,
     parseSemanticProjectQueryInput,
     queryAgentDiscovery,
@@ -39,6 +41,7 @@ import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
 import { type BriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
     type HostedProviderTurn,
@@ -46,7 +49,6 @@ import {
     type HostedTurnHistory,
     type HostedTurnRecord,
 } from '../models/HostedTurnHistory';
-import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
 import { type ProjectContextProductionBrief } from '../models/ProjectContext';
@@ -56,8 +58,6 @@ import {
     type RetainedCommandSet,
     type RetainedCompilation,
 } from '../models/RetainedCompilation';
-import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
-import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolArgumentSchemaViolation } from '../models/ToolCallResult';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
@@ -72,7 +72,7 @@ import {
     serializeReceiptContext,
     serializeRemainingBudgetNote,
 } from '../services/applicationToolReceiptBudget';
-import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
+import { extractAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { parseAnswerRespond } from '../transformers/parseAnswerRespond';
 import { parseCommandBatchDecline } from '../transformers/parseCommandBatchDecline';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -104,12 +104,16 @@ import {
     type AdmittedAnswerIntake,
     type AnswerReadSource,
 } from './composeMeasuredAnswer';
+import { createMusicalReadPrerequisite } from './createMusicalReadPrerequisite';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
+import { formatMusicalReadHint } from './formatMusicalReadHint';
 import { formatReceiptContext } from './formatReceiptContext';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
+import { isMusicalReadStale } from './isMusicalReadStale';
+import { isOfferedMusicalWorkflow, type OfferedMusicalWorkflow } from './isOfferedMusicalWorkflow';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
 import {
@@ -117,6 +121,9 @@ import {
     type WholeRequestIntakePhase,
 } from './projectPlanningProviderToolSchemas';
 import { readAnswerProjectQuery } from './readAnswerProjectQuery';
+import { readMusicalContentRefusalMessage } from './readMusicalContentRefusalMessage';
+import { validateCommandBatchProposal } from './validateCommandBatchProposal';
+import { validateOneProposalPerTurn } from './validateOneProposalPerTurn';
 
 export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,
@@ -243,6 +250,9 @@ type MeasurementAttempt = {
 
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
+    offeredMusicalWorkflows?: readonly OfferedMusicalWorkflow[];
+    musicalContentBinding?: ReturnType<typeof captureMusicalContentBinding>;
+    readCreativeAuthority?: () => CreativeRequestAuthority | undefined;
     requireWholeRequestIntake?: true;
     /** Current app-owned intake identity and availability; never a metric-proof assertion. */
     readMeasurementOpportunity?: () => MeasurementOpportunity | null;
@@ -380,8 +390,19 @@ const STRICT_CONTRACT_PART: Readonly<Record<'arguments' | 'filters' | 'page' | '
  * the bounds. Only the wording of a refusal is the loop's own, because a
  * receipt names the tool the provider called.
  */
-function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): ParsedQuery {
-    const parsed = parseSemanticProjectQueryInput(argumentsValue);
+function parseProjectQueryArguments(
+    argumentsValue: Record<string, unknown>,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
+): ParsedQuery {
+    if (argumentsValue.type === 'musical-content' && binding === undefined) {
+        return { status: 'invalid', reason: 'Musical evidence binding is unavailable.' };
+    }
+    let parsed: ReturnType<typeof parseSemanticProjectQueryInput>;
+    if (argumentsValue.type === 'musical-content' && binding !== undefined) {
+        parsed = bindMusicalContentQuery(argumentsValue, binding);
+    } else {
+        parsed = parseSemanticProjectQueryInput(argumentsValue);
+    }
     if (parsed.status === 'invalid') {
         return {
             status: 'invalid',
@@ -445,7 +466,20 @@ function executeSemanticProjectQuery(
             warnings: [...receipt.warnings],
             error: null,
         };
-    } catch {
+    } catch (error) {
+        if (input.type === 'musical-content' && error instanceof Error) {
+            const safeMessage = readMusicalContentRefusalMessage(error.message);
+            if (safeMessage !== undefined) {
+                return failureReceipt({
+                    callId,
+                    turn,
+                    toolName,
+                    code: 'musical-content-refused',
+                    safeMessage,
+                    retryable: true,
+                });
+            }
+        }
         return failureReceipt({
             callId,
             turn,
@@ -461,9 +495,10 @@ function executeProjectQuery(
     callId: string,
     turn: number,
     answerSources?: Map<string, AnswerReadSource>,
-    frozenAnswerRevision?: string
+    frozenAnswerRevision?: string,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
 ): ApplicationToolReceipt {
-    const parsed = parseProjectQueryArguments(call.arguments);
+    const parsed = parseProjectQueryArguments(call.arguments, binding);
     if (parsed.status === 'invalid') {
         return failureReceipt({
             callId,
@@ -1361,11 +1396,12 @@ function executeSafeRead(
     callId: string,
     turn: number,
     answerSources?: Map<string, AnswerReadSource>,
-    frozenAnswerRevision?: string
+    frozenAnswerRevision?: string,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
 ): ApplicationToolReceipt {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
-            return executeProjectQuery(call, callId, turn, answerSources, frozenAnswerRevision);
+            return executeProjectQuery(call, callId, turn, answerSources, frozenAnswerRevision, binding);
         case PROJECT_DISCOVERY_TOOL_NAME:
             return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
@@ -1501,6 +1537,7 @@ function executeTurnReads(input: {
     nextRecipeOrdinal: () => number;
     retainedCompilations: readonly RetainedCompilation[];
     frozenAnswerRevision?: string;
+    musicalContentBinding?: ReturnType<typeof captureMusicalContentBinding>;
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
@@ -1585,7 +1622,14 @@ function executeTurnReads(input: {
             }
         }
         if (measurement === undefined || !measurementToolNames.includes(call.name)) {
-            const receipt = executeSafeRead(call, callId, turn, producedSources, input.frozenAnswerRevision);
+            const receipt = executeSafeRead(
+                call,
+                callId,
+                turn,
+                producedSources,
+                input.frozenAnswerRevision,
+                input.musicalContentBinding
+            );
             return { receipt, commands: null, answerSource: producedSources.get(callId) };
         }
         if (index !== firstMeasurementIndex) {
@@ -1695,103 +1739,6 @@ function recordSearchedIntents(
 }
 
 /**
- * The arguments `command.batch.propose` may carry. Whether `refines` names this thread's pending
- * proposal is the planner's to check against the thread; the loop holds only its shape.
- */
-const COMMAND_BATCH_PROPOSAL_KEYS: ReadonlySet<string> = new Set([
-    'commands',
-    'list',
-    'plan',
-    'compiledCallIds',
-    'refines',
-]);
-
-function validateCommandBatchProposal(
-    call: ToolCallResult,
-    disclosedCommandSchemas: ReadonlyMap<string, string>,
-    retainedCompilations: ReadonlyMap<string, RetainedCompilation>
-): string | null {
-    const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
-    const list = isRecord(call.arguments.list) ? call.arguments.list : null;
-    const hasStructuredList = list !== null && Array.isArray(list.items);
-    const references = call.arguments.compiledCallIds;
-    if (
-        references !== undefined &&
-        (!Array.isArray(references) ||
-            references.length === 0 ||
-            references.length > MAX_LLM_ACTIONS_PER_BATCH ||
-            !references.every(
-                (entry): entry is string =>
-                    typeof entry === 'string' && entry.length > 0 && entry.length <= MAX_CALL_ID_LENGTH
-            ) ||
-            new Set(references).size !== references.length ||
-            references.some((entry) => !retainedCompilations.has(entry)))
-    ) {
-        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.';
-    }
-    const selectedCount = Array.isArray(references)
-        ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
-        : 0;
-    const refines = call.arguments.refines;
-    if (
-        Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
-        (refines !== undefined &&
-            refines !== null &&
-            (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
-        hasPrimitiveCommands === hasStructuredList ||
-        (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
-    ) {
-        return 'Provider command proposal does not match the strict catalog contract.';
-    }
-    const commands: unknown[] = hasPrimitiveCommands
-        ? (call.arguments.commands as unknown[])
-        : (list!.items as unknown[]);
-    const commandLimit = hasPrimitiveCommands ? MAX_LLM_ACTIONS_PER_BATCH : SEMANTIC_COMMAND_LIST_MAX_ITEMS;
-    if (
-        commands.length + selectedCount === 0 ||
-        commands.length > commandLimit ||
-        commands.length + selectedCount > MAX_LLM_ACTIONS_PER_BATCH
-    ) {
-        return 'Provider command proposal exceeds the command budget.';
-    }
-    for (const command of commands) {
-        if (!isRecord(command)) {
-            return 'Provider command proposal does not match the strict catalog contract.';
-        }
-        const allowedKeys = hasPrimitiveCommands
-            ? ['name', 'arguments']
-            : ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'];
-        if (Object.keys(command).some((key) => !allowedKeys.includes(key))) {
-            return 'Provider command proposal does not match the strict catalog contract.';
-        }
-        if (
-            typeof command.name !== 'string' ||
-            command.name.length === 0 ||
-            command.name.length > 128 ||
-            !isRecord(command.arguments)
-        ) {
-            return 'Provider command proposal does not match the strict catalog contract.';
-        }
-        const disclosedSchema = disclosedCommandSchemas.get(command.name);
-        if (disclosedSchema === undefined) {
-            return 'Provider command proposal referenced an undiscovered catalog command.';
-        }
-        try {
-            const currentEntry = getAgentToolCatalogEntries({
-                category: 'command',
-                names: [command.name],
-            }).items[0];
-            if (currentEntry === undefined || JSON.stringify(currentEntry) !== disclosedSchema) {
-                return 'Provider command proposal referenced a stale catalog command schema.';
-            }
-        } catch {
-            return 'Provider command proposal referenced an unavailable catalog command.';
-        }
-    }
-    return null;
-}
-
-/**
  * A decline says the run produced no batch, so it may not ride alongside a call that produces one:
  * admitting both would leave the outcome of the turn ambiguous between refusal and proposal.
  */
@@ -1846,16 +1793,6 @@ type ValidatedAnswer = { status: 'accepted'; answer: PlanningAnswer | null } | T
  */
 type ValidatedTerminalCalls =
     { status: 'accepted'; decline: CommandBatchDecline | null; answer: PlanningAnswer | null } | TerminalCallRejection;
-
-/**
- * One turn proposes one batch. Two proposals leave no answer to which one the run made, and the
- * compiler downstream reads a single proposal — so a second one would slip past the budget and the
- * target rules that only ever examine the first. Refusing here says so in a reason the model sees.
- */
-function validateOneProposalPerTurn(calls: readonly { call: ToolCallResult }[]): string | null {
-    const proposalCount = calls.filter(({ call }) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME).length;
-    return proposalCount > 1 ? 'Provider returned more than one command batch proposal in one turn.' : null;
-}
 
 function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
@@ -2114,6 +2051,8 @@ export async function runApplicationOwnedToolLoop(
     let measurementIntake: MeasurementIntake | null = null;
     let measurementWitness: { opportunity: MeasurementOpportunity; receipt: ApplicationToolReceipt } | null = null;
     let heldTerminal: HeldTerminal | null = null;
+    let musicalRead: ReturnType<typeof createMusicalReadPrerequisite> | undefined;
+    let musicalReadUnavailable = false;
     // Read through a function: the loop's measurement step decides which turns reach the hold,
     // and inline narrowing of `heldTerminal` at the loop head would depend on that decision.
     const heldOpportunity = (): MeasurementOpportunity | null => heldTerminal?.opportunity ?? null;
@@ -2513,18 +2452,60 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         const isFinalTurn = turn === maxTurns();
+        const creativeAuthority = input.readCreativeAuthority?.();
+        if (interpretation === 'admitted' && creativeAuthority !== undefined && musicalRead === undefined) {
+            if (creativeAuthority.mode !== 'edit' || !creativeAuthority.editDimensions.includes('midi-content')) {
+                musicalRead = null;
+            } else if (input.musicalContentBinding === undefined) {
+                musicalRead = null;
+                musicalReadUnavailable = true;
+            } else {
+                try {
+                    musicalRead = createMusicalReadPrerequisite(creativeAuthority, input.musicalContentBinding);
+                } catch {
+                    musicalRead = null;
+                    musicalReadUnavailable = true;
+                }
+            }
+        }
+        if (isMusicalReadStale(musicalRead, musicalReadUnavailable, input.musicalContentBinding)) {
+            return {
+                status: 'rejected',
+                reason: 'Musical evidence is stale; start a fresh request.',
+                receipts,
+                turns: turn - 1,
+            };
+        }
+        const musicalHint = musicalRead?.hint() ?? null;
+        const musicalReadPending = musicalHint !== null || musicalReadUnavailable;
+        const offeredMusicalWorkflows = input.offeredMusicalWorkflows ?? [];
         // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
         // movement itself is neither an invocation nor a receipt and cannot settle its control.
         const measurementOpportunity: MeasurementOpportunity | null =
             readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ?? heldOpportunity();
         const needsMeasurementStep: boolean =
+            !musicalReadPending &&
             measurementOpportunity !== null &&
             !hasMeasurementWitness(measurementOpportunity) &&
             (heldTerminal !== null || turn === maxTurns() - 1);
         // Voluntary reads can share a turn. A held proposal or the penultimate turn reserves
         // one missing primary receipt; a held complete proposal needs no later proposal turn.
         let directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE;
-        if (needsMeasurementStep && input.measurement !== undefined) {
+        if (musicalReadPending && offeredMusicalWorkflows.length === 0) {
+            const toolNames: string[] = [];
+            const canDecline = input.terminalToolNames.has(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            if (musicalHint !== null || !canDecline) {
+                toolNames.push(PROJECT_QUERY_TOOL_NAME);
+            }
+            if (canDecline) {
+                toolNames.push(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            }
+            directive = {
+                mode: 'required',
+                toolNames,
+                parallelToolCalls: false,
+            };
+        } else if (needsMeasurementStep && input.measurement !== undefined) {
             directive = { mode: 'required', toolNames: [input.measurement.toolName], parallelToolCalls: false };
         } else if (isFinalTurn) {
             directive = {
@@ -2562,7 +2543,8 @@ export async function runApplicationOwnedToolLoop(
                 ),
                 ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
-                    lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining),
+                    (lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining)) +
+                    formatMusicalReadHint(musicalHint),
                 remaining,
                 directive,
             });
@@ -2572,6 +2554,14 @@ export async function runApplicationOwnedToolLoop(
         if (outcome.status === 'rejected') {
             return { ...outcome, receipts, turns: turn };
         }
+        if (isMusicalReadStale(musicalRead, musicalReadUnavailable, input.musicalContentBinding)) {
+            return {
+                status: 'rejected',
+                reason: 'Musical evidence is stale; start a fresh request.',
+                receipts,
+                turns: turn,
+            };
+        }
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
@@ -2580,8 +2570,10 @@ export async function runApplicationOwnedToolLoop(
         const measurementStepToolName: string | undefined = needsMeasurementStep
             ? input.measurement?.toolName
             : undefined;
-        const directiveRefusal =
-            measurementStepToolName === undefined ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn) : null;
+        let directiveRefusal: ReturnType<typeof toolChoiceRefusal> = null;
+        if (measurementStepToolName === undefined && !musicalReadPending) {
+            directiveRefusal = toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn);
+        }
         if (directiveRefusal !== null) {
             return { status: 'rejected', reason: directiveRefusal, receipts, turns: turn };
         }
@@ -3013,6 +3005,46 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        if (
+            musicalReadPending &&
+            terminalCalls.some(({ call }) => call.name !== COMMAND_BATCH_DECLINE_TOOL_NAME) &&
+            !isOfferedMusicalWorkflow(
+                terminalCalls.map(({ call }) => call),
+                offeredMusicalWorkflows
+            )
+        ) {
+            if (isFinalTurn) {
+                return {
+                    status: 'rejected',
+                    reason: 'Required musical evidence was not read within the planning budget.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const missing = terminalCalls.map(({ call, callId }) =>
+                failureReceipt({
+                    callId,
+                    toolName: call.name,
+                    turn,
+                    code: 'musical-read-required',
+                    safeMessage: 'Read the required musical window and all its pages before proposing.',
+                    retryable: true,
+                })
+            );
+            const overBudget = admitTurnReceipts(missing, turn, outcome, terminalCalls);
+            if (overBudget !== null) {
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            continue;
+        }
+        if (musicalReadPending && outcome.toolCalls.length === 0) {
+            return {
+                status: 'rejected',
+                reason: 'Required musical evidence was not requested.',
+                receipts,
+                turns: turn,
+            };
+        }
         const terminalValidation: ValidatedTerminalCalls = validateTerminalCalls(terminalCalls);
         if (terminalValidation.status === 'rejected') {
             return {
@@ -3175,6 +3207,7 @@ export async function runApplicationOwnedToolLoop(
                 nextRecipeOrdinal,
                 retainedCompilations: [...retainedCompilations.values()],
                 frozenAnswerRevision: answerIntake?.authority.revision,
+                musicalContentBinding: input.musicalContentBinding,
                 signal: input.signal,
             })
         );
@@ -3211,6 +3244,11 @@ export async function runApplicationOwnedToolLoop(
         const currentOpportunity = measurementOpportunity;
         for (const [index, executed] of executedReads.entries()) {
             const admitted = turnReceipts[index];
+            const raw = rawTurnReceipts[index];
+            const call = safeReadCalls[index]?.call;
+            if (musicalRead && admitted && raw && call) {
+                musicalRead.admit(call, raw, admitted);
+            }
             if (
                 currentOpportunity !== null &&
                 admitted !== undefined &&

@@ -201,6 +201,7 @@ jobs:
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
+        id: webgpu-admission
         timeout-minutes: 20
         shell: bash
         env:
@@ -208,17 +209,32 @@ jobs:
         run: |
           set -o pipefail
           log=browser-ai-webgpu-admission.log
+          crash_dir=
+          if runner_temp=$(cd -P -- "${RUNNER_TEMP:-}" 2>/dev/null && pwd -P) &&
+             staging=$(umask 077 && mktemp -d "$runner_temp/sourdaw-webgpu.XXXXXXXX" 2>/dev/null); then
+            crash_dir="$staging"
+          fi
           printf '[browser-ai-webgpu] started %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee "$log"
           set +e
-          pnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a "$log"
+          SOURDAW_BROWSER_AI_CRASH_DIRECTORY="$crash_dir" pnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a "$log"
           statuses=("${PIPESTATUS[@]}")
           set -e
+          footer_status=0
           printf '[browser-ai-webgpu] completed %s command=%s log=%s\n' \
-            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${statuses[0]}" "${statuses[1]}" | tee -a "$log"
+            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${statuses[0]}" "${statuses[1]}" | tee -a "$log" || footer_status=$?
           if [ "${statuses[0]}" -ne 0 ]; then
+            if [ -n "$crash_dir" ] &&
+               SOURDAW_BROWSER_AI_CRASH_DIRECTORY="$crash_dir" node scripts/browserAiMacCrashSummary.ts 2>/dev/null &&
+               [ -f vite-native-crash.json ] && [ ! -L vite-native-crash.json ]; then
+              # A checkout-relative path preserves the existing upload archive layout.
+              printf 'crash-summary=vite-native-crash.json\n' 2>/dev/null >> "${GITHUB_OUTPUT:-}" || true
+            fi
             exit "${statuses[0]}"
           fi
-          exit "${statuses[1]}"
+          if [ "${statuses[1]}" -ne 0 ]; then
+            exit "${statuses[1]}"
+          fi
+          exit "$footer_status"
 
       - name: Upload Browser AI WebGPU diagnostics
         if: ${{ always() }}
@@ -231,6 +247,7 @@ jobs:
             test-results/**/trace.zip
             test-results/**/error-context.md
             test-results/.last-run.json
+            ${{ steps.webgpu-admission.outputs.crash-summary }}
           retention-days: 7
           if-no-files-found: warn
 

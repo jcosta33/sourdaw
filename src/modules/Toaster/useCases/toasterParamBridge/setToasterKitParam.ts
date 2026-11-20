@@ -6,6 +6,7 @@ import { updateKit } from '../../stores/toasterStore';
 import { writeToasterParamsNatively } from '../writeToasterParamsNatively';
 
 import { findToasterNodeOnStrip } from './findToasterNodeOnStrip';
+import { kitPending } from './toasterKitParamQueue';
 
 const KIT_PARAM_MAP = {
     swing: 'swing',
@@ -20,16 +21,12 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 } as const;
 
-const kitPending = new Map<string, number>();
-const kitLatest = new Map<string, { deviceId: string; paramName: string; value: number }>();
-
 function flushKitParam(cacheKey: string): void {
-    kitPending.delete(cacheKey);
-    const entry = kitLatest.get(cacheKey);
+    const entry = kitPending.get(cacheKey);
     if (!entry) {
         return;
     }
-    kitLatest.delete(cacheKey);
+    kitPending.delete(cacheKey);
 
     const target = resolveEligibleDeviceWriteTarget(entry.deviceId);
     if (target.status !== 'eligible') {
@@ -78,11 +75,6 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     // already holds the authoritative latest value (updateKit above); only the
     // last value sampled before the frame fires reaches the worklet.
     const cacheKey = `${deviceId}_${key}`;
-    kitLatest.set(cacheKey, { deviceId, paramName, value });
-    if (!kitPending.has(cacheKey)) {
-        kitPending.set(
-            cacheKey,
-            requestAnimationFrame(() => flushKitParam(cacheKey))
-        );
-    }
+    const frame = kitPending.get(cacheKey)?.frame ?? requestAnimationFrame(() => flushKitParam(cacheKey));
+    kitPending.set(cacheKey, { frame, deviceId, paramName, value });
 }

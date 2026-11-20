@@ -1,5 +1,6 @@
 import {
     createDefaultPatch,
+    DEFAULT_LEVAIN_INSTRUMENT_ID,
     isInstrumentId,
     type ArticulationType,
     type InstrumentId,
@@ -16,6 +17,12 @@ import {
  * this one describes the envelope the document stores it in.
  */
 export const LEVAIN_DEVICE_STATE_VERSION = 1;
+
+/** The default identity carried when a layout needs a chunk before an instrument is selected. */
+export const LEVAIN_MISSING_DEVICE_STATE = {
+    version: LEVAIN_DEVICE_STATE_VERSION,
+    data: { instrumentId: DEFAULT_LEVAIN_INSTRUMENT_ID },
+} as const;
 
 /**
  * JSON-shaped payload the document can store and merge. Mirrors the Arrangement

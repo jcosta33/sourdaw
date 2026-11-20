@@ -22,6 +22,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     getExecutableAppActionEffect: vi.fn(),
     pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('../../../../repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,

@@ -133,6 +133,7 @@ describe('batchAddAutomationPoints', () => {
     });
 
     it('merges new points into the target lane and leaves other lanes unchanged', () => {
+        const otherLane = storeCell.state!.lanes[1];
         batchAddAutomationPoints('lane-a', [
             { beat: 4, value: 0.25, curve: 'linear', tension: 0 },
             { beat: 2, value: 0.75, curve: 'linear', tension: 0 },
@@ -142,7 +143,37 @@ describe('batchAddAutomationPoints', () => {
         const laneB = storeCell.state!.lanes.find((length) => length.id === 'lane-b');
 
         expect(laneA?.points.map((param) => param.beat)).toEqual([1, 2, 4]);
+        expect(laneB).toBe(otherLane);
         expect(laneB?.points).toEqual([{ beat: 10, value: 1, curve: 'linear', tension: 0 }]);
+    });
+
+    it('sets a new snapshot for an empty batch and preserves both lane references', () => {
+        const previous = storeCell.state!;
+
+        batchAddAutomationPoints('lane-a', []);
+
+        expect(storeCell.state).not.toBe(previous);
+        expect(storeCell.state!.lanes[0]).toBe(previous.lanes[0]);
+        expect(storeCell.state!.lanes[1]).toBe(previous.lanes[1]);
+    });
+
+    it('replaces the first equal-beat step point in its original slot', () => {
+        const sentinel = point(1, 0.1);
+        const firstStep: AutomationPoint = { id: 'first-step', beat: 4, value: 0.2, curve: 'step', tension: 0 };
+        const secondStep: AutomationPoint = { id: 'second-step', beat: 4, value: 0.8, curve: 'step', tension: 0 };
+        const replacement: AutomationPoint = { id: 'replacement', beat: 4, value: 0.4, curve: 'step', tension: 0 };
+        const existing = [sentinel, firstStep, secondStep];
+        storeCell.state = { lanes: [makeLane('lane-a', existing)] };
+
+        batchAddAutomationPoints('lane-a', [replacement]);
+
+        const actual = storeCell.state.lanes[0]!.points;
+        expect(actual).toEqual([sentinel, replacement, secondStep]);
+        expect(actual).not.toBe(existing);
+        expect(actual[0]).toBe(sentinel);
+        expect(actual[1]).toBe(replacement);
+        expect(actual[2]).toBe(secondStep);
+        expect(existing).toEqual([sentinel, firstStep, secondStep]);
     });
 
     it('replaces an existing point when the new point is within 0.05 beats', () => {

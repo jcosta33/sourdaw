@@ -21,6 +21,8 @@ type OpeningScrollInput = {
     viewportWidth: number;
     scrollLeft: number;
     beatWidth: number;
+    /** Omitted by existing pure callers to use the standard initial scale. */
+    rowHeight?: number;
 };
 
 export type OpeningScroll = {
@@ -58,7 +60,15 @@ const wantedScrollTop = ({ spanTop, spanBottom, viewportHeight, areaHeight }: Sp
  * clip with no notes (with a row) is centred on middle C.
  */
 export const getPianoRollOpeningScroll = (input: OpeningScrollInput): OpeningScroll | null => {
-    const { notes, visiblePitches, viewportHeight, viewportWidth, scrollLeft, beatWidth } = input;
+    const {
+        notes,
+        visiblePitches,
+        viewportHeight,
+        viewportWidth,
+        scrollLeft,
+        beatWidth,
+        rowHeight = ROW_HEIGHT,
+    } = input;
     if (!(viewportHeight > 0) || !(viewportWidth > 0) || visiblePitches.length === 0) {
         return null;
     }
@@ -69,11 +79,11 @@ export const getPianoRollOpeningScroll = (input: OpeningScrollInput): OpeningScr
     const highestRow = shown.length > 0 ? Math.min(...rows) : nearestRow(visiblePitches, MIDDLE_C_PITCH);
     const lowestRow = shown.length > 0 ? Math.max(...rows) : highestRow;
 
-    const spanTop = getPianoRollRowTop(highestRow);
-    const spanBottom = getPianoRollRowTop(lowestRow) + ROW_HEIGHT;
+    const spanTop = getPianoRollRowTop(highestRow, rowHeight);
+    const spanBottom = getPianoRollRowTop(lowestRow, rowHeight) + rowHeight;
     const areaHeight = viewportHeight - RULER_HEIGHT;
     const wanted = wantedScrollTop({ spanTop, spanBottom, viewportHeight, areaHeight });
-    const maxScrollTop = Math.max(0, getPianoRollContentHeight(visiblePitches.length) - viewportHeight);
+    const maxScrollTop = Math.max(0, getPianoRollContentHeight(visiblePitches.length, rowHeight) - viewportHeight);
     const scrollTop = Math.min(maxScrollTop, Math.max(0, wanted));
 
     const earliestX = shown.length > 0 ? Math.min(...shown.map((note) => note.startBeat)) * beatWidth : null;

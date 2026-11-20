@@ -2316,7 +2316,7 @@ mod tests {
             Arc::new(CrumbsSlotLifetime::default()),
             metering,
         );
-        (slot, CrumbsCommandSender(tx), commit_rx, recycle_tx)
+        (slot, CrumbsCommandSender::new(tx), commit_rx, recycle_tx)
     }
 
     /// One chunk of the engine's input tap, as the render callback hands it
@@ -3728,25 +3728,85 @@ impl std::fmt::Display for CrumbsCommandQueueFull {
 
 impl std::error::Error for CrumbsCommandQueueFull {}
 
-/// Keeps ordinary writes unchanged while the same FIFO carries take identity.
-pub struct CrumbsCommandSender(pub rtrb::Producer<NativeCrumbsCommand>);
+static LAST_PAD_AUDITION_ID: AtomicU32 = AtomicU32::new(0);
+
+/// The control-side producer for one attached slot. Each accepted pad audition
+/// reserves one entry of this FIFO until its release is written.
+pub struct CrumbsCommandSender {
+    producer: rtrb::Producer<NativeCrumbsCommand>,
+    held_auditions: Vec<u32>,
+}
+
 impl CrumbsCommandSender {
-    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
-        self.0
-            .push(NativeCrumbsCommand::Engine(command))
-            .map_err(|_| CrumbsCommandQueueFull)
+    pub fn new(producer: rtrb::Producer<NativeCrumbsCommand>) -> Self {
+        Self {
+            producer,
+            held_auditions: Vec::new(),
+        }
     }
+
+    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
+        self.push_native(NativeCrumbsCommand::Engine(command))
+    }
+
     pub fn push_native(
         &mut self,
         command: NativeCrumbsCommand,
     ) -> Result<(), CrumbsCommandQueueFull> {
-        self.0.push(command).map_err(|_| CrumbsCommandQueueFull)
+        if self.producer.slots() <= self.held_auditions.len() {
+            return Err(CrumbsCommandQueueFull);
+        }
+        self.producer
+            .push(command)
+            .map_err(|_| CrumbsCommandQueueFull)
     }
+
+    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, String> {
+        if self.producer.slots() < self.held_auditions.len() + 2 {
+            return Err(CrumbsCommandQueueFull.to_string());
+        }
+
+        // Receipts must never alias after a slot with the same instance id
+        // is attached, so stop issuing them when the counter is exhausted.
+        let previous = LAST_PAD_AUDITION_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
+                previous.checked_add(1)
+            })
+            .map_err(|_| "Crumbs pad audition ids exhausted".to_string())?;
+        let audition_id = previous + 1;
+        self.push(CrumbsCommand::PadAuditionOn {
+            note,
+            velocity,
+            audition_id,
+        })
+        .map_err(|error| error.to_string())?;
+        self.held_auditions.push(audition_id);
+        Ok(audition_id)
+    }
+
+    pub fn release_pad_audition(&mut self, audition_id: u32) -> Result<(), CrumbsCommandQueueFull> {
+        let Some(index) = self.held_auditions.iter().position(|id| *id == audition_id) else {
+            return Ok(());
+        };
+        // This sender is the only producer, and its other writes can never
+        // occupy the capacity reserved for an active audition's release.
+        self.producer
+            .push(NativeCrumbsCommand::Engine(CrumbsCommand::PadAuditionOff {
+                audition_id,
+            }))
+            .map_err(|_| CrumbsCommandQueueFull)?;
+        self.held_auditions.swap_remove(index);
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub fn slots(&self) -> usize {
-        self.0.slots()
+        self.producer.slots()
     }
+
+    #[cfg(test)]
     pub fn capacity(&self) -> usize {
-        self.0.buffer().capacity()
+        self.producer.buffer().capacity()
     }
 }
 

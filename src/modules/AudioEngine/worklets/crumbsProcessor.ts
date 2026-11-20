@@ -24,6 +24,8 @@
  *   { type: 'loadSample', loadToken, data: Float32Array, channels, sampleRate }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
+ *   { type: 'padAuditionOn', note, velocity, auditionId }
+ *   { type: 'padAuditionOff', auditionId }
  *   { type: 'allNotesOff' } | { type: 'allSoundOff' }
  *   { type: 'param', name, value }
  *   { type: 'mode', mode }
@@ -41,6 +43,8 @@ type CrumbsMsg =
     | { type: 'loadSample'; loadToken: number; data: Float32Array; channels: number; sampleRate: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | { type: 'padAuditionOn'; note: number; velocity: number; auditionId: number }
+    | { type: 'padAuditionOff'; auditionId: number }
     | { type: 'allNotesOff' }
     | { type: 'allSoundOff' }
     | { type: 'param'; name: string; value: number }
@@ -204,6 +208,12 @@ class CrumbsProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.note);
+                break;
+            case 'padAuditionOn':
+                inst.pad_audition_on(msg.note, msg.velocity, msg.auditionId);
+                break;
+            case 'padAuditionOff':
+                inst.pad_audition_off(msg.auditionId);
                 break;
             case 'allNotesOff':
                 // Drop any not-yet-dispatched scheduled notes first so a queued

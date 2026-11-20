@@ -68,15 +68,15 @@ const randomTagline = BREAD_TAGLINES[Math.floor(Math.random() * BREAD_TAGLINES.l
 const AmbientGlows = (): ReactElement => (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div
-            className="absolute size-[500px] rounded-full blur-3xl opacity-[0.07] -top-20 left-1/4 animate-pulse"
+            className="absolute size-[500px] rounded-full blur-3xl opacity-[0.07] -top-20 left-1/4 motion-safe:animate-pulse"
             style={{ background: 'var(--color-accent-orange)', animationDuration: '7s' }}
         />
         <div
-            className="absolute size-80 rounded-full blur-3xl opacity-[0.04] bottom-16 right-16 animate-pulse"
+            className="absolute size-80 rounded-full blur-3xl opacity-[0.04] bottom-16 right-16 motion-safe:animate-pulse"
             style={{ background: 'var(--color-accent-lavender)', animationDuration: '10s', animationDelay: '3s' }}
         />
         <div
-            className="absolute size-56 rounded-full blur-3xl opacity-[0.03] top-1/2 left-8 animate-pulse"
+            className="absolute size-56 rounded-full blur-3xl opacity-[0.03] top-1/2 left-8 motion-safe:animate-pulse"
             style={{ background: 'var(--color-accent-cyan)', animationDuration: '13s', animationDelay: '6s' }}
         />
     </div>
@@ -311,7 +311,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                 onDragLeave={
                     view === 'home'
                         ? (e) => {
-                              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              const relatedTarget = e.relatedTarget;
+                              if (!(relatedTarget instanceof Node) || !e.currentTarget.contains(relatedTarget)) {
                                   setIsDragOver(false);
                               }
                           }
@@ -520,15 +521,14 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             </Stack>
                             <div className="w-48 h-px rounded-full overflow-hidden bg-white/5">
                                 <div
-                                    className="h-full w-1/3 rounded-full"
+                                    className="ls-shimmer h-full w-1/3 rounded-full"
                                     style={{
                                         background:
                                             'linear-gradient(90deg, transparent, var(--color-accent-orange), transparent)',
-                                        animation: 'ls-shimmer 1.6s ease-in-out infinite',
                                     }}
                                 />
                             </div>
-                            <style>{`@keyframes ls-shimmer { 0%{transform:translateX(-200%)} 100%{transform:translateX(400%)} }`}</style>
+                            <style>{`@keyframes ls-shimmer { 0%{transform:translateX(-200%)} 100%{transform:translateX(400%)} } @media (prefers-reduced-motion: no-preference) { .ls-shimmer { animation: ls-shimmer 1.6s ease-in-out infinite; } }`}</style>
                         </Stack>
                     ) : null}
                 </Row>
