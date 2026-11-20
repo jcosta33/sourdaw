@@ -23,6 +23,7 @@ import { unregisterToasterDevice } from '../stores/toasterStore';
 import { exit16Levels } from './exit16Levels';
 import { stopNoteRepeat } from './stopNoteRepeat';
 import { stopSequencer } from './stopSequencer';
+import { cancelPendingToasterKitParams } from './toasterParamBridge/cancelPendingToasterKitParams';
 import { cancelPendingToasterPadParams } from './toasterParamBridge/cancelPendingToasterPadParams';
 
 export function disposeToasterDevice(deviceId: string): void {
@@ -30,5 +31,6 @@ export function disposeToasterDevice(deviceId: string): void {
     stopNoteRepeat(deviceId);
     exit16Levels(deviceId);
     cancelPendingToasterPadParams(deviceId);
+    cancelPendingToasterKitParams(deviceId);
     unregisterToasterDevice(deviceId);
 }

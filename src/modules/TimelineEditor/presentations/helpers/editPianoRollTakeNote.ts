@@ -1,9 +1,9 @@
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { sliceMidiTakeNoteForEdit } from '#/modules/MIDI/useCases';
+import { sliceMidiTakeNoteForEdit, type projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
-import { type PianoRollTakeNotes } from './projectPianoRollTakeNotes';
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 type NoteChange = Partial<
     Pick<MidiNote, 'pitch' | 'startBeat' | 'duration' | 'velocity' | 'pressure' | 'slide' | 'pitchBend' | 'probability'>

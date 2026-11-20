@@ -157,6 +157,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: mockClearUndoHistory,
+    reconcileSessionUndoForProject: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

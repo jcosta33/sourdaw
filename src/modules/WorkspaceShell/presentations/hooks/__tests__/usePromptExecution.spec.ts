@@ -1,4 +1,6 @@
-import { act, renderHook } from '@testing-library/react';
+import { createElement } from 'react';
+
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -763,65 +765,73 @@ describe('usePromptExecution', () => {
         );
     });
 
-    it('navigates the fuzzy list with ArrowDown/ArrowUp, accepts with Tab, submits with Enter, and dismisses with Escape', () => {
+    const renderKeyboardHarness = () => {
+        const Harness = () => {
+            const prompt = usePromptExecution();
+            return createElement('input', {
+                onFocus: () => prompt.setIsFocused(true),
+                onKeyDown: prompt.handleKeyDown,
+                'data-selected': prompt.selectedIndex,
+                'data-results': prompt.fuzzyResults.length,
+                'data-value': prompt.value,
+            });
+        };
+        const input = render(createElement(Harness)).getByRole('textbox');
+        const press = (key: string, isComposing = false) =>
+            fireEvent.keyDown(input, { key, isComposing, cancelable: true });
+        return { input, press };
+    };
+
+    it('navigates the fuzzy list with ArrowDown/ArrowUp and accepts with Tab', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([
             preset({ id: 'a', label: 'A' }),
             preset({ id: 'b', label: 'B' }),
             preset({ id: 'c', label: 'C' }),
         ]);
-        const { result } = renderHook(() => usePromptExecution());
-        act(() => result.current.setIsFocused(true));
-        // fuzzyResults seeded with available presets
-        expect(result.current.fuzzyResults).toHaveLength(3);
-        expect(result.current.selectedIndex).toBe(-1);
+        const { input, press } = renderKeyboardHarness();
+        fireEvent.focus(input);
+        expect(input.getAttribute('data-results')).toBe('3');
+        expect(input.getAttribute('data-selected')).toBe('-1');
+        expect(press('ArrowDown')).toBe(false);
+        expect(input.getAttribute('data-selected')).toBe('0');
+        press('ArrowDown');
+        expect(input.getAttribute('data-selected')).toBe('1');
+        press('ArrowDown');
+        press('ArrowDown');
+        expect(input.getAttribute('data-selected')).toBe('2');
+        expect(press('ArrowUp')).toBe(false);
+        expect(input.getAttribute('data-selected')).toBe('1');
+        press('ArrowUp');
+        press('ArrowUp');
+        press('ArrowUp');
+        expect(input.getAttribute('data-selected')).toBe('-1');
+        press('ArrowDown');
+        press('ArrowDown');
+        expect(press('Tab')).toBe(false);
+        expect(input.getAttribute('data-value')).toBe('B');
+        expect(input.getAttribute('data-results')).toBe('0');
+        expect(press('ArrowDown')).toBe(true);
+    });
 
-        const mk = (key: string): { key: string; preventDefault: () => void } => ({ key, preventDefault: vi.fn() });
-
-        const down = mk('ArrowDown');
-        act(() => result.current.handleKeyDown(down as never));
-        expect(down.preventDefault).toHaveBeenCalled();
-        expect(result.current.selectedIndex).toBe(0);
-
-        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
-        expect(result.current.selectedIndex).toBe(1);
-
-        // Clamp at the bottom
-        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
-        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
-        expect(result.current.selectedIndex).toBe(2);
-
-        // ArrowUp moves back and clamps at -1
-        const up = mk('ArrowUp');
-        act(() => result.current.handleKeyDown(up as never));
-        expect(up.preventDefault).toHaveBeenCalled();
-        expect(result.current.selectedIndex).toBe(1);
-        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
-        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
-        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
-        expect(result.current.selectedIndex).toBe(-1);
-
-        // Select index 1, Tab fills the input with the preset label
-        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
-        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
-        const tabEvent = mk('Tab');
-        act(() => result.current.handleKeyDown(tabEvent as never));
-        expect(tabEvent.preventDefault).toHaveBeenCalled();
-        expect(result.current.value).toBe('B');
-        expect(result.current.fuzzyResults).toHaveLength(0);
-
-        // Keyboard matrix is inert once the fuzzy list is cleared
-        const inert = mk('ArrowDown');
-        act(() => result.current.handleKeyDown(inert as never));
-        expect(inert.preventDefault).not.toHaveBeenCalled();
+    it('leaves preset navigation and submission to the IME while composing', () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([preset()]);
+        const { input, press } = renderKeyboardHarness();
+        fireEvent.focus(input);
+        expect(press('ArrowDown', true)).toBe(true);
+        expect(input.getAttribute('data-selected')).toBe('-1');
+        press('ArrowDown');
+        expect(input.getAttribute('data-selected')).toBe('0');
+        expect(press('Enter', true)).toBe(true);
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).not.toHaveBeenCalled();
     });
 
     it('submits the selected preset descriptor on Enter', async () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset()]);
-        const { result } = renderHook(() => usePromptExecution());
-        act(() => result.current.setIsFocused(true));
-        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
+        const { input, press } = renderKeyboardHarness();
+        fireEvent.focus(input);
+        press('ArrowDown');
         await act(async () => {
-            result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
+            expect(press('Enter')).toBe(false);
         });
         expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -836,32 +846,29 @@ describe('usePromptExecution', () => {
 
     it('dismisses the fuzzy list on Escape without executing', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
-        const { result } = renderHook(() => usePromptExecution());
-        act(() => result.current.setIsFocused(true));
-        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
-        expect(result.current.fuzzyResults).toHaveLength(1);
-
-        act(() => result.current.handleKeyDown({ key: 'Escape', preventDefault: vi.fn() } as never));
-        expect(result.current.fuzzyResults).toHaveLength(0);
-        expect(result.current.selectedIndex).toBe(-1);
+        const { input, press } = renderKeyboardHarness();
+        fireEvent.focus(input);
+        press('ArrowDown');
+        expect(input.getAttribute('data-results')).toBe('1');
+        expect(press('Escape')).toBe(false);
+        expect(input.getAttribute('data-results')).toBe('0');
+        expect(input.getAttribute('data-selected')).toBe('-1');
     });
 
     it('ignores ArrowUp/Tab/Enter/Escape when no fuzzy results are shown', () => {
-        const { result } = renderHook(() => usePromptExecution());
-        const evt = { key: 'ArrowDown', preventDefault: vi.fn() };
-        act(() => result.current.handleKeyDown(evt as never));
-        expect(evt.preventDefault).not.toHaveBeenCalled();
+        const { press } = renderKeyboardHarness();
+        for (const key of ['ArrowDown', 'ArrowUp', 'Tab', 'Enter', 'Escape']) {
+            expect(press(key)).toBe(true);
+        }
     });
 
     it('ignores Tab/Enter when the index is -1 (nothing selected)', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
-        const { result } = renderHook(() => usePromptExecution());
-        act(() => result.current.setIsFocused(true));
-        const tab = { key: 'Tab', preventDefault: vi.fn() };
-        act(() => result.current.handleKeyDown(tab as never));
-        // value unchanged because no selection
-        expect(result.current.value).toBe('');
-        expect(tab.preventDefault).not.toHaveBeenCalled();
+        const { input, press } = renderKeyboardHarness();
+        fireEvent.focus(input);
+        expect(press('Tab')).toBe(true);
+        expect(press('Enter')).toBe(true);
+        expect(input.getAttribute('data-value')).toBe('');
     });
 
     it('aborts an in-flight submit when the abort signal fires after parsing resolves', async () => {

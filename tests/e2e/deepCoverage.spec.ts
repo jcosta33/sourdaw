@@ -227,7 +227,7 @@ test.describe('Prompt bar — preview and execution', () => {
         const track_rows_before = await track_rows.count();
         expect(track_rows_before).toBeGreaterThan(0);
 
-        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete Track');
+        await page.getByRole('combobox', { name: 'Prompt command input' }).fill('Delete Track');
         await page.getByRole('option', { name: /Delete Track/i }).click();
 
         // The destructive command raises a review rather than executing: the
@@ -263,7 +263,7 @@ test.describe('Prompt bar — preview and execution', () => {
         const rows_before = await track_rows.count();
         expect(rows_before).toBeGreaterThan(0);
 
-        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete Track');
+        await page.getByRole('combobox', { name: 'Prompt command input' }).fill('Delete Track');
         await page.getByRole('option', { name: /Delete Track/i }).click();
 
         await expect(awaiting_review).toBeVisible();

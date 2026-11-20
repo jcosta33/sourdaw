@@ -5,6 +5,7 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ChatMessage } from '../../models/Chat';
+import { isPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
@@ -166,7 +167,7 @@ const OTHER_PROJECT = 'project-other';
 function confirmation(input: {
     runId: string;
     assistantMessageId: string;
-    status: 'proposed' | 'executed' | 'cancelled' | 'failed';
+    status: 'proposed' | 'accepted' | 'executed' | 'cancelled' | 'failed';
     supersededBy?: string | null;
     measuredPreview?: MeasuredPreview;
     batchId?: string;
@@ -280,6 +281,136 @@ function readSection(text: string): Record<string, unknown> {
 
 describe('thread context for the planner', () => {
     describe('reading the thread', () => {
+        it('carries the admitted reading and exact committed or cancelled batch to both provider profiles', () => {
+            const makeThread = (reading: string, status: 'executed' | 'cancelled', hasReceipt: boolean) => {
+                const card = {
+                    ...confirmation({ runId: 'radio-run', assistantMessageId: 'radio-card', status }),
+                    creativeAuthorityIds: ['authority'],
+                };
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('request', 'user', 'make it radio-like'),
+                            message('radio-card', 'assistant', reading),
+                        ],
+                        confirmations: [card],
+                        runs: [
+                            {
+                                runId: 'radio-run',
+                                receipts: hasReceipt ? [receipt('radio-run')] : [],
+                                plan: {
+                                    applicationToolReceipts: [
+                                        {
+                                            schema: 'sourdaw.application-tool-receipt',
+                                            schemaVersion: 1,
+                                            callId: 'intake',
+                                            toolName: 'selectCreativeInterpretation',
+                                            turn: 1,
+                                            status: 'success',
+                                            revision: null,
+                                            data: {
+                                                kind: 'metric-intent',
+                                                authorityId: 'authority',
+                                                creativeInterpretation: reading,
+                                            },
+                                            summary: 'admitted',
+                                            warnings: [],
+                                            error: null,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        pastGroupIds: new Set(['radio-run:batch-1']),
+                    })
+                );
+            };
+            const vintage = makeThread('A small vintage receiver', 'executed', true);
+            const broadcast = makeThread('A polished broadcast sound', 'executed', true);
+            for (const profile of ['message', 'localMessage'] as const) {
+                const first = readSection(buildContext(vintage)[profile]);
+                const second = readSection(buildContext(broadcast)[profile]);
+                expect(first.lastCommit).toMatchObject({
+                    batchId: 'radio-run:batch-1',
+                    confirmationId: 'confirmation:radio-run:radio-card',
+                    creativeInterpretation: 'A small vintage receiver',
+                });
+                expect(second.lastCommit).toMatchObject({ creativeInterpretation: 'A polished broadcast sound' });
+            }
+            expect(makeThread('A small vintage receiver', 'executed', false)).toBeNull();
+            const cancelled = makeThread('A small vintage receiver', 'cancelled', false);
+            expect(readSection(buildContext(cancelled).message).lastCancelled).toMatchObject({
+                batchId: 'radio-run:batch-1',
+                confirmationId: 'confirmation:radio-run:radio-card',
+                creativeInterpretation: 'A small vintage receiver',
+            });
+        });
+        it.each(['proposed', 'executed', 'cancelled'] as const)(
+            'does not borrow a run reading for an unbound %s confirmation',
+            (status) => {
+                const card = confirmation({ runId: 'radio-run', assistantMessageId: 'radio-card', status });
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('request', 'user', 'change it'),
+                            message('radio-card', 'assistant', 'Proposal'),
+                        ],
+                        confirmations: [card],
+                        runs: [
+                            {
+                                runId: 'radio-run',
+                                creativeAuthorityIds: ['later'],
+                                receipts: status === 'executed' ? [receipt('radio-run')] : [],
+                                plan: {
+                                    applicationToolReceipts: [
+                                        {
+                                            schema: 'sourdaw.application-tool-receipt',
+                                            schemaVersion: 1,
+                                            callId: 'intake',
+                                            toolName: 'selectCreativeInterpretation',
+                                            turn: 1,
+                                            status: 'success',
+                                            revision: null,
+                                            data: {
+                                                kind: 'metric-intent',
+                                                authorityId: 'later',
+                                                creativeInterpretation: 'Later reading',
+                                            },
+                                            summary: 'admitted',
+                                            warnings: [],
+                                            error: null,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    })
+                );
+                const results = {
+                    proposed: thread?.pendingProposal,
+                    executed: thread?.lastCommit,
+                    cancelled: thread?.lastCancelled,
+                };
+                const result = results[status];
+                expect(result).not.toBeNull();
+                expect(result).not.toHaveProperty('creativeInterpretation');
+            }
+        );
+        it('does not treat an accepted confirmation without its batch receipt as committed', () => {
+            const card = confirmation({ runId: 'accepted-run', assistantMessageId: 'card', status: 'accepted' });
+            expect(
+                buildThreadContext(
+                    sources({
+                        messages: [
+                            message('request', 'user', 'change the sound'),
+                            message('card', 'assistant', 'Applying'),
+                        ],
+                        confirmations: [card],
+                        runs: [{ runId: 'accepted-run', receipts: [] }],
+                    })
+                )
+            ).toBeNull();
+        });
         it('has no state when nothing is pending or committed, and the message carries no section', () => {
             const thread = buildThreadContext(
                 sources({
@@ -293,7 +424,7 @@ describe('thread context for the planner', () => {
                         confirmation({
                             runId: 'run-cancelled',
                             assistantMessageId: 'assistant-2',
-                            status: 'cancelled',
+                            status: 'failed',
                         }),
                         confirmation({
                             runId: 'run-replaced',
@@ -457,6 +588,8 @@ describe('thread context for the planner', () => {
 
             expect(thread?.lastCommit).toEqual({
                 runId: 'run-committed',
+                batchId: 'run-committed:batch-1',
+                confirmationId: 'confirmation:run-committed:assistant-1',
                 receiptIds: ['command:run-committed:batch-1'],
                 standing: 'standing',
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
@@ -502,6 +635,7 @@ describe('thread context for the planner', () => {
 
             expect(thread?.lastCommit).toEqual({
                 runId: 'run-newer',
+                batchId: 'run-newer:batch-1',
                 receiptIds: ['command:run-newer:batch-1'],
                 standing: 'undone',
                 commands: [{ name: 'setTempo', label: 'Set tempo to 128 BPM' }],
@@ -695,6 +829,7 @@ describe('thread context for the planner', () => {
             it('is never the last commit, and the project commit before it still is', () => {
                 expect(threadAfterTransport({ executionKind: 'runtime' })).toEqual({
                     runId: 'run-drums',
+                    batchId: DRUMS_BATCH,
                     receiptIds: [`command:${DRUMS_BATCH}`],
                     standing: 'standing',
                     commands: [{ name: 'setTrackGain', label: 'Set Drums gain to -3 dB' }],
@@ -803,6 +938,7 @@ describe('thread context for the planner', () => {
             it('reports the newest directly committed batch by its own receipt and commands', () => {
                 expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1, BATCH_2] })).toEqual({
                     runId: 'run-scheduled',
+                    batchId: BATCH_2,
                     receiptIds: [`command:${BATCH_2}`],
                     standing: 'standing',
                     commands: [{ name: 'muteTrack', label: 'Mute Layer 2' }],
@@ -927,7 +1063,11 @@ describe('thread context for the planner', () => {
                     })
                 );
 
-                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+                expect(thread?.lastCommit).toEqual({
+                    ...SUBSET_COMMIT,
+                    batchId: SUBSET_BATCH,
+                    confirmationId: 'confirmation:run-subset:assistant-2',
+                });
             });
 
             it("never lets a later direct commit of the same run take the subset's receipt", () => {
@@ -945,7 +1085,11 @@ describe('thread context for the planner', () => {
                     })
                 );
 
-                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+                expect(thread?.lastCommit).toEqual({
+                    ...SUBSET_COMMIT,
+                    batchId: SUBSET_BATCH,
+                    confirmationId: 'confirmation:run-subset:assistant-1',
+                });
             });
         });
 
@@ -1120,6 +1264,213 @@ describe('thread context for the planner', () => {
     });
 
     describe('sizing', () => {
+        const escapedReading = String.fromCharCode(0).repeat(512);
+
+        const riffNotes = (length: number) =>
+            Array.from({ length }, (_, index) => ({
+                pitch: 36 + (index % 24),
+                startBeat: index / 4,
+                durationBeats: 0.25,
+                velocity: 100,
+                releaseVelocity: 64,
+                probability: 1,
+                muted: false,
+            }));
+
+        it('keeps the newest request and result identities when admitted readings expand in JSON', () => {
+            const commands = [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }];
+            const measuredDeltas = [{ targetId: 'bass', metric: 'integratedLoudness', delta: -3, unit: 'LUFS' }];
+            const newest = 'Keep that tone, but make the lick less busy';
+            const thread: ThreadContext = {
+                requests: ['A warmer bass', newest],
+                pendingProposal: {
+                    runId: 'pending-run',
+                    confirmationId: 'pending-card',
+                    batchPosition: { index: 1, total: 2 },
+                    creativeInterpretation: escapedReading,
+                    commands,
+                },
+                lastCommit: {
+                    runId: 'commit-run',
+                    batchId: 'commit-batch',
+                    confirmationId: 'commit-card',
+                    receiptIds: ['commit-receipt'],
+                    standing: 'standing',
+                    creativeInterpretation: escapedReading,
+                    commands,
+                    measuredDeltas,
+                },
+            };
+
+            expect(isPublicCreativeInterpretation(escapedReading)).toBe(true);
+            const fitted = fitThreadContext(thread, 'local');
+            const section = readSection(`\n\n${fitted.section}\n\n`);
+            const bytes = new TextEncoder().encode(fitted.section).byteLength;
+
+            expect(bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(fitted.evidence.bytes).toBe(bytes);
+            expect(section.requests).toEqual([
+                { trust: 'untrusted_user_string', value: 'A warmer bass', truncated: false },
+                { trust: 'untrusted_user_string', value: newest, truncated: false },
+            ]);
+            expect(section.pendingProposal).toMatchObject({
+                runId: 'pending-run',
+                confirmationId: 'pending-card',
+                batchPosition: { index: 1, total: 2 },
+                creativeInterpretation: escapedReading,
+                commands,
+                omittedCommandCount: 0,
+            });
+            expect(section.lastCommit).toMatchObject({
+                runId: 'commit-run',
+                batchId: 'commit-batch',
+                confirmationId: 'commit-card',
+                receiptIds: ['commit-receipt'],
+                standing: 'standing',
+                commands,
+                omittedCommandCount: 0,
+                measuredDeltas,
+                omittedMeasuredDeltaCount: 0,
+            });
+            expect(section.lastCommit).not.toHaveProperty('creativeInterpretation');
+        });
+
+        it.each([
+            ['an oversized reading', escapedReading, {}],
+            ['an ordinary reading', 'A small vintage receiver', { creativeInterpretation: 'A small vintage receiver' }],
+        ] as const)('fits cancelled metadata independently of %s', (_scenario, reading, expectedReading) => {
+            const newest = `Keep that tone${escapedReading}`.slice(0, MAX_THREAD_REQUEST_LENGTH);
+            const cancelled = {
+                runId: 'cancelled-run',
+                batchId: 'cancelled-batch',
+                confirmationId: 'cancelled-card',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+            };
+            const fitted = fitThreadContext(
+                {
+                    requests: [newest],
+                    pendingProposal: null,
+                    lastCommit: null,
+                    lastCancelled: { ...cancelled, creativeInterpretation: reading },
+                },
+                'local'
+            );
+            const section = readSection(`\n\n${fitted.section}\n\n`);
+
+            expect(fitted.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(section.requests).toEqual([{ trust: 'untrusted_user_string', value: newest, truncated: false }]);
+            expect(section.lastCancelled).toEqual({
+                trust: 'untrusted_project_data',
+                ...cancelled,
+                ...expectedReading,
+                omittedCommandCount: 0,
+            });
+        });
+
+        it('keeps pending MIDI arguments ahead of cancelled history when space is tight', () => {
+            const pendingCommand = {
+                name: 'createMidiClip',
+                label: 'Create MIDI clip "New Riff" with 12 notes',
+                arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 3, notes: riffNotes(12) },
+            };
+            const cancelledCommand = {
+                name: 'createMidiClip',
+                label: 'Create MIDI clip "Old Riff" with 35 notes',
+                arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 9, notes: riffNotes(35) },
+            };
+            const thread: ThreadContext = {
+                requests: ['Keep the riff short'],
+                pendingProposal: {
+                    runId: 'pending-run',
+                    confirmationId: 'pending-card',
+                    batchPosition: null,
+                    commands: [pendingCommand],
+                },
+                lastCommit: null,
+                lastCancelled: {
+                    runId: 'cancelled-run',
+                    batchId: 'cancelled-batch',
+                    confirmationId: 'cancelled-card',
+                    commands: [cancelledCommand],
+                },
+            };
+
+            const local = fitThreadContext(thread, 'local');
+            const localContext = readSection(`\n\n${local.section}\n\n`);
+            expect(localContext.pendingProposal).toHaveProperty('commands', [pendingCommand]);
+            expect(localContext.lastCancelled).toMatchObject({
+                batchId: 'cancelled-batch',
+                omittedCommandCount: 0,
+            });
+            expect(localContext.lastCancelled).toHaveProperty('commands', [
+                { name: cancelledCommand.name, label: cancelledCommand.label, argumentsOmitted: true },
+            ]);
+
+            const hosted = fitThreadContext(thread, 'hosted');
+            expect(readSection(`\n\n${hosted.section}\n\n`).lastCancelled).toHaveProperty('commands', [
+                cancelledCommand,
+            ]);
+        });
+
+        it.each(['pendingProposal', 'lastCommit'] as const)(
+            'keeps the %s reading ahead of cancelled command arguments',
+            (source) => {
+                const creativeInterpretation = 'A small vintage receiver with a warm midrange';
+                const current = {
+                    runId: 'r',
+                    creativeInterpretation,
+                    commands: [
+                        {
+                            name: 'setTrackGain',
+                            label: 'Set lead gain',
+                            arguments: { trackId: 'lead', value: 0.7 },
+                        },
+                    ],
+                };
+                const cancelledReading = 'The previous riff';
+                const cancelledCommand = {
+                    name: 'createMidiClip',
+                    label: 'Create a 38-note riff',
+                    arguments: { trackId: 'lead', startBeat: 0, endBeat: 10, notes: riffNotes(38) },
+                };
+                const thread: ThreadContext = {
+                    requests: ['Keep that tone'],
+                    pendingProposal: null,
+                    lastCommit: null,
+                    lastCancelled: {
+                        runId: 'r',
+                        batchId: 'b',
+                        confirmationId: 'c',
+                        creativeInterpretation: cancelledReading,
+                        commands: [cancelledCommand],
+                    },
+                };
+
+                if (source === 'pendingProposal') {
+                    thread.pendingProposal = { ...current, confirmationId: 'p', batchPosition: null };
+                } else {
+                    thread.lastCommit = { ...current, receiptIds: ['r'], standing: 'standing', measuredDeltas: [] };
+                }
+
+                const local = fitThreadContext(thread, 'local');
+                const localContext = readSection(`\n\n${local.section}\n\n`);
+                expect(localContext[source]).toHaveProperty('creativeInterpretation', creativeInterpretation);
+                expect(localContext[source]).toHaveProperty('commands', current.commands);
+                expect(localContext.lastCancelled).toMatchObject({
+                    creativeInterpretation: cancelledReading,
+                    omittedCommandCount: 0,
+                });
+                expect(localContext.lastCancelled).toHaveProperty('commands', [
+                    { name: cancelledCommand.name, label: cancelledCommand.label, argumentsOmitted: true },
+                ]);
+
+                const hosted = fitThreadContext(thread, 'hosted');
+                const hostedContext = readSection(`\n\n${hosted.section}\n\n`);
+                expect(hostedContext[source]).toHaveProperty('creativeInterpretation', creativeInterpretation);
+                expect(hostedContext.lastCancelled).toHaveProperty('commands', [cancelledCommand]);
+            }
+        );
+
         it('drops the oldest requests first under the cap and keeps the newest', () => {
             const thread = createFullThreadContext();
             const local = fitThreadContext(thread, 'local');
@@ -1183,15 +1534,7 @@ describe('thread context for the planner', () => {
         });
 
         it('keeps a command whose arguments alone exceed the cap by its name and label', () => {
-            const notes = Array.from({ length: 96 }, (_, index) => ({
-                pitch: 36 + (index % 24),
-                startBeat: index / 4,
-                durationBeats: 0.25,
-                velocity: 100,
-                releaseVelocity: 64,
-                probability: 1,
-                muted: false,
-            }));
+            const notes = riffNotes(96);
             const thread: ThreadContext = {
                 requests: ['write a riff', 'make it busier'],
                 pendingProposal: {
@@ -1278,15 +1621,7 @@ describe('thread context for the planner', () => {
         });
 
         it('keeps a committed command whose arguments alone exceed the cap by its name and label', () => {
-            const notes = Array.from({ length: 96 }, (_, index) => ({
-                pitch: 36 + (index % 24),
-                startBeat: index / 4,
-                durationBeats: 0.25,
-                velocity: 100,
-                releaseVelocity: 64,
-                probability: 1,
-                muted: false,
-            }));
+            const notes = riffNotes(96);
             const thread: ThreadContext = {
                 requests: ['write a riff'],
                 pendingProposal: null,
@@ -1376,6 +1711,43 @@ describe('thread context for the planner', () => {
             clearPendingActionConfirmations();
             clearChatMessages();
             agentRunLifecycle.clear();
+        });
+
+        it('sends distinct public readings and exact result identity to both provider messages', async () => {
+            for (const reading of ['A small vintage receiver', 'A polished broadcast sound']) {
+                const thread: ThreadContext = {
+                    requests: ['make it radio-like'],
+                    pendingProposal: null,
+                    lastCommit: {
+                        runId: 'radio-run',
+                        batchId: 'radio-batch',
+                        confirmationId: 'radio-card',
+                        receiptIds: ['radio-receipt'],
+                        standing: 'standing',
+                        creativeInterpretation: reading,
+                        commands: [],
+                        measuredDeltas: [],
+                    },
+                };
+                await parsePromptToActions({
+                    prompt: 'keep that tone',
+                    context,
+                    projectRevision: 'revision-1',
+                    thread,
+                });
+                const call = vi.mocked(generateToolPlanningOutcome).mock.calls.at(-1);
+                for (const index of [1, 10] as const) {
+                    const text = call?.[index];
+                    if (typeof text !== 'string') {
+                        throw new TypeError('Expected provider message');
+                    }
+                    expect(readSection(text).lastCommit).toMatchObject({
+                        creativeInterpretation: reading,
+                        batchId: 'radio-batch',
+                        confirmationId: 'radio-card',
+                    });
+                }
+            }
         });
 
         it('sends the pending proposal to the planner with a chat refinement and records it as run evidence', async () => {

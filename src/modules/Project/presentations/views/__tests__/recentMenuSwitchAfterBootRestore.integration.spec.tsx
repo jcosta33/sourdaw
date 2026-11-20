@@ -38,14 +38,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    captureProjectRevision: vi.fn<() => string>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     importCachedAudioBuffers:
         vi.fn<() => Promise<{ persist: () => Promise<boolean>; publish: () => undefined } | null>>(),
     loadCrdtProject: vi.fn<() => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     resetCrdtProject: vi.fn(),
-    getCrdtDoc: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -55,9 +53,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureDurableDocumentWitness: vi.fn(),
-    captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn(() => Promise.resolve()),
-    getCrdtDoc: mocks.getCrdtDoc,
     loadCrdtProject: mocks.loadCrdtProject,
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
@@ -69,7 +65,6 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     clearUndoHistory: vi.fn(),
-    executeAppAction: vi.fn(() => Promise.resolve()),
     executeUserAppAction: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -164,11 +159,18 @@ vi.mock('../TemplateChooser', () => ({
 }));
 
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { registerCrdtStorageRuntime, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installFakeIndexedDb } from '../../../__tests__/fakeIndexedDb';
@@ -220,6 +222,11 @@ function makeProjectState(input: {
     };
 }
 
+function registerSaveHandler(): void {
+    clearHandlerRegistry();
+    registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
+}
+
 /** The live module stores `buildProjectData` serializes, blank as a new project holds them. */
 function resetLiveStoresToBlank(): void {
     trackStore.set(structuredClone(defaultTrackState));
@@ -260,6 +267,7 @@ async function saveProjectA(): Promise<void> {
  * compaction settled — canonical fresh identity, nothing pending.
  */
 function startBlankProjectB(): void {
+    resetCrdtProjectAuthority(BLANK_PROJECT_NAME);
     resetLiveStoresToBlank();
     projectStore.set(
         makeProjectState({
@@ -277,6 +285,7 @@ function startBlankProjectB(): void {
  * persisted blank project through the real transition machinery.
  */
 async function bootRestoreBlankProjectB(): Promise<void> {
+    registerSaveHandler();
     projectStore.set(structuredClone(defaultProjectStoreState));
     resetLiveStoresToBlank();
 
@@ -321,6 +330,10 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        installNativePreparationWorker();
+        registerCrdtStorageRuntime();
+        registerSaveHandler();
+        resetCrdtProjectAuthority(SAVED_PROJECT_NAME);
         const { createControlledLockManager } = await import('#/infra/testing/createControlledLockManager');
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
@@ -331,7 +344,6 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         idbControls = installFakeIndexedDb();
         window.localStorage.clear();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
-        mocks.captureProjectRevision.mockReturnValue('revision-fixture');
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         // The live audio-buffer candidate; the characterization case is the
         // only place that overrides this to null.
@@ -340,7 +352,6 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
             publish: () => undefined,
         });
         mocks.loadCrdtProject.mockResolvedValue(true);
-        mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
         mocks.resetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
             onAuthorityReplaced?.();
             return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
@@ -350,6 +361,8 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
 
     afterEach(async () => {
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        await settleNativePreparationWorkers();
+        clearHandlerRegistry();
         vi.unstubAllGlobals();
     });
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calls = vi.hoisted(() => ({
     initialize: vi.fn<(url: string) => Promise<void>>(),
-    materialize: vi.fn<(data: unknown) => { bytes: Uint8Array<ArrayBuffer>; heads: string[] }>(),
+    materialize: vi.fn<(data: unknown) => { changes: Uint8Array<ArrayBuffer>[]; heads: string[] }>(),
 }));
 vi.mock('@automerge/automerge/slim', () => ({ initializeWasm: calls.initialize }));
 vi.mock('../prospectiveMutationWorkerRuntime', () => ({ materializeProspectiveMutation: calls.materialize }));
@@ -27,7 +27,7 @@ describe('prospective Worker public WASM readiness', () => {
     it('waits for public initialization before materializing and transferring its owned response', async () => {
         const ready = Promise.withResolvers<void>();
         calls.initialize.mockReturnValue(ready.promise);
-        const result = { bytes: Uint8Array.of(1, 2, 3), heads: ['a'.repeat(64)] };
+        const result = { changes: [Uint8Array.of(1, 2, 3)], heads: ['a'.repeat(64)] };
         calls.materialize.mockReturnValue(result);
         await import('../prospectiveMutationWorker');
         expect(calls.initialize).not.toHaveBeenCalled();
@@ -45,7 +45,7 @@ describe('prospective Worker public WASM readiness', () => {
         await pending;
         expect(calls.materialize).toHaveBeenCalledExactlyOnceWith(request);
         expect(endpoint.postMessage).toHaveBeenCalledExactlyOnceWith({ status: 'complete', ...result }, [
-            result.bytes.buffer,
+            result.changes[0]!.buffer,
         ]);
     });
 
@@ -81,7 +81,7 @@ describe('prospective Worker public WASM readiness', () => {
 
     it('accepts messages whose serialized origin is empty, as Chromium reports for its own document', async () => {
         calls.initialize.mockResolvedValue(undefined);
-        calls.materialize.mockReturnValue({ bytes: Uint8Array.of(9), heads: [] });
+        calls.materialize.mockReturnValue({ changes: [], heads: [] });
         await import('../prospectiveMutationWorker');
         if (!endpoint.onmessage) {
             throw new Error('Worker handler missing');

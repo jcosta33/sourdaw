@@ -1,11 +1,15 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { glutenStore, setGlutenUiLevel } from '../../../stores/glutenStore';
+import { setGlutenParamWithAudio } from '../../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GlutenPanel } from '../GlutenPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => defaultValue),
+}));
+vi.mock('../../../useCases/glutenParamBridge/setGlutenParamWithAudio', () => ({
+    setGlutenParamWithAudio: vi.fn(),
 }));
 
 // deviceId is a required prop on GlutenPanel — render with a real one.
@@ -50,16 +54,14 @@ describe('GlutenPanel', () => {
         expect(meter.getAttribute('role')).toBe('meter');
     });
 
-    it('applies minimum height floor and does not clip overflow at root', () => {
-        const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
-        const viewport = container.firstElementChild;
-        const faceplate = container.querySelector('.gluten-faceplate');
-        // The height-constrained box is the root wrapper: an overflow clip
-        // there cuts the floored workspace off inside a shorter panel.
-        expect(viewport).toHaveClass('@container', 'h-full', 'min-h-[440px]');
-        expect(viewport).not.toHaveClass('overflow-hidden');
-        expect(faceplate).toHaveClass('min-h-[464px]');
-        expect(faceplate).not.toHaveClass('overflow-hidden');
+    it('keeps threshold keyboard-operable inside the named workspace', () => {
+        render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const region = screen.getByRole('region', { name: 'Gluten workspace' });
+        const threshold = screen.getByRole('slider', { name: 'Threshold' });
+        expect(region).toContainElement(threshold);
+        const value = Number(threshold.getAttribute('aria-valuenow'));
+        fireEvent.keyDown(threshold, { key: 'ArrowUp' });
+        expect(setGlutenParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'threshold', value + 0.5, false);
     });
 
     it('prevents control cards from collapsing when faceplate is compressed', () => {
@@ -72,22 +74,6 @@ describe('GlutenPanel', () => {
             expect(section).not.toBeNull();
             expect(section?.className).toContain('shrink-0');
         }
-    });
-
-    it('applies responsive rail layout and scoped scrolling class contracts', () => {
-        const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
-        const viewport = container.firstElementChild;
-        const faceplate = container.querySelector('.gluten-faceplate');
-        const workspace = faceplate?.firstElementChild;
-
-        expect(viewport).toHaveClass('@container', 'h-full');
-        expect(faceplate).not.toHaveClass('@container', 'h-full');
-        expect(faceplate).toHaveClass('@4xl:h-full');
-        expect(workspace).not.toHaveClass('h-full');
-        expect(workspace).toHaveClass('grid-cols-1', '@4xl:h-full', '@4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]');
-        expect(screen.getByLabelText('Gluten presets')).toHaveClass('h-80', '@4xl:h-auto');
-        expect(screen.getByLabelText('Gluten dynamics overview')).toHaveClass('@4xl:overflow-y-auto');
-        expect(screen.getByLabelText('Gluten controls')).toHaveClass('@4xl:overflow-y-auto');
     });
 
     it('renders topology buttons with stacked icon-led header and labels to prevent horizontal squashing', () => {

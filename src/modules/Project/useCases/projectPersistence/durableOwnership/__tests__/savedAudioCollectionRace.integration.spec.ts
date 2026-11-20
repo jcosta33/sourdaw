@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -187,6 +191,7 @@ describe('saved audio collection race', () => {
     let lockManager: ControlledLockManager;
 
     beforeEach(() => {
+        installNativePreparationWorker();
         clearHandlerRegistry();
         window.localStorage.clear();
         lockManager = createControlledLockManager();
@@ -196,6 +201,7 @@ describe('saved audio collection race', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('../../helpers/stopActiveAutoSave'),
@@ -254,6 +260,8 @@ describe('saved audio collection race', () => {
         reportStage('restore:done');
         arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(arrangement.getArrangementHandlers());
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
 
         crdt.registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });

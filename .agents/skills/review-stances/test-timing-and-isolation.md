@@ -84,7 +84,7 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    hold its queued delivery, revoke the operation, and require refusal with no stale writes. Revert
    that task boundary and require `detectTransientsForClip.spec.ts` to fail. In the real Detect trace,
    require publication outside `FireAnimationFrame` while preserving PCM, projections, undo/redo,
-   and the original no >=50 ms task and no >=100 ms frame-gap gates. Follow the complete settled
+   and the absolute 50 ms product-task and 100 ms frame-gap gates. Follow the complete settled
    command through its success notification and caller DOM update too: #5843 introduced the synchronous
    post-commit completion path. Its recorded cold 120-second E2E passed the task/frame, PCM and Undo gates;
    recorded mutations targeted storage admission, tier selection and FFT. Those results did not demonstrate
@@ -96,10 +96,25 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    synchronous delivery, failed scheduling/reconciliation, hidden/pagehide and stale delivery need explicit
    controls. #5843 also put checked native document parsing and whole-root JS materialization in one adoption
    task. A Worker mutation does not bound that later load. Attribute both stages and require a real host-task
-   boundary between them; moving parse outside the old phase measure must remain covered by the unchanged
+   boundary between them; moving parse outside the old phase measure must remain covered by the full
    click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
    authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
-   until the unchanged whole-task/frame gates pass.
+   until the whole-task/frame gates pass.
+   [#6514](https://github.com/jcosta33/sourdaw/pull/6514) split the Worker-built complete-document parse from
+   later root materialization; its fresh-project Detect case passed, yet a later sensitivity response occupied
+   a full renderer task in native `prepareLoad`. Attribute the receiving Worker message and its Promise
+   continuations as well as publication, and bound the native parse and enclosing task through the
+   completion gates on cold and repeated routes. A phase split alone does not bound either task.
+   [#6968](https://github.com/jcosta33/sourdaw/pull/6968) introduced the blanket all-RunTask assertion
+   with one canonical delta adopted through the synchronous public Automerge call. On #6910 the
+   full-task attribution held, but the gate did not distinguish the indivisible SDK call from
+   product work around it. Require complete same-page reference tasks using the exact Worker bytes
+   and predecessor heads. Check each marked vendor span maps to one enclosing task, and account for
+   the app-owned native callback in the bounded remainder. Require a relative allowance only for
+   a trace task reaching 50 ms or a matched browser long task. A responsive short task must pass
+   even when its cold SDK span exceeds the reference allowance. Extra validation or callback work above
+   that budget and an unmarked task reaching 50 ms must each fail. Preserve the 100 ms frame limit
+   and the full task census through DOM completion.
    A fresh-project green does not establish project-scale coverage: build a realistic current document and
    retained native history through real actions, then assert both from authoritative state. Record fixture
    size and history depth outside the measured interval without warming worker or replica state on the route.
