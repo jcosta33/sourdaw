@@ -80,13 +80,13 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     // a Makeup GainNode (linear gain, named 'makeup'); it has no other
     // parameter, so only makeup resolves there. Each definition family resolves
     // only on the node it names, so a node never receives both.
-    'builtin-sidechain-compressor:sc-comp-threshold': [{ paramName: 'threshold' }],
-    'builtin-sidechain-compressor:sc-comp-ratio': [{ paramName: 'ratio' }],
-    'builtin-sidechain-compressor:sc-comp-attack': [{ paramName: 'attack', scale: 1 / 1000 }],
-    'builtin-sidechain-compressor:sc-comp-release': [{ paramName: 'release', scale: 1 / 1000 }],
+    'builtin-sidechain-compressor:sc-comp-threshold': [{ nodeIndex: 0, paramName: 'threshold' }],
+    'builtin-sidechain-compressor:sc-comp-ratio': [{ nodeIndex: 0, paramName: 'ratio' }],
+    'builtin-sidechain-compressor:sc-comp-attack': [{ nodeIndex: 0, paramName: 'attack', scale: 1 / 1000 }],
+    'builtin-sidechain-compressor:sc-comp-release': [{ nodeIndex: 0, paramName: 'release', scale: 1 / 1000 }],
     'builtin-sidechain-compressor:sc-comp-makeup': [
         { nodeName: 'makeup', property: 'gain', convert: dbToGain },
-        { paramName: 'makeup' },
+        { nodeIndex: 0, paramName: 'makeup' },
     ],
     // rev-size/rev-decay/rev-damping re-render the impulse (no AudioParam).
     'builtin-reverb:rev-predelay': [{ nodeName: 'predelay', property: 'delayTime', scale: 1 / 1000 }],
