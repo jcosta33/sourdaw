@@ -391,21 +391,24 @@ async function main(): Promise<number> {
     if (!json) {
         throw new TypeError(USAGE);
     }
-    const record = family
-        ? await runEditorFamilyProof(options, process.env, {
-              hostSupported,
-              async drive(binary, observations) {
-                  const { driveDesktopEditorFamily } = await import('./desktopEditorFamilyDrive.ts');
-                  await driveDesktopEditorFamily(binary, observations);
-              },
-          })
-        : await runProof(options, process.env, {
-              hostSupported,
-              async drive(binary, report) {
-                  const { driveDesktopFermenter } = await import('./desktopFermenterDrive.ts');
-                  await driveDesktopFermenter(binary, report);
-              },
-          });
+    let record: FamilyRecord | ProofRecord;
+    if (family) {
+        record = await runEditorFamilyProof(options, process.env, {
+            hostSupported,
+            async drive(binary, observations) {
+                const { driveDesktopEditorFamily } = await import('./desktopEditorFamilyDrive.ts');
+                await driveDesktopEditorFamily(binary, observations);
+            },
+        });
+    } else {
+        record = await runProof(options, process.env, {
+            hostSupported,
+            async drive(binary, report) {
+                const { driveDesktopFermenter } = await import('./desktopFermenterDrive.ts');
+                await driveDesktopFermenter(binary, report);
+            },
+        });
+    }
     writeFinalJson(json, record);
     const label = family ? 'Premium editor family' : 'Fermenter';
     process.stdout.write(

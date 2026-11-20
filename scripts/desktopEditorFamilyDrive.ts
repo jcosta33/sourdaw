@@ -15,7 +15,10 @@ function devicesNamed(inspector: Locator, name: string): Locator {
 
 async function newInstance(cards: Locator, before: string[]): Promise<string> {
     const exclude = before.map((testId) => `:not([data-testid="${testId}"])`).join('');
-    const added = exclude ? cards.and(cards.page().locator(exclude)) : cards;
+    let added = cards;
+    if (exclude) {
+        added = cards.and(cards.page().locator(exclude));
+    }
     await added.waitFor({ state: 'visible' });
     const testId = await added.getAttribute('data-testid');
     const id = testId?.match(ID)?.[1];
@@ -80,7 +83,9 @@ function renderedControl(body: Locator, row: DeviceObservation): Locator {
         case 'Grinder':
         case 'Gluten':
             return body.getByLabel(name, { exact: true });
-        default:
+        case 'Crumbs':
+        case 'Proof':
+        case 'Yeast':
             return body.getByText(name, { exact: true });
     }
 }
