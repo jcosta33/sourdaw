@@ -1185,6 +1185,7 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [];
  */
 const PANEL_FILES: readonly { readonly file: string; readonly declared?: number; readonly readable: number }[] = [
     { file: 'src/modules/Bacteria/presentations/components/BandStrip.tsx', declared: 1, readable: 1 },
+    { file: 'src/modules/Bacteria/presentations/views/BacteriaInputGainKnob.tsx', declared: 1, readable: 1 },
     { file: 'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx', readable: 0 },
     { file: 'src/modules/Crumbs/presentations/components/CrumbsControls.tsx', declared: 14, readable: 10 },
     { file: 'src/modules/Crust/presentations/components/CrustControlZone.tsx', readable: 0 },

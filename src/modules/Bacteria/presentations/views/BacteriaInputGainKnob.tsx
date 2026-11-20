@@ -36,6 +36,7 @@ export function BacteriaInputGainKnob({
                 defaultValue={DEFAULT_PATCH.inputGain}
                 size="sm"
                 tone="mint"
+                paramId="inputGain"
                 aria-label="Input"
             />
             <span className="text-micro leading-none text-muted-foreground">Input</span>
