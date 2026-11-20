@@ -423,6 +423,8 @@ const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
         PREMIUM_EDITOR_UPLOAD,
         EDITOR_WORKSPACE_PROOF,
         EDITOR_WORKSPACE_UPLOAD,
+        'Observe Grand Boule output audition in the packaged app',
+        'Upload the Grand Boule output audition record',
     ].map((step) => ({
         workflow: 'nightly.yml',
         job: 'desktop-measure',
@@ -2872,8 +2874,56 @@ function assertPackagedEditorWorkspaceProof(candidate: UnknownRecord): void {
         'if-no-files-found': 'error',
     });
 }
+function assertPackagedGrandBouleAudition(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const proof = stepNamed(job, 'Observe Grand Boule output audition in the packaged app');
+    const upload = stepNamed(job, 'Upload the Grand Boule output audition record');
+    expect(steps[steps.indexOf(stepNamed(job, EDITOR_WORKSPACE_UPLOAD)) + 1]).toBe(proof);
+    expect(steps[steps.indexOf(proof) + 1]).toBe(upload);
+    expect(proof).toMatchObject({
+        id: 'prove-grand-boule-audition',
+        if: FERMENTER_ADMISSION,
+        'continue-on-error': true,
+        'timeout-minutes': 15,
+        env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
+    });
+    expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'node scripts/proveDesktopFermenter.ts --audition --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
+    ]);
+    expect(upload).toMatchObject({
+        if: "${{ !cancelled() && (steps.prove-grand-boule-audition.outcome == 'success' || steps.prove-grand-boule-audition.outcome == 'failure') }}",
+        'continue-on-error': true,
+        uses: 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+    });
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-grand-boule-audition-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-grand-boule-audition-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
 
 describe('health gates workflow contract', () => {
+    it('pins the separate exact-receipt Grand Boule audition after workspace evidence', () => {
+        assertPackagedGrandBouleAudition(nightly);
+        const proofName = 'Observe Grand Boule output audition in the packaged app';
+        const proof = stepNamed(jobAt(nightly, 'desktop-measure'), proofName);
+        for (const change of [
+            { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
+            { if: FERMENTER_ADMISSION.replace('!cancelled()', 'always()') },
+            { run: stringAt(proof, 'run').replace('--audition ', '') },
+            { run: stringAt(proof, 'run').replace('sourdaw-fermenter-build-', 'different-receipt-') },
+            { env: { FERMENTER_CAPTURE_OUTCOME: 'success' } },
+            { 'continue-on-error': false },
+        ]) {
+            const candidate = cloneWorkflows('altered audition proof').nightly;
+            Object.assign(stepNamed(jobAt(candidate, 'desktop-measure'), proofName), change);
+            expect(() => assertPackagedGrandBouleAudition(candidate)).toThrow();
+        }
+    });
+
     it('runs the separate workspace observation after the family record with the exact scheduled receipt and narrow upload', () => {
         assertPackagedEditorWorkspaceProof(nightly);
     });
