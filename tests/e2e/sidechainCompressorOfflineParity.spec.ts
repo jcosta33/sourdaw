@@ -27,7 +27,9 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                 window.AudioWorkletNode = class extends OriginalWorkletNode {
                     constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
                         super(context, name, options);
-                        if (name === 'sidechain-compressor-processor') {
+                        // The live engine builds its own worklet on its AudioContext; only
+                        // the renders' offline contexts count here.
+                        if (context instanceof OfflineAudioContext && name === 'sidechain-compressor-processor') {
                             workletConstructions++;
                         }
                     }
