@@ -2,10 +2,15 @@
 //! controller in one object) over the same DSP, its factory, and the module
 //! entry points each platform's host resolves.
 //!
-//! The factory lists the class three times: the second differs only in
+//! The factory lists the class four times: the second differs only in
 //! answering one `process` call ([`crate::FAILING_PROCESS_CALL`]) with
 //! `kResultFalse`, and the third only in refusing `setProcessing(true)`: both
-//! are what a host must not let pass as processed audio.
+//! are what a host must not let pass as processed audio. The fourth is shaped
+//! like a plugin whose processor is the truth about its parameters: its
+//! controller refuses `setParamNormalized` and reads every value back from the
+//! processor, and its `setProcessing` answers the SDK's default
+//! `kNotImplemented`. The factory also lists the purpose-built bus and restart
+//! classes of [`crate::vst3_probe`].
 
 use crate::clap_front::GAIN_PARAM_ID;
 use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
@@ -39,12 +44,17 @@ const PROCESS_ERROR_CLASS_NAME: &str = "Sourdaw Harness Fx Process Error";
 pub const VST3_START_REFUSED_CLASS_ID: TUID =
     uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A4);
 const START_REFUSED_CLASS_NAME: &str = "Sourdaw Harness Fx Start Refused";
+/// The class id of the class whose processor holds the truth about `Gain`.
+pub const VST3_PROCESSOR_TRUTH_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A5);
+const PROCESSOR_TRUTH_CLASS_NAME: &str = "Sourdaw Harness Fx Processor Truth";
 
 /// How one class departs from the plain effect.
 #[derive(Clone, Copy, Default)]
 struct Departures {
     fails_a_process_call: bool,
     refuses_to_start_processing: bool,
+    controller_defers_to_processor: bool,
 }
 
 struct Vst3Echo {
@@ -55,6 +65,9 @@ struct Vst3Echo {
     controller_gain: AtomicU64,
     process_calls: ProcessCalls,
     refuses_to_start_processing: bool,
+    /// Whether the controller refuses host writes and answers every read from
+    /// the processor's own value, with `setProcessing` left at the SDK default.
+    controller_defers_to_processor: bool,
 }
 
 impl Class for Vst3Echo {
@@ -68,6 +81,7 @@ impl Vst3Echo {
             controller_gain: AtomicU64::new(GAIN_DEFAULT.to_bits()),
             process_calls: ProcessCalls::new(departures.fails_a_process_call),
             refuses_to_start_processing: departures.refuses_to_start_processing,
+            controller_defers_to_processor: departures.controller_defers_to_processor,
         }
     }
 }
@@ -236,6 +250,10 @@ impl IAudioProcessorTrait for Vst3Echo {
     unsafe fn setProcessing(&self, state: TBool) -> tresult {
         if state != 0 && self.refuses_to_start_processing {
             return kResultFalse;
+        }
+        if self.controller_defers_to_processor {
+            // `AudioEffect::setProcessing`'s own answer in the SDK.
+            return kNotImplemented;
         }
         kResultOk
     }
@@ -431,12 +449,18 @@ impl IEditControllerTrait for Vst3Echo {
         if id != GAIN_PARAM_ID {
             return 0.0;
         }
+        if self.controller_defers_to_processor {
+            return self.echo.gain();
+        }
         f64::from_bits(self.controller_gain.load(Ordering::Relaxed))
     }
 
     unsafe fn setParamNormalized(&self, id: ParamID, value: ParamValue) -> tresult {
         if id != GAIN_PARAM_ID {
             return kInvalidArgument;
+        }
+        if self.controller_defers_to_processor {
+            return kResultFalse;
         }
         self.controller_gain
             .store(value.to_bits(), Ordering::Relaxed);
@@ -482,7 +506,7 @@ unsafe fn read_chunk(stream: *mut IBStream) -> Option<[u8; CHUNK_BYTES]> {
 
 /// # Safety
 /// `stream`, when non-null, must be live for this call.
-unsafe fn write_chunk(stream: *mut IBStream, chunk: &[u8]) -> tresult {
+pub(crate) unsafe fn write_chunk(stream: *mut IBStream, chunk: &[u8]) -> tresult {
     // SAFETY: the caller guarantees the stream is live.
     let Some(stream) = (unsafe { ComRef::from_raw(stream) }) else {
         return kInvalidArgument;
@@ -508,7 +532,7 @@ unsafe fn write_chunk(stream: *mut IBStream, chunk: &[u8]) -> tresult {
     kResultOk
 }
 
-fn write_tchar(target: &mut [TChar], value: &str) {
+pub(crate) fn write_tchar(target: &mut [TChar], value: &str) {
     let mut written = 0;
     for (slot, unit) in target.iter_mut().zip(value.encode_utf16()) {
         *slot = unit as TChar;
@@ -553,7 +577,7 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        3
+        ECHO_CLASSES + crate::vst3_probe::PROBE_CLASSES
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
@@ -561,7 +585,11 @@ impl IPluginFactoryTrait for Factory {
             0 => (VST3_CLASS_ID, CLASS_NAME),
             1 => (VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME),
             2 => (VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME),
-            _ => return kInvalidArgument,
+            3 => (VST3_PROCESSOR_TRUTH_CLASS_ID, PROCESSOR_TRUTH_CLASS_NAME),
+            probe => match crate::vst3_probe::class_at(probe - ECHO_CLASSES) {
+                Some(class) => class,
+                None => return kInvalidArgument,
+            },
         };
         if info.is_null() {
             return kInvalidArgument;
@@ -598,6 +626,14 @@ impl IPluginFactoryTrait for Factory {
                 refuses_to_start_processing: true,
                 ..Departures::default()
             }
+        } else if requested == VST3_PROCESSOR_TRUTH_CLASS_ID {
+            Departures {
+                controller_defers_to_processor: true,
+                ..Departures::default()
+            }
+        } else if let Some(probe) = crate::vst3_probe::create(&requested) {
+            // SAFETY: the caller's `iid` and `obj` are checked non-null above.
+            return unsafe { hand_out(probe, iid, obj) };
         } else {
             return kInvalidArgument;
         };
@@ -605,15 +641,31 @@ impl IPluginFactoryTrait for Factory {
         else {
             return kResultFalse;
         };
-        let pointer = instance.as_ptr();
-        // SAFETY: `pointer` is a live `FUnknown`, so its vtable pointer is readable.
-        let vtbl = unsafe { (*pointer).vtbl };
-        // SAFETY: a live `FUnknown`'s vtable is valid.
-        let query_interface = unsafe { (*vtbl).queryInterface };
-        // SAFETY: `queryInterface` takes its own reference for the caller, and
-        // `instance` releases this one on drop.
-        unsafe { query_interface(pointer, iid as *const TUID, obj) }
+        // SAFETY: the caller's `iid` and `obj` are checked non-null above.
+        unsafe { hand_out(instance, iid, obj) }
     }
+}
+
+/// The number of [`Vst3Echo`] classes the factory lists before the probes.
+const ECHO_CLASSES: int32 = 4;
+
+/// Answer a `createInstance` with the interface `iid` names on `instance`.
+///
+/// # Safety
+/// `iid` must point at a 16-byte interface id and `obj` must be writable.
+pub(crate) unsafe fn hand_out(
+    instance: vst3::ComPtr<FUnknown>,
+    iid: FIDString,
+    obj: *mut *mut c_void,
+) -> tresult {
+    let pointer = instance.as_ptr();
+    // SAFETY: `pointer` is a live `FUnknown`, so its vtable pointer is readable.
+    let vtbl = unsafe { (*pointer).vtbl };
+    // SAFETY: a live `FUnknown`'s vtable is valid.
+    let query_interface = unsafe { (*vtbl).queryInterface };
+    // SAFETY: `queryInterface` takes its own reference for the caller, and
+    // `instance` releases this one on drop; the caller vouches for `iid` and `obj`.
+    unsafe { query_interface(pointer, iid as *const TUID, obj) }
 }
 
 // ── Module entry points ─────────────────────────────────────────────────

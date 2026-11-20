@@ -52,6 +52,12 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
+    /// The plugin changed what its component is — its buses, or the whole
+    /// component — and asked to be deactivated and activated again so the host
+    /// re-reads it. The cycle calls the plugin's own lifecycle, which both its
+    /// format and this host bind to the host's UI thread, so the follow-up is
+    /// carried there under the runtime owner's exclusive claim.
+    ComponentRestart,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -511,6 +517,20 @@ pub trait HostedPluginRuntime: AudioPlugin {
     /// Apply a latency change the plugin flagged, returning the new latency in
     /// frames, or `None` when nothing was pending. Control path only.
     fn poll_latency_change(&mut self) -> Result<Option<u32>, String>;
+
+    /// Run the deactivate/re-read/reactivate cycle the plugin asked for when it
+    /// changed its buses or its whole component, and report whether one ran.
+    /// **Control path, on the host's UI thread**, under the runtime owner's
+    /// exclusive claim: the cycle is the plugin's own lifecycle, which its
+    /// format binds to the UI thread.
+    ///
+    /// A layout the host cannot route is an `Err`, and the instance is left
+    /// out of service on its slot rather than processed with the geometry it
+    /// had before. The default answers that nothing was asked for, for a
+    /// format whose restart requests arrive some other way.
+    fn apply_component_restart(&mut self) -> Result<bool, String> {
+        Ok(false)
+    }
 
     /// Answer the plugin's request that the host call `on_main_thread` on it,
     /// making that call if one is pending. Control path only.

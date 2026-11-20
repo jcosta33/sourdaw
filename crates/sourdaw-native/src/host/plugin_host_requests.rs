@@ -33,6 +33,11 @@
 //! (`request_restart` is `[thread-safe]` the same way; its hint is serviced by
 //! the latency watcher.)
 //!
+//! A VST3 `restartComponent` asking for a bus change or a reload is routed
+//! here too: the plugin raises it on the UI thread, which may allocate, and
+//! the restart it asks for is carried back to the UI thread from here, because
+//! every lifecycle call in it is one the format makes there.
+//!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
 //! reads, and its `request_resize` is refused outright rather than accepted and
@@ -42,6 +47,7 @@
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
@@ -51,7 +57,7 @@ use daw_plugin_host::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
@@ -392,6 +398,46 @@ fn report_state_change(
     reached_plugin
 }
 
+/// The shell's UI thread, once it has registered its window host.
+///
+/// A VST3 component restart is a sequence of host-to-plugin lifecycle calls —
+/// `setActive`, `getBusInfo`, `setBusArrangements`, `setupProcessing` — and the
+/// format makes every one of them on the UI thread. This watcher is not that
+/// thread, so it carries the restart there through the same lending seam the
+/// editor commands use.
+static UI_THREAD: RwLock<Option<Arc<dyn UiThread>>> = RwLock::new(None);
+
+/// Name the thread component restarts are carried to. The shell's window host
+/// is that thread; registering a later one replaces the first.
+pub fn use_ui_thread(ui: Arc<dyn UiThread>) {
+    *UI_THREAD
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ui);
+}
+
+fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
+    UI_THREAD
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Carry a recorded bus or reload restart out on the UI thread.
+///
+/// A layout the host cannot route is not a failed follow-up: the instance
+/// latches the refusal, reports it and passes its blocks dry, and asking again
+/// would refuse the same layout. Only not reaching the plugin is retried.
+fn restart_component(runtime: &SharedHostedPlugin) -> Result<(), String> {
+    let Some(ui) = registered_ui_thread() else {
+        return Err("no UI thread is registered to carry a component restart".to_string());
+    };
+    runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            lend_on_ui_thread(&*ui, plugin, |plugin| plugin.apply_component_restart())
+        })
+        .map(|_routed_or_refused| ())
+}
+
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
@@ -464,6 +510,7 @@ fn serve_channel_wake(
             PluginHostRequest::ParametersRescan => {
                 rescan_parameters(&runtime, instance_id, engine_plugins, events)
             }
+            PluginHostRequest::ComponentRestart => restart_component(&runtime),
         },
         || runtime.ensure_public_control_allowed().is_ok(),
     );
