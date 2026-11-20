@@ -9,7 +9,7 @@ export type RangeBeats = { startBeat: number; endBeat: number };
 export type RangePhrase = RangeBeats & { start: number; end: number };
 
 /**
- * A single bar or the bars before a section that the musical range law refuses: where the phrase
+ * A single bar, the bars before a section or an ambiguous section that the musical range law refuses: where the phrase
  * sits and the law's own reason, so the request can be refused with it rather than as a mismatch.
  */
 export type RefusedRangePhrase = { start: number; end: number; refusal: string };
@@ -137,14 +137,20 @@ function findBarsBefore(text: string, context: ProjectContext): StatedRangePhras
     });
 }
 
-/** Each `in <reference>` whose longest whole-word reference names a place the project resolves. */
-function findSectionRanges(text: string, context: ProjectContext): RangePhrase[] {
+/**
+ * Each `in <reference>` whose longest whole-word reference names a place: one the project resolves, or
+ * several it cannot tell apart, which the law refuses with its own reason. An ambiguous reference
+ * claims its connector, so a single bar the same words could also read as never stands in its place;
+ * the law never picks between ambiguous references. A reference no place answers ("unknown-section",
+ * or an `invalid-range` that names none) falls through to shorter references and then to the other forms.
+ */
+function findSectionRanges(text: string, context: ProjectContext): StatedRangePhrase[] {
     return [...text.matchAll(SECTION_CONNECTOR_PATTERN)].flatMap((match) => {
         const referenceStart = match.index + match[0].length;
         for (const reference of getReferenceCandidates(text.slice(referenceStart))) {
-            const beats = resolveBeats({ section: reference }, context);
-            if (beats !== null) {
-                return [{ ...beats, start: match.index, end: referenceStart + reference.length }];
+            const resolution = resolveProjectRange({ section: reference }, context);
+            if (resolution.kind === 'resolved' || resolution.kind === 'ambiguous-section') {
+                return [toStatedPhrase(resolution, match.index, referenceStart + reference.length)];
             }
         }
         return [];
@@ -156,13 +162,14 @@ function findSectionRanges(text: string, context: ProjectContext): RangePhrase[]
  * resolver finds, `over bars N to M`, `over beats N to M` (`from beat N to beat M` alike), `in bar N`
  * and `the last N bars before <section>`. The resolver decides what counts as a place, so a phrase
  * names a range only when a range write would resolve it; the exceptions are the last two forms,
- * which are unambiguous about what they ask and so are kept, carrying the law's reason, when it
- * refuses them. A section connector another form already read is not read again.
+ * which are unambiguous about what they ask, and a section reference the law finds ambiguous, which
+ * names a place it cannot pick: each is kept, carrying the law's reason, when it refuses them. A
+ * section connector another form already read is not read again.
  */
 export function findRangePhrases(text: string, context: ProjectContext): StatedRangePhrase[] {
     const sections = findSectionRanges(text, context);
     // A section whose name opens like a bar ("Bar 9 Drop") answers its own connector, so the section
-    // reading wins and a single bar stands only where no place answers.
+    // reading wins, resolved or ambiguous, and a single bar stands only where no place answers.
     const singleBars = findSingleBars(text, context).filter(
         (bar) => !sections.some((section) => section.start === bar.start)
     );
