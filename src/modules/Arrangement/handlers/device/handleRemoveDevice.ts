@@ -1,9 +1,12 @@
 import { createHandler } from '#/utils/createHandler';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { prepareRemoveDevice } from '../../useCases/device/prepareRemoveDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { recordDiscardedDevicePluginStates } from '../track/discardedPluginStateCarry';
+
+import { findPlannedDeviceOwner } from './findPlannedDeviceOwner';
 
 /** A redo replays this removal with the first run's device snapshot. */
 function recordRemovedPluginState(deviceId: string, undoEntryId: string | undefined): void {
@@ -17,11 +20,7 @@ function recordRemovedPluginState(deviceId: string, undoEntryId: string | undefi
     );
 }
 
-function ownerFreezeMatches(
-    deviceId: string,
-    expectedFrozen: boolean | undefined,
-    frozenOf: (trackId: string) => boolean | undefined
-): boolean {
+function liveOwnerFreezeMatches(deviceId: string, expectedFrozen: boolean | undefined): boolean {
     if (expectedFrozen === undefined) {
         return true;
     }
@@ -29,19 +28,26 @@ function ownerFreezeMatches(
         track.devices.some((device) => device.id === deviceId)
     );
     const owner = owners.length === 1 ? owners[0] : undefined;
-    return owner !== undefined && (frozenOf(owner.id) ?? false) === expectedFrozen;
+    return owner !== undefined && owner.frozen === expectedFrozen;
+}
+
+function plannedOwnerFreezeMatches(
+    deviceId: string,
+    expectedFrozen: boolean | undefined,
+    context: HandlerValidationContext
+): boolean {
+    if (expectedFrozen === undefined) {
+        return true;
+    }
+    const owner = findPlannedDeviceOwner(deviceId, context);
+    return owner !== undefined && owner.frozen === expectedFrozen;
 }
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({
     canReapplyAfterDivergence: (action) =>
         action.payload.expectedTrackId !== undefined && action.payload.expectedDeviceIds !== undefined,
     validate: (action, context) => {
-        const frozenMatches = ownerFreezeMatches(
-            action.payload.deviceId,
-            action.payload.expectedFrozen,
-            (trackId) => getPlannedTrackState(context, trackId)?.frozen
-        );
-        if (!frozenMatches) {
+        if (!plannedOwnerFreezeMatches(action.payload.deviceId, action.payload.expectedFrozen, context)) {
             return false;
         }
         if (!action.payload.expectedTrackId && !action.payload.expectedDeviceIds) {
@@ -66,12 +72,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
         );
     },
     execute: (alpha, context) => {
-        const frozenMatches = ownerFreezeMatches(
-            alpha.payload.deviceId,
-            alpha.payload.expectedFrozen,
-            (trackId) => getTrackStoreState()?.tracks.find((track) => track.id === trackId)?.frozen
-        );
-        if (!frozenMatches) {
+        if (!liveOwnerFreezeMatches(alpha.payload.deviceId, alpha.payload.expectedFrozen)) {
             return { status: 'conflict' };
         }
         if (alpha.payload.expectedTrackId || alpha.payload.expectedDeviceIds) {

@@ -291,7 +291,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     addClip: ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId'],
     addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType', 'afterDeviceId'],
-    removeDevice: ['deviceId', 'expectedTrackId', 'expectedDeviceIds', 'expectedFrozen'],
+    removeDevice: ['deviceId', 'expectedTrackId', 'expectedDeviceIds'],
     setDeviceParameter: [
         'deviceId',
         'paramId',

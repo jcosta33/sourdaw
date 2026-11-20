@@ -131,6 +131,30 @@ describe('handleRemoveDevice', () => {
             expect(handleRemoveDevice.validate?.(planned, { actionIndex: 0, actions: [planned] })).toBe(false);
         });
 
+        describe('a device only an earlier batch member adds', () => {
+            const addsDevice = {
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'builtin-eq', deviceId: 'batch-device' },
+            } as const;
+            const removesIt = {
+                type: 'removeDevice',
+                payload: { deviceId: 'batch-device', expectedFrozen: false },
+            } as const;
+            const context = { actionIndex: 1, actions: [addsDevice, removesIt] } satisfies HandlerValidationContext;
+
+            it('validates the stamped removal while the planned track is unfrozen', () => {
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', frozen: false, devices: [] }] });
+
+                expect(handleRemoveDevice.validate?.(removesIt, context)).toBe(true);
+            });
+
+            it('rejects the stamped removal when the planned track is frozen', () => {
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', frozen: true, devices: [] }] });
+
+                expect(handleRemoveDevice.validate?.(removesIt, context)).toBe(false);
+            });
+        });
+
         it('removes from a track whose freeze state matches', () => {
             mocks.getTrackStoreState.mockReturnValue(chainWith(false));
             mocks.prepareRemoveDevice.mockReturnValue('written');
