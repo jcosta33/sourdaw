@@ -2718,24 +2718,47 @@ fn helper_has_exited(pid: u32) -> std::io::Result<bool> {
 /// process groups named by their pids.
 ///
 /// The supervisor is stopped first, so it can reap nothing — no child's pid
-/// can be freed — during the kill. Each of its children's groups is killed
-/// with the child itself (the helper's, and on Linux the group of any
-/// `setsid` orphan it adopted; [`kill_led_group`]), then every descendant is
-/// swept: a descendant that called `setsid`, or a helper that moved to
-/// another group, has left the group but not the tree. The supervisor's own
-/// group and the supervisor go last. ESRCH from any of the signals means
-/// that process or group is already gone.
+/// can be freed — during the kill. Every descendant is then swept while
+/// each is alive and stopped: a descendant that called `setsid`, or a helper
+/// that moved to another group, has left the group but not the tree, and on
+/// macOS, with no subreaper, a helper killed before the sweep would hand
+/// its children to launchd, out of every walk. Each of the supervisor's
+/// children's groups is killed next, with the child itself (the helper's,
+/// and on Linux the group of any `setsid` orphan it adopted;
+/// [`kill_led_group`]): the children were listed before the sweep and stay
+/// unreaped, so their pids still name them. The supervisor's own group and
+/// the supervisor go last. ESRCH from any of the signals means that process
+/// or group is already gone.
 #[cfg(unix)]
 fn kill_helper_tree(pid: u32) {
     let Ok(group) = libc::pid_t::try_from(pid) else {
         return;
     };
     send_signal(group, libc::SIGSTOP);
-    for child in child_pids(group) {
+    let children = child_pids(group);
+    kill_descendants(group);
+    for &child in &children {
         kill_led_group(child);
     }
-    kill_descendants(group);
+    #[cfg(all(test, target_os = "macos"))]
+    await_children_released(&children);
     kill_led_group(group);
+}
+
+/// Test builds only, macOS: wait, within a second, until each killed child
+/// of the supervisor has finished exiting and so holds no children, which
+/// launchd then holds instead. It pins the kill's order against the timing
+/// of an exit: whatever runs after it sees the helper already gone, as a
+/// slower walk on a loaded machine would.
+#[cfg(all(test, target_os = "macos"))]
+fn await_children_released(children: &[libc::pid_t]) {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while children.iter().any(|child| !child_pids(*child).is_empty()) {
+        if Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 #[cfg(all(unix, target_os = "linux"))]
@@ -3440,6 +3463,9 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     const DEADLINE_CHILD_MARKER_ENV: &str = "SOURDAW_TEST_DEADLINE_WATCHDOG_CHILD";
     const PLAIN_SPAWNER_PID_FILE_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_HELPER_PID_FILE";
     const PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_LEAVES_GROUP";
+    /// The [`PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV`] value for a helper that
+    /// also holds a stopped member in the supervisor's group.
+    const STOPPED_MEMBER: &str = "stopped-member";
 
     /// The stand-in spawner for the Linux kernel tie: runs a plain `sh`
     /// helper, which arms no watchdog, through the real bounded spawn. The
@@ -3449,21 +3475,42 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let Some(pid_file) = std::env::var_os(PLAIN_SPAWNER_PID_FILE_ENV) else {
             return;
         };
-        let mut command = if std::env::var_os(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV).is_some() {
-            let mut perl = Command::new("perl");
-            // Joins the supervisor's group, so only its own pid still names
-            // it. It ignores SIGHUP, as a plugin can: killing the spawner
-            // orphans that group, and a member already stopped would
-            // otherwise bring the kernel's hangup down on the helper.
-            perl.args([
-                "-e",
-                "$SIG{HUP} = 'IGNORE'; setpgrp(0, getppid()) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
-            ]);
-            perl
-        } else {
-            let mut sh = Command::new("sh");
-            sh.args(["-c", "echo $$ > \"$0\"; exec sleep 30"]);
-            sh
+        let mut command = match std::env::var(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV).as_deref() {
+            Ok(STOPPED_MEMBER) => {
+                let mut perl = Command::new("perl");
+                // As below, and before its pid is written it holds a forked
+                // member of the supervisor's group stopped, so killing the
+                // spawner orphans a group with a stopped member and the
+                // kernel hangs the whole group up.
+                perl.args([
+                    "-MPOSIX",
+                    "-e",
+                    "$SIG{HUP} = 'IGNORE'; setpgrp(0, getppid()) or die; \
+                     my $m = fork; if (!$m) { kill('STOP', $$); sleep 30; exit 0 } \
+                     waitpid($m, POSIX::WUNTRACED) == $m or die; \
+                     open(F, '>', \"$ARGV[0].member\"); print F $m; close(F); \
+                     open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
+                ]);
+                perl
+            }
+            Ok(_) => {
+                let mut perl = Command::new("perl");
+                // Joins the supervisor's group, so only its own pid still
+                // names it. It ignores SIGHUP, as a plugin can: killing the
+                // spawner orphans that group, and a member already stopped
+                // would otherwise bring the kernel's hangup down on the
+                // helper.
+                perl.args([
+                    "-e",
+                    "$SIG{HUP} = 'IGNORE'; setpgrp(0, getppid()) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
+                ]);
+                perl
+            }
+            Err(_) => {
+                let mut sh = Command::new("sh");
+                sh.args(["-c", "echo $$ > \"$0\"; exec sleep 30"]);
+                sh
+            }
         };
         command.arg(pid_file);
         let _ = run_bounded_in(
@@ -3481,7 +3528,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     #[test]
     fn a_killed_spawner_takes_a_plain_helper_with_it() {
-        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(false);
+        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(None);
 
         assert!(
             process_has_exited_within(helper, Duration::from_secs(3)),
@@ -3494,11 +3541,26 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     #[test]
     fn a_killed_spawner_takes_a_helper_that_left_its_group_with_it() {
-        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(true);
+        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(Some("1"));
 
         assert!(
             process_has_exited_within(helper, Duration::from_secs(3)),
             "helper {helper} that left its group outlived its killed spawner"
+        );
+    }
+
+    /// Killing the spawner orphans the supervisor's group while a member of
+    /// it is stopped, so the kernel sends the whole group SIGHUP and
+    /// SIGCONT. The supervisor must survive the hangup to end the helper,
+    /// which ignores it.
+    #[cfg(unix)]
+    #[test]
+    fn a_hangup_of_the_supervisors_group_still_ends_the_helper() {
+        let (helper, _stragglers) = plain_helper_of_a_killed_spawner(Some(STOPPED_MEMBER));
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "helper {helper} outlived a hangup of its supervisor's group"
         );
     }
 
@@ -3507,10 +3569,11 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// the helper if an assertion fails; the caller holds it past its
     /// assertions.
     #[cfg(unix)]
-    fn plain_helper_of_a_killed_spawner(leaves_group: bool) -> (i32, Stragglers) {
+    fn plain_helper_of_a_killed_spawner(leaves_group: Option<&str>) -> (i32, Stragglers) {
         let pid_file =
             std::env::temp_dir().join(format!("sourdaw-plain-helper-{}", uuid::Uuid::new_v4()));
-        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let member_file = PathBuf::from(format!("{}.member", pid_file.display()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone(), member_file.clone()]);
         let mut spawner =
             Command::new(std::env::current_exe().expect("test executable should exist"));
         spawner
@@ -3520,8 +3583,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        if leaves_group {
-            spawner.env(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV, "1");
+        if let Some(mode) = leaves_group {
+            spawner.env(PLAIN_SPAWNER_HELPER_LEAVES_GROUP_ENV, mode);
         }
         let spawner = spawner.spawn().expect("the stand-in spawner should start");
         let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
@@ -3530,6 +3593,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let helper = read_pid_within(&pid_file, Duration::from_secs(10))
             .expect("the plain helper should start and write its pid");
         stragglers.pids.push(helper);
+        // Written before the helper's own pid, when the helper forked one.
+        if let Some(member) = read_pid_within(&member_file, Duration::ZERO) {
+            stragglers.pids.push(member);
+        }
 
         // SAFETY: kill takes plain values; the spawner is this test's child.
         assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
@@ -3927,6 +3994,49 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             "the stopped helper {helper} survived because it left its group"
         );
         stragglers.pids.retain(|pid| *pid != helper);
+    }
+
+    /// A stopped scan's helper forked a child that left every group with
+    /// `setsid`. Only the walk of the stopped tree reaches that child, and
+    /// only while the helper lives: on macOS a helper killed first hands it
+    /// to launchd, out of every walk.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_scan_kills_a_setsid_child_of_its_helper() {
+        let registry = std::sync::Arc::new(HelperRegistry::new());
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-stopped-setsid-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let scanning = std::sync::Arc::clone(&registry);
+        let child_pid_file = pid_file.clone();
+        std::thread::spawn(move || {
+            let mut command = Command::new("perl");
+            command
+                .args([
+                    "-MPOSIX",
+                    "-e",
+                    "if (!fork) { POSIX::setsid() > 0 or die; \
+                     open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30; exit 0 } \
+                     sleep 30",
+                ])
+                .arg(&child_pid_file);
+            let _ = run_bounded_in(
+                &scanning,
+                &TreeSupervisorLaunch::TestEntry,
+                &mut command,
+                WORKER_TIMEOUT,
+            );
+        });
+        let child = read_pid_within(&pid_file, Duration::from_secs(5))
+            .expect("the helper's child should leave every group and write its pid");
+        stragglers.pids.push(child);
+
+        registry.stop();
+
+        assert!(
+            process_has_exited_within(child, Duration::from_secs(2)),
+            "the setsid child {child} of a stopped scan's helper survived"
+        );
     }
 
     /// A helper that answers and exits 0 still takes the child it left in its
