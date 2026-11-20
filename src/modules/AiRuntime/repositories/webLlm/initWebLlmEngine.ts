@@ -123,7 +123,8 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         // Two models must not hold GPU memory at once, so the previous engine goes here,
                         // just before the new worker. Adapter and admission refusals, and an abort before
                         // this point, keep it; a creation failure after it leaves no engine, and
-                        // activeModelId still names the model that last loaded.
+                        // activeModelId keeps its previous target: the last loaded model, or the default
+                        // when none has loaded.
                         retirePreviousWebLlmEngine();
                         const worker = new Worker(new URL('../../workers/llmWorker.ts', import.meta.url), {
                             type: 'module',
