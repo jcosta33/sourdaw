@@ -4,6 +4,7 @@ import { accessSync, constants, lstatSync, mkdirSync, readFileSync, realpathSync
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { PR_UNIT_COVERAGE_SHARD_ENV } from './prUnitCoverageSequencer.ts';
 import { unitCoverageShardDirectory } from './unitCoveragePaths.ts';
 import { assertIndependentUnitObjects, copyUnitCheckout } from './unitExecutionCopy.ts';
 import { ownCheckoutDirectories } from './unitShardCheckoutOwnership.ts';
@@ -505,7 +506,10 @@ export function runUnitPhase(
     if (phase === 'browsers') {
         args = ['exec', 'playwright', 'install', 'chromium', '--only-shell'];
     }
-    return ports.run(context.pnpm, args, options).status ?? 1;
+    const childOptions = reportsCoverage
+        ? { ...options, env: { ...options.env, [PR_UNIT_COVERAGE_SHARD_ENV]: '1' } }
+        : options;
+    return ports.run(context.pnpm, args, childOptions).status ?? 1;
 }
 
 export function launchUnitPhase(
