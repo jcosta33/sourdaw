@@ -147,6 +147,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     setExternalPluginState: defaultPolicy,
     setDeviceState: defaultPolicy,
     setFermenterPatch: defaultPolicy,
+    setLevainIdentity: defaultPolicy,
     setGrandBouleDeviceState: defaultPolicy,
     setToasterFactoryKit: defaultPolicy,
     setBacteriaFactoryPatch: defaultPolicy,

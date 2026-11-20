@@ -23,18 +23,28 @@ function readOwner(deviceId: string) {
     return track && device?.type === 'levain' ? { track, device } : undefined;
 }
 
+function captureMasterRuntime(deviceId: string) {
+    const bridge = levainBridge();
+    const isRegistered = bridge.captureRegistration(deviceId);
+    const instrumentId = levainStore.value?.[deviceId]?.patch.instrumentId;
+    return {
+        isRegistered,
+        isPatchCurrent: () =>
+            instrumentId === levainStore.value?.[deviceId]?.patch.instrumentId && !bridge.isMasterGainQueued(deviceId),
+    };
+}
+
 function captureOwner(deviceId: string) {
     const owner = readOwner(deviceId);
     if (!owner || owner.track.frozen || !levainStore.value?.[deviceId]) {
         return undefined;
     }
     const { track, device } = owner;
-    const bridge = levainBridge();
-    const isRegistered = bridge.captureMasterRegistration(deviceId);
+    const { isRegistered, isPatchCurrent } = captureMasterRuntime(deviceId);
     const project = captureProjectIdentity();
     const root = captureProjectRootIdentity();
     const access = getLevainDeviceStateProjectAccess();
-    if (!isRegistered() || bridge.isMasterGainQueued(deviceId) || (access && !access.hasDevice(track.id, deviceId))) {
+    if (!isRegistered() || !isPatchCurrent() || (access && !access.hasDevice(track.id, deviceId))) {
         return undefined;
     }
 
@@ -58,7 +68,7 @@ function captureOwner(deviceId: string) {
         const current = readOriginalOwner();
         if (
             !current ||
-            bridge.isMasterGainQueued(deviceId) ||
+            !isPatchCurrent() ||
             current.track.frozen !== track.frozen ||
             current.track.devices.length !== deviceIds.length ||
             current.track.devices.some(({ id }, index) => id !== deviceIds[index])

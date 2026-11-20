@@ -89,6 +89,7 @@ export const indirectMutationByActionType: {
     setExternalPluginState: indirectMutationRules.none,
     setDeviceState: indirectMutationRules.none,
     setFermenterPatch: indirectMutationRules.none,
+    setLevainIdentity: indirectMutationRules.none,
     setGrandBouleDeviceState: indirectMutationRules.none,
     setToasterFactoryKit: indirectMutationRules.none,
     setBacteriaFactoryPatch: indirectMutationRules.none,

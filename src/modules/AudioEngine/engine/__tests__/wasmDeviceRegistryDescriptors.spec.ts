@@ -635,6 +635,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function createResult(): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),
@@ -648,6 +649,25 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: Promise.resolve({}),
             };
         }
+
+        it('offers pad audition only after the Crumbs worklet is ready', async () => {
+            const release = vi.fn();
+            const startPadAudition = vi.fn(() => release);
+            factoryMocks.createCrumbsNode.mockResolvedValue({ ...createResult(), startPadAudition });
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice: vi.fn().mockResolvedValue('ready') });
+            const deps = createDeps({ deviceType: 'builtin-crumbs' });
+
+            const { placeholder, loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            expect(placeholder.crumbsControls?.ready).toBe(false);
+            expect(placeholder.crumbsControls?.startPadAudition(36, 90)).toBeUndefined();
+            expect(startPadAudition).not.toHaveBeenCalled();
+
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.crumbsControls?.ready).toBe(true);
+            expect(loaded.crumbsControls?.startPadAudition(36, 90)).toBe(release);
+            expect(startPadAudition).toHaveBeenCalledExactlyOnceWith(36, 90);
+        });
 
         it('settles content readiness only after project sample preparation completes', async () => {
             const preparation = Promise.withResolvers<DeviceContentLoadOutcome>();
@@ -1309,6 +1329,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeCrumbsResult(ready: Promise<Record<string, unknown>>): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),

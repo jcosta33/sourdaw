@@ -102,6 +102,7 @@ export const semanticDiffClassificationByActionType: {
     setExternalPluginState: { overwrite: true },
     setDeviceState: { overwrite: true },
     setFermenterPatch: NONE,
+    setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
     setBacteriaFactoryPatch: NONE,

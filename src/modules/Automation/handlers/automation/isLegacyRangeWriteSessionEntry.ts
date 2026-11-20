@@ -98,6 +98,7 @@ export const legacyRangeRemovalByActionType: {
     setExternalPluginState: notLegacyRangeWrite,
     setDeviceState: notLegacyRangeWrite,
     setFermenterPatch: notLegacyRangeWrite,
+    setLevainIdentity: notLegacyRangeWrite,
     setGrandBouleDeviceState: notLegacyRangeWrite,
     setToasterFactoryKit: notLegacyRangeWrite,
     setBacteriaFactoryPatch: notLegacyRangeWrite,

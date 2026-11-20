@@ -85,6 +85,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setExternalPluginState: true,
     setDeviceState: true,
     setFermenterPatch: true,
+    setLevainIdentity: true,
     setGrandBouleDeviceState: true,
     setToasterFactoryKit: true,
     setBacteriaFactoryPatch: true,

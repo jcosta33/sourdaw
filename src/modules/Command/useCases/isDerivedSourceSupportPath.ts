@@ -98,6 +98,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setExternalPluginState: noSupportPath,
     setDeviceState: noSupportPath,
     setFermenterPatch: noSupportPath,
+    setLevainIdentity: noSupportPath,
     setGrandBouleDeviceState: noSupportPath,
     setToasterFactoryKit: noSupportPath,
     setBacteriaFactoryPatch: noSupportPath,

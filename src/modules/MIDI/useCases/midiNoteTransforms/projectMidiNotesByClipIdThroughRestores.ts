@@ -143,6 +143,7 @@ const notesProjectionByActionType: {
     setExternalPluginState: noNotesProjection,
     setDeviceState: noNotesProjection,
     setFermenterPatch: noNotesProjection,
+    setLevainIdentity: noNotesProjection,
     setGrandBouleDeviceState: noNotesProjection,
     setToasterFactoryKit: noNotesProjection,
     setBacteriaFactoryPatch: noNotesProjection,

@@ -36,7 +36,6 @@ import { syncCrumbsRecordingState } from '../../useCases/recording/syncCrumbsRec
 import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
 import { setCrumbsParamWithAudio } from '../../useCases/setCrumbsParamWithAudio';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
-import { triggerPadOff } from '../../useCases/triggerPad/triggerPadOff';
 import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
 import { debouncedUpdateMarkerPosition } from '../../useCases/updateSliceMarker/debouncedUpdateMarkerPosition';
 import { detectAndSetSlices } from '../../useCases/updateSliceMarker/detectAndSetSlices';
@@ -234,11 +233,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     {mode === 'drum' ? (
                         <SectionCard title="Pad bay" detail="Trigger pads to play samples">
                             <PadGrid
+                                key={deviceId}
                                 pads={pads.pads}
                                 selectedIndex={pads.selectedPadIndex}
                                 onSelectPad={(index) => selectPad(deviceId, index)}
                                 onTriggerPad={(index) => triggerPadOn(deviceId, index, 100)}
-                                onTriggerPadOff={(index) => triggerPadOff(deviceId, index)}
                                 onReorderPad={(from, to) => reorderPad(deviceId, from, to)}
                             />
                         </SectionCard>

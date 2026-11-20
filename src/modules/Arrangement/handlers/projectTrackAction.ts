@@ -218,6 +218,7 @@ export const trackProjectionByActionType: {
     setExternalPluginState: keepTrack,
     setDeviceState: keepTrack,
     setFermenterPatch: keepTrack,
+    setLevainIdentity: keepTrack,
     setGrandBouleDeviceState: keepTrack,
     setToasterFactoryKit: keepTrack,
     setBacteriaFactoryPatch: keepTrack,

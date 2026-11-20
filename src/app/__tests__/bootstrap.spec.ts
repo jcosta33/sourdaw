@@ -209,7 +209,6 @@ const {
     initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
-    initLevainDeviceStatePersistenceMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -307,7 +306,6 @@ const {
         initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
-        initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
@@ -650,7 +648,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
-    initLevainDeviceStatePersistence: initLevainDeviceStatePersistenceMock,
+    getLevainHandlers: sentinelHandlers('Levain'),
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
@@ -940,11 +938,10 @@ describe('bootstrap', () => {
         expect(resetActionReplayAuthorityMock).toHaveBeenCalledExactlyOnceWith();
         expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
     });
-    it('binds committed Levain membership before device-state persistence subscribes', () => {
+    it('binds committed Levain membership before document reconciliation subscribes', () => {
         expect(initLevainDeviceStateProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
-        expect(initLevainDeviceStatePersistenceMock).toHaveBeenCalledExactlyOnceWith();
         expect(initLevainDeviceStateProjectAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
-            initLevainDeviceStatePersistenceMock.mock.invocationCallOrder[0]!
+            initDeviceStateReconciliationMock.mock.invocationCallOrder[0]!
         );
     });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
@@ -987,6 +984,7 @@ describe('bootstrap', () => {
         'Bacteria',
         'Fermenter',
         'GrandBoule',
+        'Levain',
         'Toaster',
         'Gluten',
         'NodeView',

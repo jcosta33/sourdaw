@@ -96,6 +96,7 @@ const restoredMidiOwnerIdsByActionType: {
     setExternalPluginState: noOwnerIds,
     setDeviceState: noOwnerIds,
     setFermenterPatch: noOwnerIds,
+    setLevainIdentity: noOwnerIds,
     setGrandBouleDeviceState: noOwnerIds,
     setToasterFactoryKit: noOwnerIds,
     setBacteriaFactoryPatch: noOwnerIds,

@@ -170,6 +170,7 @@ export const plannedTrackByActionType: {
     setExternalPluginState: noPlannedTrack,
     setDeviceState: noPlannedTrack,
     setFermenterPatch: noPlannedTrack,
+    setLevainIdentity: noPlannedTrack,
     setGrandBouleDeviceState: noPlannedTrack,
     setToasterFactoryKit: noPlannedTrack,
     setBacteriaFactoryPatch: noPlannedTrack,

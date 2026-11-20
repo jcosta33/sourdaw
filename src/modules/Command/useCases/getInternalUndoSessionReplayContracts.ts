@@ -32,8 +32,8 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
-function createFactoryPatchReplayContract(
-    actionType: 'setToasterFactoryKit' | 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset'
+function createCapturedDeviceReplayContract(
+    actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -71,9 +71,10 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
-        createFactoryPatchReplayContract('setToasterFactoryKit'),
-        createFactoryPatchReplayContract('setBacteriaFactoryPatch'),
-        createFactoryPatchReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
+        createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

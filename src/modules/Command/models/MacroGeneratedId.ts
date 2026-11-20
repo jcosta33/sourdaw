@@ -135,6 +135,7 @@ export const macroGeneratedIdByActionType: {
     setExternalPluginState: noGeneratedId,
     setDeviceState: noGeneratedId,
     setFermenterPatch: noGeneratedId,
+    setLevainIdentity: noGeneratedId,
     setGrandBouleDeviceState: noGeneratedId,
     setToasterFactoryKit: noGeneratedId,
     setBacteriaFactoryPatch: noGeneratedId,

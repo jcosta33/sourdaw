@@ -140,6 +140,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setExternalPluginState: noUnprojectedWrite,
     setDeviceState: noUnprojectedWrite,
     setFermenterPatch: noUnprojectedWrite,
+    setLevainIdentity: noUnprojectedWrite,
     setGrandBouleDeviceState: noUnprojectedWrite,
     setToasterFactoryKit: noUnprojectedWrite,
     setBacteriaFactoryPatch: noUnprojectedWrite,

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:78f8d77986b1a83ece25ba7b6a9ecff18e8d90697445b01032b3fd10a9b5f8b1
+// @wasm-bindgen-dts crate-source: sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -42,6 +42,8 @@ export const crumbsinstance_get_right_ptr: (a: number) => number;
 export const crumbsinstance_new: (a: number) => number;
 export const crumbsinstance_note_off: (a: number, b: number) => void;
 export const crumbsinstance_note_on: (a: number, b: number, c: number) => void;
+export const crumbsinstance_pad_audition_off: (a: number, b: number) => void;
+export const crumbsinstance_pad_audition_on: (a: number, b: number, c: number, d: number) => void;
 export const crumbsinstance_process: (a: number, b: number) => number;
 export const crumbsinstance_set_active_sample: (a: number, b: number) => void;
 export const crumbsinstance_set_mode: (a: number, b: number, c: number) => void;

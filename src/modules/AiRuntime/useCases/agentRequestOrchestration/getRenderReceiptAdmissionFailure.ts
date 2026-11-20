@@ -95,6 +95,7 @@ const renderReceiptGateByActionType: GateLookup = {
     setExternalPluginState: notRenderReceiptGated,
     setDeviceState: notRenderReceiptGated,
     setFermenterPatch: notRenderReceiptGated,
+    setLevainIdentity: notRenderReceiptGated,
     setGrandBouleDeviceState: notRenderReceiptGated,
     setToasterFactoryKit: notRenderReceiptGated,
     setBacteriaFactoryPatch: notRenderReceiptGated,

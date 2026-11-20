@@ -94,6 +94,7 @@ export const automationReferenceByActionType: {
     setExternalPluginState: automationReferenceRules.namesLaneOrContent,
     setDeviceState: automationReferenceRules.namesLaneOrContent,
     setFermenterPatch: automationReferenceRules.namesLaneOrContent,
+    setLevainIdentity: automationReferenceRules.namesLaneOrContent,
     setGrandBouleDeviceState: automationReferenceRules.namesLaneOrContent,
     setToasterFactoryKit: automationReferenceRules.namesLaneOrContent,
     setBacteriaFactoryPatch: automationReferenceRules.namesLaneOrContent,

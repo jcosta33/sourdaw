@@ -916,6 +916,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             'descriptor advertises none of them.',
     },
     {
+        file: 'src/modules/Levain/models/LevainDeviceState.ts',
+        exportName: 'LEVAIN_MISSING_DEVICE_STATE',
+        reason: 'Versioned serialized absence witness. Its number is format metadata and its instrument id is identity.',
+    },
+    {
         file: 'src/modules/Levain/models/LevainPatch.ts',
         exportName: 'ARTICULATION_ID_BY_TYPE',
         reason: 'A lookup from articulation type to sample-set id. No numeric parameter values.',

@@ -80,6 +80,7 @@ export const projectsClipsByTempoActionType: { readonly [Type in AppActionType]:
     setExternalPluginState: false,
     setDeviceState: false,
     setFermenterPatch: false,
+    setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,

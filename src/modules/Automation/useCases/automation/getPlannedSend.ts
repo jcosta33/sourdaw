@@ -243,6 +243,7 @@ const plannedSendByActionType: {
     setExternalPluginState: unchangedSend,
     setDeviceState: unchangedSend,
     setFermenterPatch: unchangedSend,
+    setLevainIdentity: unchangedSend,
     setGrandBouleDeviceState: unchangedSend,
     setToasterFactoryKit: unchangedSend,
     setBacteriaFactoryPatch: unchangedSend,

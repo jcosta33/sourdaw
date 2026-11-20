@@ -80,6 +80,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     setExternalPluginState: false,
     setDeviceState: false,
     setFermenterPatch: false,
+    setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,

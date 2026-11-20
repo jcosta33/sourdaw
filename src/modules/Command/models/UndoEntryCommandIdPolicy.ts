@@ -80,6 +80,7 @@ export const undoEntryStoresCommandIdByActionType: { readonly [Type in AppAction
     setExternalPluginState: false,
     setDeviceState: false,
     setFermenterPatch: false,
+    setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,

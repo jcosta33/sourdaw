@@ -769,13 +769,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/index.ts': 1,
         'src/modules/Grinder/presentations/views/GrinderPanel.tsx': 3,
+        // The declaration and call compile a selection for the guarded Command write.
+        'src/modules/Levain/useCases/commitLevainIdentity.ts': 2,
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
-        'src/modules/Levain/useCases/loadPreset.ts': 4,
-        // Count provenance (#4764): new file entry, measured 2 — the
-        // `loadInstrument` named import and its single call; same law as the
-        // Toaster reconcile above.
-        'src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts': 2,
+        // The adapter declares loadInstrument and delegates to commitLevainIdentity.
+        'src/modules/Levain/useCases/loadPreset.ts': 1,
+        // Named import, module specifier and call load the committed bank into the registered runtime.
+        'src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts': 3,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         // Count provenance: the helper declaration and the caller's import
         // identifier, import path, declaration, and invocation compile Faust
@@ -1113,9 +1114,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
-        // The patch helpers operate on detached device chains. Bacteria reuses
-        // the factory projection with a numeric footprint as well as a chunk.
-        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 5,
+        // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
+        'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
+        // The typed patch helpers operate on detached chains. Toaster's kit
+        // snapshots declare two empty scalar footprints.
+        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 6,
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
@@ -1395,8 +1398,8 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts',
     'src/modules/Grinder/useCases/grinderParamBridge/setGrinderPedalParamWithAudio.ts',
     'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts',
+    'src/modules/Levain/useCases/commitLevainIdentity.ts',
     'src/modules/Levain/useCases/levainParamBridge/helpers.ts',
-    'src/modules/Levain/useCases/loadPreset.ts',
     'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
