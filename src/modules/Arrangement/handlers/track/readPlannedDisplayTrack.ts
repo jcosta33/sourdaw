@@ -67,7 +67,15 @@ export function readPlannedDisplayTracks(context?: HandlerValidationContext): Tr
         readTrackIdAfter,
         live.map((track) => track.id)
     );
-    return trackIds.flatMap((id) => getPlannedTrackState(context, id) ?? []);
+    return trackIds.map((id) => {
+        const planned = getPlannedTrackState(context, id);
+        if (planned === null) {
+            throw new Error(
+                `Track "${id}" an earlier action creates cannot be planned, so the batch's track list is unknown`
+            );
+        }
+        return planned;
+    });
 }
 
 export function describeMissingTrack(trackId: string): string {

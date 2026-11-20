@@ -54,6 +54,24 @@ describe('getPlannedTrackState', () => {
         expect(planned).toMatchObject({ id: 'gone', name: 'Gone', gain: 0.5, height: 200 });
     });
 
+    it('plans a track an earlier removeTrack removes as no track, and plans it again once restored', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 'gone', name: 'Gone', kind: 'audio', gain: 0.5 }), height: 120 }],
+        });
+        const snapshot = captureTrackRemovalSnapshot('gone');
+        if (!snapshot) {
+            throw new Error('Expected a removal snapshot');
+        }
+        const remove = { type: 'removeTrack', payload: { trackId: 'gone' } } as const;
+        const restore = { type: 'restoreTrack', payload: snapshot } as const;
+
+        expect(plan([], 'gone')).toMatchObject({ id: 'gone', height: 120 });
+        expect(plan([remove], 'gone')).toBeNull();
+        expect(plan([remove, restore], 'gone')).toMatchObject({ id: 'gone', height: 120 });
+        expect(plan([remove, restore, remove], 'gone')).toBeNull();
+    });
+
     it('does not plan a restore for another track', () => {
         trackStore.set({
             ...defaultTrackState,

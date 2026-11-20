@@ -544,16 +544,28 @@ function lookup<Type extends AppActionType>(
     return plannedTrackByActionType[action.type](action, context, actionIndex, trackId);
 }
 
+/**
+ * The track as the earlier actions of the batch leave it. The earlier actions are read in order: a
+ * removal makes the track no track, and a later creator or restore plans it again.
+ */
 export function getPlannedTrackState(context: HandlerValidationContext, trackId: string): Track | null {
-    const current = getTrackStoreState()?.tracks.find((track) => track.id === trackId);
-    if (current) {
-        return projectTrackThroughPriorBatchActions(current, context);
-    }
+    let present = getTrackStoreState()?.tracks.some((track) => track.id === trackId) ?? false;
+    let planned: Track | null = null;
     for (const [actionIndex, action] of context.actions.slice(0, context.actionIndex).entries()) {
-        const planned = lookup(action, context, actionIndex, trackId);
-        if (planned) {
-            return planned;
+        if (action.type === 'removeTrack' && action.payload.trackId === trackId) {
+            present = false;
+            planned = null;
+            continue;
+        }
+        const created = lookup(action, context, actionIndex, trackId);
+        if (created) {
+            present = true;
+            planned = created;
         }
     }
-    return null;
+    if (planned) {
+        return planned;
+    }
+    const current = present ? getTrackStoreState()?.tracks.find((track) => track.id === trackId) : undefined;
+    return current ? projectTrackThroughPriorBatchActions(current, context) : null;
 }

@@ -2515,7 +2515,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
             expect(result).toMatchObject({ status: 'committed' });
             const forward = heights();
-            expect(forward['track-created']).toBeGreaterThan(80);
+            expect(forward['track-created']).toBe(120);
 
             expect((await undo()).headConsumed).toBe(true);
             expect(heights()['track-created']).toBeUndefined();
@@ -2523,6 +2523,25 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             await redo();
             expect(heights()).toEqual(forward);
         });
+
+        it.each([
+            [{ type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } }, TRACK_ID, 'setTrackHeight'],
+            [{ type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } }, FOLDER_ID, 'foldTrack'],
+        ] as const)(
+            'refuses a %s on a track an earlier action of the batch removes, writing nothing',
+            async (edit, trackId, name) => {
+                const before = ownerProjections();
+
+                const result = await runAsAgent([{ type: 'removeTrack', payload: { trackId } }, structuredClone(edit)]);
+
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    reason: expect.stringContaining(`Could not preflight ${name}: Track "${trackId}" does not exist`),
+                });
+                expect(ownerProjections()).toEqual(before);
+                expect(undoStore.value?.past ?? []).toEqual([]);
+            }
+        );
 
         it.each([
             [{ type: 'duplicateTrack', payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' } }, 'duplicateTrack'],

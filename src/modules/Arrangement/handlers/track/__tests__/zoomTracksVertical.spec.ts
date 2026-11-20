@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTrack } from '../../../models/Track';
+import { captureTrackRemovalSnapshot } from '../../../useCases/captureTrackRemovalSnapshot';
 import { handleZoomTracksVertical } from '../zoomTracksVertical';
 
 const mocks = vi.hoisted(() => ({
@@ -246,6 +248,38 @@ describe('handleZoomTracksVertical', () => {
             });
 
             expect(heightsOf(description)).toEqual(['t1:64', 'folder:80', 'copy:64']);
+        });
+
+        it('names a track an earlier restoreTrack restores, at the height its snapshot holds', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ ...createTrack({ id: 'gone', name: 'Gone', kind: 'audio' }), height: 120 }],
+            });
+            const snapshot = captureTrackRemovalSnapshot('gone');
+            if (!snapshot) {
+                throw new Error('Expected a removal snapshot');
+            }
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 64, devices: [] }] });
+            const restore = { type: 'restoreTrack', payload: snapshot } as const;
+
+            const description = handleZoomTracksVertical.describe(zoom, { actions: [restore, zoom], actionIndex: 1 });
+
+            expect(heightsOf(description)).toEqual(['t1:64', 'gone:120']);
+        });
+
+        it('refuses a batch whose restored track cannot be planned from its snapshot', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [createTrack({ id: 'gone', name: 'Gone', kind: 'audio' })],
+            });
+            const snapshot = captureTrackRemovalSnapshot('gone');
+            if (!snapshot) {
+                throw new Error('Expected a removal snapshot');
+            }
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 64, devices: [] }] });
+            const restore = { type: 'restoreTrack', payload: { ...snapshot, trackSnapshot: { id: 'gone' } } } as const;
+
+            expect(() => handleZoomTracksVertical.describe(zoom, { actions: [restore, zoom], actionIndex: 1 })).toThrow(
+                'Track "gone" an earlier action creates cannot be planned'
+            );
         });
 
         it('leaves out a track an earlier removeTrack removes', () => {

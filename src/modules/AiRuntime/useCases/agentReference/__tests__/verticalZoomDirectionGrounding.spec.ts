@@ -67,6 +67,15 @@ describe('vertical zoom direction grounding', () => {
         ['zoom tracks vertically in by 40', 40, -40],
         ['zoom tracks vertically to make them shorter by 40', -40, 40],
         ['zoom tracks vertically to make them taller by 40', 40, -40],
+        ['zoom tracks vertically out by -40', -40, 40],
+        ['zoom tracks vertically in by -40', -40, 40],
+        ['zoom tracks vertically by 40 while the volume is turned down', 40, -40],
+        ['zoom tracks vertically by 40 and lower the vocal volume', 40, -40],
+        ['zoom tracks vertically to reduce every row by 40', -40, 40],
+        ['zoom tracks vertically to shrink every row by 40', -40, 40],
+        ['zoom tracks vertically to make the rows bigger by 40', 40, -40],
+        ['zoom tracks vertically in the chorus by 40', 40, -40],
+        ['zoom tracks vertically out of the chorus by 40', 40, -40],
     ])('admits the stated way and refuses the opposite for "%s"', (prompt, admitted, refused) => {
         const accepted = zoom(prompt, admitted);
         const rejected = zoom(prompt, refused);
@@ -82,6 +91,13 @@ describe('vertical zoom direction grounding', () => {
             { type: 'zoomTracksVertical', payload: { delta: -40 } },
         ]);
         expect(zoom('zoom tracks vertically by -40', 40).actions).toEqual([]);
+    });
+
+    it('grounds no sign when the request names both ways', () => {
+        const prompt = 'zoom tracks vertically by 40 making rows taller or shorter';
+
+        expect(zoom(prompt, 40).actions).toEqual([]);
+        expect(zoom(prompt, -40).actions).toEqual([]);
     });
 
     it('keeps the stated magnitude when the request names no way', () => {
