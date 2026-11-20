@@ -144,7 +144,7 @@ export type Preferences = {
     showMinimap: boolean;
     timelineMinimapHeight: number;
     voiceCommandKey: string;
-    theme: 'dark' | 'light';
+    theme: 'dark' | 'light' | 'system';
     uiScale: number;
     elasticTransientSensitivity: number;
     panelPlacementSidebar: 'left' | 'right';
@@ -179,7 +179,7 @@ export const defaultPreferences: Preferences = {
     showMinimap: true,
     timelineMinimapHeight: TIMELINE_MINIMAP_DEFAULT_HEIGHT,
     voiceCommandKey: 'v',
-    theme: 'dark',
+    theme: 'system',
     uiScale: DEFAULT_UI_SCALE,
     elasticTransientSensitivity: DEFAULT_ELASTIC_TRANSIENT_SENSITIVITY,
     panelPlacementSidebar: 'left',

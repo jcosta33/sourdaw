@@ -3,6 +3,7 @@ import { toasterStore } from '../stores/toasterStore';
 import { disposeToasterDevice } from './disposeToasterDevice';
 import { activeNoteRepeatSessions } from './noteRepeatState';
 import { activeSessions } from './sixteenLevels';
+import { kitPending } from './toasterParamBridge/toasterKitParamQueue';
 import { padPending } from './toasterParamBridge/toasterPadParamQueue';
 
 /**
@@ -20,6 +21,7 @@ export function disposeEveryToasterDevice(): void {
         ...activeNoteRepeatSessions.keys(),
         ...activeSessions.keys(),
         ...Array.from(padPending.values(), (pending) => pending.deviceId),
+        ...Array.from(kitPending.values(), (pending) => pending.deviceId),
     ]);
     for (const deviceId of deviceIds) {
         disposeToasterDevice(deviceId);

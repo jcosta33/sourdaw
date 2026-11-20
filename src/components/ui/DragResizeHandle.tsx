@@ -16,6 +16,8 @@ export type DragResizeHandleProps = {
     direction?: 'horizontal' | 'vertical';
     onResize: (delta: number) => void;
     onResizeEnd?: () => void;
+    /** Overrides onResizeEnd when the initiating pointer is canceled. */
+    onResizeCancel?: () => void;
     className?: string;
     cursor?: string;
     'aria-label': string;
@@ -118,10 +120,13 @@ const releaseCapturedPointer = (captured: { element: HTMLElement; pointerId: num
     }
 };
 
-const attachDocumentListeners = (
-    onMove: (event: globalThis.MouseEvent | globalThis.PointerEvent) => void,
-    onEnd: () => void
-): void => {
+type DragEvent = globalThis.MouseEvent | globalThis.PointerEvent;
+type DragOwner = number | 'mouse' | null;
+
+const ownsDragEvent = (owner: DragOwner, event: DragEvent): boolean =>
+    owner === ('pointerId' in event ? event.pointerId : 'mouse');
+
+const attachDocumentListeners = (onMove: (event: DragEvent) => void, onEnd: (event: DragEvent) => void): void => {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onEnd);
     document.addEventListener('pointermove', onMove);
@@ -129,10 +134,7 @@ const attachDocumentListeners = (
     document.addEventListener('pointercancel', onEnd);
 };
 
-const detachDocumentListeners = (
-    onMove: (event: globalThis.MouseEvent | globalThis.PointerEvent) => void,
-    onEnd: () => void
-): void => {
+const detachDocumentListeners = (onMove: (event: DragEvent) => void, onEnd: (event: DragEvent) => void): void => {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onEnd);
     document.removeEventListener('pointermove', onMove);
@@ -171,6 +173,7 @@ type UseDragResizeOptions = {
     cursor?: string;
     onResize: (delta: number) => void;
     onResizeEnd?: () => void;
+    onResizeCancel?: () => void;
     onMouseDown?: (event: MouseEvent<HTMLDivElement>) => void;
     onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
 };
@@ -181,13 +184,16 @@ const useDragResize = ({
     cursor,
     onResize,
     onResizeEnd,
+    onResizeCancel,
     onMouseDown,
     onPointerDown,
 }: UseDragResizeOptions) => {
-    const draggingRef = useRef(false);
+    const dragOwnerRef = useRef<DragOwner>(null);
+    const isDragging = (): boolean => dragOwnerRef.current !== null;
     const startRef = useRef(0);
     const onResizeRef = useRef(onResize);
     const onResizeEndRef = useRef(onResizeEnd);
+    const onResizeCancelRef = useRef(onResizeCancel ?? onResizeEnd);
     const verticalRef = useRef(vertical);
     const sideRef = useRef(effectiveSide);
     const cursorRef = useRef(cursor);
@@ -196,14 +202,15 @@ const useDragResize = ({
     useEffect(() => {
         onResizeRef.current = onResize;
         onResizeEndRef.current = onResizeEnd;
+        onResizeCancelRef.current = onResizeCancel ?? onResizeEnd;
         verticalRef.current = vertical;
         sideRef.current = effectiveSide;
         cursorRef.current = cursor;
-    }, [onResize, onResizeEnd, vertical, effectiveSide, cursor]);
+    }, [onResize, onResizeEnd, onResizeCancel, vertical, effectiveSide, cursor]);
 
-    const handleDocumentMoveRef = useRef<(event: globalThis.MouseEvent | globalThis.PointerEvent) => void>(() => {});
-    handleDocumentMoveRef.current = (event: globalThis.MouseEvent | globalThis.PointerEvent) => {
-        if (!draggingRef.current) {
+    const handleDocumentMoveRef = useRef<(event: DragEvent) => void>(() => {});
+    handleDocumentMoveRef.current = (event) => {
+        if (!ownsDragEvent(dragOwnerRef.current, event)) {
             return;
         }
         const current = verticalRef.current ? event.clientX : event.clientY;
@@ -216,19 +223,19 @@ const useDragResize = ({
         onResizeRef.current(delta);
     };
 
-    const moveListenerRef = useRef((event: globalThis.MouseEvent | globalThis.PointerEvent) => {
+    const moveListenerRef = useRef((event: DragEvent) => {
         handleDocumentMoveRef.current(event);
     });
 
-    const endListenerRef = useRef(() => {
-        handleDocumentEndRef.current();
+    const endListenerRef = useRef((event: DragEvent) => {
+        handleDocumentEndRef.current(event);
     });
 
     const cleanupDrag = () => {
-        if (!draggingRef.current) {
+        if (dragOwnerRef.current === null) {
             return;
         }
-        draggingRef.current = false;
+        dragOwnerRef.current = null;
         detachDocumentListeners(moveListenerRef.current, endListenerRef.current);
         clearBodyDragStyles();
 
@@ -236,25 +243,20 @@ const useDragResize = ({
         capturedPointerRef.current = null;
     };
 
-    const handleDocumentEndRef = useRef<() => void>(() => {});
-    handleDocumentEndRef.current = () => {
-        if (!draggingRef.current) {
+    const handleDocumentEndRef = useRef<(event: DragEvent) => void>(() => {});
+    handleDocumentEndRef.current = (event) => {
+        if (!ownsDragEvent(dragOwnerRef.current, event)) {
             return;
         }
         cleanupDrag();
-        onResizeEndRef.current?.();
+        const callback = event.type === 'pointercancel' ? onResizeCancelRef.current : onResizeEndRef.current;
+        callback?.();
     };
 
-    useEffect(() => {
-        return () => {
-            if (draggingRef.current) {
-                cleanupDrag();
-            }
-        };
-    }, []);
+    useEffect(() => cleanupDrag, []);
 
     const startDrag = (clientX: number, clientY: number, targetElement?: HTMLElement, pointerId?: number): void => {
-        draggingRef.current = true;
+        dragOwnerRef.current = pointerId ?? 'mouse';
         startRef.current = verticalRef.current ? clientX : clientY;
         setBodyDragStyles(cursorRef.current ?? (verticalRef.current ? 'col-resize' : 'row-resize'));
 
@@ -264,7 +266,7 @@ const useDragResize = ({
 
     const handleMouseDown = (event: MouseEvent<HTMLDivElement>): void => {
         onMouseDown?.(event);
-        if (event.button !== 0 || draggingRef.current) {
+        if (event.button !== 0 || isDragging()) {
             return;
         }
         event.preventDefault();
@@ -273,14 +275,14 @@ const useDragResize = ({
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
         onPointerDown?.(event);
-        if (event.button !== 0 || draggingRef.current) {
+        if (event.button !== 0 || isDragging()) {
             return;
         }
         event.preventDefault();
         startDrag(event.clientX, event.clientY, event.currentTarget, event.pointerId);
     };
 
-    return { handleMouseDown, handlePointerDown };
+    return { handleMouseDown, handlePointerDown, isDragging };
 };
 
 /**
@@ -293,6 +295,7 @@ export const DragResizeHandle = ({
     direction,
     onResize,
     onResizeEnd,
+    onResizeCancel,
     className,
     cursor,
     'aria-label': ariaLabel,
@@ -308,17 +311,21 @@ export const DragResizeHandle = ({
     const vertical = isVertical(direction, side);
     const effectiveSide = side ?? (vertical ? 'right' : 'bottom');
 
-    const { handleMouseDown, handlePointerDown } = useDragResize({
+    const { handleMouseDown, handlePointerDown, isDragging } = useDragResize({
         vertical,
         effectiveSide,
         cursor,
         onResize,
         onResizeEnd,
+        onResizeCancel,
         onMouseDown,
         onPointerDown,
     });
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (isDragging()) {
+            return;
+        }
         const bound = homeEndBound(event.key, ariaValueMin, ariaValueMax);
         if (onSetSize !== undefined && bound !== undefined) {
             event.preventDefault();

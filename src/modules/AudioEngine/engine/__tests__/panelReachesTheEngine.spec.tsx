@@ -293,6 +293,7 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
         // records what it was told.
         crumbsControls: {
             ready: true,
+            startPadAudition: () => undefined,
             noteOn: () => {},
             noteOff: () => {},
             allNotesOff: () => {},

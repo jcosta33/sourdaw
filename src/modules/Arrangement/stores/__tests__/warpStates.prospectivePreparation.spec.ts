@@ -1,6 +1,21 @@
-import { applyChanges, getActorId, getChanges, getHeads, clone } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+    applyChanges,
+    change,
+    clone,
+    decodeChange,
+    encodeChange,
+    free,
+    getActorId,
+    getChanges,
+    getHeads,
+    load,
+} from '@automerge/automerge';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    applyCanonicalStorageSlotMutation,
+    type CanonicalStorageSlotMutation,
+} from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import {
     captureAutomergeStoragePreparationScope,
     configureAutomergeStoragePort,
@@ -34,7 +49,51 @@ const replacement: WarpState = {
     ],
 };
 
+type PreparationRequest = {
+    seed: Uint8Array;
+    actor: string;
+    message?: string;
+    mutation: CanonicalStorageSlotMutation;
+    preparationPolicy?: string;
+};
+
+const requests: Array<{ key: string; policy?: string }> = [];
+
+class WarpPreparationWorker {
+    onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+
+    postMessage({ seed, actor, message, mutation, preparationPolicy }: PreparationRequest): void {
+        requests.push({ key: mutation.key, policy: preparationPolicy });
+        const before = load<Record<string, unknown>>(seed, { actor });
+        const after = change(before, { message }, (draft) => applyCanonicalStorageSlotMutation(draft, mutation));
+        try {
+            // This fixture's small edit fits one native sequence member.
+            const changes = getChanges(before, after).map((bytes) => {
+                const { hash: _hash, ...decoded } = decodeChange(bytes);
+                return Uint8Array.from(encodeChange(decoded));
+            });
+            const data: {
+                status: 'complete';
+                changes: Uint8Array[];
+                heads: string[];
+                sequence?: { changeCount: number; operationCount: number };
+            } = { status: 'complete', changes, heads: getHeads(after) };
+            if (preparationPolicy === 'bounded-native-sequence-v1') {
+                const operationCount = changes.reduce((total, bytes) => total + decodeChange(bytes).ops.length, 0);
+                data.sequence = { changeCount: changes.length, operationCount };
+            }
+            this.onmessage?.(new MessageEvent('message', { data }));
+        } finally {
+            free(after);
+        }
+    }
+
+    terminate(): void {}
+}
+
 beforeEach(() => {
+    requests.length = 0;
+    vi.stubGlobal('Worker', WarpPreparationWorker);
     configureAutomergeStoragePort(null);
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
@@ -47,6 +106,7 @@ afterEach(() => {
     flushAutomergeStorageWrites();
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
+    vi.unstubAllGlobals();
 });
 
 function plan() {
@@ -61,8 +121,18 @@ function plan() {
     return { transaction, preparation };
 }
 
+async function materialize(preparation: ReturnType<typeof plan>['preparation']): Promise<void> {
+    preparation.clone();
+    const request = preparation.requestMaterialization;
+    if (!request) {
+        throw new Error('Expected an owner-scoped Worker request');
+    }
+    await request(new AbortController().signal);
+    preparation.materialize();
+}
+
 describe('Arrangement private warp-state preparation', () => {
-    it('keeps raw/projection/revision invisible, then publishes one actual-actor change to an independent peer', () => {
+    it('keeps bounded native preparation private, then publishes one actual-actor change to an independent peer', async () => {
         const before = getCrdtDoc('root');
         if (!before) {
             throw new Error('Expected root');
@@ -72,8 +142,9 @@ describe('Arrangement private warp-state preparation', () => {
         const revision = captureProjectRevision();
         const beforeProjection = warpStateStore.value;
         const { transaction, preparation } = plan();
-        preparation.clone();
-        preparation.materialize();
+        expect(requests).toEqual([]);
+        await materialize(preparation);
+        expect(requests).toEqual([{ key: 'warpStates', policy: 'bounded-native-sequence-v1' }]);
         expect(getCrdtDoc('root')).toBe(before);
         expect(getHeads(before)).toEqual(beforeHeads);
         expect(warpStateStore.value).toBe(beforeProjection);
@@ -95,10 +166,9 @@ describe('Arrangement private warp-state preparation', () => {
         expect(warpStateStore.value).toEqual(after.warpStates);
     });
 
-    it('refuses a stale stage and lets a fresh plan retain later user and sibling rows', () => {
+    it('refuses a stale stage and lets a fresh plan retain later user and sibling rows', async () => {
         const first = plan();
-        first.preparation.clone();
-        first.preparation.materialize();
+        await materialize(first.preparation);
         setWarpState('other', { ...getWarpState('other'), originalTempo: 99 });
         setWarpState('target', {
             ...original,
@@ -121,8 +191,7 @@ describe('Arrangement private warp-state preparation', () => {
         if (!prepared) {
             throw new Error('Expected fresh plan');
         }
-        prepared.clone();
-        prepared.materialize();
+        await materialize(prepared);
         expect(transaction.scope(prepared.stage)).toBe(true);
         transaction.validateDocument('root', () => null);
         transaction.commit();

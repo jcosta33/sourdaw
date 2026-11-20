@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -67,12 +68,13 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const [barWidth, setBarWidth] = useState(0);
 
+    const editingSectionId = editing?.sectionId;
     useEffect(() => {
-        if (editing && inputRef.current) {
+        if (editingSectionId !== undefined && inputRef.current) {
             inputRef.current.focus();
             inputRef.current.select();
         }
-    }, [editing]);
+    }, [editingSectionId]);
 
     // Detach any global drag listeners still attached when the bar unmounts.
     useEffect(() => {
@@ -359,7 +361,9 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         onMouseMove={(event) => handleSectionMouseMove(event, section)}
                         onMouseLeave={() => handleSectionMouseLeave(section)}
                         onDoubleClick={() => {
-                            setEditing({ sectionId: section.id, name: section.name });
+                            if (!isEditing) {
+                                setEditing({ sectionId: section.id, name: section.name });
+                            }
                         }}
                     >
                         {/* Left resize handle visual */}
@@ -404,13 +408,18 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                 </Row>
             ) : null}
             {contextMenu.kind !== 'none' ? (
-                <div
+                <DawContextMenuSurface
                     ref={menuRef}
-                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
-                    style={{
-                        left: contextMenu.x,
-                        top: contextMenu.y,
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    xClampOffset={140}
+                    yClampOffset={contextMenu.kind === 'empty' ? 40 : 240}
+                    onClose={() => setContextMenu({ kind: 'none' })}
+                    onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                     }}
+                    className="min-w-[140px] p-1"
                     role="menu"
                 >
                     {contextMenu.kind === 'empty' ? (
@@ -470,7 +479,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             </DawMenuButton>
                         </>
                     ) : null}
-                </div>
+                </DawContextMenuSurface>
             ) : null}
         </TimelineChromeSurface>
     );

@@ -1,7 +1,11 @@
 import { type MidiCC } from '../../models/MidiNote';
 import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 
-import { listClipControllerPasses, type ControllerProjectionClip } from './listClipControllerPasses';
+import {
+    listClipControllerPasses,
+    type ClipControllerPass,
+    type ControllerProjectionClip,
+} from './listClipControllerPasses';
 
 type ProjectClipControllerEventsInput = {
     controlChanges: readonly MidiCC[];
@@ -81,12 +85,10 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * or past it: the clip plays in that window and in no later one, so a window that
  * opens on the clip end, where the clip is not scheduled, owes it nothing.
  */
-export function projectClipControllerEvents({
-    controlChanges,
-    clip,
-    fromBeat,
-    toBeat,
-}: ProjectClipControllerEventsInput): ProjectedClipControllerMove[] {
+function projectControllers(
+    { controlChanges, clip, fromBeat, toBeat }: ProjectClipControllerEventsInput,
+    collect?: (move: ProjectedClipControllerMove, window: ClipControllerPass) => void
+): ProjectedClipControllerMove[] {
     if (controlChanges.length === 0) {
         return [];
     }
@@ -101,9 +103,17 @@ export function projectClipControllerEvents({
         for (const move of moves) {
             if (ownsMove(move, fromBeat, toBeat)) {
                 events.push(move);
+                collect?.(move, window);
             }
         }
     }
 
     return events.sort((left, right) => left.beat - right.beat);
+}
+
+export function projectClipControllerEvents(
+    input: ProjectClipControllerEventsInput,
+    collect?: (move: ProjectedClipControllerMove, window: ClipControllerPass) => void
+): ProjectedClipControllerMove[] {
+    return projectControllers(input, collect);
 }

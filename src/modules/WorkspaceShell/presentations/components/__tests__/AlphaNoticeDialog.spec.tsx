@@ -33,13 +33,13 @@ describe('AlphaNoticeDialog', () => {
         );
         expectExternalProjectLink(
             screen.getByRole('link', { name: /Report a bug/ }),
-            'https://github.com/jcosta33/sourdaw/issues'
+            'https://github.com/jcosta33/sourdaw/discussions/categories/general'
         );
     });
 
     it('renders the explanatory body text mentioning GitHub feedback routes', () => {
         render(<AlphaNoticeDialog open onOpenChange={vi.fn()} />);
         expect(screen.getByText(/GitHub Discussion/)).toBeInTheDocument();
-        expect(screen.getByText(/GitHub Issues/)).toBeInTheDocument();
+        expect(screen.getByText(/bugs in GitHub Discussions/)).toBeInTheDocument();
     });
 });

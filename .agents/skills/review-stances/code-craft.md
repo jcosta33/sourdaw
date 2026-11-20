@@ -1,41 +1,28 @@
 # Standing probes: code craft
 
 A hunk lands a construct that a documented convention or a lint rule forbids, and nothing goes red: the
-file sits on a burn-down baseline that silences the rule, the rule never existed for that convention, the
-rule's own spec stopped observing it, or the diff quietly widens a baseline. Documented convention is a
+file meets its rule's recorded count, the rule never existed for that convention, or the rule's own
+spec stopped observing it. Documented convention is a
 contract, not a hedge, and a violation a lint rule already names is a merge blocker; personal style is not.
 Every finding quotes the convention sentence or the lint message the head should have produced; hedged
 findings without a concrete break ("I'd prefer if") are discarded.
 
 ## Standing probes
 
-1. **A banned craft construct passes because its file is baselined.** The `sourdaw-craft` plugin
-   (`scripts/oxlintCraft/plugin.mjs`) skips a rule for every path listed under that rule in
-   `oxlint.craft-baseline.mjs`, so new code in a listed file is never linted for it. Input: grep each added
-   hunk for `...(cond ? x : {})` or `...(cond && x)`, `{ ...x }` with no added field, `[...arr].map` and
-   similar clone-then-method calls, `JSON.parse(JSON.stringify`, a chain of three or more
-   `.map/.filter/.sort/.flatMap/.reduce`, and a ternary used as a statement. For each hit, look its file up
-   under the matching rule id in `oxlint.craft-baseline.mjs` on the head. A listed file is the finding: no
-   check goes red, so the reviewer is the check, citing the rule id and `docs/07-conventions.md`.
-   `{ ...record, field }` and `fn(...args)` are legal.
-2. **A craft construct in an unlisted file reaches a green Lint job.** Runs: CI; first establish the
-   `Lint` job's actual checked merge ref, source and relevant rule configuration and severity. Input: any
-   probe-1 construct in a file not listed for its rule. A checked tree containing both the added source
-   and current enforcing configuration must report the plugin's message (for a conditional spread,
-   "Do not spread a conditional or logical expression"). Only a green `Lint` on that combined tree
-   means the rule does not match that syntactic form: name the form and carry it to probe 6 as a missing
-   `invalid` row in `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
-3. **The diff widens a lint baseline instead of complying.** `oxlint.craft-baseline.mjs` and
-   `eslint.size-baseline.mjs` only burn down: "No path is ever added". `craftBaseline.spec.ts` checks only
-   rule keys, sort order, duplicates and existence, so a sorted, unique added path passes it. Input:
-   `git diff <merge-base> <head> -- oxlint.craft-baseline.mjs eslint.size-baseline.mjs`. Any added path is
-   the finding; a removed path whose file still violates the rule must turn the `Lint` job red on the head.
-   Compare each changed file's actual integrated source with its recorded ceiling in
-   `scripts/lintSizeCeilings.json`, and require `scripts/__tests__/lintSizeBaseline.spec.ts` to observe
-   that combined version. #6618 and #6493 each grew the parser while a passing older checked tree
-   omitted the parallel growth; the integrated source exceeded its unchanged ceiling. A passing
-   older tree is no witness for the combined size. Extract a coherent responsibility to comply;
-   never raise the ceiling or compress blank lines to hide growth.
+1. **One violation is traded for another under the same count.** Compare the added source with
+   `oxlint-quality-baseline.json` for its file and rule. The count rejects growth but preserves an
+   unchanged total, even when a different violation replaced a removed one. Identify the added
+   occurrence and quote its rule message. For spread rules, keep `{ ...record, field }` and
+   `fn(...args)` as controls.
+2. **A craft construct on a path with no count reaches a green Lint job.** Establish the checked
+   merge ref, source, quality configuration and severity. The same checked tree containing a new
+   conditional spread with no allowance must report "Do not spread a conditional or logical
+   expression". If the integrated run is green, reduce the missed syntax to an invalid row in
+   `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
+3. **Concurrent changes exceed a size ceiling that neither side exceeded alone.** Compare the actual
+   integrated source with `scripts/lintSizeCeilings.json`. #6618 and #6493 independently grew the
+   parser against older trees and the combined source exceeded its unchanged ceiling. Require the
+   current combined witness. Extract a coherent responsibility to comply.
 4. **A `className` pile on a `ui/` primitive instead of a variant.** No lint rule observes this. Input: a
    call site that passes a run of layout or colour utilities (`className="h-8 px-3 …"`) to a primitive
    imported from `src/components/ui/`. The finding quotes `src/components/AGENTS.md` ("Do not pile Tailwind
@@ -96,3 +83,21 @@ findings without a concrete break ("I'd prefer if") are discarded.
     `scripts/__tests__/runLint.spec.ts` "fails a pass one file short, however large the tree", and
     deleting the coverage assertion from the full run must fail "fails a plugin pass that lints fewer
     files than the targets track, before ESLint runs".
+11. **Formatting changes the type behavior of a lint autofix (PR #7033).** The ternary
+    fixer grouped statement calls. Prettier removed the grouping and TypeScript
+    treated the calls as assertions. Probe a ternary whose branches call a declared
+    assertion and whose function subsequently returns the asserted value. Compare the
+    inferred declaration before the fix and after formatting. Also use a locally
+    inferred assertion callee, which produces TS2775 if formatted as a bare call,
+    and a computed member or immediately invoked function, which can produce TS2776.
+    Require eligible fixtures to retain their types and runtime effects after the
+    documented formatting step.
+
+## Retired lessons
+
+- #4186 skipped the entire craft rule for any listed file. `scripts/__tests__/lintQualityBudget.spec.ts`
+  checks equal, excess, unrecorded and stale counts. `scripts/__tests__/runLint.spec.ts` exercises
+  the same enforcement after the last writer in check and fix, with the ledger bytes intact.
+- The old craft inventory test let a sorted, unique file be added without a finding.
+  `scripts/__tests__/lintSizeBaseline.spec.ts` checks merge-base admission and refuses a raised count.
+  `scripts/__tests__/lintLedgerCrossing.spec.ts` covers overlapping count and source edits at delivery.

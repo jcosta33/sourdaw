@@ -446,18 +446,51 @@ describe('LaunchScreen', () => {
 
     // ── Drag-and-drop visual feedback ─────────────────────────────────────────────
 
-    it('toggles the drag-over state on dragOver and clears it on dragLeave', () => {
+    it('keeps the drop highlight when the drag moves to a descendant of the dialog', () => {
         render(<LaunchScreen exiting={false} />);
         const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        const dropHint = screen.getByText('Drop audio or MIDI to start instantly');
 
-        // dragOver sets isDragOver=true, swapping the drop zone to the orange style.
         fireEvent.dragOver(dialog, { dataTransfer: { dropEffect: 'none' } });
-        const dropZone = screen.getByText('Drop audio or MIDI to start instantly').parentElement!;
-        expect(dropZone.className).toContain('--color-accent-orange');
+        expect(dropHint.parentElement).toHaveClass('bg-[var(--color-accent-orange)]/10');
 
-        // dragLeave with a relatedTarget outside the dialog clears the state.
-        fireEvent.dragLeave(dialog, { relatedTarget: document.body });
-        expect(dropZone.className).not.toContain('bg-[var(--color-accent-orange)]/10');
+        fireEvent(dialog, new MouseEvent('dragleave', { bubbles: true, relatedTarget: dropHint }));
+        expect(dropHint.parentElement).toHaveClass('bg-[var(--color-accent-orange)]/10');
+    });
+
+    it.each([
+        { destination: 'an outside node', relatedTarget: document.body },
+        { destination: 'no target', relatedTarget: null },
+    ])('clears the drop highlight when the drag leaves the dialog for $destination', ({ relatedTarget }) => {
+        render(<LaunchScreen exiting={false} />);
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        const dropZone = screen.getByText('Drop audio or MIDI to start instantly').parentElement;
+
+        fireEvent.dragOver(dialog, { dataTransfer: { dropEffect: 'none' } });
+        expect(dropZone).toHaveClass('bg-[var(--color-accent-orange)]/10');
+
+        fireEvent(dialog, new MouseEvent('dragleave', { bubbles: true, relatedTarget }));
+        expect(dropZone).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
+    });
+
+    it('clears the drop highlight when the drag leaves the dialog for a window', () => {
+        const { container } = render(
+            <>
+                <LaunchScreen exiting={false} />
+                <iframe title="Outside the launch dialog" />
+            </>
+        );
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        const dropZone = screen.getByText('Drop audio or MIDI to start instantly').parentElement;
+        // Vitest aliases the global window, so use a native DOM Window from the frame.
+        const relatedTarget = container.querySelector('iframe')?.contentWindow;
+        expect(relatedTarget).toBeTruthy();
+
+        fireEvent.dragOver(dialog, { dataTransfer: { dropEffect: 'none' } });
+        expect(dropZone).toHaveClass('bg-[var(--color-accent-orange)]/10');
+
+        fireEvent(dialog, new MouseEvent('dragleave', { bubbles: true, relatedTarget }));
+        expect(dropZone).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
     });
 
     it('formats recent-project timestamps as relative time (just now / Xm ago / Xh ago / Xd ago)', () => {

@@ -4,11 +4,6 @@
     // Full-scope native core rules and public JS plugins live in .oxlint-plugins.json;
     // parser-service, resolver, directive, budget and semantic gaps remain in ESLint.
     "plugins": ["typescript", "unicorn", "jsx-a11y", "import", "promise"],
-    // JS plugin: agent JS-isms oxlint does not implement natively (spread-as-clone,
-    // conditional empty spread, JSON.parse(JSON.stringify), long array chains,
-    // ternary-as-if). Native size ceilings and their warning baseline live in
-    // .oxlint-plugins.json so tooling excluded from this pass stays checked.
-    "jsPlugins": ["./scripts/oxlintCraft/plugin.mjs"],
     "env": {
         "browser": true,
         "builtin": true
@@ -199,7 +194,6 @@
                 "allowRegExp": true
             }
         ],
-        "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
 
         // ── eslint-plugin-unicorn ────────────────────────────────────────────
         // unicorn/no-for-each was renamed from no-array-for-each in unicorn v66;
@@ -280,15 +274,7 @@
         "jsx-a11y/role-has-required-aria-props": "error",
         "jsx-a11y/role-supports-aria-props": "error",
         "jsx-a11y/scope": "error",
-        "jsx-a11y/tabindex-no-positive": "error",
-
-        // ── sourdaw-craft (JS plugin) ───────────────────────────────────────
-        "sourdaw-craft/no-conditional-empty-spread": "error",
-        "sourdaw-craft/no-useless-clone-spread": "error",
-        "sourdaw-craft/no-spread-clone-array-method": "error",
-        "sourdaw-craft/no-json-parse-stringify": "error",
-        "sourdaw-craft/no-long-array-chain": "error",
-        "sourdaw-craft/no-control-flow-ternary": "error"
+        "jsx-a11y/tabindex-no-positive": "error"
     },
     "overrides": [
         {

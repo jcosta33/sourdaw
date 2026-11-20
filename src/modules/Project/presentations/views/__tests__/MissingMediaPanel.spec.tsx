@@ -1,12 +1,23 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { revealClip } from '#/modules/Arrangement/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     defaultMissingMediaStoreState,
     type MissingMediaItem,
     missingMediaStore,
 } from '../../../stores/missingMediaStore';
+import { locateMissingMedia } from '../../../useCases/locateMissingMedia';
 import { MissingMediaPanel } from '../MissingMediaPanel';
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    revealClip: vi.fn(),
+    readRelinkAudioSourceEligibility: vi.fn(() => 'eligible'),
+}));
+vi.mock('../../../useCases/locateMissingMedia', () => ({ locateMissingMedia: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 function clipItem(overrides: Partial<MissingMediaItem> = {}): MissingMediaItem {
     return {
@@ -22,6 +33,7 @@ function clipItem(overrides: Partial<MissingMediaItem> = {}): MissingMediaItem {
 
 describe('MissingMediaPanel', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         missingMediaStore.set(defaultMissingMediaStoreState);
     });
 
@@ -93,9 +105,100 @@ describe('MissingMediaPanel', () => {
 
         const rows = screen.getAllByRole('listitem');
         expect(rows).toHaveLength(2);
-        expect(rows[0]?.textContent).toBe('Lost GuitarGuitarsDrop a replacement file on the clip to relink it');
+        expect(rows[0]?.textContent).toContain('Drop a replacement file on the clip to relink it');
         expect(rows[1]?.textContent).toBe('Frozen track PadPadUnfreeze the track to re-render its audio');
-        expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+        expect(screen.getByRole('button', { name: 'Locate…' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reveal clip' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '2 missing files — show details' })).toHaveAttribute(
+            'aria-expanded',
+            'true'
+        );
+    });
+
+    it('locates a missing source through the recovery use case', async () => {
+        vi.mocked(locateMissingMedia).mockResolvedValue();
+        missingMediaStore.set({ items: [clipItem()] });
+        render(<MissingMediaPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Locate…' }));
+
+        expect(locateMissingMedia).toHaveBeenCalledExactlyOnceWith({
+            sourceBufferId: 'buf-gone',
+            label: 'Lost Guitar',
+        });
+        expect(await screen.findByRole('button', { name: 'Locate…' })).toBeEnabled();
+    });
+
+    it('reports unexpected relink failure, retains the missing row and releases the busy control', async () => {
+        const locating = Promise.withResolvers<void>();
+        vi.mocked(locateMissingMedia).mockReturnValueOnce(locating.promise);
+        const item = clipItem();
+        missingMediaStore.set({ items: [item] });
+        render(<MissingMediaPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Locate…' }));
+        expect(screen.getByRole('button', { name: 'Locating…' })).toBeDisabled();
+        await act(async () => locating.reject(new Error('Source publication failed')));
+
+        await waitFor(() =>
+            expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+                'Could not finish relinking missing media. Unresolved files remain listed.',
+                'error'
+            )
+        );
+        expect(screen.getByRole('button', { name: 'Locate…' })).toBeEnabled();
+        expect(screen.getByText('Lost Guitar')).toBeInTheDocument();
+        expect(missingMediaStore.value?.items).toEqual([item]);
+    });
+
+    it('does not add failure feedback when Locate resolves with its own committed warning', async () => {
+        vi.mocked(locateMissingMedia).mockImplementationOnce(async () => {
+            notifyUser('Relink committed with a history warning', 'warning');
+        });
+        missingMediaStore.set({ items: [clipItem()] });
+        render(<MissingMediaPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Locate…' }));
+        expect(await screen.findByRole('button', { name: 'Locate…' })).toBeEnabled();
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith('Relink committed with a history warning', 'warning');
+    });
+
+    it('reveals the exact clip reference without a file-level duplicate action', () => {
+        missingMediaStore.set({
+            items: [
+                clipItem({ clipId: 'clip-left', label: 'Take (a)' }),
+                clipItem({ clipId: 'clip-right', label: 'Take (b)' }),
+            ],
+        });
+        render(<MissingMediaPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+
+        expect(screen.getAllByRole('button', { name: 'Locate…' })).toHaveLength(1);
+        const revealButtons = screen.getAllByRole('button', { name: 'Reveal clip' });
+        expect(revealButtons).toHaveLength(2);
+        fireEvent.click(revealButtons[1]!);
+
+        expect(revealClip).toHaveBeenCalledExactlyOnceWith('clip-right');
+    });
+
+    it('keeps frozen-track recovery out of the ordinary relink and reveal actions', () => {
+        missingMediaStore.set({
+            items: [
+                clipItem({
+                    bufferId: 'freeze-gone',
+                    clipId: undefined,
+                    kind: 'frozenTrack',
+                    label: 'Frozen track Pad',
+                }),
+            ],
+        });
+        render(<MissingMediaPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+
+        expect(screen.queryByRole('button', { name: 'Locate…' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Reveal clip' })).toBeNull();
+        expect(screen.getByText('Unfreeze the track to re-render its audio')).toBeInTheDocument();
     });
 
     it('counts files rather than references when a split clip shares one buffer', () => {

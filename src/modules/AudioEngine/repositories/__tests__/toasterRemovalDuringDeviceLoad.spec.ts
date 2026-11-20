@@ -84,6 +84,7 @@ function stubPendingToasterNode(): { result: ToasterNodeResult; finishLoad: () =
 function makeGrandBouleResult(): GrandBouleNodeResult {
     return {
         workletNode: asWorkletNode(new FakeWorkletNode()),
+        startPreviewNote: vi.fn(),
         noteOn: vi.fn(),
         noteOff: vi.fn(),
         noteExpression: vi.fn(),

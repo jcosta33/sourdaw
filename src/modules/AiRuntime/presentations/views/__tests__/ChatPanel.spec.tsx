@@ -574,7 +574,7 @@ describe('ChatPanel', () => {
                 {
                     id: 'assistant-1',
                     role: 'assistant',
-                    content: 'This prompt requires confirmation',
+                    content: 'This prompt requires confirmation\n\nInterpretation: A small vintage receiver',
                     timestamp: 1,
                     isCommandAction: true,
                     pendingActionConfirmationId: 'confirm-1',
@@ -589,6 +589,7 @@ describe('ChatPanel', () => {
         render(<ChatPanel />);
 
         expect(screen.getByText('Action')).toBeInTheDocument();
+        expect(screen.getByText(/Interpretation: A small vintage receiver/u)).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Confirm pending actions' }));
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
 
