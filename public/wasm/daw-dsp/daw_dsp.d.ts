@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:ac7fe727782a8172b5bd11de0b6075992ee370ab6a08a3abecdea73b4f7d5ee6
+// @wasm-bindgen-dts crate-source: sha256:78f8d77986b1a83ece25ba7b6a9ecff18e8d90697445b01032b3fd10a9b5f8b1
 /* tslint:disable */
 /* eslint-disable */
 
@@ -446,6 +446,10 @@ export class GrandBouleInstance {
      */
     get_nan_flush_count(): number;
     /**
+     * Preview strikes refused at render time because no voice slot was idle.
+     */
+    get_preview_voice_refusal_count(): number;
+    /**
      * Pointer to the right channel buffer (call after `process`).
      */
     get_right_ptr(): number;
@@ -469,7 +473,7 @@ export class GrandBouleInstance {
      */
     note_expression(midi_note: number, channel: number, bend_semitones: number, pressure: number, slide: number): void;
     /**
-     * Begin the release phase for any voice holding this note.
+     * Begin the release phase for MIDI voices holding this note.
      */
     note_off(midi_note: number): void;
     /**
@@ -516,8 +520,8 @@ export class GrandBouleInstance {
      */
     push_note_expression(midi_note: number, channel: number, bend_semitones: number, pressure: number, slide: number, offset: number): boolean;
     /**
-     * Queue a note-off releasing every voice at `midi_note`, at `offset`
-     * samples into the next rendered block. Ordering and refusal as
+     * Queue a note-off releasing MIDI voices at `midi_note` on every channel,
+     * at `offset` samples into the next rendered block. Ordering and refusal as
      * [`Self::push_note_on`].
      */
     push_note_off(midi_note: number, offset: number): boolean;
@@ -544,6 +548,18 @@ export class GrandBouleInstance {
      * ordering.
      */
     push_note_on(midi_note: number, velocity: number, channel: number, offset: number): boolean;
+    /**
+     * Queue a release for the held preview with `strike_id` at `offset`.
+     * An already released, refused or displaced strike has no effect.
+     */
+    push_preview_note_off(strike_id: number, offset: number): boolean;
+    /**
+     * Queue a preview strike at `offset`. Use a fresh nonzero `strike_id`
+     * within this instance for every preview strike. Returns queue acceptance
+     * as in [`Self::push_note_on`]. If all voices are busy at the event's frame,
+     * the engine counts the refusal and leaves the sounding voices alone.
+     */
+    push_preview_note_on(strike_id: number, midi_note: number, velocity: number, offset: number): boolean;
     /**
      * Queue the sostenuto pedal engaging or releasing at `offset` samples into
      * the next rendered block. Ordering and refusal as [`Self::push_sustain`].
@@ -1248,6 +1264,7 @@ export interface InitOutput {
     readonly grandbouleinstance_active_voices: (a: number) => number;
     readonly grandbouleinstance_all_notes_off: (a: number) => void;
     readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
+    readonly grandbouleinstance_get_preview_voice_refusal_count: (a: number) => number;
     readonly grandbouleinstance_get_right_ptr: (a: number) => number;
     readonly grandbouleinstance_lifecycle_state: (a: number) => number;
     readonly grandbouleinstance_new: (a: number, b: number) => number;
@@ -1262,6 +1279,8 @@ export interface InitOutput {
     readonly grandbouleinstance_push_note_off: (a: number, b: number, c: number) => number;
     readonly grandbouleinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
     readonly grandbouleinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly grandbouleinstance_push_preview_note_off: (a: number, b: number, c: number) => number;
+    readonly grandbouleinstance_push_preview_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly grandbouleinstance_push_sostenuto: (a: number, b: number, c: number) => number;
     readonly grandbouleinstance_push_sustain: (a: number, b: number, c: number) => number;
     readonly grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;

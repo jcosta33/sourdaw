@@ -24,8 +24,7 @@ type GrandBouleVisualizationsProps = {
     pianoPreviewHeld: boolean;
     onToggleVisualization: (visualization: GrandBouleVisualization) => void;
     onPreviewHoldChange: (held: boolean) => void;
-    onNoteOn: (midiNote: number, velocity: number) => void;
-    onNoteOff: (midiNote: number) => void;
+    onPreviewNote: (midiNote: number, velocity: number) => (() => void) | undefined;
 };
 
 type Visualization = {
@@ -44,8 +43,7 @@ function createVisualizations({
     sampleRate,
     openVisualizations,
     onPreviewHoldChange,
-    onNoteOn,
-    onNoteOff,
+    onPreviewNote,
 }: GrandBouleVisualizationsProps): readonly Visualization[] {
     const pianoVisible = openVisualizations.includes('piano');
     return [
@@ -65,8 +63,7 @@ function createVisualizations({
                         sustainPedal={sustainPedal}
                         lidPosition={lidPosition}
                         visible={pianoVisible}
-                        onNoteOn={onNoteOn}
-                        onNoteOff={onNoteOff}
+                        onPreviewNote={onPreviewNote}
                         onPreviewHoldChange={onPreviewHoldChange}
                         className="h-48 w-full"
                     />
@@ -149,7 +146,6 @@ export const GrandBouleVisualizations = (props: GrandBouleVisualizationsProps): 
                 const expanded = openVisualizations.includes(id);
                 return (
                     <div id={`${visualizationId}-${id}`} key={id} hidden={!expanded} className="shrink-0">
-                        {/* A late preview release can still arrive after the canvas is hidden. */}
                         {expanded || id === 'piano' ? (
                             <Stack gap={2} className="grand-boule-window p-2">
                                 {content}

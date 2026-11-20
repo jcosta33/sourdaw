@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     controls: {
         ready: true,
         noteOn: vi.fn(),
+        startPreviewNote: vi.fn(),
         noteOff: vi.fn(),
         noteOnMidi2: vi.fn(),
         setParam: vi.fn(),
@@ -54,6 +55,14 @@ describe('resolveGrandBouleEngine', () => {
 
         engine.setParam({ name: 'tone_color', value: 0.2 });
         expect(mocks.controls.setParam).toHaveBeenCalledWith('tone_color', 0.2);
+    });
+
+    it('returns the preview release from the addressed controls', () => {
+        const release = vi.fn();
+        mocks.controls.startPreviewNote.mockReturnValueOnce(release);
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+        expect(engine.startPreviewNote({ midiNote: 60, velocity: 0.4 })).toBe(release);
+        expect(mocks.controls.startPreviewNote).toHaveBeenCalledWith(60, 0.4);
     });
 
     it('sends a panel damper movement to the engine body as well as the Web Audio node', () => {
