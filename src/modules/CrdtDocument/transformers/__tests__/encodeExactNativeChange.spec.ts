@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { change, clone, decodeChange, encodeChange, from, getChanges } from '@automerge/automerge';
 import { describe, expect, it, vi } from 'vitest';
 
-import { assertExactNativeChangeEncoding, encodeExactNativeChange } from '../EncodeExactNativeChange';
+import { assertExactNativeChangeEncoding, encodeExactNativeChange } from '../encodeExactNativeChange';
 
 function negativeZeroChange() {
     const actor = 'aaaaaaaaaaaaaaaa';
