@@ -117,6 +117,9 @@ describe('AutomergeRepository off-thread full save (CC-8)', () => {
         };
         const repository = await loadRepositoryFromWorker();
         const frontier = repository.getHeads('root');
+        if (!frontier) {
+            throw new Error('Expected the root heads before capturing an incremental');
+        }
         repository.changeDoc('root', (doc: ProjectDoc) => {
             doc.captured = true;
         });
