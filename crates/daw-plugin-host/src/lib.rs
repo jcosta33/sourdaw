@@ -50,7 +50,7 @@ pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
     signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin, EditorClosed,
     EditorVisibility, EditorWindowAsks, EditorWindowHost, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
     PluginHostRequest, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
     DEFAULT_EDITOR_CONTENT_SCALE,
 };

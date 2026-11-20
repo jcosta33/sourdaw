@@ -150,7 +150,9 @@ pub async fn resize_plugin_gui(
 ) -> Result<PluginEditorSize, String> {
     let (width, height) =
         call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
-            plugin.request_editor_size(width, height)
+            plugin
+                .request_editor_size(width, height)
+                .map_err(|error| error.to_string())
         })
         .and_then(|granted| granted)?;
 
@@ -171,7 +173,9 @@ pub async fn apply_plugin_gui_scale(
 ) -> Result<PluginEditorSize, String> {
     let (width, height) =
         call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
-            plugin.apply_editor_content_scale(scale_factor)
+            plugin
+                .apply_editor_content_scale(scale_factor)
+                .map_err(|error| error.to_string())
         })
         .and_then(|granted| granted)?;
 
@@ -238,11 +242,11 @@ fn open_editor_with_host_window_stated_first<Plugin: ?Sized, Opened>(
 /// the window this command then destroys — and answering the plugin's resize
 /// requests `true` against it forever after. `close_gui` is the format-neutral
 /// release, and a no-op on an editor that never opened.
-fn open_editor_or_release_host_window<Plugin: AudioPlugin + ?Sized>(
+fn open_editor_or_release_host_window<Plugin: AudioPlugin + ?Sized, Refusal>(
     plugin: &mut Plugin,
     state_host_window: impl FnOnce(&mut Plugin),
-    open_editor: impl FnOnce(&mut Plugin) -> Result<(u32, u32), String>,
-) -> Result<(u32, u32), String> {
+    open_editor: impl FnOnce(&mut Plugin) -> Result<(u32, u32), Refusal>,
+) -> Result<(u32, u32), Refusal> {
     let opened = open_editor_with_host_window_stated_first(plugin, state_host_window, open_editor);
     if opened.is_err() {
         plugin.close_gui();
@@ -509,7 +513,8 @@ fn open_editor_reporting_resizability(
             plugin.set_editor_content_scale(host_window.scale_factor);
         },
         |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
-    )?;
+    )
+    .map_err(|error| error.to_string())?;
 
     Ok(OpenedEditor {
         size,
@@ -1083,7 +1088,8 @@ mod tests {
     use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::{AppState, EnginePluginInstanceData};
     use daw_engine::timeline::DeviceKind;
-    use daw_plugin_host::ClapWrapper;
+    use daw_plugin_host::clap_wrapper::ClapError;
+    use daw_plugin_host::{ClapWrapper, PluginError};
     use std::cell::Cell;
     use std::sync::{Arc, Mutex};
 
@@ -1363,7 +1369,7 @@ mod tests {
     fn an_opened_editor_reports_the_plugins_own_resize_answer() {
         for can_resize in [true, false] {
             let mut plugin = RecordingPlugin {
-                opens: Ok((640, 480)),
+                opens: Some((640, 480)),
                 calls: Vec::new(),
                 can_resize,
             };
@@ -1973,7 +1979,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
         runtime
             .with_control(std::time::Duration::from_secs(2), |plugin| {
-                plugin.open_gui(std::ptr::null_mut())
+                plugin
+                    .open_gui(std::ptr::null_mut())
+                    .map_err(|error| error.to_string())
             })
             .expect("the fixture GUI should open");
         state
@@ -2015,7 +2023,9 @@ mod tests {
         assert!(
             runtime
                 .with_control(std::time::Duration::from_secs(2), |plugin| {
-                    plugin.open_gui(std::ptr::null_mut())
+                    plugin
+                        .open_gui(std::ptr::null_mut())
+                        .map_err(|error| error.to_string())
                 })
                 .is_ok(),
             "a repeated reset must still leave the editor openable"
@@ -2144,7 +2154,9 @@ mod tests {
 
         // Open (as open_plugin_gui does) and record the window label.
         let size = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.open_gui(std::ptr::null_mut())
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
         });
         assert!(size.is_ok());
         state
@@ -2182,7 +2194,9 @@ mod tests {
 
         // The reopen path reaches open_gui with clean state and recreates the GUI.
         let reopened = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.open_gui(std::ptr::null_mut())
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
         });
         assert!(
             reopened.is_ok(),
@@ -2213,7 +2227,9 @@ mod tests {
 
         // The editor the user is looking at now, published under its own label.
         let size = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.open_gui(std::ptr::null_mut())
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
         });
         assert!(size.is_ok());
         state
@@ -2248,7 +2264,9 @@ mod tests {
         );
 
         let reopen = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.open_gui(std::ptr::null_mut())
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
         });
         assert_eq!(
             reopen.err().as_deref(),
@@ -2413,7 +2431,8 @@ mod tests {
     /// backends answer through the plugin's own SDK; what matters here is the
     /// order and the release, which the trait alone decides.
     struct RecordingPlugin {
-        opens: Result<(u32, u32), String>,
+        /// The size the open answers, or `None` for an open that fails.
+        opens: Option<(u32, u32)>,
         calls: Vec<&'static str>,
         /// What this plugin answers when asked whether its editor accepts a
         /// host-chosen size.
@@ -2434,10 +2453,10 @@ mod tests {
         fn get_parameters(&self) -> Vec<daw_plugin_host::PluginParameter> {
             Vec::new()
         }
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -2445,9 +2464,14 @@ mod tests {
             self.calls.push("window");
         }
 
-        fn open_gui(&mut self, _: *mut std::ffi::c_void) -> Result<(u32, u32), String> {
+        fn open_gui(&mut self, _: *mut std::ffi::c_void) -> Result<(u32, u32), PluginError> {
             self.calls.push("open");
-            self.opens.clone()
+            self.opens.ok_or_else(|| {
+                ClapError::GuiCreateFailed {
+                    name: "Recording".to_string(),
+                }
+                .into()
+            })
         }
 
         fn close_gui(&mut self) {
@@ -2461,7 +2485,7 @@ mod tests {
     #[test]
     fn an_editor_that_failed_to_open_gives_the_host_window_back() {
         let mut plugin = RecordingPlugin {
-            opens: Err("gui.create() failed".to_string()),
+            opens: None,
             calls: Vec::new(),
             can_resize: false,
         };
@@ -2481,7 +2505,7 @@ mod tests {
     #[test]
     fn an_editor_that_opened_keeps_the_host_window() {
         let mut plugin = RecordingPlugin {
-            opens: Ok((640, 480)),
+            opens: Some((640, 480)),
             calls: Vec::new(),
             can_resize: false,
         };
@@ -2492,7 +2516,7 @@ mod tests {
             |plugin| plugin.open_gui(std::ptr::null_mut()),
         );
 
-        assert_eq!(opened, Ok((640, 480)));
+        assert_eq!(opened.expect("the editor opens"), (640, 480));
         assert_eq!(plugin.calls.as_slice(), ["window", "open"]);
     }
 

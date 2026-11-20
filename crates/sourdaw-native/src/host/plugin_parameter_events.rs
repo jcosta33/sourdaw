@@ -379,22 +379,12 @@ mod tests {
 
     /// Both hints are process-wide, so any test that pushes an event or arms a
     /// flush raises one for every test running beside it. Every test below that
-    /// pushes, arms, or drives a tick takes this first.
-    static HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Serialise against the other hint users and start from a clean slate, so a
-    /// hint left raised by whichever test ran before cannot stand in for the one
-    /// this test is about.
+    /// pushes, arms, or drives a tick takes this first, which serialises against
+    /// the other hint users and starts from a clean slate, so a hint left raised
+    /// by whichever test ran before cannot stand in for the one this test is
+    /// about.
     fn hint_guard() -> std::sync::MutexGuard<'static, ()> {
-        let guard = HINT_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        take_pending_parameter_events_signal();
-        take_pending_parameter_flush_signal();
-        take_pending_tail_change_signal();
-        take_pending_process_refusal_signal();
-        take_pending_editor_resize_signal();
-        guard
+        crate::host::hint_test_support::guard()
     }
 
     #[derive(Default)]

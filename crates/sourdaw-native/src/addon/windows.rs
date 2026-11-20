@@ -239,6 +239,12 @@ impl UiThread for JsUiThread {
             Ok(())
         })
     }
+
+    fn run_posted_releases(&self) {
+        if self.is_ui_thread() {
+            self.posted.drain_releases();
+        }
+    }
 }
 
 /// The JS callbacks one registration hands over, kept together so an editor
@@ -279,6 +285,10 @@ impl UiThread for JsWindowHost {
 
     fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), String> {
         self.ui.run_on_ui_thread(task)
+    }
+
+    fn run_posted_releases(&self) {
+        self.ui.run_posted_releases();
     }
 }
 

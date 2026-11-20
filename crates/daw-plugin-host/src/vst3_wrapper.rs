@@ -16,22 +16,24 @@ use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
     PluginHostRequestNotifier, ProcessMode, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
     MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
-    HOST_CHANNELS,
+    BusLayoutError, HOST_CHANNELS,
 };
-use crate::vst3_class_id::same_class_id;
-use crate::vst3_editor::{plugin_offers_an_editor, EditorSession, EditorSize, Vst3Editor};
+use crate::vst3_class_id::{same_class_id, ClassIdError};
+use crate::vst3_editor::{
+    plugin_offers_an_editor, EditorError, EditorSession, EditorSize, Vst3Editor,
+};
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
-use crate::vst3_module::Vst3Module;
+use crate::vst3_module::{ModuleError, Vst3Module};
 use crate::vst3_scanner::{category_from_vst3_sub_categories, split_sub_categories};
 use std::cell::Cell;
 use std::ffi::c_void;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
 use vst3::Steinberg::Vst::{
@@ -585,20 +587,182 @@ pub fn encode_state(component: &[u8], controller: &[u8]) -> Vec<u8> {
     encoded
 }
 
+/// Why a VST3 instance could not be opened, activated, saved, restored, or
+/// driven through its editor.
+///
+/// Every variant is built on the control path. The process path reports a
+/// refusal through flags and never builds one of these.
+#[derive(Debug)]
+pub enum Vst3Error {
+    /// The stored blob is shorter than its header.
+    StateTooShort,
+    /// The stored blob does not carry this host's magic.
+    StateForeign,
+    /// The stored blob was written by a newer state version.
+    StateNewerVersion { version: u16 },
+    /// The header's lengths overflow.
+    StateImpossibleLength,
+    /// The blob is shorter than its header declares.
+    StateTruncated,
+    /// The descriptor id is not a class id.
+    ClassId(ClassIdError),
+    /// The bundle's module could not be opened.
+    Module(ModuleError),
+    /// The bundle's factory lists no class with the descriptor's id.
+    ClassNotImplemented {
+        bundle: PathBuf,
+        descriptor_id: String,
+    },
+    /// `initialize` refused the host context.
+    InitializeRefused { name: String },
+    /// `createInstance` refused the component.
+    FactoryRefusedComponent { name: String },
+    /// `createInstance` succeeded with no component.
+    NoComponent { name: String },
+    /// `createInstance` refused the controller.
+    FactoryRefusedController { name: String },
+    /// `createInstance` succeeded with no controller.
+    NoController { name: String },
+    /// The component exposes no `IAudioProcessor`.
+    NoAudioProcessor { name: String },
+    /// No bus layout the host can feed was agreed.
+    BusLayout(BusLayoutError),
+    /// `setupProcessing` refused the host's setup.
+    ProcessingSetupRefused { name: String },
+    /// `setActive(1)` refused.
+    ActivateRefused { name: String },
+    /// An editor is already open on this instance.
+    EditorAlreadyOpen { name: String },
+    /// The instance has no edit controller.
+    NoEditController { name: String },
+    /// The editor refused to open, re-scale or resize.
+    Editor(EditorError),
+    /// A host-initiated editor operation found no open editor.
+    NoOpenEditor { name: String },
+    /// `setupProcessing` refused after a latency change.
+    LatencyResetupRefused { name: String },
+    /// `setActive(1)` refused after a latency change.
+    LatencyReactivationRefused { name: String },
+    /// The component would not write its state.
+    ProcessorStateUnreported { name: String },
+    /// The component refused the stored state.
+    ProcessorStateRefused { name: String },
+}
+
+impl std::fmt::Display for Vst3Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StateTooShort => f.write_str("VST3 state is too short to carry its own header"),
+            Self::StateForeign => f.write_str("VST3 state was not written by this host"),
+            Self::StateNewerVersion { version } => write!(
+                f,
+                "VST3 state version {version} was written by a newer host and cannot be read"
+            ),
+            Self::StateImpossibleLength => {
+                f.write_str("VST3 state declares more bytes than can exist")
+            }
+            Self::StateTruncated => {
+                f.write_str("VST3 state is shorter than its own header declares")
+            }
+            Self::ClassId(error) => write!(f, "{error}"),
+            Self::Module(error) => write!(f, "{error}"),
+            Self::ClassNotImplemented {
+                bundle,
+                descriptor_id,
+            } => write!(
+                f,
+                "[VST3] '{}' does not implement class {descriptor_id}; its own factory lists no \
+                 such class",
+                bundle.display()
+            ),
+            Self::InitializeRefused { name } => write!(f, "[VST3] '{name}' refused to initialize"),
+            Self::FactoryRefusedComponent { name } => {
+                write!(f, "[VST3] factory refused to create '{name}'")
+            }
+            Self::NoComponent { name } => {
+                write!(f, "[VST3] factory returned no component for '{name}'")
+            }
+            Self::FactoryRefusedController { name } => {
+                write!(f, "[VST3] factory refused the controller of '{name}'")
+            }
+            Self::NoController { name } => {
+                write!(f, "[VST3] factory returned no controller for '{name}'")
+            }
+            Self::NoAudioProcessor { name } => {
+                write!(f, "[VST3] '{name}' exposes no audio processor")
+            }
+            Self::BusLayout(error) => write!(f, "{error}"),
+            Self::ProcessingSetupRefused { name } => {
+                write!(f, "[VST3] '{name}' refused the host's processing setup")
+            }
+            Self::ActivateRefused { name } => write!(f, "[VST3] '{name}' refused to activate"),
+            Self::EditorAlreadyOpen { name } => {
+                write!(f, "[VST3] '{name}' already has an open editor")
+            }
+            Self::NoEditController { name } => write!(
+                f,
+                "[VST3] '{name}' has no edit controller, and so no editor"
+            ),
+            Self::Editor(error) => write!(f, "{error}"),
+            Self::NoOpenEditor { name } => {
+                write!(f, "[VST3] '{name}' has no open editor to address")
+            }
+            Self::LatencyResetupRefused { name } => {
+                write!(f, "[VST3] '{name}' refused re-setup after a latency change")
+            }
+            Self::LatencyReactivationRefused { name } => write!(
+                f,
+                "[VST3] '{name}' refused reactivation after a latency change"
+            ),
+            Self::ProcessorStateUnreported { name } => {
+                write!(f, "[VST3] '{name}' refused to report its processor state")
+            }
+            Self::ProcessorStateRefused { name } => write!(
+                f,
+                "[VST3] '{name}' refused the processor state saved in this project"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Vst3Error {}
+
+impl From<ClassIdError> for Vst3Error {
+    fn from(error: ClassIdError) -> Self {
+        Self::ClassId(error)
+    }
+}
+
+impl From<ModuleError> for Vst3Error {
+    fn from(error: ModuleError) -> Self {
+        Self::Module(error)
+    }
+}
+
+impl From<BusLayoutError> for Vst3Error {
+    fn from(error: BusLayoutError) -> Self {
+        Self::BusLayout(error)
+    }
+}
+
+impl From<EditorError> for Vst3Error {
+    fn from(error: EditorError) -> Self {
+        Self::Editor(error)
+    }
+}
+
 /// Split a stored blob back into the two chunks, refusing anything this host did
 /// not write.
-pub fn decode_state(encoded: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
+pub fn decode_state(encoded: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Vst3Error> {
     if encoded.len() < STATE_HEADER_BYTES {
-        return Err("VST3 state is too short to carry its own header".to_string());
+        return Err(Vst3Error::StateTooShort);
     }
     if &encoded[..4] != STATE_MAGIC {
-        return Err("VST3 state was not written by this host".to_string());
+        return Err(Vst3Error::StateForeign);
     }
     let version = u16::from_le_bytes([encoded[4], encoded[5]]);
     if version != STATE_VERSION {
-        return Err(format!(
-            "VST3 state version {version} was written by a newer host and cannot be read"
-        ));
+        return Err(Vst3Error::StateNewerVersion { version });
     }
     let component_len =
         u32::from_le_bytes([encoded[6], encoded[7], encoded[8], encoded[9]]) as usize;
@@ -607,9 +771,9 @@ pub fn decode_state(encoded: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let expected = STATE_HEADER_BYTES
         .checked_add(component_len)
         .and_then(|total| total.checked_add(controller_len))
-        .ok_or_else(|| "VST3 state declares more bytes than can exist".to_string())?;
+        .ok_or(Vst3Error::StateImpossibleLength)?;
     if encoded.len() < expected {
-        return Err("VST3 state is shorter than its own header declares".to_string());
+        return Err(Vst3Error::StateTruncated);
     }
     let component_end = STATE_HEADER_BYTES + component_len;
     Ok((
@@ -758,7 +922,7 @@ impl Vst3Instance {
     ///
     /// `descriptor_id` is the class CID as 32 hex characters, which is what the
     /// scanner publishes and what a saved project stores.
-    pub fn open(bundle_path: &Path, descriptor_id: &str) -> Result<Self, String> {
+    pub fn open(bundle_path: &Path, descriptor_id: &str) -> Result<Self, Vst3Error> {
         let class_id = parse_class_id(descriptor_id)?;
         let host = Vst3HostContext::new();
         let module = Vst3Module::open(bundle_path)?;
@@ -769,11 +933,10 @@ impl Vst3Instance {
         // that belongs to somebody else's plugin, which is how an early-ranked
         // copy evicts the genuine registration of the plugin it names.
         if !factory_declares_class(module.factory(), &class_id) {
-            return Err(format!(
-                "[VST3] '{}' does not implement class {descriptor_id}; its own factory lists no \
-                 such class",
-                bundle_path.display()
-            ));
+            return Err(Vst3Error::ClassNotImplemented {
+                bundle: bundle_path.to_path_buf(),
+                descriptor_id: descriptor_id.to_string(),
+            });
         }
 
         let name = class_name(module.factory(), &class_id)
@@ -793,7 +956,7 @@ impl Vst3Instance {
         host: Vst3HostContext,
         class_id: &TUID,
         name: &str,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Vst3Error> {
         let component = create_component(factory, class_id, name)?;
 
         // SAFETY: `component` was just created by the factory and has not been
@@ -801,7 +964,9 @@ impl Vst3Instance {
         // the plugin never reached the state `terminate` undoes.
         unsafe {
             if component.initialize(host.as_unknown()) != kResultOk {
-                return Err(format!("[VST3] '{name}' refused to initialize"));
+                return Err(Vst3Error::InitializeRefused {
+                    name: name.to_string(),
+                });
             }
         }
 
@@ -1115,7 +1280,11 @@ unsafe impl Sync for Vst3Wrapper {}
 impl Vst3Wrapper {
     /// Load a bundle, instantiate the class the descriptor names, and activate
     /// it at the given sample rate.
-    pub fn new(bundle_path: &Path, descriptor_id: &str, sample_rate: f64) -> Result<Self, String> {
+    pub fn new(
+        bundle_path: &Path,
+        descriptor_id: &str,
+        sample_rate: f64,
+    ) -> Result<Self, Vst3Error> {
         Self::new_with_mode(
             bundle_path,
             descriptor_id,
@@ -1131,7 +1300,7 @@ impl Vst3Wrapper {
         descriptor_id: &str,
         sample_rate: f64,
         mode: ProcessMode,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Vst3Error> {
         let instance = Vst3Instance::open(bundle_path, descriptor_id)?;
         Self::activated_with_mode(instance, parse_class_id(descriptor_id)?, sample_rate, mode)
     }
@@ -1142,7 +1311,7 @@ impl Vst3Wrapper {
         instance: Vst3Instance,
         class_id: TUID,
         sample_rate: f64,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Vst3Error> {
         Self::activated_with_mode(instance, class_id, sample_rate, ProcessMode::Realtime)
     }
 
@@ -1152,7 +1321,7 @@ impl Vst3Wrapper {
         class_id: TUID,
         sample_rate: f64,
         mode: ProcessMode,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Vst3Error> {
         let mut wrapper = Self {
             editor: None,
             processor: None,
@@ -1191,13 +1360,12 @@ impl Vst3Wrapper {
     /// active. Entering the processing state is left to the processing thread —
     /// the audio thread, or an offline instance's render thread — which is the
     /// only thread VST3 allows `setProcessing` from.
-    fn activate(&mut self) -> Result<(), String> {
+    fn activate(&mut self) -> Result<(), Vst3Error> {
         let component = self.instance.component();
         let Some(processor) = component.cast::<IAudioProcessor>() else {
-            return Err(format!(
-                "[VST3] '{}' exposes no audio processor",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::NoAudioProcessor {
+                name: self.instance.name().to_string(),
+            });
         };
 
         // Before activation, because `setBusArrangements` is only defined
@@ -1223,19 +1391,17 @@ impl Vst3Wrapper {
         // SAFETY: the component is initialised and inactive, the state
         // `setupProcessing` requires; `setup` is a live local read during the call.
         if unsafe { processor.setupProcessing(&mut setup) } != kResultOk {
-            return Err(format!(
-                "[VST3] '{}' refused the host's processing setup",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::ProcessingSetupRefused {
+                name: self.instance.name().to_string(),
+            });
         }
 
         // SAFETY: the component is initialised, set up and inactive; this runs on
         // the control path during construction, never concurrently with `process`.
         if unsafe { component.setActive(1) } != kResultOk {
-            return Err(format!(
-                "[VST3] '{}' refused to activate",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::ActivateRefused {
+                name: self.instance.name().to_string(),
+            });
         }
 
         // Every geometry-dependent allocation happens here, once: a block reads
@@ -1316,19 +1482,18 @@ impl Vst3Wrapper {
     /// editor is closed. That is the whole of what [`Vst3Editor::open`] asks of
     /// its caller, so this function discharges the contract rather than passing
     /// it on to a trait that models the same handle as safe for every backend.
-    pub(crate) fn open_editor(&mut self, parent: *mut c_void) -> Result<EditorSize, String> {
+    pub(crate) fn open_editor(&mut self, parent: *mut c_void) -> Result<EditorSize, Vst3Error> {
         if self.editor.is_some() {
-            return Err(format!(
-                "[VST3] '{}' already has an open editor",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::EditorAlreadyOpen {
+                name: self.instance.name().to_string(),
+            });
         }
-        let controller = self.instance.controller().ok_or_else(|| {
-            format!(
-                "[VST3] '{}' has no edit controller, and so no editor",
-                self.instance.name()
-            )
-        })?;
+        let controller = self
+            .instance
+            .controller()
+            .ok_or_else(|| Vst3Error::NoEditController {
+                name: self.instance.name().to_string(),
+            })?;
 
         // SAFETY: `parent` reaches here only from `AudioPlugin::open_gui`, whose
         // argument is the live native window handle the shell created for this
@@ -1364,12 +1529,9 @@ impl Vst3Wrapper {
     /// Every host-initiated editor operation starts here, and names the plugin
     /// in its refusal: the caller reaches this from a window event, where "no
     /// editor" is a report about one instance among several.
-    fn open_editor_or_refuse(&self) -> Result<&Vst3Editor, String> {
-        self.editor.as_ref().ok_or_else(|| {
-            format!(
-                "[VST3] '{}' has no open editor to address",
-                self.instance.name()
-            )
+    fn open_editor_or_refuse(&self) -> Result<&Vst3Editor, Vst3Error> {
+        self.editor.as_ref().ok_or_else(|| Vst3Error::NoOpenEditor {
+            name: self.instance.name().to_string(),
         })
     }
 
@@ -1479,7 +1641,7 @@ impl Vst3Wrapper {
     /// Control path only: the caller holds the exclusive control claim, so the
     /// audio thread cannot run concurrently — which is also why the stop here
     /// uses the counted off-audio-thread route.
-    pub fn reactivate_for_latency(&mut self) -> Result<u32, String> {
+    pub fn reactivate_for_latency(&mut self) -> Result<u32, Vst3Error> {
         let Some(processor) = self.processor.clone() else {
             return Ok(0);
         };
@@ -1499,19 +1661,17 @@ impl Vst3Wrapper {
         // SAFETY: exclusive control access; the component is initialised and
         // inactive, the state `setupProcessing` requires; `setup` is a live local.
         if unsafe { processor.setupProcessing(&mut setup) } != kResultOk {
-            return Err(format!(
-                "[VST3] '{}' refused re-setup after a latency change",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::LatencyResetupRefused {
+                name: self.instance.name().to_string(),
+            });
         }
 
         // SAFETY: exclusive control access; the component is initialised, set up
         // and inactive.
         if unsafe { self.instance.component().setActive(1) } != kResultOk {
-            return Err(format!(
-                "[VST3] '{}' refused reactivation after a latency change",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::LatencyReactivationRefused {
+                name: self.instance.name().to_string(),
+            });
         }
 
         self.activated = true;
@@ -1810,16 +1970,13 @@ impl AudioPlugin for Vst3Wrapper {
     /// valid save — which then overwrites the last good one in the project file.
     /// The controller's own chunk stays tolerant: `getState` answering
     /// `kNotImplemented` is ordinary for a controller with nothing to persist.
-    fn get_state(&self) -> Result<Vec<u8>, String> {
+    fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         let component = read_chunk(|stream| {
             // SAFETY: control path only; the component is live.
             unsafe { self.instance.component().getState(stream) }
         })
-        .ok_or_else(|| {
-            format!(
-                "[VST3] '{}' refused to report its processor state",
-                self.instance.name()
-            )
+        .ok_or_else(|| Vst3Error::ProcessorStateUnreported {
+            name: self.instance.name().to_string(),
         })?;
 
         let controller = self
@@ -1846,7 +2003,7 @@ impl AudioPlugin for Vst3Wrapper {
     /// tell the project it reloaded when it did not. The controller's two
     /// entry points stay tolerant, because `kNotImplemented` is the ordinary
     /// answer from a combined class that already took the same bytes.
-    fn set_state(&mut self, state: &[u8]) -> Result<(), String> {
+    fn set_state(&mut self, state: &[u8]) -> Result<(), PluginError> {
         let (component, controller_chunk) = decode_state(state)?;
 
         let restored = write_chunk(&component, |stream| {
@@ -1854,10 +2011,10 @@ impl AudioPlugin for Vst3Wrapper {
             unsafe { self.instance.component().setState(stream) }
         });
         if restored != kResultOk {
-            return Err(format!(
-                "[VST3] '{}' refused the processor state saved in this project",
-                self.instance.name()
-            ));
+            return Err(Vst3Error::ProcessorStateRefused {
+                name: self.instance.name().to_string(),
+            }
+            .into());
         }
 
         let Some(controller) = self.instance.controller() else {
@@ -1893,9 +2050,9 @@ impl AudioPlugin for Vst3Wrapper {
         self.has_editor()
     }
 
-    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        self.open_editor(handle_ptr)
-            .map(|size| (size.width, size.height))
+    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), PluginError> {
+        let size = self.open_editor(handle_ptr)?;
+        Ok((size.width, size.height))
     }
 
     fn close_gui(&mut self) {
@@ -1914,20 +2071,24 @@ impl AudioPlugin for Vst3Wrapper {
         self.editor.as_ref().is_some_and(Vst3Editor::can_resize)
     }
 
-    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
-        self.open_editor_or_refuse()?
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), PluginError> {
+        let granted = self
+            .open_editor_or_refuse()?
             .request_size(EditorSize { width, height })
-            .map(|granted| (granted.width, granted.height))
+            .map_err(Vst3Error::from)?;
+        Ok((granted.width, granted.height))
     }
 
     /// The stated scale is kept as well as applied: an editor closed and
     /// reopened on the display it was moved to must open at the scale it is on,
     /// not at the one it was created under.
-    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), PluginError> {
         self.editor_scale = scale;
-        self.open_editor_or_refuse()?
+        let granted = self
+            .open_editor_or_refuse()?
             .apply_content_scale(scale)
-            .map(|granted| (granted.width, granted.height))
+            .map_err(Vst3Error::from)?;
+        Ok((granted.width, granted.height))
     }
 
     /// Read and clear the "plugin state changed" signal its editor raised
@@ -2037,7 +2198,7 @@ impl HostedPluginRuntime for Vst3Wrapper {
         self.process_block(inputs, outputs, num_samples);
     }
 
-    fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+    fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
         self.report_plugin_observations();
         self.deliver_deferred_messages();
 
@@ -2243,38 +2404,46 @@ fn create_component(
     factory: &ComPtr<IPluginFactory>,
     class_id: &TUID,
     name: &str,
-) -> Result<ComPtr<IComponent>, String> {
+) -> Result<ComPtr<IComponent>, Vst3Error> {
     let mut object: *mut std::ffi::c_void = ptr::null_mut();
     let iid = crate::vst3_host::tuid_from_guid(&IComponent::IID);
     // SAFETY: the `ComPtr` holds a reference on a live factory; `class_id` and
     // `iid` are live 16-byte locals, and `object` is a live out-parameter.
     if unsafe { factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) } != kResultOk
     {
-        return Err(format!("[VST3] factory refused to create '{name}'"));
+        return Err(Vst3Error::FactoryRefusedComponent {
+            name: name.to_string(),
+        });
     }
     // SAFETY: a successful `createInstance` for `IComponent::IID` leaves in
     // `object` null or an owned `IComponent` reference, adopted here exactly once.
-    unsafe { ComPtr::from_raw(object as *mut IComponent) }
-        .ok_or_else(|| format!("[VST3] factory returned no component for '{name}'"))
+    unsafe { ComPtr::from_raw(object as *mut IComponent) }.ok_or_else(|| Vst3Error::NoComponent {
+        name: name.to_string(),
+    })
 }
 
 fn create_controller(
     factory: &ComPtr<IPluginFactory>,
     class_id: &TUID,
     name: &str,
-) -> Result<ComPtr<IEditController>, String> {
+) -> Result<ComPtr<IEditController>, Vst3Error> {
     let mut object: *mut std::ffi::c_void = ptr::null_mut();
     let iid = crate::vst3_host::tuid_from_guid(&IEditController::IID);
     // SAFETY: the `ComPtr` holds a reference on a live factory; `class_id` and
     // `iid` are live 16-byte locals, and `object` is a live out-parameter.
     if unsafe { factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) } != kResultOk
     {
-        return Err(format!("[VST3] factory refused the controller of '{name}'"));
+        return Err(Vst3Error::FactoryRefusedController {
+            name: name.to_string(),
+        });
     }
     // SAFETY: a successful `createInstance` for `IEditController::IID` leaves in
     // `object` null or an owned `IEditController` reference, adopted here once.
-    unsafe { ComPtr::from_raw(object as *mut IEditController) }
-        .ok_or_else(|| format!("[VST3] factory returned no controller for '{name}'"))
+    unsafe { ComPtr::from_raw(object as *mut IEditController) }.ok_or_else(|| {
+        Vst3Error::NoController {
+            name: name.to_string(),
+        }
+    })
 }
 
 /// Activate event bus zero, when the component has one. Bus zero is the main bus

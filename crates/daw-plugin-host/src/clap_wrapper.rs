@@ -55,11 +55,13 @@ use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
 use crate::params::PluginParameter;
-use crate::scanner::{category_from_clap_features, clap_library_path, owned_feature_list};
+use crate::scanner::{
+    category_from_clap_features, clap_library_path, owned_feature_list, ScanError,
+};
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorClosed, EditorVisibility, EditorWindowAsks,
     EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
+    PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
     MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
@@ -362,19 +364,15 @@ impl AudioBusLayout {
     ///
     /// Free of any plugin call so the buffer arithmetic is testable against
     /// plain numbers, and so the load path only owes the reading.
-    fn declared(input_ports: &[u32], output_ports: &[u32]) -> Result<Self, String> {
-        let build = |ports: &[u32], direction: &str| -> Result<PortBuffers, String> {
+    fn declared(input_ports: &[u32], output_ports: &[u32]) -> Result<Self, ClapError> {
+        let build = |ports: &[u32], direction: PortDirection| -> Result<PortBuffers, ClapError> {
             let total_channels: u32 = ports.iter().copied().try_fold(0u32, |sum, channels| {
                 sum.checked_add(channels)
                     .filter(|_| channels > 0)
-                    .ok_or_else(|| {
-                        format!("CLAP {direction} port declares an unusable channel count")
-                    })
+                    .ok_or(ClapError::PortChannelCountUnusable { direction })
             })?;
             if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
-                return Err(format!(
-                    "CLAP {direction} audio channel count exceeds runtime bounds"
-                ));
+                return Err(ClapError::AudioChannelCountExceedsBounds { direction });
             }
             let mut scratch = vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
             let mut pointers = Vec::with_capacity(total_channels as usize);
@@ -405,8 +403,10 @@ impl AudioBusLayout {
             Ok((scratch, pointers, buffers))
         };
 
-        let (input_scratch, input_channel_ptrs, input_buffers) = build(input_ports, "input")?;
-        let (output_scratch, output_channel_ptrs, output_buffers) = build(output_ports, "output")?;
+        let (input_scratch, input_channel_ptrs, input_buffers) =
+            build(input_ports, PortDirection::Input)?;
+        let (output_scratch, output_channel_ptrs, output_buffers) =
+            build(output_ports, PortDirection::Output)?;
         Ok(Self {
             input_scratch,
             output_scratch,
@@ -772,17 +772,242 @@ unsafe extern "C" fn istream_read(
     to_read as i64
 }
 
+/// Which way a CLAP audio port carries signal, as a refusal names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortDirection {
+    Input,
+    Output,
+}
+
+impl PortDirection {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::Output => "output",
+        }
+    }
+}
+
+/// Why a CLAP plugin could not be loaded, saved, restored, re-activated, or
+/// driven through its editor.
+///
+/// Every variant is built on the control path. The process path reports a
+/// refusal through flags and never builds one of these.
+#[derive(Debug)]
+pub enum ClapError {
+    /// The plugin path does not resolve to a loadable library.
+    LibraryPath(ScanError),
+    /// The dynamic loader refused the library.
+    LibraryNotLoaded {
+        plugin_path: String,
+        cause: libloading::Error,
+    },
+    /// The library exports no `clap_entry`.
+    NoEntrySymbol {
+        plugin_path: String,
+        cause: libloading::Error,
+    },
+    /// The library's `clap_entry` is null.
+    NullEntry,
+    /// The plugin path contains a NUL byte.
+    InvalidPluginPath,
+    /// `clap_entry.init` returned false.
+    EntryInitFailed,
+    /// The entry has no `get_factory`.
+    NoFactoryLookup,
+    /// The entry returned no plugin factory.
+    NullFactory,
+    /// The plugin id contains a NUL byte.
+    InvalidPluginId,
+    /// The factory has no `create_plugin`.
+    NoCreatePlugin,
+    /// The factory returned no instance for the id.
+    InstanceNotCreated { plugin_id: String },
+    /// `plugin.init` returned false.
+    PluginInitFailed,
+    /// The plugin requires real-time rendering and was asked to render offline.
+    RequiresRealtime { name: String },
+    /// `clap.render` refused offline rendering.
+    OfflineRefused { name: String },
+    /// `clap.audio-ports` has no `count`.
+    AudioPortsNoCount { direction: PortDirection },
+    /// `clap.audio-ports` reports more ports than the runtime carries.
+    AudioPortCountExceedsBounds { direction: PortDirection },
+    /// `clap.audio-ports` has no `get`.
+    AudioPortsNoInfo { direction: PortDirection },
+    /// `clap.audio-ports` returned false for a port it counted.
+    AudioPortNoInfo {
+        direction: PortDirection,
+        index: u32,
+    },
+    /// A declared port carries zero channels, or the total overflows.
+    PortChannelCountUnusable { direction: PortDirection },
+    /// The declared ports carry more channels than the runtime carries.
+    AudioChannelCountExceedsBounds { direction: PortDirection },
+    /// `state.load` returned false.
+    StateLoadFailed { name: String },
+    /// `state.save` returned false.
+    StateSaveRefused { name: String },
+    /// The plugin has no editor.
+    GuiUnsupported,
+    /// The editor is already open.
+    GuiAlreadyOpen,
+    /// `gui.is_api_supported` refused this platform's embedded API.
+    EmbeddedGuiUnsupported { name: String },
+    /// `clap.gui` has no `create`.
+    GuiNoCreate,
+    /// `gui.create` returned false.
+    GuiCreateFailed { name: String },
+    /// `gui.set_parent` returned false.
+    GuiSetParentFailed { name: String },
+    /// The command fixture has no open editor to resize.
+    FixtureNoEditorToResize,
+    /// The command fixture has no open editor to re-scale.
+    FixtureNoEditorToRescale,
+    /// The open editor cannot be resized by the host.
+    NoResizableEditor { name: String },
+    /// No editor is open to resize.
+    NoEditorToResize { name: String },
+    /// `gui.adjust_size` refused the request.
+    EditorSizeRefused { name: String },
+    /// `gui.set_size` refused the adjusted size.
+    AdjustedSizeRefused { name: String },
+    /// The display scale is not finite and positive.
+    InvalidContentScale { name: String, scale: f64 },
+    /// No editor is open to re-scale.
+    NoEditorToRescale { name: String },
+    /// `gui.get_size` states no size at the new display scale.
+    NoSizeAtScale { name: String },
+    /// `plugin.activate` returned false after a latency change.
+    LatencyReactivationFailed { name: String },
+}
+
+impl std::fmt::Display for ClapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LibraryPath(error) => write!(f, "{error}"),
+            Self::LibraryNotLoaded { plugin_path, cause } => {
+                write!(f, "Failed to load CLAP plugin at {plugin_path}: {cause}")
+            }
+            Self::NoEntrySymbol { plugin_path, cause } => {
+                write!(f, "No clap_entry symbol in {plugin_path}: {cause}")
+            }
+            Self::NullEntry => f.write_str("clap_entry symbol is null"),
+            Self::InvalidPluginPath => f.write_str("Invalid plugin path"),
+            Self::EntryInitFailed => f.write_str("clap_entry.init() returned false"),
+            Self::NoFactoryLookup => f.write_str("clap_entry has no get_factory"),
+            Self::NullFactory => f.write_str("Plugin factory is null"),
+            Self::InvalidPluginId => f.write_str("Invalid plugin ID"),
+            Self::NoCreatePlugin => f.write_str("Factory has no create_plugin function"),
+            Self::InstanceNotCreated { plugin_id } => {
+                write!(f, "Failed to create plugin instance: {plugin_id}")
+            }
+            Self::PluginInitFailed => f.write_str("plugin.init() returned false"),
+            Self::RequiresRealtime { name } => write!(
+                f,
+                "[CLAP] '{name}' requires real-time rendering and cannot render offline"
+            ),
+            Self::OfflineRefused { name } => write!(f, "[CLAP] '{name}' refused to render offline"),
+            Self::AudioPortsNoCount { direction } => write!(
+                f,
+                "CLAP {} audio-ports has no count callback",
+                direction.label()
+            ),
+            Self::AudioPortCountExceedsBounds { direction } => write!(
+                f,
+                "CLAP {} audio port count exceeds runtime bounds",
+                direction.label()
+            ),
+            Self::AudioPortsNoInfo { direction } => write!(
+                f,
+                "CLAP {} audio-ports has no info callback",
+                direction.label()
+            ),
+            Self::AudioPortNoInfo { direction, index } => write!(
+                f,
+                "CLAP {} audio port {index} returned no port info",
+                direction.label()
+            ),
+            Self::PortChannelCountUnusable { direction } => write!(
+                f,
+                "CLAP {} port declares an unusable channel count",
+                direction.label()
+            ),
+            Self::AudioChannelCountExceedsBounds { direction } => write!(
+                f,
+                "CLAP {} audio channel count exceeds runtime bounds",
+                direction.label()
+            ),
+            Self::StateLoadFailed { name } => write!(f, "[CLAP] state.load() failed for {name}"),
+            Self::StateSaveRefused { name } => {
+                write!(f, "[CLAP] '{name}' refused to save its state")
+            }
+            Self::GuiUnsupported => f.write_str("Plugin does not support GUI"),
+            Self::GuiAlreadyOpen => f.write_str("GUI is already open"),
+            Self::EmbeddedGuiUnsupported { name } => write!(
+                f,
+                "Plugin '{name}' does not support embedded GUI on this platform"
+            ),
+            Self::GuiNoCreate => f.write_str("Plugin GUI has no create function"),
+            Self::GuiCreateFailed { name } => write!(f, "Plugin '{name}' gui.create() failed"),
+            Self::GuiSetParentFailed { name } => {
+                write!(f, "Plugin '{name}' gui.set_parent() failed")
+            }
+            Self::FixtureNoEditorToResize => f.write_str("Plugin has no open editor to resize"),
+            Self::FixtureNoEditorToRescale => f.write_str("Plugin has no open editor to re-scale"),
+            Self::NoResizableEditor { name } => {
+                write!(f, "Plugin '{name}' has no resizable open editor")
+            }
+            Self::NoEditorToResize { name } => {
+                write!(f, "Plugin '{name}' has no open editor to resize")
+            }
+            Self::EditorSizeRefused { name } => {
+                write!(f, "Plugin '{name}' refused the requested editor size")
+            }
+            Self::AdjustedSizeRefused { name } => write!(
+                f,
+                "Plugin '{name}' refused to move to the adjusted editor size"
+            ),
+            Self::InvalidContentScale { name, scale } => write!(
+                f,
+                "Plugin '{name}' cannot be told a display scale of {scale}"
+            ),
+            Self::NoEditorToRescale { name } => {
+                write!(f, "Plugin '{name}' has no open editor to re-scale")
+            }
+            Self::NoSizeAtScale { name } => write!(
+                f,
+                "Plugin '{name}' states no editor size at the new display scale"
+            ),
+            Self::LatencyReactivationFailed { name } => write!(
+                f,
+                "[CLAP] reactivation for latency change failed for {name}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClapError {}
+
+impl From<ScanError> for ClapError {
+    fn from(error: ScanError) -> Self {
+        Self::LibraryPath(error)
+    }
+}
+
 struct StreamCursor {
     data: Vec<u8>,
     pos: usize,
 }
 
-fn state_load_result(plugin_name: &str, loaded: bool) -> Result<(), String> {
+fn state_load_result(plugin_name: &str, loaded: bool) -> Result<(), ClapError> {
     if loaded {
         return Ok(());
     }
 
-    Err(format!("[CLAP] state.load() failed for {}", plugin_name))
+    Err(ClapError::StateLoadFailed {
+        name: plugin_name.to_string(),
+    })
 }
 
 /// Read a display string out of a fixed-size CLAP char array, or `None` when it
@@ -810,7 +1035,7 @@ impl ClapWrapper {
     ///   supplied by the caller. It is not the output device's rate: the two can
     ///   differ, and the plugin only ever sees engine-rendered audio, so
     ///   activating on the device's clock detunes everything the plugin does.
-    pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
+    pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, ClapError> {
         Self::new_with_mode(plugin_path, plugin_id, sample_rate, ProcessMode::Realtime)
     }
 
@@ -826,27 +1051,33 @@ impl ClapWrapper {
         plugin_id: &str,
         sample_rate: f64,
         mode: ProcessMode,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ClapError> {
         let path = Path::new(plugin_path);
         let library_path = clap_library_path(path)?;
         // 1. Load the shared library
         // SAFETY: loading runs the bundle's initialisers, which is what hosting a
         // CLAP bundle means; this path is the user's chosen, already-resolved bundle,
         // loaded on the host's UI thread as the crate's lifecycle rule requires.
-        let library = unsafe { Library::new(&library_path) }
-            .map_err(|e| format!("Failed to load CLAP plugin at {}: {}", plugin_path, e))?;
+        let library = unsafe { Library::new(&library_path) }.map_err(|cause| {
+            ClapError::LibraryNotLoaded {
+                plugin_path: plugin_path.to_string(),
+                cause,
+            }
+        })?;
 
         // 2. Get the clap_entry symbol
         // SAFETY: CLAP defines `clap_entry` as an exported `clap_plugin_entry`
         // struct, so the symbol's address read as `*const clap_plugin_entry` is
         // correctly typed; `library` outlives the `Symbol` borrow.
         let entry: libloading::Symbol<*const clap_plugin_entry> =
-            unsafe { library.get(b"clap_entry\0") }
-                .map_err(|e| format!("No clap_entry symbol in {}: {}", plugin_path, e))?;
+            unsafe { library.get(b"clap_entry\0") }.map_err(|cause| ClapError::NoEntrySymbol {
+                plugin_path: plugin_path.to_string(),
+                cause,
+            })?;
 
         let entry_ptr = *entry;
         if entry_ptr.is_null() {
-            return Err("clap_entry symbol is null".to_string());
+            return Err(ClapError::NullEntry);
         }
 
         // SAFETY: `entry_ptr` is non-null (checked above) and points into `library`,
@@ -857,12 +1088,12 @@ impl ClapWrapper {
         //    the spec's init/deinit pairing never starts — same rule as the
         //    scan-time loader in `scanner.rs`.
         if let Some(init_fn) = entry_ref.init {
-            let path_c = CString::new(plugin_path).map_err(|_| "Invalid plugin path")?;
+            let path_c = CString::new(plugin_path).map_err(|_| ClapError::InvalidPluginPath)?;
             // SAFETY: `init_fn` is the entry's own `init`, matched as `Some`; it gets
             // the NUL-terminated bundle path, which `path_c` keeps alive for the call.
             let ok = unsafe { init_fn(path_c.as_ptr()) };
             if !ok {
-                return Err("clap_entry.init() returned false".to_string());
+                return Err(ClapError::EntryInitFailed);
             }
         }
 
@@ -902,7 +1133,7 @@ impl ClapWrapper {
         plugin_id: &str,
         sample_rate: f64,
         mode: ProcessMode,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ClapError> {
         // SAFETY: this fn's own contract: `entry_ptr` is a live entry whose `init`
         // succeeded, which is `create_instance_from_entry`'s precondition.
         let loaded =
@@ -931,7 +1162,7 @@ impl ClapWrapper {
         plugin_id: &str,
         sample_rate: f64,
         mode: ProcessMode,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ClapError> {
         // 4. Get the plugin factory
         let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
         // SAFETY: `entry_ptr` points to a live, initialised entry (this fn's contract).
@@ -940,11 +1171,11 @@ impl ClapWrapper {
             // as `Some`, given the static NUL-terminated `CLAP_PLUGIN_FACTORY_ID`.
             unsafe { get_factory(factory_id) }
         } else {
-            return Err("clap_entry has no get_factory".to_string());
+            return Err(ClapError::NoFactoryLookup);
         };
 
         if factory_ptr.is_null() {
-            return Err("Plugin factory is null".to_string());
+            return Err(ClapError::NullFactory);
         }
 
         // SAFETY: non-null (checked above), and CLAP defines the object returned for
@@ -960,18 +1191,18 @@ impl ClapWrapper {
         let host_ptr: *const clap_host = &*host;
 
         // 6. Create the plugin instance
-        let id_c = CString::new(plugin_id).map_err(|_| "Invalid plugin ID")?;
+        let id_c = CString::new(plugin_id).map_err(|_| ClapError::InvalidPluginId)?;
 
-        let create_plugin = factory
-            .create_plugin
-            .ok_or("Factory has no create_plugin function")?;
+        let create_plugin = factory.create_plugin.ok_or(ClapError::NoCreatePlugin)?;
 
         // SAFETY: `create_plugin` is the factory's own callback, matched as `Some`;
         // `host_ptr` points into the `host` box and `id_c` is NUL-terminated, both
         // alive for the call (and `host` for the instance's life, via the wrapper).
         let plugin = unsafe { create_plugin(factory, host_ptr, id_c.as_ptr()) };
         if plugin.is_null() {
-            return Err(format!("Failed to create plugin instance: {}", plugin_id));
+            return Err(ClapError::InstanceNotCreated {
+                plugin_id: plugin_id.to_string(),
+            });
         }
 
         // 7. Init the plugin
@@ -986,7 +1217,7 @@ impl ClapWrapper {
                 // SAFETY: the live, never-activated instance created above, on the
                 // loading (main) thread; this error path does not use it again.
                 unsafe { destroy_abandoned_instance(plugin) };
-                return Err("plugin.init() returned false".to_string());
+                return Err(ClapError::PluginInitFailed);
             }
         }
 
@@ -1363,7 +1594,7 @@ impl ClapWrapper {
         plugin_ref: &clap_plugin,
         name: &str,
         mode: ProcessMode,
-    ) -> Result<(), String> {
+    ) -> Result<(), ClapError> {
         if mode == ProcessMode::Realtime {
             return Ok(());
         }
@@ -1387,9 +1618,9 @@ impl ClapWrapper {
                 unsafe { requires(plugin) }
             });
         if hard_realtime {
-            return Err(format!(
-                "[CLAP] '{name}' requires real-time rendering and cannot render offline"
-            ));
+            return Err(ClapError::RequiresRealtime {
+                name: name.to_string(),
+            });
         }
         let accepted = render.set.is_some_and(|set| {
             // SAFETY: the render extension's own `[main-thread & !active]` `set`,
@@ -1397,7 +1628,9 @@ impl ClapWrapper {
             unsafe { set(plugin, CLAP_RENDER_OFFLINE) }
         });
         if !accepted {
-            return Err(format!("[CLAP] '{name}' refused to render offline"));
+            return Err(ClapError::OfflineRefused {
+                name: name.to_string(),
+            });
         }
         Ok(())
     }
@@ -1435,7 +1668,7 @@ impl ClapWrapper {
     /// # Safety
     /// `plugin_ref` must be a live, initialised, deactivated `clap_plugin` instance
     /// (or a sound test double), called on the thread that owns its main-thread calls.
-    unsafe fn read_audio_bus_layout(plugin_ref: &clap_plugin) -> Result<AudioBusLayout, String> {
+    unsafe fn read_audio_bus_layout(plugin_ref: &clap_plugin) -> Result<AudioBusLayout, ClapError> {
         // SAFETY: this fn's contract is `query_extension`'s, and
         // `clap_plugin_audio_ports` is the struct CLAP defines for `CLAP_EXT_AUDIO_PORTS`.
         let extension = unsafe {
@@ -1447,22 +1680,24 @@ impl ClapWrapper {
         // SAFETY: non-null (checked above); CLAP keeps an extension struct valid for
         // the life of the instance, which outlives this call.
         let audio_ports = unsafe { &*extension };
-        let read_direction = |is_input: bool| -> Result<Vec<u32>, String> {
-            let direction = if is_input { "input" } else { "output" };
+        let read_direction = |is_input: bool| -> Result<Vec<u32>, ClapError> {
+            let direction = if is_input {
+                PortDirection::Input
+            } else {
+                PortDirection::Output
+            };
             let count = audio_ports
                 .count
-                .ok_or_else(|| format!("CLAP {direction} audio-ports has no count callback"))?;
+                .ok_or(ClapError::AudioPortsNoCount { direction })?;
             // SAFETY: `count` is the extension's own callback, matched as `Some`, called
             // on the live, deactivated instance on its main thread (this fn's contract).
             let count = unsafe { count(plugin_ref as *const clap_plugin, is_input) };
             if count > MAX_RUNTIME_AUDIO_PORTS {
-                return Err(format!(
-                    "CLAP {direction} audio port count exceeds runtime bounds"
-                ));
+                return Err(ClapError::AudioPortCountExceedsBounds { direction });
             }
             let get = audio_ports
                 .get
-                .ok_or_else(|| format!("CLAP {direction} audio-ports has no info callback"))?;
+                .ok_or(ClapError::AudioPortsNoInfo { direction })?;
             let mut channels = Vec::with_capacity(count as usize);
             for index in 0..count {
                 // SAFETY: `clap_audio_port_info` is a C struct of integers, a char
@@ -1471,9 +1706,7 @@ impl ClapWrapper {
                 // SAFETY: `get` is the extension's own callback, matched as `Some`;
                 // `index < count`, and `info` is a live, writable out-parameter.
                 if !unsafe { get(plugin_ref as *const clap_plugin, index, is_input, &mut info) } {
-                    return Err(format!(
-                        "CLAP {direction} audio port {index} returned no port info"
-                    ));
+                    return Err(ClapError::AudioPortNoInfo { direction, index });
                 }
                 channels.push(info.channel_count);
             }
@@ -1686,15 +1919,15 @@ impl ClapWrapper {
     /// 4. gui.get_size(&w, &h)
     /// 5. gui.set_parent(window)
     /// 6. gui.show()
-    pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+    pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), ClapError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
             if !fixture.has_gui {
-                return Err("Plugin does not support GUI".to_string());
+                return Err(ClapError::GuiUnsupported);
             }
             if self.gui_open {
-                return Err("GUI is already open".to_string());
+                return Err(ClapError::GuiAlreadyOpen);
             }
 
             self.host_state.discard_editor_window_asks();
@@ -1703,11 +1936,11 @@ impl ClapWrapper {
         }
 
         if self.gui_ext.is_null() || self.plugin.is_null() {
-            return Err("Plugin does not support GUI".to_string());
+            return Err(ClapError::GuiUnsupported);
         }
 
         if self.gui_open {
-            return Err("GUI is already open".to_string());
+            return Err(ClapError::GuiAlreadyOpen);
         }
 
         // Anything a previous editor asked of its window is about that window.
@@ -1723,19 +1956,20 @@ impl ClapWrapper {
             // SAFETY: the extension's callback, matched as `Some`, on the live
             // instance `self.plugin`; `api` is a static NUL-terminated CLAP API id.
             if !unsafe { is_supported(self.plugin, api.as_ptr(), false) } {
-                return Err(format!(
-                    "Plugin '{}' does not support embedded GUI on this platform",
-                    self.name
-                ));
+                return Err(ClapError::EmbeddedGuiUnsupported {
+                    name: self.name.clone(),
+                });
             }
         }
 
         // 2. Create GUI
-        let create = gui.create.ok_or("Plugin GUI has no create function")?;
+        let create = gui.create.ok_or(ClapError::GuiNoCreate)?;
         // SAFETY: the extension's `create`, unwrapped above, on the live instance with
         // the static API id; no editor is open (`gui_open` checked above).
         if !unsafe { create(self.plugin, api.as_ptr(), false) } {
-            return Err(format!("Plugin '{}' gui.create() failed", self.name));
+            return Err(ClapError::GuiCreateFailed {
+                name: self.name.clone(),
+            });
         }
 
         // 3. Set scale — the host's stated display scale, defaulting to
@@ -1793,7 +2027,9 @@ impl ClapWrapper {
                     // the editor `create` made above; it is not used again.
                     unsafe { destroy(self.plugin) };
                 }
-                return Err(format!("Plugin '{}' gui.set_parent() failed", self.name));
+                return Err(ClapError::GuiSetParentFailed {
+                    name: self.name.clone(),
+                });
             }
         }
 
@@ -2057,22 +2293,25 @@ impl ClapWrapper {
     /// The size arrives and leaves in the window seam's logical units; the
     /// plugin is asked and told in its own, which on win32 and x11 are physical
     /// pixels.
-    pub fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+    pub fn request_editor_size(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<(u32, u32), ClapError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
             if !self.gui_open {
-                return Err("Plugin has no open editor to resize".to_string());
+                return Err(ClapError::FixtureNoEditorToResize);
             }
             self.resize_host_window(width, height);
             return Ok((width, height));
         }
 
         if !self.editor_can_resize() {
-            return Err(format!(
-                "Plugin '{}' has no resizable open editor",
-                self.name
-            ));
+            return Err(ClapError::NoResizableEditor {
+                name: self.name.clone(),
+            });
         }
 
         let previous = self.get_gui_size();
@@ -2080,20 +2319,18 @@ impl ClapWrapper {
         // SAFETY: control path only, which is `open_gui_extension`'s contract; the
         // extension outlives this borrow of `self`.
         let Some(gui) = (unsafe { self.open_gui_extension() }) else {
-            return Err(format!(
-                "Plugin '{}' has no open editor to resize",
-                self.name
-            ));
+            return Err(ClapError::NoEditorToResize {
+                name: self.name.clone(),
+            });
         };
 
         if let Some(adjust_size) = gui.adjust_size {
             // SAFETY: the extension's callback, matched as `Some`, on the live instance
             // with an open editor, with two live out-parameters.
             if !unsafe { adjust_size(self.plugin, &mut granted_width, &mut granted_height) } {
-                return Err(format!(
-                    "Plugin '{}' refused the requested editor size",
-                    self.name
-                ));
+                return Err(ClapError::EditorSizeRefused {
+                    name: self.name.clone(),
+                });
             }
         }
 
@@ -2108,10 +2345,9 @@ impl ClapWrapper {
                     let (width, height) = self.to_logical_units(previous);
                     self.resize_host_window(width, height);
                 }
-                return Err(format!(
-                    "Plugin '{}' refused to move to the adjusted editor size",
-                    self.name
-                ));
+                return Err(ClapError::AdjustedSizeRefused {
+                    name: self.name.clone(),
+                });
             }
         }
 
@@ -2126,12 +2362,12 @@ impl ClapWrapper {
     /// re-read rather than assumed: `set_scale` is what makes a plugin lay itself
     /// out at the new density, and `get_size` is the only way to learn what that
     /// came to.
-    pub fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+    pub fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), ClapError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
             let Some((width, height)) = self.get_gui_size().filter(|_| self.gui_open) else {
-                return Err("Plugin has no open editor to re-scale".to_string());
+                return Err(ClapError::FixtureNoEditorToRescale);
             };
             self.editor_content_scale = scale;
             self.resize_host_window(width, height);
@@ -2139,20 +2375,19 @@ impl ClapWrapper {
         }
 
         if !(scale.is_finite() && scale > 0.0) {
-            return Err(format!(
-                "Plugin '{}' cannot be told a display scale of {scale}",
-                self.name
-            ));
+            return Err(ClapError::InvalidContentScale {
+                name: self.name.clone(),
+                scale,
+            });
         }
         self.editor_content_scale = scale;
 
         // SAFETY: control path only, which is `open_gui_extension`'s contract; the
         // extension outlives this borrow of `self`.
         let Some(gui) = (unsafe { self.open_gui_extension() }) else {
-            return Err(format!(
-                "Plugin '{}' has no open editor to re-scale",
-                self.name
-            ));
+            return Err(ClapError::NoEditorToRescale {
+                name: self.name.clone(),
+            });
         };
         // Skipped for cocoa for the same reason the open path skips it:
         // its logical sizes already carry the OS scale.
@@ -2164,12 +2399,11 @@ impl ClapWrapper {
             }
         }
 
-        let stated = self.get_gui_size().ok_or_else(|| {
-            format!(
-                "Plugin '{}' states no editor size at the new display scale",
-                self.name
-            )
-        })?;
+        let stated = self
+            .get_gui_size()
+            .ok_or_else(|| ClapError::NoSizeAtScale {
+                name: self.name.clone(),
+            })?;
         // Converted through the scale just stored: what the plugin lays out at
         // the new density is stated in its own units, and the window it sits in
         // is sized in the seam's.
@@ -3201,7 +3435,7 @@ impl ClapWrapper {
     /// concurrently — which is also why the audio thread cannot perform the stop
     /// this cycle needs, and why the off-audio-thread fallback is used and
     /// counted here. Restarting is left to the first block after the cycle.
-    pub fn reactivate_for_latency(&mut self) -> Result<u32, String> {
+    pub fn reactivate_for_latency(&mut self) -> Result<u32, ClapError> {
         if self.plugin.is_null() {
             return Ok(self.latency_samples());
         }
@@ -3235,10 +3469,9 @@ impl ClapWrapper {
                     MAX_BUFFER as u32,
                 )
             } {
-                return Err(format!(
-                    "[CLAP] reactivation for latency change failed for {}",
-                    self.name
-                ));
+                return Err(ClapError::LatencyReactivationFailed {
+                    name: self.name.clone(),
+                });
             }
             self.activated = true;
             // A new activation is a new steady clock: the counter describes
@@ -3258,7 +3491,7 @@ impl ClapWrapper {
     /// `Some(new_samples)`. Returns `Ok(None)` when nothing changed. The flag is
     /// consumed (read-and-cleared) whether or not a reactivation follows.
     /// Main/control-thread only.
-    pub fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+    pub fn poll_latency_change(&mut self) -> Result<Option<u32>, ClapError> {
         self.report_plugin_observations();
 
         if !self.host_state.take_latency_dirty() {
@@ -3482,7 +3715,7 @@ impl AudioPlugin for ClapWrapper {
     /// the true answer for it. A plugin whose `save` fails has state it would not
     /// give, and answering empty there tells the project it saved when it did
     /// not.
-    fn get_state(&self) -> Result<Vec<u8>, String> {
+    fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             return Ok(fixture.state.clone());
@@ -3508,12 +3741,15 @@ impl AudioPlugin for ClapWrapper {
         // SAFETY: the extension's `save`, matched as `Some`, on the live non-null
         // instance; `ostream` and the `buffer` its `ctx` names outlive the call.
         if !unsafe { save_fn(self.plugin, &ostream) } {
-            return Err(format!("[CLAP] '{}' refused to save its state", self.name));
+            return Err(ClapError::StateSaveRefused {
+                name: self.name.clone(),
+            }
+            .into());
         }
         Ok(buffer)
     }
 
-    fn set_state(&mut self, state_data: &[u8]) -> Result<(), String> {
+    fn set_state(&mut self, state_data: &[u8]) -> Result<(), PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.state = state_data.to_vec();
@@ -3565,8 +3801,8 @@ impl AudioPlugin for ClapWrapper {
         ClapWrapper::has_gui(self)
     }
 
-    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        ClapWrapper::open_gui(self, handle_ptr)
+    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), PluginError> {
+        Ok(ClapWrapper::open_gui(self, handle_ptr)?)
     }
 
     fn close_gui(&mut self) {
@@ -3644,12 +3880,12 @@ impl AudioPlugin for ClapWrapper {
         ClapWrapper::editor_can_resize(self)
     }
 
-    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
-        ClapWrapper::request_editor_size(self, width, height)
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), PluginError> {
+        Ok(ClapWrapper::request_editor_size(self, width, height)?)
     }
 
-    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
-        ClapWrapper::apply_editor_content_scale(self, scale)
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), PluginError> {
+        Ok(ClapWrapper::apply_editor_content_scale(self, scale)?)
     }
 }
 
@@ -3707,8 +3943,8 @@ impl HostedPluginRuntime for ClapWrapper {
         )
     }
 
-    fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
-        ClapWrapper::poll_latency_change(self)
+    fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
+        Ok(ClapWrapper::poll_latency_change(self)?)
     }
 
     fn service_main_thread_callback(&mut self) {
@@ -4518,14 +4754,17 @@ mod tests {
 
     #[test]
     fn state_load_result_returns_ok_when_clap_load_succeeds() {
-        assert_eq!(state_load_result("fixture", true), Ok(()));
+        assert!(state_load_result("fixture", true).is_ok());
     }
 
     #[test]
     fn state_load_result_returns_error_when_clap_load_fails() {
+        let refusal = state_load_result("fixture", false).expect_err("load returned false");
+
+        assert!(matches!(&refusal, ClapError::StateLoadFailed { name } if name == "fixture"));
         assert_eq!(
-            state_load_result("fixture", false),
-            Err("[CLAP] state.load() failed for fixture".to_string())
+            refusal.to_string(),
+            "[CLAP] state.load() failed for fixture"
         );
     }
 
@@ -4733,7 +4972,8 @@ mod tests {
         .err()
         .expect("an entry whose factory query returns null must not load");
 
-        assert_eq!(error, "Plugin factory is null");
+        assert!(matches!(error, ClapError::NullFactory));
+        assert_eq!(error.to_string(), "Plugin factory is null");
         assert_eq!(
             entry_lifecycle(),
             ["entry_deinit"],
@@ -4758,7 +4998,8 @@ mod tests {
         .err()
         .expect("a plugin whose init returns false must not load");
 
-        assert_eq!(error, "plugin.init() returned false");
+        assert!(matches!(error, ClapError::PluginInitFailed));
+        assert_eq!(error.to_string(), "plugin.init() returned false");
         assert_eq!(
             entry_lifecycle(),
             ["plugin_destroy", "entry_deinit"],
@@ -4851,7 +5092,17 @@ mod tests {
         .err()
         .expect("a plugin whose port list cannot be read must not load");
 
-        assert_eq!(error, "CLAP input audio port 0 returned no port info");
+        assert!(matches!(
+            error,
+            ClapError::AudioPortNoInfo {
+                direction: PortDirection::Input,
+                index: 0
+            }
+        ));
+        assert_eq!(
+            error.to_string(),
+            "CLAP input audio port 0 returned no port info"
+        );
         assert_eq!(
             entry_lifecycle(),
             ["plugin_init", "plugin_destroy", "entry_deinit"],
@@ -5073,7 +5324,7 @@ mod tests {
         get_factory: Some(render_get_factory),
     };
 
-    fn load_render_fake(plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, String> {
+    fn load_render_fake(plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
         // SAFETY: `RENDER_ENTRY` is a static fake entry with no `init` to have run,
         // live for the process, so it satisfies the "initialised entry" contract.
         unsafe {
@@ -5118,8 +5369,9 @@ mod tests {
             .err()
             .expect("a plugin whose render.set refuses offline must not load offline");
 
+        assert!(matches!(&error, ClapError::OfflineRefused { .. }));
         assert_eq!(
-            error,
+            error.to_string(),
             format!("[CLAP] '{RENDER_REFUSING_PLUGIN_ID}' refused to render offline")
         );
         assert_eq!(
@@ -6807,8 +7059,12 @@ mod tests {
             .expect_err("a fixed-size editor must refuse a host-chosen size");
 
         assert!(
-            refusal.contains("no resizable open editor"),
+            matches!(refusal, ClapError::NoResizableEditor { .. }),
             "got: {refusal}"
+        );
+        assert_eq!(
+            refusal.to_string(),
+            "Plugin 'stub' has no resizable open editor"
         );
         assert_eq!(
             editor_steps(),

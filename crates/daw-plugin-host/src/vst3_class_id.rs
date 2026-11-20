@@ -8,7 +8,37 @@
 //! asks a Windows factory for a class nobody implements — so both routes are
 //! converted here and nowhere else.
 
+use std::num::ParseIntError;
 use vst3::Steinberg::TUID;
+
+/// Why a text is not a VST3 class id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClassIdError {
+    /// The text, once trimmed, is not 32 hexadecimal characters.
+    NotThirtyTwoHexCharacters { descriptor_id: String },
+    /// A byte pair did not parse as hexadecimal.
+    InvalidByte {
+        descriptor_id: String,
+        cause: ParseIntError,
+    },
+}
+
+impl std::fmt::Display for ClassIdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotThirtyTwoHexCharacters { descriptor_id } => write!(
+                f,
+                "'{descriptor_id}' is not a VST3 class id (expected 32 hexadecimal characters)"
+            ),
+            Self::InvalidByte {
+                descriptor_id,
+                cause,
+            } => write!(f, "'{descriptor_id}' is not a VST3 class id: {cause}"),
+        }
+    }
+}
+
+impl std::error::Error for ClassIdError {}
 
 /// How a `TUID`'s sixteen bytes are ordered in memory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +77,7 @@ fn in_layout(mut bytes: [u8; 16], layout: TuidLayout) -> [u8; 16] {
 
 /// Parse a class CID as a scan publishes it and a project stores it: 32
 /// hexadecimal characters.
-pub fn parse_class_id(descriptor_id: &str) -> Result<TUID, String> {
+pub fn parse_class_id(descriptor_id: &str) -> Result<TUID, ClassIdError> {
     parse_class_id_as(descriptor_id, TuidLayout::NATIVE)
 }
 
@@ -63,7 +93,7 @@ pub fn format_class_id(class_id: &TUID) -> String {
 /// a scan that publishes whatever it finds there produces a descriptor that can
 /// never be loaded — the failure then surfaces when a user tries to open the
 /// plugin rather than when it was scanned.
-pub fn normalized_class_id(descriptor_id: &str) -> Result<String, String> {
+pub fn normalized_class_id(descriptor_id: &str) -> Result<String, ClassIdError> {
     parse_class_id(descriptor_id).map(|class_id| format_class_id(&class_id))
 }
 
@@ -73,22 +103,26 @@ pub fn same_class_id(left: &TUID, right: &TUID) -> bool {
     left.iter().zip(right.iter()).all(|(a, b)| a == b)
 }
 
-fn parse_class_id_as(descriptor_id: &str, layout: TuidLayout) -> Result<TUID, String> {
+fn parse_class_id_as(descriptor_id: &str, layout: TuidLayout) -> Result<TUID, ClassIdError> {
     let trimmed = descriptor_id.trim();
     if trimmed.len() != 32
         || !trimmed
             .chars()
             .all(|character| character.is_ascii_hexdigit())
     {
-        return Err(format!(
-            "'{descriptor_id}' is not a VST3 class id (expected 32 hexadecimal characters)"
-        ));
+        return Err(ClassIdError::NotThirtyTwoHexCharacters {
+            descriptor_id: descriptor_id.to_string(),
+        });
     }
 
     let mut canonical = [0u8; 16];
     for (index, slot) in canonical.iter_mut().enumerate() {
-        *slot = u8::from_str_radix(&trimmed[index * 2..index * 2 + 2], 16)
-            .map_err(|error| format!("'{descriptor_id}' is not a VST3 class id: {error}"))?;
+        *slot = u8::from_str_radix(&trimmed[index * 2..index * 2 + 2], 16).map_err(|cause| {
+            ClassIdError::InvalidByte {
+                descriptor_id: descriptor_id.to_string(),
+                cause,
+            }
+        })?;
     }
 
     let mut class_id: TUID = [0; 16];
@@ -186,9 +220,26 @@ mod tests {
     /// factory, where the bytes would be read as some other class entirely.
     #[test]
     fn a_malformed_class_id_is_refused_rather_than_padded() {
+        assert_eq!(
+            parse_class_id("com.example.plugin"),
+            Err(ClassIdError::NotThirtyTwoHexCharacters {
+                descriptor_id: "com.example.plugin".to_string()
+            })
+        );
         assert!(parse_class_id("").is_err());
         assert!(parse_class_id("1122").is_err());
         assert!(parse_class_id("com.example.plugin").is_err());
         assert!(parse_class_id("zz22334455667788AABBCCDDEEFF0011").is_err());
+    }
+
+    /// The refusal text reaches the renderer as a scan or load reason.
+    #[test]
+    fn a_malformed_class_id_prints_the_refusal_the_renderer_receives() {
+        let refusal = parse_class_id(" 1122 ").expect_err("four characters");
+
+        assert_eq!(
+            refusal.to_string(),
+            "' 1122 ' is not a VST3 class id (expected 32 hexadecimal characters)"
+        );
     }
 }

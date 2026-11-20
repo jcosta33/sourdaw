@@ -32,6 +32,13 @@
 //! (`electron/scanWorker.ts`) and launches it directly — no shell runtime,
 //! Electron or otherwise, is ever re-entered to inspect a plugin.
 //!
+//! On Unix the policy starts this executable twice per candidate: once as the
+//! trusted tree supervisor, which runs no plugin code, and once, under it, as
+//! the leaf that does. The supervisor's marker comes first in its arguments,
+//! followed by the leaf's whole command line; it watches the application,
+//! relays the leaf's exit status, and kills whatever the leaf's tree leaves
+//! behind on every way out. Both roles are read by the same argument contract.
+//!
 //! Started with no worker marker in its arguments, this process is not being
 //! asked to scan anything: it prints why it exists to stderr and exits 2
 //! rather than silently doing nothing.
