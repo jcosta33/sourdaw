@@ -47,7 +47,7 @@ const RECONFIGURING_CLASS_NAME: &str = "Sourdaw Harness Fx Reconfiguring";
 const RECONFIGURING_INSTRUMENT_CLASS_NAME: &str = "Sourdaw Harness Fx Reconfiguring Instrument";
 
 /// How many classes this module adds to the factory's list.
-pub(crate) const PROBE_CLASSES: int32 = 3;
+pub(crate) const PROBE_CLASSES: int32 = 4;
 
 /// Writing this above one half widens the output to stereo and asks for
 /// `kIoChanged`.
@@ -88,6 +88,10 @@ pub(crate) fn class_at(index: int32) -> Option<(TUID, &'static str)> {
             VST3_RECONFIGURING_INSTRUMENT_CLASS_ID,
             RECONFIGURING_INSTRUMENT_CLASS_NAME,
         )),
+        3 => Some((
+            crate::vst3_emitter::VST3_EMITTER_CLASS_ID,
+            crate::vst3_emitter::EMITTER_CLASS_NAME,
+        )),
         _ => None,
     }
 }
@@ -99,6 +103,9 @@ pub(crate) fn is_instrument_class(class_id: &TUID) -> bool {
 
 /// A fresh instance of the probe `class_id` names, or `None` for another id.
 pub(crate) fn create(class_id: &TUID) -> Option<ComPtr<FUnknown>> {
+    if *class_id == crate::vst3_emitter::VST3_EMITTER_CLASS_ID {
+        return crate::vst3_emitter::create();
+    }
     let (inputs, outputs) = if *class_id == VST3_MONO_COPY_CLASS_ID {
         (1, 1)
     } else if *class_id == VST3_RECONFIGURING_CLASS_ID

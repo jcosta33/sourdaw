@@ -17,6 +17,7 @@
 mod clap_front;
 mod echo;
 pub mod state;
+mod vst3_emitter;
 mod vst3_front;
 mod vst3_probe;
 
@@ -25,6 +26,10 @@ pub use clap_front::{
     CLAP_START_REFUSED_PLUGIN_ID, GAIN_PARAM_ID,
 };
 pub use echo::{ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_DEFAULT, LATENCY_FRAMES};
+pub use vst3_emitter::{
+    DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE, METER_PARAM_ID, MODULATED_PARAM_ID,
+    VST3_EMITTER_CLASS_ID,
+};
 pub use vst3_front::{
     VST3_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
     VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
