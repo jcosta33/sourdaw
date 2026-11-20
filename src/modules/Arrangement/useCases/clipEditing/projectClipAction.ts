@@ -135,6 +135,7 @@ const projectClipActionByActionType: {
     setFermenterPatch: keepState,
     setGrandBouleDeviceState: keepState,
     setToasterFactoryKit: keepState,
+    setGlutenFactoryPreset: keepState,
     createBus: keepState,
     createFolder: keepState,
     setSend: keepState,

@@ -89,6 +89,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     setFermenterPatch: noApplicationIdRule,
     setGrandBouleDeviceState: noApplicationIdRule,
     setToasterFactoryKit: noApplicationIdRule,
+    setGlutenFactoryPreset: noApplicationIdRule,
     createBus: { argument: 'busId', prefix: 'bus-command-' },
     createFolder: { argument: 'folderTrackId', prefix: 'folder-command-' },
     setSend: noApplicationIdRule,

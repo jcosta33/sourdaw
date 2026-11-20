@@ -258,6 +258,7 @@ const addActionSourceOwnersByActionType: {
     setFermenterPatch: addNoOwners,
     setGrandBouleDeviceState: addNoOwners,
     setToasterFactoryKit: addNoOwners,
+    setGlutenFactoryPreset: addNoOwners,
     createBus: addNoOwners,
     createFolder: addNoOwners,
     setSend: addNoOwners,

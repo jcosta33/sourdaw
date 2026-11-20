@@ -89,6 +89,7 @@ export const preservesTrimCoordinatesByActionType: {
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,
     setSend: false,

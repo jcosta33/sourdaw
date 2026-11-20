@@ -82,6 +82,7 @@ export const paletteColoredByActionType: { readonly [Type in AppActionType]: boo
     setFermenterPatch: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setGlutenFactoryPreset: false,
     createBus: true,
     createFolder: false,
     setSend: false,

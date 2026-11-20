@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
 import {
@@ -110,19 +111,19 @@ function withField<Key extends keyof GlutenPatch>(patch: GlutenPatch, key: Key, 
     return { ...patch, [key]: value };
 }
 
-export function hydrateGlutenPatchFromProject(deviceId: string): void {
+export function hydrateGlutenPatchFromProject(deviceId: string, committedName?: string): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
     }
 
     const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
-    if (!device) {
+    if (device?.type !== 'gluten') {
         return;
     }
 
     const currentPatch = getGlutenState(deviceId).patch;
-    let patch = currentPatch;
+    let patch = committedName === undefined ? currentPatch : { ...DEFAULT_PATCH, name: committedName };
 
     for (const field of NUMERIC_FIELDS) {
         const stored = device.parameterValues[field];
@@ -171,7 +172,7 @@ export function hydrateGlutenPatchFromProject(deviceId: string): void {
         );
     }
 
-    if (patch !== currentPatch) {
+    if (!valuesEqual(patch, currentPatch)) {
         loadGlutenPatch(deviceId, patch);
     }
 }

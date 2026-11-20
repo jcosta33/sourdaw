@@ -198,21 +198,40 @@ export function captureDevicePatchCommitValidation(input: Input) {
     }
     const identity = captureProjectIdentity();
     const headsAtAdmission = getHeads(root).toSorted();
-    const matchesSource = (document: Readonly<Record<string, unknown>>): boolean => {
-        const current = read(document, input);
+    function matchesOwner(current: Snapshot | null): boolean {
         return (
             transition.isCurrent() &&
             captureProjectIdentity() === identity &&
             current !== null &&
-            matchesJsonFingerprint(current.value, fingerprint) &&
             (current.track ? getObjectId(current.track) : undefined) === trackIdentity &&
             (current.owners[0] ? getObjectId(current.owners[0].device) : undefined) === deviceIdentity
         );
+    }
+    const matchesSource = (document: Readonly<Record<string, unknown>>): boolean => {
+        const current = read(document, input);
+        return current !== null && matchesOwner(current) && matchesJsonFingerprint(current.value, fingerprint);
     };
     return {
         isCurrent: (): boolean => {
             const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
             return current !== undefined && matchesSource(current);
+        },
+        matchesCommittedParameters: (parameters: Readonly<DevicePatchState['parameterValues']>): boolean => {
+            const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+            const snapshot = current ? read(current, input) : null;
+            const stored = snapshot?.owners[0]?.device.parameterValues;
+            return (
+                typeof trackIdentity === 'string' &&
+                typeof deviceIdentity === 'string' &&
+                matchesOwner(snapshot) &&
+                valuesEqual(snapshot?.value.track, before.value.track) &&
+                snapshot?.track?.kind === before.track?.kind &&
+                snapshot?.owners[0]?.device.type === before.owners[0]?.device.type &&
+                isRecord(stored) &&
+                Object.entries(parameters).every(([key, value]) =>
+                    value === null ? !Object.hasOwn(stored, key) : Object.hasOwn(stored, key) && stored[key] === value
+                )
+            );
         },
         start() {
             return startWrittenIntentObservation(

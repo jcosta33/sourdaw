@@ -145,6 +145,7 @@ const notesProjectionByActionType: {
     setFermenterPatch: noNotesProjection,
     setGrandBouleDeviceState: noNotesProjection,
     setToasterFactoryKit: noNotesProjection,
+    setGlutenFactoryPreset: noNotesProjection,
     createBus: noNotesProjection,
     createFolder: noNotesProjection,
     setSend: noNotesProjection,

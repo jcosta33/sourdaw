@@ -68,6 +68,16 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
         toasterFactoryKitReplayContract,
+        {
+            actionType: 'setGlutenFactoryPreset',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('setGlutenFactoryPreset', payload) &&
+                getHandlerByType('setGlutenFactoryPreset')?.validateSessionActionArguments?.(payload) === true,
+            validateEntry: (entry) =>
+                getHandlerByType('setGlutenFactoryPreset')?.validateSessionEntry?.(entry) === true,
+        },
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

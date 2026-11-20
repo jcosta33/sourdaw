@@ -82,6 +82,7 @@ export const projectsDeviceChainByActionType: { readonly [Type in AppActionType]
     setFermenterPatch: true,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: true,
+    setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,
     setSend: false,

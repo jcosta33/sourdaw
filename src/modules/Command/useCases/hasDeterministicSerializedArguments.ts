@@ -101,6 +101,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setFermenterPatch: anyArguments,
     setGrandBouleDeviceState: anyArguments,
     setToasterFactoryKit: anyArguments,
+    setGlutenFactoryPreset: anyArguments,
     createBus: (value) =>
         isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId) && isNonEmptyString(value.color),
     createFolder: anyArguments,

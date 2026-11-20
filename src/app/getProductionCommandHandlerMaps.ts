@@ -14,6 +14,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getCvGateHandlers } from '#/modules/CvGate/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
+import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import {
@@ -71,6 +72,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getFermenterHandlers(),
         getGrandBouleHandlers(),
         getToasterHandlers(),
+        getGlutenHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),
