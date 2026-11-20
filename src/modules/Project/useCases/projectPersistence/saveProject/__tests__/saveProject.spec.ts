@@ -50,9 +50,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => 0,
 }));
 
-vi.mock('../../fileIO/buildProjectData', () => ({
-    buildProjectData: mocks.buildProjectData,
-}));
 vi.mock('../../migrateActiveProjectIdentity', () => ({
     migrateActiveProjectIdentity: mocks.migrateActiveProjectIdentity,
 }));
@@ -80,7 +77,22 @@ vi.mock('../collectProjectDirectoryPcm', () => ({
         throw new Error('Unexpected directory PCM capture in this fixture');
     }),
 }));
+vi.mock('../buildPreparedProjectSaveData', () => ({
+    buildPreparedProjectSaveData: async () => {
+        const project = mocks.projectStoreValue.value;
+        if (project) {
+            mocks.projectStoreSet({ ...project, updatedAt: Date.now(), dirty: true });
+        }
+        const built = await mocks.buildProjectData();
+        if (!built) {
+            throw new Error('Project snapshot could not be built');
+        }
+        return { built, settledTakesAtSnapshot: 0 };
+    },
+}));
+
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'project-identity',
     exportSdawFile: vi.fn(() => {
         throw new Error('Unexpected directory document export in this fixture');
     }),
@@ -116,6 +128,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 function makeProject(): ProjectStoreState {
     return {
         name: 'My Song',
+        projectId: '11111111-2222-4333-8444-555555555555',
         createdAt: 1700000000000,
         updatedAt: 1700000000000,
         dirty: true,

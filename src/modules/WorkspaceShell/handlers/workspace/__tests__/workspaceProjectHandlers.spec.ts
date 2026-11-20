@@ -62,6 +62,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     },
     newProject: vi.fn(),
     saveProject: vi.fn(),
+    prepareProjectSaveSnapshot: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
     exportProjectFile: vi.fn(),
     pickFiles: vi.fn().mockResolvedValue([pickedFiles.audio]),

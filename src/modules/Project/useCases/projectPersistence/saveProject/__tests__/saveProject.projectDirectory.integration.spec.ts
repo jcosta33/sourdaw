@@ -1,6 +1,11 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    holdNextNativePreparation,
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
@@ -8,6 +13,8 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { duplicateArrangement } from '../../../arrangement/duplicateArrangement';
+import { isHydratableProjectData } from '../../helpers/isHydratableProjectData';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 
 import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
@@ -553,6 +560,7 @@ describe('project directory save and cold Recent open', () => {
         folder.beforeBindingRead = null;
         vi.stubGlobal('indexedDB', new IDBFactory());
         vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+        installNativePreparationWorker();
         const nativeClone = structuredClone;
         vi.stubGlobal('structuredClone', (value: unknown) => {
             const cloned: unknown = nativeClone(value);
@@ -584,6 +592,7 @@ describe('project directory save and cold Recent open', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         stopHistoryMirror?.();
         stopHistoryMirror = undefined;
         const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
@@ -600,6 +609,233 @@ describe('project directory save and cold Recent open', () => {
         projectOriginalMediaPort.configure(null);
         vi.restoreAllMocks();
     });
+
+    it('prepares a coherent paired directory Save and includes a later same-project edit', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const { arrangementStore } = runtime.projectStores;
+        const inactiveId = arrangementStore.value?.activeArrangementId;
+        if (!inactiveId || !runtime.clip.audioBufferId) {
+            throw new Error('Expected the original arrangement and audio');
+        }
+        duplicateArrangement(inactiveId, 'Active preparation');
+        const activeId = arrangementStore.value?.activeArrangementId;
+        if (!activeId || activeId === inactiveId) {
+            throw new Error('Expected a separate active arrangement');
+        }
+        flushAutomergeStorageWrites();
+        const inactive = arrangementStore.value?.arrangements.find((entry) => entry.id === inactiveId);
+        expect(inactive).toBeDefined();
+
+        await runtime.arrangement.importAudioFile(makeWave(new Float32Array([0.25, -0.125, 0.75, 0])), {
+            shouldContinue: () => true,
+        });
+        const held = holdNextNativePreparation();
+        const saving = runtime.project.saveProject();
+        try {
+            const arrival = await Promise.race([held.requested.then(() => 'worker'), saving.then(() => 'saved')]);
+            expect(arrival).toBe('worker');
+            expect(
+                arrangementStore.value?.arrangements
+                    .find((entry) => entry.id === activeId)
+                    ?.tracks.tracks.flatMap((track) => track.clips)
+            ).toHaveLength(1);
+            await runtime.arrangement.importAudioFile(makeWave(new Float32Array([-0.75, 0.375, 0.125, 0])), {
+                shouldContinue: () => true,
+            });
+        } finally {
+            held.release();
+        }
+        expect(await saving).toBe(true);
+
+        const liveTracks = structuredClone(runtime.arrangementStores.trackStore.value?.tracks);
+        const liveClips = liveTracks?.flatMap((track) => track.clips);
+        expect(liveClips).toHaveLength(3);
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const saved = await projectDirectory.read(runtime.directory, runtime.projectId);
+        const snapshot: unknown = JSON.parse(saved.snapshot);
+        if (!isHydratableProjectData(snapshot)) {
+            throw new Error('Expected the persisted directory JSON');
+        }
+        const native = await runtime.crdt.prepareExternalProjectDocument(saved.document, runtime.projectId);
+        type Arrangements = NonNullable<typeof arrangementStore.value>;
+        const nativeArrangements = native.rootMediaSlots.arrangements as Arrangements;
+        expect(nativeArrangements.activeArrangementId).toBe(activeId);
+        expect(nativeArrangements.arrangements.find((entry) => entry.id === inactiveId)).toEqual(inactive);
+        expect(
+            nativeArrangements.arrangements
+                .find((entry) => entry.id === activeId)
+                ?.tracks.tracks.flatMap((track) => track.clips)
+                .map((clip) => clip.id)
+        ).toEqual(liveClips?.map((clip) => clip.id));
+        expect(snapshot.activeArrangementId).toBe(activeId);
+        expect(snapshot).not.toHaveProperty('audioBuffers');
+        expect(
+            snapshot.arrangements
+                ?.find((entry) => entry.id === inactiveId)
+                ?.tracks?.tracks.flatMap((track) => track.clips)
+                .map((clip) => clip.bufferId)
+        ).toEqual([runtime.clip.audioBufferId]);
+        expect(
+            snapshot.arrangements
+                ?.find((entry) => entry.id === activeId)
+                ?.tracks?.tracks.flatMap((track) => track.clips)
+                .map((clip) => clip.id)
+        ).toEqual(liveClips?.map((clip) => clip.id));
+        expect([...saved.pcm.keys()].sort()).toEqual(liveClips?.map((clip) => clip.audioBufferId).sort());
+        for (const [id, entry] of saved.pcm) {
+            const samples = runtime.audio.getCachedAudioBuffer({ bufferId: id })?.getChannelData(0);
+            if (!samples) {
+                throw new Error('Expected exact saved PCM for the active arrangement');
+            }
+            expect(entry.channels[0]).toEqual(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
+        }
+
+        await runtime.audio.clearRuntimeCachedAudioBuffers();
+        runtime.crdt.resetCrdtProjectAuthority('Cold paired reopen');
+        runtime.helpers.resetModuleStoresToDefault();
+        expect(await runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).toBe(true);
+        expect(runtime.arrangementStores.trackStore.value?.tracks).toEqual(liveTracks);
+    }, 70_000);
+
+    it('refuses an unowned intent and a held outgoing Save whose replacement withdrew authority', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const { getProjectSnapshotKey } = await import('../../getProjectSnapshotKey');
+        const { readNamedProjectJson } = await import('../../../../repositories/project/readNamedProjectJson');
+        const { arrangementStore, projectStore } = runtime.projectStores;
+        const before = await projectDirectory.read(runtime.directory, runtime.projectId);
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected the open project');
+        }
+        const recentKey = getProjectSnapshotKey(project.createdAt);
+        const namedBefore = await readNamedProjectJson(recentKey);
+        expect(typeof namedBefore).toBe('string');
+        const revision = runtime.crdt.captureProjectRevision();
+        await expect(
+            runtime.command.executeAppAction(
+                { type: 'saveProject', payload: { intent: 'prepareSnapshot' } },
+                { signal: new AbortController().signal }
+            )
+        ).rejects.toThrow('Project Save preparation requires its owning request');
+        expect(runtime.crdt.captureProjectRevision()).toBe(revision);
+
+        await runtime.arrangement.importAudioFile(makeWave(new Float32Array([0.75, 0.125, -0.625, 0])), {
+            shouldContinue: () => true,
+        });
+        projectStore.set({ ...projectStore.value, initialized: false, loading: true });
+        flushAutomergeStorageWrites();
+        const beforeHeld = runtime.crdt.captureProjectRevision();
+        const arrangements = arrangementStore.value;
+        let current = true;
+        const held = holdNextNativePreparation();
+        const saving = runtime.project.saveProject({ outgoingProject: { shouldContinue: () => current } });
+        try {
+            const arrival = await Promise.race([held.requested.then(() => 'worker'), saving.then(() => 'saved')]);
+            expect(arrival).toBe('worker');
+            current = false;
+        } finally {
+            held.release();
+        }
+        expect(await saving).toBe(false);
+        expect(runtime.crdt.captureProjectRevision()).toBe(beforeHeld);
+        expect(arrangementStore.value).toBe(arrangements);
+        expect((await projectDirectory.read(runtime.directory, runtime.projectId)).snapshot).toBe(before.snapshot);
+        expect(await readNamedProjectJson(recentKey)).toBe(namedBefore);
+    }, 70_000);
+
+    it('initializes a legacy arrangement shell and publishes no Save if its Worker loses authority', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const { readNamedProjectJson } = await import('../../../../repositories/project/readNamedProjectJson');
+        const { getProjectSnapshotKey } = await import('../../getProjectSnapshotKey');
+        const { arrangementStore, projectStore } = runtime.projectStores;
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected the saved project');
+        }
+        const recentKey = getProjectSnapshotKey(project.createdAt);
+        const previousNamed = await readNamedProjectJson(recentKey);
+        expect(typeof previousNamed).toBe('string');
+        const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
+        runtime.crdt.mutateCrdtDoc({
+            id: runtime.crdt.DOC_PREFIX_ROOT,
+            changeFn: (draft) => {
+                delete draft.arrangements;
+            },
+        });
+        runtime.crdt.projectCrdtToStores();
+        expect(runtime.crdt.getCrdtDoc(runtime.crdt.DOC_PREFIX_ROOT)?.arrangements).toBeUndefined();
+        expect(runtime.arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)).toHaveLength(1);
+
+        let current = true;
+        const held = holdNextNativePreparation();
+        const saving = runtime.project.saveProject({ outgoingProject: { shouldContinue: () => current } });
+        try {
+            const arrival = await Promise.race([held.requested.then(() => 'worker'), saving.then(() => 'saved')]);
+            expect(arrival).toBe('worker');
+            const root = runtime.crdt.getCrdtDoc(runtime.crdt.DOC_PREFIX_ROOT);
+            expect(root?.arrangements).toEqual(arrangementStore.value);
+            expect(arrangementStore.value?.arrangements[0]?.tracks.tracks).toEqual([]);
+            expect(projectStore.value?.dirty).toBe(true);
+            current = false;
+        } finally {
+            held.release();
+        }
+        expect(await saving).toBe(false);
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
+        expect((await projectDirectory.read(runtime.directory, runtime.projectId)).snapshot).toBe(
+            previousDirectory.snapshot
+        );
+
+        expect(await runtime.project.saveProject()).toBe(true);
+        const binding = folder.bound.get('last');
+        if (!binding) {
+            throw new Error('Expected the project directory still to be bound');
+        }
+        const { prepareProjectDirectoryRead } = await import('../../projectDirectoryRead');
+        await expect(prepareProjectDirectoryRead(binding, () => true)).resolves.toHaveProperty(
+            'projectId',
+            runtime.projectId
+        );
+        expect(arrangementStore.value?.arrangements[0]?.tracks.tracks.flatMap((track) => track.clips)).toHaveLength(1);
+    }, 70_000);
+
+    it('saves an authored native document without altering its native author', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const id = runtime.crdt.DOC_PREFIX_ROOT;
+        const root = runtime.crdt.getCrdtDoc(id);
+        if (!root) {
+            throw new Error('Expected the saved root');
+        }
+        const authored = runtime.automerge.clone(root, { author: 'aabbcc' });
+        runtime.crdt.replaceCrdtDoc({ id, doc: authored });
+        await runtime.arrangement.importAudioFile(makeWave(new Float32Array([0.875, 0.375, -0.25, 0])), {
+            shouldContinue: () => true,
+        });
+        const before = runtime.crdt.getCrdtDoc(id);
+        if (!before) {
+            throw new Error('Expected the authored root');
+        }
+        expect(runtime.automerge.getAuthor(before)).toBe('aabbcc');
+
+        expect(await runtime.project.saveProject()).toBe(true);
+        const after = runtime.crdt.getCrdtDoc(id);
+        if (!after) {
+            throw new Error('Expected the same document after Save');
+        }
+        expect(runtime.automerge.getAuthor(after)).toBe('aabbcc');
+        const binding = folder.bound.get('last');
+        if (!binding) {
+            throw new Error('Expected the project directory still to be bound');
+        }
+        const { prepareProjectDirectoryRead } = await import('../../projectDirectoryRead');
+        await expect(prepareProjectDirectoryRead(binding, () => true)).resolves.toHaveProperty(
+            'projectId',
+            runtime.projectId
+        );
+    }, 70_000);
 
     it('writes real document, PCM and original bytes; reopens them after session memory is removed', async () => {
         const [audio, arrangement, project, projectStores, arrangementStores, crdt, helpers, metadata, collaboration] =
@@ -633,6 +869,8 @@ describe('project directory save and cold Recent open', () => {
         });
         arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(arrangement.getArrangementHandlers());
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         crdt.registerCrdtStorageRuntime();
         const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
         registerProjectSlotProjections();
