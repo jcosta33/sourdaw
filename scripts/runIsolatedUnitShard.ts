@@ -4,6 +4,7 @@ import { accessSync, constants, lstatSync, mkdirSync, readFileSync, realpathSync
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { PR_UNIT_COVERAGE_SHARD_ENV } from './prUnitCoverageSequencer.ts';
 import { unitCoverageShardDirectory } from './unitCoveragePaths.ts';
 import { assertIndependentUnitObjects, copyUnitCheckout } from './unitExecutionCopy.ts';
 import { ownCheckoutDirectories } from './unitShardCheckoutOwnership.ts';
@@ -496,6 +497,7 @@ export function runUnitPhase(
             '--coverage.reporter=json',
             `--coverage.reportsDirectory=${join(context.temp, unitCoverageShardDirectory)}`
         );
+        options.env[PR_UNIT_COVERAGE_SHARD_ENV] = '1';
     }
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];

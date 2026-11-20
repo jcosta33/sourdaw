@@ -1156,7 +1156,7 @@ expect(
 // restore: a setup-node step with a `cache` only speeds the install up, so a
 // refused or stalled restore must fall through to the uncached install instead
 // of hanging the job (#5929). The healthGatesWorkflow spec pins its step cap and
-// the unsoftened Node install before it. The scheduled Fermenter observations
+// the unsoftened Node install before it. The scheduled packaged editor observations
 // report their own verdict and do not decide the Nightly job result.
 expect(
     stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
@@ -1167,6 +1167,8 @@ const continueOnErrorStepPins = new Set([
     'nightly.ymldesktop-measureCapture the Fermenter build receipt',
     'nightly.ymldesktop-measureProve Fermenter in the packaged app',
     'nightly.ymldesktop-measureUpload the Fermenter proof record',
+    'nightly.ymldesktop-measureProve premium editor mounts in the packaged app',
+    'nightly.ymldesktop-measureUpload the premium editor proof record',
 ]);
 const isSetupNodeCacheStep = (step) =>
     typeof step?.uses === 'string' &&

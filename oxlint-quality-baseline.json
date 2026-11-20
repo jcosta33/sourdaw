@@ -3269,7 +3269,7 @@
     },
     "src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts": {
@@ -18773,9 +18773,6 @@
             "count": 1
         },
         "typescript/no-non-null-assertion": {
-            "count": 1
-        },
-        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },
