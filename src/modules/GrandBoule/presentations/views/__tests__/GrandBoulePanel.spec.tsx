@@ -7,6 +7,7 @@ import { type MidiNoteOffPayload, type MidiNoteOnPayload, type MidiPedalCcPayloa
 
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
+import { initGrandBouleSubscribers } from '../../../useCases/grandBouleSubscriber';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 const projectTrackState = vi.hoisted(() => ({
@@ -151,6 +152,7 @@ describe('GrandBoulePanel', () => {
             'midi.pedalCc': MidiPedalCcPayload;
         }>();
         setGrandBouleEventBus(bus);
+        const stopSubscriber = initGrandBouleSubscribers({ eventBus: bus, logger: { info: vi.fn() } });
         projectTrackState.current = {
             tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', parameterValues: {} }] }],
             selectedTrackId: 'track-1',
@@ -239,6 +241,7 @@ describe('GrandBoulePanel', () => {
         runtime.read.mockClear();
         await act(() => bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'grand-boule' }));
         expect(runtime.read).not.toHaveBeenCalled();
+        stopSubscriber();
     });
 
     it('renders interactive control elements (buttons, knobs, or sliders)', () => {

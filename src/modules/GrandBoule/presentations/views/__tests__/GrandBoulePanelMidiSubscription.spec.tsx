@@ -52,8 +52,6 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
  */
 
 type TestBusEvents = {
-    'audioDevice.loaded': { deviceId: string; deviceType: string };
-    'audioDevice.removed': { deviceId: string; deviceType: string };
     'midi.noteOn': import('#/modules/MIDI/events').MidiNoteOnPayload;
     'midi.noteOff': import('#/modules/MIDI/events').MidiNoteOffPayload;
     'midi.pedalCc': import('#/modules/MIDI/events').MidiPedalCcPayload;
@@ -69,8 +67,6 @@ type TestBusHandlerSets = {
 
 function createHandlerSets(): TestBusHandlerSets {
     return {
-        'audioDevice.loaded': new Set<TestBusHandler<'audioDevice.loaded'>>(),
-        'audioDevice.removed': new Set<TestBusHandler<'audioDevice.removed'>>(),
         'midi.noteOn': new Set<TestBusHandler<'midi.noteOn'>>(),
         'midi.noteOff': new Set<TestBusHandler<'midi.noteOff'>>(),
         'midi.pedalCc': new Set<TestBusHandler<'midi.pedalCc'>>(),
