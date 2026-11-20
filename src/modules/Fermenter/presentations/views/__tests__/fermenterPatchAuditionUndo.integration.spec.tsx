@@ -455,23 +455,23 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(rawDevice().parameterValues.oscWaveform).toBe(0);
     });
 
-    async function queueWaveformBeforeOwnerChange(change: (track: Track) => Track): Promise<void> {
+    async function queueWaveformBeforeOwnerChange(change: () => void): Promise<void> {
         renderPanel();
         fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
         const hold = await holdSnapshot();
         fireEvent.click(screen.getByRole('button', { name: 'Sine' }));
-        act(() => hold.change(() => replaceTrack(change(projectedTrack()))));
+        expect(depth()).toBe(0);
+        expect(Object.hasOwn(rawDevice().parameterValues, 'oscWaveform')).toBe(false);
+        expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+        act(() => hold.change(change));
         await act(() => hold.finish());
         await act(() => executeUserAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Barrier' } }));
     }
 
-    it.each(['frozen', 'changed-owner'] as const)('refuses a queued waveform after %s', async (change) => {
-        await queueWaveformBeforeOwnerChange((track) => {
-            if (change === 'frozen') {
-                return { ...track, frozen: true };
-            }
-            return { ...track, name: 'Replacement owner' };
-        });
+    it('refuses a queued waveform after the track freezes', async () => {
+        await queueWaveformBeforeOwnerChange(() => replaceTrack({ ...projectedTrack(), frozen: true }));
+        expect(projectedTrack().frozen).toBe(true);
+        expect(getCrdtDoc<{ tracks: { tracks: Track[] } }>('root')?.tracks.tracks[0]?.frozen).toBe(true);
         await waitFor(() =>
             expect(screen.getByRole('button', { name: 'Saw' })).toHaveAttribute('aria-pressed', 'true')
         );
@@ -481,8 +481,40 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(audio.updateDevicePatch).not.toHaveBeenCalled();
     });
 
+    it('refuses a queued waveform after the same device ID gets a new raw owner', async () => {
+        const ownerBefore = readFermenterPatchOwner(DEVICE_ID);
+        expect(ownerBefore).not.toBeNull();
+        const before = structuredClone(rawDevice());
+        await queueWaveformBeforeOwnerChange(() => {
+            mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                id: 'root',
+                changeFn: (doc) => {
+                    const track = doc.tracks.tracks.find((candidate) => candidate.id === TRACK_ID);
+                    if (!track) {
+                        throw new Error('Expected the target track');
+                    }
+                    track.devices[0] = structuredClone(before);
+                },
+            });
+            trackStore.hydrate();
+        });
+        const ownerAfter = readFermenterPatchOwner(DEVICE_ID);
+        expect(ownerAfter).not.toBeNull();
+        expect(ownerAfter).not.toBe(ownerBefore);
+        expect(rawDevice()).toEqual(before);
+        expect(projectedTrack().devices[0]).toEqual(before);
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'Saw' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        expect(depth()).toBe(1);
+        expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+    });
+
     it('refuses a queued waveform after device removal', async () => {
-        await queueWaveformBeforeOwnerChange((track) => ({ ...track, devices: track.devices.slice(1) }));
+        await queueWaveformBeforeOwnerChange(() => {
+            const track = projectedTrack();
+            replaceTrack({ ...track, devices: track.devices.slice(1) });
+        });
         expect(projectedTrack().devices.map((device) => device.id)).toEqual([OTHER_DEVICE_ID]);
         expect(depth()).toBe(1);
         expect(audio.updateDevicePatch).not.toHaveBeenCalled();
