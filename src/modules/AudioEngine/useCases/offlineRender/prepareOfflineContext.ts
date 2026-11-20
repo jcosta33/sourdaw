@@ -1,3 +1,4 @@
+import { SIDECHAIN_PROCESSOR_UNAVAILABLE_WARNING } from '../../repositories/devices/dynamics/createOfflineSidechainCompressor';
 import { prepareOfflineSidechainCompressor } from '../../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
 import { prepareOfflineBitcrusherRate } from '../../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
 
@@ -28,17 +29,6 @@ export type PrepareOfflineContextInput = {
      * export pays no module fetch.
      */
     tracks: readonly { readonly devices: readonly { readonly type: string; readonly bypassed: boolean }[] }[];
-    /**
-     * The compressor devices this render will actually key, already planned by
-     * the caller. Route selection genuinely differs per path — the mixdown
-     * scans every route, stems plan per stem group, freeze scans its own
-     * subgraph — so it stays with the caller; what is shared is the
-     * registration, the warning text and the failure handling.
-     *
-     * An empty set means no compressor in this render is keyed, and the
-     * sidechain module is not fetched.
-     */
-    sidechainTargetDevices?: ReadonlySet<object>;
     onWarning?: (message: string) => void;
 };
 
@@ -53,7 +43,7 @@ export type PrepareOfflineContextInput = {
  * freezing a track that carried a sidechain compressor baked ordinary
  * self-keyed compression (the ducking vanished) and freezing a bitcrusher baked
  * bit-depth reduction with no rate decimation. Both degradations were silent:
- * `createSidechainCompressorFallback` reports through the `onWarning` stored on
+ * `createOfflineSidechainCompressor` reports through the `onWarning` stored on
  * the `prepared` record, and on an unprepared context that record was never
  * created, so there was nothing to report through.
  *
@@ -65,19 +55,20 @@ export type PrepareOfflineContextInput = {
 export async function prepareOfflineContext({
     offlineCtx,
     tracks,
-    sidechainTargetDevices,
     onWarning,
 }: PrepareOfflineContextInput): Promise<void> {
-    if (sidechainTargetDevices && sidechainTargetDevices.size > 0) {
+    // Every sidechain compressor gets the worklet, keyed or not: live builds it
+    // unconditionally, and with no key on input 1 it only applies Makeup, so an
+    // unkeyed device must render the same way offline.
+    const hasSidechainCompressor = tracks.some((track) =>
+        track.devices.some((device) => device.type === 'builtin-sidechain-compressor' && !device.bypassed)
+    );
+    if (hasSidechainCompressor) {
         try {
-            await prepareOfflineSidechainCompressor({
-                offlineCtx,
-                onWarning,
-                targetDevices: sidechainTargetDevices,
-            });
+            await prepareOfflineSidechainCompressor({ offlineCtx, onWarning });
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
-            onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+            onWarning?.(`${SIDECHAIN_PROCESSOR_UNAVAILABLE_WARNING} ${reason}`);
         }
     }
 
