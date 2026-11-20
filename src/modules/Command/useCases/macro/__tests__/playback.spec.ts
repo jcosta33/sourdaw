@@ -4,8 +4,10 @@ import { registerKernelPorts } from '#/app/registerKernelPorts';
 import * as storageWrites from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane } from '#/modules/Automation/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { type Macro } from '../../../models/Macro';
+import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
 
@@ -146,6 +148,49 @@ describe('playMacro', () => {
         await playMacro(macro.id);
 
         expect(executeAppActionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('replays a recorded tempo map edit through the tempo map route, dropping its captured row plan', async () => {
+        const promotion = {
+            version: 1 as const,
+            clips: [],
+            takes: [],
+            regions: [],
+            gaps: [],
+            gapFieldPresence: [],
+        };
+        const recorded: Macro['actions'][number] = {
+            type: 'editTempoMap',
+            payload: {
+                edit: { type: 'add', beat: 4, tempo: 90 },
+                rowPlan: {
+                    operation: 'add',
+                    before: [],
+                    after: [{ id: 'recorded', beat: 4, tempo: 90, curve: 'instant' }],
+                    order: [{ beat: 4, before: [], after: ['recorded'] }],
+                    collision: { beat: 4, targetId: null },
+                },
+                audioSourcePromotion: promotion,
+            },
+        };
+        macroStore.set({
+            macros: [{ ...macro, actions: [recorded] }],
+            recording: false,
+            currentRecording: [],
+        });
+        registerHandlerMap(getTransportHandlers());
+
+        try {
+            await playMacro(macro.id);
+        } finally {
+            clearHandlerRegistry();
+        }
+
+        expect(executeAppActionMock).toHaveBeenCalledTimes(1);
+        expect(executeAppActionMock.mock.calls[0]?.[0]).toEqual({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'add', beat: 4, tempo: 90 } },
+        });
     });
 
     it('propagates settlement failure before dispatching any macro step', async () => {
