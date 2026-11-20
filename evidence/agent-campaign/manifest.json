@@ -838,7 +838,7 @@
             "fixtures": [
                 {
                     "path": "electron/__tests__/commands.spec.ts",
-                    "digest": "b66a50d9b54f1144f536e8b6c34d1d1bdb4876dc41cf5edf173b7df0b8914157"
+                    "digest": "41c3aa5a84e2bf845b4188ee613645774eb183a1d6798dc890e6ec75c911c3c0"
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",

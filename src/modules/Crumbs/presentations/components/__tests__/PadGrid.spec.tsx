@@ -55,6 +55,7 @@ describe('PadGrid', () => {
         expect(releases[1]).toHaveBeenCalledOnce();
         expect(releases[0]).not.toHaveBeenCalled();
         fireEvent.pointerLeave(pad, { pointerId: 1 });
+        expect(releases[0]).toHaveBeenCalledOnce();
         fireEvent.pointerUp(pad, { pointerId: 1 });
         expect(releases[0]).toHaveBeenCalledOnce();
     });
@@ -96,13 +97,43 @@ describe('PadGrid', () => {
         expect(second).toHaveBeenCalledOnce();
     });
 
-    it('releases on pointer cancellation and ignores later terminals', () => {
+    it.each([
+        ['off-pad pointer up', (_pad: HTMLElement) => fireEvent.pointerUp(document.body, { pointerId: 7 })],
+        ['off-pad pointer cancel', (_pad: HTMLElement) => fireEvent.pointerCancel(document.body, { pointerId: 7 })],
+        ['pointer leave', (pad: HTMLElement) => fireEvent.pointerLeave(pad, { pointerId: 7 })],
+        ['lost pointer capture', (pad: HTMLElement) => fireEvent.lostPointerCapture(pad, { pointerId: 7 })],
+    ])('releases immediately on %s and ignores duplicate terminals', (_name, terminal) => {
         const release = vi.fn();
         render(<PadGrid pads={[makePad(0)]} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={() => release} />);
         const pad = screen.getByRole('button');
         fireEvent.pointerDown(pad, { pointerId: 7, isPrimary: true, button: 0 });
-        fireEvent.pointerCancel(document.body, { pointerId: 7 });
+        expect(release).not.toHaveBeenCalled();
+        terminal(pad);
+        expect(release).toHaveBeenCalledOnce();
         fireEvent.pointerUp(pad, { pointerId: 7 });
+        fireEvent.pointerCancel(document.body, { pointerId: 7 });
+        fireEvent.pointerLeave(pad, { pointerId: 7 });
+        fireEvent.lostPointerCapture(pad, { pointerId: 7 });
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('releases a held key when focus moves to another pad', () => {
+        const release = vi.fn();
+        render(
+            <PadGrid
+                pads={[makePad(0), makePad(1)]}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={() => release}
+            />
+        );
+        const [first, second] = screen.getAllByRole('button');
+        first!.focus();
+        fireEvent.keyDown(first!, { key: ' ' });
+        expect(release).not.toHaveBeenCalled();
+        second!.focus();
+        expect(release).toHaveBeenCalledOnce();
+        fireEvent.keyUp(first!, { key: ' ' });
         expect(release).toHaveBeenCalledOnce();
     });
 });
