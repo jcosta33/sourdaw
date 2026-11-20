@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createStore } from '#/infra/store/createStore';
+
 const mocks = vi.hoisted(() => ({
+    isDeviceCarriedByNativeSession: vi.fn(() => false),
+    startNativeGrandBoulePreviewNote: vi.fn(),
     sendNativeLiveMidiControl: vi.fn(async () => true),
     writeNativeBuiltinParameters: vi.fn(),
     controls: {
@@ -30,18 +34,24 @@ vi.mock('#/modules/AudioEngine/useCases', () => {
         ensureTrackStrip: getStrip,
         getTrackStrip: getStrip,
         getAudioSampleRate: () => 48_000,
+        isDeviceCarriedByNativeSession: mocks.isDeviceCarriedByNativeSession,
+        startNativeGrandBoulePreviewNote: mocks.startNativeGrandBoulePreviewNote,
         sendNativeLiveMidiControl: mocks.sendNativeLiveMidiControl,
         writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
     };
 });
-vi.mock('../../repositories/grandBouleEngineHandle', () => ({
-    createDisconnectedGrandBouleEngineHandle: vi.fn(() => ({ setCalibration: vi.fn() })),
-}));
-
+import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
+import { createDefaultGrandBouleState, createGrandBouleStore } from '../../stores/grandBouleStore';
 import { resolveGrandBouleEngine } from '../resolveGrandBouleEngine';
+import { startGrandBoulePreviewNote } from '../startGrandBoulePreviewNote';
 
 describe('resolveGrandBouleEngine', () => {
     beforeEach(() => {
+        mocks.isDeviceCarriedByNativeSession.mockReset().mockReturnValue(false);
+        mocks.startNativeGrandBoulePreviewNote.mockReset();
+        mocks.controls.ready = true;
+        mocks.controls.noteOn.mockClear();
+        mocks.controls.startPreviewNote.mockReset();
         mocks.sendNativeLiveMidiControl.mockClear();
         mocks.writeNativeBuiltinParameters.mockClear();
         mocks.controls.setParam.mockClear();
@@ -63,6 +73,85 @@ describe('resolveGrandBouleEngine', () => {
         const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
         expect(engine.startPreviewNote({ midiNote: 60, velocity: 0.4 })).toBe(release);
         expect(mocks.controls.startPreviewNote).toHaveBeenCalledWith(60, 0.4);
+    });
+
+    it('starts panel preview on the current native carrier even when the ready Worker twin is gated', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+        const release = vi.fn();
+        mocks.isDeviceCarriedByNativeSession.mockReturnValue(true);
+        mocks.startNativeGrandBoulePreviewNote.mockReturnValue(release);
+
+        const result = startGrandBoulePreviewNote({
+            engine,
+            store: createGrandBouleStore('grand-1'),
+            midiNote: 60,
+            velocity: 0.4,
+        });
+
+        expect(mocks.startNativeGrandBoulePreviewNote).toHaveBeenCalledExactlyOnceWith({
+            trackId: 'track-1',
+            deviceId: 'grand-1',
+            note: 60,
+            velocity: 0.4,
+        });
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
+        expect(result).toBe(release);
+    });
+
+    it('uses the addressed native body from the same mounted handle before the Worker is ready', () => {
+        mocks.controls.ready = false;
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1', runtimeControls: null });
+        const store = createStore({
+            initialData: {
+                ...createDefaultGrandBouleState(),
+                midiCalibration: {
+                    ...createDefaultMidiCalibration(),
+                    velocityCurveExponent: 2,
+                    velocityFloor: 0.1,
+                    velocityCeiling: 0.9,
+                },
+            },
+        });
+        const preview = { engine, store, midiNote: 60, velocity: 0.5 };
+
+        expect(engine.isReady()).toBe(false);
+        expect(startGrandBoulePreviewNote(preview)).toBeUndefined();
+        expect(mocks.startNativeGrandBoulePreviewNote).not.toHaveBeenCalled();
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
+
+        const release = vi.fn();
+        mocks.isDeviceCarriedByNativeSession.mockReturnValue(true);
+        mocks.startNativeGrandBoulePreviewNote.mockReturnValue(release);
+        const releaseStrike = startGrandBoulePreviewNote(preview);
+
+        expect(mocks.startNativeGrandBoulePreviewNote).toHaveBeenCalledExactlyOnceWith({
+            trackId: 'track-1',
+            deviceId: 'grand-1',
+            note: 60,
+            velocity: expect.closeTo(0.3),
+        });
+        expect(releaseStrike).toBe(release);
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
+        expect(engine.isReady()).toBe(false);
+        expect(engine.getAnalyserNode()).toBeNull();
+
+        engine.noteOn({ midiNote: 60, velocity: 0.5 });
+        engine.setCalibration({ sustainThreshold: 0.6, ccSmoothingMs: 40 });
+        engine.setSustain({ position: 1 });
+        expect(mocks.controls.noteOn).not.toHaveBeenCalled();
+        expect(mocks.controls.setParam).not.toHaveBeenCalled();
+        expect(mocks.controls.setSustain).not.toHaveBeenCalled();
+        expect(mocks.writeNativeBuiltinParameters).not.toHaveBeenCalled();
+        expect(mocks.sendNativeLiveMidiControl).not.toHaveBeenCalled();
+    });
+
+    it('does not start the Worker while the native carrier is awaiting a realized target', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+        mocks.isDeviceCarriedByNativeSession.mockReturnValue(true);
+
+        expect(engine.startPreviewNote({ midiNote: 60, velocity: 0.4 })).toBeUndefined();
+        expect(mocks.startNativeGrandBoulePreviewNote).toHaveBeenCalledOnce();
+        expect(mocks.controls.startPreviewNote).not.toHaveBeenCalled();
     });
 
     it('sends a panel damper movement to the engine body as well as the Web Audio node', () => {

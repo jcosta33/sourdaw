@@ -14,9 +14,6 @@ type StartGrandBoulePreviewNoteInput = {
 
 /** Start a panel preview using the same calibrated velocity as ordinary notes. */
 export function startGrandBoulePreviewNote(input: StartGrandBoulePreviewNoteInput): (() => void) | undefined {
-    if (!input.engine.isReady()) {
-        return undefined;
-    }
     const velocity = shapeNormalisedGrandBouleVelocity(input.velocity, input.store.value?.midiCalibration);
     return input.engine.startPreviewNote({ midiNote: input.midiNote, velocity });
 }
