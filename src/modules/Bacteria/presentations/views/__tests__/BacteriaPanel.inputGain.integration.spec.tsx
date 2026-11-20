@@ -28,7 +28,6 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
-
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import {
     type ConfirmPayload,
