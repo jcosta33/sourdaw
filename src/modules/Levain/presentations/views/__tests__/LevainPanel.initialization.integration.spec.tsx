@@ -24,6 +24,7 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -274,7 +275,11 @@ it('retires an old drag after a different committed Master value arrives', async
     expect(updateDeviceParam).not.toHaveBeenCalled();
 });
 
-it('restores the legacy-only value on Undo after a keyboard edit', async () => {
+it.each<{ caseName: string; legacy: Record<string, number>; effectiveValue: number }>([
+    { caseName: 'retained', legacy: { master_gain: 0.42 }, effectiveValue: 0.42 },
+    { caseName: 'changed', legacy: { master_gain: 0.55 }, effectiveValue: 0.55 },
+    { caseName: 'removed', legacy: {}, effectiveValue: 0.8 },
+])('replays the current Master when the legacy value was $caseName', async ({ legacy, effectiveValue }) => {
     const tracks = trackStore.value;
     if (!tracks) {
         throw new Error('Expected the Levain project fixture');
@@ -301,10 +306,29 @@ it('restores the legacy-only value on Undo after a keyboard edit', async () => {
         0.43,
         expect.any(Symbol)
     );
+    const historyBefore = undoStore.value?.past;
+    await act(async () => {
+        mutateCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>({
+            id: 'root',
+            changeFn: (document) => {
+                const device = document.tracks.tracks[0]?.devices[0];
+                if (device?.id !== deviceId) {
+                    throw new Error('Expected the Levain project fixture');
+                }
+                device.parameterValues = { ...legacy, masterGain: 0.43 };
+            },
+        });
+    });
+    expect(projectDevice()?.parameterValues).toEqual({ ...legacy, masterGain: 0.43 });
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({ ...legacy, masterGain: 0.43 });
+    expect(master).toHaveAttribute('aria-valuenow', '0.43');
+    expect(undoStore.value?.past).toEqual(historyBefore);
+
     await act(async () => undo());
-    expect(projectDevice()?.parameterValues).toEqual({ master_gain: 0.42 });
-    expect(master).toHaveAttribute('aria-valuenow', '0.42');
-    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', 0.42);
+    expect(projectDevice()?.parameterValues).toEqual(legacy);
+    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual(legacy);
+    expect(master).toHaveAttribute('aria-valuenow', String(effectiveValue));
+    expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', deviceId, 'masterGain', effectiveValue);
     expect(updateDeviceParam).toHaveBeenCalledTimes(2);
 });
 

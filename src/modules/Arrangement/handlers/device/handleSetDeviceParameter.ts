@@ -173,6 +173,21 @@ function runtimeAuthorityForParameter(
         : undefined;
 }
 
+function valueForParameterWrite(action: {
+    payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean };
+}): number {
+    const { paramId, value, deleteParameter } = action.payload;
+    if (!deleteParameter || paramId !== 'masterGain' || !Number.isFinite(value)) {
+        return value;
+    }
+    const { device } = resolveDeviceTarget(action);
+    if (device?.type !== 'levain') {
+        return value;
+    }
+    // Deleting the canonical key exposes the alias the live device still holds.
+    return valueWhenParameterIsAbsent(device, paramId) ?? value;
+}
+
 function handleGuardedSetDeviceParameter(
     action: {
         payload: {
@@ -190,14 +205,19 @@ function handleGuardedSetDeviceParameter(
         return { status: 'conflict' as const };
     }
     const runtimeAuthority = runtimeAuthorityForParameter(action, context);
-    const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
-        ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
-        ...(context?.executionMode === 'isolated-preview' || (runtimeAuthority && !runtimeAuthority.isCurrent())
-            ? { projectOnly: true }
-            : {}),
-        ...(runtimeAuthority ? { runtimeOwner: runtimeAuthority.owner } : {}),
-        automationRecordingPolicy: action.payload.automationRecordingPolicy,
-    });
+    const didWrite = setDeviceParameter(
+        action.payload.deviceId,
+        action.payload.paramId,
+        valueForParameterWrite(action),
+        {
+            ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
+            ...(context?.executionMode === 'isolated-preview' || (runtimeAuthority && !runtimeAuthority.isCurrent())
+                ? { projectOnly: true }
+                : {}),
+            ...(runtimeAuthority ? { runtimeOwner: runtimeAuthority.owner } : {}),
+            automationRecordingPolicy: action.payload.automationRecordingPolicy,
+        }
+    );
     return toHandlerExecutionResult(didWrite);
 }
 
