@@ -538,12 +538,9 @@ describe('ProofChamberPanel', () => {
         });
     });
 
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-        const { container } = render(<ProofChamberPanel deviceId="test-device" />);
-        const faceplate = container.querySelector<HTMLElement>('.proof-chamber-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
+    it('offers a keyboard-focusable Dutch Oven controls scroll region', () => {
+        render(<ProofChamberPanel deviceId={'test-device'} />);
+        expect(screen.getByRole('region', { name: 'Dutch Oven controls' })).toHaveAttribute('tabindex', '0');
     });
 
     it('prevents section cards from collapsing when faceplate is compressed', () => {

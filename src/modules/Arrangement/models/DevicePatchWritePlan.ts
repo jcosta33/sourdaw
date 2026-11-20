@@ -1,6 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { projectDeviceChainAction } from './DeviceChainActionProjection';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { type DevicePatchState } from './DevicePatchState';
@@ -102,6 +102,13 @@ function parameterSourceMatches(
     );
 }
 
+function projectPlannedPatch(device: Device, step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>): Device | null {
+    if (step.preservedMetadata) {
+        return projectCapturedDevicePatchWithMetadata(device, step.expected, step.after, step.preservedMetadata);
+    }
+    return projectCapturedDevicePatch(device, step.expected, step.after);
+}
+
 function projectCapturedStep(
     owners: Owner[],
     step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>
@@ -110,6 +117,7 @@ function projectCapturedStep(
     if (
         !target ||
         target.owner.id !== step.trackId ||
+        (step.expectedDeviceType !== undefined && target.device.type !== step.expectedDeviceType) ||
         (target.owner.frozen ?? false) !== step.expectedTrackFrozen ||
         target.owner.frozen === true ||
         target.owner.devices.length !== step.expectedDeviceIds.length ||
@@ -117,7 +125,7 @@ function projectCapturedStep(
     ) {
         return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
     }
-    const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
+    const device = projectPlannedPatch(target.device, step);
     if (!device) {
         return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
     }
@@ -170,12 +178,20 @@ function projectMaterializedTrack(
     return { status: 'projected', owners };
 }
 
+const capturedPatchActions = new Set<AppAction['type']>([
+    'setFermenterPatch',
+    'setToasterFactoryKit',
+    'setBacteriaFactoryPatch',
+    'setGlutenFactoryPreset',
+    'setLevainIdentity',
+]);
+
 function projectCommandOwners(
     owners: Owner[],
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (action.type === 'setFermenterPatch') {
+    if (capturedPatchActions.has(action.type)) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

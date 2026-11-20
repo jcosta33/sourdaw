@@ -102,11 +102,7 @@ When a committed command must update another module's transient state such as Pr
 
 ### 10. A grouped inverse is captured from the owning action prefix
 
-`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an inverse from project state, project the earlier siblings through the owning domain before reading that state, and use the same projection for batch validation.
-
-**Why:** capturing from the live pre-batch state restores the wrong value on grouped undo and redo.
-
-**Enforced by:** review only (probe in `review-stances/replay-authority.md`).
+When an action captures project state for grouped undo, its owning domain supplies the prefix state. Follow the [grouped inverse and batch validation rules](../crdt-collaboration/SKILL.md#10-a-grouped-inverse-is-captured-from-the-owning-action-prefix).
 
 ## References
 

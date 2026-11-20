@@ -15,6 +15,7 @@ import { copySelectedClip, getArrangementHandlers, pasteClip, setClipSelection }
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
 import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -25,6 +26,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createApplicationMenuTemplate } from '../../../../../../electron/applicationMenu';
+import { FloatingDevicePanel } from '../../components/FloatingDevicePanel';
 import { useNativeApplicationMenu } from '../useNativeApplicationMenu';
 
 import type { Clip, Track } from '#/modules/Arrangement/stores';
@@ -126,11 +128,47 @@ function NativeMenuHost() {
     );
 }
 
+function DeviceHistoryHost() {
+    const [expanded, setExpanded] = useState(false);
+    const project = projectStore.value;
+    if (!project) {
+        throw new Error('Expected an open project');
+    }
+    useNativeApplicationMenu(project);
+    useGlobalKeyboardShortcuts();
+    return (
+        <FloatingDevicePanel
+            label="Sampler"
+            labelColor="text-primary"
+            borderColor="border-primary"
+            geometry={null}
+            setGeometry={() => {}}
+            otherSurfaceOwnsEscape={() => false}
+            onClose={() => {}}
+        >
+            <button aria-haspopup="listbox" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+                Device control
+            </button>
+            {expanded ? (
+                <div role="listbox" aria-label="Presets">
+                    <div role="option" aria-selected="true">
+                        Factory
+                    </div>
+                </div>
+            ) : null}
+            <input aria-label="Preset name" />
+            <input type="range" aria-label="Gain" />
+            <input type="checkbox" aria-label="Bypass" />
+            <input type="radio" aria-label="Stereo" />
+        </FloatingDevicePanel>
+    );
+}
+
 function clipIds(): string[] {
     return trackStore.value?.tracks[0]?.clips.map((clip) => clip.id) ?? [];
 }
 
-describe('native Edit focus with the timeline clip navigator', () => {
+describe('Edit command focus in the workspace', () => {
     beforeEach(() => {
         initialPlayheadBeat = playheadPositionRef.current;
         configureAutomergeStoragePort(null);
@@ -163,6 +201,63 @@ describe('native Edit focus with the timeline clip navigator', () => {
         playheadPositionRef.current = initialPlayheadBeat;
         native.listener = undefined;
     });
+
+    it.each(['keyboard', 'native menu'] as const)(
+        'round-trips project history from a device control through the %s',
+        async (source) => {
+            await commandUseCases.executeUserAppAction({ type: 'cutClip' });
+            expect(clipIds()).toEqual(['clip-two']);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            const undo = vi.spyOn(commandUseCases, 'undo');
+            const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');
+            render(<DeviceHistoryHost />);
+            const control = screen.getByRole('button', { name: 'Device control' });
+            const preset = screen.getByRole('textbox', { name: 'Preset name' });
+            const menu = createApplicationMenuTemplate({
+                appName: 'Sourdaw',
+                send: (intent) => native.listener?.(intent),
+            }).find((item) => item.label === 'Edit')?.submenu;
+            function invoke(target: HTMLElement, action: 'Undo' | 'Redo' | 'Cut') {
+                act(() => target.focus());
+                expect(target).toHaveFocus();
+                if (source === 'keyboard') {
+                    const key = action === 'Cut' ? 'x' : 'z';
+                    fireEvent.keyDown(target, { key, ctrlKey: true, shiftKey: action === 'Redo' });
+                    return;
+                }
+                const click = menu?.find((candidate) => candidate.label === action)?.click;
+                if (!click) {
+                    throw new Error('Expected the native history command');
+                }
+                act(click);
+            }
+            invoke(preset, 'Undo');
+            fireEvent.click(control);
+            expect(screen.getByRole('listbox', { name: 'Presets' })).toBeInTheDocument();
+            invoke(control, 'Undo');
+            fireEvent.click(control);
+            expect(undo).not.toHaveBeenCalled();
+            setClipSelection(['clip-two']);
+            invoke(control, 'Cut');
+            expect(dispatch).not.toHaveBeenCalled();
+            expect(clipIds()).toEqual(['clip-two']);
+            const historyControls = [
+                control,
+                screen.getByRole('slider', { name: 'Gain' }),
+                screen.getByRole('checkbox', { name: 'Bypass' }),
+                screen.getByRole('radio', { name: 'Stereo' }),
+            ];
+            for (const target of historyControls) {
+                invoke(target, 'Undo');
+                await waitFor(() => expect(clipIds()).toEqual(['clip-one', 'clip-two']));
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                invoke(target, 'Redo');
+                await waitFor(() => expect(clipIds()).toEqual(['clip-two']));
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+            }
+            expect(undo).toHaveBeenCalledTimes(historyControls.length);
+        }
+    );
 
     it('keeps native Cut inside Browse, then cuts the selected clip after focus returns to arrangement', async () => {
         const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');

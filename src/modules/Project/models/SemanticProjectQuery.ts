@@ -25,6 +25,7 @@ export const SEMANTIC_PROJECT_QUERY_TYPES = [
     'tempo',
     'history',
     'diff',
+    'musical-content',
 ] as const;
 
 export type SemanticProjectQueryType = (typeof SEMANTIC_PROJECT_QUERY_TYPES)[number];
@@ -62,6 +63,8 @@ export type SemanticProjectQueryInput = {
         cursor?: string;
     };
     sinceRevision?: string;
+    expectedRevision?: string;
+    selectionToken?: string;
 };
 
 export type SemanticProjectRevision = {

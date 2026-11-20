@@ -6,6 +6,7 @@ import { registerToasterDevice, toasterStore } from '../stores/toasterStore';
 
 import { disposeToasterDevice } from './disposeToasterDevice';
 import { hydrateToasterKitFromProject } from './hydrateToasterKitFromProject';
+import { observePublishedToasterKit } from './observePublishedToasterKit';
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
 
 type AudioDeviceLifecyclePayload = {
@@ -51,7 +52,11 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
         // carrying it. `registerToasterDevice` ignores it when a record already
         // exists, which is what makes a mid-session device reload keep the edits in
         // memory instead of rolling them back to the last mirrored state.
+        const justRegistered = !toasterStore.value?.[deviceId];
         registerToasterDevice(deviceId, hydrateToasterKitFromProject(deviceId) ?? undefined);
+        if (justRegistered) {
+            observePublishedToasterKit({ deviceId, trackId: target.trackId, initial: true });
+        }
 
         const state = toasterStore.value?.[deviceId];
         const kit = state?.kit;

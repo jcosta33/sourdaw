@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { CRUST_OVERSAMPLE_FACTORS, DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
@@ -94,6 +94,46 @@ describe('CrustPanel', () => {
         useCaseMocks.useCrustMeters.mockReturnValue(INITIAL_METERS);
         crustStore.set({});
         crustMeterStore.set({});
+    });
+
+    it.each([
+        ['Preset', 'Crust presets'],
+        ['Target', 'Streaming loudness targets'],
+    ])('closes %s on the first Escape and returns focus before the host handles another', (label, menu) => {
+        const outerEscape = vi.fn();
+        render(
+            <div onKeyDown={(event) => event.key === 'Escape' && outerEscape()}>
+                <CrustPanel deviceId="crust-1" />
+            </div>
+        );
+        const trigger = screen.getByRole('button', { name: new RegExp(label) });
+        fireEvent.click(trigger);
+        const option = screen.getByRole('listbox', { name: menu }).querySelector<HTMLElement>('[role="option"]');
+        expect(option).not.toBeNull();
+        act(() => option!.focus());
+        expect(option).toHaveFocus();
+        fireEvent.keyDown(option!, { key: 'Escape' });
+        expect(screen.queryByRole('listbox', { name: menu })).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+        expect(outerEscape).not.toHaveBeenCalled();
+        fireEvent.keyDown(trigger, { key: 'Escape' });
+        expect(outerEscape).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['Preset', 'Crust presets'],
+        ['Target', 'Streaming loudness targets'],
+    ])('closes %s when focus leaves its selector', (label, menu) => {
+        render(<CrustPanel deviceId="crust-1" />);
+        const trigger = screen.getByRole('button', { name: new RegExp(label) });
+        act(() => trigger.focus());
+        fireEvent.click(trigger);
+        const option = screen.getByRole('listbox', { name: menu }).querySelector<HTMLElement>('[role="option"]');
+        expect(option).not.toBeNull();
+        act(() => option!.focus());
+        expect(screen.getByRole('listbox', { name: menu })).toBeInTheDocument();
+        act(() => screen.getByRole('button', { name: 'Reset' }).focus());
+        expect(screen.queryByRole('listbox', { name: menu })).not.toBeInTheDocument();
     });
 
     it('forwards the store meter floor (-100) for input/output verbatim', () => {
@@ -281,11 +321,9 @@ describe('CrustPanel', () => {
         expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
     });
 
-    it('applies minimum height floor and does not clip overflow at root', () => {
-        const { container } = render(<CrustPanel deviceId="crust-1" />);
-        const faceplate = container.querySelector('.crust-faceplate');
-        expect(faceplate).toHaveClass('min-h-[440px]');
-        expect(faceplate).not.toHaveClass('overflow-hidden');
+    it('offers a keyboard-focusable Crust controls scroll region', () => {
+        render(<CrustPanel deviceId={'crust-1'} />);
+        expect(screen.getByRole('region', { name: 'Crust controls' })).toHaveAttribute('tabindex', '0');
     });
 
     it('uses opaque semantic foregrounds for desk and section labels', () => {

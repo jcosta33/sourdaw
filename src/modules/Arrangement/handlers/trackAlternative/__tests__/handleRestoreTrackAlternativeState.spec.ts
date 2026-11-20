@@ -473,4 +473,39 @@ describe('handleRestoreTrackAlternativeState', () => {
         expect(result).toEqual({ status: 'conflict' });
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
+
+    it('refuses, writing nothing, a payload whose retired-clip rows ride on only one side', () => {
+        const liveTrack = makeTrack();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [makeAlternative('alt1', 'Alt 1', [makeClip('c1')])],
+                    activeAlternativeId: 'alt1',
+                    clips: liveTrack.clips,
+                    retiredClips: {
+                        clipIds: ['c2'],
+                        midiNotesByClipId: {},
+                        midiCcByClipId: {},
+                        midiPitchBendByClipId: {},
+                        clipSatellites: [],
+                        clipAutomationLanes: [],
+                        takeLaneIds: [],
+                        takeLanes: [],
+                    },
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
 });

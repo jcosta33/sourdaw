@@ -379,16 +379,20 @@ impl OfflinePluginInstances<'_> {
     pub(crate) fn register(&self, renderer: &mut OfflineRenderer) -> Result<(), String> {
         for instance in &self.instances {
             let id = instance.bound.engine_plugin_id;
-            renderer.push(GraphCommand::AddHostedPlugin(
-                id,
-                Box::new(HostedPluginSlot::new(Arc::clone(&instance.runtime))),
-                MidiNoteStore::new(),
-            ))?;
-            renderer.push(GraphCommand::SetEffectLatency {
-                effect_id: id,
-                latency_frames: instance.latency_frames,
-                dry_delay: CompensationDelay::for_latency(instance.latency_frames),
-            })?;
+            renderer
+                .push(GraphCommand::AddHostedPlugin(
+                    id,
+                    Box::new(HostedPluginSlot::new(Arc::clone(&instance.runtime))),
+                    MidiNoteStore::new(),
+                ))
+                .map_err(|error| error.to_string())?;
+            renderer
+                .push(GraphCommand::SetEffectLatency {
+                    effect_id: id,
+                    latency_frames: instance.latency_frames,
+                    dry_delay: CompensationDelay::for_latency(instance.latency_frames),
+                })
+                .map_err(|error| error.to_string())?;
         }
         Ok(())
     }

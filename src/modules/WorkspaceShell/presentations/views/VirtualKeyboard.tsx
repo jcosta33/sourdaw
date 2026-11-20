@@ -47,6 +47,7 @@ import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { formatMidiNoteName } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
+import { isDeviceEditorControlTarget } from '#/utils/UI/isDeviceEditorControlTarget';
 
 import { workspaceStore, defaultWorkspaceState } from '../../stores/workspaceStore';
 import { setVirtualKeyboardOctave } from '../../useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
@@ -261,16 +262,19 @@ const isListboxKeyOwner = (target: Element, key: string): boolean => {
 };
 
 /** Surfaces where typing and navigation belong to the user's current task, not the keyboard. */
-const yieldsKeyboardToTarget = (event: KeyboardEvent): boolean => {
+const yieldsKeyboardToTarget = (event: KeyboardEvent, playingKey: boolean): boolean => {
     const target = event.target;
     if (!(target instanceof Element)) {
         return false;
     }
-    return (
-        isNativeTextEditableTarget(target) ||
-        target instanceof HTMLSelectElement ||
-        isListboxKeyOwner(target, event.key)
-    );
+    // Native inputs retain their usual key handling, including range controls.
+    if (isNativeTextEditableTarget(target) || target instanceof HTMLSelectElement) {
+        return true;
+    }
+    if (playingKey && isDeviceEditorControlTarget(target)) {
+        return false;
+    }
+    return isListboxKeyOwner(target, event.key);
 };
 
 const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean => {
@@ -318,9 +322,20 @@ const classifyEscape = (event: KeyboardEvent, panel: Element | null): KeydownRul
     return isPlainEscapePress(event) ? 'close' : 'swallow';
 };
 
+function playingKeyRule(event: KeyboardEvent): 'note' | 'octave' | null {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || isAltGraphKey(event)) {
+        return null;
+    }
+    if (event.code === OCTAVE_DOWN_CODE || event.code === OCTAVE_UP_CODE) {
+        return 'octave';
+    }
+    return event.code in KEYBOARD_WHITE_MAP || event.code in KEYBOARD_BLACK_MAP ? 'note' : null;
+}
+
 const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
     const isShortcutChord = event.metaKey || (event.ctrlKey && !isAltGraphKey(event));
-    if (isShortcutChord || yieldsKeyboardToTarget(event)) {
+    const playingKey = playingKeyRule(event);
+    if (isShortcutChord || yieldsKeyboardToTarget(event, playingKey !== null)) {
         return 'passthrough';
     }
     if (event.code === 'Escape') {
@@ -329,14 +344,7 @@ const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRu
     if (event.key === 'Tab') {
         return 'passthrough';
     }
-    const isMusicalKey = !event.altKey && !event.shiftKey;
-    if (isMusicalKey && (event.code === OCTAVE_DOWN_CODE || event.code === OCTAVE_UP_CODE)) {
-        return 'octave';
-    }
-    if (isMusicalKey && (event.code in KEYBOARD_WHITE_MAP || event.code in KEYBOARD_BLACK_MAP)) {
-        return 'note';
-    }
-    return isNativeKeyOfFocusedControl(event) ? 'control' : 'swallow';
+    return playingKey ?? (isNativeKeyOfFocusedControl(event) ? 'control' : 'swallow');
 };
 
 // Immediate, so a window capture listener registered after this one cannot see the key either.

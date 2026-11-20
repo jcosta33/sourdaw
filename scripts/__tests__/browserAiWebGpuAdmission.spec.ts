@@ -5,10 +5,13 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import admissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { selectTestSideSpecs } from '../e2eTestSideGraph';
+import { listSpecs, productPathsOf, selectValidationPlan } from '../prValidationScope';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const admissionSpecPath = join(repositoryRoot, 'tests/e2e/browserAiWebGpuAdmission.spec.ts');
 const admissionTestName = 'proves the live Chromium Browser AI admission boundary without skipping';
+const hardwareSpecs = ['tests/e2e/browserAiWebGpuAdmission.spec.ts', 'tests/e2e/browserAiAdmittedPresentation.spec.ts'];
 
 function getAdmissionTestBody(sourceFile: ts.SourceFile): ts.Block {
     const admissionTest = sourceFile.statements.find((statement): statement is ts.ExpressionStatement => {
@@ -72,11 +75,55 @@ describe('Browser AI WebGPU admission', () => {
         if (!server || Array.isArray(server)) {
             throw new Error('Expected the admission config to own one server');
         }
-        expect(server.command).toBe('pnpm dev --host 127.0.0.1 --port 5188 --strictPort');
+        expect(server.command).toBe('node scripts/e2eDevServer.ts --browser-ai-admission');
+        expect(server.cwd).toBe(repositoryRoot);
         expect(server.url).toBe('http://localhost:5188');
         expect(server.env).toEqual({ NO_HMR: '0' });
         expect(server.reuseExistingServer).toBe(false);
         expect(server.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
+    });
+
+    it('selects the hardware job when only its non-spec Playwright config changes', () => {
+        const configPath = 'tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
+        const specs = listSpecs(repositoryRoot);
+        const routes = selectTestSideSpecs([configPath], specs, {
+            kind: 'graph',
+            graph: [{ source: configPath, dependencies: [] }],
+            references: [],
+        });
+
+        expect(routes).toEqual([{ path: configPath, kind: 'full', reason: 'imported by no browser spec' }]);
+        expect(selectValidationPlan([configPath], specs, undefined, false, undefined, undefined, routes)).toMatchObject(
+            {
+                browser: true,
+                browserAi: true,
+            }
+        );
+    });
+
+    it.each(['scripts/e2eDevServer.ts', 'scripts/browserAiMacCrashEvidence.ts', 'scripts/browserAiMacCrashSummary.ts'])(
+        'selects browser and hardware coverage when only %s changes',
+        (path) => {
+            const specs = listSpecs(repositoryRoot);
+            const plan = selectValidationPlan([path], specs);
+
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(plan.matrix.include.flatMap((shard) => shard.specs)).toEqual(expect.arrayContaining(hardwareSpecs));
+            expect(productPathsOf([path], specs, false)).toEqual([path]);
+        }
+    );
+
+    it('keeps an ordinary repository script on the broad non-browser path', () => {
+        const path = 'scripts/recordHealthGateWorkflowSnapshot.ts';
+        const specs = listSpecs(repositoryRoot);
+
+        expect(selectValidationPlan([path], specs)).toMatchObject({
+            profile: 'broad',
+            browser: false,
+            browserAi: false,
+            matrix: { include: [] },
+        });
+        expect(productPathsOf([path], specs, false)).toEqual([]);
     });
 
     it('reserves the cold-start budget needed before the launch-screen readiness gate', () => {

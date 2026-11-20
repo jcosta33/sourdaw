@@ -15,8 +15,8 @@ use super::policy::{
 };
 use crate::capture_clock::{device_presentation_end, PresentationTime};
 use crate::device::{
-    DeviceOpenRequest, NegotiatedOutput, OpenOutput, OutputBackend, OutputTiming, RenderFn,
-    StreamErrorFn,
+    DeviceOpenRequest, NegotiatedOutput, OpenOutput, OutputBackend, OutputDeviceError,
+    OutputTiming, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::StreamErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -79,11 +79,144 @@ const E_FAIL: i32 = 0x8000_4005_u32 as i32;
 
 pub(crate) struct WasapiOutputBackend;
 
+/// Why WASAPI could not open or start the default output.
+///
+/// Built on the caller's thread or on the stream thread before its buffer
+/// loop runs — never inside the loop, which reports through the `Copy`
+/// [`StreamErrorKind`] alone.
+#[derive(Debug)]
+pub enum WasapiOutputError {
+    /// The operating system refused to spawn the stream thread.
+    SpawnStreamThread(std::io::Error),
+    /// The stream thread ended before it answered the open.
+    ExitedBeforeNegotiating,
+    /// The stream thread was gone when the start was sent.
+    ExitedBeforeStart,
+    /// The stream thread ended before it answered the start.
+    ExitedBeforeStartingStream,
+    /// `CoInitializeEx` refused the stream thread.
+    ComInitialize(windows::core::HRESULT),
+    /// `CreateEventW` refused the buffer event.
+    CreateEvent(ComCause),
+    /// `SetEventHandle` refused the buffer event.
+    SetEventHandle(ComCause),
+    /// `GetBufferSize` failed.
+    GetBufferSize(ComCause),
+    /// `GetService(IAudioRenderClient)` failed.
+    GetRenderClient(ComCause),
+    /// The silent pre-fill could not acquire the buffer.
+    PrefillGetBuffer(ComCause),
+    /// The silent pre-fill could not release the buffer.
+    PrefillReleaseBuffer(ComCause),
+    /// `Start` refused the stream.
+    Play(ComCause),
+    /// The device enumerator could not be created.
+    DeviceEnumerator(ComCause),
+    /// No default render endpoint exists.
+    NoDefaultDevice(ComCause),
+    /// The format and mode ladder found nothing the endpoint accepts.
+    Negotiation(NegotiationError),
+    /// Negotiation succeeded without leaving an initialised client.
+    NegotiationWithoutClient,
+}
+
+impl core::fmt::Display for WasapiOutputError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::SpawnStreamThread(error) => {
+                write!(f, "Failed to spawn the WASAPI stream thread: {error}")
+            }
+            Self::ExitedBeforeNegotiating => {
+                f.write_str("The WASAPI stream thread exited before negotiating a stream")
+            }
+            Self::ExitedBeforeStart => {
+                f.write_str("The WASAPI stream thread exited before starting")
+            }
+            Self::ExitedBeforeStartingStream => {
+                f.write_str("The WASAPI stream thread exited before starting the stream")
+            }
+            Self::ComInitialize(hr) => write!(f, "CoInitializeEx failed: {hr:?}"),
+            Self::CreateEvent(cause) => write!(f, "CreateEventW failed: {cause}"),
+            Self::SetEventHandle(cause) => write!(f, "SetEventHandle failed: {cause}"),
+            Self::GetBufferSize(cause) => write!(f, "GetBufferSize failed: {cause}"),
+            Self::GetRenderClient(cause) => {
+                write!(f, "GetService(IAudioRenderClient) failed: {cause}")
+            }
+            Self::PrefillGetBuffer(cause) => write!(f, "Pre-fill GetBuffer failed: {cause}"),
+            Self::PrefillReleaseBuffer(cause) => {
+                write!(f, "Pre-fill ReleaseBuffer failed: {cause}")
+            }
+            Self::Play(cause) => write!(f, "Failed to play stream: {cause}"),
+            Self::DeviceEnumerator(cause) => {
+                write!(f, "Failed to reach the audio device enumerator: {cause}")
+            }
+            Self::NoDefaultDevice(cause) => {
+                write!(f, "No default audio output device found ({cause})")
+            }
+            Self::Negotiation(error) => write!(f, "{error}"),
+            Self::NegotiationWithoutClient => {
+                f.write_str("Negotiation reported success without an initialized client")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WasapiOutputError {}
+
+/// The text of a failed COM call, read where the call failed.
+///
+/// A `windows::core::Error` prints through the error-info object the failing
+/// call left on its thread, and that object is read with COM calls. The
+/// stream thread uninitialises COM when it exits, which happens before any
+/// caller prints an open failure, so the text is read on the stream thread
+/// while COM is still initialised there and carried as text.
+#[derive(Debug)]
+pub struct ComCause(String);
+
+impl ComCause {
+    fn of(error: &windows::core::Error) -> Self {
+        Self(error.to_string())
+    }
+}
+
+impl core::fmt::Display for ComCause {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Why the negotiation ladder ended without a stream.
+#[derive(Debug)]
+pub struct NegotiationError(NegotiationFailure);
+
+impl core::fmt::Display for NegotiationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match &self.0 {
+            NegotiationFailure::Fatal { hresult } => write!(
+                f,
+                "The audio endpoint cannot be negotiated with (HRESULT {hresult:#010X}: {:?})",
+                stream_error_kind_for_hresult(*hresult)
+            ),
+            NegotiationFailure::Exhausted { refusals } => {
+                f.write_str("Every offered stream format was refused by the device:")?;
+                for refusal in refusals {
+                    write!(
+                        f,
+                        " [{:?}/{:?} {:#010X}]",
+                        refusal.source, refusal.stage, refusal.hresult
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 enum StartMessage {
     Start {
         render: RenderFn,
         on_error: StreamErrorFn,
-        ack: Sender<Result<(), String>>,
+        ack: Sender<Result<(), WasapiOutputError>>,
     },
     Abort,
 }
@@ -103,7 +236,9 @@ pub(crate) struct WasapiStream {
 impl OutputBackend for WasapiOutputBackend {
     type Open = WasapiOpenOutput;
 
-    fn open_default_output(request: DeviceOpenRequest) -> Result<WasapiOpenOutput, String> {
+    fn open_default_output(
+        request: DeviceOpenRequest,
+    ) -> Result<WasapiOpenOutput, OutputDeviceError> {
         let stop = Arc::new(AtomicBool::new(false));
         let (start_tx, start_rx) = mpsc::channel();
         let (negotiated_tx, negotiated_rx) = mpsc::channel();
@@ -112,7 +247,7 @@ impl OutputBackend for WasapiOutputBackend {
         let join = thread::Builder::new()
             .name("sourdaw-wasapi-output".to_string())
             .spawn(move || stream_thread_main(request, thread_stop, negotiated_tx, start_rx))
-            .map_err(|error| format!("Failed to spawn the WASAPI stream thread: {error}"))?;
+            .map_err(WasapiOutputError::SpawnStreamThread)?;
 
         match negotiated_rx.recv() {
             Ok(Ok(negotiated)) => Ok(WasapiOpenOutput {
@@ -127,7 +262,7 @@ impl OutputBackend for WasapiOutputBackend {
             }
             Err(_) => {
                 let _ = join.join();
-                Err("The WASAPI stream thread exited before negotiating a stream".to_string())
+                Err(WasapiOutputError::ExitedBeforeNegotiating)
             }
         }
     }
@@ -140,7 +275,11 @@ impl OpenOutput for WasapiOpenOutput {
         self.negotiated
     }
 
-    fn start(mut self, render: RenderFn, on_error: StreamErrorFn) -> Result<WasapiStream, String> {
+    fn start(
+        mut self,
+        render: RenderFn,
+        on_error: StreamErrorFn,
+    ) -> Result<WasapiStream, OutputDeviceError> {
         let (ack_tx, ack_rx) = mpsc::channel();
         self.start_tx
             .send(StartMessage::Start {
@@ -148,7 +287,7 @@ impl OpenOutput for WasapiOpenOutput {
                 on_error,
                 ack: ack_tx,
             })
-            .map_err(|_| "The WASAPI stream thread exited before starting".to_string())?;
+            .map_err(|_| WasapiOutputError::ExitedBeforeStart)?;
 
         match ack_rx.recv() {
             Ok(Ok(())) => Ok(WasapiStream {
@@ -158,7 +297,7 @@ impl OpenOutput for WasapiOpenOutput {
                 join: self.join.take(),
             }),
             Ok(Err(error)) => Err(error),
-            Err(_) => Err("The WASAPI stream thread exited before starting the stream".to_string()),
+            Err(_) => Err(WasapiOutputError::ExitedBeforeStartingStream),
         }
     }
 }
@@ -188,14 +327,14 @@ impl Drop for WasapiStream {
 struct ComGuard;
 
 impl ComGuard {
-    fn initialize() -> Result<Self, String> {
+    fn initialize() -> Result<Self, WasapiOutputError> {
         // S_FALSE (already initialized on this thread) is success here.
         // SAFETY: the reserved argument is `None` (null), as the API requires,
         // and nothing else is passed; the matching `CoUninitialize` runs only
         // from this guard's `Drop`, on the same thread, after a success.
         let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         if hr.is_err() {
-            return Err(format!("CoInitializeEx failed: {hr:?}"));
+            return Err(WasapiOutputError::ComInitialize(hr));
         }
         Ok(Self)
     }
@@ -268,11 +407,11 @@ impl Drop for MmcssGuard {
 struct EventHandle(HANDLE);
 
 impl EventHandle {
-    fn create() -> Result<Self, String> {
+    fn create() -> Result<Self, WasapiOutputError> {
         // SAFETY: no security attributes (`None`) and a null name are both
         // documented as valid; the call reads no memory of ours.
         let handle = unsafe { CreateEventW(None, false, false, PCWSTR::null()) }
-            .map_err(|error| format!("CreateEventW failed: {error}"))?;
+            .map_err(|error| WasapiOutputError::CreateEvent(ComCause::of(&error)))?;
         Ok(Self(handle))
     }
 }
@@ -725,21 +864,21 @@ enum LoopExit {
 }
 
 impl StreamRuntime {
-    fn attach(initialized: InitializedClient) -> Result<Self, String> {
+    fn attach(initialized: InitializedClient) -> Result<Self, WasapiOutputError> {
         let event = EventHandle::create()?;
         // SAFETY: the client is a live, initialised interface on this
         // COM-initialised stream thread, and `event.0` is a live event handle
         // that the returned runtime owns alongside the client, so it outlives
         // every signal the client raises on it.
         unsafe { initialized.client.SetEventHandle(event.0) }
-            .map_err(|error| format!("SetEventHandle failed: {error}"))?;
+            .map_err(|error| WasapiOutputError::SetEventHandle(ComCause::of(&error)))?;
         // SAFETY: the client is a live, initialised interface on this
         // COM-initialised stream thread; the call takes no pointer of ours.
         let buffer_frames = unsafe { initialized.client.GetBufferSize() }
-            .map_err(|error| format!("GetBufferSize failed: {error}"))?;
+            .map_err(|error| WasapiOutputError::GetBufferSize(ComCause::of(&error)))?;
         // SAFETY: as above; `GetService` writes only the interface it returns.
         let render_client = unsafe { initialized.client.GetService::<IAudioRenderClient>() }
-            .map_err(|error| format!("GetService(IAudioRenderClient) failed: {error}"))?;
+            .map_err(|error| WasapiOutputError::GetRenderClient(ComCause::of(&error)))?;
         let scratch =
             vec![0.0f32; buffer_frames as usize * usize::from(initialized.format.channels)];
         // Timing is additive: an unavailable clock does not prevent playback.
@@ -766,7 +905,7 @@ impl StreamRuntime {
         })
     }
 
-    fn start(&mut self) -> Result<(), String> {
+    fn start(&mut self) -> Result<(), WasapiOutputError> {
         // One silent period before Start: an exclusive stream otherwise
         // plays whatever the DMA buffer held, and a shared one opens on an
         // underrun. SILENT zero-fills on release, so the returned pointer
@@ -774,18 +913,19 @@ impl StreamRuntime {
         // SAFETY: `render_client` is a live interface on this COM-initialised
         // stream thread; the returned pointer is discarded unread.
         unsafe { self.render_client.GetBuffer(self.buffer_frames) }
-            .map_err(|error| format!("Pre-fill GetBuffer failed: {error}"))?;
+            .map_err(|error| WasapiOutputError::PrefillGetBuffer(ComCause::of(&error)))?;
         // SAFETY: as above; this releases the same frame count the `GetBuffer`
         // above just acquired, and nothing wrote through its pointer.
         unsafe {
             self.render_client
                 .ReleaseBuffer(self.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT.0 as u32)
         }
-        .map_err(|error| format!("Pre-fill ReleaseBuffer failed: {error}"))?;
+        .map_err(|error| WasapiOutputError::PrefillReleaseBuffer(ComCause::of(&error)))?;
         self.submitted_frames = u64::from(self.buffer_frames);
         // SAFETY: `client` is a live, initialised interface on this
         // COM-initialised stream thread; the call takes no pointer of ours.
-        unsafe { self.client.Start() }.map_err(|error| format!("Failed to play stream: {error}"))
+        unsafe { self.client.Start() }
+            .map_err(|error| WasapiOutputError::Play(ComCause::of(&error)))
     }
 
     fn negotiated(&self) -> NegotiatedOutput {
@@ -992,17 +1132,17 @@ impl Drop for StreamRuntime {
 
 /// Negotiate and attach one stream on the current (COM-initialized)
 /// thread, reporting the chosen path and every refusal on the way there.
-fn open_stream_runtime(request: &DeviceOpenRequest) -> Result<StreamRuntime, String> {
+fn open_stream_runtime(request: &DeviceOpenRequest) -> Result<StreamRuntime, WasapiOutputError> {
     // SAFETY: every caller runs on the stream thread after `ComGuard`
     // initialised COM; the class id is a static GUID and no aggregating outer
     // object is passed.
     let enumerator: IMMDeviceEnumerator =
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
-            .map_err(|error| format!("Failed to reach the audio device enumerator: {error}"))?;
+            .map_err(|error| WasapiOutputError::DeviceEnumerator(ComCause::of(&error)))?;
     // SAFETY: `enumerator` is the live interface just created on this
     // COM-initialised thread; the call takes only enum values.
     let device = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }
-        .map_err(|error| format!("No default audio output device found ({error})"))?;
+        .map_err(|error| WasapiOutputError::NoDefaultDevice(ComCause::of(&error)))?;
 
     let mut negotiation = LiveNegotiation::new(device);
     let plan = negotiate_windows_stream(
@@ -1010,35 +1150,15 @@ fn open_stream_runtime(request: &DeviceOpenRequest) -> Result<StreamRuntime, Str
         request.exclusive,
         request.force_default_period,
     )
-    .map_err(|failure| describe_negotiation_failure(&failure))?;
+    .map_err(|failure| WasapiOutputError::Negotiation(NegotiationError(failure)))?;
 
     report_negotiated_plan(&plan);
 
     let initialized = negotiation
         .initialized
         .take()
-        .ok_or_else(|| "Negotiation reported success without an initialized client".to_string())?;
+        .ok_or(WasapiOutputError::NegotiationWithoutClient)?;
     StreamRuntime::attach(initialized)
-}
-
-fn describe_negotiation_failure(failure: &NegotiationFailure) -> String {
-    match failure {
-        NegotiationFailure::Fatal { hresult } => format!(
-            "The audio endpoint cannot be negotiated with (HRESULT {hresult:#010X}: {:?})",
-            stream_error_kind_for_hresult(*hresult)
-        ),
-        NegotiationFailure::Exhausted { refusals } => {
-            let mut message =
-                String::from("Every offered stream format was refused by the device:");
-            for refusal in refusals {
-                message.push_str(&format!(
-                    " [{:?}/{:?} {:#010X}]",
-                    refusal.source, refusal.stage, refusal.hresult
-                ));
-            }
-            message
-        }
-    }
 }
 
 /// The native-side diagnostics line for which path this stream actually
@@ -1077,7 +1197,7 @@ fn report_negotiated_plan(plan: &NegotiatedPlan) {
 fn stream_thread_main(
     request: DeviceOpenRequest,
     stop: Arc<AtomicBool>,
-    negotiated_tx: Sender<Result<NegotiatedOutput, String>>,
+    negotiated_tx: Sender<Result<NegotiatedOutput, WasapiOutputError>>,
     start_rx: Receiver<StartMessage>,
 ) {
     let _com = match ComGuard::initialize() {
@@ -1212,4 +1332,59 @@ fn sleep_between_reopen_attempts(stop: &AtomicBool) -> bool {
         thread::sleep(REOPEN_POLL_SLICE);
     }
     stop.load(Ordering::Acquire)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NegotiationError, WasapiOutputError, E_FAIL};
+    use crate::device::wasapi::policy::{
+        CandidateSource, FormatRefusal, NegotiationFailure, NegotiationStage,
+    };
+
+    /// The open and start messages, pinned exactly: they reach the renderer
+    /// as the engine-start failure text.
+    #[test]
+    fn wasapi_output_errors_print_their_messages() {
+        let cases = [
+            (
+                WasapiOutputError::ExitedBeforeNegotiating,
+                "The WASAPI stream thread exited before negotiating a stream".to_string(),
+            ),
+            (
+                WasapiOutputError::ExitedBeforeStart,
+                "The WASAPI stream thread exited before starting".to_string(),
+            ),
+            (
+                WasapiOutputError::ExitedBeforeStartingStream,
+                "The WASAPI stream thread exited before starting the stream".to_string(),
+            ),
+            (
+                WasapiOutputError::NegotiationWithoutClient,
+                "Negotiation reported success without an initialized client".to_string(),
+            ),
+            (
+                WasapiOutputError::Negotiation(NegotiationError(NegotiationFailure::Fatal {
+                    hresult: E_FAIL,
+                })),
+                "The audio endpoint cannot be negotiated with (HRESULT 0x80004005: \
+                 BackendSpecific)"
+                    .to_string(),
+            ),
+            (
+                WasapiOutputError::Negotiation(NegotiationError(NegotiationFailure::Exhausted {
+                    refusals: vec![FormatRefusal {
+                        source: CandidateSource::EngineF32,
+                        stage: NegotiationStage::ExclusiveClaim,
+                        hresult: E_FAIL,
+                    }],
+                })),
+                "Every offered stream format was refused by the device: \
+                 [EngineF32/ExclusiveClaim 0x80004005]"
+                    .to_string(),
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+    }
 }

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     engine: {
         noteOn: vi.fn(),
+        startPreviewNote: vi.fn(),
         noteOff: vi.fn(),
         noteOnMidi2: vi.fn(),
         setParam: vi.fn(),

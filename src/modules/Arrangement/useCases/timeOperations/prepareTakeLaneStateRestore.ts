@@ -1,3 +1,4 @@
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransitions';
@@ -48,9 +49,9 @@ function revertTakeLaneTransitionPlan(plan: TakeLaneTransitionPlan): boolean {
  * the retire direction is order-independent. The slot is null when the forward
  * operation neither retired nor re-keyed takes, so the handle only exists when
  * there is something to do. Apply and revert are the comping module's
- * defensive primitives, which reconcile against live state rather than
- * conflicting on it, and each is one atomic store write, so a failed apply
- * leaves nothing to recover. A region the retirement owns rides only the
+ * defensive primitives, which reconcile against live state. Apply may publish
+ * more than once, so recovery restores the value this participant received
+ * before any of its writes. A region the retirement owns rides only the
  * re-key's before side (#4841), so both legs can bring it back — and they
  * converge in either order rather than depending on one. Run the retirement
  * leg first (as both directions do here) and its overlap refusal defers the
@@ -66,11 +67,24 @@ export function prepareTakeLaneStateRestore(plan: TakeLaneTransitionPlan): {
     revert: () => boolean;
     recoverAfterFailedApply: () => unknown[];
 } {
+    let capturedState: typeof takeLaneStore.value;
     return {
         name: 'Take lanes',
         hasChanges: true,
-        apply: () => applyTakeLaneTransitionPlan(plan),
+        apply: () => {
+            capturedState = takeLaneStore.value;
+            return applyTakeLaneTransitionPlan(plan);
+        },
         revert: () => revertTakeLaneTransitionPlan(plan),
-        recoverAfterFailedApply: () => [],
+        recoverAfterFailedApply: () => {
+            if (takeLaneStore.value === capturedState) {
+                return [];
+            }
+            takeLaneStore.set(capturedState);
+            if (takeLaneStore.value !== capturedState) {
+                return [new Error('Take lane state could not be restored')];
+            }
+            return [];
+        },
     };
 }

@@ -1,1 +1,1 @@
-// no public events
+export type { GlutenFactoryPresetAction } from './glutenAppActions';
