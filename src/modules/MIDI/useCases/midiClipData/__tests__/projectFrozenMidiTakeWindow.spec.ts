@@ -48,6 +48,48 @@ function source(): FrozenMidiTakeSource {
 }
 
 describe('frozen MIDI take window', () => {
+    it('collects synthetic, carried, source and closing controller origins from the same playback window', () => {
+        const original = source();
+        const controls: MidiCC[] = [
+            { id: 'rpn-msb', controller: 101, value: 0, channel: 0, beat: 4 },
+            { id: 'rpn-lsb', controller: 100, value: 0, channel: 0, beat: 4 },
+            { id: 'range', controller: 6, value: 12, channel: 0, beat: 4 },
+            { id: 'held', controller: 64, value: 127, channel: 0, beat: 4.8 },
+            { id: 'move', controller: 1, value: 70, channel: 0, beat: 5.5 },
+            { id: 'lift', controller: 64, value: 0, channel: 0, beat: 9 },
+        ];
+        const events: Array<{ row: MidiCC; origin: string; sourceBeat?: number }> = [];
+        const result = projectFrozenMidiTakeWindow({
+            source: { ...original, rows: { ...original.rows, controlChanges: { present: true, value: controls } } },
+            fragment: { startBeat: 0, endBeat: 4 },
+            absoluteOccurrenceIndex: 0,
+            fromBeat: 0,
+            toBeat: 4,
+            collectController: (event: { row: MidiCC; origin: string; sourceBeat?: number }) => events.push(event),
+        });
+        expect(result).not.toBeNull();
+        expect(events).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ origin: 'synthetic' }),
+                expect.objectContaining({
+                    row: expect.objectContaining({ id: 'held', beat: 0 }),
+                    origin: 'carried',
+                    sourceBeat: 4.8,
+                }),
+                expect.objectContaining({
+                    row: expect.objectContaining({ id: 'move', beat: 0.5 }),
+                    origin: 'source',
+                    sourceBeat: 5.5,
+                }),
+                expect.objectContaining({
+                    row: expect.objectContaining({ id: 'lift', beat: 4 }),
+                    origin: 'closing',
+                    sourceBeat: 9,
+                }),
+            ])
+        );
+    });
+
     it('plays a pedal lift on the fragment’s closing line, never at an inner loop seam', () => {
         const original = source();
         const pedal = { id: 'press', controller: 64, value: 127, channel: 0, beat: 5 };

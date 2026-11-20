@@ -56,7 +56,7 @@ describe('preferencesStore — present-but-corrupt persisted blob', () => {
 
         // Read boundary must return the sanitized form: invalid fields fall back
         // to defaults, valid fields are preserved.
-        expect(fresh.value?.theme).toBe('dark'); // invalid null → default
+        expect(fresh.value?.theme).toBe('system'); // invalid null → default
         expect(fresh.value?.autoSave).toBe(true); // invalid 'yes' → default
         expect(fresh.value?.uiScale).toBe(1.5); // valid → preserved
 

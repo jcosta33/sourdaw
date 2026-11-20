@@ -44,6 +44,9 @@ describe('commitToasterKit', () => {
         expect(action.type).toBe('setDeviceState');
         expect(action.payload.deviceId).toBe('device-1');
         expect(action.payload.state).toBeDefined();
-        expect(options).toEqual({ skipMacroRecording: true });
+        expect(options.skipMacroRecording).toBe(true);
+        expect(options.shouldExecute()).toBe(true);
+        mockToasterStore.value = { 'device-1': { kit: structuredClone(sampleKit) } };
+        expect(options.shouldExecute()).toBe(false);
     });
 });

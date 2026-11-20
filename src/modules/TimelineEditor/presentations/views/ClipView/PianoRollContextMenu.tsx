@@ -23,6 +23,7 @@ import {
     snapClipToScale,
     getGrooveTemplate,
     getStraightGrooveTemplateId,
+    type projectPianoRollTakeNotes,
 } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
@@ -38,7 +39,8 @@ import {
     transformPianoRollTakeNotes,
 } from '../../helpers/applyPianoRollTakeMenuAction';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
-import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
+
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 

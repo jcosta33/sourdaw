@@ -28,9 +28,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
-import { createDefaultPatch } from '../../models/LevainPatch';
-import { defaultLevainState, levainStore } from '../../stores/levainStore';
-import { commitLevainDeviceState } from '../commitLevainDeviceState';
+import { levainStore } from '../../stores/levainStore';
 import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { reconcileLevainDeviceStateFromProject } from '../reconcileLevainDeviceStateFromProject';
@@ -198,32 +196,14 @@ async function requestAcrossSuccessorProject(requestAction: () => Promise<void>)
 }
 
 const dispatched = vi.hoisted(() => [] as Promise<void>[]);
-const identityCompletion = vi.hoisted(() => ({
-    hold: null as { committed: () => void; release: Promise<void> } | null,
-}));
 const tierCompletion = vi.hoisted(() => ({
     hold: null as { committed: () => void; release: Promise<void> } | null,
 }));
-const submittedFacets = vi.hoisted(() => [] as ('identity' | 'tier')[]);
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...original,
-        executeAppAction: (...args: Parameters<typeof original.executeAppAction>) => {
-            submittedFacets.push('identity');
-            const hold = identityCompletion.hold;
-            identityCompletion.hold = null;
-            const request = original.executeAppAction(...args).then(async () => {
-                if (hold) {
-                    hold.committed();
-                    await hold.release;
-                }
-            });
-            dispatched.push(request);
-            return request;
-        },
         executeUserAppAction: (...args: Parameters<typeof original.executeUserAppAction>) => {
-            submittedFacets.push('tier');
             const hold = tierCompletion.hold;
             tierCompletion.hold = null;
             const request = original.executeUserAppAction(...args).then(async () => {
@@ -237,29 +217,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
         },
     };
 });
-
-const coordinated = vi.hoisted(() => [] as Promise<void>[]);
-vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
-    return {
-        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
-            const request = original.coordinateLevainDeviceState(...args);
-            coordinated.push(request);
-            return request;
-        },
-    };
-});
-
-async function settleIdentityRequests(): Promise<void> {
-    await Promise.all(coordinated);
-}
-
-function editedPatch(edit: string) {
-    if (edit === 'instrument') {
-        return createDefaultPatch('horn');
-    }
-    return { ...createDefaultPatch('cello'), currentArticulation: 'tremolo' as const };
-}
 
 function editDevice(
     state: TrackStoreState,
@@ -308,17 +265,13 @@ beforeEach(() => {
     clearHandlerRegistry();
     registerHandlerMap(getArrangementHandlers());
     dispatched.length = 0;
-    coordinated.length = 0;
-    identityCompletion.hold = null;
     tierCompletion.hold = null;
-    submittedFacets.length = 0;
     trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoLevainDevices() });
     flushAutomergeStorageWrites();
     levainStore.set({ a: hydrateLevainStateFromProject('a')!, b: hydrateLevainStateFromProject('b')! });
 });
 
 afterEach(async () => {
-    await settleIdentityRequests();
     configureLevainDeviceStateProjectAccess(null);
     agentProjectRepairStateStore.set(null);
     trackStore.set({ ...defaultTrackState, tracks: [] });
@@ -389,170 +342,6 @@ it('saves a tier while real gain and mic writes replace its projected device', a
     expect(rawProjectDevice('a')?.parameterValues).toMatchObject({ masterGain: 0.52, mic0Volume: 0.31 });
 });
 
-it('saves an identity while real gain and mic writes replace its projected device', async () => {
-    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-    await requestDuringSnapshotEdit(
-        () => {
-            persistDeviceParam('a', 'masterGain', 0.52);
-            persistDeviceParam('a', 'mic0Volume', 0.31);
-        },
-        async () => {
-            commitLevainDeviceState('a');
-            await settleIdentityRequests();
-        }
-    );
-    expect(rawProjectState('a')?.data).toMatchObject({ instrumentId: 'horn' });
-    expect(rawProjectDevice('a')?.parameterValues).toMatchObject({ masterGain: 0.52, mic0Volume: 0.31 });
-});
-
-it('saves the latest identity and articulation queued behind one snapshot', async () => {
-    await requestDuringSnapshotEdit(null, async () => {
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-        commitLevainDeviceState('a');
-        levainStore.set({
-            ...levainStore.value,
-            a: { ...defaultLevainState, patch: { ...createDefaultPatch('cello'), currentArticulation: 'tremolo' } },
-        });
-        commitLevainDeviceState('a');
-        await settleIdentityRequests();
-    });
-    expect(rawProjectState('a')?.data).toMatchObject({
-        instrumentId: 'cello',
-        currentArticulation: 'tremolo',
-    });
-});
-
-it('cancels a queued identity when the latest patch returns to the saved choice', async () => {
-    await requestDuringSnapshotEdit(null, async () => {
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-        commitLevainDeviceState('a');
-        levainStore.set({
-            ...levainStore.value,
-            a: { ...defaultLevainState, patch: { ...createDefaultPatch('cello'), currentArticulation: 'pizzicato' } },
-        });
-        commitLevainDeviceState('a');
-        await settleIdentityRequests();
-    });
-    expect(rawProjectState('a')?.data).toMatchObject({
-        instrumentId: 'cello',
-        currentArticulation: 'pizzicato',
-    });
-});
-
-it.each(['tier-first', 'identity-first'] as const)(
-    'saves both local facets queued behind a real snapshot in %s order',
-    async (order) => {
-        await requestDuringSnapshotEdit(null, async () => {
-            const identity = () => {
-                levainStore.set({
-                    ...levainStore.value,
-                    a: { ...defaultLevainState, patch: createDefaultPatch('horn') },
-                });
-                commitLevainDeviceState('a');
-            };
-            if (order === 'identity-first') {
-                identity();
-            }
-            const tier = setLevainPanelUiLevel('a', 6);
-            if (order === 'tier-first') {
-                identity();
-            }
-            await tier;
-            await settleIdentityRequests();
-        });
-        expect(rawProjectState('a')?.data).toMatchObject({
-            instrumentId: 'horn',
-            currentArticulation: 'sustain',
-            disclosureTier: 'expert',
-            unrelated: 'preserve',
-        });
-        expect(projectState('a')).toEqual(rawProjectState('a'));
-        expect(levainStore.value?.a?.uiLevel).toBe(1);
-        reconcileLevainDeviceStateFromProject('a');
-        expect(levainStore.value?.a?.uiLevel).toBe(6);
-    }
-);
-
-it('refuses peer state arriving after its own identity commit but before the queued tier is created', async () => {
-    let committed!: () => void;
-    let release!: () => void;
-    const ownCommit = new Promise<void>((resolve) => {
-        committed = resolve;
-    });
-    const completion = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    identityCompletion.hold = { committed, release: completion };
-    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-    commitLevainDeviceState('a');
-    const tier = setLevainPanelUiLevel('a', 6);
-    await ownCommit;
-    expect(rawProjectState('a')?.data.instrumentId).toBe('horn');
-    const peer = { version: 1, data: { instrumentId: 'flute', currentArticulation: 'staccato', unrelated: 'newer' } };
-    trackStore.set(editDevice(trackStore.value!, (device) => ({ ...device, deviceState: peer })));
-    flushAutomergeStorageWrites();
-    release();
-    await tier;
-    await settleIdentityRequests();
-    expect(rawProjectState('a')).toEqual(peer);
-    expect(projectState('a')).toEqual(peer);
-    expect(levainStore.value?.a?.uiLevel).toBe(1);
-    expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
-});
-
-it('keeps newest facet choices and independent devices while both writers wait', async () => {
-    await requestDuringSnapshotEdit(null, async () => {
-        const expert = setLevainPanelUiLevel('a', 6);
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-        commitLevainDeviceState('a');
-        const basic = setLevainPanelUiLevel('a', 1);
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: editedPatch('articulation') } });
-        commitLevainDeviceState('a');
-        const other = setLevainPanelUiLevel('b', 6);
-        levainStore.set({ ...levainStore.value, b: { ...defaultLevainState, patch: createDefaultPatch('flute') } });
-        commitLevainDeviceState('b');
-        await Promise.all([expert, basic, other]);
-        await settleIdentityRequests();
-    });
-    expect(rawProjectState('a')?.data).toMatchObject({
-        instrumentId: 'cello',
-        currentArticulation: 'tremolo',
-        disclosureTier: 'basic',
-        unrelated: 'preserve',
-    });
-    expect(rawProjectState('b')?.data).toMatchObject({
-        instrumentId: 'flute',
-        currentArticulation: 'sustain',
-        disclosureTier: 'expert',
-    });
-});
-
-it('cancels a reverted pending identity without cancelling the pending tier', async () => {
-    await requestDuringSnapshotEdit(null, async () => {
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-        commitLevainDeviceState('a');
-        const tier = setLevainPanelUiLevel('a', 6);
-        levainStore.set({
-            ...levainStore.value,
-            a: {
-                ...defaultLevainState,
-                patch: {
-                    ...createDefaultPatch('cello'),
-                    currentArticulation: 'pizzicato',
-                },
-            },
-        });
-        commitLevainDeviceState('a');
-        await tier;
-        await settleIdentityRequests();
-    });
-    expect(rawProjectState('a')?.data).toMatchObject({
-        instrumentId: 'cello',
-        currentArticulation: 'pizzicato',
-        disclosureTier: 'expert',
-    });
-});
-
 it.each([1, 99])('preserves queued peer identity and metadata in version %i during a tier write', async (version) => {
     const peer = { version, data: { instrumentId: 'flute', currentArticulation: 'staccato', unrelated: 'newer' } };
     await requestDuringSnapshotEdit((state) => editDevice(state, (device) => ({ ...device, deviceState: peer })));
@@ -598,88 +387,15 @@ it('commits the newest valid tier choice when two choices wait behind one snapsh
     expect(levainStore.value?.a?.uiLevel).toBe(1);
 });
 
-it.each([
-    [1, 'instrument'],
-    [1, 'articulation'],
-    [99, 'instrument'],
-    [99, 'articulation'],
-] as const)('preserves queued peer tier and version %i during an %s write', async (version, edit) => {
-    const peer = {
-        version,
-        data: { instrumentId: 'cello', currentArticulation: 'pizzicato', disclosureTier: 'expert', unrelated: 'newer' },
-    };
-    const patch = editedPatch(edit);
-    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch } });
-    await requestDuringSnapshotEdit(
-        (state) => editDevice(state, (device) => ({ ...device, deviceState: peer })),
-        async () => {
-            commitLevainDeviceState('a');
-            await settleIdentityRequests();
-        }
-    );
-    expect(rawProjectState('a')).toEqual(peer);
-    expect(projectState('a')).toEqual(peer);
-});
-
-it('keeps an identity request for the same entity when its projection is cloned', async () => {
-    const before = structuredClone(projectState('a'));
-    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-    await requestDuringSnapshotEdit(
-        (state) => editDevice(state, (device) => structuredClone(device)),
-        async () => {
-            commitLevainDeviceState('a');
-            await settleIdentityRequests();
-        }
-    );
-    // The clone is the same persisted UUID and state facet, with no new entity generation.
-    expect(rawProjectState('a')?.data).toMatchObject({
-        ...before?.data,
-        instrumentId: 'horn',
-        currentArticulation: 'sustain',
-    });
-});
-
-it('does not carry a queued identity into a successor project retaining identical device objects and bytes', async () => {
-    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-    await requestAcrossSuccessorProject(async () => {
-        commitLevainDeviceState('a');
-        await settleIdentityRequests();
-    });
-});
-
-it('refuses unknown versions before a tier or identity request', async () => {
+it('refuses unknown versions before a tier request', async () => {
     const peer = { version: 99, data: { future: 'preserve' } };
     trackStore.set(editDevice(trackStore.value!, (device) => ({ ...device, deviceState: peer })));
     flushAutomergeStorageWrites();
     await setLevainPanelUiLevel('a', 6);
-    commitLevainDeviceState('a');
     expect(rawProjectState('a')).toEqual(peer);
     expect(dispatched).toHaveLength(0);
     expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('newer version'), 'warning');
 });
-
-it.each(['instrument', 'articulation'])(
-    'preserves the authoritative peer tier and unknown metadata during a current %s edit',
-    async (edit) => {
-        await setLevainPanelUiLevel('a', 6);
-        const patch = editedPatch(edit);
-        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch } });
-        commitLevainDeviceState('a');
-        await settleIdentityRequests();
-        const expected = {
-            version: 1,
-            data: {
-                instrumentId: patch.instrumentId,
-                currentArticulation: patch.currentArticulation,
-                disclosureTier: 'expert',
-                unrelated: 'preserve',
-            },
-        };
-        expect(rawProjectState('a')).toEqual(expected);
-        expect(projectState('a')).toEqual(expected);
-        expect(projectState('b')?.data.instrumentId).toBe('horn');
-    }
-);
 
 function commitTopology(tracks: TrackStoreState['tracks'], snapshotTransaction: object): void {
     const write = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
@@ -698,41 +414,25 @@ function commitTopology(tracks: TrackStoreState['tracks'], snapshotTransaction: 
     projectCrdtToStores();
 }
 
-it.each(['tier', 'identity'] as const)(
-    'retires an already submitted %s request after committed removal and identical restore',
-    async (facet) => {
-        const original = structuredClone(rawProjectState('a'));
-        if (facet === 'identity') {
-            levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-        }
-        await requestDuringSnapshotEdit(
-            (state, transaction) => {
-                const tracks = structuredClone(state.tracks);
-                commitTopology(
-                    editDevice(state, (device) => device).tracks.map((track) => ({
-                        ...track,
-                        devices: track.devices.filter((device) => device.id !== 'a'),
-                    })),
-                    transaction
-                );
-                expect(rawProjectDevice('a')).toBeUndefined();
-                expect(committedMembershipEvents.at(-1)).toBe(false);
-                commitTopology(tracks, transaction);
-                expect(rawProjectState('a')).toEqual(original);
-            },
-            async () => {
-                if (facet === 'tier') {
-                    await setLevainPanelUiLevel('a', 6);
-                } else {
-                    commitLevainDeviceState('a');
-                    await settleIdentityRequests();
-                }
-            }
+it('retires an already submitted tier request after committed removal and identical restore', async () => {
+    const original = structuredClone(rawProjectState('a'));
+    await requestDuringSnapshotEdit((state, transaction) => {
+        const tracks = structuredClone(state.tracks);
+        commitTopology(
+            tracks.map((track) => ({
+                ...track,
+                devices: track.devices.filter((device) => device.id !== 'a'),
+            })),
+            transaction
         );
+        expect(rawProjectDevice('a')).toBeUndefined();
+        expect(committedMembershipEvents.at(-1)).toBe(false);
+        commitTopology(tracks, transaction);
         expect(rawProjectState('a')).toEqual(original);
-        expect(levainStore.value?.a?.uiLevel).toBe(1);
-    }
-);
+    });
+    expect(rawProjectState('a')).toEqual(original);
+    expect(levainStore.value?.a?.uiLevel).toBe(1);
+});
 
 it('observes separate committed remove and restore while projection notifications batch', async () => {
     const original = structuredClone(rawProjectState('a'));
@@ -831,56 +531,32 @@ it.each(['commit', 'abort'] as const)(
     }
 );
 
-it.each(['identity', 'tier'] as const)(
-    'does not create the old second facet after a held %s commit loses its target',
-    async (firstFacet) => {
-        let committed!: () => void;
-        let release!: () => void;
-        const firstCommitted = new Promise<void>((resolve) => {
-            committed = resolve;
-        });
-        const completion = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        const hold = { committed, release: completion };
-        if (firstFacet === 'identity') {
-            identityCompletion.hold = hold;
-        } else {
-            tierCompletion.hold = hold;
-        }
-        const identity = () => {
-            levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
-            commitLevainDeviceState('a');
-        };
-        if (firstFacet === 'identity') {
-            identity();
-        }
-        const tier = setLevainPanelUiLevel('a', 6);
-        if (firstFacet === 'tier') {
-            identity();
-        }
-        await firstCommitted;
-        const saved = structuredClone(rawProjectState('a'));
-        const state = structuredClone(trackStore.value!);
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((track) => ({
-                ...track,
-                devices: track.devices.filter((device) => device.id !== 'a'),
-            })),
-        });
-        flushAutomergeStorageWrites();
-        expect(rawProjectDevice('a')).toBeUndefined();
-        trackStore.set(state);
-        flushAutomergeStorageWrites();
-        expect(rawProjectState('a')).toEqual(saved);
-        // A different device remains independently writable while the old tail is held.
-        await setLevainPanelUiLevel('b', 6);
-        expect(rawProjectState('b')?.data.disclosureTier).toBe('expert');
-        release();
-        await tier;
-        await settleIdentityRequests();
-        expect(rawProjectState('a')).toEqual(saved);
-        expect(submittedFacets).toEqual([firstFacet, 'tier']);
-    }
-);
+it('retires a second tier request when the first commit is followed by a committed owner loss', async () => {
+    const committed = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    tierCompletion.hold = { committed: committed.resolve, release: release.promise };
+    const first = setLevainPanelUiLevel('a', 6);
+    await committed.promise;
+    const second = setLevainPanelUiLevel('a', 1);
+    const saved = structuredClone(rawProjectState('a'));
+    const state = structuredClone(trackStore.value!);
+    trackStore.set({
+        ...state,
+        tracks: state.tracks.map((track) => ({
+            ...track,
+            devices: track.devices.filter((device) => device.id !== 'a'),
+        })),
+    });
+    flushAutomergeStorageWrites();
+    expect(rawProjectDevice('a')).toBeUndefined();
+    trackStore.set(state);
+    flushAutomergeStorageWrites();
+    expect(rawProjectState('a')).toEqual(saved);
+    // A different device remains independently writable while the old tail is held.
+    await setLevainPanelUiLevel('b', 6);
+    expect(rawProjectState('b')?.data.disclosureTier).toBe('expert');
+    release.resolve();
+    await Promise.all([first, second]);
+    expect(rawProjectState('a')).toEqual(saved);
+    expect(dispatched).toHaveLength(2);
+});

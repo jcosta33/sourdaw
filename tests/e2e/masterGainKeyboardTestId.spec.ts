@@ -85,6 +85,8 @@ test.describe('Mixer master gain — keyboard response', () => {
         menu = await openMenu();
         await menu.getByRole('menuitem', { name: 'Paste Value' }).click();
         await expect(gain).toHaveAttribute('aria-valuenow', copiedValue);
-        await expect(page.getByText('Clipboard does not contain a valid master gain value.')).toBeVisible();
+        await expect(
+            page.getByTestId('notification-toast').getByText('Clipboard does not contain a valid master gain value.')
+        ).toBeVisible();
     });
 });

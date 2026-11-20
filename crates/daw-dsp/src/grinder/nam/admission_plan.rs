@@ -4,6 +4,7 @@
 //! instance ledger; the WaveNet parse runs the shared part alone, so a shape
 //! that would overrun memory is refused before any buffer is built on either
 //! target.
+use super::NamModelError;
 use serde_json::Value;
 
 pub(super) const MIB: u64 = 1024 * 1024;
@@ -14,22 +15,60 @@ const VALUE_SLOT: u64 = 32;
 #[cfg(not(target_arch = "wasm32"))]
 const _: () = assert!(std::mem::size_of::<serde_json::Value>() == 32);
 
-pub(super) fn refuse(reason: &str) -> String {
-    format!("Native NAM refused: {reason}")
+/// Why NAM admission refused a model or a native preparation. Admission runs
+/// on the control path only, so the owned variants never reach a callback.
+#[derive(Clone, Debug, PartialEq)]
+pub enum NamAdmissionError {
+    /// A structural, cost, ledger or lifecycle policy; the reason names the
+    /// field or limit that refused.
+    Refused(&'static str),
+    /// Another preparation already holds the native transaction.
+    PreparationActive,
+    /// A newer request superseded this preparation.
+    Superseded,
+    /// The config block is not valid JSON; carries the parser's detail.
+    ConfigJson(String),
+    /// The version, activation grammar or full model parse refused the file.
+    Model(Box<NamModelError>),
 }
-pub(super) fn add(a: u64, b: u64) -> Result<u64, String> {
+
+impl core::fmt::Display for NamAdmissionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Native NAM refused: ")?;
+        match self {
+            Self::Refused(reason) => f.write_str(reason),
+            Self::PreparationActive => f.write_str("preparation already active"),
+            Self::Superseded => f.write_str("superseded preparation"),
+            Self::ConfigJson(detail) => f.write_str(detail),
+            Self::Model(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for NamAdmissionError {}
+
+impl NamAdmissionError {
+    pub(super) fn model(error: NamModelError) -> Self {
+        Self::Model(Box::new(error))
+    }
+}
+
+pub(super) fn refuse(reason: &'static str) -> NamAdmissionError {
+    NamAdmissionError::Refused(reason)
+}
+pub(super) fn add(a: u64, b: u64) -> Result<u64, NamAdmissionError> {
     a.checked_add(b).ok_or_else(|| refuse("charge overflow"))
 }
-pub(super) fn mul(a: u64, b: u64) -> Result<u64, String> {
+pub(super) fn mul(a: u64, b: u64) -> Result<u64, NamAdmissionError> {
     a.checked_mul(b).ok_or_else(|| refuse("charge overflow"))
 }
-fn bounded(value: u64, ceiling: u64, name: &str) -> Result<u64, String> {
+fn bounded(value: u64, ceiling: u64, name: &'static str) -> Result<u64, NamAdmissionError> {
     if value == 0 || value > ceiling {
         return Err(refuse(name));
     }
     Ok(value)
 }
-fn dimension(config: &Value, key: &str, max: u64) -> Result<u64, String> {
+fn dimension(config: &Value, key: &'static str, max: u64) -> Result<u64, NamAdmissionError> {
     bounded(
         config
             .get(key)
@@ -39,19 +78,32 @@ fn dimension(config: &Value, key: &str, max: u64) -> Result<u64, String> {
         key,
     )
 }
-fn optional_dimension(config: &Value, key: &str, default: u64, max: u64) -> Result<u64, String> {
+fn optional_dimension(
+    config: &Value,
+    key: &'static str,
+    default: u64,
+    max: u64,
+) -> Result<u64, NamAdmissionError> {
     match config.get(key) {
         None => Ok(default),
         Some(_) => dimension(config, key, max),
     }
 }
-fn boolean(config: &Value, key: &str, default: Option<bool>) -> Result<bool, String> {
+fn boolean(
+    config: &Value,
+    key: &'static str,
+    default: Option<bool>,
+) -> Result<bool, NamAdmissionError> {
     match config.get(key) {
         Some(value) => value.as_bool().ok_or_else(|| refuse(key)),
         None => default.ok_or_else(|| refuse(key)),
     }
 }
-fn list<'a>(config: &'a Value, key: &str, max: usize) -> Result<&'a [Value], String> {
+fn list<'a>(
+    config: &'a Value,
+    key: &'static str,
+    max: usize,
+) -> Result<&'a [Value], NamAdmissionError> {
     let values = config
         .get(key)
         .and_then(Value::as_array)
@@ -61,7 +113,7 @@ fn list<'a>(config: &'a Value, key: &str, max: usize) -> Result<&'a [Value], Str
     }
     Ok(values)
 }
-fn list_dimension(value: &Value, ceiling: u64) -> Result<u64, String> {
+fn list_dimension(value: &Value, ceiling: u64) -> Result<u64, NamAdmissionError> {
     bounded(
         value.as_u64().ok_or_else(|| refuse("integer dimension"))?,
         ceiling,
@@ -115,7 +167,7 @@ impl<'a> Scan<'a> {
             self.at += 1;
         }
     }
-    fn eat(&mut self, byte: u8) -> Result<(), String> {
+    fn eat(&mut self, byte: u8) -> Result<(), NamAdmissionError> {
         self.whitespace();
         if self.text.as_bytes().get(self.at) != Some(&byte) {
             return Err(refuse("JSON syntax"));
@@ -123,7 +175,7 @@ impl<'a> Scan<'a> {
         self.at += 1;
         Ok(())
     }
-    fn string(&mut self, key: bool) -> Result<(usize, usize), String> {
+    fn string(&mut self, key: bool) -> Result<(usize, usize), NamAdmissionError> {
         self.eat(b'"')?;
         let start = self.at;
         let mut escaped = false;
@@ -152,7 +204,7 @@ impl<'a> Scan<'a> {
             self.at += 1;
         }
     }
-    fn number(&mut self) -> Result<(), String> {
+    fn number(&mut self) -> Result<(), NamAdmissionError> {
         self.whitespace();
         let start = self.at;
         while self
@@ -174,7 +226,7 @@ impl<'a> Scan<'a> {
         }
         Ok(())
     }
-    fn value(&mut self, depth: usize) -> Result<(), String> {
+    fn value(&mut self, depth: usize) -> Result<(), NamAdmissionError> {
         if depth > 32 || self.nodes >= 4096 {
             return Err(refuse("JSON depth/node limit"));
         }
@@ -219,7 +271,7 @@ impl<'a> Scan<'a> {
             _ => self.number(),
         }
     }
-    pub(super) fn object(&mut self, depth: usize) -> Result<(), String> {
+    pub(super) fn object(&mut self, depth: usize) -> Result<(), NamAdmissionError> {
         self.eat(b'{')?;
         let base = self.key_count;
         self.whitespace();
@@ -290,7 +342,7 @@ impl<'a> Scan<'a> {
         self.key_count = base;
         Ok(())
     }
-    pub(super) fn field(&self, span: Option<(usize, usize)>) -> Result<&'a str, String> {
+    pub(super) fn field(&self, span: Option<(usize, usize)>) -> Result<&'a str, NamAdmissionError> {
         let (start, end) = span.ok_or_else(|| refuse("required NAM field"))?;
         Ok(&self.text[start..end])
     }
@@ -321,7 +373,7 @@ pub(super) struct ScannedModel<'a> {
     pub(super) architecture: String,
 }
 impl<'a> ScannedModel<'a> {
-    pub(super) fn read(text: &'a str) -> Result<Self, String> {
+    pub(super) fn read(text: &'a str) -> Result<Self, NamAdmissionError> {
         let mut scan = Scan::new(text);
         scan.object(0)?;
         scan.whitespace();
@@ -337,7 +389,7 @@ impl<'a> ScannedModel<'a> {
         if let Some(span) = scan.version {
             let version: String =
                 serde_json::from_str(scan.field(Some(span))?).map_err(|_| refuse("version"))?;
-            super::verify_version(&version).map_err(|e| refuse(&e.to_string()))?;
+            super::verify_version(&version).map_err(NamAdmissionError::model)?;
         }
         Ok(Self {
             scan,
@@ -351,7 +403,7 @@ impl<'a> ScannedModel<'a> {
 /// any of it: the structural plan, the exact weight count, and the state,
 /// resident, prewarm and transient memory envelope. The per-sample work
 /// ceilings stay native-only.
-pub(super) fn admit_wavenet(text: &str) -> Result<(), String> {
+pub(super) fn admit_wavenet(text: &str) -> Result<(), NamAdmissionError> {
     if text.len() > MIB as usize {
         return Err(refuse("model byte limit"));
     }
@@ -366,9 +418,9 @@ impl NativeNamPlan {
     /// The architecture plan, the exact weight count and the memory policy
     /// every target enforces. Native admission follows it with its
     /// per-sample work policy, then the transient envelope.
-    pub(super) fn shared(model: &ScannedModel<'_>, rate: u64) -> Result<Self, String> {
-        let config: Value =
-            serde_json::from_str(model.config_text).map_err(|e| refuse(&e.to_string()))?;
+    pub(super) fn shared(model: &ScannedModel<'_>, rate: u64) -> Result<Self, NamAdmissionError> {
+        let config: Value = serde_json::from_str(model.config_text)
+            .map_err(|e| NamAdmissionError::ConfigJson(e.to_string()))?;
         if !config.is_object() {
             return Err(refuse("config object"));
         }
@@ -425,7 +477,11 @@ impl NativeNamPlan {
     /// serde's weight Value vector, f32 copy, bounded non-weight maps and
     /// strings coexist with the model during construction. Charge capacity
     /// growth (old + new) too; never infer a bound from source byte size alone.
-    pub(super) fn transient(&self, model: &ScannedModel<'_>, text: &str) -> Result<(), String> {
+    pub(super) fn transient(
+        &self,
+        model: &ScannedModel<'_>,
+        text: &str,
+    ) -> Result<(), NamAdmissionError> {
         let parsed_weights = mul(model.scan.weights as u64, add(mul(VALUE_SLOT, 3)?, 8)?)?;
         let parsed_metadata = add(
             mul(model.scan.nodes as u64, 1024)?,
@@ -444,7 +500,7 @@ impl NativeNamPlan {
 }
 
 impl NativeNamPlan {
-    fn buffer(&mut self, floats: u64) -> Result<(), String> {
+    fn buffer(&mut self, floats: u64) -> Result<(), NamAdmissionError> {
         self.floats = add(self.floats, floats)?;
         if floats > 0 {
             self.allocations = add(self.allocations, 1)?;
@@ -459,7 +515,7 @@ impl NativeNamPlan {
         d: u64,
         bias: bool,
         history: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), NamAdmissionError> {
         let taps = mul(mul(i, o)?, k)?;
         self.weights = add(self.weights, add(taps, if bias { o } else { 0 })?)?;
         self.mac = add(self.mac, taps)?;
@@ -478,9 +534,14 @@ impl NativeNamPlan {
         self.structures = add(self.structures, 1)?;
         Ok(())
     }
-    fn activation(&mut self, value: &Value, channels: u64, copies: u64) -> Result<(), String> {
+    fn activation(
+        &mut self,
+        value: &Value,
+        channels: u64,
+        copies: u64,
+    ) -> Result<(), NamAdmissionError> {
         // Reuse the actual activation grammar after the bounded config pass.
-        super::activations::Activation::from_json(value).map_err(|e| refuse(&e.to_string()))?;
+        super::activations::Activation::from_json(value).map_err(NamAdmissionError::model)?;
         let name = value
             .as_str()
             .or_else(|| value.get("type").and_then(Value::as_str))
@@ -502,7 +563,7 @@ impl NativeNamPlan {
         }
         Ok(())
     }
-    fn mono(config: &Value) -> Result<(), String> {
+    fn mono(config: &Value) -> Result<(), NamAdmissionError> {
         if optional_dimension(config, "in_channels", 1, 1)? != 1
             || optional_dimension(config, "out_channels", 1, 1)? != 1
         {
@@ -510,7 +571,7 @@ impl NativeNamPlan {
         }
         Ok(())
     }
-    fn linear(&mut self, config: &Value) -> Result<(), String> {
+    fn linear(&mut self, config: &Value) -> Result<(), NamAdmissionError> {
         Self::mono(config)?;
         let taps = dimension(config, "receptive_field", 4096)?;
         self.weights = add(taps, u64::from(boolean(config, "bias", None)?))?;
@@ -522,7 +583,7 @@ impl NativeNamPlan {
         self.prewarm = taps;
         Ok(())
     }
-    fn lstm(&mut self, config: &Value) -> Result<(), String> {
+    fn lstm(&mut self, config: &Value) -> Result<(), NamAdmissionError> {
         let hidden = dimension(config, "hidden_size", 32)?;
         let layers = dimension(config, "num_layers", 4)?;
         dimension(config, "input_size", 1)?;
@@ -551,7 +612,7 @@ impl NativeNamPlan {
         self.prewarm = 24_000;
         Ok(())
     }
-    fn convnet(&mut self, config: &Value) -> Result<(), String> {
+    fn convnet(&mut self, config: &Value) -> Result<(), NamAdmissionError> {
         Self::mono(config)?;
         optional_dimension(config, "groups", 1, 1)?;
         let channels = dimension(config, "channels", 64)?;
@@ -587,7 +648,7 @@ impl NativeNamPlan {
         self.allocations += 3;
         Ok(())
     }
-    fn wavenet(&mut self, config: &Value) -> Result<(), String> {
+    fn wavenet(&mut self, config: &Value) -> Result<(), NamAdmissionError> {
         Self::mono(config)?;
         if config.get("condition_dsp").is_some_and(|v| !v.is_null()) {
             return Err(refuse("condition DSP unsupported"));
@@ -763,11 +824,11 @@ impl NativeNamPlan {
 // The shared BN constructor rejects negative variance but a finite weight can
 // still fold to infinity. Validate those exact f32 coefficients before any
 // constructor; a ReLU during silence could otherwise hide a poisoned NaN.
-fn validate_batchnorm(config: &Value, text: &str) -> Result<(), String> {
+fn validate_batchnorm(config: &Value, text: &str) -> Result<(), NamAdmissionError> {
     let channels = dimension(config, "channels", 64)? as usize;
     let blocks = list(config, "dilations", 32)?.len();
     let mut values = text[1..text.len() - 1].split(',');
-    let mut next = || -> Result<f32, String> {
+    let mut next = || -> Result<f32, NamAdmissionError> {
         values
             .next()
             .ok_or_else(|| refuse("batchnorm weights"))?
@@ -808,4 +869,43 @@ fn validate_batchnorm(config: &Value, text: &str) -> Result<(), String> {
         input = channels;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admission_errors_print_the_refusal_text_the_host_receives() {
+        let serde_detail = serde_json::from_str::<Value>("{").unwrap_err().to_string();
+        for (error, message) in [
+            (
+                refuse("charge overflow"),
+                "Native NAM refused: charge overflow".to_string(),
+            ),
+            (
+                NamAdmissionError::PreparationActive,
+                "Native NAM refused: preparation already active".to_string(),
+            ),
+            (
+                NamAdmissionError::Superseded,
+                "Native NAM refused: superseded preparation".to_string(),
+            ),
+            (
+                NamAdmissionError::ConfigJson(serde_detail.clone()),
+                format!("Native NAM refused: {serde_detail}"),
+            ),
+            (
+                NamAdmissionError::model(NamModelError::UnsupportedVersion("0.4.9".into())),
+                "Native NAM refused: unsupported NAM file version \"0.4.9\" (supported: 0.5.0 through 0.7.x)"
+                    .to_string(),
+            ),
+        ] {
+            assert_eq!(error.to_string(), message);
+        }
+        assert_eq!(
+            NamModelError::Refused(refuse("exact weight count")).to_string(),
+            "invalid NAM model config: Native NAM refused: exact weight count"
+        );
+    }
 }

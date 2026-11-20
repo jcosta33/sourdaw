@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -8,6 +10,7 @@ import { setVirtualKeyboardOctave } from '#/modules/WorkspaceShell/useCases/togg
 import { setVirtualKeyboardVelocity } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity';
 import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
+import { FloatingDevicePanel, type DevicePanelGeometry } from '../../components/FloatingDevicePanel';
 import { VirtualKeyboard } from '../VirtualKeyboard';
 
 // Controllable workspace state so individual tests can drive octave/velocity.
@@ -848,6 +851,104 @@ describe('VirtualKeyboard', () => {
             expect(notPrevented).toBe(false);
             expect(bubbleKeydowns).toHaveLength(0);
             expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+        });
+
+        it('plays from an ordinary floating device control and releases only its note after focus transfers', () => {
+            function Device() {
+                const [open, setOpen] = useState(true);
+                const [geometry, setGeometry] = useState<DevicePanelGeometry | null>(null);
+                return open ? (
+                    <FloatingDevicePanel
+                        label="Sampler"
+                        labelColor="text-primary"
+                        borderColor="border-primary"
+                        geometry={geometry}
+                        setGeometry={setGeometry}
+                        otherSurfaceOwnsEscape={() => false}
+                        onClose={() => setOpen(false)}
+                    >
+                        <button>Device control</button>
+                        <input aria-label="Preset name" />
+                        <input type="range" aria-label="Native value" />
+                        <select aria-label="Mode">
+                            <option>Mono</option>
+                        </select>
+                        <button aria-haspopup="listbox" aria-expanded="true">
+                            Choose preset
+                        </button>
+                        <div role="listbox" aria-label="Presets">
+                            <button role="option" aria-selected="true">
+                                Factory
+                            </button>
+                        </div>
+                    </FloatingDevicePanel>
+                ) : null;
+            }
+            const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1232);
+            const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(800);
+            const closeKeyboard = vi.fn();
+            try {
+                render(
+                    <>
+                        <VirtualKeyboard onClose={closeKeyboard} />
+                        <Device />
+                    </>
+                );
+                const panel = screen.getByRole('dialog', { name: 'Sampler' });
+                const control = screen.getByRole('button', { name: 'Device control' });
+                const text = screen.getByRole('textbox', { name: 'Preset name' });
+                fireEvent.keyDown(document.body, { code: 'KeyS', key: 's' });
+                control.focus();
+                fireEvent.keyDown(control, { code: 'KeyA', key: 'a' });
+                expect(onMock.mock.calls).toEqual([
+                    [0, 62, 100],
+                    [0, 60, 100],
+                ]);
+                for (const target of [
+                    text,
+                    screen.getByRole('slider', { name: 'Native value' }),
+                    screen.getByRole('combobox', { name: 'Mode' }),
+                    screen.getByRole('button', { name: 'Choose preset' }),
+                    screen.getByRole('option', { name: 'Factory' }),
+                ]) {
+                    target.focus();
+                    expect(fireEvent.keyDown(target, { code: 'KeyD', key: 'd' })).toBe(true);
+                }
+                expect(fireEvent.keyDown(control, { code: 'KeyD', key: 'ð', ctrlKey: true, altKey: true })).toBe(true);
+                expect(onMock).toHaveBeenCalledTimes(2);
+                text.focus();
+                fireEvent.keyUp(text, { code: 'KeyA', key: 'a' });
+                expect(vi.mocked(triggerLiveNoteOff).mock.calls).toEqual([[0, 60]]);
+                const resizeWidth = screen.getByRole('separator', { name: 'Resize Sampler width' });
+                const resizeHeight = screen.getByRole('separator', { name: 'Resize Sampler height' });
+                for (const separator of [resizeWidth, resizeHeight]) {
+                    separator.focus();
+                    fireEvent.keyDown(separator, { key: 'Home', code: 'Home' });
+                }
+                expect(panel).toHaveStyle({ width: '320px', height: '160px' });
+                fireEvent.keyDown(resizeWidth, { key: 'ArrowRight', code: 'ArrowRight' });
+                fireEvent.keyDown(resizeHeight, { key: 'ArrowDown', code: 'ArrowDown' });
+                expect(panel).toHaveStyle({ width: '330px', height: '170px' });
+                fireEvent.keyDown(resizeWidth, { key: 'End', code: 'End' });
+                fireEvent.keyDown(resizeHeight, { key: 'End', code: 'End' });
+                expect(panel).toHaveStyle({ width: '1216px', height: '780px' });
+                fireEvent.keyDown(control, { code: 'KeyX', key: 'x' });
+                expect(setOctaveMock).toHaveBeenCalledWith(5);
+                fireEvent.keyDown(control, { code: 'Escape', key: 'Escape' });
+                expect(panel).not.toBeInTheDocument();
+                expect(closeKeyboard).not.toHaveBeenCalled();
+                expect(vi.mocked(triggerLiveNoteOff).mock.calls).toEqual([[0, 60]]);
+                fireEvent.keyUp(document.body, { code: 'KeyS', key: 's' });
+                expect(vi.mocked(triggerLiveNoteOff).mock.calls).toEqual([
+                    [0, 60],
+                    [0, 62],
+                ]);
+                fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+                expect(closeKeyboard).toHaveBeenCalledOnce();
+            } finally {
+                width.mockRestore();
+                height.mockRestore();
+            }
         });
 
         it('consumes the octave keys', () => {

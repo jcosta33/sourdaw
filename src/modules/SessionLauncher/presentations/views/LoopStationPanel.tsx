@@ -372,6 +372,9 @@ export const LoopStationPanel = (): ReactElement => {
                                 onChange={(event) => setFixedInput(event.target.value)}
                                 onBlur={commitFixedLoopLength}
                                 onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing) {
+                                        return;
+                                    }
                                     if (event.key === 'Enter') {
                                         commitFixedLoopLength();
                                     }

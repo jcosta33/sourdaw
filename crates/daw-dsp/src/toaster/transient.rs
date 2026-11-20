@@ -77,12 +77,38 @@ pub struct TransientShaperInstance {
     right: TransientShaper,
 }
 
+/// Why a standalone Transient Shaper could not be built.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransientShaperError {
+    /// The sample rate is non-finite, zero or negative.
+    InvalidSampleRate,
+}
+
+impl core::fmt::Display for TransientShaperError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidSampleRate => {
+                f.write_str("Transient Shaper requires a positive finite sample rate")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransientShaperError {}
+
+/// The wasm-bindgen edge: the constructor throws the message as a string.
+impl From<TransientShaperError> for wasm_bindgen::JsValue {
+    fn from(error: TransientShaperError) -> Self {
+        wasm_bindgen::JsValue::from_str(&error.to_string())
+    }
+}
+
 #[wasm_bindgen::prelude::wasm_bindgen]
 impl TransientShaperInstance {
     #[wasm_bindgen::prelude::wasm_bindgen(constructor)]
-    pub fn new(sample_rate: f32) -> Result<TransientShaperInstance, String> {
+    pub fn new(sample_rate: f32) -> Result<TransientShaperInstance, TransientShaperError> {
         if !sample_rate.is_finite() || sample_rate <= 0.0 {
-            return Err("Transient Shaper requires a positive finite sample rate".into());
+            return Err(TransientShaperError::InvalidSampleRate);
         }
         Ok(Self {
             left: TransientShaper::new(sample_rate),
@@ -126,5 +152,22 @@ fn process_channel(
         output
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_shaper_error_prints_the_message_the_worklet_receives() {
+        assert_eq!(
+            TransientShaperError::InvalidSampleRate.to_string(),
+            "Transient Shaper requires a positive finite sample rate"
+        );
+        assert_eq!(
+            TransientShaperInstance::new(0.0).err(),
+            Some(TransientShaperError::InvalidSampleRate)
+        );
     }
 }

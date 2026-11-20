@@ -49,6 +49,7 @@ import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadG
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { hydrateGlutenDisclosureFromProject } from '../../useCases/hydrateGlutenDisclosureFromProject';
+import { selectGlutenFactoryPreset } from '../../useCases/selectGlutenFactoryPreset';
 import { setGlutenPanelUiLevel } from '../../useCases/setGlutenPanelUiLevel';
 import { GlutenCurve } from '../components/GlutenCurve';
 import { GrHistory } from '../components/GrHistory';
@@ -487,12 +488,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         phaseCorrStr = 'OOP';
     }
 
-    function applyPreset(nextPatch: GlutenPatch): void {
-        loadGlutenPatchWithAudio(deviceId, nextPatch);
-    }
-
     function applyStyle(style: GlutenStyle): void {
-        applyPreset(buildStylePatch(style, currentPatch));
+        loadGlutenPatchWithAudio(deviceId, buildStylePatch(style, currentPatch));
     }
 
     /**
@@ -626,8 +623,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     }
 
     const faceplate = (
-        <div className="gluten-faceplate min-h-[464px] rounded-[26px] p-3 @4xl:h-full">
-            <div className="grid min-h-[440px] grid-cols-1 gap-3 @4xl:h-full @4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
+        <div
+            role="region"
+            aria-label="Gluten workspace"
+            className="gluten-faceplate h-full min-h-0 overflow-y-auto rounded-[26px] p-3"
+        >
+            <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
                 <DawPluginRail
                     aria-label="Gluten presets"
                     className="gluten-window h-80 min-h-0 p-3 @4xl:h-auto"
@@ -681,7 +682,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         title={preset.name}
                                         detail={preset.category}
                                         subtitle={describePreset(preset.patch)}
-                                        onPress={() => applyPreset(preset.patch)}
+                                        onPress={() => {
+                                            void selectGlutenFactoryPreset(deviceId, preset.id);
+                                        }}
                                     />
                                 );
                             })
@@ -698,12 +701,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </Stack>
                 </DawPluginRail>
 
-                <Stack
-                    as="section"
-                    aria-label="Gluten dynamics overview"
-                    gap={3}
-                    className="min-w-0 pr-1 @4xl:min-h-0 @4xl:overflow-y-auto"
-                >
+                <Stack as="section" aria-label="Gluten dynamics overview" gap={3} className="min-w-0">
                     <Row align="start" justify="between" wrap gap={3}>
                         <Stack gap={2}>
                             <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
@@ -935,11 +933,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </Stack>
                 </Stack>
 
-                <DawPluginRail
-                    aria-label="Gluten controls"
-                    scrollable={false}
-                    className="@4xl:min-h-0 @4xl:overflow-y-auto @4xl:pr-1"
-                >
+                <DawPluginRail aria-label="Gluten controls" scrollable={false} className="min-w-0">
                     <ControlCard
                         title="Clamp"
                         detail={clampNotice ?? 'Threshold, ratio, and timing stay front and center.'}
@@ -1634,5 +1628,5 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         </div>
     );
 
-    return <div className="@container h-full min-h-[440px]">{faceplate}</div>;
+    return <div className="@container h-full min-h-0">{faceplate}</div>;
 };

@@ -38,6 +38,7 @@ const { mocks } = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: (value: unknown) => value,
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
     readMusicalRangeInputs: vi.fn(() => []),

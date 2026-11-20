@@ -58,7 +58,7 @@ async function readState(page: Page, trackId: string, deviceId: string) {
 
 test('a first Arpeggiator Rate gesture restores and redoes its canonical project value', async ({ page }) => {
     test.setTimeout(120_000);
-    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.setViewportSize({ width: 900, height: 700 });
     await setupWorkspace(page);
     await launch_new_project(page);
     await expect
@@ -85,7 +85,8 @@ test('a first Arpeggiator Rate gesture restores and redoes its canonical project
     await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
     await browser.getByRole('button', { name: 'MIDI FX' }).click();
     await browser.getByRole('button', { name: /^Yeast MIDI FX/ }).click();
-    await expect(page.getByRole('button', { name: 'Close Yeast' })).toBeVisible();
+    const yeastDialog = page.getByRole('dialog', { name: 'Yeast', exact: true });
+    await expect(yeastDialog.getByRole('button', { name: 'Close Yeast' })).toBeVisible();
     const deviceId = await page.evaluate(
         async ({ entryPath, trackId }) => {
             const { arrangement }: typeof import('./persistedHydrationEntry') = await import(entryPath);
@@ -99,7 +100,7 @@ test('a first Arpeggiator Rate gesture restores and redoes its canonical project
         throw new Error('The Browser did not add a Yeast device');
     }
 
-    await page.getByRole('button', { name: '+ Arpeggiator', exact: true }).click();
+    await yeastDialog.getByRole('button', { name: '+ Arpeggiator', exact: true }).click();
     await expect.poll(async () => (await readState(page, trackId, deviceId)).rack.processors.length).toBe(1);
     const before = await readState(page, trackId, deviceId);
     const processor = before.rack.processors.at(0);
@@ -113,15 +114,21 @@ test('a first Arpeggiator Rate gesture restores and redoes its canonical project
     expect(before.devices.some((device) => device.id === deviceId && device.type === 'yeast')).toBe(true);
     expect(before.latestActionType).toBe('addYeastProcessor');
 
-    const rate = page.getByRole('slider', { name: 'Rate', exact: true });
+    const rate = yeastDialog.getByRole('slider', { name: 'Rate', exact: true });
     await expect(rate).toHaveCount(1);
     await expect(rate).toHaveAttribute('aria-valuenow', '8');
+    await rate.scrollIntoViewIfNeeded();
     const bounds = await rate.boundingBox();
     if (!bounds) {
         throw new Error('The Arpeggiator Rate control has no pointer target');
     }
     const x = bounds.x + bounds.width / 2;
     const y = bounds.y + bounds.height / 2;
+    await expect
+        .poll(() => rate.evaluate((element, { x, y }) => element.contains(document.elementFromPoint(x, y)), { x, y }), {
+            message: 'The Arpeggiator Rate slider receives the pointer at its center',
+        })
+        .toBe(true);
     await page.mouse.move(x, y);
     await page.mouse.down();
     await page.mouse.move(x, y - 15);
@@ -161,7 +168,12 @@ test('a first Arpeggiator Rate gesture restores and redoes its canonical project
     expect(committed.rawTracks).toEqual(before.rawTracks);
     expect(committed.devices).toEqual(before.devices);
 
-    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    // The compact transport puts Undo and Redo in the overflow menu.
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    const toolbarUndo = page.getByRole('button', { name: 'Undo', exact: true });
+    await expect(toolbarUndo).toBeVisible();
+    expect(await readState(page, trackId, deviceId)).toEqual(committed);
+    await toolbarUndo.click();
     await expect
         .poll(async () => {
             const state = await readState(page, trackId, deviceId);

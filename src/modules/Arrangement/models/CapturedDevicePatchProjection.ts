@@ -1,8 +1,9 @@
+import { type DevicePatchTransitionMetadata, resolveDevicePatchTransition } from '#/utils/resolveDevicePatchTransition';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { type DevicePatchState } from './DevicePatchState';
-import { type Device } from './Track';
+import { type Device, type DeviceStateChunk } from './Track';
 
 /** Compile one guarded footprint before its owner publishes any field. */
 export function projectCapturedDevicePatch(
@@ -47,4 +48,35 @@ export function projectCapturedDevicePatch(
         return nextDevice;
     }
     return { ...nextDevice, deviceState: structuredClone(next.deviceState) };
+}
+
+/** Compile an exact write from the projected device's captured leaves. */
+export function projectCapturedDevicePatchWithMetadata(
+    device: Device,
+    expected: DevicePatchState,
+    next: DevicePatchState,
+    metadata: DevicePatchTransitionMetadata<DeviceStateChunk>
+): Device | null {
+    if (Object.hasOwn(device, 'deviceState') && device.deviceState === undefined) {
+        return null;
+    }
+    const parameterValues: DevicePatchState['parameterValues'] = {};
+    for (const key of Object.keys(expected.parameterValues)) {
+        if (!Object.hasOwn(device.parameterValues, key)) {
+            parameterValues[key] = null;
+            continue;
+        }
+        const value = device.parameterValues[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            return null;
+        }
+        parameterValues[key] = value;
+    }
+    const transition = resolveDevicePatchTransition(
+        { deviceState: device.deviceState ?? null, parameterValues },
+        expected,
+        next,
+        metadata
+    );
+    return transition ? projectCapturedDevicePatch(device, transition.expected, transition.next) : null;
 }

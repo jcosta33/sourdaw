@@ -66,6 +66,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
