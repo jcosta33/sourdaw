@@ -786,7 +786,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "e3b1e894ebde7239b5ea9f5bb602090331f52707f60c60ee1d89ed3a3e559448"
+                    "digest": "83c52ae6db5aeaf9f1869072236b4a491430c105b5e871311a5603c8b01470a1"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "b17a5ae78e9b01714278f0c0bd48571adbdf0178149c619c7dc9cc90bfff4bc1"
+                    "digest": "f8247fb7c145b680b437314b1a2e4a9a514b709de445b0fb51852ed0a8968234"
                 }
             ]
         },
