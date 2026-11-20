@@ -1649,6 +1649,7 @@
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
@@ -1680,7 +1681,8 @@
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
-                "src/modules/Toaster/repositories/toasterPresets.ts"
+                "src/modules/Toaster/repositories/toasterPresets.ts",
+                "src/utils/builtinDeviceTypes.ts"
             ],
             "sources": [
                 "public/legal/TRADEMARKS.md",
@@ -2799,8 +2801,10 @@
             "value": "Mellotron",
             "paths": [
                 "src/modules/Arrangement/models/DeviceParameter.ts",
+                "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
-                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx"
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
+                "src/utils/builtinDeviceTypes.ts"
             ]
         },
         {
