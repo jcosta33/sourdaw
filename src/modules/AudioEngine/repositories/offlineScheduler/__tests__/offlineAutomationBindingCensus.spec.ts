@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
@@ -14,6 +17,7 @@ import {
     BUILTIN_DEVICE_NODE_FACTORIES,
     type OfflineDeviceNode,
 } from '../../deviceNodeFactory';
+import { preparedOfflineSidechainCompressors } from '../../devices/dynamics/prepareOfflineSidechainCompressor';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 
 import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
@@ -68,6 +72,45 @@ function namedGain(node: OfflineDeviceNode, name: string): GainNode {
     return named as GainNode;
 }
 
+const SIDECHAIN_PROCESSOR_SOURCE = readFileSync(
+    resolve(process.cwd(), 'public/audio/worklets/sidechain-compressor-processor.js'),
+    'utf8'
+);
+
+/** The AudioParam names the sidechain processor declares in its `parameterDescriptors`. */
+function declaredSidechainParameterNames(): string[] {
+    return Array.from(SIDECHAIN_PROCESSOR_SOURCE.matchAll(/\{\s*name:\s*'(\w+)'/g), (match) => match[1]);
+}
+
+/**
+ * Builds a device as an offline render does. The sidechain compressor renders on
+ * its worklet once `prepareOfflineContext` registers the module, so its context
+ * is marked prepared and the worklet double carries exactly the AudioParams the
+ * processor source declares: a binding to a name the processor does not declare
+ * stays unbound here.
+ */
+function createRenderedOfflineDeviceNode(deviceType: string): OfflineDeviceNode | null {
+    const context = asBaseAudioContext(createMockAudioContext());
+    if (deviceType !== 'builtin-sidechain-compressor') {
+        return createOfflineDeviceNode({ context, deviceType });
+    }
+    preparedOfflineSidechainCompressors.set(context, {});
+    const parameters = new Map(declaredSidechainParameterNames().map((name) => [name, context.createGain().gain]));
+    const stub = globalThis.AudioWorkletNode;
+    globalThis.AudioWorkletNode = class SidechainProcessorDouble {
+        parameters = parameters;
+        connect(): this {
+            return this;
+        }
+        disconnect(): void {}
+    } as unknown as typeof AudioWorkletNode;
+    try {
+        return createOfflineDeviceNode({ context, deviceType });
+    } finally {
+        globalThis.AudioWorkletNode = stub;
+    }
+}
+
 /** The mock param's ramp values, read through its vitest mock. */
 function rampValues(param: AudioParam): number[] {
     const calls = (param as unknown as { linearRampToValueAtTime: { mock: { calls: [number, number][] } } })
@@ -87,10 +130,7 @@ describe('offline automation binding census (#3739)', () => {
             // A factory without a descriptor would sit outside the range law
             // and the automatable law at once — it must be visible here.
             expect(descriptor, `no descriptor for ${factory.type}`).toBeDefined();
-            const node = createOfflineDeviceNode({
-                context: asBaseAudioContext(createMockAudioContext()),
-                deviceType: factory.type,
-            });
+            const node = createRenderedOfflineDeviceNode(factory.type);
             if (!node) {
                 throw new Error(`expected ${factory.type} to build offline`);
             }
