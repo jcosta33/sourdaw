@@ -11,17 +11,34 @@ import {
     trackStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import {
+    createAutomationLane,
+    recordAutomationValue,
+    setAutomationRecordingDependencies,
+    startAutomationRecording,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { captureUndoHistory, clearUndoHistory, executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { getProofState, proofStore, updateProofMeters } from '../../../stores/proofStore';
+import { proofLimiterCeiling } from '../../../useCases/proofParamBridge/proofLimiterCeiling';
+import { registerProofDevice } from '../../../useCases/proofParamBridge/registerProofDevice';
+import { syncFullPatch } from '../../../useCases/proofParamBridge/syncFullPatch';
+import { unregisterProofDevice } from '../../../useCases/proofParamBridge/unregisterProofDevice';
+import { resetProofForProject } from '../../../useCases/resetProofForProject';
 import { ProofPanel } from '../ProofPanel';
 
 const audioEngine = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
@@ -57,7 +74,12 @@ async function pressProofSlider(
         expect(observedValue).toBeCloseTo(nextValue, 12);
         expect(projectParameter('a', parameter)).toBe(observedValue);
         expect(documentParameter('a', parameter)).toBe(observedValue);
-        expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('track', 'a', parameter, observedValue);
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 4))).toContainEqual([
+            'track',
+            'a',
+            parameter,
+            observedValue,
+        ]);
     });
 }
 
@@ -69,6 +91,22 @@ async function selectTier(tier: string): Promise<void> {
     );
 }
 
+function beginCeilingDrag(slider: HTMLElement): void {
+    Object.defineProperties(slider, {
+        setPointerCapture: { configurable: true, value: vi.fn() },
+        releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    fireEvent.pointerDown(slider, { button: 0, pointerId: 1, clientY: 100 });
+}
+
+function beginMasterCeilingPreview(): HTMLElement {
+    const ceiling = screen.getByRole('slider', { name: 'Master limiter ceiling' });
+    beginCeilingDrag(ceiling);
+    fireEvent.pointerMove(ceiling, { pointerId: 1, clientY: 130 });
+    expect(getProofState('a').patch.limCeiling).toBeLessThan(-1);
+    return ceiling;
+}
+
 describe('Proof cumulative disclosure in project truth', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -77,8 +115,11 @@ describe('Proof cumulative disclosure in project truth', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
+        clearUndoHistory();
         registerHandlerMap(getArrangementHandlers());
         audioEngine.updateDeviceParam.mockClear();
+        automationStore.set({ lanes: [] });
+        transportStore.set(defaultTransportState);
         proofStore.set({ a: getProofState('a'), b: getProofState('b') });
         trackStore.set({
             ...defaultTrackState,
@@ -100,12 +141,15 @@ describe('Proof cumulative disclosure in project truth', () => {
     });
     afterEach(() => {
         cleanup();
+        unregisterProofDevice('a');
+        stopAutomationRecording();
+        transportStore.set(defaultTransportState);
+        resetProofForProject();
         clearHandlerRegistry();
         trackStore.set({ ...defaultTrackState, tracks: [] });
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
         configureAutomergeStoragePort(null);
-        proofStore.set({});
     });
 
     it('uses the shared five named tiers with Play selected', () => {
@@ -392,6 +436,305 @@ describe('Proof cumulative disclosure in project truth', () => {
         expect(getProofState('a').patch.excBands[2]?.drive).toBe(0.21);
         expect(getProofState('a').patch.excBands[2]?.enabled).toBe(initial.excBands[2]?.enabled);
         expect(getProofState('a').patch.excBands[0]).toEqual(initial.excBands[0]);
+    });
+
+    it.each([undefined, -1, -3])('replays a held ceiling from prior value %s on the same panel', async (previous) => {
+        const initialParams: Record<string, number> = previous === undefined ? {} : { lim_ceiling: previous };
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Missing the Proof fixture project');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                automationMode: 'touch',
+                devices: track.devices.map((device) =>
+                    device.id === 'a' ? { ...device, parameterValues: initialParams } : device
+                ),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        await executeUserAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'b', paramId: 'lim_ceiling', value: -4 },
+        });
+        const before = captureUndoHistory();
+        expect(before.past).toHaveLength(1);
+        render(<ProofPanel deviceId="a" />);
+        await selectTier('build');
+        const ceiling = screen.getByRole('slider', { name: /^Master limiter ceiling$/ });
+        const sliders = [
+            ceiling,
+            screen.getByRole('slider', { name: /^Mission limiter ceiling$/ }),
+            screen.getByRole('slider', { name: /^Limiter ceiling$/ }),
+        ];
+        const assertDisplay = (value: number): void => {
+            for (const slider of sliders) {
+                expect(Number(slider.getAttribute('aria-valuenow'))).toBeCloseTo(value, 12);
+            }
+        };
+        const assertCanonical = (value: number | undefined): void => {
+            const projected = trackStore.value?.tracks[0]?.devices;
+            const raw = getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks[0]?.devices;
+            for (const devices of [projected, raw]) {
+                const params = devices?.find((device) => device.id === 'a')?.parameterValues;
+                if (!params) {
+                    throw new Error('Missing the addressed Proof parameter row');
+                }
+                expect(Object.hasOwn(params, 'lim_ceiling')).toBe(value !== undefined);
+                expect(params).toEqual(value === undefined ? {} : { lim_ceiling: value });
+                expect(devices?.find((device) => device.id === 'b')?.parameterValues).toEqual({ lim_ceiling: -4 });
+            }
+        };
+        const descriptorDefault = getPluginById('proof')?.parameters.find(
+            ({ id }) => id === 'lim_ceiling'
+        )?.defaultValue;
+        expect(descriptorDefault).toBe(-1);
+        assertDisplay(previous ?? -1);
+        assertCanonical(previous);
+        const ceilingLane = createAutomationLane('track', 'a:lim_ceiling', 'Ceiling', -12, 0);
+        const sentinelLane = createAutomationLane('track', 'b:input_gain', 'Other device input');
+        automationStore.set({ lanes: [ceilingLane, sentinelLane] });
+        const context = new AudioContext();
+        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        startAutomationRecording();
+        recordAutomationValue('track', 'b:input_gain', 0.7, 1);
+        audioEngine.updateDeviceParam.mockClear();
+        beginCeilingDrag(ceiling);
+        function preview(clientY: number, precedingValue: number): number {
+            fireEvent.pointerMove(ceiling, { pointerId: 1, clientY });
+            const sample = getProofState('a').patch.limCeiling;
+            expect(sample).toBeLessThan(precedingValue);
+            assertDisplay(sample);
+            assertCanonical(previous);
+            expect(captureUndoHistory()).toEqual(before);
+            return sample;
+        }
+        const firstSample = preview(110, previous ?? -1);
+        await act(() =>
+            executeUserAppAction(
+                {
+                    type: 'renameTrack',
+                    payload: { trackId: 'track', name: 'Renamed while held' },
+                },
+                { skipUndo: true }
+            )
+        );
+        expect(trackStore.value?.tracks[0]?.name).toBe('Renamed while held');
+        assertDisplay(firstSample);
+        const lastSample = preview(130, firstSample);
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 3))).toEqual([
+            ['track', 'a', 'lim_ceiling'],
+            ['track', 'a', 'lim_ceiling'],
+        ]);
+        audioEngine.updateDeviceParam.mockClear();
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        await waitFor(() => expect(captureUndoHistory().past).toHaveLength(before.past.length + 1));
+        expect(captureUndoHistory().past[0]).toEqual(before.past[0]);
+        expect(captureUndoHistory().past.at(-1)).toMatchObject({
+            kind: 'action',
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'a',
+                    paramId: 'lim_ceiling',
+                    value: lastSample,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+        });
+        assertCanonical(lastSample);
+        assertDisplay(lastSample);
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 4))).toEqual([
+            ['track', 'a', 'lim_ceiling', lastSample],
+        ]);
+
+        audioEngine.updateDeviceParam.mockClear();
+        await act(() => undo());
+        assertCanonical(previous);
+        assertDisplay(previous ?? -1);
+        expect(captureUndoHistory().past).toEqual(before.past);
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 4))).toEqual([
+            ['track', 'a', 'lim_ceiling', previous ?? -1],
+        ]);
+
+        audioEngine.updateDeviceParam.mockClear();
+        await act(() => redo());
+        assertCanonical(lastSample);
+        assertDisplay(lastSample);
+        expect(captureUndoHistory().past).toHaveLength(before.past.length + 1);
+        expect(audioEngine.updateDeviceParam.mock.calls.map((args) => args.slice(0, 4))).toEqual([
+            ['track', 'a', 'lim_ceiling', lastSample],
+        ]);
+        act(() => stopAutomationRecording());
+        expect(automationStore.value?.lanes.map(({ parameterId, points }) => ({ parameterId, points }))).toEqual([
+            { parameterId: 'a:lim_ceiling', points: [] },
+            { parameterId: 'b:input_gain', points: [{ beat: 1, value: 0.7, curve: 'linear', tension: 0 }] },
+        ]);
+    });
+
+    it('carries a held ceiling into its first runtime registration and replays its one history entry', async () => {
+        render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        const preview = getProofState('a').patch.limCeiling;
+        const baselineHistory = captureUndoHistory();
+        const previewWrite = audioEngine.updateDeviceParam.mock.calls.at(-1);
+        expect(previewWrite).toEqual(['track', 'a', 'lim_ceiling', preview, expect.any(Symbol)]);
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        audioEngine.updateDeviceParam.mockClear();
+
+        act(() => {
+            registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+            syncFullPatch('a');
+        });
+        const mountedWhileHeld = Number(ceiling.getAttribute('aria-valuenow'));
+        const registrationWrite = audioEngine.updateDeviceParam.mock.calls.find(([, , key]) => key === 'lim_ceiling');
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(captureUndoHistory()).toEqual(baselineHistory);
+
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        await waitFor(() => expect(documentParameter('a', 'lim_ceiling')).toBe(preview));
+        expect(projectParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(captureUndoHistory().past).toHaveLength(baselineHistory.past.length + 1);
+        expect(mountedWhileHeld).toBe(preview);
+        expect(registrationWrite).toEqual(previewWrite);
+        expect(Number(ceiling.getAttribute('aria-valuenow'))).toBe(preview);
+
+        await act(() => undo());
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(projectParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        await act(() => redo());
+        expect(documentParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(projectParameter('a', 'lim_ceiling')).toBe(preview);
+        expect(Number(ceiling.getAttribute('aria-valuenow'))).toBe(preview);
+    });
+
+    it('retires an old ceiling drag when a registered Proof bridge is replaced', async () => {
+        registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+        render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        act(() => {
+            registerProofDevice({ deviceId: 'a', bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() } });
+            syncFullPatch('a');
+        });
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        audioEngine.updateDeviceParam.mockClear();
+        await act(async () => {
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        });
+        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(projectParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(captureUndoHistory().past).toEqual([]);
+    });
+
+    it('settles successive ceiling releases before the bypass write waiting on them', async () => {
+        render(<ProofPanel deviceId="a" />);
+        await selectTier('shape');
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const barrier = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        const writes: (number | undefined)[] = [];
+        const unsubscribe = trackStore.subscribe(() => {
+            if (projectParameter('a', 'eq_bypass') === 1) {
+                writes.push(projectParameter('a', 'lim_ceiling'));
+            }
+        });
+        try {
+            const ceiling = beginMasterCeilingPreview();
+            const first = getProofState('a').patch.limCeiling;
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+            fireEvent.keyDown(ceiling, { key: 'Home' });
+            fireEvent.click(screen.getByRole('button', { name: 'EQ module' }));
+            expect(projectParameter('a', 'eq_bypass')).toBeUndefined();
+            expect(captureUndoHistory().past).toEqual([]);
+            held.resolve();
+            await barrier;
+            await waitFor(() => expect(documentParameter('a', 'eq_bypass')).toBe(1));
+            expect(writes[0]).toBe(-12);
+            expect(captureUndoHistory().past).toMatchObject([
+                { action: { type: 'setDeviceParameter', payload: { paramId: 'lim_ceiling', value: first } } },
+                { action: { type: 'setDeviceParameter', payload: { paramId: 'lim_ceiling', value: -12 } } },
+            ]);
+        } finally {
+            held.resolve();
+            await barrier;
+            unsubscribe();
+        }
+    });
+
+    it('refuses the held release and its waiting bypass when the owner freezes during admission', async () => {
+        render(<ProofPanel deviceId="a" />);
+        await selectTier('shape');
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const barrier = transactSnapshot(async (snapshotTransaction) => {
+            entered.resolve();
+            await held.promise;
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                snapshotTransaction,
+                changeFn: (doc) => {
+                    const track = doc.tracks.tracks[0];
+                    if (!track) {
+                        throw new Error('Missing the Proof owner');
+                    }
+                    track.frozen = true;
+                },
+            });
+            trackStore.hydrate();
+        });
+        await entered.promise;
+        try {
+            const ceiling = beginMasterCeilingPreview();
+            fireEvent.click(screen.getByRole('button', { name: 'EQ module' }));
+            const settlement = proofLimiterCeiling.settlement('a');
+            if (!settlement) {
+                throw new Error('Expected the limiter action to wait on the open snapshot');
+            }
+            await act(async () => {
+                held.resolve();
+                await barrier;
+                await settlement.done;
+            });
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+            expect(trackStore.value?.tracks[0]?.frozen).toBe(true);
+            expect(projectParameter('a', 'lim_ceiling')).toBeUndefined();
+            expect(documentParameter('a', 'eq_bypass')).toBeUndefined();
+            expect(captureUndoHistory().past).toEqual([]);
+            expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        } finally {
+            held.resolve();
+            await barrier;
+        }
+    });
+
+    it('restores just the held preview when the mounted panel switches devices', () => {
+        const panel = render(<ProofPanel deviceId="a" />);
+        const ceiling = beginMasterCeilingPreview();
+        panel.rerender(<ProofPanel deviceId="b" />);
+        fireEvent.pointerUp(ceiling, { pointerId: 1 });
+        expect(getProofState('a').patch.limCeiling).toBe(-1);
+        expect(getProofState('b').patch.limCeiling).toBe(-1);
+        expect(captureUndoHistory().past).toEqual([]);
+        expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
+        expect(documentParameter('b', 'lim_ceiling')).toBeUndefined();
+    });
+
+    it('settles a held ceiling once when its panel closes', async () => {
+        const panel = render(<ProofPanel deviceId="a" />);
+        beginMasterCeilingPreview();
+        const preview = getProofState('a').patch.limCeiling;
+        panel.unmount();
+        await waitFor(() => expect(captureUndoHistory().past).toHaveLength(1));
+        expect(documentParameter('a', 'lim_ceiling')).toBe(preview);
     });
 
     it('writes the Check, Mission, and Build limiter ceiling surfaces through their rendered controls', async () => {

@@ -197,7 +197,7 @@ test('native transcript stays a draft until explicit submission and confirmation
 
     await setupWorkspace(page);
     await launch_new_project(page);
-    const input = page.getByRole('textbox', { name: 'Prompt command input', exact: true });
+    const input = page.getByRole('combobox', { name: 'Prompt command input', exact: true });
     const mic = page.getByTestId('voice-command-button');
     await expect(input).toHaveValue('');
     await expect(mic).toBeVisible();

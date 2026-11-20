@@ -142,6 +142,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        readPianoRollSelection: actual.readPianoRollSelection,
+        locatePianoRollSelectionWindows: actual.locatePianoRollSelectionWindows,
+        projectPianoRollTakeNotes: actual.projectPianoRollTakeNotes,
         captureEventPositionAt: actual.captureEventPositionAt,
         prepareRecordedControllersCommit: actual.prepareRecordedControllersCommit,
         captureRecordedControllerRetirement: actual.captureRecordedControllerRetirement,
@@ -233,6 +236,7 @@ vi.mock('#/modules/Project/useCases', async () => {
         newProject: actual.newProject,
         pendingProjectReplacements: actual.pendingProjectReplacements,
         pickFiles: actual.pickFiles,
+        prepareProjectSaveSnapshot: actual.prepareProjectSaveSnapshot,
         saveProject: actual.saveProject,
         saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,
     };

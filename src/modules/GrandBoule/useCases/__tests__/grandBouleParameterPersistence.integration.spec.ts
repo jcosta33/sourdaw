@@ -236,6 +236,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         updateMidiFxParam: vi.fn(),
         wireSidechainRoute: vi.fn(),
         isDeviceCarriedByNativeSession: () => false,
+        startNativeGrandBoulePreviewNote: () => undefined,
         sendNativeLiveMidiControl: () => Promise.resolve(true),
         sendNativeLiveMidiNote: () => Promise.resolve(true),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,

@@ -4,21 +4,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { onRubberBandStart } from '../automationDrag';
 
-const mocks = vi.hoisted(() => ({
-    pushUndoEntry: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    commitUndoEntry: vi.fn(),
-    createUndoEntry: vi.fn(),
-    getExecutableAppActionEffect: vi.fn(() => null),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
-    executeAppAction: vi.fn(),
-    pushUndoEntry: mocks.pushUndoEntry,
 }));
 
 // Coordinate mapping: 10px per beat, y 0..100 → value 1..0.
@@ -56,9 +49,6 @@ const Surface = (): ReactElement => {
     return <div aria-label="lane-surface" onMouseDown={handleMouseDown} />;
 };
 
-const storedPoints = (): AutomationPoint[] =>
-    automationStore.value?.lanes.find((lane) => lane.id === 'lane-1')?.points ?? [];
-
 describe('automationDrag click-add undo (#4819)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -69,40 +59,24 @@ describe('automationDrag click-add undo (#4819)', () => {
         });
     });
 
-    it('undoing a click-added point removes only it, sparing the earlier point at the same beat', () => {
+    it('dispatches one point insertion when the click lands on an existing beat', () => {
         render(<Surface />);
         const surface = screen.getByLabelText('lane-surface');
 
-        // Click at beat 16, value 0.8.
         fireEvent.mouseDown(surface, { clientX: 160, clientY: 20 });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         fireEvent.mouseUp(window, { clientX: 160, clientY: 20 });
 
-        // Both points coexist at beat 16; the click's point is the one with a
-        // freshly minted id.
-        const afterAdd = storedPoints();
-        expect(afterAdd).toHaveLength(2);
-        const clickedId = afterAdd.find((point) => point.id !== 'existing-16')?.id;
-        expect(clickedId).toEqual(expect.any(String));
-        expect(afterAdd.find((point) => point.id === clickedId)).toMatchObject({ beat: 16, value: 0.8 });
-
-        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-        const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
-        const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
-
-        undoFn!();
-        expect(storedPoints()).toEqual([{ id: 'existing-16', beat: 16, value: 0.2, curve: 'linear', tension: 0 }]);
-
-        redoFn!();
-        const afterRedo = storedPoints();
-        expect(afterRedo).toHaveLength(2);
-        expect(afterRedo.find((point) => point.id === 'existing-16')).toMatchObject({ beat: 16, value: 0.2 });
-        expect(afterRedo.find((point) => point.id === clickedId)).toMatchObject({ beat: 16, value: 0.8 });
-
-        // The cycle keeps holding: a second undo again spares the earlier point.
-        undoFn!();
-        expect(storedPoints()).toEqual([{ id: 'existing-16', beat: 16, value: 0.2, curve: 'linear', tension: 0 }]);
-
-        redoFn!();
-        expect(storedPoints()).toHaveLength(2);
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'insertAutomationLanePoints',
+                payload: {
+                    laneId: 'lane-1',
+                    owner: { trackId: 'track-1', parameterId: 'volume' },
+                    insertion: { kind: 'point', point: { beat: 16, value: 0.8, curve: 'linear', tension: 0 } },
+                },
+            },
+            expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
+        );
     });
 });

@@ -126,6 +126,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
+        sanitizeTrackSnapshot: vi.fn(),
         activeRecordingRef: { current: [] },
         readMusicalRangeInputs: vi.fn(() => []),
         trackStore: mocks.trackStore,

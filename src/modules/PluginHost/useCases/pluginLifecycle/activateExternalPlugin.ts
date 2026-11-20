@@ -6,6 +6,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import {
     carriedExternalPluginStateFence,
@@ -25,10 +26,12 @@ import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
+import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
 import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
+import { watchExternalPluginTail } from './watchExternalPluginTail';
 
 type ActivateExternalPluginInput = {
     pluginId: string;
@@ -218,6 +221,9 @@ export function activateExternalPlugin({
     // editor, and both subscriptions are one listener for the whole session.
     watchExternalPluginParameterEvents();
     watchExternalPluginParameterRescan();
+    // Before the load for the same reason: a plugin that lengthens its tail
+    // while it first activates must find the subscription already up.
+    watchExternalPluginTail();
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during
@@ -227,16 +233,26 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
+    // Engine retirement can forget this task without ending the graph
+    // generation, and a successor can already hold the same instance ID.
+    function isCurrentActivation(): boolean {
+        return (
+            activationEpoch === externalPluginActivationEpoch.current &&
+            externalPluginActivationTasks.get(instanceId) === activationTask &&
+            loadedExternalInstances.has(instanceId)
+        );
+    }
+
     let restoredCarry: CarriedExternalPluginState | undefined;
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
         try {
             const instance = await loadPlugin(pluginId, instanceId);
-            if (activationEpoch !== externalPluginActivationEpoch.current) {
+            if (!isCurrentActivation()) {
                 return {
                     status: 'failed',
                     stage: 'attach',
-                    reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                    reason: 'External plugin activation was superseded by a runtime teardown',
                 };
             }
             // Publish what this instance reports about itself before anything
@@ -248,6 +264,11 @@ export function activateExternalPlugin({
                 engineAttached: instance.engine_plugin_id !== null,
                 parameters: toExternalPluginParameters(instance.parameters),
             });
+            // What an export reserves after the last note for this instance's
+            // decay; later revisions arrive over `plugin-tail-changed`. One the
+            // plugin reported before this answer arrived is newer than it.
+            writeExternalPluginTail(instanceId, tailRevisionsDuringLoad.get(instanceId) ?? instance.tail_samples);
+            tailRevisionsDuringLoad.delete(instanceId);
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing yet. The first graph batch starts one and
@@ -269,14 +290,18 @@ export function activateExternalPlugin({
             // through the plugin-latency-changed subscription instead.
             onLatencyMs?.(instance.latency_ms);
         } catch (error) {
-            // Instantiation failed: drop the guard so a later rebuild can retry,
-            // and the sink with it — nothing is live to report for.
-            loadedExternalInstances.delete(instanceId);
-            loadedExternalInstancePluginIds.delete(instanceId);
-            externalLatencyReporters.delete(instanceId);
-            setActivationStatus(instanceId, 'error', String(error));
-            logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
-            return { status: 'failed', stage: 'load', reason: String(error) };
+            const reason = String(error);
+            if (isCurrentActivation()) {
+                // Drop the guard so a later rebuild can retry, and the sink
+                // with it since the instance never went live.
+                loadedExternalInstances.delete(instanceId);
+                loadedExternalInstancePluginIds.delete(instanceId);
+                externalLatencyReporters.delete(instanceId);
+                tailRevisionsDuringLoad.delete(instanceId);
+                setActivationStatus(instanceId, 'error', reason);
+            }
+            logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${reason}`);
+            return { status: 'failed', stage: 'load', reason };
         }
 
         // No base-chunk check against the project chunk is needed: project

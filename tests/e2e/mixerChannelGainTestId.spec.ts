@@ -118,7 +118,9 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await page.evaluate(() => navigator.clipboard.writeText('gain:invalid'));
         await secondMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
         await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue);
-        await expect(page.getByText('Clipboard does not contain a valid track gain value.')).toBeVisible();
+        await expect(
+            page.getByTestId('notification-toast').getByText('Clipboard does not contain a valid track gain value.')
+        ).toBeVisible();
     });
 
     test('track pan menu resets, enters exact values, copies, pastes, and replays pan changes', async ({ page }) => {
@@ -183,6 +185,8 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await clapPan.click({ button: 'right' });
         await clapMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
         await expect(clapPan).toHaveAttribute('aria-valuenow', '-12.375');
-        await expect(page.getByText('Clipboard does not contain a valid track pan value.')).toBeVisible();
+        await expect(
+            page.getByTestId('notification-toast').getByText('Clipboard does not contain a valid track pan value.')
+        ).toBeVisible();
     });
 });

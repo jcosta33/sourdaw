@@ -21,6 +21,11 @@ export function createPlanningInterpretationToolSchema(input: {
     const answerProperties = createAnswerInterpretationToolSchema(input.answer).function.parameters.properties;
     const { catalogId: _answerCatalogId, ...selectionProperties } = answerProperties;
     const properties = schema.function.parameters.properties;
+    properties.creativeInterpretation = {
+        type: 'string',
+        description:
+            'For creative work, state one short public musical reading of the request, not private reasoning or permission.',
+    };
     for (const key of [
         'targetCandidateIds',
         'editDimensionCandidateIds',

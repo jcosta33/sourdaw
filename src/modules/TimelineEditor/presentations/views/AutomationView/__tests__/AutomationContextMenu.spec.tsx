@@ -67,6 +67,14 @@ describe('AutomationContextMenu', () => {
         expect(screen.getByText(/Random/i)).toBeInTheDocument();
     });
 
+    it('keeps all six decorative glyphs outside the shape names', () => {
+        renderWithTooltip(<AutomationContextMenu {...defaultProps} section="shape" />);
+        for (const name of ['Sine', 'Triangle', 'Sawtooth Up', 'Sawtooth Down', 'Square', 'Random']) {
+            const row = screen.getByRole('button', { name });
+            expect(row.querySelector('[aria-hidden="true"]')).toHaveClass('w-4');
+        }
+    });
+
     it('should only render shape section when section is "shape"', () => {
         renderWithTooltip(<AutomationContextMenu {...defaultProps} section="shape" />);
         expect(screen.queryByText('Curve Type')).not.toBeInTheDocument();

@@ -1,6 +1,25 @@
-import { change, getHeads, init, load, save, saveSince } from '@automerge/automerge';
+import {
+    type Doc,
+    type Heads,
+    change,
+    clone,
+    getBackend,
+    getChangesSince,
+    getHeads,
+    getMissingDeps,
+    init,
+    load,
+    loadIncremental,
+    save,
+    saveSince,
+    view,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    type EncodedIncrementalFrames,
+    type IncrementalEncodingInput,
+} from '../../models/IncrementalPersistenceEncoding';
 import { processLoad } from '../crdtWorker';
 
 type AnyDoc = Record<string, unknown>;
@@ -26,7 +45,15 @@ type CompactedResponse = { id: number; type: 'compacted'; bundle: [string, Uint8
 
 type CompactStaleResponse = { id: number; type: 'compactStale'; reason: string };
 
-type WorkerResponse = LoadedResponse | MergedResponse | ErrorResponse | CompactedResponse | CompactStaleResponse;
+type IncrementalsEncodedResponse = { id: number; type: 'incrementalsEncoded'; documents: EncodedIncrementalFrames[] };
+
+type WorkerResponse =
+    | LoadedResponse
+    | MergedResponse
+    | ErrorResponse
+    | CompactedResponse
+    | CompactStaleResponse
+    | IncrementalsEncodedResponse;
 
 /** Save a fresh doc with a fixed actor so byte output is deterministic. */
 function freshDoc(actor: string, mutate?: (doc: AnyDoc) => void): Uint8Array {
@@ -200,12 +227,15 @@ describe('crdtWorker processLoad', () => {
 describe('crdtWorker message dispatcher', () => {
     const originalPostMessage = (self as unknown as { postMessage?: unknown }).postMessage;
     let posted: WorkerResponse[];
+    let postedTransfers: Transferable[] | undefined;
     let onmessage: ((event: { data: unknown }) => void) | null;
 
     beforeEach(async () => {
         posted = [];
-        const postMessage = vi.fn((message: unknown) => {
+        postedTransfers = undefined;
+        const postMessage = vi.fn((message: unknown, transfer?: Transferable[]) => {
             posted.push(message as WorkerResponse);
+            postedTransfers = transfer;
         });
         (self as unknown as { postMessage: unknown }).postMessage = postMessage;
         // Importing the module installs self.onmessage and references the live
@@ -334,6 +364,156 @@ describe('crdtWorker message dispatcher', () => {
         posted.length = 0;
         return { rootBytes, rootHeads: getHeads(load<AnyDoc>(rootBytes)) };
     }
+
+    function incrementalInput(id: string, document: Doc<AnyDoc>, frontier: Heads): IncrementalEncodingInput {
+        return {
+            id,
+            seed: Uint8Array.from(getBackend(document).saveNoCompress()),
+            heads: getHeads(document),
+            frontier,
+        };
+    }
+
+    it('encodes exact incremental bytes against a durable baseline and keeps the compaction shadow', () => {
+        const { rootBytes, rootHeads } = seedReplica((doc) => {
+            doc.baseline = 'durable';
+        });
+        const evolved = change(load<AnyDoc>(rootBytes), (doc) => {
+            doc.edited = true;
+        });
+        const child = change(init<AnyDoc>(), (doc) => {
+            doc.child = true;
+        });
+        onmessage!({
+            data: {
+                id: 30,
+                type: 'encodeIncrementals',
+                documents: [incrementalInput('root', evolved, rootHeads), incrementalInput('branch_child', child, [])],
+            },
+        });
+
+        expect(posted).toHaveLength(1);
+        const response = posted[0];
+        expect(response).toMatchObject({ id: 30, type: 'incrementalsEncoded' });
+        if (response?.type !== 'incrementalsEncoded') {
+            throw new Error('Expected encoded incremental documents');
+        }
+        const [rootOutput, childOutput] = response.documents;
+        if (!rootOutput || !childOutput) {
+            throw new Error('Expected root and child output');
+        }
+        expect(response.documents).toEqual([
+            { id: 'root', frames: getChangesSince(evolved, rootHeads), heads: getHeads(evolved) },
+            { id: 'branch_child', frames: getChangesSince(child, []), heads: getHeads(child) },
+        ]);
+        const [rootFrame] = rootOutput.frames;
+        const [childFrame] = childOutput.frames;
+        if (!rootFrame || !childFrame) {
+            throw new Error('Expected both native change frames');
+        }
+        expect(postedTransfers).toHaveLength(2);
+        expect(postedTransfers?.[0]).toBe(rootFrame.buffer);
+        expect(postedTransfers?.[1]).toBe(childFrame.buffer);
+        expect(rootFrame.buffer).not.toBe(childFrame.buffer);
+
+        const standalone = loadIncremental(init<AnyDoc>(), rootFrame);
+        expect(getHeads(standalone)).toEqual([]);
+        expect(getMissingDeps(standalone, rootHeads)).toEqual(rootHeads);
+        const replay = loadIncremental(load<AnyDoc>(rootBytes), rootFrame);
+        expect(getHeads(replay)).toEqual(getHeads(evolved));
+        expect(replay).toEqual({ baseline: 'durable', edited: true });
+
+        onmessage!({
+            data: {
+                id: 31,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [],
+                removedDocIds: [],
+                expectedHeads: [['root', rootHeads]],
+            },
+        });
+        const compacted = posted[1];
+        expect(compacted).toMatchObject({ id: 31, type: 'compacted' });
+        if (compacted?.type !== 'compacted') {
+            throw new Error('Expected the existing shadow to compact');
+        }
+        expect(compacted.bundle).toEqual([['root', rootBytes]]);
+    });
+
+    it('encodes from an empty frontier when only part of the old frontier is active', () => {
+        const original = change(init<AnyDoc>(), (doc) => {
+            doc.baseline = true;
+        });
+        const earlier = getHeads(original);
+        const later = change(original, (doc) => {
+            doc.future = true;
+        });
+        const historical = clone(view(later, earlier));
+        onmessage!({
+            data: {
+                id: 32,
+                type: 'encodeIncrementals',
+                documents: [incrementalInput('root', historical, [...earlier, ...getHeads(later)])],
+            },
+        });
+
+        expect(posted).toEqual([
+            {
+                id: 32,
+                type: 'incrementalsEncoded',
+                documents: [{ id: 'root', frames: getChangesSince(historical, []), heads: earlier }],
+            },
+        ]);
+    });
+
+    it('keeps an unchanged active frontier even when the seed has unrelated pending changes', () => {
+        const prerequisite = change(init<AnyDoc>(), (doc) => {
+            doc.missing = true;
+        });
+        const prior = getHeads(prerequisite);
+        const later = change(prerequisite, (doc) => {
+            doc.pending = true;
+        });
+        const active = change(init<AnyDoc>(), (doc) => {
+            doc.active = true;
+        });
+        const seed = loadIncremental(active, saveSince(later, prior));
+        const activeHeads = getHeads(seed);
+        expect(getMissingDeps(seed, activeHeads)).toEqual(prior);
+        onmessage!({
+            data: { id: 33, type: 'encodeIncrementals', documents: [incrementalInput('root', seed, activeHeads)] },
+        });
+
+        expect(posted).toEqual([
+            {
+                id: 33,
+                type: 'incrementalsEncoded',
+                documents: [{ id: 'root', frames: [], heads: activeHeads }],
+            },
+        ]);
+    });
+
+    it('rejects incremental encoding when the supplied heads are an inactive ancestor of the seed', () => {
+        const root = change(init<AnyDoc>(), (doc) => {
+            doc.baseline = true;
+        });
+        const prior = getHeads(root);
+        const evolved = change(root, (doc) => {
+            doc.newer = true;
+        });
+        const input = { ...incrementalInput('root', evolved, prior), heads: prior };
+        onmessage!({ data: { id: 34, type: 'encodeIncrementals', documents: [input] } });
+
+        expect(posted).toEqual([{ id: 34, type: 'error', message: expect.stringContaining('seed heads changed') }]);
+    });
+
+    it('rejects duplicate incremental document IDs without posting a partial batch', () => {
+        const input = incrementalInput('root', init<AnyDoc>(), []);
+        onmessage!({ data: { id: 35, type: 'encodeIncrementals', documents: [input, input] } });
+
+        expect(posted).toEqual([{ id: 35, type: 'error', message: expect.stringContaining('Duplicate incremental') }]);
+    });
 
     it('re-encodes its replica when the caller reports matching heads', () => {
         const { rootHeads } = seedReplica((doc) => {

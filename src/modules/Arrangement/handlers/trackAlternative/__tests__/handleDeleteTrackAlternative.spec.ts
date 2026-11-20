@@ -51,6 +51,7 @@ describe('handleDeleteTrackAlternative', () => {
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
+                    clips: [],
                     alternatives: [
                         { id: 'alt1', clips: [] },
                         { id: 'alt2', clips: [] },
@@ -78,6 +79,7 @@ describe('handleDeleteTrackAlternative', () => {
         const sibling = {
             id: 'sibling',
             activeAlternativeId: 'sib-alt',
+            clips: [],
             alternatives: [{ id: 'sib-alt', clips: [] }],
         };
         mocks.getTrackStoreState.mockReturnValue({
@@ -85,6 +87,7 @@ describe('handleDeleteTrackAlternative', () => {
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
+                    clips: [],
                     alternatives: [
                         { id: 'alt1', clips: [] },
                         { id: 'alt2', clips: [] },

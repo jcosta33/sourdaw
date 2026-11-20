@@ -35,6 +35,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
+        sanitizeTrackSnapshot: (value: unknown) => value,
         clampDeviceParamWrite: actual.clampDeviceParamWrite,
         clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
         deriveEffectiveAudibility: actual.deriveEffectiveAudibility,

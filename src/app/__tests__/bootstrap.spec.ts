@@ -209,7 +209,6 @@ const {
     initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
-    initLevainDeviceStatePersistenceMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -307,7 +306,6 @@ const {
         initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
-        initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
@@ -415,6 +413,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     // Reached only because the Toaster barrel is loaded for real below, which
     // pulls its preset-loading compiler into this spec's graph.
     compileLoadPresetActions: noop,
+    applyDevicePatchState: () => false,
+    captureDevicePatchCommitValidation: () => null,
+    getPlannedDevicePatchState: () => null,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -441,6 +442,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
+    holdWebFallbackDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
     getToasterDeviceControls: noop,
@@ -603,12 +605,21 @@ vi.mock('#/modules/DawInterchange/useCases', () => ({
     getDawProjectHandlers: sentinelHandlers('DawProject'),
 }));
 
+vi.mock('#/modules/Bacteria/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Bacteria/useCases')>()),
+    getBacteriaHandlers: sentinelHandlers('Bacteria'),
+}));
+
 vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
 
 vi.mock('#/modules/Fermenter/useCases', () => ({
     getFermenterHandlers: sentinelHandlers('Fermenter'),
     setFermenterMappedParam: noop,
     setFermenterDependencies: noop,
+}));
+
+vi.mock('#/modules/Gluten/useCases', () => ({
+    getGlutenHandlers: sentinelHandlers('Gluten'),
 }));
 
 vi.mock('#/modules/Gluten/stores', () => ({
@@ -637,7 +648,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
-    initLevainDeviceStatePersistence: initLevainDeviceStatePersistenceMock,
+    getLevainHandlers: sentinelHandlers('Levain'),
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
@@ -694,6 +705,7 @@ vi.mock('#/modules/Project/useCases', () => ({
 
 vi.mock('#/modules/Project/stores', () => ({
     getSettledProjectId: getDurableProjectOwnerIdMock,
+    projectTransitionEpoch: { captureEditAuthority: () => ({ isCurrent: () => false }) },
 }));
 
 vi.mock('#/modules/ProjectVersioning/useCases', () => ({
@@ -741,6 +753,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     const real = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
 
     return {
+        getToasterHandlers: sentinelHandlers('Toaster'),
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
@@ -925,11 +938,10 @@ describe('bootstrap', () => {
         expect(resetActionReplayAuthorityMock).toHaveBeenCalledExactlyOnceWith();
         expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
     });
-    it('binds committed Levain membership before device-state persistence subscribes', () => {
+    it('binds committed Levain membership before document reconciliation subscribes', () => {
         expect(initLevainDeviceStateProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
-        expect(initLevainDeviceStatePersistenceMock).toHaveBeenCalledExactlyOnceWith();
         expect(initLevainDeviceStateProjectAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
-            initLevainDeviceStatePersistenceMock.mock.invocationCallOrder[0]!
+            initDeviceStateReconciliationMock.mock.invocationCallOrder[0]!
         );
     });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
@@ -969,8 +981,12 @@ describe('bootstrap', () => {
         'DawProject',
         'FinalFeature',
         'CvGate',
+        'Bacteria',
         'Fermenter',
         'GrandBoule',
+        'Levain',
+        'Toaster',
+        'Gluten',
         'NodeView',
         'WebMidiInput',
         'Rave',

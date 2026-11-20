@@ -168,6 +168,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     pendingProjectReplacements: { capture: vi.fn(() => () => true), withdraw: vi.fn() },
     pickFiles: vi.fn(),
+    prepareProjectSaveSnapshot: vi.fn(),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
 }));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createTrack, type Track } from '../../models/Track';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from '../getVisibleTimelineTracks';
 
 function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'kind'>): Track {
     return {
@@ -33,15 +33,5 @@ describe('getVisibleTimelineTracks', () => {
             'open-child',
             'root-track',
         ]);
-    });
-});
-
-describe('getTimelineTrackHeight', () => {
-    it('returns fixed height for folder tracks and configured height for regular tracks', () => {
-        const folder = makeTrack({ id: 'folder', kind: 'folder', height: 100 });
-        const midi = makeTrack({ id: 'midi', kind: 'midi', height: 72 });
-
-        expect(getTimelineTrackHeight(folder)).toBe(26);
-        expect(getTimelineTrackHeight(midi)).toBe(72);
     });
 });

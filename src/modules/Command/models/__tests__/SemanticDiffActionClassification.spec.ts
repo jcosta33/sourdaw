@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { semanticDiffClassificationByActionType } from '../SemanticDiffActionClassification';
 
-// The sets the classification replaced, copied verbatim so the record cannot drift from them.
+// Each flag lists its expected action types independently of the production classification.
 const expectedByFlag = {
     created: [
         'addTrack',
@@ -68,6 +68,7 @@ const expectedByFlag = {
     overwrite: [
         'copyMidiArticulations',
         'commitScratchPad',
+        'insertAutomationLanePoints',
         'setDeviceState',
         'setExternalPluginState',
         'setProductionBrief',
@@ -117,7 +118,7 @@ const expectedByFlag = {
 
 describe('semanticDiffClassificationByActionType', () => {
     for (const [flag, expected] of Object.entries(expectedByFlag)) {
-        it(`classifies exactly the original ${flag} action types`, () => {
+        it(`classifies exactly the expected ${flag} action types`, () => {
             const actual = Object.entries(semanticDiffClassificationByActionType)
                 .filter(([, classification]) => (classification as Record<string, true | undefined>)[flag] === true)
                 .map(([actionType]) => actionType);

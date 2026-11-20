@@ -17,8 +17,13 @@ const MAX_THREAD_RECEIPT_ID_LENGTH = 128;
 type FittedThread = {
     requests: string[];
     pendingCommands: ThreadCommand[];
+    pendingReading?: string;
     committedCommands: ThreadCommand[];
+    committedReading?: string;
     measuredDeltas: ThreadMeasuredDelta[];
+    cancelled: boolean;
+    cancelledCommands: ThreadCommand[];
+    cancelledReading?: string;
 };
 
 type FittedThreadContext = {
@@ -41,6 +46,7 @@ function serializePendingProposal(pending: ThreadContext['pendingProposal'], fit
         runId: pending.runId,
         confirmationId: pending.confirmationId,
         batchPosition: pending.batchPosition,
+        creativeInterpretation: fitted.pendingReading,
         commands: fitted.pendingCommands,
         omittedCommandCount: pending.commands.length - fitted.pendingCommands.length,
     };
@@ -53,6 +59,9 @@ function serializeLastCommit(commit: ThreadContext['lastCommit'], fitted: Fitted
     return {
         trust: 'untrusted_project_data' as const,
         runId: commit.runId,
+        batchId: commit.batchId,
+        confirmationId: commit.confirmationId,
+        creativeInterpretation: fitted.committedReading,
         receiptIds: commit.receiptIds
             .slice(-MAX_THREAD_RECEIPT_IDS)
             .map((receiptId) => receiptId.slice(0, MAX_THREAD_RECEIPT_ID_LENGTH)),
@@ -75,6 +84,20 @@ function serializeSection(thread: ThreadContext, fitted: FittedThread): string {
         pendingProposal: serializePendingProposal(thread.pendingProposal, fitted),
         lastCommit: serializeLastCommit(thread.lastCommit, fitted),
     };
+    if (fitted.cancelled && thread.lastCancelled) {
+        return `thread_context:\n${JSON.stringify({
+            ...value,
+            lastCancelled: {
+                trust: 'untrusted_project_data',
+                runId: thread.lastCancelled.runId,
+                confirmationId: thread.lastCancelled.confirmationId,
+                batchId: thread.lastCancelled.batchId,
+                creativeInterpretation: fitted.cancelledReading,
+                commands: fitted.cancelledCommands,
+                omittedCommandCount: thread.lastCancelled.commands.length - fitted.cancelledCommands.length,
+            },
+        })}`;
+    }
     return `thread_context:\n${JSON.stringify(value)}`;
 }
 
@@ -97,23 +120,41 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
 
 /**
  * The `thread_context` section for one message profile, within that profile's byte cap. The cap
- * is filled in the order a refinement needs: the newest earlier request, then the pending
- * proposal's commands, then the last commit's commands and measured deltas, then the earlier
- * requests from newest back. A command whose arguments do not fit is kept by name and label alone,
- * marked `argumentsOmitted`. An entry that does not fit even so is left out whole and counted; the entries
- * after a command or delta that did not fit are still tried, but requests stop at the first that
- * does not fit, so what survives is always the newest run of turns and the oldest go first. Only
- * the section's ids and counts are always present, and their bounds keep them within either cap.
+ * is filled in the order a refinement needs: the newest earlier request, the pending proposal's
+ * commands, the last commit's commands and measured deltas, and the complete readings for both.
+ * Then it tries the optional cancelled batch, its commands and its complete reading, followed by
+ * the earlier requests from newest back.
+ * A command whose arguments do not fit is kept by name and label alone, marked `argumentsOmitted`.
+ * An entry that still does not fit is left out whole and counted. Later commands and deltas are
+ * still tried, while requests stop at the first that does not fit. Pending proposal and last commit
+ * ids and counts are always present, and their bounds keep them within either cap.
  */
 export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessageProfile): FittedThreadContext {
     const cap = THREAD_CONTEXT_MAX_BYTES[profile];
-    let fitted: FittedThread = { requests: [], pendingCommands: [], committedCommands: [], measuredDeltas: [] };
+    let fitted: FittedThread = {
+        requests: [],
+        pendingCommands: [],
+        committedCommands: [],
+        measuredDeltas: [],
+        cancelled: false,
+        cancelledCommands: [],
+    };
     const tryAdd = (candidate: FittedThread): boolean => {
         if (byteLength(serializeSection(thread, candidate)) > cap) {
             return false;
         }
         fitted = candidate;
         return true;
+    };
+    const tryAddCurrentReadings = (): void => {
+        const pendingReading = thread.pendingProposal?.creativeInterpretation;
+        if (pendingReading !== undefined) {
+            tryAdd({ ...fitted, pendingReading });
+        }
+        const committedReading = thread.lastCommit?.creativeInterpretation;
+        if (committedReading !== undefined) {
+            tryAdd({ ...fitted, committedReading });
+        }
     };
     // A command whose arguments do not fit is still named: its name and label are what a refinement
     // points at, and they cost a fraction of the arguments.
@@ -122,6 +163,20 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
             return;
         }
         tryAdd(withCommand({ name: command.name, label: command.label, argumentsOmitted: true }));
+    };
+    const tryAddCancelled = (): void => {
+        if (thread.lastCancelled && tryAdd({ ...fitted, cancelled: true })) {
+            for (const command of thread.lastCancelled.commands) {
+                tryAddCommand(command, (entry) => ({
+                    ...fitted,
+                    cancelledCommands: [...fitted.cancelledCommands, entry],
+                }));
+            }
+            const cancelledReading = thread.lastCancelled.creativeInterpretation;
+            if (cancelledReading !== undefined) {
+                tryAdd({ ...fitted, cancelledReading });
+            }
+        }
     };
     const newestFirstRequests = [...thread.requests].reverse();
     const newestRequest = newestFirstRequests[0];
@@ -135,6 +190,8 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     for (const delta of thread.lastCommit?.measuredDeltas ?? []) {
         tryAdd({ ...fitted, measuredDeltas: [...fitted.measuredDeltas, delta] });
     }
+    tryAddCurrentReadings();
+    tryAddCancelled();
     if (requestsFit) {
         for (const request of newestFirstRequests.slice(1)) {
             if (!tryAdd({ ...fitted, requests: [request, ...fitted.requests] })) {
