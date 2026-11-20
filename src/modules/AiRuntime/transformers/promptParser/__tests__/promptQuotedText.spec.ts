@@ -51,6 +51,9 @@ describe('prompt quoted text', () => {
         ["'Keys", false, "'    "],
         ["'Til Dawn'", true, "'        '"],
         ["Make the 'Round Robin' track louder", true, "Make the '           ' track louder"],
+        ["Mute the 'Till Dawn!' track", true, "Mute the '          ' track"],
+        ["Make the 'Round Robin.' track louder", true, "Make the '            ' track louder"],
+        ["Make the 'Kay?' track louder", true, "Make the '    ' track louder"],
         ["Make the 'N' track louder", true, "Make the ' ' track louder"],
         [
             "Add a track called 'Till Dawn and Dusk' and mute the drums",

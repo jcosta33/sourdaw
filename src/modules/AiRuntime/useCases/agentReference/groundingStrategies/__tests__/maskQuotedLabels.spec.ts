@@ -8,6 +8,9 @@ describe('maskQuotedLabels', () => {
         ["Make the drums louder, 'cause the mix is dull", "Make the drums louder, 'cause the mix is dull"],
         ["rock 'n' roll the bass", "rock ' ' roll the bass"],
         ["Make the 'Round Robin' track louder", "Make the '           ' track louder"],
+        ["Mute the 'Till Dawn!' track", "Mute the '          ' track"],
+        ["Make the 'Round Robin.' track louder", "Make the '            ' track louder"],
+        ["Make the 'Kay?' track louder", "Make the '    ' track louder"],
         ["Make the 'N' track louder", "Make the ' ' track louder"],
         [
             "Add a track called 'Till Dawn and Dusk' and mute the drums",

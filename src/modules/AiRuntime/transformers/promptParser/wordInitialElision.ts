@@ -24,7 +24,8 @@ function isWordCharacter(character: string | undefined): boolean {
     return character !== undefined && /[\p{L}\p{N}]/u.test(character);
 }
 
-// The next straight apostrophe that is not inside a word decides: a closer ends a quotation, an opener starts another one.
+// Classified by shape: in-word (letter on both sides) is skipped, an opener has a word character after it,
+// every other apostrophe is a closer. The first decisive one settles whether a quotation follows.
 function nextApostropheCloses(value: string, fromIndex: number): boolean {
     for (let index = value.indexOf("'", fromIndex); index !== -1; index = value.indexOf("'", index + 1)) {
         const wordBefore = isWordCharacter(value[index - 1]);
@@ -32,7 +33,7 @@ function nextApostropheCloses(value: string, fromIndex: number): boolean {
         if (wordBefore && wordAfter) {
             continue;
         }
-        return wordBefore;
+        return !wordAfter;
     }
     return false;
 }
