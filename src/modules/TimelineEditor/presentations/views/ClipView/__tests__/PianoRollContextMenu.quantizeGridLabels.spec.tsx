@@ -11,8 +11,8 @@ import {
 } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
-import { PianoRollContextMenu } from '../PianoRollContextMenu';
 import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
+import { PianoRollContextMenu } from '../PianoRollContextMenu';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
 // Quantize-grid label contract shared by all three surfaces (#4801): gridSize

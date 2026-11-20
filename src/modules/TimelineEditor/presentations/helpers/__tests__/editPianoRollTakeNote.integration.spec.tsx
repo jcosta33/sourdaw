@@ -41,7 +41,6 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
-import { ROW_HEIGHT } from '../pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
 import {
@@ -50,6 +49,7 @@ import {
     transformPianoRollTakeNotes,
 } from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
+import { ROW_HEIGHT } from '../pianoRollConstants';
 
 const original = {
     id: 'original-row',
