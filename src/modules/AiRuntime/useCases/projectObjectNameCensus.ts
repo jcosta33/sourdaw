@@ -67,8 +67,8 @@ function readDeviceNames(device: ProjectContextDevice, context: ProjectContext):
 }
 
 function readCensusEntry<Value>(
-    reading: ObjectNameReading<Value>,
-    value: Value | null | undefined,
+    reading: ObjectNameReading<NonNullable<Value>>,
+    value: Value,
     context: ProjectContext
 ): readonly string[] {
     if ('notAName' in reading || value === undefined || value === null) {
@@ -81,7 +81,7 @@ function readCensus<Owner>(census: ObjectNameCensus<Owner>, owner: Owner, contex
     // The census type names exactly these keys, which `Object.keys` cannot state.
     const keys = Object.keys(census) as ArrayKeyOf<Owner>[];
     return keys.flatMap(<Key extends ArrayKeyOf<Owner>>(key: Key) =>
-        readCensusEntry<NonNullable<Owner[Key]>>(census[key], owner[key], context)
+        readCensusEntry(census[key], owner[key], context)
     );
 }
 
