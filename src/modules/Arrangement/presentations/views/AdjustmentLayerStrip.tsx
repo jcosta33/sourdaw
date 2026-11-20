@@ -8,7 +8,7 @@ import {
     useState,
 } from 'react';
 
-import { Layers, Plus, Power, Settings2, Trash2, X } from 'lucide-react';
+import { Layers, Power, Settings2, Trash2, X } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
@@ -33,6 +33,7 @@ import {
 } from '../../stores/adjustmentLayer';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 
+import { AdjustmentLayerAddMenu } from './AdjustmentLayerAddMenu';
 import {
     handleLayerRowKeyDown,
     handleRegionEdgeKeyDown,
@@ -92,18 +93,6 @@ const MIN_DRAG_PX = 3;
 export const getAdjustmentLayerStripHeight = (layerCount: number): number =>
     Math.max(ROW_HEIGHT, layerCount * ROW_HEIGHT) + ROW_HEIGHT;
 
-const ALL_EFFECT_TYPES: AdjustmentEffectType[] = [
-    'eq',
-    'compressor',
-    'reverb',
-    'delay',
-    'saturation',
-    'filter',
-    'stereo-width',
-    'volume',
-    'pan',
-];
-
 const defaultState: AdjustmentLayerState = { layers: [] };
 
 export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayerStripProps): ReactElement => {
@@ -112,7 +101,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const layers = state.layers;
 
     const [contextMenu, setContextMenu] = useState<LayerContextMenu>({ kind: 'none' });
-    const [addMenuOpen, setAddMenuOpen] = useState(false);
     const [inspector, setInspector] = useState<InspectorState>(null);
     const [tracksPicker, setTracksPicker] = useState<{ layerId: string } | null>(null);
     const [dragPreview, setDragPreview] = useState<{ regionId: string; startBeat: number; endBeat: number } | null>(
@@ -123,7 +111,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const [focusedLayerId, setFocusedLayerId] = useState<string | null>(null);
     const dragStateRef = useRef<DragState>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-    const addMenuRef = useRef<HTMLDivElement>(null);
     // Holds the teardown for the in-flight drag's global listeners (region or
     // fade) so an unmount mid-drag can detach them; null when no drag is active.
     const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -175,19 +162,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             window.removeEventListener('keydown', handleEscape);
         };
     }, [contextMenu.kind]);
-
-    useEffect(() => {
-        if (!addMenuOpen) {
-            return undefined;
-        }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-                setAddMenuOpen(false);
-            }
-        };
-        window.addEventListener('mousedown', handleClick);
-        return () => window.removeEventListener('mousedown', handleClick);
-    }, [addMenuOpen]);
 
     const rowsHeight = Math.max(ROW_HEIGHT, layers.length * ROW_HEIGHT);
 
@@ -340,8 +314,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         window.addEventListener('mouseup', handleUp);
     };
 
-    const openAddMenu = () => setAddMenuOpen((prev) => !prev);
-
     // These wrappers dispatch commands from UI handlers (click / slider / lane
     // click). The resulting state is observed reactively via the store, so each
     // dispatch is fire-and-forget — no rejection to await at the call site.
@@ -351,7 +323,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             type: 'createAdjustmentLayer',
             payload: { name: label, effectType },
         });
-        setAddMenuOpen(false);
     };
 
     const toggleLayer = (layerId: string) => {
@@ -465,16 +436,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     <Layers className="size-2.5" />
                     Adjustment Layers
                 </Row>
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 hover:bg-white/10"
-                    onClick={openAddMenu}
-                    aria-label="Add adjustment layer"
-                >
-                    <Plus className="size-3" />
-                </Button>
+                <AdjustmentLayerAddMenu onCreate={createLayer} />
             </Row>
 
             {/* Static wrapper: the rows stay positioned against the strip surface. */}
@@ -509,21 +471,6 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     );
                 })}
             </div>
-
-            {addMenuOpen ? (
-                <div
-                    ref={addMenuRef}
-                    className="daw-floating-surface absolute right-2 top-5 z-50 min-w-[200px] rounded-md p-1"
-                    role="menu"
-                >
-                    <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
-                    {ALL_EFFECT_TYPES.map((effectType) => (
-                        <DawMenuButton key={effectType} onClick={() => createLayer(effectType)}>
-                            {effectType.charAt(0).toUpperCase() + effectType.slice(1)}
-                        </DawMenuButton>
-                    ))}
-                </div>
-            ) : null}
 
             {contextMenu.kind !== 'none' ? (
                 <DawContextMenuSurface

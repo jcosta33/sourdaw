@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "4841a5a4b78f2e982981d107dba0bf6258fa2ace797c0c49f7de5ce1d4efbf32"
+        "digest": "3d2263690dfaed74cfe84286f45ad2d2d8acdbacd4607a8be43b8ed3a9b8dd6a"
     },
     "census": {
         "digest": "6bddd390efa87d365583684c6b6cc79698a47415a0a8543108eac62a1db63cb3"
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "6930b4836923bd5f1c451f1a7df020b998de1a350baf67bcc845e1f809a5a2fe"
+                    "digest": "a59824552bb5575402807adffc90e11beacff70f67849add9f42d94c6edd37e5"
                 }
             ]
         },
@@ -614,7 +614,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "b378dd27df075cd186132d2d558e8fbd583265d6bd4dd4e3b681c772145c8423"
+                    "digest": "0b84252f3f202201cc201fd325f8a9d558cbbccc628f12bce0c3fc9c90aea86b"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "5ca5fd53b70cd183725ceb5eeeb1286883d71653e8f56ba593335826c959d975"
+                    "digest": "f98855eec2f13dd9f61384e31f8654f966c5ae48c9280f80df350945c95ba939"
                 }
             ]
         },
@@ -838,7 +838,7 @@
             "fixtures": [
                 {
                     "path": "electron/__tests__/commands.spec.ts",
-                    "digest": "a54958d251eded5b34d210d91383c507903d6efb78999c15447f9b1cf74a400d"
+                    "digest": "41c3aa5a84e2bf845b4188ee613645774eb183a1d6798dc890e6ec75c911c3c0"
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",

@@ -51,7 +51,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../../saveProject/captureExternalPluginStates', () => ({
-    captureExternalPluginStates: vi.fn(() => Promise.resolve()),
+    captureExternalPluginStates: vi.fn(() => Promise.resolve({ rejectedPlugins: [] })),
 }));
 
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';

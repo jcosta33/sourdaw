@@ -29,6 +29,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('../hydrateBacteriaModAssignmentsFromProject', () => ({

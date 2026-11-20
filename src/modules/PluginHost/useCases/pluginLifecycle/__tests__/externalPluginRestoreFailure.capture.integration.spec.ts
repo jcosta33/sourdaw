@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -25,6 +29,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { exportProjectFile, saveProject } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -236,6 +241,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
     let lockManager: ReturnType<typeof createControlledLockManager>;
 
     beforeEach(() => {
+        installNativePreparationWorker();
         vi.clearAllMocks();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
@@ -249,6 +255,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -281,6 +288,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         agentProjectInspectionPort.setProvider(null);
         clearUndoHistory();
@@ -336,6 +344,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-edit'));
 
         clearHandlerRegistry();
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         await expect(saveProject()).resolves.toBe(true);
 
         // The host was read, but nothing was written: the snapshot still holds

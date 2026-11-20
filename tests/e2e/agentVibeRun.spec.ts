@@ -227,10 +227,48 @@ async function auditionBothSides(page: Page, batch: number) {
         ['Baseline', 'Playing baseline'],
         ['Proposal', 'Playing proposal'],
     ] as const) {
-        await card.getByRole('button', { name: button, exact: true }).click();
-        await expect(status, `batch ${String(batch)} ${button} audition`).toHaveText(label, { timeout: 30_000 });
-        await card.getByRole('button', { name: 'Stop comparison' }).click();
-        await expect(status).toHaveText('Stopped');
+        // Observe the actual card before clicking: playback can end before the runner polls its status.
+        const observation = await status.evaluateHandle((element, expectedPlaying) => {
+            const states: string[] = [];
+            const record = (text: string | null): void => {
+                if (states.length === 0 && text === expectedPlaying) {
+                    states.push(text);
+                } else if (states.length === 1 && text === 'Stopped') {
+                    states.push(text);
+                }
+            };
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'characterData') {
+                        record(mutation.oldValue);
+                    } else {
+                        for (const node of mutation.removedNodes) {
+                            record(node.textContent);
+                        }
+                    }
+                }
+                record(element.textContent);
+            });
+            observer.observe(element, {
+                subtree: true,
+                childList: true,
+                characterData: true,
+                characterDataOldValue: true,
+            });
+            return { states, observer };
+        }, label);
+        try {
+            await card.getByRole('button', { name: button, exact: true }).click();
+            await expect
+                .poll(() => observation.evaluate(({ states }) => states.slice()), {
+                    message: `batch ${String(batch)} ${button} audition starts and ends`,
+                    timeout: 30_000,
+                })
+                .toEqual([label, 'Stopped']);
+        } finally {
+            await observation.evaluate(({ observer }) => observer.disconnect());
+            await observation.dispose();
+        }
     }
     await expect
         .poll(async () => (await startedSources(page)).length - startsBefore, {

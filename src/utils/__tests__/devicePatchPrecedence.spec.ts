@@ -84,6 +84,47 @@ describe('orderDeviceParametersForReplay', () => {
         expect(orderDeviceParametersForReplay('bacteria', bacteriaParams)).toEqual(Object.entries(bacteriaParams));
     });
 
+    it('replays the saved Bacteria band override independently of the bare broadcast order', () => {
+        const saved = Object.freeze({ band2_bitDepth: 4, bitDepth: 16, inputGain: 2, band2_inputGain: 10 });
+        const result = Object.fromEntries(orderDeviceParametersForReplay('Bacteria', saved));
+
+        expect(result).toEqual({
+            band0_bitDepth: 16,
+            band1_bitDepth: 16,
+            band2_bitDepth: 4,
+            band3_bitDepth: 16,
+            band4_bitDepth: 16,
+            band5_bitDepth: 16,
+            inputGain: 2,
+            band2_inputGain: 10,
+        });
+        expect(saved.bitDepth).toBe(16);
+    });
+
+    it('protects saved active Bacteria crossovers in an unordered Web replay', () => {
+        const saved = Object.freeze({
+            crossoverFreq2: 4000,
+            crossoverFreq3: 2500,
+            crossoverFreq4: 6000,
+            crossoverFreq1: 500,
+            bandCount: 3,
+        });
+        const replay = orderDeviceParametersForReplay('bacteria', saved);
+
+        expect(replay.filter(([key]) => key.startsWith('crossoverFreq'))).toEqual([
+            ['crossoverFreq1', 500],
+            ['crossoverFreq2', 4000],
+            ['crossoverFreq3', 4000],
+            ['crossoverFreq4', 6000],
+        ]);
+        expect(saved.crossoverFreq3).toBe(2500);
+    });
+
+    it('keeps Bacteria partial crossover writes without an explicit band count', () => {
+        const saved = { crossoverFreq3: 2500 };
+        expect(orderDeviceParametersForReplay('bacteria', saved)).toEqual(Object.entries(saved));
+    });
+
     it('behaves cleanly with partial precedence keys', () => {
         const onlyAlgorithm = orderDeviceParametersForReplay('crust', { algorithm: 6 });
         expect(onlyAlgorithm).toEqual([['algorithm', 6]]);

@@ -189,6 +189,9 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                                         handleRenameCommit(snap.id, event.currentTarget.value)
                                                     }
                                                     onKeyDown={(event) => {
+                                                        if (event.nativeEvent.isComposing) {
+                                                            return;
+                                                        }
                                                         if (event.key === 'Enter') {
                                                             handleRenameCommit(snap.id, event.currentTarget.value);
                                                         } else if (event.key === 'Escape') {

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
@@ -435,16 +435,18 @@ describe('GrinderPanel', () => {
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
     });
 
-    it('applies minimum height floor and does not clip overflow at root', () => {
-        const { container } = render(<GrinderPanel deviceId={device_id} />);
-        const faceplate = container.querySelector('.grinder-faceplate');
-        expect(faceplate).toHaveClass('min-h-[460px]');
-        expect(faceplate).not.toHaveClass('overflow-hidden');
-    });
-
-    it('keeps preset drawer scroll container from collapsing sections with [&>*]:shrink-0', () => {
+    it('filters presets without hiding the amp lineup or changing the active section', () => {
         render(<GrinderPanel deviceId={device_id} />);
-        const aside = screen.getByRole('complementary');
-        expect(aside).toHaveClass('[&>*]:shrink-0');
+        const browser = within(screen.getByRole('complementary'));
+        expect(browser.getByRole('button', { name: /Sparkle Clean/ })).toBeInTheDocument();
+
+        fireEvent.change(browser.getByRole('searchbox', { name: 'Search Grinder presets' }), {
+            target: { value: 'rectifier heavy' },
+        });
+
+        expect(browser.getByRole('button', { name: /Rectifier Heavy/ })).toBeInTheDocument();
+        expect(browser.queryByRole('button', { name: /Sparkle Clean/ })).not.toBeInTheDocument();
+        expect(browser.getByRole('button', { name: /Custom/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Lab' })).toHaveAttribute('aria-pressed', 'true');
     });
 });

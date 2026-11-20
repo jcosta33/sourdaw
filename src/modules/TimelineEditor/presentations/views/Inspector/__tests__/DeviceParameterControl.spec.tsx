@@ -665,7 +665,7 @@ describe('DeviceParameterControl', () => {
         expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:gain', 'Gain');
     });
 
-    it('creates Inspector menu automation with the stable id of a legacy-named built-in', () => {
+    it('creates Inspector menu automation with the stable id of a legacy-named built-in', async () => {
         const track: Track = {
             id: 'track-1',
             name: 'Test Track',
@@ -703,9 +703,21 @@ describe('DeviceParameterControl', () => {
         render(<TrackAutomationSection track={track} />);
 
         fireEvent.click(screen.getByLabelText('Add automation lane'));
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Tune' }));
+        await act(async () => {
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Tune' }));
+        });
 
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:tune', 'Crumbs: Tune');
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'addAutomationLane',
+                payload: expect.objectContaining({
+                    trackId: 'track-1',
+                    parameterId: 'device-1:tune',
+                    parameterName: 'Crumbs: Tune',
+                }),
+            },
+            expect.anything()
+        );
     });
 
     it('should not render automation button for non-automatable parameters', () => {

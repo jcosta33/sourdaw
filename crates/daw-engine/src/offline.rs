@@ -67,6 +67,30 @@ pub struct OfflineRenderCancelled {
     pub rendered_frames: usize,
 }
 
+/// Why [`OfflineRenderer::push`] refused a command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfflineCommandError {
+    /// The offline effect table already holds [`EFFECT_TABLE_CAPACITY`] entries.
+    EffectTableFull,
+    /// The offline command ring has no free slot.
+    QueueFull,
+}
+
+impl core::fmt::Display for OfflineCommandError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::EffectTableFull => write!(
+                f,
+                "effect-table-full: the offline render already holds its maximum of \
+                 {EFFECT_TABLE_CAPACITY} native devices and plugins"
+            ),
+            Self::QueueFull => f.write_str("Offline command queue full"),
+        }
+    }
+}
+
+impl std::error::Error for OfflineCommandError {}
+
 /// The scheduler, a command ring, and a render loop — and no audio stream.
 ///
 /// Field order is drop order and is load bearing, exactly as `AppState`'s is:
@@ -146,15 +170,12 @@ impl OfflineRenderer {
     /// Admitted against the effect table first, in push order, exactly as the
     /// live engine admits a batch: the callback can only count a registration
     /// it has no room for, and a render that dropped a device is not the batch.
-    pub fn push(&mut self, command: GraphCommand) -> Result<(), String> {
+    pub fn push(&mut self, command: GraphCommand) -> Result<(), OfflineCommandError> {
         let registrations = match command.effect_table_delta() {
             delta if delta > 0 => {
                 let admitted = self.effect_registrations + delta.unsigned_abs();
                 if admitted > EFFECT_TABLE_CAPACITY {
-                    return Err(format!(
-                        "effect-table-full: the offline render already holds its maximum of \
-                         {EFFECT_TABLE_CAPACITY} native devices and plugins"
-                    ));
+                    return Err(OfflineCommandError::EffectTableFull);
                 }
                 admitted
             }
@@ -164,7 +185,7 @@ impl OfflineRenderer {
         };
         self.command_tx
             .push(command)
-            .map_err(|_| "Offline command queue full".to_string())?;
+            .map_err(|_| OfflineCommandError::QueueFull)?;
         self.effect_registrations = registrations;
         Ok(())
     }
@@ -603,7 +624,18 @@ mod tests {
             ))
             .expect_err("one past the table must refuse");
 
-        assert!(refusal.starts_with("effect-table-full"), "{refusal}");
+        assert_eq!(refusal, OfflineCommandError::EffectTableFull);
+        assert_eq!(
+            refusal.to_string(),
+            format!(
+                "effect-table-full: the offline render already holds its maximum of \
+                 {EFFECT_TABLE_CAPACITY} native devices and plugins"
+            )
+        );
+        assert_eq!(
+            OfflineCommandError::QueueFull.to_string(),
+            "Offline command queue full"
+        );
         renderer
             .push(GraphCommand::RemovePlugin(0))
             .expect("a removal frees a slot");

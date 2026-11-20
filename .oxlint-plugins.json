@@ -29,6 +29,10 @@
         {
             "name": "jsx-a11y-x-js",
             "specifier": "eslint-plugin-jsx-a11y-x"
+        },
+        {
+            "name": "import-x-js",
+            "specifier": "eslint-plugin-import-x"
         }
     ],
     "categories": {
@@ -45,6 +49,10 @@
         "builtin": true
     },
     "settings": {
+        "import-x/resolver": {
+            "typescript": true,
+            "node": { "preserveSymlinks": false }
+        },
         "react-x": {
             "version": "detect",
             "importSource": "react",
@@ -157,6 +165,28 @@
         "@tanstack/query/mutation-property-order": "error"
     },
     "overrides": [
+        {
+            "files": ["**/*.{js,jsx,ts,tsx,mts,cts}"],
+            "rules": {
+                "import-x-js/order": [
+                    "error",
+                    {
+                        "groups": ["builtin", "external", "internal", "parent", "sibling", "index", "object", "type"],
+                        "pathGroups": [
+                            { "pattern": "react", "group": "external", "position": "before" },
+                            { "pattern": "src/**", "group": "internal", "position": "before" }
+                        ],
+                        "pathGroupsExcludedImportTypes": ["react"],
+                        "distinctGroup": true,
+                        "named": false,
+                        "sortTypesGroup": false,
+                        "warnOnUnassignedImports": false,
+                        "newlines-between": "always",
+                        "alphabetize": { "order": "asc", "caseInsensitive": true, "orderImportKind": "ignore" }
+                    }
+                ]
+            }
+        },
         {
             "files": [
                 "scripts/**/*.{js,mjs,cjs}",
@@ -532,7 +562,6 @@
                 "src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx",
                 "src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx",
                 "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-                "src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts",
                 "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",

@@ -1463,16 +1463,37 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn crumbs_note_on(&self, instance_id: String, note: u8, velocity: u8) -> Result<()> {
+    pub async fn crumbs_pad_audition_on(
+        &self,
+        instance_id: String,
+        note: u8,
+        velocity: u8,
+    ) -> Result<u32> {
         reason(
-            commands::crumbs::crumbs_note_on(instance_id, note, velocity, &self.singletons.crumbs)
-                .await,
+            commands::crumbs::crumbs_pad_audition_on(
+                instance_id,
+                note,
+                velocity,
+                &self.singletons.crumbs,
+            )
+            .await,
         )
     }
 
     #[napi]
-    pub async fn crumbs_note_off(&self, instance_id: String, note: u8) -> Result<()> {
-        reason(commands::crumbs::crumbs_note_off(instance_id, note, &self.singletons.crumbs).await)
+    pub async fn crumbs_pad_audition_off(
+        &self,
+        instance_id: String,
+        audition_id: u32,
+    ) -> Result<()> {
+        reason(
+            commands::crumbs::crumbs_pad_audition_off(
+                instance_id,
+                audition_id,
+                &self.singletons.crumbs,
+            )
+            .await,
+        )
     }
 
     #[napi]

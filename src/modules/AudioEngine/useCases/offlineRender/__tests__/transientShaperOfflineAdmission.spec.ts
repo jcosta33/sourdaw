@@ -46,7 +46,7 @@ describe('Transient Shaper offline backend admission', () => {
             degraded: false,
         });
     });
-    it('retains the existing external-plugin offline limit honestly', async () => {
+    it('keeps a hosted device with no loaded instance off the native render', async () => {
         state.availability = { available: true, transport };
         const hosted = {
             ...track,
@@ -64,7 +64,16 @@ describe('Transient Shaper offline backend admission', () => {
             ],
         };
         expect(
-            await selectOfflineRenderEngine({ ...input, renderableTracks: [hosted], scheduledTracks: [hosted] })
+            await selectOfflineRenderEngine({
+                ...input,
+                renderableTracks: [hosted],
+                scheduledTracks: [hosted],
+                hostedPluginRuntime: {
+                    loadedInstanceIds: new Set(),
+                    onDesktopRuntime: true,
+                    pluginKind: () => 'effect',
+                },
+            })
         ).toMatchObject({ engine: 'web-audio/offline', degraded: true });
     });
 });

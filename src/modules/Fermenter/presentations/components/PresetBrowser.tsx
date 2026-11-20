@@ -124,13 +124,7 @@ export const PresetBrowser = ({
                 />
             </div>
             {/* Category pills */}
-            <Row
-                align="stretch"
-                wrap={false}
-                gap={0.5}
-                shrink={false}
-                className="overflow-x-auto no-scrollbar px-2 py-1 border-b border-border/20"
-            >
+            <Row align="stretch" wrap gap={0.5} shrink={false} className="border-b border-border/20 px-2 py-1">
                 {CATEGORIES.map((cat) => {
                     let pillStyle: React.CSSProperties | undefined = undefined;
                     if (category === cat.id && cat.color) {
@@ -194,7 +188,7 @@ export const PresetBrowser = ({
                 </Row>
             ) : null}
             {/* Preset list */}
-            <div className="min-h-[140px] flex-1 overflow-y-auto px-1 py-0.5">
+            <div className="min-h-16 flex-1 overflow-y-auto px-1 py-0.5">
                 {filtered.length === 0 ? (
                     <div className="text-center text-[9px] text-muted-foreground/50 py-6">No presets found</div>
                 ) : (
@@ -204,14 +198,14 @@ export const PresetBrowser = ({
                             size="bare"
                             key={preset.id}
                             type="button"
-                            className={`flex min-h-6 w-full items-center justify-between rounded px-2 text-left text-[length:var(--text-nano)] transition-all ${
+                            className={`flex min-h-6 w-full items-center justify-between rounded px-2 text-left text-[length:var(--text-nano)] whitespace-normal transition-all ${
                                 preset.id === currentPresetId
                                     ? 'bg-[var(--color-accent-lavender)]/15 text-foreground'
                                     : 'text-text-secondary hover:bg-surface-raised hover:text-foreground'
                             }`}
                             onClick={() => onLoadPreset(preset.id)}
                         >
-                            <span className="truncate font-medium">{preset.name}</span>
+                            <span className="min-w-0 wrap-anywhere font-medium">{preset.name}</span>
                             <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
                         </Button>
                     ))

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ROW_HEIGHT } from '../../../helpers/pianoRollConstants';
 import { PianoRollToolbar } from '../PianoRollToolbar';
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
@@ -36,6 +37,7 @@ vi.mock('#/components/ui/button', () => ({
         className,
         'aria-pressed': ariaPressed,
         'aria-label': ariaLabel,
+        'aria-labelledby': ariaLabelledBy,
     }: {
         children: React.ReactNode;
         onClick?: () => void;
@@ -44,6 +46,7 @@ vi.mock('#/components/ui/button', () => ({
         className?: string;
         'aria-pressed'?: boolean;
         'aria-label'?: string;
+        'aria-labelledby'?: string;
     }) => (
         <button
             type="button"
@@ -53,6 +56,7 @@ vi.mock('#/components/ui/button', () => ({
             data-size={size}
             aria-pressed={ariaPressed}
             aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
         >
             {children}
         </button>
@@ -68,6 +72,7 @@ vi.mock('#/components/ui/slider', () => ({
         step,
         className,
         'aria-label': ariaLabel,
+        'aria-labelledby': ariaLabelledBy,
     }: {
         value: number[];
         onValueChange: (v: number[]) => void;
@@ -76,6 +81,7 @@ vi.mock('#/components/ui/slider', () => ({
         step: number;
         className?: string;
         'aria-label'?: string;
+        'aria-labelledby'?: string;
     }) => (
         <input
             type="range"
@@ -85,6 +91,7 @@ vi.mock('#/components/ui/slider', () => ({
             step={step}
             className={className}
             aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
@@ -108,7 +115,8 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('../../../helpers/pianoRollConstants', () => ({
+vi.mock('../../../helpers/pianoRollConstants', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../helpers/pianoRollConstants')>()),
     SCALES: {
         chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         major: [0, 2, 4, 5, 7, 9, 11],
@@ -146,6 +154,8 @@ describe('PianoRollToolbar', () => {
         onToggleLassoMode: vi.fn(),
         zoom: 1,
         onZoomChange: vi.fn(),
+        rowHeight: ROW_HEIGHT,
+        onRowHeightChange: vi.fn(),
         constrainToScale: false,
         onToggleConstrainToScale: vi.fn(),
         notePreviewEnabled: false,
@@ -252,10 +262,10 @@ describe('PianoRollToolbar', () => {
 
     it('should render zoom slider', () => {
         render(<PianoRollToolbar {...defaultProps} />);
-        expect(screen.getByLabelText('Piano roll zoom')).toBeInTheDocument();
+        expect(screen.getByLabelText('Horizontal zoom')).toBeInTheDocument();
     });
 
-    it('offers the Velocity lane in the Expression view', () => {
+    it('shows Velocity availability when instrument lanes are omitted', () => {
         render(
             <PianoRollToolbar
                 {...defaultProps}
@@ -264,8 +274,8 @@ describe('PianoRollToolbar', () => {
                 onActiveExpressionLaneChange={vi.fn()}
             />
         );
-        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-        expect(values).toContain('velocity');
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
 
     it('hides every MPE expression lane when the track instrument sounds none (MD-2)', () => {
@@ -278,10 +288,8 @@ describe('PianoRollToolbar', () => {
                 mpeExpressionLanes={[]}
             />
         );
-        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-        expect(values).not.toContain('pressure');
-        expect(values).not.toContain('slide');
-        expect(values).not.toContain('pitchBend');
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
         expect(screen.queryByText('Pressure (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Slide (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Pitch Bend (MPE)')).not.toBeInTheDocument();
