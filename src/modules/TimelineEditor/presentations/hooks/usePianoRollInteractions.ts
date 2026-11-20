@@ -13,6 +13,7 @@ import {
     type SetStateAction,
     useRef,
     useEffect,
+    useEffectEvent,
     useState,
 } from 'react';
 
@@ -60,6 +61,7 @@ import {
     NOTE_INSET_X,
     getPaintedNoteWidth,
     type DragState,
+    type PianoRollLassoPath,
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
     getVisiblePitches,
@@ -268,6 +270,7 @@ type InteractionArgs = {
     notePreviewEnabled: boolean;
     drawPreviewRef: React.RefObject<{ beat: number; pitch: number; duration: number } | null>;
     rubberBandRef: React.RefObject<{ x: number; y: number; w: number; h: number } | null>;
+    lassoPathRef: React.RefObject<PianoRollLassoPath | null>;
     dragPreviewRef: React.RefObject<{
         noteIds: Set<string>;
         beatDelta: number;
@@ -282,6 +285,8 @@ type InteractionHandlers = {
     handleMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleMouseUp: (e: MouseEvent<HTMLCanvasElement>) => void;
+    handleMouseLeave: (e: MouseEvent<HTMLCanvasElement>) => void;
+    cancelLasso: () => boolean;
     handleDoubleClick: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleKeyDown: (e: KeyboardEvent<HTMLCanvasElement>) => void;
     handleContextMenu: (e: MouseEvent<HTMLCanvasElement>) => void;
@@ -320,12 +325,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         notePreviewEnabled,
         drawPreviewRef,
         rubberBandRef,
+        lassoPathRef,
         dragPreviewRef,
     } = args;
 
     const dragRef = useRef<DragState>({ ...INITIAL_DRAG_STATE });
     const paintNotesRef = useRef<Set<string>>(new Set());
-    const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
     const auditionRef = useRef<(() => void) | null>(null);
     /** R-A13: debounce timer for note-hover audition. */
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -351,6 +356,28 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // asynchronously and has no id here. The cell was empty when the sequence
     // began, so no earlier note can share it.
     const stampedByClickRef = useRef<{ pitch: number; beat: number } | null>(null);
+
+    const cancelLasso = (): boolean => {
+        if (dragRef.current.mode !== 'lasso') {
+            return false;
+        }
+        lassoPathRef.current = null;
+        pendingStampRef.current = null;
+        dragRef.current = INITIAL_DRAG_STATE;
+        return true;
+    };
+
+    const cancelLassoOnWindowBlur = useEffectEvent(cancelLasso);
+    useEffect(() => {
+        const onBlur = (): void => {
+            cancelLassoOnWindowBlur();
+        };
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('blur', onBlur);
+            cancelLassoOnWindowBlur();
+        };
+    }, []);
 
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
@@ -636,6 +663,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     // ── Mouse handlers ───────────────────────────────────────────────
     const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
+        if (dragRef.current.mode === 'lasso') {
+            return;
+        }
         // R-A13: cancel hover preview timer on mousedown
         if (hoverTimerRef.current !== null) {
             clearTimeout(hoverTimerRef.current);
@@ -740,7 +770,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 pendingStampRef.current = null;
                 return;
             } else if (lassoMode) {
+                if (event.button !== 0) {
+                    return;
+                }
                 lassoPathRef.current = [{ x, y: noteY }];
+                pendingStampRef.current = null;
                 setSelectedNoteIds(new Set());
                 dragRef.current = {
                     mode: 'lasso',
@@ -958,30 +992,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         if (drag.mode === 'lasso') {
-            lassoPathRef.current.push({ x, y: noteY });
-            draw();
-            const canvasEl = canvasRef.current;
-            if (canvasEl) {
-                const ctx = canvasEl.getContext('2d');
-                // The lasso path is stored in content space, and the renderer
-                // leaves the context transformed into content space (scaled by
-                // devicePixelRatio and translated by the scroll offset), so
-                // these points need no further conversion.
-                if (ctx && lassoPathRef.current.length > 1) {
-                    ctx.strokeStyle = 'rgba(128, 104, 152, 0.8)';
-                    ctx.lineWidth = 1.5;
-                    ctx.setLineDash([4, 3]);
-                    ctx.beginPath();
-                    const p0 = lassoPathRef.current[0]!;
-                    ctx.moveTo(p0.x, p0.y + getPianoRollRowTop(0));
-                    for (let index = 1; index < lassoPathRef.current.length; index++) {
-                        const pt = lassoPathRef.current[index]!;
-                        ctx.lineTo(pt.x, pt.y + getPianoRollRowTop(0));
-                    }
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-            }
+            lassoPathRef.current?.push({ x, y: noteY });
             return;
         }
 
@@ -1075,11 +1086,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>): void => {
+        const drag = dragRef.current;
+        if (drag.mode === 'lasso' && event.button !== 0) {
+            return;
+        }
         if (auditionRef.current) {
             auditionRef.current();
             auditionRef.current = null;
         }
-        const drag = dragRef.current;
 
         if (drag.mode === 'rubber-band') {
             const rb = rubberBandRef.current;
@@ -1361,7 +1375,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         dragPreviewRef.current = null;
         drawPreviewRef.current = null;
 
-        if (drag.mode === 'lasso' && lassoPathRef.current.length > 2) {
+        const path = lassoPathRef.current;
+        if (cancelLasso()) {
+            if (!path || path.length < 3) {
+                return;
+            }
             // Lasso hit test against the note's bounding box (not just its
             // center — long notes with their center outside a tight lasso but
             // edges enclosed would otherwise be missed):
@@ -1373,7 +1391,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             // A full edge-intersection test is not needed for lasso UX and is
             // expensive for long polygons.
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-            const path = lassoPathRef.current;
 
             let pathMinX = Infinity;
             let pathMinY = Infinity;
@@ -1455,7 +1472,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 }
             }
             setSelectedNoteIds(enclosed);
-            lassoPathRef.current = [];
+            return;
         }
 
         if (drag.mode === 'paint') {
@@ -1482,6 +1499,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         dragRef.current = { ...INITIAL_DRAG_STATE };
+    };
+
+    const handleMouseLeave = (event: MouseEvent<HTMLCanvasElement>): void => {
+        if (!cancelLasso()) {
+            handleMouseUp(event);
+        }
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>): void => {
@@ -1515,6 +1538,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+        if (event.key === 'Escape' && cancelLasso()) {
+            event.preventDefault();
+            return;
+        }
         // The focused piano roll owns Delete / Backspace even with nothing
         // selected: claiming the key (preventDefault) keeps the global layer
         // from deleting arrangement clips behind the editor. Every key this
@@ -2008,6 +2035,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
         event.preventDefault();
+        cancelLasso();
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -2022,6 +2050,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
+        cancelLasso,
         handleDoubleClick,
         handleKeyDown,
         handleContextMenu,

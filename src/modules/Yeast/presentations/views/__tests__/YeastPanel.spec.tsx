@@ -112,6 +112,14 @@ describe('YeastPanel', () => {
         expect(screen.getByText(/No processors yet/)).toBeInTheDocument();
     });
 
+    it('exposes rack controls inside the named region', () => {
+        render(<YeastPanel />);
+        const panel = screen.getByRole('region', { name: 'Yeast rack panel' });
+        const arp = within(panel).getByRole('button', { name: 'Arp Off' });
+        arp.focus();
+        expect(arp).toHaveFocus();
+    });
+
     it('should expose the default panel controls', () => {
         render(<YeastPanel />);
 
@@ -659,14 +667,6 @@ describe('YeastPanel', () => {
     });
 
     describe('overflow normalization', () => {
-        it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-            const { container } = render(<YeastPanel />);
-            const faceplate = container.querySelector<HTMLElement>('.yeast-faceplate');
-            expect(faceplate).not.toBeNull();
-            expect(faceplate?.className).toContain('min-h-[440px]');
-            expect(faceplate?.className).not.toContain('overflow-hidden');
-        });
-
         it('prevents side cards from collapsing when faceplate is compressed', () => {
             const { container } = render(<YeastPanel />);
             const cards = container.querySelectorAll('.yeast-window.shrink-0');

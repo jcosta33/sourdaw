@@ -183,6 +183,9 @@ export type DragState = {
 
 export type PianoRollMenu = { x: number; y: number; beat: number } | null;
 
+/** X is measured from beat zero and Y from the top of the first pitch row. */
+export type PianoRollLassoPath = Array<{ x: number; y: number }>;
+
 export const INITIAL_DRAG_STATE: DragState = {
     mode: 'none',
     noteId: null,

@@ -318,6 +318,11 @@ export function YeastPreviewSurface({
                     className="block h-full w-full rounded-lg border border-white/10 bg-black/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent-peach)]"
                     role="img"
                     tabIndex={0}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                            event.stopPropagation();
+                        }
+                    }}
                     aria-label={feedback.summary}
                 />
             </div>

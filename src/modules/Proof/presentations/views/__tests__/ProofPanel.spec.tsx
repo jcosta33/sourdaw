@@ -381,6 +381,14 @@ describe('ProofPanel', () => {
         expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
     });
 
+    it('exposes the compare control inside the mastering region', () => {
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        const panel = screen.getByRole('region', { name: 'Proof mastering panel' });
+        const compare = within(panel).getByRole('button', { name: 'A/B compare' });
+        compare.focus();
+        expect(compare).toHaveFocus();
+    });
+
     it('keeps rail cards at their intrinsic height so the rail owns overflow', () => {
         render(<ProofPanel deviceId={DEVICE_ID} />);
 

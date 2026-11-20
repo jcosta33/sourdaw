@@ -252,6 +252,7 @@ function SelectedNoteEditor({
         notePreviewEnabled: false,
         drawPreviewRef: { current: null },
         rubberBandRef: { current: null },
+        lassoPathRef: { current: null },
         dragPreviewRef: { current: null },
     });
     return (

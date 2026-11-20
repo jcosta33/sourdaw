@@ -48,7 +48,7 @@ export const useArrangementMinimumHeight = (): number => {
             preferences.timelineMinimapHeight
         ),
         hasChords: chordState.events.length > 0 || chordState.enabled,
-        surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(tracks, selectedTrackId),
+        surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(tracks, selectedTrackId, preferences.trackHeight),
         scratchPadHeight: scratchPadOpen ? getScratchPadRenderedHeight(scratchPadCollapsed, scratchPadHeight) : 0,
     });
 };

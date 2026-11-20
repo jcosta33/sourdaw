@@ -3,8 +3,12 @@ import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioSto
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { countSettledTakes } from '#/modules/Transport/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    exportSdawFile,
+    persistCrdtProject,
+} from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectDirectory } from '../../../repositories/project/projectDirectory';
@@ -14,7 +18,7 @@ import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
 import { isNativeProjectRuntimeAvailable } from '../../isNativeProjectRuntimeAvailable';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
-import { buildProjectData } from '../fileIO/buildProjectData';
+import { type buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { collectProjectFreezeOnlyBufferIds } from '../helpers/collectProjectFreezeOnlyBufferIds';
 import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
@@ -22,6 +26,7 @@ import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 
+import { buildPreparedProjectSaveData } from './buildPreparedProjectSaveData';
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
 import { pluginStateEditCount } from './pluginStateEditCount';
@@ -70,6 +75,28 @@ function describeSnapshotChange(
         return 'the required audio durability receipt is no longer current';
     }
     return null;
+}
+
+function createSnapshotContinuationAssertion(
+    persistedProject: ProjectStoreState,
+    snapshotRevision: string,
+    isCurrent: () => boolean
+) {
+    return (audioDurabilityReceipt?: AudioDurabilityReceipt): void => {
+        // A public project edit updates its store immediately but may defer
+        // the corresponding Automerge write until the next animation frame.
+        // Expose that write before every post-await authority check so the
+        // original serialized revision cannot certify a newer visible state.
+        flushAutomergeStorageWrites();
+        if (!isCurrent()) {
+            throw new Error('[saveProject] Active project changed during snapshot persistence');
+        }
+        assertProjectSnapshotAuthority();
+        const change = describeSnapshotChange(persistedProject, snapshotRevision, audioDurabilityReceipt);
+        if (change !== null) {
+            throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
+        }
+    };
 }
 
 let pendingFolderSelection: { projectId: string; root: Promise<FileSystemDirectoryHandle> } | null = null;
@@ -220,13 +247,24 @@ export type SaveProjectOptions = {
      * the folder the project already bound.
      */
     requestFolderSelection?: boolean;
+    /** The replacement still owns the outgoing document while it saves a take that just closed. */
+    outgoingProject?: { shouldContinue: () => boolean };
 };
 
-export function saveProject({ requestFolderSelection = false }: SaveProjectOptions = {}): Promise<boolean> {
+type OutgoingSave = { identity: string; shouldContinue: () => boolean };
+
+export function saveProject({
+    requestFolderSelection = false,
+    outgoingProject,
+}: SaveProjectOptions = {}): Promise<boolean> {
     // The picker must start in the gesture turn, before the queued predecessor
     // settles or migration and plugin capture await.
     const selectedRoot = requestFolderSelection ? requestProjectFolderSelection() : null;
-    const save = runSaveAfter(latestSave, selectedRoot);
+    const outgoing = outgoingProject && {
+        identity: captureProjectIdentity(),
+        shouldContinue: outgoingProject.shouldContinue,
+    };
+    const save = runSaveAfter(latestSave, selectedRoot, outgoing);
     latestSave = save;
     // Only a save still in flight is waited on: once it settles, fulfilled or
     // rejected, the next save starts at once.
@@ -244,17 +282,34 @@ export function saveProject({ requestFolderSelection = false }: SaveProjectOptio
 
 async function runSaveAfter(
     predecessor: Promise<boolean> | undefined,
-    selectedRoot: Promise<FileSystemDirectoryHandle> | null
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null,
+    outgoing: OutgoingSave | undefined
 ): Promise<boolean> {
     if (predecessor) {
         // Only the order matters here; the predecessor's own caller receives
         // its result, rejection included, through the promise it was handed.
         await predecessor.catch(() => undefined);
     }
-    return persistProjectSnapshot(selectedRoot);
+    return persistProjectSnapshot(selectedRoot, outgoing);
 }
 
-async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryHandle> | null): Promise<boolean> {
+function captureSaveOwnership(outgoing: OutgoingSave | undefined): () => boolean {
+    const identity = captureProjectIdentity();
+    return () => {
+        if (captureProjectIdentity() !== identity) {
+            return false;
+        }
+        if (outgoing) {
+            return outgoing.identity === identity && outgoing.shouldContinue();
+        }
+        return projectStore.value?.loading === false;
+    };
+}
+
+async function persistProjectSnapshot(
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null,
+    outgoing: OutgoingSave | undefined
+): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -292,8 +347,16 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
     const recentKey = getProjectSnapshotKey(project.createdAt);
     const folderSave = folderSaveAvailable();
 
+    const isCurrent = captureSaveOwnership(outgoing);
+    if (!isCurrent()) {
+        return false;
+    }
+
     try {
         await migrateActiveProjectIdentity();
+        if (!isCurrent()) {
+            return false;
+        }
 
         // Capture each loaded native plugin's live state chunk into project truth
         // before serialization, so a reopened project restores editor-driven state
@@ -307,15 +370,10 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
         const everyPluginCaptured = await captureEveryPluginState();
 
         const current = projectStore.value;
-        if (!current || current.createdAt !== project.createdAt) {
+        if (!isCurrent() || !current?.projectId || current.createdAt !== project.createdAt) {
             throw new Error('[saveProject] Active project changed before persistence');
         }
         const persistedProject = current;
-
-        // Keep the project dirty until every durable write succeeds. The
-        // timestamp belongs to the snapshot being built, so publish it before
-        // serialization and include it in the revision token below.
-        projectStore.set({ ...current, updatedAt: Date.now(), dirty: true });
 
         // Write a flat-JSON ProjectData snapshot under the SAME key the
         // recent entry uses, so loadRecentProject can reopen it. The
@@ -333,29 +391,17 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
         // in bytes. loadRecentProject resolves the ids through the cache,
         // exactly as the boot restore path already does.
         //
-        // Read in the same synchronous turn as the snapshot's revision, so a
-        // take that settles once the snapshot is taken still counts as unsaved.
-        const settledTakesAtSnapshot = countSettledTakes();
-        const built = await buildProjectData({ includeAudioBuffers: false });
-        if (!built) {
-            // No snapshot means nothing under recentKey to reopen. Listing
-            // the project anyway is how a recent entry came to point at
-            // nothing (ADR 0013).
-            throw new Error('[saveProject] Project snapshot could not be built');
-        }
+        const { built, settledTakesAtSnapshot } = await buildPreparedProjectSaveData({
+            projectId: current.projectId,
+            createdAt: current.createdAt,
+            isCurrent,
+        });
 
-        const assertSnapshotContinuation = (audioDurabilityReceipt?: AudioDurabilityReceipt): void => {
-            // A public project edit updates its store immediately but may defer
-            // the corresponding Automerge write until the next animation frame.
-            // Expose that write before every post-await authority check so the
-            // original serialized revision cannot certify a newer visible state.
-            flushAutomergeStorageWrites();
-            assertProjectSnapshotAuthority();
-            const change = describeSnapshotChange(persistedProject, built.snapshotRevision, audioDurabilityReceipt);
-            if (change !== null) {
-                throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
-            }
-        };
+        const assertSnapshotContinuation = createSnapshotContinuationAssertion(
+            persistedProject,
+            built.snapshotRevision,
+            isCurrent
+        );
 
         let preflightReceipt: AudioDurabilityReceipt | undefined;
         try {
@@ -407,7 +453,7 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
 
                     // Only record the recent-projects entry once the snapshot
                     // write committed for the exact revision it serialized.
-                    addToRecentProjects(persistedProject.name, recentKey);
+                    addToRecentProjects(built.data.meta.name, recentKey);
                     assertSnapshotContinuation(audioDurabilityReceipt);
 
                     // The CRDT snapshot and named project file establish the same

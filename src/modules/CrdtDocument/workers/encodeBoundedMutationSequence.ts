@@ -11,16 +11,18 @@ import {
     type ChangeMetadata,
 } from '@automerge/automerge/slim';
 
-import { encodeExactNativeChange } from '../models/EncodeExactNativeChange';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
     NATIVE_SEQUENCE_MAX_OPERATIONS,
+    type ProspectiveMutationWorkerResult,
+} from '../models/ProspectiveMutationWorkerProtocol';
+import { encodeExactNativeChange } from '../transformers/encodeExactNativeChange';
+import {
     isAbsentNativeAuthor,
     hasOpaqueNativeMetadata,
     nativeChangeMessage,
     nativeOperationCount,
-} from '../models/NativeMutationSequence';
-import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
+} from '../transformers/nativeChangeMetadata';
 
 function matchesCanonicalChangeHistory(decoded: DecodedChange, metadata: ChangeMetadata): boolean {
     return (
