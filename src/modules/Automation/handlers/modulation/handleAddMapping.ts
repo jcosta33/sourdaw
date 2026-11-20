@@ -2,40 +2,37 @@ import { createHandler } from '#/utils/createHandler';
 
 import { modulationStore } from '../../stores/modulationStore';
 import { addMapping } from '../../useCases/modulation/addMapping';
+import { type MappingTarget } from '../../useCases/modulation/removeMapping';
 
-function sameTarget(
-    mapping: { targetTrackId: string; targetDeviceId: string; targetParamId: string },
-    target: { targetTrackId: string; targetDeviceId: string; targetParamId: string }
-): boolean {
-    return (
-        mapping.targetTrackId === target.targetTrackId &&
-        mapping.targetDeviceId === target.targetDeviceId &&
-        mapping.targetParamId === target.targetParamId
-    );
+function getMappingTarget(modulatorId: string, target: MappingTarget) {
+    const modulator = modulationStore.value?.modulators.find((source) => source.id === modulatorId);
+    const isNoop =
+        !modulator ||
+        modulator.mappings.some(
+            (mapping) =>
+                mapping.targetTrackId === target.targetTrackId &&
+                mapping.targetDeviceId === target.targetDeviceId &&
+                mapping.targetParamId === target.targetParamId
+        );
+    return { modulator, isNoop };
 }
 
 export const handleAddMapping = createHandler<'addMapping'>({
+    isNoop: ({ payload }) => getMappingTarget(payload.modulatorId, payload.mapping).isNoop,
     execute: (action) => {
         addMapping(action.payload.modulatorId, action.payload.mapping);
         return undefined;
     },
     describe: (action) => {
-        const modulator = modulationStore.value?.modulators.find((m) => m.id === action.payload.modulatorId);
-        // Re-adding an existing destination is the use case's documented
-        // no-op (it must not clobber a user-tuned amount), so there is no
-        // inverse: undoing it must not delete the pre-existing mapping.
-        const alreadyExists =
-            modulator?.mappings.some((mapping) => sameTarget(mapping, action.payload.mapping)) ?? false;
-        if (alreadyExists || !modulator) {
-            return {
-                label: modulator
-                    ? `Map ${modulator.name} (${modulator.id}) to ${action.payload.mapping.targetTrackId}/${action.payload.mapping.targetDeviceId}/${action.payload.mapping.targetParamId}`
-                    : 'Add modulation mapping',
-                inverseAction: null,
-            };
+        const { modulator, isNoop } = getMappingTarget(action.payload.modulatorId, action.payload.mapping);
+        const label = modulator
+            ? `Map ${modulator.name} (${modulator.id}) to ${action.payload.mapping.targetTrackId}/${action.payload.mapping.targetDeviceId}/${action.payload.mapping.targetParamId}`
+            : 'Add modulation mapping';
+        if (isNoop) {
+            return { label, inverseAction: null };
         }
         return {
-            label: `Map ${modulator.name} (${modulator.id}) to ${action.payload.mapping.targetTrackId}/${action.payload.mapping.targetDeviceId}/${action.payload.mapping.targetParamId}`,
+            label,
             inverseAction: {
                 type: 'removeMapping',
                 payload: {

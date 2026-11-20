@@ -95,20 +95,6 @@ export const SpectralWaterfall = ({ analyser, sampleRate, className }: SpectralW
             return undefined;
         }
 
-        // Resize canvas to match CSS layout.
-        const observer = new ResizeObserver((entries) => {
-            const { width, height } = entries[0]!.contentRect;
-            const w = Math.round(width * devicePixelRatio);
-            const h = Math.round(height * devicePixelRatio);
-            if (canvas.width !== w) {
-                canvas.width = w;
-            }
-            if (canvas.height !== h) {
-                canvas.height = h;
-            }
-        });
-        observer.observe(container);
-
         const ctx = canvas.getContext('2d');
         if (ctx === null) {
             return undefined;
@@ -126,6 +112,20 @@ export const SpectralWaterfall = ({ analyser, sampleRate, className }: SpectralW
         // canvas self-blit, so the per-frame cost is O(DISPLAY_COLS) instead of
         // O(HISTORY_FRAMES × DISPLAY_COLS).
         const rowImg = offscreenCtx.createImageData(DISPLAY_COLS, 1);
+
+        // Resize canvas to match CSS layout.
+        const observer = new ResizeObserver((entries) => {
+            const { width, height } = entries[0]!.contentRect;
+            const w = Math.round(width * devicePixelRatio);
+            const h = Math.round(height * devicePixelRatio);
+            if (canvas.width !== w) {
+                canvas.width = w;
+            }
+            if (canvas.height !== h) {
+                canvas.height = h;
+            }
+        });
+        observer.observe(container);
 
         let raf = 0;
         let dbBuffer: Float32Array<ArrayBuffer> | null = null;

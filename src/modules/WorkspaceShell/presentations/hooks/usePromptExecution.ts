@@ -302,6 +302,9 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Keyboard navigation ─────────────────────────────────────────────
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+        if (event.nativeEvent.isComposing) {
+            return;
+        }
         if (fuzzyResults.length > 0) {
             if (event.key === 'ArrowDown') {
                 event.preventDefault();

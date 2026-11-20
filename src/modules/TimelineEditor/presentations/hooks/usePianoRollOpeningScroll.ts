@@ -9,6 +9,7 @@ type Options = {
     notes: readonly MidiNote[];
     visiblePitches: readonly number[];
     beatWidth: number;
+    rowHeight: number;
 };
 
 type OpeningState = { clipId: string; settled: boolean; appliedWithoutNotes: boolean };
@@ -24,7 +25,14 @@ type OpeningState = { clipId: string; settled: boolean; appliedWithoutNotes: boo
  * same clip before the user touched the roll: the note store can fill after
  * the editor mounts.
  */
-export const usePianoRollOpeningScroll = ({ scrollRef, clipId, notes, visiblePitches, beatWidth }: Options) => {
+export const usePianoRollOpeningScroll = ({
+    scrollRef,
+    clipId,
+    notes,
+    visiblePitches,
+    beatWidth,
+    rowHeight,
+}: Options) => {
     const stateRef = useRef<OpeningState | null>(null);
     const appliedRef = useRef<{ top: number; left: number } | null>(null);
 
@@ -47,6 +55,7 @@ export const usePianoRollOpeningScroll = ({ scrollRef, clipId, notes, visiblePit
             viewportWidth: viewport.clientWidth,
             scrollLeft: viewport.scrollLeft,
             beatWidth,
+            rowHeight,
         });
         if (target === null) {
             return;

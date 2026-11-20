@@ -73,14 +73,22 @@ test.describe('Piano-roll toolbar — toggle state', () => {
         await expect(chord).not.toHaveAttribute('aria-pressed', before ?? '');
     });
 
-    test('Expression-view toggle reveals the Active expression lane combobox', async ({ page }) => {
+    test('Expression-view toggle reveals the velocity lane', async ({ page }) => {
         const expr = page.getByRole('button', { name: /Toggle Expression View/i });
-        const lane = page.getByRole('combobox', { name: /Active expression lane/i });
-        await expect(lane).toHaveCount(0);
-
+        const selector = page.getByRole('combobox', { name: 'Active expression lane' });
+        const readout = page.getByText('Velocity only for this instrument', { exact: true });
+        const lane = page.getByRole('group', { name: 'velocity lane', exact: true });
+        await expect(expr).toHaveAttribute('aria-pressed', 'false');
+        await expect(readout).toHaveCount(0);
         await expr.click();
-
+        await expect(expr).toHaveAttribute('aria-pressed', 'true');
+        await expect(selector).toHaveCount(0);
+        await expect(readout).toBeVisible();
         await expect(lane).toBeVisible();
+        await expr.click();
+        await expect(expr).toHaveAttribute('aria-pressed', 'false');
+        await expect(readout).toHaveCount(0);
+        await expect(lane).toHaveCount(0);
     });
 });
 
@@ -132,7 +140,7 @@ test.describe('Piano-roll — zoom', () => {
     });
 
     test('Zoom slider exposes a numeric value', async ({ page }) => {
-        const zoom = page.getByRole('slider', { name: /Piano roll zoom/i });
+        const zoom = page.getByRole('slider', { name: /Horizontal zoom/i });
         await expect(zoom).toBeVisible();
         // PianoRoll.tsx defaults `zoom` to 1 (`useState(1)`), rendered by
         // PianoRollToolbar.tsx as `zoom * 100`.

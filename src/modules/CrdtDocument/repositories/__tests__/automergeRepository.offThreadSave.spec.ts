@@ -1,13 +1,15 @@
-import { clone, load, loadIncremental } from '@automerge/automerge';
+import { clone, getHeads, load, loadIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     ControlledWorker,
     createRootBundle,
     respondToCompactShadow,
+    respondToEncodeIncrementals,
     respondToLoad,
     type BundleEntry,
     type CompactShadowRequest,
+    type EncodeIncrementalsRequest,
 } from './automergeWorkerTestHarness';
 
 type ProjectDoc = Record<string, unknown>;
@@ -98,6 +100,53 @@ describe('AutomergeRepository off-thread full save (CC-8)', () => {
         const workerRootBytes = exchange.lastCompactedBundle.find(([id]) => id === 'root')?.[1];
         expect(bundle.get('root')).toBe(workerRootBytes);
         expect(load<ProjectDoc>(bundle.get('root')!)).toMatchObject({ seed: true, edited: 'after load' });
+    });
+
+    it('transfers a native seed and returns only the exact requested persistence delta', async () => {
+        const encodedRequest = Promise.withResolvers<{
+            worker: ControlledWorker;
+            request: EncodeIncrementalsRequest;
+        }>();
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                queueMicrotask(() => respondToLoad(worker, request));
+            }
+            if (request.type === 'encodeIncrementals') {
+                encodedRequest.resolve({ worker, request });
+            }
+        };
+        const repository = await loadRepositoryFromWorker();
+        const frontier = repository.getHeads('root');
+        if (!frontier) {
+            throw new Error('Expected the root heads before capturing an incremental');
+        }
+        repository.changeDoc('root', (doc: ProjectDoc) => {
+            doc.captured = true;
+        });
+        const capturedHeads = repository.getHeads('root');
+        const capture = repository.capturePersistenceIncrementals(
+            new Map([['root', frontier]]),
+            new AbortController().signal
+        );
+        const { worker, request } = await encodedRequest.promise;
+        expect(request.documents).toHaveLength(1);
+        expect(request.documents[0]?.seed.byteLength).toBeGreaterThan(0);
+        const transfer = worker.postMessageTransferArguments.at(-1);
+        expect(transfer).toEqual([expect.any(ArrayBuffer)]);
+        expect(transfer).toEqual([expect.objectContaining({ byteLength: 0 })]);
+        repository.changeDoc('root', (doc: ProjectDoc) => {
+            doc.afterCapture = true;
+        });
+        respondToEncodeIncrementals(worker, request);
+        const [incremental] = await capture;
+        if (!incremental) {
+            throw new Error('Expected the captured root incremental');
+        }
+        expect(incremental.id).toBe('root');
+        expect(incremental.heads).toEqual(capturedHeads);
+        const replayed = loadIncremental(load<ProjectDoc>(baseBundle.get('root')!), incremental.chunk);
+        expect(getHeads(replayed)).toEqual(capturedHeads);
+        expect(replayed).toEqual({ seed: true, captured: true });
     });
 
     it('leaves the incremental cursor untouched so chunked persistence still works', async () => {

@@ -1987,23 +1987,42 @@ describe('MidiRack', () => {
             }
         });
 
-        it('rolls back preview decisions when a processor throws after recording one', () => {
-            const rack = new MidiRack();
-            rack.addProcessor(new DecisionThenThrowProcessor('throws-after-decision'));
+        it.each([
+            { mode: 'live MIDI', preserveInputTrackIds: false, inputTrackId: 'track-a' },
+            { mode: 'clip playback', preserveInputTrackIds: true, inputTrackId: 'live-yeast:track-a:clip-a:0' },
+        ])(
+            'recovers the $mode preview scope when a processor throws after recording a decision',
+            ({ preserveInputTrackIds, inputTrackId }) => {
+                const rack = new MidiRack();
+                rack.addProcessor(new DecisionThenThrowProcessor('throws-after-decision'));
+                const scope = { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a' };
+                const input = [noteOn(0, 60), noteOff(64, 60)].map((event) => ({ ...event, trackId: inputTrackId }));
 
-            const output = rack.processBlock([noteOn(0, 60), noteOff(64, 60)], 0, 128, transport, 'track-a', true);
-            const preview = takePreviewBlock(rack);
+                const output = rack.processBlock(
+                    input,
+                    0,
+                    128,
+                    transport,
+                    scope.trackId,
+                    true,
+                    scope.rackId,
+                    scope.routeId,
+                    1,
+                    preserveInputTrackIds
+                );
+                const preview = takePreviewBlock(rack);
 
-            expect(output).toMatchObject([noteOn(0, 60), noteOff(64, 60)]);
-            expect(preview.records).toMatchObject([
-                { phase: 'open', pitch: 60, probability: null, realized: true },
-                { phase: 'closed', pitch: 60, probability: null, realized: true },
-            ]);
-            expect(preview.records[0]?.eventId).toBe(preview.records[1]?.eventId);
-            expect(preview.provenance).toEqual([
-                { processorId: 'throws-after-decision', eventCount: 0, bypassed: false, failed: true },
-            ]);
-        });
+                expect(output).toEqual(input);
+                expect(preview.records).toMatchObject([
+                    { ...scope, phase: 'open', pitch: 60, probability: null, realized: true },
+                    { ...scope, phase: 'closed', pitch: 60, probability: null, realized: true },
+                ]);
+                expect(preview.records[0]?.eventId).toBe(preview.records[1]?.eventId);
+                expect(preview.provenance).toEqual([
+                    { processorId: 'throws-after-decision', eventCount: 0, bypassed: false, failed: true },
+                ]);
+            }
+        );
 
         it('clears retained lineage and keeps downstream processors running after a rack-generation failure', () => {
             const rack = new MidiRack();
@@ -2041,6 +2060,162 @@ describe('MidiRack', () => {
             ]);
             expect(preview.records).toHaveLength(2);
             expect(preview.provenance).toEqual([]);
+        });
+
+        it.each([
+            { mode: 'enabled', bypassed: false, starts: [42000, 54000, 66000], ends: [48000, 60000, 72000] },
+            { mode: 'bypassed', bypassed: true, starts: [30000, 30000, 30000], ends: [73000, 73000, 73000] },
+        ])('captures an $mode arpeggiator clip on the admitted track', ({ bypassed, starts, ends }) => {
+            const rack = new MidiRack('rack-a');
+            const arp = new Arpeggiator('arp');
+            arp.setParam('gate', 0.5);
+            arp.setBypassed(bypassed);
+            rack.addProcessor(arp, 'arpeggiator');
+            const trackId = 'track-a';
+            const occurrenceId = 'live-yeast:track-a:clip-a:0';
+            const scope = { rackId: 'rack-a', routeId: trackId, trackId };
+            const pitches = [60, 64, 67];
+            const samplesPerBeat = 24000;
+            const midi: MidiEvent[] = [];
+            const records: ReturnType<typeof takePreviewBlock>['records'] = [];
+            for (const [start, end, input] of [
+                [24000, 48000, pitches.map((pitch) => noteOn(30000, pitch))],
+                [48000, 72000, []],
+                [72000, 84000, pitches.map((pitch) => noteOff(73000, pitch))],
+            ] as const) {
+                midi.push(
+                    ...rack.processBlock(
+                        input.map((event, index) => ({
+                            ...event,
+                            trackId: occurrenceId,
+                            noteInstanceId: `clip:${index}`,
+                        })),
+                        start,
+                        end,
+                        { ...transport, sampleRate: 48000, ppqPosition: start / samplesPerBeat },
+                        trackId,
+                        true,
+                        scope.rackId,
+                        scope.routeId,
+                        1,
+                        true
+                    )
+                );
+                records.push(...takePreviewBlock(rack).records);
+            }
+
+            const notes = pitches.map((pitch, index) => ({
+                pitch,
+                on: starts[index]!,
+                off: ends[index]!,
+                noteInstanceId: bypassed ? `clip:${index}` : `arp:generated:${index}`,
+            }));
+            expect(midi.filter(isNoteOn)).toMatchObject(
+                notes.map(({ pitch, noteInstanceId, on }) => ({
+                    trackId: occurrenceId,
+                    noteInstanceId,
+                    timeSamples: on,
+                    kind: { note: pitch },
+                }))
+            );
+            expect(midi.filter(isNoteOff)).toMatchObject(
+                notes.map(({ pitch, noteInstanceId, off }) => ({
+                    trackId: occurrenceId,
+                    noteInstanceId,
+                    timeSamples: off,
+                    kind: { note: pitch },
+                }))
+            );
+            const opens = records.filter((record) => record.phase === 'open');
+            const closes = records.filter((record) => record.phase === 'closed');
+            expect(opens).toMatchObject(
+                notes.map(({ pitch }) => ({ ...scope, pitch, realized: true, processorId: 'arp', bypassed }))
+            );
+            expect(opens.map(({ beatTime }) => Math.round(beatTime * samplesPerBeat))).toEqual(starts);
+            expect(new Set(opens.map(({ eventId }) => eventId)).size).toBe(pitches.length);
+            expect(closes).toMatchObject(
+                notes.map(({ pitch }, index) => ({ ...scope, pitch, eventId: opens[index]!.eventId }))
+            );
+            expect(
+                closes.map(({ beatTime, durationBeats }) => Math.round((beatTime + durationBeats) * samplesPerBeat))
+            ).toEqual(ends);
+        });
+
+        it('pairs deferred and interleaved same-pitch clip releases within their capture scope and epoch', () => {
+            const rack = new MidiRack('rack-a');
+            const scope = { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a' };
+            const occurrenceA = 'live-yeast:track-a:clip-a:0';
+            const occurrenceB = 'live-yeast:track-a:clip-b:0';
+            const occurrenceC = 'live-yeast:track-a:clip-c:0';
+            const scoped = (event: MidiEvent, trackId: string, noteInstanceId = 'clip-voice') => ({
+                ...event,
+                trackId,
+                noteInstanceId,
+            });
+            const block = (input: MidiEvent[], start: number, end: number, captureEpoch = 1, rackId = scope.rackId) => {
+                const midi = rack.processBlock(
+                    input,
+                    start,
+                    end,
+                    { ...transport, ppqPosition: start / 22050 },
+                    scope.trackId,
+                    true,
+                    rackId,
+                    scope.routeId,
+                    captureEpoch,
+                    true
+                );
+                return { midi, ...takePreviewBlock(rack) };
+            };
+
+            const opened = block(
+                [
+                    scoped(noteOn(10, 60), occurrenceA),
+                    scoped(noteOn(20, 60), occurrenceB),
+                    scoped(noteOn(30, 60), occurrenceB, 'second-clip-voice'),
+                ],
+                0,
+                128
+            );
+            expect(opened.records).toMatchObject([
+                { ...scope, phase: 'open', pitch: 60 },
+                { ...scope, phase: 'open', pitch: 60 },
+                { ...scope, phase: 'open', pitch: 60 },
+            ]);
+            const [first, second, third] = opened.records;
+            expect(new Set(opened.records.map(({ eventId }) => eventId)).size).toBe(3);
+
+            expect(block([scoped(noteOff(150, 60), occurrenceC)], 128, 256).records).toEqual([]);
+            expect(block([scoped(noteOff(200, 60), occurrenceA)], 128, 256, 1, 'rack-b').records).toEqual([]);
+
+            const laterOff = scoped(noteOff(400, 60), occurrenceB);
+            const laterOn = scoped(noteOn(405, 64), occurrenceB);
+            const thirdOff = scoped(noteOff(260, 60), occurrenceB, 'second-clip-voice');
+            const queued = block([thirdOff, laterOff, laterOn], 256, 384);
+            expect(queued.midi).toEqual([thirdOff]);
+            expect(queued.records).toMatchObject([
+                { ...scope, phase: 'closed', pitch: 60, eventId: third!.eventId },
+                { ...scope, phase: 'closed', pitch: 60, eventId: second!.eventId },
+                { ...scope, phase: 'open', pitch: 64 },
+            ]);
+            expect(queued.records[1]!.durationBeats).toBeCloseTo((400 - 20) / 22050, 12);
+            const released = block([scoped(noteOff(410, 60), occurrenceA)], 384, 512);
+            expect(released.midi).toEqual([laterOff, laterOn, scoped(noteOff(410, 60), occurrenceA)]);
+            expect(released.records).toMatchObject([{ ...scope, phase: 'closed', pitch: 60, eventId: first!.eventId }]);
+            expect(released.records[0]!.durationBeats).toBeCloseTo((410 - 10) / 22050, 12);
+
+            const old = block([scoped(noteOn(600, 60), occurrenceA)], 512, 640);
+            expect(old.records).toMatchObject([{ ...scope, phase: 'open', pitch: 60 }]);
+            expect(block([scoped(noteOff(700, 60), occurrenceA)], 640, 768, 2)).toMatchObject({
+                reset: true,
+                records: [],
+            });
+            const fresh = block([scoped(noteOn(800, 60), occurrenceA)], 768, 896, 2);
+            expect(fresh.records).toMatchObject([{ ...scope, phase: 'open', pitch: 60 }]);
+            rack.releasePreview(scope.rackId, scope.routeId, scope.trackId, 1);
+            expect(block([scoped(noteOff(900, 60), occurrenceA)], 896, 1024, 2).records).toMatchObject([
+                { ...scope, phase: 'closed', pitch: 60, eventId: fresh.records[0]!.eventId },
+            ]);
         });
 
         it('captures a down-strum in the same stable scheduled order as audible output', () => {
@@ -2187,46 +2362,105 @@ describe('MidiRack', () => {
             expect(processorLineageCases.map(({ type }) => type)).toEqual(PROCESSOR_TYPES.map(({ type }) => type));
         });
 
-        it('keeps decision lineage for a repeater event drained in a later block', () => {
-            const rack = new MidiRack();
-            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
-            const repeater = createProcessor('repeater', 'repeater');
-            repeater.setParam('repeat_count', 1);
-            repeater.setParam('rate_denom', 1);
-            rack.addProcessor(repeater, 'repeater');
+        it.each([
+            { mode: 'live MIDI', preserveInputTrackIds: false, inputTrackId: 'track-a' },
+            { mode: 'clip playback', preserveInputTrackIds: true, inputTrackId: 'live-yeast:track-a:clip-a:0' },
+        ])(
+            'keeps $mode decision lineage for a repeater event drained in a later block',
+            ({ preserveInputTrackIds, inputTrackId }) => {
+                const rack = new MidiRack('rack-a');
+                rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+                const repeater = createProcessor('repeater', 'repeater');
+                repeater.setParam('repeat_count', 1);
+                repeater.setParam('rate_denom', 1);
+                rack.addProcessor(repeater, 'repeater');
 
-            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
-            takePreviewBlock(rack);
-            const output = rack.processBlock(
-                [{ timeSamples: 88000, kind: { type: 'cc', channel: 0, cc: 1, value: 64 } }],
-                88000,
-                97000,
-                { ...transport, ppqPosition: 88000 / 22050 },
-                'track-a',
-                true
-            );
-            const previewNotes = takePreviewBlock(rack).records.filter((record) => record.phase === 'open');
+                rack.processBlock(
+                    [{ ...noteOn(0, 60), trackId: inputTrackId }],
+                    0,
+                    128,
+                    transport,
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'route-a',
+                    1,
+                    preserveInputTrackIds
+                );
+                takePreviewBlock(rack);
+                const output = rack.processBlock(
+                    [{ timeSamples: 88000, kind: { type: 'cc', channel: 0, cc: 1, value: 64 } }],
+                    88000,
+                    97000,
+                    { ...transport, ppqPosition: 88000 / 22050 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'route-a',
+                    1,
+                    preserveInputTrackIds
+                );
+                const previewNotes = takePreviewBlock(rack).records.filter((record) => record.phase === 'open');
 
-            expect(output.filter(isNoteOn)).toMatchObject([{ timeSamples: 88200, kind: { note: 60 } }]);
-            expect(previewNotes).toMatchObject([
-                {
-                    pitch: 60,
-                    durationBeats: 2,
-                    processorId: 'decision-source',
-                    probability: 0.75,
-                    realized: true,
-                },
-            ]);
-        });
+                expect(output.filter(isNoteOn)).toMatchObject([
+                    { timeSamples: 88200, trackId: inputTrackId, kind: { note: 60 } },
+                ]);
+                expect(previewNotes).toMatchObject([
+                    {
+                        rackId: 'rack-a',
+                        routeId: 'route-a',
+                        trackId: 'track-a',
+                        pitch: 60,
+                        durationBeats: 2,
+                        processorId: 'decision-source',
+                        probability: 0.75,
+                        realized: true,
+                    },
+                ]);
+            }
+        );
 
-        it('rejects delayed lineage retained by an obsolete capture epoch', () => {
+        it.each([
+            {
+                prior: 'obsolete live MIDI epoch',
+                preserveInputTrackIds: false,
+                inputTrackId: 'track-a',
+                rackId: 'rack-a',
+                epoch: 2,
+            },
+            {
+                prior: 'obsolete clip epoch',
+                preserveInputTrackIds: true,
+                inputTrackId: 'live-yeast:track-a:clip-a:0',
+                rackId: 'rack-a',
+                epoch: 2,
+            },
+            {
+                prior: 'foreign clip scope',
+                preserveInputTrackIds: true,
+                inputTrackId: 'live-yeast:track-a:clip-a:0',
+                rackId: 'rack-b',
+                epoch: 1,
+            },
+        ])('rejects delayed lineage retained by a $prior', ({ preserveInputTrackIds, inputTrackId, rackId, epoch }) => {
             const rack = new MidiRack('rack-a');
             rack.addProcessor(new DecisionSourceProcessor('decision-source'));
             const repeater = createProcessor('repeater', 'repeater');
             repeater.setParam('repeat_count', 1);
             repeater.setParam('rate_denom', 1);
             rack.addProcessor(repeater, 'repeater');
-            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true, 'rack-a', 'route-a', 1);
+            rack.processBlock(
+                [{ ...noteOn(0, 60), trackId: inputTrackId }],
+                0,
+                128,
+                transport,
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1,
+                preserveInputTrackIds
+            );
             takePreviewBlock(rack);
 
             const output = rack.processBlock(
@@ -2236,12 +2470,15 @@ describe('MidiRack', () => {
                 { ...transport, ppqPosition: 88000 / 22050 },
                 'track-a',
                 true,
-                'rack-a',
+                rackId,
                 'route-a',
-                2
+                epoch,
+                preserveInputTrackIds
             );
 
-            expect(output.filter(isNoteOn)).toMatchObject([{ timeSamples: 88200, kind: { note: 60 } }]);
+            expect(output.filter(isNoteOn)).toMatchObject([
+                { timeSamples: 88200, trackId: inputTrackId, kind: { note: 60 } },
+            ]);
             expect(takePreviewBlock(rack)).toMatchObject({ records: [], droppedEvents: 1, reset: true });
         });
 

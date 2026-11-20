@@ -29,10 +29,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
 }));
 
-vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
-    useContextMenuDismiss: vi.fn(),
-}));
-
 vi.mock('../TimelineChromeSurface', () => ({
     TimelineChromeSurface: vi.fn(({ children, onContextMenu, ...props }: any) => (
         <div {...props} onContextMenu={onContextMenu} data-testid="lane-surface">
@@ -316,18 +312,68 @@ describe('MarkerLane', () => {
             });
         });
 
-        it('renames the marker via the menu and commits on Enter', () => {
-            renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={0} />);
-            const lane = screen.getByTestId('lane-surface');
-            openMarkerMenu(lane, 100);
-            fireEvent.click(screen.getByText('Rename Marker'));
-            const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
-            fireEvent.change(input, { target: { value: '  Verse  ' } });
-            fireEvent.keyDown(input, { key: 'Enter' });
-            expect(executeUserAppAction).toHaveBeenCalledWith({
+        it.each(['menu', 'double-click'])('preserves the marker draft and caret after %s rename entry', (entry) => {
+            renderWithTooltip(
+                <>
+                    <button type="button">Prior control</button>
+                    <MarkerLane pixelsPerBeat={10} scrollX={0} />
+                </>
+            );
+            if (entry === 'menu') {
+                screen.getByRole('button', { name: 'Prior control' }).focus();
+                const lane = screen.getByTestId('lane-surface');
+                openMarkerMenu(lane, 100);
+                const rename = screen.getByRole('button', { name: 'Rename Marker' });
+                act(() => rename.focus());
+                fireEvent.click(rename);
+            } else {
+                fireEvent.doubleClick(screen.getByTitle('Intro'));
+            }
+
+            const input = screen.getByRole<HTMLInputElement>('textbox');
+            expect(input).toHaveFocus();
+            expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
+
+            const typeCharacter = (character: string) => {
+                input.setRangeText(character, input.selectionStart!, input.selectionEnd!, 'end');
+                fireEvent.input(input, { data: character, inputType: 'insertText' });
+            };
+            for (const character of 'Verse') {
+                typeCharacter(character);
+            }
+            expect(input).toHaveValue('Verse');
+            expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
+
+            input.setSelectionRange(2, 2);
+            typeCharacter('X');
+            typeCharacter('Y');
+            expect(input).toHaveValue('VeXYrse');
+            expect([input.selectionStart, input.selectionEnd]).toEqual([4, 4]);
+            fireEvent.doubleClick(input);
+            expect(input).toHaveValue('VeXYrse');
+
+            input.setSelectionRange(2, 4);
+            typeCharacter('-');
+            if (entry === 'menu') {
+                fireEvent.keyDown(input, { key: 'Enter' });
+            } else {
+                act(() => screen.getByRole('button', { name: 'Prior control' }).focus());
+            }
+            expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
                 type: 'renameMarker',
-                payload: { markerId: 'm1', name: 'Verse' },
+                payload: { markerId: 'm1', name: 'Ve-rse' },
             });
+        });
+
+        it('allows native mouse selection in the marker input without moving the marker', () => {
+            renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={0} />);
+            fireEvent.doubleClick(screen.getByTitle('Intro'));
+            const input = screen.getByRole('textbox');
+
+            expect(fireEvent.mouseDown(input, { button: 0, clientX: 105 })).toBe(true);
+            fireEvent.mouseMove(window, { clientX: 155 });
+            fireEvent.mouseUp(window, { clientX: 155 });
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('cancels rename on Escape without committing', () => {

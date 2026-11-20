@@ -558,6 +558,9 @@ export const InstrumentsTab = ({
                                 onChange={(event) => setSaveFormName(event.target.value)}
                                 className="h-7 text-xs flex-1 bg-surface-default border-border/50 focus-visible:border-border/80"
                                 onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing) {
+                                        return;
+                                    }
                                     if (event.key === 'Enter') {
                                         handleSavePreset();
                                     }

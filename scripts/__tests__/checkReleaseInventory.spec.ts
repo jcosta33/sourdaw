@@ -4861,6 +4861,37 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toContain('runtime: path is not tracked: missing/**');
     });
 
+    it('includes a tracked snapshot beyond the default Git stdout buffer', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        const trackedPath = 'z-release-entry.txt';
+        const content = 'This tracked file follows more than a mebibyte of indexed paths.\n';
+        const defaultBuffer = 1024 * 1024;
+        try {
+            execFileSync('git', ['init', '--quiet'], { cwd: root });
+            writeFileSync(join(root, trackedPath), content);
+            const blob = execFileSync('git', ['hash-object', '-w', '--', trackedPath], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const indexEntry = (path: string): string => `100644 ${blob}\t${path}\n`;
+            const padding = 'x'.repeat(220);
+            const entries = Array.from({ length: 5000 }, (_, index) => indexEntry(`padding-${index}-${padding}.txt`));
+            entries.push(indexEntry(trackedPath));
+            execFileSync('git', ['update-index', '--index-info'], { cwd: root, input: entries.join('') });
+            const listing = execFileSync('git', ['ls-files'], { cwd: root, maxBuffer: 2 * defaultBuffer });
+            expect(listing.indexOf(`${trackedPath}\n`)).toBeGreaterThan(defaultBuffer);
+
+            const result = loadRepositorySnapshot(root, {
+                snapshots: [{ path: trackedPath, sha256: sha256(content) }],
+                marks: [],
+            });
+            expect(result.releaseFiles).toEqual([trackedPath]);
+            expect(result.fileDigests).toEqual({ [trackedPath]: sha256(content) });
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
     it('discovers shipped assets and non-HTTP production endpoints', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
         mkdirSync(join(root, 'src'), { recursive: true });

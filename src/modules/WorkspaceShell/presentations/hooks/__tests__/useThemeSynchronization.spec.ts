@@ -24,6 +24,11 @@ vi.mock('#/modules/Preferences/stores', () => ({
 
 describe('useThemeSynchronization', () => {
     beforeEach(() => {
+        vi.stubGlobal('matchMedia', () => ({
+            matches: false,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        }));
         mocks.listeners.clear();
         mocks.preferences.current = { theme: 'light' };
         document.documentElement.classList.remove('dark', 'light');
@@ -52,5 +57,41 @@ describe('useThemeSynchronization', () => {
         expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#020100');
         unmount();
         expect(mocks.listeners.size).toBe(0);
+    });
+    it('follows system changes only while system is selected and unsubscribes on unmount', () => {
+        let dark = false;
+        const listeners = new Set<() => void>();
+        vi.stubGlobal('matchMedia', () => ({
+            get matches() {
+                return dark;
+            },
+            addEventListener: (_event: string, listener: () => void) => listeners.add(listener),
+            removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
+        }));
+        mocks.preferences.current = { theme: 'system' };
+        const { unmount } = renderHook(() => useThemeSynchronization());
+        expect(document.documentElement).toHaveClass('light');
+        dark = true;
+        act(() => {
+            for (const listener of listeners) {
+                listener();
+            }
+        });
+        expect(document.documentElement).toHaveClass('dark');
+        mocks.preferences.current = { theme: 'light' };
+        act(() => {
+            for (const listener of mocks.listeners) {
+                listener();
+            }
+        });
+        act(() => {
+            for (const listener of listeners) {
+                listener();
+            }
+        });
+        expect(document.documentElement).toHaveClass('light');
+        unmount();
+        expect(listeners.size).toBe(0);
+        vi.unstubAllGlobals();
     });
 });

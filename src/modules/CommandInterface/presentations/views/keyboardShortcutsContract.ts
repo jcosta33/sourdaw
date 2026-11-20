@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { currentKeyboardLayoutMap, loadKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { getHandlerMap } from '#/modules/Command/stores';
 import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { isDeviceEditorControlTarget } from '#/utils/UI/isDeviceEditorControlTarget';
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { isWithinModalSurface } from '../../useCases/isWithinModalSurface';
@@ -14,6 +15,9 @@ import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboa
 import { resolveShortcutKey } from '../../useCases/resolveShortcutKey';
 
 function resolveKeyTarget(isTextEntry: boolean, target: EventTarget | null): KeyTarget {
+    if (isDeviceEditorControlTarget(target)) {
+        return 'deviceEditor';
+    }
     if (isTextEntry) {
         return 'textEntry';
     }
@@ -98,6 +102,19 @@ function closestButton(target: EventTarget | null): HTMLButtonElement | null {
     return target instanceof Element ? target.closest('button') : null;
 }
 
+function isShortcutTextEntryTarget(target: EventTarget | null): boolean {
+    // Portaled dialogs and menus keep shortcuts like Delete from reaching the
+    // arrangement behind them (#3618). They share the input policy, including
+    // the command palette exception.
+    // A native select owns its navigation keys here. Native Edit routing
+    // retains the narrower shared editable-target contract.
+    return (
+        target instanceof HTMLSelectElement ||
+        (target instanceof Element && isKeyboardEditableTarget(target)) ||
+        isWithinModalSurface(target)
+    );
+}
+
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
  */
@@ -167,27 +184,8 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 return;
             }
 
-            const target = event.target as HTMLElement;
-
-            // A portaled modal or menu surface owns the keyboard while focus is
-            // inside it (#3618). Radix marks its Dialog/Popover content with
-            // `role="dialog"` and its DropdownMenu content with `role="menu"`,
-            // and the hand-rolled portals (dialogService overlays, context
-            // menus) mark the same roles; Radix also moves focus into the
-            // surface on open. Without this gate an unhandled Delete /
-            // Backspace falls through to this window listener and deletes the
-            // selected arrangement clips behind the surface with no
-            // confirmation. Gate the whole layer exactly like a text input —
-            // a modal is no more a shortcut context than an input is, so the
-            // one `allowedInInput` exception (Cmd+K palette summon) applies
-            // here too, as it already does inside a dialog's own inputs.
-            // A native select owns Home, End, Space, and arrow navigation just
-            // like a text field. Keep this adapter-local so native Edit routing
-            // retains its narrower shared editable-target contract.
-            const isTextEntry =
-                target instanceof HTMLSelectElement ||
-                isKeyboardEditableTarget(target) ||
-                isWithinModalSurface(event.target);
+            const target = event.target;
+            const isTextEntry = isShortcutTextEntryTarget(target);
             // A focused canvas editor (`data-canvas-editor`) keeps only the
             // editor-safe global shortcuts; see NOTE_EDITOR_SHORTCUT_IDS.
             const keyTarget = resolveKeyTarget(isTextEntry, target);
