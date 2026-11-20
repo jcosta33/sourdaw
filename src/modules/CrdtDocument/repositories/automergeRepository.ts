@@ -11,9 +11,7 @@ import {
     merge,
     change,
     getChanges,
-    getChangesMetaSince,
     getMissingDeps,
-    hasHeads,
     view,
     getHeads,
     clone,
@@ -47,6 +45,7 @@ import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChang
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
+import { retainsActiveFrontier } from './retainsActiveFrontier';
 
 type AnyDoc = Record<string, unknown>;
 
@@ -107,41 +106,6 @@ function createSnapshotTransactionOverlapError(id: DocId): Error {
 
 function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
     return retainsActiveFrontier(replacement, getHeads(previous));
-}
-
-function retainsActiveFrontier(replacement: Doc<unknown>, previousHeads: Heads, hasKnownHeads = hasHeads): boolean {
-    const replacementHeads = getHeads(replacement);
-    const unreachedHeads = new Set(previousHeads);
-    for (const head of replacementHeads) {
-        unreachedHeads.delete(head);
-    }
-    if (unreachedHeads.size === 0) {
-        return true;
-    }
-    if (!hasKnownHeads(replacement, previousHeads)) {
-        return false;
-    }
-
-    const dependencies = new Map(
-        getChangesMetaSince(replacement, previousHeads).map((change) => [change.hash, change.deps])
-    );
-    const visited = new Set<string>();
-    const pending = [...replacementHeads];
-    while (pending.length > 0 && unreachedHeads.size > 0) {
-        const head = pending.pop();
-        if (!head || visited.has(head)) {
-            continue;
-        }
-        visited.add(head);
-        if (unreachedHeads.delete(head)) {
-            continue;
-        }
-        const dependentHeads = dependencies.get(head);
-        if (dependentHeads) {
-            pending.push(...dependentHeads);
-        }
-    }
-    return unreachedHeads.size === 0;
 }
 
 function hasCompleteNativeHistory(doc: Doc<unknown>, heads: Heads): boolean {
