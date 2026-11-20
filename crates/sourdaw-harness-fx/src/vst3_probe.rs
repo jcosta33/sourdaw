@@ -130,6 +130,8 @@ struct Probe {
     restarts_forever: AtomicBool,
     /// `Level` as the processor holds it.
     level: AtomicU64,
+    /// Whether the host has this class in the processing state.
+    processing: AtomicBool,
     trigger_values: [AtomicU64; TRIGGER_PARAMS.len()],
     handler: AtomicPtr<IComponentHandler>,
     log: Mutex<Vec<u8>>,
@@ -148,6 +150,7 @@ impl Probe {
             extra_parameter: AtomicBool::new(false),
             restarts_forever: AtomicBool::new(false),
             level: AtomicU64::new(1f64.to_bits()),
+            processing: AtomicBool::new(false),
             trigger_values: std::array::from_fn(|_| AtomicU64::new(0f64.to_bits())),
             handler: AtomicPtr::new(ptr::null_mut()),
             log: Mutex::new(Vec::new()),
@@ -442,7 +445,17 @@ impl IAudioProcessorTrait for Probe {
         kResultOk
     }
 
-    unsafe fn setProcessing(&self, _state: TBool) -> tresult {
+    /// A start while already processing is a host leaving the state behind,
+    /// which VST3 does not allow, so it is refused: a host that forgot a
+    /// `setProcessing(0)` hears this class pass its next blocks through.
+    unsafe fn setProcessing(&self, state: TBool) -> tresult {
+        if state == 0 {
+            self.processing.store(false, Ordering::Relaxed);
+            return kResultOk;
+        }
+        if self.processing.swap(true, Ordering::Relaxed) {
+            return kResultFalse;
+        }
         kResultOk
     }
 

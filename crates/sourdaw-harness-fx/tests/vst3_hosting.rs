@@ -17,12 +17,12 @@ use daw_plugin_host::{
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
-    ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_PARAM_ID, LATENCY_FRAMES, LEVEL_PARAM_ID,
-    LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE, LOG_SETUP_PROCESSING,
-    RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID, VST3_MONO_COPY_CLASS_ID,
-    VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
+    ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_DEFAULT, GAIN_PARAM_ID, LATENCY_FRAMES,
+    LEVEL_PARAM_ID, LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE,
+    LOG_SETUP_PROCESSING, RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID,
+    VST3_MONO_COPY_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
     VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID, VST3_RECONFIGURING_CLASS_ID,
-    VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
+    VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, VST3_START_REFUSED_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
 };
 use std::sync::{Arc, Mutex};
 use support::InstalledPlugin;
@@ -499,6 +499,38 @@ fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_b
 
     block(&mut wrapper, &[]);
     assert_eq!(gain(&wrapper), 0.25);
+}
+
+/// The idle flush enters the processing state for its one call and leaves it
+/// again, so the first real block starts processing normally rather than
+/// asking a plugin already in that state to enter it twice.
+#[test]
+fn an_idle_flush_leaves_the_processing_state_it_entered() {
+    let plugin = InstalledPlugin::create("vst3-idle-flush-stops");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+    let (left, right) = distinct_pair();
+
+    wrapper.set_parameter(LEVEL_PARAM_ID, 0.5);
+
+    let halved: Vec<f32> = left.iter().map(|sample| sample * 0.5).collect();
+    assert_eq!(
+        process(&mut wrapper, &left, &right),
+        (halved.clone(), halved),
+        "the first block is processed, at the level the flush delivered"
+    );
+}
+
+/// A plugin that declines to enter the processing state for the flush is not
+/// handed the flush's `process` call.
+#[test]
+fn an_idle_flush_the_plugin_declines_to_start_calls_no_process() {
+    let plugin = InstalledPlugin::create("vst3-idle-flush-declined");
+    let mut wrapper = plugin.vst3_class(&VST3_START_REFUSED_CLASS_ID, ProcessMode::Realtime);
+
+    wrapper.set_parameter(GAIN_PARAM_ID, 0.25);
+
+    let (component, _controller) = decode_vst3_container(&wrapper.get_state().unwrap()).unwrap();
+    assert_eq!(decode(&component).unwrap().gain, GAIN_DEFAULT);
 }
 
 /// A write whose flush the processor refuses stays queued for the processor's

@@ -5,7 +5,10 @@
 //! `IEditController` → connect them → `setupProcessing` → `setActive(true)` →
 //! `setProcessing(true)` on the processing thread → `IAudioProcessor::process`.
 //! The processing thread is the audio thread, or an offline instance's render
-//! thread.
+//! thread. Two control-path exceptions, each made under the exclusive access
+//! seam so no processing thread is inside the plugin: a forced stop before a
+//! lifecycle call, and the zero-sample parameter flush of an idle instance,
+//! which enters and leaves the processing state around its one `process`.
 //!
 //! RT-safety: every buffer, parameter queue, bus array and event the processing
 //! thread hands the plugin is allocated while activating — including the
@@ -1852,11 +1855,7 @@ impl Vst3Wrapper {
             return;
         }
 
-        if self.processor.is_none() {
-            self.hold_host_parameter_updates(parameter_updates);
-            Self::pass_through(inputs, outputs, num_samples);
-            return;
-        }
+        // An active instance always holds its processor: activation needs it.
         self.stage_parameter_updates(parameter_updates);
 
         // Borrowed, not cloned: cloning would put an `AddRef`/`Release` pair —
@@ -1864,7 +1863,7 @@ impl Vst3Wrapper {
         // the check and the `process` call below share one borrow, leaving no
         // second lookup that could panic on the audio thread.
         let Some(processor) = self.processor.as_ref() else {
-            // Checked above, and staging cannot clear it.
+            Self::pass_through(inputs, outputs, num_samples);
             return;
         };
 
@@ -2195,8 +2194,9 @@ impl HostedPluginRuntime for Vst3Wrapper {
         Arc::clone(&self.processing)
     }
 
-    /// **Audio thread only** — the caller's thread affinity is what makes
-    /// `setProcessing` legal.
+    /// **Audio thread only.** The processing thread is where the engine's
+    /// intent to start or stop lands; the control path enters the processing
+    /// state only around an idle flush (see the module note).
     ///
     /// A plugin that keeps refusing to start is asked a bounded number of times
     /// and then left alone. Retrying on every block spends an unbounded number of

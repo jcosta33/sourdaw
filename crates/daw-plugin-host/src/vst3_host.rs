@@ -220,31 +220,28 @@ impl ParameterGestureQueue {
 
     /// Copy every waiting value into `out`, in ascending parameter id, and
     /// leave each one waiting. Pair with [`settle`](Self::settle) once the
-    /// processor has taken them.
+    /// processor has taken them. **Control path only, under the exclusive
+    /// access seam.**
+    ///
+    /// Read without claiming the slot: a claimed slot is invisible to a
+    /// concurrent [`record`](Self::record) for the same parameter, which would
+    /// then open a second slot for it. With the audio thread excluded nothing
+    /// drains or re-labels a ready slot, so its id is stable while it is read,
+    /// and its value is whichever one the last overwrite left.
     fn peek(&self, out: &mut [HostParameterUpdate]) -> usize {
         let mut count = 0;
         for slot in &self.slots {
             if count >= out.len() {
                 break;
             }
-            if slot
-                .state
-                .compare_exchange(
-                    SLOT_READY,
-                    SLOT_WRITING,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_err()
-            {
+            if slot.state.load(Ordering::Acquire) != SLOT_READY {
                 continue;
             }
             out[count] = HostParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
-                value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
+                value: f64::from_bits(slot.value_bits.load(Ordering::Acquire)),
             };
             count += 1;
-            slot.state.store(SLOT_READY, Ordering::Release);
         }
         out[..count].sort_unstable_by_key(|update| update.param_id);
         count
