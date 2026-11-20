@@ -59,7 +59,7 @@ describe('ProjectName', () => {
 
         fireEvent.click(screen.getByText('My Song'));
 
-        const input = screen.getByDisplayValue('My Song') as HTMLInputElement;
+        const input = screen.getByRole('textbox', { name: 'Project name' });
         fireEvent.change(input, { target: { value: 'New Name' } });
         fireEvent.blur(input);
 

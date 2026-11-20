@@ -133,6 +133,18 @@ describe('LoopStationPanel', () => {
         mocks.transportState = { playheadPosition: 0, timeSignatureNumerator: 4 };
     });
 
+    it('waits for composition to finish before committing the loop length with Enter', () => {
+        renderPanel();
+        const input = screen.getByRole('spinbutton', { name: 'Fixed loop length in beats (0 = auto)' });
+        fireEvent.change(input, { target: { value: '8' } });
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(mocks.setFixedLoopLength).not.toHaveBeenCalled();
+        expect(input).toHaveValue(8);
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(mocks.setFixedLoopLength).toHaveBeenCalledExactlyOnceWith(8);
+    });
+
     it('should render without crashing', () => {
         const { container } = renderPanel();
         expect(container.firstChild).not.toBeNull();

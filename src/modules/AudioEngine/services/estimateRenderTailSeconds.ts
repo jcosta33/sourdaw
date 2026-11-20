@@ -62,7 +62,14 @@ export type TailDeclarationLike =
           automatableEnabledParameterId?: string;
           stateGuard?: { path: readonly string[]; equals: string | number };
       }
-    | { kind: 'parallel'; tails: readonly TailDeclarationLike[] };
+    | { kind: 'parallel'; tails: readonly TailDeclarationLike[] }
+    /**
+     * A tail that never ends — a hosted plugin reporting its format's infinite
+     * sentinel. It makes every route through it unbounded, so the estimate is
+     * the ceiling and says it was clamped, rather than a figure that reads as
+     * a measured decay.
+     */
+    | { kind: 'unbounded' };
 
 type DeviceLike = {
     type: string;
@@ -208,6 +215,10 @@ function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): num
         return longest;
     }
 
+    if (tail.kind === 'unbounded') {
+        return Number.POSITIVE_INFINITY;
+    }
+
     if (tail.kind === 'stateFeedbackLoop') {
         return evaluateStateFeedbackLoop(device, tail);
     }
@@ -299,6 +310,9 @@ function chainTailSeconds(track: TrackLike): number {
         }
 
         const tailSeconds = evaluateDeclaration(device, device.tail);
+        if (tailSeconds === Number.POSITIVE_INFINITY) {
+            return Number.POSITIVE_INFINITY;
+        }
         if (Number.isFinite(tailSeconds) && tailSeconds > 0) {
             chainTail += tailSeconds;
         }

@@ -1,4 +1,5 @@
 import { getHeldClips } from '#/modules/Arrangement/useCases';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     type ActionOf,
@@ -303,6 +304,25 @@ function importedStems(action: ActionOf<'importStemSet'>, scope: ProductionBrief
     );
 }
 
+function insertedAutomationLanePoints(
+    action: ActionOf<'insertAutomationLanePoints'>,
+    scope: ProductionBriefRangeScope
+): boolean {
+    const { capture } = action.payload;
+    const insertion: unknown = action.payload.insertion;
+    if (
+        isRecord(insertion) &&
+        insertion.kind === 'shape' &&
+        typeof insertion.startBeat === 'number' &&
+        typeof insertion.endBeat === 'number' &&
+        intervalOverlapsRange(insertion.startBeat, insertion.endBeat, scope)
+    ) {
+        return true;
+    }
+    const changedBeats = capture?.changedBeats;
+    return Array.isArray(changedBeats) && changedBeats.some((beat) => beat >= scope.startBeat && beat < scope.endBeat);
+}
+
 function insertedTime(action: ActionOf<'insertTime'>, scope: ProductionBriefRangeScope): boolean {
     return action.payload.atBeat < scope.endBeat;
 }
@@ -335,6 +355,7 @@ export const rangeOverlapRules = {
     trackContent,
     clipsShiftedByRippleDelete,
     importedStems,
+    insertedAutomationLanePoints,
     insertedTime,
     deletedTime,
 };

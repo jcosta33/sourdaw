@@ -31,8 +31,8 @@ test.describe('AiGeneration — pattern insert', () => {
         await expect(insertButton).toBeVisible({ timeout: 10_000 });
 
         // Before insert, no notification toast exists — the queue is empty and
-        // NotificationToast returns null (useNotificationQueue).
-        const toast = page.getByRole('alert');
+        // the visual toast is absent.
+        const toast = page.getByTestId('notification-toast');
         await expect(toast).toHaveCount(0);
 
         // "4-on-the-Floor" is a deterministic drum template — pure JS, no model.
@@ -41,11 +41,16 @@ test.describe('AiGeneration — pattern insert', () => {
         // The state change: handleInsertTemplate ends with
         // `notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success')`,
         // fired only after addClip + batchAddMidiNotes succeed. The toast now
-        // renders (role="alert") with the insert message — proving the full
+        // renders with the insert message — proving the full
         // generate→insert mutation ran, not mere panel existence.
-        const successToast = page.getByRole('alert');
+        const successToast = page.getByTestId('notification-toast');
         await expect(successToast).toBeVisible({ timeout: 10_000 });
         await expect(successToast).toContainText(/Inserted 4-on-the-Floor \(\d+ notes\)/i);
+
+        await expect(successToast.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+        await expect(page.getByRole('status').filter({ hasText: /Inserted 4-on-the-Floor/ })).toContainText(
+            /Inserted 4-on-the-Floor \(\d+ notes\)/i
+        );
 
         // The clip itself now exists on the timeline: its name is
         // `🎵 <template> (<key>)` and renders as a clip label. Asserting the

@@ -5,6 +5,10 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -184,7 +188,7 @@ describe('imported project names at the actual native menu boundary', () => {
         const project = await import('#/modules/Project/useCases');
         const { projectStore } = await import('#/modules/Project/stores');
         const command = await import('#/modules/Command/useCases');
-        const { undoHistoryStore } = await import('#/modules/Command/stores');
+        const { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } = await import('#/modules/Command/stores');
         const { leaveSession } = await import('#/modules/Collaboration/useCases');
         const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
         const { registerProjectLifecycle } = await import('#/app/registerProjectLifecycle');
@@ -192,9 +196,13 @@ describe('imported project names at the actual native menu boundary', () => {
         const { registerSupportingServicePorts } = await import('#/app/registerSupportingServicePorts');
         const { registerKernelPorts } = await import('#/app/registerKernelPorts');
         const { configureProjectOriginalMediaPort } = await import('#/app/configureProjectOriginalMediaPort');
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
         const { useProjectState } = await import('../useProjectState');
         const { useNativeApplicationMenu } = await import('../useNativeApplicationMenu');
 
+        installNativePreparationWorker();
+        clearHandlerRegistry();
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         crdt.registerCrdtStorageRuntime();
         registerProjectSlotProjections();
         registerProjectLifecycle();
@@ -228,6 +236,8 @@ describe('imported project names at the actual native menu boundary', () => {
             stopDirtyTracking();
             stopHistory();
             project.projectOriginalMediaPort.configure(null);
+            clearHandlerRegistry();
+            await settleNativePreparationWorkers();
         });
         crdt.initBranchState();
         await crdt.whenBranchStateSettled();

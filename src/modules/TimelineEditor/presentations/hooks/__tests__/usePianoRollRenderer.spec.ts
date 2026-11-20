@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
+import { ROW_HEIGHT, getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -111,6 +111,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     clipId: 'clip-1',
     trackId: 'track-1',
     beatWidth: BEAT_W,
+    rowHeight: ROW_HEIGHT,
     gridSnap: 1,
     scaleType: 'chromatic',
     scaleRoot: 0,
@@ -122,6 +123,7 @@ const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     showGhostNotes: false,
     drawPreviewRef: { current: null },
     rubberBandRef: { current: null },
+    lassoPathRef: { current: null },
     dragPreviewRef: { current: null },
     ...overrides,
 });
@@ -158,7 +160,57 @@ describe('usePianoRollRenderer', () => {
         expect(canvas.width).toBe(VIEWPORT_W);
         expect(canvas.height).toBe(2070);
         expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
-        expect(canvas.style.height).toBe('2070px');
+        expect(canvas.style.height).toBe('');
+    });
+
+    it('paints the live lasso in the scrolled note frame until the path is cleared', () => {
+        const path = [{ x: 100, y: 30 }];
+        const deps = buildDeps({ lassoPathRef: { current: path } });
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const lineTo = vi.spyOn(ctx, 'lineTo');
+        const setTransform = vi.spyOn(ctx, 'setTransform');
+        const setLineDash = vi.spyOn(ctx, 'setLineDash');
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+        vi.clearAllMocks();
+
+        path.push({ x: 190, y: 30 });
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(190, 30);
+        expect(setLineDash).toHaveBeenCalledWith([4, 3]);
+        vi.clearAllMocks();
+
+        runTick();
+        expect(drawImage).not.toHaveBeenCalled();
+
+        deps.scrollRef.current!.scrollLeft = 48;
+        runTick();
+        expect(setTransform).toHaveBeenLastCalledWith(1, 0, 0, 1, -48, 0);
+        expect(lineTo).toHaveBeenCalledWith(190, 30);
+        vi.clearAllMocks();
+
+        path.push({ x: 188, y: 81 });
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(188, 81);
+        vi.clearAllMocks();
+
+        deps.lassoPathRef.current = [
+            { x: 110, y: 30 },
+            { x: 176, y: 28 },
+            { x: 182, y: 77 },
+        ];
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(lineTo).toHaveBeenCalledWith(182, 77);
+        expect(lineTo).not.toHaveBeenCalledWith(188, 81);
+        vi.clearAllMocks();
+
+        deps.lassoPathRef.current = null;
+        runTick();
+        expect(drawImage).toHaveBeenCalledOnce();
+        expect(setLineDash).not.toHaveBeenCalledWith([4, 3]);
     });
 
     // Issue #2299. A backing store sized to the whole arrangement made the
@@ -215,12 +267,12 @@ describe('usePianoRollRenderer', () => {
         const setTransform = vi.spyOn(ctx, 'setTransform');
         const drawImage = vi.spyOn(ctx, 'drawImage');
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 35, duration: 2, velocity: 127 }],
             },
         };
-        const deps = buildDeps({ scrollRef: scrollContainer(300) });
+        const deps = buildDeps({ notes: fixture.notesByClipId['clip-1'], scrollRef: scrollContainer(300) });
         renderHook(() => usePianoRollRenderer(deps));
 
         runTick();
@@ -260,7 +312,7 @@ describe('usePianoRollRenderer', () => {
     // work unless the slice is culled.
     it('skips notes outside the drawn slice', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-1': [
                     { id: 'near', pitch: 60, startBeat: 35, duration: 2, velocity: 127 },
@@ -268,13 +320,39 @@ describe('usePianoRollRenderer', () => {
                 ],
             },
         };
-        const deps = buildDeps({ scrollRef: scrollContainer(300) });
+        const deps = buildDeps({ notes: fixture.notesByClipId['clip-1'], scrollRef: scrollContainer(300) });
         renderHook(() => usePianoRollRenderer(deps));
 
         runTick();
 
         expect(roundRect).toHaveBeenCalledWith(351, rowY(60) + 1, 18, 14, 2);
         expect(roundRect).not.toHaveBeenCalledWith(30_001, rowY(60) + 1, 18, 14, 2);
+    });
+
+    it('paints the visible overhang of short primary and opened notes while culling offscreen notes', () => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const primary = [
+            { id: 'primary', pitch: 60, startBeat: 30, duration: 0.125, velocity: 100 },
+            { id: 'offscreen', pitch: 61, startBeat: 29, duration: 0.125, velocity: 100 },
+        ];
+        const secondary = [{ id: 'secondary', pitch: 65, startBeat: 30, duration: 0.125, velocity: 100 }];
+        mocks.trackState = {
+            tracks: [
+                { id: 'track-1', kind: 'midi', color: 'blue', clips: [{ id: 'clip-2', type: 'midi', color: 'red' }] },
+            ],
+        };
+        const deps = buildDeps({
+            notes: primary,
+            openedClipIds: ['clip-2'],
+            openedClipNotes: { 'clip-2': secondary },
+            scrollRef: scrollContainer(303),
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+
+        expect(roundRect).toHaveBeenCalledWith(301, rowY(60) + 1, 4, 14, 2);
+        expect(roundRect).toHaveBeenCalledWith(301, rowY(65) + 1, 4, 14, 2);
+        expect(roundRect).not.toHaveBeenCalledWith(291, rowY(61) + 1, 4, 14, 2);
     });
 
     // A viewport-relative canvas that does not treat the scroll offset as a
@@ -372,14 +450,110 @@ describe('usePianoRollRenderer', () => {
         expect(drawImage).toHaveBeenCalledTimes(2);
     });
 
+    it('paints and invalidates each projected editable layer independently of raw MIDI', () => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const strokes: Array<{ rect: unknown[]; width: number }> = [];
+        vi.spyOn(ctx, 'stroke').mockImplementation(() => {
+            strokes.push({ rect: roundRect.mock.lastCall ?? [], width: ctx.lineWidth });
+        });
+        const primary = [{ id: 'primary', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }];
+        const secondary = [
+            { id: 'secondary', pitch: 65, startBeat: 4, duration: 2, velocity: 100 },
+            { id: 'unselected', pitch: 67, startBeat: 12, duration: 2, velocity: 100 },
+        ];
+        mocks.midiState = {
+            notesByClipId: {
+                'clip-1': [{ id: 'raw-primary', pitch: 50, startBeat: 9, duration: 1, velocity: 100 }],
+                'clip-2': [{ id: 'raw-secondary', pitch: 51, startBeat: 10, duration: 1, velocity: 100 }],
+            },
+        };
+        mocks.trackState = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'midi',
+                    color: 'blue',
+                    clips: [
+                        { id: 'clip-1', type: 'midi', color: 'blue' },
+                        { id: 'clip-2', type: 'midi', color: 'red' },
+                    ],
+                },
+            ],
+        };
+        let deps = {
+            ...buildDeps({
+                notes: primary,
+                openedClipIds: ['clip-1', 'clip-2'],
+                selectedNoteIds: new Set(['primary', 'secondary']),
+            }),
+            openedClipNotes: { 'clip-2': secondary },
+        };
+        const { rerender } = renderHook(() => usePianoRollRenderer(deps));
+        const rect = (beat: number, pitch: number): number[] => [beat * 10 + 1, rowY(pitch) + 1, 18, 14, 2];
+        runTick();
+        expect(roundRect).toHaveBeenCalledWith(...rect(2, 60));
+        expect(roundRect).toHaveBeenCalledWith(...rect(4, 65));
+        expect(strokes).toContainEqual({ rect: rect(2, 60), width: 1 });
+        expect(strokes).toContainEqual({ rect: rect(4, 65), width: 1 });
+        expect(strokes).toContainEqual({ rect: rect(12, 67), width: 0.5 });
+        expect(roundRect).not.toHaveBeenCalledWith(91, rowY(50) + 1, 8, 14, 2);
+        expect(roundRect).not.toHaveBeenCalledWith(101, rowY(51) + 1, 8, 14, 2);
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(1);
+
+        roundRect.mockClear();
+        deps = { ...deps, notes: [{ ...primary[0]!, startBeat: 6, pitch: 61 }] };
+        rerender();
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(2);
+        expect(roundRect).toHaveBeenCalledWith(...rect(6, 61));
+        expect(roundRect).not.toHaveBeenCalledWith(...rect(2, 60));
+        roundRect.mockClear();
+        deps = {
+            ...deps,
+            openedClipNotes: { 'clip-2': [{ ...secondary[0]!, startBeat: 8, pitch: 66 }, secondary[1]!] },
+        };
+        rerender();
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(3);
+        expect(roundRect).toHaveBeenCalledWith(...rect(8, 66));
+        expect(roundRect).not.toHaveBeenCalledWith(...rect(4, 65));
+        roundRect.mockClear();
+        deps = { ...deps, openedClipNotes: { 'clip-2': [] } };
+        rerender();
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(4);
+        expect(roundRect).not.toHaveBeenCalledWith(...rect(8, 66));
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(4);
+        deps = { ...deps, openedClipIds: ['clip-1'], openedClipNotes: { 'clip-2': [] } };
+        rerender();
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(5);
+        expect(roundRect).not.toHaveBeenCalledWith(...rect(8, 66));
+    });
+
+    it.each([8, 32])('draws notes and resizes the backing store at row height %i', (height) => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        const deps = buildDeps({
+            rowHeight: height,
+            notes: [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+        runTick();
+        expect(deps.canvasRef.current!.height).toBe(22 + 128 * height);
+        expect(roundRect).toHaveBeenCalledWith(21, 67 * height + 1, 18, height - 2, 2);
+    });
+
     it('draws each active note of the clip at its beat/pitch cell', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
             },
         };
-        const deps = buildDeps();
+        const deps = buildDeps({ notes: fixture.notesByClipId['clip-1'] });
         renderHook(() => usePianoRollRenderer(deps));
 
         runTick();
@@ -390,12 +564,13 @@ describe('usePianoRollRenderer', () => {
 
     it('renders the drag preview offset instead of the committed position during a move', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
             },
         };
         const deps = buildDeps({
+            notes: fixture.notesByClipId['clip-1'],
             dragPreviewRef: { current: { noteIds: new Set(['n1']), beatDelta: 1, pitchDelta: 2 } },
         });
         renderHook(() => usePianoRollRenderer(deps));
@@ -409,12 +584,13 @@ describe('usePianoRollRenderer', () => {
 
     it('applies a duration override during a right-edge resize preview', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 2, duration: 2, velocity: 127 }],
             },
         };
         const deps = buildDeps({
+            notes: fixture.notesByClipId['clip-1'],
             dragPreviewRef: {
                 current: {
                     noteIds: new Set(['n1']),
@@ -515,7 +691,7 @@ describe('usePianoRollRenderer', () => {
         it('paints under the notes of other open clips, which play by their own span', () => {
             const fillRect = vi.spyOn(ctx, 'fillRect');
             const roundRect = vi.spyOn(ctx, 'roundRect');
-            mocks.midiState = {
+            const fixture = {
                 notesByClipId: {
                     'clip-2': [{ id: 'o1', pitch: 65, startBeat: 20, duration: 1, velocity: 100 }],
                 },
@@ -533,7 +709,11 @@ describe('usePianoRollRenderer', () => {
                     },
                 ],
             };
-            renderHook(() => usePianoRollRenderer(buildDeps({ openedClipIds: ['clip-1', 'clip-2'] })));
+            renderHook(() =>
+                usePianoRollRenderer(
+                    buildDeps({ openedClipIds: ['clip-1', 'clip-2'], openedClipNotes: fixture.notesByClipId })
+                )
+            );
 
             runTick();
 
@@ -631,7 +811,7 @@ describe('usePianoRollRenderer', () => {
 
     it('draws notes of other simultaneously opened clips', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-2': [{ id: 'o1', pitch: 65, startBeat: 4, duration: 2, velocity: 100 }],
             },
@@ -646,7 +826,7 @@ describe('usePianoRollRenderer', () => {
                 },
             ],
         };
-        const deps = buildDeps({ openedClipIds: ['clip-2'] });
+        const deps = buildDeps({ openedClipIds: ['clip-2'], openedClipNotes: fixture.notesByClipId });
         renderHook(() => usePianoRollRenderer(deps));
 
         runTick();
@@ -656,7 +836,7 @@ describe('usePianoRollRenderer', () => {
 
     it('applies drag preview offsets to secondary opened clip notes during drag', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
-        mocks.midiState = {
+        const fixture = {
             notesByClipId: {
                 'clip-2': [{ id: 'o1', pitch: 65, startBeat: 4, duration: 2, velocity: 100 }],
             },
@@ -673,6 +853,7 @@ describe('usePianoRollRenderer', () => {
         };
         const deps = buildDeps({
             openedClipIds: ['clip-2'],
+            openedClipNotes: fixture.notesByClipId,
             dragPreviewRef: {
                 current: {
                     noteIds: new Set(['o1']),

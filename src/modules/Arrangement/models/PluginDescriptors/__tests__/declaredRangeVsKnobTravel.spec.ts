@@ -247,6 +247,9 @@ function readAttribute(tag: string, name: string): string | null {
 // ── Imported references ─────────────────────────────────────────────────────
 
 type ImportedReferences = {
+    readonly importedFilePath: (name: string) => string | null;
+    /** The id named by an imported string literal constant. */
+    readonly string: (name: string) => string | null;
     /** The id a `TABLE.member` reference names, when TABLE is an imported object of quoted ids. */
     readonly tableMember: (base: string, member: string) => string | null;
     /** The number an imported constant — or one member of an imported constant object — resolves to. */
@@ -256,9 +259,8 @@ type ImportedReferences = {
 /**
  * Follows one panel's imported references to the values their files author.
  *
- * Resolves only the campaign's authoring shapes: an `export const` whose value
- * is a numeric literal, or an object literal whose member is a numeric or
- * single-quoted string literal. Anything else — a computed value, a re-export,
+ * Resolves only literal `export const` values: a number, a quoted id, or an
+ * object with literal members. Anything else — a computed value, a re-export,
  * a function — stays unresolved, and the knob carrying it falls into
  * `unboundKnobs`/`noKnob` where the gap is counted rather than guessed at. That
  * refusal is the same discipline the Rust leg applies to named-constant bounds:
@@ -350,7 +352,15 @@ function readImportedReferences(importingFile: string): ImportedReferences {
         return hit === null ? null : Number(hit[1]!.replaceAll('_', ''));
     };
 
-    return { tableMember, number };
+    const string = (name: string): string | null => {
+        const literal = exportedLiteral(name);
+        if (literal === null || !('scalar' in literal)) {
+            return null;
+        }
+        return /^(['"])([\w-]+)\1$/.exec(literal.scalar)?.[2] ?? null;
+    };
+
+    return { importedFilePath, string, tableMember, number };
 }
 
 /** One knob bound: a numeric literal, or an imported constant the panel references. */
@@ -551,7 +561,7 @@ type PanelBinding = {
     readonly translation:
         | { readonly kind: 'identity' }
         | { readonly kind: 'table'; readonly source: string }
-        | { readonly kind: 'switch'; readonly source: string };
+        | { readonly kind: 'proof'; readonly source: string; readonly panel: string };
 };
 
 const PANEL_BINDINGS: Readonly<Record<string, PanelBinding>> = {
@@ -599,11 +609,12 @@ const PANEL_BINDINGS: Readonly<Record<string, PanelBinding>> = {
     proof: {
         presentationRoot: 'src/modules/Proof/presentations',
         // Proof's descriptor ids are the Rust snake_case ones; its panel writes
-        // camelCase patch keys and `setProofParamWithPatch` translates them on
-        // the way to the engine. Reading that switch is the join.
+        // camelCase patch keys. The general bridge translates its scalars in a
+        // switch, and the ceiling gesture names its parameter in the action.
         translation: {
-            kind: 'switch',
+            kind: 'proof',
             source: 'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
+            panel: 'src/modules/Proof/presentations/views/ProofPanel.tsx',
         },
     },
     yeast: {
@@ -631,19 +642,40 @@ function readTranslationTable(source: string): ReadonlyMap<string, string> {
     return new Map([...block.matchAll(entry)].map((match) => [match[1]!, match[2]!]));
 }
 
-/**
- * A `case 'panelKey': return { name: 'engine_key', … }` switch.
- *
- * Proof's panel speaks camelCase and its descriptor speaks the Rust snake_case;
- * the translation is a switch rather than an object literal
- * (`Proof/useCases/proofParamBridge/setProofParamWithPatch.ts:276-300`), and it
- * is the same production code the panel's writes actually go through. Reading it
- * is what turns Proof from three uncovered parameters into three three-way rows.
- */
-function readTranslationSwitch(source: string): ReadonlyMap<string, string> {
+/** Read the general Proof bridge's `case 'panelKey': return { name: 'engine_key', … }` arms. */
+function readTranslationSwitch(source: string): Map<string, string> {
     const text = stripComments(readFileSync(join(REPO_ROOT, source), 'utf8')).replaceAll(/\s+/g, ' ');
     const arm = /case '([\w-]+)': return \{ name: '([\w-]+)'/g;
     return new Map([...text.matchAll(arm)].map((match) => [match[1]!, match[2]!]));
+}
+
+/** Follow the panel's dedicated ceiling branch to the action's imported parameter id. */
+function readProofCeilingTranslation(panel: string): { key: string; parameterId: string } | null {
+    const panelFile = join(REPO_ROOT, panel);
+    const text = stripComments(readFileSync(panelFile, 'utf8'));
+    const branch = /if\s*\(edit\.key\s*===\s*'([\w-]+)'\)\s*\{/.exec(text);
+    const key = branch?.[1];
+    if (!branch || !key) {
+        return null;
+    }
+    const body = readBraced(text, branch.index + branch[0].length - 1);
+    if (!/\bproofLimiterCeiling\.change\s*\(/.test(body)) {
+        return null;
+    }
+    const gestureFile = readImportedReferences(panelFile).importedFilePath('proofLimiterCeiling');
+    if (gestureFile === null) {
+        return null;
+    }
+    const gesture = stripComments(readFileSync(gestureFile, 'utf8')).replaceAll(/\s+/g, ' ');
+    const action = /\bexecuteUserAppAction\( \{ type: 'setDeviceParameter', payload: \{ deviceId, paramId: (\w+),/.exec(
+        gesture
+    );
+    const parameter = action?.[1];
+    if (!parameter) {
+        return null;
+    }
+    const parameterId = readImportedReferences(gestureFile).string(parameter);
+    return parameterId === null ? null : { key, parameterId };
 }
 
 // ── Leg 2: knob travel ─────────────────────────────────────────────────────
@@ -700,8 +732,12 @@ function buildPanelTranslator(binding: PanelBinding): (id: string) => string {
     if (binding.translation.kind === 'identity') {
         return (id) => id;
     }
-    if (binding.translation.kind === 'switch') {
+    if (binding.translation.kind === 'proof') {
         const table = readTranslationSwitch(binding.translation.source);
+        const ceiling = readProofCeilingTranslation(binding.translation.panel);
+        if (ceiling) {
+            table.set(ceiling.key, ceiling.parameterId);
+        }
         return (id) => table.get(id) ?? id;
     }
     const table = readTranslationTable(binding.translation.source);
@@ -2142,8 +2178,8 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             toaster: 4,
             // `setLevainParamWithAudio(deviceId, 'masterGain', value)`, same reason.
             levain: 1,
-            // Reached only through the `setProofParamWithPatch` switch, which
-            // translates the panel's camelCase to the descriptor's snake_case.
+            // The patch switch translates the gains. The ceiling gesture's
+            // action supplies its descriptor id separately.
             proof: 3,
 
             // ── The zeros. Each is a real gap with a real cause. ──────────────
@@ -2628,11 +2664,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
                 'powerAmpBias',
                 'tubeAge',
             ],
-            // All three covered, through the `setProofParamWithPatch` switch.
-            // **The old comment here was also wrong** — it said Proof's sections
-            // "bind through a local `key` variable rather than a literal". They
-            // bind through `onPatchChange({ key: 'limCeiling', … })`, a literal
-            // the scanner was mis-reading as the id `"key"`.
+            // The scalar switch and the ceiling action cover all three ids.
             proof: [],
             // #4650 removed the four `arp_*` parameters: nothing read them, so
             // the descriptor now declares nothing and the empty list is the

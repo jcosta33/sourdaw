@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+import { writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
-import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
+import { toasterStore, defaultToasterState, registerToasterDevice } from '../../stores/toasterStore';
 import { disposeEveryToasterDevice } from '../disposeEveryToasterDevice';
 import { disposeToasterDevice } from '../disposeToasterDevice';
 import { enter16Levels } from '../enter16Levels';
 import { is16LevelsActive } from '../is16LevelsActive';
 import { isNoteRepeating } from '../isNoteRepeating';
+import { resetToasterForProject } from '../resetToasterForProject';
 import { startNoteRepeat } from '../startNoteRepeat';
 import { startSequencer } from '../startSequencer';
+import { setToasterKitParam } from '../toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../toasterParamBridge/setToasterPadParam';
 import { trigger16Level } from '../trigger16Level';
 import { triggerToasterPad } from '../triggerPad';
@@ -20,6 +23,7 @@ import { triggerToasterPad } from '../triggerPad';
 // the rAF pad-param flush has a real strip to target — otherwise the flush
 // short-circuits before scheduling a frame and the cancellation can't be proven.
 const setPadParam = vi.fn();
+const setSuccessorParam = vi.fn();
 const scheduleHit = vi.fn();
 const allNotesOff = vi.fn();
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -35,10 +39,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         cancelScheduled: vi.fn(),
         allNotesOff,
     })),
-    getTrackStrip: vi.fn(() => ({
+    getTrackStrip: vi.fn((trackId: string) => ({
         deviceNodes: [DEVICE, PENDING_ONLY_DEVICE].map((deviceId) => ({
             deviceId,
-            toasterControls: { ready: true, setPadParam },
+            toasterControls: {
+                ready: trackId !== LOADING_TRACK,
+                setPadParam,
+                setParam: trackId === SUCCESSOR_TRACK ? setSuccessorParam : vi.fn(),
+            },
         })),
     })),
     applyNoteExpression: vi.fn(),
@@ -64,20 +72,22 @@ vi.mock('../triggerPad', () => ({
 }));
 
 const DEVICE = 'dispose-device';
-/** A device whose only trace in the Toaster module is a queued pad flush. */
+/** A device known to Toaster only through a queued parameter write. */
 const PENDING_ONLY_DEVICE = 'pending-only-device';
+const LOADING_TRACK = 'loading-track';
+const SUCCESSOR_TRACK = 'successor-track';
 
 /**
  * Pad writes resolve their target through the Arrangement track store, so the
  * devices must sit on an eligible track for a flush to be queued at all.
  */
-function placeDevicesOnTrack(): void {
+function placeDevicesOnTrack(trackId = 'track-1'): void {
     trackStore.set({
         ...defaultTrackState,
         tracks: sanitizeTrackSnapshot({
             tracks: [
                 {
-                    id: 'track-1',
+                    id: trackId,
                     name: 'Drums',
                     kind: 'midi',
                     devices: [DEVICE, PENDING_ONLY_DEVICE].map((id) => ({
@@ -202,6 +212,24 @@ describe('disposeToasterDevice', () => {
         expect(triggerToasterPad).not.toHaveBeenCalled();
     });
 
+    it('cancels only the disposed device’s queued kit write', () => {
+        placeDevicesOnTrack(SUCCESSOR_TRACK);
+        registerToasterDevice(DEVICE);
+        registerToasterDevice(PENDING_ONLY_DEVICE);
+        setToasterKitParam(PENDING_ONLY_DEVICE, 'masterGain', 0.75);
+        setToasterKitParam(DEVICE, 'masterGain', 0.123);
+
+        disposeToasterDevice(DEVICE);
+        vi.advanceTimersToNextFrame();
+
+        expect(toasterStore.value?.[DEVICE]).toBeUndefined();
+        expect(toasterStore.value?.[PENDING_ONLY_DEVICE]?.kit.masterGain).toBe(0.75);
+        expect(setSuccessorParam).toHaveBeenCalledExactlyOnceWith('master_gain', 0.75);
+        expect(writeNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith(SUCCESSOR_TRACK, PENDING_ONLY_DEVICE, {
+            master_gain: 0.75,
+        });
+    });
+
     // Bug #3: a pad-param flush already queued on rAF could fire post-destroy,
     // writing to a detached worklet. Teardown must cancel the queued frame.
     it('cancels a queued rAF pad-param flush so it never reaches the worklet', () => {
@@ -267,5 +295,28 @@ describe('disposeEveryToasterDevice', () => {
 
         expect(setPadParam).not.toHaveBeenCalled();
         expect(cancelFrame).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the outgoing loading device’s Master edit away from a same-ID successor', () => {
+        placeDevicesOnTrack(LOADING_TRACK);
+        setToasterKitParam(PENDING_ONLY_DEVICE, 'masterGain', 0.123);
+        expect(toasterStore.value).toEqual({});
+
+        resetToasterForProject();
+        placeDevicesOnTrack(SUCCESSOR_TRACK);
+        registerToasterDevice(PENDING_ONLY_DEVICE);
+        expect(toasterStore.value?.[PENDING_ONLY_DEVICE]?.kit.masterGain).toBe(defaultToasterState.kit.masterGain);
+        vi.advanceTimersToNextFrame();
+
+        expect(setSuccessorParam.mock.calls).toEqual([]);
+        expect(writeNativeBuiltinParameters).not.toHaveBeenCalled();
+
+        setToasterKitParam(PENDING_ONLY_DEVICE, 'masterGain', 0.75);
+        vi.advanceTimersToNextFrame();
+        expect(toasterStore.value?.[PENDING_ONLY_DEVICE]?.kit.masterGain).toBe(0.75);
+        expect(setSuccessorParam).toHaveBeenCalledExactlyOnceWith('master_gain', 0.75);
+        expect(writeNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith(SUCCESSOR_TRACK, PENDING_ONLY_DEVICE, {
+            master_gain: 0.75,
+        });
     });
 });

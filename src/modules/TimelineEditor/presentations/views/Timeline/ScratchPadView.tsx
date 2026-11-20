@@ -260,6 +260,9 @@ export const ScratchPadView = ({
                                                 }
                                                 onBlur={commitRename}
                                                 onKeyDown={(event) => {
+                                                    if (event.nativeEvent.isComposing) {
+                                                        return;
+                                                    }
                                                     if (event.key === 'Enter') {
                                                         commitRename();
                                                     }

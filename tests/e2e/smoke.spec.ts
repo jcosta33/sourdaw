@@ -65,6 +65,7 @@ async function blockExternalRequests(page: Page): Promise<() => Promise<void>> {
         await webSocket.close({ code: 1008, reason: 'External network blocked' });
     });
     return async () => {
+        // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe the entire offline idle window for stray network activity.
         await page.waitForTimeout(OFFLINE_IDLE_WINDOW_MS);
         expect(unexpectedEndpoints, 'offline smoke blocked external runtime endpoints').toEqual({
             requests: [],
@@ -673,6 +674,7 @@ test.describe('Offline project smoke', () => {
         await expect(play).toHaveAccessibleName('Play');
         await expect.poll(playheadPosition).toBe(initialPosition);
         const stoppedPosition = await playheadPosition();
+        // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe that the stopped playhead stays put over time.
         await page.waitForTimeout(250);
         await expect(playheadPosition()).resolves.toBe(stoppedPosition);
         await assertOffline();

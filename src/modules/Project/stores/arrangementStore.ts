@@ -932,13 +932,22 @@ export function discard_arrangements_raw_keys(raw: unknown): unknown {
     return { ...raw, arrangements: raw.arrangements.map(discard_snapshot_raw_keys) };
 }
 
+const arrangementStorage = createAutomergeStorage<ArrangementStoreState>(DOC_PREFIX_ROOT, 'arrangements', {
+    discardsRaw: discard_arrangements_raw_keys,
+    // Audit CC-2 — projection default for a document without this slot, so
+    // hydrate never writes the previous project's cache back into truth.
+    hydrateMissing: () => defaultArrangementStoreState,
+});
+
+export function prepareArrangementStoreState(scope: object, value: ArrangementStoreState) {
+    return arrangementStorage.prepareSet?.(scope, value, (prepared) => arrangementStore.set(prepared), {
+        preparationPolicy: 'bounded-native-sequence-v1',
+        ownedPath: ['arrangements'],
+    });
+}
+
 export const arrangementStore = createStore<ArrangementStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements', {
-        discardsRaw: discard_arrangements_raw_keys,
-        // Audit CC-2 — projection default for a document without this slot, so
-        // hydrate never writes the previous project's cache back into truth.
-        hydrateMissing: () => defaultArrangementStoreState,
-    }),
+    storage: arrangementStorage,
     initialData: defaultArrangementStoreState,
     sanitize: sanitize_arrangement_store_state,
 });
