@@ -478,6 +478,37 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
     });
 
     describe('resize handles', () => {
+        it.each(['clip-1', 'clip-2'])(
+            'moves and resizes a short expressive note in %s through undo and redo',
+            async (owner) => {
+                const note = { ...expressiveNote, duration: 0.375 };
+                const peer = { ...expressiveNote, id: 'peer', pitch: 65, startBeat: 4 };
+                seedStore({
+                    'clip-1': owner === 'clip-1' ? [note, peer] : [peer],
+                    'clip-2': owner === 'clip-2' ? [note] : [],
+                });
+                const { canvas } = renderRoll({ gridSnap: 0.25, openedClipIds: ['clip-2'] });
+                const expected = (edited: typeof note) => (owner === 'clip-1' ? [edited, peer] : [edited]);
+                const gestures = [
+                    { x: 87, dx: 10, dy: -16, edited: { ...note, startBeat: 2.25, pitch: 61 } },
+                    { x: 81.5, dx: -10, dy: 0, edited: { ...note, startBeat: 1.75, duration: 0.625 } },
+                    { x: 93.5, dx: 10, dy: 0, edited: { ...note, duration: 0.625 } },
+                ];
+                for (const { x, dx, dy, edited } of gestures) {
+                    fireEvent.mouseDown(canvas, { clientX: x, clientY: yForPitch(60) });
+                    fireEvent.mouseMove(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
+                    fireEvent.mouseUp(canvas, { clientX: x + dx, clientY: yForPitch(60) + dy });
+                    expect(getNotesForClip(owner)).toEqual(expected(edited));
+                    if (owner === 'clip-2') expect(getNotesForClip('clip-1')).toEqual([peer]);
+                    await undoSync();
+                    expect(getNotesForClip(owner)).toEqual(expected(note));
+                    await redoSync();
+                    expect(getNotesForClip(owner)).toEqual(expected(edited));
+                    await undoSync();
+                }
+            }
+        );
+
         it('left-edge resize undoes and redoes in place, keeping the id and every expression field', async () => {
             const { canvas } = renderRoll();
 

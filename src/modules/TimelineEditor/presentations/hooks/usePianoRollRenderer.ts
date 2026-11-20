@@ -66,6 +66,8 @@ import {
     NOTE_NAMES,
     ROW_HEIGHT,
     RULER_HEIGHT,
+    NOTE_INSET_X,
+    getPaintedNoteWidth,
     getScaleIntervals,
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
@@ -734,7 +736,7 @@ function drawOpenedClipNotes(
             const strokeAlpha = isSelected ? 0.9 : 0.65;
             ctx.fillStyle = colorWithAlpha(clipColor, fillAlpha);
             ctx.beginPath();
-            ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+            ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
             ctx.fill();
             ctx.strokeStyle = colorWithAlpha(clipColor, strokeAlpha);
             ctx.lineWidth = isSelected ? 1 : 0.5;
@@ -812,7 +814,7 @@ function drawActiveNotes(
 
         ctx.fillStyle = colorWithAlpha(noteColor, alpha);
         ctx.beginPath();
-        ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+        ctx.roundRect(x + NOTE_INSET_X, y + 1, getPaintedNoteWidth(w), ROW_HEIGHT - 2, 2);
         ctx.fill();
 
         if (isSelected) {
