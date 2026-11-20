@@ -11,6 +11,7 @@ import {
     type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
+import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
@@ -23,7 +24,7 @@ import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
-import { chooseVibeBatchValues, type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
+import { chooseVibeBatchValues } from '../vibeRun/chooseVibeBatchValues';
 import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
 
 import { describeAppliedBatches } from './describeAppliedBatches';

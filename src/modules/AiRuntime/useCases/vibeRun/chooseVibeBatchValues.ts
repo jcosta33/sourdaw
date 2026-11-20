@@ -16,8 +16,6 @@ import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
 import { isHostedValueChoiceChain } from './isHostedValueChoiceChain';
 import { readVibeBatchValueReply } from './readVibeBatchValueReply';
 
-export type { VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
-
 export type VibeBatchValueChoiceOutcome = VibeBatchValueChoice | { readonly source: 'stopped' };
 
 /** One correction after a refused reply, as the planner's own bounded correction allows. */

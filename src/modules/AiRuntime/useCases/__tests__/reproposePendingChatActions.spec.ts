@@ -10,6 +10,7 @@ import {
     proposePendingActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { type persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => ({
     compileApproval: vi.fn(),
     compilePartial: vi.fn(),
     getRun: vi.fn(),
-    persistConfirmation: vi.fn(),
+    persistConfirmation: vi.fn<typeof persistPromptActionConfirmation>(),
     preview: vi.fn(),
     recordBatch: vi.fn(),
     refresh: vi.fn(),
@@ -441,8 +442,11 @@ describe('reproposePendingChatActions', () => {
             status: 'reproposed',
         });
 
-        const [persisted] = mocks.persistConfirmation.mock.calls.at(-1) ?? [];
-        const content = (persisted as { content?: string } | undefined)?.content ?? '';
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        if (persisted === undefined) {
+            throw new TypeError('Expected the re-preview to persist its replacement card');
+        }
+        const { content } = persisted;
         expect(content.startsWith('This prompt requires confirmation before execution.')).toBe(true);
         expect(content.match(/^- \*\*setTrackGain\*\*: /gmu)).toHaveLength(3);
         expect(content.endsWith('\n\nRe-previewed against the current project.')).toBe(true);

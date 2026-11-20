@@ -4,12 +4,9 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { containsSampleData } from '../../__tests__/hostedSampleDataDetector';
 import {
-    BRIEF_ROUTE,
     DRUMS_ID,
     PROMPT,
     VOCAL_ID,
@@ -25,19 +22,10 @@ import {
     type RenderInput,
 } from '../../__tests__/vibeRunWorkflowFixture';
 import { type ToolCallResult } from '../../models/ToolCallResult';
-import { type ToolSchema } from '../../models/ToolDefinitions';
-import { encodeWireToolName } from '../../repositories/cloudLlm/cloudInference/encodeWireToolName';
 import { chatStore } from '../../stores/chatStore';
-import {
-    getPendingActionConfirmation,
-    pendingActionConfirmationStore,
-} from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
-import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
-import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { skipPendingVibeBatch } from '../skipPendingVibeBatch';
 import {
@@ -47,6 +35,18 @@ import {
 } from '../vibeRun/buildVibeBatchValueRequest';
 import { readVibeBatchValueReply } from '../vibeRun/readVibeBatchValueReply';
 
+import {
+    DRUMS_CHOICE,
+    armValueWire,
+    choose,
+    drumsChoice,
+    isRecord,
+    parameterWrites,
+    readUserJson,
+    scriptBriefRoute,
+    type Reply,
+    type WireAnswer,
+} from './hostedValueChoiceWire';
 import { landProjectEdit } from './landProjectEdit';
 import { metricGoalAudioBuffer } from './metricGoalWorkflowFixture';
 
@@ -66,8 +66,8 @@ const planning = vi.hoisted(() => ({
     original: null as null | typeof import('../llmOrchestration/inference').generateToolPlanningOutcome,
 }));
 const wire = vi.hoisted(() => ({
-    requestAnthropic: vi.fn(),
-    requestOpenAi: vi.fn(),
+    requestAnthropic: vi.fn<WireAnswer>(),
+    requestOpenAi: vi.fn<WireAnswer>(),
 }));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -212,179 +212,23 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...audio,
 }));
 
-/** The drums-warm window the batch's one recipe authors, and values inside it that no EQ starts at. */
-const DRUMS_CHOICE = [
-    { step: 0, paramId: 'eq-low-freq', value: 90 },
-    { step: 0, paramId: 'eq-low-gain', value: 3.5 },
-    { step: 0, paramId: 'eq-high-freq', value: 9000 },
-    { step: 0, paramId: 'eq-high-gain', value: -1.5 },
-];
-
-type Reply = { calls: ToolCallResult[] } | { text: string } | { status: number };
-
 /** What the scripted provider answers to each value request it reads, by its index among them. */
 let respond: (request: { user: Record<string, unknown>; index: number }) => Reply = () => ({ calls: [] });
 let valueBodies: Record<string, unknown>[] = [];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** The value request's own JSON user message, wherever the dialect put it. */
-function readUserJson(value: unknown): Record<string, unknown> | null {
-    if (typeof value === 'string' && value.startsWith('{')) {
-        try {
-            const parsed: unknown = JSON.parse(value);
-            if (isRecord(parsed) && (Array.isArray(parsed.pairs) || isRecord(parsed.request))) {
-                return parsed;
-            }
-        } catch {
-            return null;
-        }
-        return null;
-    }
-    if (Array.isArray(value)) {
-        for (const item of value) {
-            const found = readUserJson(item);
-            if (found !== null) {
-                return found;
-            }
-        }
-    }
-    if (isRecord(value)) {
-        for (const item of Object.values(value)) {
-            const found = readUserJson(item);
-            if (found !== null) {
-                return found;
-            }
-        }
-    }
-    return null;
-}
-
-type AnsweredReply = Exclude<Reply, { status: number }>;
-
-/** The Anthropic Messages content blocks for a reply: one text block, or one `tool_use` block per call. */
-function anthropicContent(reply: AnsweredReply): unknown[] {
-    if ('text' in reply) {
-        return [{ type: 'text', text: reply.text }];
-    }
-    return reply.calls.map((call, index) => ({
-        type: 'tool_use',
-        id: `toolu_${String(index)}`,
-        name: encodeWireToolName(call.name),
-        input: call.arguments,
-    }));
-}
-
-/** The OpenAI Responses output items for a reply: one message item, or one `function_call` item per call. */
-function openAiResponsesOutput(reply: AnsweredReply): unknown[] {
-    if ('text' in reply) {
-        return [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: reply.text }] }];
-    }
-    return reply.calls.map((call, index) => ({
-        type: 'function_call',
-        id: `fc_${String(index)}`,
-        call_id: `call_${String(index)}`,
-        name: encodeWireToolName(call.name),
-        arguments: JSON.stringify(call.arguments),
-    }));
-}
-
-/** The Chat Completions assistant message for a reply: text content, or `tool_calls` with null content. */
-function chatCompletionsMessage(reply: AnsweredReply): unknown {
-    if ('text' in reply) {
-        return { role: 'assistant', content: reply.text };
-    }
-    return {
-        role: 'assistant',
-        content: null,
-        tool_calls: reply.calls.map((call, index) => ({
-            id: `call_${String(index)}`,
-            type: 'function',
-            function: { name: encodeWireToolName(call.name), arguments: JSON.stringify(call.arguments) },
-        })),
-    };
-}
-
-function encodeReply(dialect: string, reply: Reply): { status: number; body: string } {
-    if ('status' in reply) {
-        return { status: reply.status, body: '{"error":{"message":"overloaded"}}' };
-    }
-    const usage = { input: 900, output: 120 };
-    if (dialect === 'anthropic') {
-        return {
-            status: 200,
-            body: JSON.stringify({
-                id: 'msg_values',
-                type: 'message',
-                role: 'assistant',
-                content: anthropicContent(reply),
-                stop_reason: 'text' in reply ? 'end_turn' : 'tool_use',
-                usage: { input_tokens: usage.input, output_tokens: usage.output },
-            }),
-        };
-    }
-    if (dialect === 'openai') {
-        return {
-            status: 200,
-            body: JSON.stringify({
-                id: 'resp_values',
-                status: 'completed',
-                output: openAiResponsesOutput(reply),
-                usage: { input_tokens: usage.input, output_tokens: usage.output },
-            }),
-        };
-    }
-    const message = chatCompletionsMessage(reply);
-    return {
-        status: 200,
-        body: JSON.stringify({
-            id: 'chatcmpl-values',
-            choices: [{ index: 0, finish_reason: 'text' in reply ? 'stop' : 'tool_calls', message }],
-            usage: { prompt_tokens: usage.input, completion_tokens: usage.output },
-        }),
-    };
-}
-
 function armWire(): void {
-    const answer = async (request: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
-        const body: unknown = JSON.parse(request.body);
-        if (!isRecord(body)) {
-            throw new TypeError('Expected a JSON body');
+    armValueWire(
+        wire,
+        () => runtimeMocks.dialect.value,
+        (body, user) => {
+            valueBodies.push(body);
+            return respond({ user, index: valueBodies.length - 1 });
         }
-        const user = readUserJson(body);
-        if (user === null) {
-            throw new Error('A provider request that is not a value request reached the wire.');
-        }
-        valueBodies.push(body);
-        const reply = encodeReply(runtimeMocks.dialect.value, respond({ user, index: valueBodies.length - 1 }));
-        request.onBodyChunk(new TextEncoder().encode(reply.body));
-        return { status: reply.status, contentType: 'application/json' };
-    };
-    wire.requestAnthropic.mockReset().mockImplementation(answer);
-    wire.requestOpenAi.mockReset().mockImplementation(answer);
+    );
 }
 
-/** The brief route is scripted; a value request goes through the real hosted route to the wire. */
 function scriptRun(): void {
-    let briefTurn = 0;
-    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (...args) => {
-        const [, userMessage, schemas] = args;
-        if (schemas.some((schema: ToolSchema) => schema.function.name === VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME)) {
-            const original = planning.original;
-            if (original === null) {
-                throw new Error('The real planning route was not captured.');
-            }
-            return original(...args);
-        }
-        const turn = BRIEF_ROUTE[briefTurn];
-        briefTurn += 1;
-        if (turn === undefined) {
-            throw new Error('Unscripted brief turn');
-        }
-        return { status: 'complete', toolCalls: turn({ userMessage, schemas }) };
-    });
+    scriptBriefRoute(planning.original);
 }
 
 async function planRun(): Promise<Confirmation> {
@@ -395,38 +239,6 @@ async function planRun(): Promise<Confirmation> {
 
 async function confirm(card: Confirmation): Promise<void> {
     await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
-}
-
-function choose(pairs: { targetId: string; recipeId: string; values: unknown[] }[]): Reply {
-    return { calls: [{ name: VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME, arguments: { choices: pairs } }] };
-}
-
-function drumsChoice(values: unknown[] = DRUMS_CHOICE): Reply {
-    return choose([{ targetId: DRUMS_ID, recipeId: 'drums-warm', values }]);
-}
-
-/** Each parameter write of the card, on the track whose added device it writes. */
-function parameterWrites(card: Confirmation) {
-    const trackOfDevice = new Map(
-        card.actions.flatMap((action) => {
-            if (action.type !== 'addDevice' || action.payload.deviceId === undefined) {
-                return [];
-            }
-            return [[action.payload.deviceId, action.payload.trackId] as const];
-        })
-    );
-    return card.actions.flatMap((action) => {
-        if (action.type !== 'setDeviceParameter') {
-            return [];
-        }
-        return [
-            {
-                paramId: action.payload.paramId,
-                value: action.payload.value,
-                trackId: trackOfDevice.get(action.payload.deviceId) ?? null,
-            },
-        ];
-    });
 }
 
 /** The drums-warm window middles; an insert leaves out a write equal to what the new EQ starts at. */
@@ -851,187 +663,6 @@ describe('when value requests are made', () => {
         const targets = valueBodies.map((body) => readWirePairs(userMessageOf(body)).map((pair) => pair.targetId));
         expect(targets).toEqual([[DRUMS_ID], [VOCAL_ID]]);
         expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('waiting-for-approval');
-    });
-});
-
-describe('a re-previewed vibe batch card (#6551, #6629)', () => {
-    const RE_PREVIEWED = 'Re-previewed against the current project.';
-
-    /** The card's own lines: past its action list and before the approval lines every card ends on. */
-    function cardLines(card: Confirmation): string[] {
-        const all = cardContent(card)
-            .split('\n')
-            .filter((line) => line.trim() !== '');
-        return all.slice(
-            all.findIndex((line) => line.startsWith('Affected IDs: ')) + 1,
-            all.findIndex((line) => line.startsWith('Approval risk: '))
-        );
-    }
-
-    /** The latest of the card's metric-goal proofs bound to its own batch: the one preview a claim may read. */
-    function latestBoundProof(card: Confirmation) {
-        const batch = card.approvalSnapshot.commandBatch;
-        const parsed = batch && parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
-        if (parsed?.status !== 'valid') {
-            throw new TypeError('Expected the card to hold its batch');
-        }
-        const proofs = metricGoalStateCodec(card.approvalSnapshot.metricGoalState)?.proofs ?? [];
-        return proofs.flatMap((proof) => bindMeasuredPreviewToBatch(proof.preview, parsed.envelope) ?? []).at(-1);
-    }
-
-    /** Leaves the card as a snapshot proposed before the value choice was recorded on it. */
-    function forgetValueChoice(confirmationId: string): void {
-        const state = pendingActionConfirmationStore.value;
-        if (state === null) {
-            throw new TypeError('Expected the pending confirmations');
-        }
-        pendingActionConfirmationStore.set({
-            ...state,
-            confirmations: state.confirmations.map((confirmation) => {
-                if (confirmation.id !== confirmationId) {
-                    return confirmation;
-                }
-                const { vibeValueChoice: _recorded, ...snapshot } = confirmation.approvalSnapshot;
-                return { ...confirmation, approvalSnapshot: snapshot };
-            }),
-        });
-        expect(getPendingActionConfirmation(confirmationId)?.approvalSnapshot.vibeValueChoice).toBeUndefined();
-    }
-
-    /**
-     * Moves the project on, and has the drums sound brighter than they did when the card was measured,
-     * so the fresh measurement reads other figures than the card showed.
-     */
-    function brightenDrumsAfterAnEdit(): void {
-        landProjectEdit(() => {
-            const state = trackStore.value;
-            if (state === null) {
-                throw new TypeError('Expected the fixture project');
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((track) =>
-                    track.id === VOCAL_ID ? { ...track, name: 'Vocal moved' } : track
-                ),
-            });
-        });
-        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) =>
-            renderTrack({
-                ...input,
-                renderTracks: input.renderTracks.map((track) => {
-                    if (track.id !== DRUMS_ID) {
-                        return track;
-                    }
-                    const brighter = {
-                        id: 'brighter-drums',
-                        name: 'Brighter',
-                        type: 'builtin-eq',
-                        bypassed: false,
-                        parameterValues: { 'eq-high-gain': 6 },
-                    };
-                    return { ...track, devices: [...track.devices, brighter] };
-                }),
-            })
-        );
-    }
-
-    async function rePreview(card: Confirmation, selectedIntentGroupIds?: string[]): Promise<Confirmation> {
-        await expect(
-            reproposePendingChatActions({ confirmationId: card.id, selectedIntentGroupIds })
-        ).resolves.toMatchObject({ status: 'reproposed' });
-        return requireOnlyProposedCard();
-    }
-
-    async function proposeDrumsCard(script: typeof respond): Promise<Confirmation> {
-        respond = script;
-        const brief = await planRun();
-        await confirm(brief);
-        return requireOnlyProposedCard();
-    }
-
-    // Red when the re-preview replaces the card's own lines with the bare re-preview sentence, or
-    // shows the figures the old measurement read rather than the fresh ones.
-    it.each<[string, typeof respond, string[], string[]]>([
-        [
-            'measurements',
-            () => drumsChoice(),
-            ['Recipe: Shell weight lifted, cymbal shelf eased on Drums — values chosen from measurements.'],
-            [
-                'Fresh approval preview on Drums, arrangement [0, 4]: frequency-band energy (bass) 0.5 → 0.76 (verified).',
-                'Fresh approval preview on Drums, arrangement [0, 4]: spectral centroid 1509.09 Hz → 1106.29 Hz (verified).',
-            ],
-        ],
-        [
-            'catalogue defaults',
-            () => ({
-                calls: [{ name: VIBE_BATCH_VALUE_KEEP_DEFAULTS_TOOL_NAME, arguments: { reason: 'Already warm.' } }],
-            }),
-            [
-                'Recipe: Shell weight lifted, cymbal shelf eased on Drums — catalogue defaults.',
-                'Recipe values are catalogue defaults: the hosted provider declined to choose values (Already warm).',
-            ],
-            [
-                'Fresh approval preview on Drums, arrangement [0, 4]: frequency-band energy (bass) 0.5 → 0.76 (verified).',
-                'Fresh approval preview on Drums, arrangement [0, 4]: spectral centroid 1509.09 Hz → 1106.28 Hz (verified).',
-            ],
-        ],
-    ])('recomposes its %s card from the fresh measurement', async (_case, script, recipeLines, freshFigures) => {
-        const card = await proposeDrumsCard(script);
-        brightenDrumsAfterAnEdit();
-
-        const replacement = await rePreview(card);
-
-        expect(cardLines(replacement)).toEqual([
-            'Objective: warm drums.',
-            ...recipeLines,
-            'Expected on Drums: frequency-band energy (bass) rises; spectral centroid falls.',
-            ...freshFigures,
-            RE_PREVIEWED,
-        ]);
-        expect(valueBodies).toHaveLength(1);
-        expect(replacement.approvalSnapshot.vibeValueChoice).toEqual(card.approvalSnapshot.vibeValueChoice);
-        expect(getAgentApprovalView({ confirmationId: replacement.id })?.measuredPreview).toBeNull();
-    });
-
-    // Red when a subset keeps recipe lines it no longer claims, or shows no fresh figures at all.
-    it('re-previews a subset as an ordinary card with its own fresh measurement', async () => {
-        const card = await proposeDrumsCard(() => drumsChoice());
-        const lowGain = getAgentApprovalView({ confirmationId: card.id })?.intentGroups.find((group) =>
-            group.summary.includes('(eq-low-gain)')
-        );
-        if (lowGain === undefined) {
-            throw new TypeError('Expected the card to offer its low-gain write as an intent group');
-        }
-        brightenDrumsAfterAnEdit();
-
-        const replacement = await rePreview(card, [lowGain.id]);
-
-        expect(replacement.actions.map((action) => action.type)).toEqual(['addDevice', 'setDeviceParameter']);
-        expect(cardLines(replacement)).toEqual([RE_PREVIEWED]);
-        expect(replacement.approvalSnapshot.adoptedRecipes).toBeUndefined();
-        expect(replacement.approvalSnapshot.vibeValueChoice).toBeUndefined();
-        const preview = replacement.approvalSnapshot.measuredPreview;
-        expect(preview?.revision).toBe(captureProjectRevision());
-        expect(preview).toEqual(latestBoundProof(replacement));
-        const centroid = getAgentApprovalView({ confirmationId: replacement.id })
-            ?.measuredPreview?.targets.find((target) => target.targetId === DRUMS_ID)
-            ?.metrics.find((metric) => metric.metricId === 'spectralCentroid');
-        expect(centroid?.baseline?.value).toBeCloseTo(1509.09, 2);
-        expect(centroid?.preview?.value).toBeCloseTo(1222.59, 2);
-    });
-
-    // Red when a card proposed before snapshots recorded the value choice no longer re-previews.
-    it('re-previews a card whose snapshot recorded no value choice as an ordinary card', async () => {
-        const card = await proposeDrumsCard(() => drumsChoice());
-        forgetValueChoice(card.id);
-        brightenDrumsAfterAnEdit();
-
-        const replacement = await rePreview(card);
-
-        expect(cardLines(replacement)).toEqual([RE_PREVIEWED]);
-        expect(replacement.approvalSnapshot.vibeValueChoice).toBeUndefined();
-        expect(replacement.approvalSnapshot.measuredPreview?.revision).toBe(captureProjectRevision());
-        expect(replacement.approvalSnapshot.measuredPreview).toEqual(latestBoundProof(replacement));
     });
 });
 

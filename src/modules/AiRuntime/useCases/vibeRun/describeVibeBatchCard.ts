@@ -1,9 +1,9 @@
 import { type AdoptedRecipe } from '../../models/AdoptedRecipe';
 import { type MetricGoalEvaluation } from '../../models/MetricGoalAdmission';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch, type VibeRunExpectedDelta } from '../../models/VibeRunPlan';
 
-import { type VibeBatchValueChoice } from './chooseVibeBatchValues';
 import { describeCatalogueDefaultsReason } from './describeCatalogueDefaultsReason';
 import { describeRecipeValueSource } from './describeRecipeValueSource';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
