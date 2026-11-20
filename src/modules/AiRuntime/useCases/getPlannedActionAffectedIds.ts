@@ -237,6 +237,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     setLevainIdentity: unaffected,
     setGrandBouleDeviceState: unaffected,
     setToasterFactoryKit: unaffected,
+    setGlutenFactoryPreset: unaffected,
     createBus: { before: noIds, after: readCreateBusIds },
     createFolder: unaffected,
     setSend: unaffected,

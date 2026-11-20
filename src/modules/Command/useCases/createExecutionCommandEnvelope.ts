@@ -125,6 +125,7 @@ const seedMaterializerByActionType: {
     setLevainIdentity: leaveSeedUnminted,
     setGrandBouleDeviceState: leaveSeedUnminted,
     setToasterFactoryKit: leaveSeedUnminted,
+    setGlutenFactoryPreset: leaveSeedUnminted,
     createBus: leaveSeedUnminted,
     createFolder: leaveSeedUnminted,
     setSend: leaveSeedUnminted,

@@ -13,6 +13,7 @@ const EXPECTED = new Set<string>([
     'insertAutomationLanePoints',
     'setLevainIdentity',
     'setToasterFactoryKit',
+    'setGlutenFactoryPreset',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {

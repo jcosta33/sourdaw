@@ -101,6 +101,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setLevainIdentity: noSupportPath,
     setGrandBouleDeviceState: noSupportPath,
     setToasterFactoryKit: noSupportPath,
+    setGlutenFactoryPreset: noSupportPath,
     createBus: noSupportPath,
     createFolder: noSupportPath,
     setSend: noSupportPath,

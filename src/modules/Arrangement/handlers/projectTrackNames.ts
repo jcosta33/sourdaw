@@ -153,6 +153,7 @@ export const trackNameProjectionByActionType: {
     setLevainIdentity: keepTrackNames,
     setGrandBouleDeviceState: keepTrackNames,
     setToasterFactoryKit: keepTrackNames,
+    setGlutenFactoryPreset: keepTrackNames,
     createBus: projectCreatedBusName,
     createFolder: keepTrackNames,
     setSend: keepTrackNames,

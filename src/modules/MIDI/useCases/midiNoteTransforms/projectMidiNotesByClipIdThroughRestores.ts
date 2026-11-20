@@ -146,6 +146,7 @@ const notesProjectionByActionType: {
     setLevainIdentity: noNotesProjection,
     setGrandBouleDeviceState: noNotesProjection,
     setToasterFactoryKit: noNotesProjection,
+    setGlutenFactoryPreset: noNotesProjection,
     createBus: noNotesProjection,
     createFolder: noNotesProjection,
     setSend: noNotesProjection,

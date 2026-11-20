@@ -119,6 +119,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     setLevainIdentity: ruleDrivenArguments,
     setGrandBouleDeviceState: ruleDrivenArguments,
     setToasterFactoryKit: ruleDrivenArguments,
+    setGlutenFactoryPreset: ruleDrivenArguments,
     createBus: () => ['busId', 'initialAlternativeId'],
     createFolder: ruleDrivenArguments,
     setSend: ruleDrivenArguments,

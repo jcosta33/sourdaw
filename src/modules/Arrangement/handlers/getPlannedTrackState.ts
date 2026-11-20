@@ -173,6 +173,7 @@ export const plannedTrackByActionType: {
     setLevainIdentity: noPlannedTrack,
     setGrandBouleDeviceState: noPlannedTrack,
     setToasterFactoryKit: noPlannedTrack,
+    setGlutenFactoryPreset: noPlannedTrack,
     createBus: planCreatedBus,
     createFolder: noPlannedTrack,
     setSend: noPlannedTrack,

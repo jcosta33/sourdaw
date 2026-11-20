@@ -168,6 +168,7 @@ const plannedBusByActionType: {
     setLevainIdentity: unchangedBus,
     setGrandBouleDeviceState: unchangedBus,
     setToasterFactoryKit: unchangedBus,
+    setGlutenFactoryPreset: unchangedBus,
     createBus: afterCreateBus,
     createFolder: unchangedBus,
     setSend: unchangedBus,

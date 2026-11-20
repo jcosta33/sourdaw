@@ -3295,7 +3295,7 @@ fn release_then_retire_engine_plugin(
     let mut reports = Vec::new();
     if !release.ops.is_empty() {
         // Read before the send, so the step after it has nothing left to fail.
-        let release_reports = graph::strip_reports(&working, &release.touched_strip_ids)?;
+        let release_reports = graph::live_strip_reports(&working, &release.touched_strip_ids)?;
         // The reserved slot is the `RemovePlugin` push below: the
         // retirement must not find the ring full behind the release.
         match engine.send_graph_batch_with_headroom(release.ops, 1) {
@@ -10878,6 +10878,7 @@ mod tests {
                 kind: "track",
                 id: "lead".to_string(),
                 device_ids: vec!["d-comp".to_string(), "d-limiter".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }],
             "the reply must report the strip's final chain with the unloaded \
              instance's device gone and the others in their original order, \
@@ -10933,6 +10934,7 @@ mod tests {
                 kind: "track",
                 id: "lead".to_string(),
                 device_ids: Vec::new(),
+                grand_boule_preview_targets: Vec::new(),
             }],
             "the strip both instances shared must appear exactly once, \
              carrying its final (empty) chain, got: {:?}",
@@ -10951,6 +10953,7 @@ mod tests {
                 kind: "track",
                 id: "lead".to_string(),
                 device_ids: vec!["d-comp".to_string()],
+                grand_boule_preview_targets: Vec::new(),
             }],
         })
         .expect("the unload reply serializes");

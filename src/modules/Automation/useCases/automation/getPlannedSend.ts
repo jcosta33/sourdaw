@@ -246,6 +246,7 @@ const plannedSendByActionType: {
     setLevainIdentity: unchangedSend,
     setGrandBouleDeviceState: unchangedSend,
     setToasterFactoryKit: unchangedSend,
+    setGlutenFactoryPreset: unchangedSend,
     createBus: unchangedSend,
     createFolder: unchangedSend,
     setSend: afterSetSend,

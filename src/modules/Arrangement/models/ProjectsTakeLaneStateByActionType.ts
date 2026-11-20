@@ -83,6 +83,7 @@ export const projectsTakeLaneStateByActionType: { readonly [Type in AppActionTyp
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,
     setSend: false,

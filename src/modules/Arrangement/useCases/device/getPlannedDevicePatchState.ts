@@ -171,6 +171,7 @@ export const plannedDeviceWriteStepByActionType: {
     setExternalPluginState: commandStep,
     setDeviceState: commandStep,
     setFermenterPatch: fermenterPatchStep,
+    setGlutenFactoryPreset: commandStep,
     setLevainIdentity: levainIdentityStep,
     setGrandBouleDeviceState: commandStep,
     setToasterFactoryKit: toasterKitStep,

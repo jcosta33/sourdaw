@@ -104,6 +104,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setLevainIdentity: payloadTrackId,
     setGrandBouleDeviceState: noMutatedTrack,
     setToasterFactoryKit: noMutatedTrack,
+    setGlutenFactoryPreset: noMutatedTrack,
     createBus: noMutatedTrack,
     createFolder: noMutatedTrack,
     setSend: noMutatedTrack,

@@ -139,6 +139,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
+    setGlutenFactoryPreset: NONE,
     createBus: { create: true, routing: true, createdTracks: countOne },
     createFolder: NONE,
     setSend: { routing: true },

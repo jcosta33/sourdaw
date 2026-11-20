@@ -155,6 +155,7 @@ const midiSnapshotByActionType: {
     setLevainIdentity: unchangedSnapshot,
     setGrandBouleDeviceState: unchangedSnapshot,
     setToasterFactoryKit: unchangedSnapshot,
+    setGlutenFactoryPreset: unchangedSnapshot,
     createBus: unchangedSnapshot,
     createFolder: unchangedSnapshot,
     setSend: unchangedSnapshot,

@@ -105,6 +105,7 @@ const midiReplayProducerByActionType: {
     setLevainIdentity: producesNothing,
     setGrandBouleDeviceState: producesNothing,
     setToasterFactoryKit: producesNothing,
+    setGlutenFactoryPreset: producesNothing,
     createBus: producesNothing,
     createFolder: producesNothing,
     setSend: producesNothing,

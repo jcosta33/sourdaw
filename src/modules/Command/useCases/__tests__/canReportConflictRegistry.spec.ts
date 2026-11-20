@@ -22,6 +22,7 @@ import {
     createTrack,
     getAllTracks,
     getPlannedDevicePatchState,
+    getPluginById,
     persistDevicePatch,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
@@ -752,6 +753,102 @@ function createToasterConflictFixture(): DivergedFixture {
     };
 }
 
+function createGlutenConflictFixture(): DivergedFixture {
+    type GlutenRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setGlutenFactoryPreset refuses when a peer changes a captured parameter after validation',
+        actionType: 'setGlutenFactoryPreset',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Gluten registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+
+            const descriptor = getPluginById('gluten');
+            if (!descriptor) {
+                throw new Error('Expected the Gluten device descriptor');
+            }
+            const before = Object.fromEntries(descriptor.parameters.map(({ id }) => [id, null]));
+            const defaults = Object.fromEntries(
+                descriptor.parameters.map(({ id, defaultValue }) => [id, defaultValue])
+            );
+            const after = {
+                ...defaults,
+                threshold: -12,
+                ratio: 2,
+                attack: 30,
+                autoRelease: 1,
+                knee: 10,
+                range: 10,
+            };
+            const deviceId = 'gluten-conflict';
+            const trackId = 'gluten-owner';
+            const rawDevice = () => getCrdtDoc<GlutenRoot>('root')?.tracks.tracks[0]?.devices[0];
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Gluten', kind: 'audio', withoutDefaultDevice: true }),
+                        devices: [
+                            { id: deviceId, name: 'Gluten', type: 'gluten', bypassed: false, parameterValues: after },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.parameterValues).toEqual(after);
+
+            const inverse = {
+                type: 'setGlutenFactoryPreset',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    presetId: 'glue-gentle',
+                    before: after,
+                    after: before,
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(inverse);
+            const context = { actions: [inverse], actionIndex: 0 };
+            expect(handler?.validate?.(inverse, context)).toBe(true);
+            expect(handler?.describe?.(inverse, context)?.label).toBe('Load Gentle Glue');
+
+            mutateCrdtDoc<GlutenRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected Gluten before the peer write');
+                    }
+                    device.parameterValues = { ...device.parameterValues, threshold: -15 };
+                },
+            });
+            trackStore.hydrate();
+            const peer = { ...after, threshold: -15 };
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.parameterValues).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Gluten fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
 function createLevainConflictFixture(): DivergedFixture {
     type LevainRoot = { tracks: { tracks: Track[] } };
     let verifyNonEffects: (() => void) | undefined;
@@ -840,6 +937,7 @@ function createLevainConflictFixture(): DivergedFixture {
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
     createToasterConflictFixture(),
+    createGlutenConflictFixture(),
     createLevainConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,

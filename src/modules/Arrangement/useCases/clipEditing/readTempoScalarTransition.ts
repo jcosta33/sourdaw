@@ -103,6 +103,7 @@ const tempoScalarTransitionByActionType: {
     setLevainIdentity: notATempoAction,
     setGrandBouleDeviceState: notATempoAction,
     setToasterFactoryKit: notATempoAction,
+    setGlutenFactoryPreset: notATempoAction,
     createBus: notATempoAction,
     createFolder: notATempoAction,
     setSend: notATempoAction,

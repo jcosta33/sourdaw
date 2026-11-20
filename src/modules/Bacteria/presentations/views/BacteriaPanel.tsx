@@ -41,6 +41,8 @@ import { StepSequencerEditor } from '../components/StepSequencerEditor';
 import { WaveshaperEditor } from '../components/WaveshaperEditor';
 import { XYMorphPad } from '../components/XYMorphPad';
 
+import { BacteriaInputGainKnob } from './BacteriaInputGainKnob';
+
 const LEVELS: Array<{ id: BacteriaUiLevel; label: string; eyebrow: string; description: string }> = [
     { id: 1, label: 'Play', eyebrow: 'Morph floor', description: 'Macros, presets, and the petri pad.' },
     { id: 2, label: 'Shape', eyebrow: 'Mutation deck', description: 'One band, one module, all the weirdness.' },
@@ -552,17 +554,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
             <Stack gap={3} className="bacteria-window min-h-0 p-3">
                 <SectionHeader eyebrow="Input" title="Gain staging" description="Keep the organism fed, not flooded." />
                 <Row wrap gap={3}>
-                    <K
-                        deviceId={deviceId}
-                        v={state.patch.inputGain}
-                        k="inputGain"
-                        label="Input"
-                        min={GAIN_TRIM_DB.min}
-                        max={GAIN_TRIM_DB.max}
-                        step={0.5}
-                        def={0}
-                        unit="dB"
-                    />
+                    <BacteriaInputGainKnob key={deviceId} deviceId={deviceId} committedValue={state.patch.inputGain} />
                     <K
                         deviceId={deviceId}
                         v={state.patch.outputGain}

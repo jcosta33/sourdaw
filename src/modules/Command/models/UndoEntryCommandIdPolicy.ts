@@ -83,6 +83,7 @@ export const undoEntryStoresCommandIdByActionType: { readonly [Type in AppAction
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setGlutenFactoryPreset: false,
     createBus: false,
     createFolder: false,
     setSend: false,

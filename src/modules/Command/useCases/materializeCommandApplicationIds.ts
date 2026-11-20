@@ -239,6 +239,7 @@ const applicationIdMaterializerByActionType: {
     setLevainIdentity: materializeByIdRule,
     setGrandBouleDeviceState: materializeByIdRule,
     setToasterFactoryKit: materializeByIdRule,
+    setGlutenFactoryPreset: materializeByIdRule,
     createBus: materializeBusCreationIds,
     createFolder: materializeByIdRule,
     setSend: materializeByIdRule,

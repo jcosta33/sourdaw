@@ -105,6 +105,7 @@ export const semanticDiffClassificationByActionType: {
     setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
+    setGlutenFactoryPreset: NONE,
     createBus: { created: true, routed: true, structuralAudio: true },
     createFolder: NONE,
     setSend: { routed: true, structuralAudio: true },

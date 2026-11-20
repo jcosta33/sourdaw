@@ -49,6 +49,7 @@ import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadG
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { hydrateGlutenDisclosureFromProject } from '../../useCases/hydrateGlutenDisclosureFromProject';
+import { selectGlutenFactoryPreset } from '../../useCases/selectGlutenFactoryPreset';
 import { setGlutenPanelUiLevel } from '../../useCases/setGlutenPanelUiLevel';
 import { GlutenCurve } from '../components/GlutenCurve';
 import { GrHistory } from '../components/GrHistory';
@@ -487,12 +488,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         phaseCorrStr = 'OOP';
     }
 
-    function applyPreset(nextPatch: GlutenPatch): void {
-        loadGlutenPatchWithAudio(deviceId, nextPatch);
-    }
-
     function applyStyle(style: GlutenStyle): void {
-        applyPreset(buildStylePatch(style, currentPatch));
+        loadGlutenPatchWithAudio(deviceId, buildStylePatch(style, currentPatch));
     }
 
     /**
@@ -685,7 +682,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         title={preset.name}
                                         detail={preset.category}
                                         subtitle={describePreset(preset.patch)}
-                                        onPress={() => applyPreset(preset.patch)}
+                                        onPress={() => {
+                                            void selectGlutenFactoryPreset(deviceId, preset.id);
+                                        }}
                                     />
                                 );
                             })

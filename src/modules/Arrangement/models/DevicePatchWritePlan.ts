@@ -178,16 +178,21 @@ function projectMaterializedTrack(
     return { status: 'projected', owners };
 }
 
+function requiresCapturedPatchStep(action: AppAction): boolean {
+    return (
+        action.type === 'setFermenterPatch' ||
+        action.type === 'setGlutenFactoryPreset' ||
+        action.type === 'setLevainIdentity' ||
+        action.type === 'setToasterFactoryKit'
+    );
+}
+
 function projectCommandOwners(
     owners: Owner[],
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): OwnerProjection {
-    if (
-        action.type === 'setFermenterPatch' ||
-        action.type === 'setLevainIdentity' ||
-        action.type === 'setToasterFactoryKit'
-    ) {
+    if (requiresCapturedPatchStep(action)) {
         return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
     }
     if (action.type === 'removeTrack') {

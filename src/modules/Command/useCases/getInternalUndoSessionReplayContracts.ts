@@ -33,7 +33,7 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
 }
 
 function createCapturedDeviceReplayContract(
-    actionType: 'setLevainIdentity' | 'setToasterFactoryKit'
+    actionType: 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -71,6 +71,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                 getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
+        createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),

@@ -97,6 +97,7 @@ export const automationRecordingPolicyByActionType: {
     setLevainIdentity: noPolicy,
     setGrandBouleDeviceState: noPolicy,
     setToasterFactoryKit: noPolicy,
+    setGlutenFactoryPreset: noPolicy,
     createBus: noPolicy,
     createFolder: noPolicy,
     setSend: noPolicy,
