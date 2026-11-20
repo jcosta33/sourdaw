@@ -50,6 +50,7 @@ import {
     transformPianoRollTakeNotes,
 } from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
+import { ROW_HEIGHT } from '../pianoRollConstants';
 import { movePianoRollTakeRows } from '../pianoRollTakeRowActions';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -233,6 +234,7 @@ function SelectedNoteEditor({
         notes: [...projection.baseNotes, ...projection.notes],
         takeProjections: new Map([['clip', projection]]),
         beatWidth: 40,
+        rowHeight: ROW_HEIGHT,
         gridSnap: 0.5,
         scaleType: 'chromatic',
         scaleRoot: 0,

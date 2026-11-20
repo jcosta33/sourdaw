@@ -13,6 +13,7 @@ import {
     type SetStateAction,
     useRef,
     useEffect,
+    useLayoutEffect,
     useEffectEvent,
     useState,
 } from 'react';
@@ -56,7 +57,6 @@ import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { readClipPlayheadBeat } from '../helpers/clipPlayheadBeat';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editPianoRollTakeNote';
 import {
-    ROW_HEIGHT,
     RULER_HEIGHT,
     NOTE_INSET_X,
     getPaintedNoteWidth,
@@ -249,6 +249,7 @@ type InteractionArgs = {
     /** A9: which clip receives newly drawn notes */
     focusedClipId?: string;
     beatWidth: number;
+    rowHeight: number;
     gridSnap: number;
     scaleType: string;
     scaleRoot: number;
@@ -306,6 +307,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         takeProjections,
         focusedClipId,
         beatWidth,
+        rowHeight,
         gridSnap,
         scaleType,
         scaleRoot,
@@ -331,6 +333,22 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const dragRef = useRef<DragState>({ ...INITIAL_DRAG_STATE });
     const paintNotesRef = useRef<Set<string>>(new Set());
+    const previousRowHeightRef = useRef(rowHeight);
+    useLayoutEffect(() => {
+        const ratio = rowHeight / previousRowHeightRef.current;
+        previousRowHeightRef.current = rowHeight;
+        if (ratio === 1) {
+            return;
+        }
+        dragRef.current.startY *= ratio;
+        if (lassoPathRef.current) {
+            lassoPathRef.current = lassoPathRef.current.map((point) => ({ x: point.x, y: point.y * ratio }));
+        }
+        const band = rubberBandRef.current;
+        if (band) {
+            rubberBandRef.current = { ...band, y: band.y * ratio, h: band.h * ratio };
+        }
+    }, [rowHeight, rubberBandRef, lassoPathRef]);
     const auditionRef = useRef<(() => void) | null>(null);
     /** R-A13: debounce timer for note-hover audition. */
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -588,13 +606,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     continue;
                 }
                 const nx = note.startBeat * beatWidth;
-                const ny = row * ROW_HEIGHT;
+                const ny = row * rowHeight;
                 const nw = note.duration * beatWidth;
                 const paintedLeft = nx + NOTE_INSET_X;
                 const paintedWidth = getPaintedNoteWidth(nw);
                 const paintedRight = paintedLeft + paintedWidth;
                 const edgeWidth = Math.min(8, paintedWidth / 4);
-                if (x >= nx && x <= Math.max(nx + nw, paintedRight) && y >= ny && y <= ny + ROW_HEIGHT) {
+                if (x >= nx && x <= Math.max(nx + nw, paintedRight) && y >= ny && y <= ny + rowHeight) {
                     if (x <= paintedLeft + edgeWidth) {
                         return { note, edge: 'left' as const, ownerClipId };
                     }
@@ -791,7 +809,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             }
 
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-            const row = getPianoRollRowAtY(rawY, visiblePitches.length);
+            const row = getPianoRollRowAtY(rawY, visiblePitches.length, rowHeight);
             if (row !== null) {
                 // R-A12: snap to nearest scale degree when constrainToScale is active
                 const pitch = snapToScalePitch(visiblePitches[row]!);
@@ -1039,7 +1057,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         } else if (drag.mode === 'move' || drag.mode === 'duplicate') {
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
             const deltaBeat = snap((x - drag.startX) / beatWidth);
-            const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
+            const deltaRow = Math.round((noteY - drag.startY) / rowHeight);
             const anchorOrigRow = visiblePitches.indexOf(drag.origPitch);
             let targetPitch = drag.origPitch;
             if (anchorOrigRow !== -1) {
@@ -1110,9 +1128,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             continue;
                         }
                         const nx = note.startBeat * beatWidth;
-                        const ny = row * ROW_HEIGHT;
+                        const ny = row * rowHeight;
                         const nw = note.duration * beatWidth;
-                        if (nx + nw > rb.x && nx < rb.x + rb.w && ny + ROW_HEIGHT > rb.y && ny < rb.y + rb.h) {
+                        if (nx + nw > rb.x && nx < rb.x + rb.w && ny + rowHeight > rb.y && ny < rb.y + rb.h) {
                             hitIds.add(note.id);
                         }
                     }
@@ -1431,10 +1449,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         continue;
                     }
                     const nx = note.startBeat * beatWidth;
-                    const ny = row * ROW_HEIGHT;
+                    const ny = row * rowHeight;
                     const nw = note.duration * beatWidth;
                     const nxMax = nx + nw;
-                    const nyMax = ny + ROW_HEIGHT;
+                    const nyMax = ny + rowHeight;
 
                     if (nxMax < pathMinX || nx > pathMaxX || nyMax < pathMinY || ny > pathMaxY) {
                         continue;
@@ -1445,7 +1463,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         [nxMax, ny],
                         [nx, nyMax],
                         [nxMax, nyMax],
-                        [nx + nw / 2, ny + ROW_HEIGHT / 2],
+                        [nx + nw / 2, ny + rowHeight / 2],
                     ];
                     let hit = samples.some(([px, py]) => pointInPolygon(px, py));
                     if (!hit) {
