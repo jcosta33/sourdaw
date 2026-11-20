@@ -339,7 +339,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // convention). A click without drag still stamps a note at the clicked
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
     // can commit a stamp when no meaningful drag occurred.
-    const pendingStampRef = useRef<{ pitch: number; beat: number } | null>(null);
+    const pendingStampRef = useRef<{
+        pitch: number;
+        beat: number;
+        chord?: { type: PianoRollChordType; clipId: string; duration: number };
+    } | null>(null);
     // The cell the current click sequence stamped. A double-click on empty grid
     // lands its second click on that fresh note; the dblclick must not delete
     // it. Matched by cell, not id, because a frozen-take stamp is inserted
@@ -603,6 +607,32 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         return null;
     };
 
+    const preparePendingStamp = (pitch: number, beat: number): void => {
+        pendingStampRef.current = { pitch, beat };
+        const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
+        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
+    };
+
+    const commitPendingChord = (pending: NonNullable<typeof pendingStampRef.current>): void => {
+        const chord = pending.chord;
+        if (!chord) {
+            return;
+        }
+        const { pitch, beat } = pending;
+        const created = stampChord(chord.clipId, pitch, beat, chord.duration, getDefaultNoteVelocity(), chord.type);
+        if (created.length === 0) {
+            return;
+        }
+        stampedByClickRef.current = { pitch, beat };
+        const createdIds = created.map((note) => note.id);
+        pushUndoEntry(
+            `Stamp ${chord.type} chord`,
+            () => removeNotesByIds(chord.clipId, createdIds),
+            () => appendNotesToClip(chord.clipId, created)
+        );
+        setSelectedNoteIds(new Set(createdIds));
+    };
+
     // ── Mouse handlers ───────────────────────────────────────────────
     const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
         // R-A13: cancel hover preview timer on mousedown
@@ -742,27 +772,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                         setStepBeat((prev) => prev + gridSnap);
                         setSelectedNoteIds(new Set());
-                    } else if (chordMode) {
-                        const beat = cellStartAtPointer(x / beatWidth);
-                        const created = stampChord(
-                            targetClipId,
-                            pitch,
-                            beat,
-                            gridSnap,
-                            getDefaultNoteVelocity(),
-                            chordType
-                        );
-                        if (created.length > 0) {
-                            stampedByClickRef.current = { pitch, beat };
-                            const createdIds = created.map((node) => node.id);
-                            pushUndoEntry(
-                                `Stamp ${chordType} chord`,
-                                () => removeNotesByIds(targetClipId, createdIds),
-                                () => appendNotesToClip(targetClipId, created)
-                            );
-                            setSelectedNoteIds(new Set(createdIds));
-                        }
-                    } else if (paintMode) {
+                    } else if (paintMode && !chordMode) {
                         const beat = cellStartAtPointer(x / beatWidth);
                         stampedByClickRef.current = { pitch, beat };
                         if (insertFrozen(targetClipId, beat, pitch, gridSnap, getDefaultNoteVelocity())) {
@@ -793,10 +803,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // must sound that clip's track instrument — a focused
                         // clip on another track would otherwise audition
                         // through the primary's instrument.
-                        const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
-                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
                         const beat = cellStartAtPointer(x / beatWidth);
-                        pendingStampRef.current = { pitch, beat };
+                        if (chordMode) {
+                            pendingStampRef.current = {
+                                pitch,
+                                beat,
+                                chord: { type: chordType, clipId: targetClipId, duration: gridSnap },
+                            };
+                        } else {
+                            preparePendingStamp(pitch, beat);
+                        }
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
                         dragRef.current = {
                             mode: 'rubber-band',
@@ -1096,6 +1112,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     }
                 }
                 setSelectedNoteIds(event.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
+            } else if (pendingStamp?.chord) {
+                if (event.type === 'mouseup') {
+                    if (pendingStamp.chord.clipId === targetClipId) {
+                        commitPendingChord(pendingStamp);
+                    }
+                }
             } else if (pendingStamp) {
                 // Click without drag — stamp a note at the click location.
                 if (

@@ -164,6 +164,29 @@ describe('Yeast preview accessibility', () => {
         expect(document.querySelectorAll('[data-preview-event]')).toHaveLength(0);
     });
 
+    it('keeps plain Tab traversal native while forwarding other keys to the window', () => {
+        render(<YeastPreviewSurface scope={null} processors={[]} runtimeStatus="ready" />);
+        const canvas = screen.getByRole('img');
+        const onWindowKey = vi.fn();
+        window.addEventListener('keydown', onWindowKey);
+        try {
+            for (const shiftKey of [false, true]) {
+                const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+                expect(canvas.dispatchEvent(event)).toBe(true);
+                expect(event.defaultPrevented).toBe(false);
+            }
+            expect(onWindowKey).not.toHaveBeenCalled();
+
+            for (const options of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+                canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ...options, bubbles: true }));
+            }
+            canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+            expect(onWindowKey).toHaveBeenCalledTimes(4);
+        } finally {
+            window.removeEventListener('keydown', onWindowKey);
+        }
+    });
+
     it('clears route activity before unbinding and rebinding the preview scope', () => {
         const { rerender } = render(
             <YeastPreviewSurface

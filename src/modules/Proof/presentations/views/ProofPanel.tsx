@@ -543,15 +543,15 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
     return (
-        <div className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3">
-            {/* The desk column never shrinks below the EQ surface, so the grid
-                overflows a narrower panel sideways and the faceplate scrolls
-                like a plugin window in any host instead of crushing the
-                controls into unreachable slivers. The faceplate carries no
-                min-height floor: a floor makes the rail taller than the panel,
-                and a chip scrolled into view then lands under whatever is
-                drawn over the dock. */}
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
+        <div
+            role="region"
+            aria-label="Proof mastering panel"
+            className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3"
+        >
+            {/* Keep the EQ surface usable by scrolling the grid horizontally
+                in narrow panels. No height floor lets the rails scroll within
+                the available panel height. */}
+            <div className="grid h-full min-h-0 grid-cols-[12rem_minmax(34rem,1fr)_13rem] gap-3">
                 <DawPluginRail>
                     <SideCard
                         title="Mission"

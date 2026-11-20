@@ -17,23 +17,25 @@ import {
     getMissingDeps,
 } from '@automerge/automerge';
 
-import { assertExactNativeChangeEncoding } from '../models/EncodeExactNativeChange';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
     NATIVE_SEQUENCE_MAX_OPERATIONS,
-    NATIVE_SEQUENCE_HISTORY_BATCH_SIZE,
+    type ProspectiveMutationWorkerResult,
+} from '../models/ProspectiveMutationWorkerProtocol';
+import { assertExactNativeChangeEncoding } from '../transformers/encodeExactNativeChange';
+import {
     isAbsentNativeAuthor,
     hasOpaqueNativeMetadata,
     nativeChangeMessage,
     nativeOperationCount,
-} from '../models/NativeMutationSequence';
-import { isNativePatchWithinOwnedPath } from '../models/NativePatchOwnership';
-import {
-    isNativeMutationSequence,
-    type ProspectiveMutationWorkerResult,
-} from '../models/ProspectiveMutationWorkerProtocol';
+} from '../transformers/nativeChangeMetadata';
 
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
+import { isNativeMutationSequence } from './isNativeMutationSequence';
+import { isNativePatchWithinOwnedPath } from './isNativePatchWithinOwnedPath';
+
+/** Source authority is read in separate host tasks, without exporting the entire native history. */
+const NATIVE_SEQUENCE_HISTORY_BATCH_SIZE = 128;
 
 type Input<TDoc> = {
     candidate: Doc<TDoc>;

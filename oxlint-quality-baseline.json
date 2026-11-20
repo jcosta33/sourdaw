@@ -13730,9 +13730,6 @@
     "src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx": {
         "vitest/expect-expect": {
             "count": 10
-        },
-        "vitest/no-conditional-expect": {
-            "count": 2
         }
     },
     "src/modules/Fermenter/presentations/views/__tests__/fermenterEngineSelectionUndo.integration.spec.tsx": {

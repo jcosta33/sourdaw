@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isNativePatchWithinOwnedPath } from '../NativePatchOwnership';
+import { isNativePatchWithinOwnedPath } from '../isNativePatchWithinOwnedPath';
 
 const ownedPath = ['slot', 'rows', 'selected'];
 

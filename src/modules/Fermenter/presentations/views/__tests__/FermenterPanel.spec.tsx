@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
@@ -594,60 +594,38 @@ describe('FermenterPanel', () => {
         });
     });
 
-    describe('compact header and minimum height layout constraints', () => {
-        it('renders compact toolbar strip and minimum height constraints for drawer scrolling', () => {
+    describe('panel regions', () => {
+        it('keeps the preset bench, inspector, and macro rig available to keyboard focus', () => {
             storeState.value = makeState({ activeVoices: 4, oscEngine: 0 });
-            const { container } = renderPanel();
+            renderPanel();
 
-            const faceplate = container.querySelector('.fermenter-faceplate');
-            expect(faceplate).toHaveClass('min-h-[460px]');
-            expect(faceplate).toHaveClass('h-full');
-
-            const header = container.querySelector('header');
-            expect(header).toHaveClass('min-h-[32px]');
             expect(screen.getByText('Scene')).toBeInTheDocument();
             expect(screen.getByText('4 voices')).toBeInTheDocument();
 
-            const paramScrollContainer = container.querySelector('.min-h-\\[180px\\]');
-            expect(paramScrollContainer).toBeInTheDocument();
-            expect(paramScrollContainer).toHaveClass('overflow-y-auto');
+            const browser = screen.getByRole('complementary', { name: 'Preset bench' });
+            const inspector = screen.getByRole('region', { name: 'Fermenter inspector' });
+            const performance = screen.getByRole('complementary', { name: 'Macro rig' });
+            expect(within(browser).getByRole('button', { name: 'Load Init' })).toBeInTheDocument();
+            expect(within(inspector).getByRole('tabpanel', { name: 'Oscillator' })).toBeInTheDocument();
+            expect(within(performance).getByText('Assign macro targets')).toBeInTheDocument();
 
-            const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
-            expect(rightRail).toBeInTheDocument();
-            expect(rightRail).toHaveClass('overflow-y-auto');
-
-            const leftRail = container.querySelector('aside.w-\\[228px\\]');
-            expect(leftRail).toBeInTheDocument();
-            expect(leftRail).toHaveClass('overflow-y-auto', 'min-h-0');
-
-            const centerSection = container.querySelector('section');
-            expect(centerSection).toBeInTheDocument();
-            expect(centerSection).toHaveClass('overflow-y-auto', 'min-h-0');
+            for (const region of [browser, inspector, performance]) {
+                expect(region.tabIndex).toBe(0);
+                region.focus();
+                expect(region).toHaveFocus();
+            }
         });
 
         it('prevents rail cards from collapsing with shrink constraints', () => {
             storeState.value = makeState({ uiLevel: 5 });
-            const { container } = renderPanel();
+            renderPanel();
 
-            const leftRail = container.querySelector('aside.w-\\[228px\\]');
-            const leftRailCards = leftRail?.children;
-            expect(leftRailCards).toBeDefined();
-            if (leftRailCards) {
-                for (const card of Array.from(leftRailCards)) {
-                    expect(card).toHaveClass('shrink-0');
-                }
-            }
-
-            const presetBrowserContainer = leftRail?.querySelector('.min-h-\\[160px\\]');
-            expect(presetBrowserContainer).toHaveClass('shrink-0');
-
-            const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
-            const rightRailCards = rightRail?.children;
-            expect(rightRailCards).toBeDefined();
-            if (rightRailCards) {
-                for (const card of Array.from(rightRailCards)) {
-                    expect(card).toHaveClass('shrink-0');
-                }
+            const browser = screen.getByRole('complementary', { name: 'Preset bench' });
+            const performance = screen.getByRole('complementary', { name: 'Macro rig' });
+            expect(within(browser).getByTestId('preset-browser').parentElement).toHaveClass('shrink-0');
+            expect(within(performance).getByText('Spectrum')).toBeInTheDocument();
+            for (const card of [...browser.children, ...performance.children]) {
+                expect(card).toHaveClass('shrink-0');
             }
         });
 
