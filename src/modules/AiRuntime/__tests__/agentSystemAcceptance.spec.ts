@@ -389,7 +389,8 @@ type RecipeExpansionTurn = { kind: 'expand'; id: string; recipeId: string; targe
 
 /**
  * One `analysis.measure` of a preview over the named fixture section: of an earlier recipe expansion,
- * of several earlier recipe expansions as one cumulative batch, or of a list of plain commands. Every named target renders in the live project and in the preview.
+ * of several earlier recipe expansions as one cumulative batch, or of a list of plain commands. Every
+ * named target renders in the live project and in the preview.
  */
 type PreviewMeasureTurn = {
     kind: 'measure-preview';
@@ -999,8 +1000,8 @@ function proposeBriefCall(turn: ProposeBriefTurn): ProviderCall & { id: string }
 
 /**
  * How many offline renders a case's own measurements make: one per target a project measurement
- * names, and two per target a preview names (the live project and the preview), once for each recipe batch. No case may lean on
- * the render double beyond what it measures.
+ * names, and two per target a preview names (the live project and the preview) for each recipe
+ * prefix it measures. No case may lean on the render double beyond what it measures.
  */
 function expectedRenderCount(testCase: CorpusCase): number {
     return testCase.providerTurns.reduce((total, turn) => {
@@ -1008,7 +1009,6 @@ function expectedRenderCount(testCase: CorpusCase): number {
             return total + 1;
         }
         if (turn.kind === 'measure-preview') {
-            // Each retained recipe a preview names renders its own cumulative batch: the project and the preview, per target.
             return total + 2 * turn.targets.length * (turn.recipeCallIds?.length ?? 1);
         }
         return total;
