@@ -50,7 +50,7 @@ describe('deviceCapabilities wrappers', () => {
     });
 
     it('selects the kit and gain of the first drum device', () => {
-        const devices = [
+        const devices: { type: string; parameterValues: Record<string, number> }[] = [
             { type: 'builtin-eq', parameterValues: { level: -20 } },
             { type: 'builtin-drum-kit', parameterValues: { kit: 1, level: -6 } },
         ];
