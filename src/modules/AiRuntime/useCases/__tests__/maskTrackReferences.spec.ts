@@ -162,6 +162,24 @@ describe('maskTrackReferences', () => {
             'add a compressor',
         ],
         [
+            'a device name the app gave it from its catalog entry',
+            context({
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Plate Reverb' }],
+                tracks: [track('vocal', 'Vocal', { devices: [device('d1', 'builtin-reverb', 'Plate Reverb')] })],
+            }),
+            'add a plate reverb',
+            'add a plate reverb',
+        ],
+        [
+            'a device name the user gave a catalog device',
+            context({
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Plate Reverb' }],
+                tracks: [track('vocal', 'Vocal', { devices: [device('d1', 'builtin-reverb', 'Wide Verb')] })],
+            }),
+            'add a plate reverb after Wide Verb',
+            'add a plate reverb after #########',
+        ],
+        [
             'a VCA group named like the kind word',
             context({ vcaGroups: [vcaGroup('vca-1', 'Group')] }),
             'group the drums',
