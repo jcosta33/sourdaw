@@ -8,6 +8,7 @@ import { type IntentResult } from '../../models/IntentResult';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
+import { BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import {
     type ScheduledVibeRunBatch,
     type MeasuredScheduledVibeRunPlan,
@@ -36,6 +37,7 @@ import { type readVibeRunCandidates } from './readVibeRunCandidates';
 import { readVibeRunInitialGoals } from './readVibeRunInitialGoals';
 import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
 import { readVibeRunWholeFit } from './readVibeRunWholeFit';
+import { readVibeTrackName } from './readVibeTrackName';
 import { toScheduledVibeRunBatch } from './toScheduledVibeRunBatch';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
@@ -50,10 +52,11 @@ export type PlannedVibeRunSchedule =
       }
     | { status: 'scheduled'; schedule: VibeRunSchedule; lines: string[]; receipts: ApplicationToolReceipt[] };
 
-/** The position the brief holds in its run; every planned batch follows it. */
-const BRIEF_POSITION = 1;
 /** The brief is one `setProductionBrief`. */
 const BRIEF_COMMAND_COUNT = 1;
+
+const PLAN_NO_LONGER_HOLDS =
+    'No batches were scheduled after the brief: the project no longer plans this reading as offered.';
 
 const EXCLUSION_REASONS: Readonly<Record<VibeRunExcludedTargetReason, string>> = {
     protected: 'the request or brief protects it',
@@ -69,19 +72,15 @@ const UNPLANNED_REASONS: Readonly<Record<VibeRunUnplannedRole['reason'], string>
     'target-exceeds-batch-cap': 'their recipes alone expand past one batch',
 };
 
-function trackName(context: ProjectContext, trackId: string): string {
-    return context.tracks.find((track) => track.id === trackId)?.name ?? trackId;
-}
-
 function describeLeftOut(plan: VibeRunPlan, context: ProjectContext): string[] {
     return [
         ...plan.excludedTargets.map(
             (excluded) =>
-                `Not planned: ${trackName(context, excluded.targetId)}, because ${EXCLUSION_REASONS[excluded.reason]}.`
+                `Not planned: ${readVibeTrackName(context, excluded.targetId)}, because ${EXCLUSION_REASONS[excluded.reason]}.`
         ),
         ...plan.unplannedRoles.map(
             (unplanned) =>
-                `No batch for the ${unplanned.role} tracks (${unplanned.targetIds.map((id) => trackName(context, id)).join(', ')}): ${UNPLANNED_REASONS[unplanned.reason]}.`
+                `No batch for the ${unplanned.role} tracks (${unplanned.targetIds.map((id) => readVibeTrackName(context, id)).join(', ')}): ${UNPLANNED_REASONS[unplanned.reason]}.`
         ),
     ];
 }
@@ -96,13 +95,13 @@ function describePlannedRun(input: {
         `After the brief, ${String(input.batches.length)} ${input.batches.length === 1 ? 'batch follows' : 'batches follow'}, each measured, previewed and approved on its own:`,
         ...input.batches.map(
             (batch) =>
-                `- Batch ${String(batch.ordinal + BRIEF_POSITION)} of ${String(input.total)}: ${describeVibeRunObjective(batch)} — ${batch.targetIds.map((id) => trackName(input.context, id)).join(', ')}`
+                `- Batch ${String(batch.ordinal + BRIEF_POSITION)} of ${String(input.total)}: ${describeVibeRunObjective(batch)} — ${batch.targetIds.map((id) => readVibeTrackName(input.context, id)).join(', ')}`
         ),
         ...describeLeftOut(input.plan, input.context),
     ];
     for (const cell of input.batches.flatMap((batch) => batch.silentRanges ?? [])) {
         lines.push(
-            `No goal for ${trackName(input.context, cell.targetId)} over ${describeRange(input.context, cell.range)}: it is silent there.`
+            `No goal for ${readVibeTrackName(input.context, cell.targetId)} over ${describeRange(input.context, cell.range)}: it is silent there.`
         );
     }
     return lines;
@@ -181,7 +180,7 @@ function readInitialWitnesses(input: ScheduleInput, collected: Collected, goals:
             });
             const section = input.context.sections?.find((section) => section.id === range.sectionId);
             lines.push(
-                `Initial measurement on ${trackName(input.context, targetId)}, ${section?.name ?? 'arrangement'} [${String(range.startBeat)}, ${String(range.endBeat)}]: ${readVibeMetricLabel(metricId, goal.band)} ${formatVibeFigure(projected.value, projected.unit)}, before the brief was approved.`
+                `Initial measurement on ${readVibeTrackName(input.context, targetId)}, ${section?.name ?? 'arrangement'} [${String(range.startBeat)}, ${String(range.endBeat)}]: ${readVibeMetricLabel(metricId, goal.band)} ${formatVibeFigure(projected.value, projected.unit)}, before the brief was approved.`
             );
         }
     }
@@ -423,13 +422,16 @@ async function planSchedule(
     expectedPlanDigest: string | undefined
 ): Promise<PlannedVibeRunSchedule> {
     const prepared = prepareVibeRunSchedule(input);
+    if (prepared.status === 'none' && expectedPlanDigest !== undefined) {
+        return { status: 'unscheduled', lines: [PLAN_NO_LONGER_HOLDS] };
+    }
     if (prepared.status !== 'prepared') {
         return prepared;
     }
     if (expectedPlanDigest !== undefined && expectedPlanDigest !== prepared.planDigest) {
         return {
             status: 'unscheduled',
-            lines: ['No batches were scheduled after the brief: the project no longer plans this reading as offered.'],
+            lines: [PLAN_NO_LONGER_HOLDS],
         };
     }
     const { batches, reading, catalog, candidate, ranges, arrangementRange } = prepared;

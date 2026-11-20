@@ -4,7 +4,6 @@ import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
 
 import { AGENT_RUN_TERMINAL_PHASES, type AgentRun } from '../models/AgentRun';
 import { type BriefReading, type BriefReadings } from '../models/BriefReading';
@@ -36,8 +35,7 @@ import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailabi
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
-import { readRetainedPlanDigestDrift } from './vibeRun/readRetainedPlanDigestDrift';
-import { readRetainedPlanReferenceDrift } from './vibeRun/readRetainedPlanReferenceDrift';
+import { readChosenReadingDrift } from './vibeRun/readChosenReadingDrift';
 
 type ChooseVibeBriefReadingInput = {
     confirmationId: string;
@@ -54,20 +52,6 @@ type BriefAction = Extract<PendingAppActionConfirmation['actions'][number], { ty
 
 function refuse(reason: string): ChooseVibeBriefReadingOutput {
     return { status: 'refused', reason };
-}
-
-/** Why the card's own facts no longer hold, or `null` while they do. */
-function readStaleness(confirmation: PendingAppActionConfirmation, briefAction: BriefAction): string | null {
-    if (projectStore.value?.productionBrief.revision !== briefAction.payload.expectedRevision) {
-        return 'The production brief changed since this card was made, so its readings no longer apply.';
-    }
-    if (
-        confirmation.approvalSnapshot.commandBatch?.authority.projectId !== captureProjectIdentity() ||
-        !projectRevisionMatchesLiveIgnoringSaveWrites(confirmation.projectRevision)
-    ) {
-        return 'The project changed since this card was made, so its readings no longer apply.';
-    }
-    return null;
 }
 
 function claimReadingPlanWork(runId: string) {
@@ -137,29 +121,16 @@ export async function chooseVibeBriefReading(
     if (offer.catalogId !== getBriefMixIntentCatalog().catalogId) {
         return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
     }
-    const liveContext = getProjectContext();
-    const missing = readRetainedPlanReferenceDrift(reading, liveContext);
-    if (missing !== null) {
-        return refuse(missing);
-    }
-    const stale = readStaleness(confirmation, briefAction);
-    if (stale !== null) {
-        return refuse(stale);
-    }
     const mixIntent = readBriefMixIntent({ catalogId: offer.catalogId, requestedDescriptors: reading.descriptors });
-    if (mixIntent === null) {
-        return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
-    }
-    const changedPlan = readRetainedPlanDigestDrift({
+    const drift = readChosenReadingDrift({
+        confirmation,
+        offer,
         reading,
         run,
-        prompt: run.request,
-        context: liveContext,
-        brief: offer.brief,
-        mixIntent,
+        context: getProjectContext(),
     });
-    if (changedPlan !== null) {
-        return refuse(changedPlan);
+    if (mixIntent === null || drift !== null) {
+        return refuse(drift ?? 'The mix catalogue changed since this card was made, so its readings no longer apply.');
     }
     const claimed = claimReadingPlanWork(run.runId);
     if (claimed.status !== 'claimed') {
@@ -305,6 +276,17 @@ async function planAfterRetire(input: {
     const { confirmation, offer, reading, run, replacementId, assistantMessageId } = input;
     const revision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
+    // The retire above awaited, so the project may have moved since the checks that admitted this choice.
+    const drift = readChosenReadingDrift({
+        confirmation,
+        offer,
+        reading,
+        run,
+        context,
+    });
+    if (drift !== null) {
+        return failReading({ run, assistantMessageId, reading, reason: drift });
+    }
     const priorReceipts = run.plan?.applicationToolReceipts ?? [];
     const planned = await planBriefVibeRun({
         prompt: run.request,

@@ -34,6 +34,7 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { pendingActionResourceSettlement } from '../agentRequestOrchestration/pendingActionResourceSettlement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { agentRunCancellation } from '../cancelAgentRun';
@@ -940,6 +941,69 @@ describe('a choice that no longer applies', () => {
         });
     });
 
+    describe('whose project moves while the card is being retired', () => {
+        async function chooseWhileRetiring(card: Confirmation, moveProject: () => Promise<void>) {
+            const original = pendingActionResourceSettlement.settleBestEffort.bind(pendingActionResourceSettlement);
+            let release: () => void = () => undefined;
+            const gate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.spyOn(pendingActionResourceSettlement, 'settleBestEffort').mockImplementation(async (input) => {
+                await gate;
+                return original(input);
+            });
+            const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
+            const choosing = chooseVibeBriefReading({
+                confirmationId: card.id,
+                readingId: readingIdOf(card, 'Darker top end'),
+            });
+            await moveProject();
+            release();
+            const outcome = await choosing;
+            return { outcome, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
+        }
+
+        function expectRunEndedWithoutPlan(card: Confirmation, renders: number) {
+            expect(renders).toBe(0);
+            expect(proposedCards()).toEqual([]);
+            const run = agentRunLifecycle.get(card.runId);
+            expect(run?.phase).toBe('failed');
+            expect(run?.plan?.batchSchedule).toBeUndefined();
+        }
+
+        it('refuses a reading whose target track was removed during the retire, and measures nothing', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            const plan = readingsOf(card).find((reading) => reading.name === 'Darker top end')?.plan;
+            const removedId = plan?.batches[0]?.targetIds[0];
+            const removedName = removedId === undefined ? undefined : plan?.trackNames[removedId];
+            if (removedId === undefined || removedName === undefined) {
+                throw new TypeError('Expected the reading to plan a named track');
+            }
+
+            const { outcome, renders } = await chooseWhileRetiring(card, () =>
+                executeAppAction({ type: 'removeTrack', payload: { trackId: removedId } }).then(() => undefined)
+            );
+
+            expect(outcome).toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
+            });
+            expectRunEndedWithoutPlan(card, renders);
+        });
+
+        it('refuses a reading whose plan is unchanged but whose brief moved during the retire, and measures nothing', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+
+            const { outcome, renders } = await chooseWhileRetiring(card, editBrief);
+
+            expect(outcome).toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/production brief changed/u),
+            });
+            expectRunEndedWithoutPlan(card, renders);
+        });
+    });
+
     it('refuses a card that offered no readings', async () => {
         const { card } = await ask({
             catalogId: getBriefMixIntentCatalog().catalogId,
@@ -953,7 +1017,7 @@ describe('a choice that no longer applies', () => {
 });
 
 describe('planning a reading against the plan it was offered with', () => {
-    async function planWith(digestFor: (retained: string) => string) {
+    async function offerForPlanning() {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         const offer = requireOffer(card);
         const reading = offer.readings[0];
@@ -965,10 +1029,19 @@ describe('planning a reading against the plan it was offered with', () => {
         if (mixIntent === null || run === null) {
             throw new TypeError('Expected a live run and a catalogue selection');
         }
+        return { card, offer, reading, mixIntent, run };
+    }
+
+    async function planAgainst(
+        offered: Awaited<ReturnType<typeof offerForPlanning>>,
+        expectedPlanDigest: string | undefined,
+        prompt: string = offered.run.request
+    ) {
+        const { card, offer, mixIntent, run } = offered;
         const admit = vi.fn(agentWorkBudget.admitMeasurement(card.runId));
         const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
         const planned = await planVibeRunSchedule({
-            prompt: run.request,
+            prompt,
             context: getProjectContext(),
             brief: offer.brief,
             mixIntent,
@@ -978,13 +1051,15 @@ describe('planning a reading against the plan it was offered with', () => {
             signal: new AbortController().signal,
             admit,
             priorReceipts: run.plan?.applicationToolReceipts ?? [],
-            expectedPlanDigest: digestFor(reading.plan.planDigest),
+            expectedPlanDigest,
         });
-        return { planned, reading, admit, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
+        return { planned, admit, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
     }
 
     it('measures nothing and plans nothing when the live preparation differs from the digest', async () => {
-        const { planned, admit, renders } = await planWith(() => 'a-digest-the-live-project-does-not-prepare');
+        const offered = await offerForPlanning();
+
+        const { planned, admit, renders } = await planAgainst(offered, 'a-digest-the-live-project-does-not-prepare');
 
         expect(planned).toMatchObject({
             status: 'unscheduled',
@@ -994,8 +1069,30 @@ describe('planning a reading against the plan it was offered with', () => {
         expect(renders).toBe(0);
     });
 
+    it('plans nothing, as unscheduled, when a digest is expected and the project now prepares no batch', async () => {
+        const offered = await offerForPlanning();
+        const protectEverything = 'make this mix warmer but leave the Drums, the Vocal and the Bass alone';
+        const withoutDigest = await planAgainst(offered, undefined, protectEverything);
+        expect(withoutDigest.planned).toEqual({ status: 'none' });
+
+        const { planned, admit, renders } = await planAgainst(
+            offered,
+            offered.reading.plan.planDigest,
+            protectEverything
+        );
+
+        expect(planned).toMatchObject({
+            status: 'unscheduled',
+            lines: ['No batches were scheduled after the brief: the project no longer plans this reading as offered.'],
+        });
+        expect(admit).not.toHaveBeenCalled();
+        expect(renders).toBe(0);
+    });
+
     it('measures and schedules when the live preparation equals the digest', async () => {
-        const { planned, admit, renders } = await planWith((retained) => retained);
+        const offered = await offerForPlanning();
+
+        const { planned, admit, renders } = await planAgainst(offered, offered.reading.plan.planDigest);
 
         expect(planned.status).toBe('scheduled');
         expect(admit).toHaveBeenCalled();

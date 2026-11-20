@@ -13,6 +13,7 @@ import { compilePerceptualConstraints } from './perceptualConstraints/compilePer
 import { type CatalogBriefMixAlternative, readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
 import { readBriefMixIntent } from './readBriefMixIntent';
 import { prepareVibeRunSchedule } from './vibeRun/prepareVibeRunSchedule';
+import { readVibeTrackName } from './vibeRun/readVibeTrackName';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];
@@ -221,16 +222,12 @@ function prepareReadings(input: {
                 trackNames: Object.fromEntries(
                     prepared.batches
                         .flatMap((batch) => batch.targetIds)
-                        .map((trackId) => [trackId, trackName(input.context, trackId)])
+                        .map((trackId) => [trackId, readVibeTrackName(input.context, trackId)])
                 ),
             },
         });
     }
     return { status: 'prepared', alternatives: planned };
-}
-
-function trackName(context: ProjectContext, trackId: string): string {
-    return context.tracks.find((track) => track.id === trackId)?.name ?? trackId;
 }
 
 /** The one `setProductionBrief` a composed brief is retained as. */

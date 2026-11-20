@@ -1,13 +1,11 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { type BriefReadingPlan } from '../../models/BriefReading';
+import { BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import { type VibeRunExpectedDelta } from '../../models/VibeRunPlan';
 
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
-
-/** The brief holds the first position of its run; every planned batch follows it. */
-const BRIEF_POSITION = 1;
 
 const DIRECTION_WORDS: Readonly<Record<VibeRunExpectedDelta['direction'], string>> = {
     increase: 'up',
