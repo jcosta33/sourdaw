@@ -137,7 +137,6 @@ function bindBatchSchedule(
     };
 }
 
-/** The commands the batch being planned and every later batch of its schedule still owe. */
 type PlanRecord = Parameters<typeof agentRunLifecycle.recordPlan>[0];
 
 /**
@@ -152,6 +151,7 @@ function requireAdmittedPlanRecord(record: PlanRecord): PlanRecord {
     return record;
 }
 
+/** The commands the batch being planned and every later batch of its schedule still owe. */
 function getScheduledCommandCount(schedule: AgentRunBatchSchedule): number {
     return schedule.slices
         .filter((slice) => slice.position >= schedule.position)
