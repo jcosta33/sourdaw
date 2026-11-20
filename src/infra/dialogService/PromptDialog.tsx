@@ -29,7 +29,7 @@ export const PromptDialog = (): ReactElement => {
     const open = Boolean(pending);
     useEffect(() => {
         if (!open) {
-            return;
+            return undefined;
         }
 
         function stopComposingEscape(event: KeyboardEvent) {
