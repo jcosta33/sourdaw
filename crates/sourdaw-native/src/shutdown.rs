@@ -71,10 +71,15 @@ const SCHEDULER_RELEASE_BUDGET: Duration = Duration::from_millis(500);
 /// Poll interval while waiting for that release.
 const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 
-/// How long the cascade may spend *waiting* for cancelled offline renders to
+/// How long the cascade may spend waiting for cancelled offline renders to
 /// end. A cancel lands before a render's next block, so the ordinary case is a
-/// block's processing plus the release of its instances; charged as measured,
-/// like [`SCHEDULER_RELEASE_BUDGET`].
+/// block's processing plus the release of its instances.
+///
+/// Unlike [`SCHEDULER_RELEASE_BUDGET`], the work run while waiting is charged
+/// too: the wait drains the UI thread's posted work, which is a render's plugin
+/// constructions and teardowns, and that is the wall clock this budget bounds.
+/// Each sleep and each drain is charged what it measured, so the wait ends
+/// within the budget plus one drain.
 pub(crate) const OFFLINE_RENDER_STOP_BUDGET: Duration = Duration::from_millis(500);
 
 /// The deadline the shell gives this whole cascade before it stops waiting and
@@ -187,7 +192,9 @@ fn shutdown_with_wait(
 /// The registry is polled, never waited on: a render takes it to give its slot
 /// back. Each poll first runs whatever work other threads have posted to the
 /// UI thread, because a render releases its plugin instances there and this
-/// cascade is that thread's turn.
+/// cascade is that thread's turn. That drain is charged to the budget with the
+/// polls; dropping it instead would leave a render waiting on this thread for
+/// a turn that never comes.
 pub(crate) fn stop_offline_renders<Ui: UiThread + ?Sized>(
     app_state: &AppState,
     ui: &Ui,
@@ -196,7 +203,7 @@ pub(crate) fn stop_offline_renders<Ui: UiThread + ?Sized>(
     cancel_every_offline_render(app_state);
     let mut remaining_budget = OFFLINE_RENDER_STOP_BUDGET;
     loop {
-        ui.run_posted_work();
+        remaining_budget = remaining_budget.saturating_sub(run_posted_work_measured(ui));
         let in_flight = offline_renders_in_flight(app_state);
         if in_flight == Some(0) {
             return 0;
@@ -387,6 +394,15 @@ fn reclaim_until_waiting_budget_is_spent(
 fn sleep_one_poll(poll: Duration) -> Duration {
     let started = Instant::now();
     thread::sleep(poll);
+    started.elapsed()
+}
+
+/// Run the UI thread's posted work, and report how long that took — a plugin's
+/// construction or teardown takes as long as it takes, and the stop budget is
+/// charged for it, measured like [`sleep_one_poll`].
+fn run_posted_work_measured<Ui: UiThread + ?Sized>(ui: &Ui) -> Duration {
+    let started = Instant::now();
+    ui.run_posted_work();
     started.elapsed()
 }
 
@@ -1038,29 +1054,87 @@ mod tests {
 
         let state = AppState::default();
         let render = InFlightRender::begin(&state, None).expect("a render is admitted");
-        let mut charged = Duration::ZERO;
 
+        // Every charge is measured, so the budget is spent only once at least
+        // that much wall clock has passed.
+        let started = Instant::now();
         let report = shutdown_with_wait(
             &CollabState::default(),
             &MidiState::default(),
             &state,
             Some(&NoWindowHost),
-            |poll| {
-                charged += poll;
-                poll
-            },
+            sleep_one_poll,
         );
+        let waited = started.elapsed();
 
         assert!(render.control().is_cancelled(), "quit cancels the render");
         assert_eq!(report.offline_renders_left_running, 1);
         assert!(
-            charged >= OFFLINE_RENDER_STOP_BUDGET,
-            "the cascade waited its whole stop budget for the render"
+            waited >= OFFLINE_RENDER_STOP_BUDGET,
+            "the cascade waited its whole stop budget for the render: {waited:?}"
         );
         let Err(refusal) = InFlightRender::begin(&state, Some("late".to_string())) else {
             panic!("a render after quit is refused");
         };
         assert!(refusal.starts_with(OFFLINE_RENDER_CLOSED), "{refusal}");
+        drop(render);
+    }
+
+    /// How long one drain of [`SlowPostedWork`] takes while it is slow: a
+    /// heavy plugin's construction or teardown, run inline by the quit thread.
+    const SLOW_POSTED_WORK: Duration = Duration::from_millis(300);
+
+    /// How many drains are slow before the posted queue runs dry, so a wait
+    /// that never charges the drain still ends, late, rather than hanging.
+    const SLOW_DRAINS: usize = 8;
+
+    /// A UI thread whose posted work takes [`SLOW_POSTED_WORK`] on each of
+    /// its first [`SLOW_DRAINS`] drains, counting every drain.
+    #[derive(Default)]
+    struct SlowPostedWork {
+        drains: std::sync::atomic::AtomicUsize,
+    }
+
+    impl UiThread for SlowPostedWork {
+        fn run_posted_work(&self) {
+            let drain = self
+                .drains
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if drain < SLOW_DRAINS {
+                thread::sleep(SLOW_POSTED_WORK);
+            }
+        }
+    }
+
+    /// The posted work the quit thread runs while it waits is charged to the
+    /// stop budget with the polls: a render whose instances take longer to
+    /// build or release than the budget costs the exit the budget plus one
+    /// drain, not every drain the wait would otherwise go on running.
+    #[test]
+    fn the_quit_wait_charges_the_posted_work_it_runs_to_its_stop_budget() {
+        use crate::commands::offline_plugins::InFlightRender;
+
+        let state = AppState::default();
+        let render = InFlightRender::begin(&state, None).expect("a render is admitted");
+        let ui = SlowPostedWork::default();
+
+        let started = Instant::now();
+        let left_running = stop_offline_renders(&state, &ui, &mut |poll| poll);
+        let stopped_in = started.elapsed();
+
+        assert_eq!(left_running, 1, "the held render is reported");
+        let drains = ui.drains.load(std::sync::atomic::Ordering::SeqCst);
+        let drains_inside_the_budget = OFFLINE_RENDER_STOP_BUDGET
+            .as_millis()
+            .div_ceil(SLOW_POSTED_WORK.as_millis()) as usize;
+        assert!(
+            drains <= drains_inside_the_budget,
+            "the wait stopped draining once the budget was spent: {drains} drains"
+        );
+        assert!(
+            stopped_in < OFFLINE_RENDER_STOP_BUDGET + SLOW_POSTED_WORK,
+            "the wait returned within its budget plus one drain: {stopped_in:?}"
+        );
         drop(render);
     }
 

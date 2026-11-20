@@ -146,7 +146,8 @@ impl OfflineRenders {
         if self.admitted.len() >= MAX_OFFLINE_RENDERS_IN_FLIGHT {
             return Err(format!(
                 "{OFFLINE_RENDER_LIMIT_REACHED}: {MAX_OFFLINE_RENDERS_IN_FLIGHT} offline renders \
-                 are already in flight; this one was refused before anything was allocated for it"
+                 are already in flight; this one was refused before anything was mapped or \
+                 built for it"
             ));
         }
         let control = match render_id {
@@ -725,13 +726,16 @@ fn refusal(bound: &BoundHostedInstance, reason: &str) -> String {
 ///
 /// Every live state is captured first, at render start, so the print is one
 /// moment of the session rather than a smear across the constructions. A
-/// refusal partway releases whatever was already built.
+/// refusal partway releases whatever was already built. So does a cancel of
+/// `render`, read before each construction and each restore: a render
+/// cancelled at quit builds nothing more on the thread waiting for it to end.
 pub(crate) async fn build_offline_instances<'a>(
     bound: &[BoundHostedInstance],
     sample_rate: f64,
     state: &'a AppState,
     ui: &'a dyn UiThread,
     seams: &OfflinePluginSeams,
+    render: &InFlightRender<'_>,
 ) -> Result<OfflinePluginInstances<'a>, String> {
     let mut built = OfflinePluginInstances {
         instances: Vec::with_capacity(bound.len()),
@@ -777,6 +781,9 @@ pub(crate) async fn build_offline_instances<'a>(
     }
 
     for (instance, (chunk, vetted)) in bound.iter().zip(captured) {
+        if render.control().is_cancelled() {
+            return Err(render.cancelled());
+        }
         let backend =
             host_backend(&vetted.entry.format).map_err(|reason| refusal(instance, &reason))?;
         // The gate spans this instance's vet and construction only: released
@@ -811,6 +818,9 @@ pub(crate) async fn build_offline_instances<'a>(
         #[cfg(test)]
         if let Some(before_restore) = &seams.before_restore {
             before_restore();
+        }
+        if render.control().is_cancelled() {
+            return Err(render.cancelled());
         }
         let latency_frames = shared
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {

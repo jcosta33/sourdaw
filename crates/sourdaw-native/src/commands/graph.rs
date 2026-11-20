@@ -6543,9 +6543,9 @@ fn render_offline_batch(
 /// blocks; a cancelled render answers an error starting
 /// `offline-render-cancelled`. At most `MAX_OFFLINE_RENDERS_IN_FLIGHT` renders,
 /// named or not, run at once: one past that is refused with
-/// `offline-render-limit-reached` before anything is mapped, allocated or
-/// built for it. It runs on the calling worker, never on `ui`,
-/// which is only ever asked to build and tear down instances.
+/// `offline-render-limit-reached` before anything is mapped or built for it.
+/// It runs on the calling worker, never on `ui`, which is only ever asked to
+/// build and tear down instances.
 pub async fn render_graph_offline(
     batch: Value,
     frames: u32,
@@ -6635,7 +6635,8 @@ pub(crate) async fn render_graph_offline_with(
     if let Some(after_mapping) = &seams.after_mapping {
         after_mapping(state);
     }
-    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
+    let plugins =
+        build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams, &render).await?;
     let (left, right) =
         render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
     drop(plugins);

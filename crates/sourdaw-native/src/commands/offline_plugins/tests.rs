@@ -1315,6 +1315,116 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
     );
 }
 
+const SECOND_INSTANCE: &str = "fx-live-second";
+
+/// A second engine-attached instance of the processing class, under its own
+/// instance and engine plugin ids, and the device that names it.
+fn attach_second_live_fx(fx: &InstalledFx, state: &AppState) -> Value {
+    let format = Format::Clap;
+    let descriptor = processing_class(format);
+    state.engine_plugins.lock().expect("engine plugins").insert(
+        SECOND_INSTANCE.to_string(),
+        EnginePluginInstanceData {
+            engine_plugin_id: ENGINE_PLUGIN_ID + 7,
+            runtime: Arc::new(SharedHostedPlugin::new(live_runtime(
+                fx,
+                format,
+                &descriptor,
+            ))),
+            name: "Sourdaw Harness Fx".to_string(),
+            parameters: Vec::new(),
+            has_gui: false,
+            chain_kind: DeviceKind::Effect,
+            parameter_events: None,
+            load_resolution: fx.load_resolution(format, &descriptor),
+        },
+    );
+    json!({ "id": "d-fx-second", "name": "Harness Fx", "type": "plugin", "bypassed": false,
+            "parameterValues": {}, "externalPluginId": "com.sourdaw.harness-fx",
+            "externalInstanceId": SECOND_INSTANCE })
+}
+
+/// A cancel that lands after the mapping, before any instance is constructed,
+/// stops the build there: nothing is constructed for a render nobody wants.
+#[test]
+fn a_cancel_after_the_mapping_constructs_no_instance() {
+    let fx = InstalledFx::create("cancel-before-construct");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.after_mapping = Some(Box::new(|state: &AppState| {
+        cancel_graph_offline("render-mapped".to_string(), state).expect("the cancel lands");
+    }));
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        Some("render-mapped"),
+    )
+    .expect_err("the render was cancelled before it built anything");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+/// A cancel that lands while the build is under way stops it before the next
+/// restore and the next construction: the instance already built is released
+/// on the UI thread and no further one is constructed.
+#[test]
+fn a_cancel_while_building_constructs_no_further_instance() {
+    let fx = InstalledFx::create("cancel-while-building");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let second_fx_device = attach_second_live_fx(&fx, &state);
+    let ui = RecordingUiThread::start();
+    let (restoring, restore_reached) = mpsc::channel::<()>();
+    let (release_restore, restore_released) = mpsc::channel::<()>();
+    let first_restore = Mutex::new(Some((restoring, restore_released)));
+    let mut seams = fx.seams();
+    seams.before_restore = Some(Box::new(move || {
+        let Some((restoring, restore_released)) = first_restore.lock().expect("first").take()
+        else {
+            return;
+        };
+        restoring.send(()).expect("the test is watching the build");
+        restore_released
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the restore");
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device(), second_fx_device]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-building"),
+            )
+        });
+        restore_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build constructs its first instance");
+        cancel_graph_offline("render-building".to_string(), &state).expect("the cancel lands");
+        release_restore.send(()).expect("the build is waiting");
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled while building returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the first instance's construction and release ran; nothing further was built"
+    );
+    assert!(state
+        .retired_engine_plugins
+        .lock()
+        .expect("retired")
+        .is_empty());
+}
+
 #[test]
 fn a_cancel_that_arrives_before_its_render_still_cancels_it_and_builds_nothing() {
     let fx = InstalledFx::create("cancel-early");
