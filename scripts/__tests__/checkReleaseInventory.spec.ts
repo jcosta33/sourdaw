@@ -5068,6 +5068,12 @@ describe('release inventory', () => {
             ]);
         });
 
+        it('finds a URL literal after one unpaired lifetime', () => {
+            const contents = 'const ENDPOINT: &\'static str = "https://lifetime.example.net/v1";';
+
+            expect(scanRust(contents)).toEqual([{ file: rustPath, value: 'https://lifetime.example.net/v1' }]);
+        });
+
         it('does not report URLs inside line or nested block comments', () => {
             const contents = [
                 lifetimesAndCharLiterals,
