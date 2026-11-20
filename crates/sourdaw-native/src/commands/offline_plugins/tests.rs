@@ -1005,6 +1005,108 @@ fn a_reload_between_the_mapping_and_the_build_refuses_the_render_by_name() {
     assert_eq!(ui.tasks_run(), 0, "nothing is built");
 }
 
+/// An engine plugin id restarts with the engine, so a replacement loaded from
+/// another file whose plugin reports the same name and kind can land under the
+/// very id the batch was mapped with. It is still not the plugin the batch was
+/// mapped against, and the render refuses it by name.
+#[test]
+fn a_same_named_replacement_under_the_mapped_engine_id_refuses_the_render_by_name() {
+    let fx = InstalledFx::create("same-name-first");
+    let replacement_fx = InstalledFx::create("same-name-second");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    let replacement = Arc::new(SharedHostedPlugin::new(live_runtime(
+        &replacement_fx,
+        Format::Clap,
+        &descriptor,
+    )));
+    let reload = Mutex::new(Some((
+        replacement,
+        replacement_fx.load_resolution(Format::Clap, &descriptor),
+    )));
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), replacement_fx.root.clone()]);
+    seams.after_mapping = Some(Box::new(move |state: &AppState| {
+        if let Some((shared, load_resolution)) = reload.lock().expect("reload").take() {
+            record_engine_instance(
+                state,
+                shared,
+                load_resolution,
+                DeviceKind::Effect,
+                ENGINE_PLUGIN_ID,
+            );
+        }
+    }));
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .map(|print| print.len())
+    .expect_err("a print of a replacement under the mapped id is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("its live instance was replaced while the render started"),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing is built");
+}
+
+/// The same live runtime re-attached under a new engine plugin id between the
+/// mapping and the build is the plugin the batch was mapped against: the
+/// render prints it, exactly as it prints with the id unchanged.
+#[test]
+fn an_unchanged_instance_re_attached_under_a_new_engine_id_still_prints() {
+    let fx = InstalledFx::create("re-attached");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    let unchanged = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("the instance prints under the id it was mapped with");
+
+    let reattach = Mutex::new(Some((live, fx.load_resolution(Format::Clap, &descriptor))));
+    let mut seams = fx.seams();
+    seams.after_mapping = Some(Box::new(move |state: &AppState| {
+        if let Some((shared, load_resolution)) = reattach.lock().expect("reattach").take() {
+            record_engine_instance(
+                state,
+                shared,
+                load_resolution,
+                DeviceKind::Effect,
+                ENGINE_PLUGIN_ID + 1,
+            );
+        }
+    }));
+
+    let reattached = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect("the same runtime under a new engine id prints");
+
+    assert!(
+        reattached.iter().any(|sample| *sample != 0.0),
+        "the print carries the effect's output"
+    );
+    assert_frames_equal(&reattached, &unchanged);
+}
+
 // ── Granted plugin folders ──────────────────────────────────────────────
 
 /// A forbidden set inside `tree`, clear of the fixture's own folder.

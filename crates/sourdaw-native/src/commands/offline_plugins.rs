@@ -554,9 +554,14 @@ struct LiveRecord {
 }
 
 /// Take every bound instance's live record under one lock, refusing by name an
-/// instance whose record is gone, or is no longer the plugin the batch was
-/// mapped against — an unload and a reload under the same id can land between
-/// the mapping and this read, and could be another plugin or an instrument.
+/// instance whose record is gone, or no longer holds the very runtime the batch
+/// was mapped against — an unload and a reload under the same id can land
+/// between the mapping and this read, and could be another plugin, another
+/// file under the same plugin name, or an instrument. The runtime is the load's
+/// identity: an engine plugin id restarts with the engine, so a replacement can
+/// reuse the mapped one, and the same runtime re-attached under a new id is
+/// still the plugin the batch was mapped against. The render registers its
+/// offline instance under the mapped id either way.
 fn live_records(
     bound: &[BoundHostedInstance],
     state: &AppState,
@@ -574,10 +579,9 @@ fn live_records(
                     "its live instance was unloaded while the render started",
                 ));
             };
-            let mapped_under = record.engine_plugin_id == instance.engine_plugin_id
-                && record.chain_kind == instance.chain_kind
-                && record.name == instance.plugin_name;
-            if !mapped_under {
+            let mapped_against =
+                std::ptr::eq(Arc::as_ptr(&record.runtime), instance.live_runtime.as_ptr());
+            if !mapped_against {
                 return Err(refusal(
                     instance,
                     "its live instance was replaced while the render started",

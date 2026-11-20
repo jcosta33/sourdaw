@@ -159,6 +159,7 @@ use crate::commands::offline_plugins::{
     build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
     OfflinePluginSeams,
 };
+use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grand_boule::parameters::midi_to_key;
@@ -3015,26 +3016,50 @@ pub(crate) struct HostedInstances {
     bound: BTreeMap<String, String>,
 }
 
-/// One instance a device may bind to: where it splices, and the plugin's name
-/// for the refusals that are about it.
+/// One instance a device may bind to: where it splices, the plugin's name for
+/// the refusals that are about it, and — offline — the live runtime the
+/// snapshot saw.
 #[derive(Clone, Debug)]
 struct HostedInstance {
     device: EngineOwnedDevice,
     plugin_name: String,
+    /// Weak, so the snapshot never keeps a runtime alive or becomes the one
+    /// whose drop tears a plugin down. The engine law binds no snapshot and
+    /// holds an empty one.
+    live_runtime: Weak<SharedHostedPlugin>,
 }
 
 /// One instance an offline render bound, as the render builds it, with the
 /// identity it was mapped under: the build refuses a live record that no longer
-/// carries it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// holds the very runtime the mapping saw.
+#[derive(Clone, Debug)]
 pub(crate) struct BoundHostedInstance {
     pub(crate) instance_id: String,
     /// The first device that named it, for refusals.
     pub(crate) device_id: String,
     pub(crate) plugin_name: String,
+    /// The id the render's own graph registers the offline instance under —
+    /// the one the batch was mapped with, whatever the live engine calls the
+    /// instance by the time it is built.
     pub(crate) engine_plugin_id: usize,
     pub(crate) chain_kind: DeviceKind,
+    /// The live runtime the mapping saw: its load is the identity, because an
+    /// engine plugin id restarts with the engine and a reload can reuse a name.
+    pub(crate) live_runtime: Weak<SharedHostedPlugin>,
 }
+
+impl PartialEq for BoundHostedInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance_id == other.instance_id
+            && self.device_id == other.device_id
+            && self.plugin_name == other.plugin_name
+            && self.engine_plugin_id == other.engine_plugin_id
+            && self.chain_kind == other.chain_kind
+            && Weak::ptr_eq(&self.live_runtime, &other.live_runtime)
+    }
+}
+
+impl Eq for BoundHostedInstance {}
 
 impl HostedInstances {
     /// The live engine's own instances.
@@ -3049,6 +3074,7 @@ impl HostedInstances {
                         HostedInstance {
                             device,
                             plugin_name: String::new(),
+                            live_runtime: Weak::new(),
                         },
                     )
                 })
@@ -3077,6 +3103,7 @@ impl HostedInstances {
                                 chain_kind: instance.chain_kind,
                             },
                             plugin_name: instance.name.clone(),
+                            live_runtime: Arc::downgrade(&instance.runtime),
                         },
                     )
                 })
@@ -3139,6 +3166,7 @@ impl HostedInstances {
                     plugin_name: instance.plugin_name.clone(),
                     engine_plugin_id: instance.device.engine_plugin_id,
                     chain_kind: instance.device.chain_kind,
+                    live_runtime: instance.live_runtime.clone(),
                 })
             })
             .collect()
@@ -15000,6 +15028,9 @@ mod tests {
                 plugin_name: "Pro-Q Fixture".to_string(),
                 engine_plugin_id: 1_007,
                 chain_kind: DeviceKind::Effect,
+                live_runtime: Arc::downgrade(
+                    &state.engine_plugins.lock().unwrap()["inst-1"].runtime
+                ),
             }]
         );
 
