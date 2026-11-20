@@ -41,7 +41,7 @@ function uniqueOccurrences(projection: PianoRollTakeNotes, selectedNoteIds: Read
     });
 }
 
-function rowAction(owner: FrozenPianoRollNoteOwner, replacement: MidiNote | null): RowAction {
+export function rowAction(owner: FrozenPianoRollNoteOwner, replacement: MidiNote | null): RowAction {
     return {
         type: 'replaceOriginalMidiTakeRow',
         payload: {
@@ -59,7 +59,7 @@ function rowAction(owner: FrozenPianoRollNoteOwner, replacement: MidiNote | null
     };
 }
 
-function baseRowAction(
+export function baseRowAction(
     clipId: string,
     row: MidiNote | null,
     replacement: MidiNote | null,
@@ -104,7 +104,7 @@ function everySelectedOwnerIsKnown(projection: PianoRollTakeNotes, selectedNoteI
     );
 }
 
-async function executeRows(
+export async function executeRows(
     actions: readonly (RowAction | BaseRowAction)[],
     label: string,
     groupId = crypto.randomUUID()

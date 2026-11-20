@@ -3,7 +3,7 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
@@ -86,6 +86,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn().mockResolvedValue({ status: 'committed', actions: [] }),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
@@ -387,16 +388,21 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60) });
             fireEvent.mouseMove(canvas, { clientX: 140, clientY: yForPitch(60) });
             fireEvent.mouseUp(canvas, { clientX: 140, clientY: yForPitch(60) });
-            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-            expect(executeUserAppAction).toHaveBeenCalledWith({
-                type: 'replaceOriginalMidiTakeRow',
-                payload: expect.objectContaining({
-                    takeId: 'first',
-                    rowId: original.id,
-                    expected: original,
-                    replacement: { ...original, startBeat: 6.5 },
-                }),
-            });
+            expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
+            expect(executeAppActionBatch).toHaveBeenCalledWith(
+                [
+                    {
+                        type: 'replaceOriginalMidiTakeRow',
+                        payload: expect.objectContaining({
+                            takeId: 'first',
+                            rowId: original.id,
+                            expected: original,
+                            replacement: { ...original, startBeat: 6.5 },
+                        }),
+                    },
+                ],
+                expect.objectContaining({ groupLabel: 'Move 1 note' })
+            );
             expect(mocks.moveMidiNote).not.toHaveBeenCalled();
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
