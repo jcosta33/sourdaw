@@ -218,7 +218,7 @@ const ZoomControls = ({ zoom, onZoomChange, rowHeight, onRowHeightChange }: Zoom
     const verticalZoomId = useId();
     return (
         <>
-            <span id={horizontalZoomId} className="text-[10px] text-muted-foreground">
+            <span id={horizontalZoomId} className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
                 Horizontal zoom
             </span>
             <Slider
@@ -235,7 +235,7 @@ const ZoomControls = ({ zoom, onZoomChange, rowHeight, onRowHeightChange }: Zoom
                 aria-labelledby={horizontalZoomId}
                 data-testid="toolbar-zoom"
             />
-            <span id={verticalZoomId} className="text-[10px] text-muted-foreground">
+            <span id={verticalZoomId} className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
                 Vertical zoom
             </span>
             <Slider
