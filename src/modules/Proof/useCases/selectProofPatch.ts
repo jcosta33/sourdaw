@@ -105,8 +105,7 @@ async function commitSelection(plan: SelectionPlan, priorWrites: CommittedParame
     }
 
     const alreadyApplied = valuesEqual(payload.before.parameters, payload.after.parameters);
-    let observed = false;
-    let committed = false;
+    const receipt: { observed: boolean; committed: boolean } = { observed: false, committed: false };
     try {
         await executeUserAppAction(
             { type: 'setProofPatchSelection', payload },
@@ -115,14 +114,14 @@ async function commitSelection(plan: SelectionPlan, priorWrites: CommittedParame
                 shouldCommit: authority.isCurrent,
                 skipMacroRecording: true,
                 observeMaterializedAction: () => {
-                    observed = true;
+                    receipt.observed = true;
                 },
                 onCommitted: () => {
-                    committed = true;
+                    receipt.committed = true;
                 },
             }
         );
-        if (selection.kind === 'preset' && alreadyApplied && observed && authority.isCurrent()) {
+        if (selection.kind === 'preset' && alreadyApplied && receipt.observed && authority.isCurrent()) {
             // An equal preset selection still sets its identity and reasserts its sound.
             syncProofPatchSelection(deviceId, selection, payload.after);
         }
@@ -134,7 +133,7 @@ async function commitSelection(plan: SelectionPlan, priorWrites: CommittedParame
             notifyUser('Could not apply the Proof change.', 'error');
         }
     }
-    return committed ? { ...priorWrites, ...payload.after.parameters } : priorWrites;
+    return receipt.committed ? { ...priorWrites, ...payload.after.parameters } : priorWrites;
 }
 
 export async function selectProofPatch(deviceId: string, selection: ProofPatchSelection): Promise<void> {
