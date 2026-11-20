@@ -6,18 +6,23 @@ import { DIRECTION } from './constraintDirections';
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
 
-/** A word that makes its clause protective: a negation, a modal negation or a keep. */
-const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATION}|${MODAL_NEGATION}|${QUALITY_VERBS}|leave|leaving|avoid|avoiding|stop|stopping|prevent|preventing|no)(?![\p{L}\p{N}])`,
-    'iu'
-);
 /**
  * A word naming a quality a measured constraint holds or a way it moves. Plain adjectives ("bright",
  * "wide") are left out: a quality reader reads those, and elsewhere they mostly describe a sound.
  */
-const MEASURED_QUALITY = new RegExp(
-    String.raw`\b(?:levels?|loudness|volume|width|stereo\s+(?:image|field|spread)|brightness|dynamics|dynamic\s+range|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?|${DIRECTION})(?![\p{L}\p{N}])`,
-    'giu'
+const MEASURED_WORD = String.raw`(?:levels?|loudness|volume|width|stereo\s+(?:image|field|spread)|brightness|dynamics|dynamic\s+range|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?|${DIRECTION})`;
+const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}(?![\p{L}\p{N}])`, 'giu');
+/** The verbs a negation governs a measured word through: a linking verb or one that moves a level. */
+const GOVERNED_VERB = String.raw`(?:make|making|get|getting|let|letting|become|becoming|be|sound|feel|seem|raise|raising|increase|increasing|boost|boosting|push|pushing|turn|turning|lower|lowering|reduce|reducing|decrease|decreasing|change|changing|alter|altering|touch|touching|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?)`;
+/**
+ * What makes a clause protective of a measured quality: a negation or modal directly before a verb
+ * it governs the quality through, or a direction ("isn't louder"); a keep-type verb; or "no" before
+ * the measured word itself ("no louder"). A negation of anything else ("don't forget to make the bass
+ * wider", "no reverb") governs no measured word, so it opens nothing.
+ */
+const PROTECTIVE = new RegExp(
+    String.raw`\b(?:(?:${NEGATION}|${MODAL_NEGATION}|avoid|avoiding)\s+(?:${GOVERNED_VERB}|${DIRECTION})|${QUALITY_VERBS}|leave|leaving|stop|stopping|prevent|preventing|no\s+${MEASURED_WORD})(?![\p{L}\p{N}])`,
+    'iu'
 );
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
 /** Hard clause boundaries; an "and" or "or" is a boundary whose next clause may share a protection. */

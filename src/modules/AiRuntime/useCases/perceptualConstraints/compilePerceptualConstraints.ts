@@ -87,8 +87,20 @@ function resolveMember(member: string, context: ProjectContext): ObjectResolutio
     return { kind: 'unresolved' };
 }
 
-/** A list ("the Bass and the Keys") resolves member by member; any unresolved member leaves the whole unresolved. */
+/**
+ * The whole object text first, so a name holding a separator ("Lead or Rhythm", "Salt and Pepper")
+ * is one object; only text that names nothing whole is read as a list.
+ */
 function resolveConstraintObject(object: string, context: ProjectContext): ObjectResolution {
+    const whole = resolveMember(object, context);
+    if (whole.kind !== 'unresolved') {
+        return whole;
+    }
+    return resolveMemberList(object, context);
+}
+
+/** A list ("the Bass and the Keys") resolves member by member; any unresolved member leaves the whole unresolved. */
+function resolveMemberList(object: string, context: ProjectContext): ObjectResolution {
     const members = object.split(OBJECT_MEMBER_SEPARATOR).filter((member) => member.trim().length > 0);
     const trackIds: string[] = [];
     const families: (SemanticCommandListRoleFamily | null)[] = [];
@@ -157,6 +169,9 @@ type RequestReader = {
 
 function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: string, hold: HoldPart) {
     const { object, constraintIds } = hold;
+    if (constraintIds.length === 0) {
+        return;
+    }
     const qualities = Array.from(new Set(constraintIds.map((id) => QUALITY_OF[id]))).join(' and ');
     if (hold.unreadable !== null) {
         reading.unsupported.push({ constraintId: 'unsupported', clause, reason: hold.unreadable });

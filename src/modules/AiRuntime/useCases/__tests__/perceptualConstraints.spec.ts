@@ -1868,6 +1868,39 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
     );
 });
 
+describe('reading only governed protections and whole object names', () => {
+    it.each([
+        // a negated stop, prevent or keep … from permits the move, so it states no bound
+        ["don't stop the mix from getting wider", [], []],
+        ["don't prevent the vocal from getting brighter", [], []],
+        // a negation or "no" that governs no measured word opens no protective clause
+        ["don't forget to make the bass wider", [], []],
+        ['no reverb on the drums and the volume up', [], []],
+        // a track whose name holds a list separator is read as one object
+        [
+            'keep the Lead or Rhythm level the same',
+            [measured('loudness-held-v1', 'keep the Lead or Rhythm level the same', onTracks('extra-0'))],
+            [],
+        ],
+        [
+            'keep the Salt and Pepper level the same',
+            [measured('loudness-held-v1', 'keep the Salt and Pepper level the same', onTracks('extra-1'))],
+            [],
+        ],
+        [
+            'keep the Rock, Paper level the same',
+            [measured('loudness-held-v1', 'keep the Rock, Paper level the same', onTracks('extra-2'))],
+            [],
+        ],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s"',
+        (prompt, constraints, unsupported) => {
+            const context = grammarContext('Lead or Rhythm', 'Salt and Pepper', 'Rock, Paper');
+            expect(compilePerceptualConstraints(prompt, context)).toEqual({ constraints, unsupported });
+        }
+    );
+});
+
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';
 const HELD_UNITS: Readonly<Record<HeldMetric, string>> = {
     integratedLoudness: 'LUFS',

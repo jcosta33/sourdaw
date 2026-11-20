@@ -90,9 +90,9 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
     ),
     // "don't widen the drums", "without squashing the mix"
     holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!any\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
-    // "keep the mix from getting louder"
+    // "keep the mix from getting louder"; "don't stop the mix from getting wider" permits the move
     holdPattern(
-        String.raw`\b(?:keep|keeping|stop|stopping|prevent|preventing)\s+${OBJECT_LIST}\s+from\s+(?:(?:getting|becoming|sounding|being)\s+)?(?:any\s+)?${DIRECTION_LIST}${CLAUSE_END}`,
+        String.raw`(?<permitted>\b${NEGATION}\s+)?\b(?:keep|keeping|stop|stopping|prevent|preventing)\s+${OBJECT_LIST}\s+from\s+(?:(?:getting|becoming|sounding|being)\s+)?(?:any\s+)?${DIRECTION_LIST}${CLAUSE_END}`,
         null
     ),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
@@ -189,14 +189,25 @@ function readNounPart(match: RegExpExecArray, prompt: string, clause: () => stri
     };
 }
 
+/**
+ * The holds a direction clause states. A negated stop, prevent or keep … from permits the move it
+ * names, so it states none, though its words stay consumed and no other reader reads them.
+ */
+function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
+    if (match.groups?.permitted !== undefined) {
+        return [];
+    }
+    const direction = match.groups?.direction;
+    return direction === undefined ? ['loudness-held-v1'] : directionConstraintIds(direction);
+}
+
 function readPart(match: RegExpExecArray, prompt: string, clause: () => string): HoldPart {
     if (match.groups?.nouns !== undefined) {
         return readNounPart(match, prompt, clause);
     }
-    const direction = match.groups?.direction;
     return {
         start: match.index,
-        constraintIds: direction === undefined ? ['loudness-held-v1'] : directionConstraintIds(direction),
+        constraintIds: directionPartIds(match),
         object: spanText(prompt, match.indices?.groups?.object),
         unreadable: null,
     };
