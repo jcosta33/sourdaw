@@ -258,11 +258,15 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
     );
 }
 
-function renderSectionContent(
-    section: FermenterSection,
-    patch: FermenterPatch,
-    onParam: (key: string, value: number) => void
-): ReactElement {
+function SectionContent({
+    section,
+    patch,
+    onParam,
+}: {
+    section: FermenterSection;
+    patch: FermenterPatch;
+    onParam: (key: string, value: number) => void;
+}): ReactElement {
     if (section === 'osc') {
         return (
             <Row align="start" wrap gap={4}>
@@ -959,7 +963,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             tabIndex={0}
                             className="shrink-0 px-1"
                         >
-                            <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
+                            <div className="pb-2">
+                                <SectionContent section={section} patch={patch} onParam={onParam} />
+                            </div>
                             {uiLevel >= 4 ? (
                                 <div className="mt-3 border-t border-border/15 pt-3">
                                     <SignalFlowView
