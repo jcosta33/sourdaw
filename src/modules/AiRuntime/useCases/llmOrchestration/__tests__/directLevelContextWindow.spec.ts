@@ -23,8 +23,8 @@ import { getProjectContext } from '../../getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from '../../prepareMetricIntentCatalog';
-import { preparePlanningMetricIntentCatalog } from '../../preparePlanningMetricIntentCatalog';
 import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
+import { selectRecipeObjectiveDetail } from '../../selectRecipeObjectiveDetail';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
 registerDeviceEnginePorts();
@@ -91,7 +91,8 @@ async function sendLocalPlanningTurn(prompt: string): Promise<LocalPlanningTurn>
                 creative: catalog,
                 answer,
                 binding: built.planningBinding,
-                metric: preparePlanningMetricIntentCatalog({ prompt, answer }),
+                metric: prepareMetricIntentCatalog({ prompt, answer }),
+                recipeObjectiveDetail: selectRecipeObjectiveDetail(),
             }),
         ],
         'planning'
@@ -155,6 +156,7 @@ describe('direct level context window', () => {
         'tame the harshness on the lead vocal',
         'make the vocal warmer',
         'make the lead vocal brighter than the snare',
+        'the snare sounds boxy in the verse',
     ])('leaves the headroom floor for %j with the metric catalog production sends', async (prompt) => {
         const cost = chargeLocalPlanningTurn(await sendLocalPlanningTurn(prompt));
         const windowTokens = getWebLlmContextWindowSize();
@@ -201,6 +203,7 @@ async function measureMetricAwareLocalPromptCost(prompt: string): Promise<number
                 answer,
                 binding: built.planningBinding,
                 metric: prepareMetricIntentCatalog({ prompt, answer }),
+                recipeObjectiveDetail: selectRecipeObjectiveDetail(),
             }),
         ],
         'planning'

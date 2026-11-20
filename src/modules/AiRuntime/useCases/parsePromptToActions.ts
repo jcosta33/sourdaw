@@ -133,12 +133,13 @@ import { planAnswerSuggestion } from './planAnswerSuggestion';
 import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
-import { preparePlanningMetricIntentCatalog } from './preparePlanningMetricIntentCatalog';
+import { prepareMetricIntentCatalog } from './prepareMetricIntentCatalog';
 import { prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { readBriefMixIntent } from './readBriefMixIntent';
+import { selectRecipeObjectiveDetail } from './selectRecipeObjectiveDetail';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
@@ -1054,7 +1055,8 @@ const planPromptIntent = inject({ logger })(
                             'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
                     };
                 }
-                const metricCatalog = preparePlanningMetricIntentCatalog({ prompt, answer: answerCatalog });
+                const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
+                const recipeObjectiveDetail = selectRecipeObjectiveDetail();
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
@@ -1476,6 +1478,7 @@ const planPromptIntent = inject({ logger })(
                                               answer: answerCatalog,
                                               binding: planningContext.planningBinding,
                                               metric: metricCatalog,
+                                              recipeObjectiveDetail,
                                           }),
                                       ]),
                             ],

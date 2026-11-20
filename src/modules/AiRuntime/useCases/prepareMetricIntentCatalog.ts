@@ -196,16 +196,12 @@ function readRecipeGoalMetric(
 function recipeObjectives(
     answer: AnswerInterpretationCatalog,
     catalog: RecipeCatalog,
-    metricIds: MetricIds,
-    descriptors: ReadonlySet<string> | undefined
+    metricIds: MetricIds
 ): Objective[] {
     const scopes = answer.scopes;
     const objectives: Objective[] = [];
     for (const recipe of catalog.recipes) {
         if (recipe.origin !== undefined || recipe.metrics.length === 0) {
-            continue;
-        }
-        if (descriptors !== undefined && !descriptors.has(recipe.descriptor)) {
             continue;
         }
         const eligibility = new Map<string, { defaultAllowed: boolean; roles: string[] }>();
@@ -293,22 +289,15 @@ function numericObjectives(prompt: string, allScopeIds: string[]): Objective[] {
     return objectives;
 }
 
-/**
- * Lexical numeric candidates and authored policies, never a second semantic classifier. `recipeDescriptors`,
- * when given, offers only the recipe objectives of those descriptors; every other objective is unchanged.
- */
-export function prepareMetricIntentCatalog(input: {
-    prompt: string;
-    answer: AnswerInterpretationCatalog;
-    recipeDescriptors?: ReadonlySet<string>;
-}) {
+/** Lexical numeric candidates and authored policies, never a second semantic classifier. */
+export function prepareMetricIntentCatalog(input: { prompt: string; answer: AnswerInterpretationCatalog }) {
     const catalog = getMixRecipeCatalog();
     const metricIds = getAgentMeasurementMetricIds();
     const scopes = input.answer.scopes;
     const allScopeIds = scopes.filter((scope) => scope.kind !== 'clips').map((scope) => scope.candidateId);
     const objectives = [
         ...policyObjectives(scopes, allScopeIds, readComparedQualities(input.prompt, input.answer.context)),
-        ...recipeObjectives(input.answer, catalog, metricIds, input.recipeDescriptors),
+        ...recipeObjectives(input.answer, catalog, metricIds),
         ...numericObjectives(input.prompt, allScopeIds),
     ];
     return {
