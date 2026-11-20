@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     getRenderedTrackExtent,
     getRenderedTrackTops,
+    getTimelineTrackHeight,
     getVariationLaneCount,
     showsVariationLanes,
     getVariationLaneExtent,
@@ -28,6 +29,19 @@ function makeTrack(kind: Track['kind'], overrides: Partial<Track> = {}, alternat
         ...overrides,
     };
 }
+
+describe('getTimelineTrackHeight', () => {
+    it('scales regular track heights and their own previews while keeping folders fixed', () => {
+        const audio = makeTrack('audio', { height: 72 });
+        const folder = makeTrack('folder', { height: 100 });
+        const preview = { trackId: audio.id, height: 80 };
+
+        expect(getTimelineTrackHeight(audio, 1.5)).toBe(108);
+        expect(getTimelineTrackHeight(audio, 1.5, preview)).toBe(120);
+        expect(getTimelineTrackHeight(audio, 1.5, { ...preview, trackId: folder.id })).toBe(108);
+        expect(getTimelineTrackHeight(folder, 1.5, { ...preview, trackId: folder.id })).toBe(26);
+    });
+});
 
 describe('getVariationLaneCount and getVariationLaneExtent', () => {
     it.each(['audio', 'midi', 'bus'] as const)(

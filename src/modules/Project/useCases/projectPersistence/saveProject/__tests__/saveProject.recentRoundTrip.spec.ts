@@ -103,8 +103,19 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
-vi.mock('../../fileIO/buildProjectData', () => ({
-    buildProjectData: mocks.buildProjectData,
+vi.mock('../buildPreparedProjectSaveData', () => ({
+    buildPreparedProjectSaveData: async () => {
+        const project = mocks.projectStoreValue.value;
+        if (project) {
+            mocks.projectStoreSet({ ...project, updatedAt: Date.now(), dirty: true });
+        }
+        const settledTakesAtSnapshot = mocks.takes.settled;
+        const built = await mocks.buildProjectData();
+        if (!built) {
+            throw new Error('Project snapshot could not be built');
+        }
+        return { built, settledTakesAtSnapshot };
+    },
 }));
 
 // loadRecentProject side effects — none touch the round-trip storage path.

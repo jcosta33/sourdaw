@@ -15,7 +15,7 @@ type MacroStripProps = {
 };
 
 export const MacroStrip = ({ values, onChange, compact }: MacroStripProps): ReactElement => (
-    <div className={compact ? 'grid grid-cols-4 gap-1' : 'flex items-center gap-2 flex-wrap'}>
+    <div className={compact ? 'grid max-w-60 grid-cols-4 gap-1' : 'flex items-center gap-2 flex-wrap'}>
         {MACRO_LABELS.map((label, i) => (
             <RotaryKnob
                 key={label}

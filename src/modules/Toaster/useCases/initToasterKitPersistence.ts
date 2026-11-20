@@ -5,12 +5,12 @@ import { commitToasterKit } from './commitToasterKit';
 import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 
 /**
- * Mirror every Toaster kit edit into project truth.
+ * Mirror session-only Toaster kit edits into project truth.
  *
  * Subscribing to the session store rather than calling `commitToasterKit` from each
  * mutation site is deliberate. The kit is reached from a dozen places — the panel
  * drives several store mutators directly, the param bridge writes pad and kit fields,
- * presets replace the kit wholesale, Euclidean fills rewrite steps — and a persistence
+ * Euclidean fills rewrite steps — and a persistence
  * call added to each of them is a list that silently goes stale the moment someone
  * adds the thirteenth. One subscription cannot miss a path, including paths that do
  * not exist yet.

@@ -157,12 +157,24 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         : 'Waiting for pitch';
     const announced = useDebouncedAnnouncement(liveMessage);
 
-    return (
-        <Row align="stretch" gap={3} className="scoring-faceplate h-full min-h-[440px] p-3">
+    const faceplate = (
+        <Row
+            as="section"
+            aria-label="Scoring tuner panel"
+            tabIndex={0}
+            align="stretch"
+            gap={3}
+            className="scoring-faceplate h-full min-h-0 flex-col overflow-auto p-3 @[900px]:flex-row"
+        >
             <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
                 {announced}
             </div>
-            <Stack as="aside" gap={3} shrink={false} className="h-full w-[232px] overflow-y-auto pr-1">
+            <Stack
+                as="aside"
+                gap={3}
+                shrink={false}
+                className="w-full shrink-0 pr-1 @[900px]:h-full @[900px]:w-[232px] @[900px]:overflow-y-auto"
+            >
                 <SectionCard title="Display" detail={mode}>
                     <div>
                         <div className="text-[18px] font-semibold text-text-primary">Scoring</div>
@@ -292,7 +304,12 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </SectionCard>
             </Stack>
 
-            <Stack as="section" gap={3} grow className="min-w-0 overflow-y-auto pr-1">
+            <Stack
+                as="section"
+                gap={3}
+                grow
+                className="min-w-0 shrink-0 pr-1 @[900px]:min-h-0 @[900px]:shrink @[900px]:overflow-y-auto"
+            >
                 <Row as="header" wrap gap={2.5} shrink={false} className="scoring-window px-3 py-2">
                     <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-indigo)]">
@@ -333,7 +350,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     </Row>
                 </Row>
 
-                <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1fr)_220px] gap-3">
+                <div className="grid min-h-0 shrink-0 grid-cols-1 gap-3 @[700px]:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="scoring-window min-h-[280px] overflow-hidden">
                         <Stack
                             className="h-full px-4 py-4 transition-colors duration-300"
@@ -347,7 +364,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 </div>
                                 <DawPluginLed tone="mint">{active ? 'Tracking' : 'Idle'}</DawPluginLed>
                             </Row>
-                            <div className="grid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4">
+                            <div className="grid min-h-0 flex-1 grid-cols-1 items-center gap-4 @[700px]:grid-cols-[minmax(70px,140px)_minmax(0,1fr)_minmax(70px,120px)]">
                                 <Stack align="center" gap={1}>
                                     <div
                                         className={`text-6xl font-bold tracking-tight transition-colors duration-200 ${toneColor}`}
@@ -431,6 +448,8 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             </Stack>
         </Row>
     );
+
+    return <div className="@container h-full min-h-0">{faceplate}</div>;
 };
 
 const NeedleDisplay = ({
@@ -576,7 +595,7 @@ const NeedleDisplay = ({
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: 480, height: 200 }}
+            style={{ width: 480, maxWidth: '100%', height: 200 }}
             className="h-full w-full"
             role="img"
             aria-label="Needle tuner display"
@@ -696,7 +715,7 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: 480, height: 180 }}
+            style={{ width: 480, maxWidth: '100%', height: 180 }}
             className="h-full w-full"
             role="img"
             aria-label="Strobe tuner display"
@@ -809,7 +828,7 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: 720, height: 56 }}
+            style={{ width: 720, maxWidth: '100%', height: 56 }}
             className="h-full w-full"
             role="img"
             aria-label="Pitch history graph"

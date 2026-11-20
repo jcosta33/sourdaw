@@ -1,3 +1,6 @@
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+
+import { isWithinBacteriaRuntimeParameterNamespace } from '../models/BacteriaRuntimeControl';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeviceChainDelta,
@@ -44,22 +47,38 @@ function isStrictlySortedUniqueIds(values: readonly string[]): boolean {
     return values.every((value, index) => index === 0 || values[index - 1]!.localeCompare(value) < 0);
 }
 
-function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
+function isDeviceRecord(value: unknown): value is UnknownRecord {
+    return (
+        isRecord(value) &&
+        ['id', 'type', 'parameterIds'].every((key) => key in value) &&
+        Object.keys(value).every((key) => ['id', 'type', 'externalInstanceId', 'parameterIds'].includes(key))
+    );
+}
+
+function compileDeviceParameterIds(value: unknown, deviceType: string): readonly string[] | string {
     if (
-        !isRecord(value) ||
-        !['id', 'type', 'parameterIds'].every((key) => key in value) ||
-        !Object.keys(value).every((key) => ['id', 'type', 'externalInstanceId', 'parameterIds'].includes(key))
+        !isUnknownArray(value) ||
+        (value.length > MAX_PARAMETER_ID_COUNT &&
+            (deviceType !== DEVICE_TYPE_IDS.bacteria || !isWithinBacteriaRuntimeParameterNamespace(value)))
     ) {
+        return 'Runtime graph device parameter ids exceed the bounded contract';
+    }
+    if (!value.every(isBoundedId) || !isStrictlySortedUniqueIds(value)) {
+        return 'Runtime graph device parameter ids must be sorted, unique identifiers';
+    }
+    return value;
+}
+
+function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
+    if (!isDeviceRecord(value)) {
         return 'Runtime graph device has an unsupported shape';
     }
     if (!isBoundedId(value.id) || !isBoundedId(value.type)) {
         return 'Runtime graph device id or type is invalid';
     }
-    if (!isUnknownArray(value.parameterIds) || value.parameterIds.length > MAX_PARAMETER_ID_COUNT) {
-        return 'Runtime graph device parameter ids exceed the bounded contract';
-    }
-    if (!value.parameterIds.every(isBoundedId) || !isStrictlySortedUniqueIds(value.parameterIds)) {
-        return 'Runtime graph device parameter ids must be sorted, unique identifiers';
+    const parameterIds = compileDeviceParameterIds(value.parameterIds, value.type);
+    if (typeof parameterIds === 'string') {
+        return parameterIds;
     }
     if (value.externalInstanceId !== undefined && !isBoundedId(value.externalInstanceId)) {
         return 'Runtime graph device external instance id is invalid';
@@ -68,7 +87,7 @@ function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
         id: value.id,
         type: value.type,
         ...(value.externalInstanceId !== undefined ? { externalInstanceId: value.externalInstanceId } : {}),
-        parameterIds: Object.freeze([...value.parameterIds]),
+        parameterIds: Object.freeze([...parameterIds]),
     });
 }
 

@@ -34,7 +34,6 @@ export function loadGrandBoulePreset(input: LoadGrandBoulePresetInput): boolean 
     input.store.set({
         ...state,
         parameters: { ...preset.parameters },
-        config: { ...state.config, activePresetId: preset.id },
     });
 
     // Dispatch every preset parameter to the WASM engine.

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
@@ -81,6 +85,8 @@ async function openProjectWithCachedStereoClip() {
     await restoreCachedAudioBuffersFromIdb({ audioContext: context });
     setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
     registerHandlerMap(getArrangementHandlers());
+    const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+    registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
     registerCrdtStorageRuntime();
     configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
     configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
@@ -204,6 +210,7 @@ function savedTrackNames(indexedDb: IndexedDbFixture, opened: OpenedProject): st
 
 describe('saveProject snapshot continuation', () => {
     beforeEach(() => {
+        installNativePreparationWorker();
         vi.resetModules();
         localStorage.clear();
         lockManager = createControlledLockManager();
@@ -211,6 +218,7 @@ describe('saveProject snapshot continuation', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         const [
             { configureDurableAudioBufferOwnership },
             { stopActiveAutoSave },

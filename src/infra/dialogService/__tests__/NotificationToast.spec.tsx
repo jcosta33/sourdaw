@@ -37,8 +37,8 @@ describe('NotificationToast', () => {
         act(() => {
             notifyHandlerRef.current!({ message: 'Hello', level: 'warning' });
         });
-        const alert = screen.getByRole('alert');
-        expect(alert).toHaveTextContent('Hello');
+        const alert = screen.getByText('Hello', { selector: 'p' }).closest('div[class*=fixed]')!;
+        expect(screen.getByRole('status')).toHaveTextContent('Hello');
         expect(alert.className).toContain('top-14');
         expect(alert.className).toContain('right-4');
         expect(alert.className).toContain('pointer-events-none');
@@ -46,6 +46,31 @@ describe('NotificationToast', () => {
 
         const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' });
         expect(dismissButton.className).toContain('pointer-events-auto');
+    });
+
+    it('keeps separate live regions mounted and announces only the current message at its urgency', async () => {
+        notifyHandlerRef.current = null;
+        render(<NotificationToast />);
+        const polite = screen.getByRole('status');
+        const urgent = screen.getByRole('alert');
+        expect(polite).toBeEmptyDOMElement();
+        expect(urgent).toBeEmptyDOMElement();
+        await waitFor(() => expect(notifyHandlerRef.current).not.toBeNull());
+
+        act(() => {
+            notifyHandlerRef.current!({ message: 'Routine update', level: 'success' });
+            notifyHandlerRef.current!({ message: 'Urgent failure', level: 'error' });
+        });
+        expect(polite).toHaveTextContent('Routine update');
+        expect(polite.textContent).toBe('Routine update');
+        expect(urgent).toBeEmptyDOMElement();
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+        expect(screen.getByRole('status')).toBe(polite);
+        expect(screen.getByRole('alert')).toBe(urgent);
+        expect(polite).toBeEmptyDOMElement();
+        expect(urgent.textContent).toBe('Urgent failure');
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+        expect(urgent).toBeEmptyDOMElement();
     });
 
     it('dismisses a corrupt MIDI error notification when clicking the dismiss button', async () => {
@@ -64,12 +89,14 @@ describe('NotificationToast', () => {
             'Failed to import "corrupt.mid" - invalid or corrupt MIDI file'
         );
 
+        expect(screen.getByTestId('notification-toast')).toBeVisible();
         const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' });
         act(() => {
             fireEvent.click(dismissButton);
         });
 
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('notification-toast')).not.toBeInTheDocument();
+        expect(screen.getByRole('alert')).toBeEmptyDOMElement();
     });
 
     it('should advance to the next notification when dismiss is clicked with multiple in queue', async () => {
@@ -82,7 +109,7 @@ describe('NotificationToast', () => {
             notifyHandlerRef.current!({ message: 'First message', level: 'info' });
             notifyHandlerRef.current!({ message: 'Second message', level: 'error' });
         });
-        expect(screen.getByRole('alert')).toHaveTextContent('First message');
+        expect(screen.getByRole('status')).toHaveTextContent('First message');
 
         const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' });
         act(() => {
@@ -103,8 +130,7 @@ describe('NotificationToast', () => {
             notifyHandlerRef.current!({ message: 'Message 2', level: 'warning' });
             notifyHandlerRef.current!({ message: 'Message 3', level: 'error' });
         });
-        const alert = screen.getByRole('alert');
-        expect(alert).toHaveTextContent('Message 1');
+        expect(screen.getByRole('status')).toHaveTextContent('Message 1');
         expect(screen.getByText('+2 more')).toBeInTheDocument();
     });
 

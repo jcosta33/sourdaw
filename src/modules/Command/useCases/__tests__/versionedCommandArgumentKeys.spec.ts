@@ -11,6 +11,40 @@ import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { validateVersionedCommandArguments } from '../versionedCommandArgumentKeys';
 
 describe('versioned linked pattern replay arguments', () => {
+    it('admits exact guarded audio-source aliases and rejects malformed owners or source fields', () => {
+        const target = {
+            trackId: 'track',
+            trackKind: 'audio',
+            activeAlternativeId: 'active',
+            alternativeId: null,
+            clipId: 'clip',
+            before: {},
+            after: { audioBufferId: 'replacement' },
+        };
+        expect(validateVersionedCommandArguments('relinkClipAudioSources', { targets: [target] })).toBe(true);
+        expect(
+            validateVersionedCommandArguments('relinkClipAudioSources', {
+                targets: [
+                    { ...target, alternativeId: 'inactive', before: { audioBufferId: 'missing', audioOffsetBeats: 2 } },
+                ],
+            })
+        ).toBe(true);
+        for (const invalid of [
+            { ...target, clipId: 1 },
+            { ...target, trackKind: 'bogus' },
+            { ...target, before: { audioBufferId: 4 } },
+            { ...target, after: { gain: 0.5 } },
+        ]) {
+            expect(validateVersionedCommandArguments('relinkClipAudioSources', { targets: [invalid] })).toBe(false);
+        }
+    });
+    it('admits captured scratch pad section ids and rejects a non-array capture', () => {
+        expect(validateVersionedCommandArguments('captureScratchPad', { sectionIds: ['pad-one', 'pad-two'] })).toBe(
+            true
+        );
+        expect(validateVersionedCommandArguments('captureScratchPad', { sectionIds: 7 })).toBe(false);
+    });
+
     it('admits the canonical creation identity and rejects a non-string identity', () => {
         const payload = {
             sourceClipId: 'source',

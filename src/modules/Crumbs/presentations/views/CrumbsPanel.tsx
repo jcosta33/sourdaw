@@ -36,7 +36,6 @@ import { syncCrumbsRecordingState } from '../../useCases/recording/syncCrumbsRec
 import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
 import { setCrumbsParamWithAudio } from '../../useCases/setCrumbsParamWithAudio';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
-import { triggerPadOff } from '../../useCases/triggerPad/triggerPadOff';
 import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
 import { debouncedUpdateMarkerPosition } from '../../useCases/updateSliceMarker/debouncedUpdateMarkerPosition';
 import { detectAndSetSlices } from '../../useCases/updateSliceMarker/detectAndSetSlices';
@@ -153,9 +152,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         statusLabel = 'Loading...';
     }
 
-    return (
+    const faceplate = (
         <div
-            className="crumbs-faceplate relative h-full min-h-[440px] rounded-[26px] p-3"
+            role="region"
+            aria-label="Crumbs controls"
+            className="crumbs-faceplate relative h-full min-h-0 overflow-y-auto rounded-[26px] p-3"
             onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'copy';
@@ -175,9 +176,9 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     <span className="text-sm font-medium text-[var(--color-accent-lavender)]">Drop sample here</span>
                 </Row>
             ) : null}
-            <div className="grid h-full min-h-[440px] grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
+            <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-[18rem_minmax(0,1fr)_17rem]">
                 {/* Left rail — Pad grid + selected pad info */}
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="min-w-0">
                     <SectionCard title="Sample" detail={activeSample?.fileName ?? 'No sample loaded'}>
                         <Row align="stretch" wrap gap={2}>
                             {activeSample ? (
@@ -232,11 +233,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     {mode === 'drum' ? (
                         <SectionCard title="Pad bay" detail="Trigger pads to play samples">
                             <PadGrid
+                                key={deviceId}
                                 pads={pads.pads}
                                 selectedIndex={pads.selectedPadIndex}
                                 onSelectPad={(index) => selectPad(deviceId, index)}
                                 onTriggerPad={(index) => triggerPadOn(deviceId, index, 100)}
-                                onTriggerPadOff={(index) => triggerPadOff(deviceId, index)}
                                 onReorderPad={(from, to) => reorderPad(deviceId, from, to)}
                             />
                         </SectionCard>
@@ -312,7 +313,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 </Stack>
 
                 {/* Center — Waveform + slice overlay */}
-                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                <Stack as="section" gap={3} className="min-w-0">
                     <SectionCard title="Waveform">
                         <div className="relative">
                             <WaveformDisplay
@@ -365,7 +366,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 </Stack>
 
                 {/* Right rail — Controls */}
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="min-w-0">
                     <SectionCard title="Controls" detail="Mode, envelope, filter, and output parameters">
                         <CrumbsControls
                             mode={mode}
@@ -388,4 +389,6 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             </div>
         </div>
     );
+
+    return <div className="@container h-full min-h-0">{faceplate}</div>;
 };

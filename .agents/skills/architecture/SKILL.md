@@ -78,7 +78,7 @@ Views and hooks may import foreign contract barrels. Leaf `presentations/compone
 
 ### 6. Use-case types stay private; one function per file
 
-Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`, on the main and types cruises), and never combine value and type specifiers in one export declaration — the architecture checker rejects that syntax so the type edge cannot hide. Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers stay private under `handlers/`; cross-module access is `get<Module>Handlers` from `useCases/`.
+Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`, on the main and types cruises), and never combine value and type specifiers in one export declaration — the architecture checker rejects that syntax so the type edge cannot hide. Consumers use local types or derive callable shapes with `ReturnType`/`Parameters`. Shared named types use `events/` for payloads or the `T` of a public `Store<T>` for a store value. Each use-case and repository file exports exactly one function. Handlers stay private under `handlers/`; cross-module access is `get<Module>Handlers` from `useCases/`.
 
 **Why:** type re-exports freeze private shapes; multi-export wrappers become laundering barrels.
 
@@ -94,7 +94,7 @@ I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root 
 
 ❌ Re-export a repository through a use-case file so the import path is “legal”.
 
-✅ A real typed use case that owns the operation; consumers import the function, not the private symbol.
+✅ A real typed use case that owns the operation. Consumers import that function. For an existing violation, read the [boundary remediation rules](../architecture-violations/SKILL.md).
 
 ## References
 
