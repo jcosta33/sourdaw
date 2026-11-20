@@ -114,7 +114,7 @@ export async function resetCrdtProjectWithTransportStopped(
             return;
         }
         attemptedThrough = countSettledTakes();
-        takeUnsaved = !(await saveProject());
+        takeUnsaved = !(await saveProject({ outgoingProject: { shouldContinue } }));
     }
 
     await settleClosedTakes();

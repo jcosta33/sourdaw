@@ -131,7 +131,31 @@ type BuildProjectDataInput = {
      * `audioBuffers` simply stays unset.
      */
     includeAudioBuffers?: boolean;
+    /** Save supplies the committed arrangement and timestamp revision. */
+    preparedRevision?: string;
 };
+
+function captureBuildRevision(preparedRevision: string | undefined): string | null {
+    if (agentProjectRepairStateStore.value !== null) {
+        return null;
+    }
+    if (preparedRevision === undefined) {
+        syncCurrentArrangementToStore();
+    }
+    flushAutomergeStorageWrites();
+    const revision = captureProjectRevision();
+    if (preparedRevision !== undefined && revision !== preparedRevision) {
+        return null;
+    }
+    return revision;
+}
+
+function snapshotUpdatedAt(preparedRevision: string | undefined, updatedAt: number): number {
+    if (preparedRevision === undefined) {
+        return Date.now();
+    }
+    return updatedAt;
+}
 
 /**
  * Serialize the live module stores into the canonical {@link ProjectData}
@@ -145,14 +169,12 @@ type BuildProjectDataInput = {
  */
 export async function buildProjectData({
     includeAudioBuffers = false,
+    preparedRevision,
 }: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
-    if (agentProjectRepairStateStore.value !== null) {
+    const snapshotRevision = captureBuildRevision(preparedRevision);
+    if (snapshotRevision === null) {
         return null;
     }
-
-    syncCurrentArrangementToStore();
-    flushAutomergeStorageWrites();
-    const snapshotRevision = captureProjectRevision();
 
     const tracks = trackStore.value;
     const transport = transportStore.value;
@@ -264,7 +286,7 @@ export async function buildProjectData({
             projectId: project.projectId,
             name: project.name,
             createdAt: project.createdAt,
-            updatedAt: Date.now(),
+            updatedAt: snapshotUpdatedAt(preparedRevision, project.updatedAt),
             keyRoot: project.keyRoot,
             scaleName: project.scaleName,
             tuning: project.tuning,
