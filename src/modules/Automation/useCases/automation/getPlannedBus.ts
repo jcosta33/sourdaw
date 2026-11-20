@@ -30,6 +30,55 @@ function afterTrackRemoved(
     return bus;
 }
 
+function afterAllTracksRemoved(): undefined {
+    return undefined;
+}
+
+function afterTracksDiscarded(
+    action: ActionOf<'discardCreatedTracks'>,
+    busId: string,
+    bus: PlannedBus | undefined
+): PlannedBus | undefined {
+    if (action.payload.trackIds.includes(busId)) {
+        return undefined;
+    }
+    return bus;
+}
+
+function afterStemSetDiscarded(
+    action: ActionOf<'discardImportedStemSet'>,
+    busId: string,
+    bus: PlannedBus | undefined
+): PlannedBus | undefined {
+    if (action.payload.folderId === busId || action.payload.stemTrackIds.includes(busId)) {
+        return undefined;
+    }
+    return bus;
+}
+
+type RestoreTrackPayload = ActionOf<'restoreTrack'>['payload'];
+
+function restoredBus(payload: RestoreTrackPayload): PlannedBus {
+    return { id: payload.trackId, kind: payload.trackKind, name: payload.trackName };
+}
+
+function afterTrackRestored(
+    action: ActionOf<'restoreTrack'>,
+    busId: string,
+    bus: PlannedBus | undefined
+): PlannedBus | undefined {
+    return action.payload.trackId === busId ? restoredBus(action.payload) : bus;
+}
+
+function afterTracksRestored(
+    action: ActionOf<'restoreTracks'>,
+    busId: string,
+    bus: PlannedBus | undefined
+): PlannedBus | undefined {
+    const restore = action.payload.restores.find((candidate) => candidate.trackId === busId);
+    return restore ? restoredBus(restore) : bus;
+}
+
 // Every action type states how it changes the planned bus: a new action does not compile until it does.
 const plannedBusByActionType: {
     readonly [Type in AppActionType]: (
@@ -39,14 +88,14 @@ const plannedBusByActionType: {
     ) => PlannedBus | undefined;
 } = {
     importStemSet: unchangedBus,
-    discardImportedStemSet: unchangedBus,
+    discardImportedStemSet: afterStemSetDiscarded,
     addTrack: unchangedBus,
     removeTrack: afterTrackRemoved,
     discardCreatedTrack: afterTrackRemoved,
-    restoreTrack: unchangedBus,
+    restoreTrack: afterTrackRestored,
     restoreClip: unchangedBus,
     discardDuplicatedClip: unchangedBus,
-    removeAllTracks: unchangedBus,
+    removeAllTracks: afterAllTracksRemoved,
     renameTrack: unchangedBus,
     createTrackAlternative: unchangedBus,
     switchTrackAlternative: unchangedBus,
@@ -116,7 +165,11 @@ const plannedBusByActionType: {
     setExternalPluginState: unchangedBus,
     setDeviceState: unchangedBus,
     setFermenterPatch: unchangedBus,
+    setLevainIdentity: unchangedBus,
     setGrandBouleDeviceState: unchangedBus,
+    setToasterFactoryKit: unchangedBus,
+    setBacteriaFactoryPatch: unchangedBus,
+    setGlutenFactoryPreset: unchangedBus,
     createBus: afterCreateBus,
     createFolder: unchangedBus,
     setSend: unchangedBus,
@@ -169,6 +222,7 @@ const plannedBusByActionType: {
     removeAutomationLane: unchangedBus,
     setAutomationLaneEnabled: unchangedBus,
     addAutomationPoint: unchangedBus,
+    insertAutomationLanePoints: unchangedBus,
     quantizeNotes: unchangedBus,
     removeShortMidiOverlaps: unchangedBus,
     createDrumPreviewBranches: unchangedBus,
@@ -192,6 +246,7 @@ const plannedBusByActionType: {
     setClipFade: unchangedBus,
     importMidiFile: unchangedBus,
     normalizeClip: unchangedBus,
+    relinkClipAudioSources: unchangedBus,
     reverseClip: unchangedBus,
     restoreReversedClip: unchangedBus,
     glueClips: unchangedBus,
@@ -294,9 +349,9 @@ const plannedBusByActionType: {
     restoreTimeOperationState: unchangedBus,
     restoreTrackHeights: unchangedBus,
     restoreTrackGroupMemberships: unchangedBus,
-    restoreTracks: unchangedBus,
+    restoreTracks: afterTracksRestored,
     restoreTrackClipStates: unchangedBus,
-    discardCreatedTracks: unchangedBus,
+    discardCreatedTracks: afterTracksDiscarded,
     discardCreatedCompGroup: unchangedBus,
     restoreTrackAlternativeState: unchangedBus,
     restoreScratchPadState: unchangedBus,

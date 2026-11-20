@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { initPluginStateDirtyTracking } from '../initPluginStateDirtyTracking';
+import { pluginStateEditCount } from '../pluginStateEditCount';
 
 type ParameterEdit = {
     instanceId: string;
@@ -106,6 +107,23 @@ describe('plugin state project dirty lifecycle', () => {
         reportParameterEdit?.({ instanceId: 'inst-1', parameterId: 12, kind: 'value', value: 0.75 });
 
         expect(projectStore.value?.dirty).toBe(false);
+    });
+
+    /**
+     * A save clears dirty when it finishes, so an edit made while it runs must
+     * still reach it although the project already reads dirty (#5989).
+     */
+    it('counts every reported edit on a project that is already dirty, and no gesture boundary', () => {
+        projectStore.set({ ...projectStore.value!, dirty: true });
+        const before = pluginStateEditCount.read();
+
+        reportStateChanged?.();
+        reportParameterEdit?.({ instanceId: 'inst-1', parameterId: 12, kind: 'value', value: 0.75 });
+        reportParameterEdit?.({ instanceId: 'inst-1', parameterId: 12, kind: 'gestureBegin' });
+        reportParameterEdit?.({ instanceId: 'inst-1', parameterId: 12, kind: 'gestureEnd' });
+
+        expect(pluginStateEditCount.read() - before).toBe(2);
+        expect(projectStore.value?.dirty).toBe(true);
     });
 
     it('stops listening when the tracking is torn down', async () => {

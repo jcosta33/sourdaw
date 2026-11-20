@@ -7,7 +7,8 @@ use super::InputOpenRefusal;
 #[cfg(not(windows))]
 use super::{
     accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRequest, NegotiatedInput,
-    NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputTiming, RenderFn, StreamErrorFn,
+    NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputDeviceError, OutputTiming,
+    RenderFn, StreamErrorFn,
 };
 #[cfg(not(windows))]
 use crate::audio_thread::effective_buffer_size;
@@ -21,6 +22,40 @@ use std::time::{Duration, Instant};
 #[cfg(not(windows))]
 pub(crate) struct CpalOutputBackend;
 
+/// Why cpal could not open or start the default output device.
+#[cfg(not(windows))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CpalOutputError {
+    /// The host reports no default output device.
+    NoDefaultDevice,
+    /// The device would not report its default output configuration.
+    DefaultConfig(cpal::Error),
+    /// The device refused to build the output stream.
+    BuildStream(cpal::Error),
+    /// The device's default sample format is not f32.
+    UnsupportedSampleFormat,
+    /// The built stream refused to play.
+    Play(cpal::Error),
+}
+
+#[cfg(not(windows))]
+impl core::fmt::Display for CpalOutputError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NoDefaultDevice => f.write_str("No default audio output device found"),
+            Self::DefaultConfig(error) => write!(f, "Failed to get default output config: {error}"),
+            Self::BuildStream(error) => write!(f, "Failed to build output stream: {error}"),
+            Self::UnsupportedSampleFormat => {
+                f.write_str("Unsupported sample format (only F32 is supported by the engine)")
+            }
+            Self::Play(error) => write!(f, "Failed to play stream: {error}"),
+        }
+    }
+}
+
+#[cfg(not(windows))]
+impl std::error::Error for CpalOutputError {}
+
 #[cfg(not(windows))]
 pub(crate) struct CpalOpenOutput {
     device: cpal::Device,
@@ -33,7 +68,9 @@ pub(crate) struct CpalOpenOutput {
 impl OutputBackend for CpalOutputBackend {
     type Open = CpalOpenOutput;
 
-    fn open_default_output(request: DeviceOpenRequest) -> Result<CpalOpenOutput, String> {
+    fn open_default_output(
+        request: DeviceOpenRequest,
+    ) -> Result<CpalOpenOutput, OutputDeviceError> {
         if request.exclusive {
             // Exclusive endpoint access is a WASAPI-only mode (ADR 0027).
             // This backend opens the shared route and says so — a mode the
@@ -44,11 +81,11 @@ impl OutputBackend for CpalOutputBackend {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .ok_or_else(|| "No default audio output device found".to_string())?;
+            .ok_or(CpalOutputError::NoDefaultDevice)?;
 
         let config = device
             .default_output_config()
-            .map_err(|e| format!("Failed to get default output config: {}", e))?;
+            .map_err(CpalOutputError::DefaultConfig)?;
 
         let channels = config.channels() as usize;
         let sample_rate = config.sample_rate() as f32;
@@ -161,7 +198,7 @@ impl OpenOutput for CpalOpenOutput {
         self,
         mut render: RenderFn,
         mut on_error: StreamErrorFn,
-    ) -> Result<cpal::Stream, String> {
+    ) -> Result<cpal::Stream, OutputDeviceError> {
         // We strictly use f32 streams.
         //
         // The backend runs the error callback on the real-time thread — ALSA
@@ -206,17 +243,11 @@ impl OpenOutput for CpalOpenOutput {
                     err_fn,
                     None,
                 )
-                .map_err(|e| format!("Failed to build output stream: {}", e))?,
-            _ => {
-                return Err(
-                    "Unsupported sample format (only F32 is supported by the engine)".to_string(),
-                )
-            }
+                .map_err(CpalOutputError::BuildStream)?,
+            _ => return Err(CpalOutputError::UnsupportedSampleFormat),
         };
 
-        stream
-            .play()
-            .map_err(|e| format!("Failed to play stream: {}", e))?;
+        stream.play().map_err(CpalOutputError::Play)?;
 
         Ok(stream)
     }
@@ -366,6 +397,40 @@ mod tests {
     use crate::audio_thread::negotiated_buffer_size;
     use crate::device::InputOpenRefusal;
     use cpal::{OutputStreamTimestamp, StreamInstant};
+
+    /// The output-open messages, pinned exactly: they reach the renderer as
+    /// the engine-start failure text, wrapped cause included.
+    #[cfg(not(windows))]
+    #[test]
+    fn cpal_output_errors_print_their_messages() {
+        use super::CpalOutputError;
+        let cause = || cpal::Error::with_message(cpal::ErrorKind::DeviceBusy, "device busy");
+        let cases = [
+            (
+                CpalOutputError::NoDefaultDevice,
+                "No default audio output device found",
+            ),
+            (
+                CpalOutputError::DefaultConfig(cause()),
+                "Failed to get default output config: device busy",
+            ),
+            (
+                CpalOutputError::BuildStream(cause()),
+                "Failed to build output stream: device busy",
+            ),
+            (
+                CpalOutputError::UnsupportedSampleFormat,
+                "Unsupported sample format (only F32 is supported by the engine)",
+            ),
+            (
+                CpalOutputError::Play(cause()),
+                "Failed to play stream: device busy",
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+    }
 
     /// `output_path_frames` has to invert `frames_to_duration`'s own
     /// nanosecond rounding exactly: 553 frames at 48 000 Hz round-trips

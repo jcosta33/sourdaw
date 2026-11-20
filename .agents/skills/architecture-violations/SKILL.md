@@ -21,7 +21,7 @@ Establish the architecture so the code flows through the right boundary. Never: 
 
 **Why:** the architecture encodes non-negotiable DAW constraints. A green check that re-introduces the hazard — now invisible — is a regression.
 
-Cycles have two checks with different reach. File-level `no-circular` (**error**) sees files, not modules. The `moduleTiers` gate (`.dependency-cruiser.module-tiers.cjs`, run inside `pnpm deps:validate`) sees module-level cycles and upward tier edges in non-presentation production code, and accepts only the manifest's reasoned `allowedCycles` and `acceptedTierEdges` rows — it has no baseline to refresh, so a new allowance is a manifest entry argued in review, and a module's tier is never changed to fit its imports. A module cycle that closes through a view or other `presentations/` code is outside both checks, so a green `deps:validate` still does not prove the presentation-inclusive module graph acyclic.
+For cycles and upward tier edges, follow [architecture rule 4](../architecture/SKILL.md#core-rules) for gate scope, tier ownership, and reasoned manifest allowances. Check the presentation-inclusive module graph when the dependency can close through a view or other presentation code. That cycle can escape both the file-level `no-circular` check and the `moduleTiers` gate.
 
 ### 2. A boundary is only real if responsibility changes across it
 
@@ -43,9 +43,7 @@ Trace upstream callers and downstream dependencies. CI's TypeScript typechecks p
 
 ### 5. Restore the contract barrel — never route around it
 
-Cross-module access goes through the contract barrels and their rules (`architecture` rules 1–2: `cross-module-index-only`, `contract-barrel-scope`, `no-internal-barrel-import`). Fix a barrel violation by re-establishing that surface, not by inventing new barrels or escape hatches.
-
-**Why:** the barrel is the only curated public surface; deep imports erase ownership.
+Restore the owning module’s contract surface using [architecture rules 1–2](../architecture/SKILL.md#core-rules). Treat any new barrel or import route that leaves the private dependency intact as a failed repair.
 
 ### 6. A use case is a typed function, not a re-export — types stay local
 
@@ -59,15 +57,13 @@ export function getNextClipId(): string {
 }
 ```
 
-Other modules import **functions** from `#/modules/<M>/useCases`, never types (`no-usecase-type-exports-on-index`). Cross-module named types travel via `events/` payloads or `Store<T>`’s `T`; otherwise use a local type or `ReturnType`/`Parameters`.
+Apply the [use-case type and export rules](../architecture/SKILL.md#6-use-case-types-stay-private-one-function-per-file) when repairing the public surface.
 
 **Why:** a re-export passes the validator while the consumer still couples to the private symbol under a new path.
 
 ### 7. One function per use-case file
 
-A multi-export wrapper over a repository is a barrel in disguise. Split to one function per file, each with a real typed signature.
-
-**Why:** multi-export wrappers recreate the laundering surface contract barrels exist to prevent.
+Replace multi-export wrappers over a repository with individual, typed operations under [architecture rule 6](../architecture/SKILL.md#6-use-case-types-stay-private-one-function-per-file). A file split alone leaves the private dependency in place if the new files still re-export it.
 
 ### 8. Protect pure layers and RT paths when remediating
 

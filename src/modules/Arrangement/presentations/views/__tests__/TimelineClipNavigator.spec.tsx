@@ -403,6 +403,22 @@ describe('TimelineClipNavigator', () => {
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
     });
 
+    it('does not activate a search result on composing Enter', () => {
+        act(() =>
+            trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [clip('one', 'voice', 0)])] })
+        );
+        openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.change(search, { target: { value: 'one' } });
+
+        fireEvent.keyDown(search, { key: 'Enter', isComposing: true });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
+        expect(search).toHaveValue('one');
+
+        fireEvent.keyDown(search, { key: 'Enter' });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['one']);
+    });
+
     it('steps to the previous result when ArrowUp is pressed in the search field', () => {
         act(() => {
             trackStore.set({

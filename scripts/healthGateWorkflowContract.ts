@@ -185,7 +185,13 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: ISOLATED_UNIT_STEPS,
+        unit: [...ISOLATED_UNIT_STEPS, 'Upload unit coverage shard'],
+        'unit-coverage': [
+            ...SETUP_NODE,
+            'Download unit coverage shards',
+            'Enforce PR coverage',
+            'Upload unit coverage report',
+        ],
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
@@ -290,10 +296,17 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Select the virtual device as the output',
             'Install the harness plugin',
             'Build the packaged desktop app',
+            'Capture the Fermenter build receipt',
             'Measure the packaged app',
             'Prove the agent workspace in the packaged app',
             'Upload the measurement record',
             'Upload the agent workspace proof record',
+            'Prove Fermenter in the packaged app',
+            'Upload the Fermenter proof record',
+            'Prove premium editor mounts in the packaged app',
+            'Upload the premium editor proof record',
+            'Prove premium editor workspace in the packaged app',
+            'Upload the premium editor workspace proof record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
@@ -359,6 +372,11 @@ const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'
 const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
 const PRODUCT_SCOPE = "needs.decide.outputs.tooling != 'true'";
 
+const FERMENTER_ADMISSION =
+    "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}";
+const FERMENTER_UPLOAD_ADMISSION =
+    "${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}";
+
 function pin(workflow: string, job: string, step: string, condition: string): ConditionalStepPin {
     return { workflow, job, step, condition };
 }
@@ -378,6 +396,12 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         "steps.filter.outcome == 'failure'"
     ),
     pin('validation.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin(
+        'validation.yml',
+        'unit-coverage',
+        'Upload unit coverage report',
+        "${{ !cancelled() && steps.enforce.outcome != 'skipped' }}"
+    ),
     ...[
         'App types',
         'Test types',
@@ -392,6 +416,23 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
     pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor workspace in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor workspace proof record',
+        "${{ !cancelled() && (steps.prove-editor-workspace.outcome == 'success' || steps.prove-editor-workspace.outcome == 'failure') }}"
+    ),
+    pin('nightly.yml', 'desktop-measure', 'Capture the Fermenter build receipt', FERMENTER_ADMISSION),
+    pin('nightly.yml', 'desktop-measure', 'Prove Fermenter in the packaged app', FERMENTER_ADMISSION),
+    pin('nightly.yml', 'desktop-measure', 'Upload the Fermenter proof record', FERMENTER_UPLOAD_ADMISSION),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor mounts in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor proof record',
+        "${{ !cancelled() && (steps.prove-premium-editors.outcome == 'success' || steps.prove-premium-editors.outcome == 'failure') }}"
+    ),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
     pin(
         'nightly.yml',

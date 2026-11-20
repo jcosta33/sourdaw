@@ -1,5 +1,8 @@
+import { useState } from 'react';
+
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createPortal } from 'react-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
@@ -212,24 +215,71 @@ vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
 }));
 
+vi.mock('#/modules/Fermenter/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Fermenter/presentations/views')>()),
+    FermenterPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="FermenterPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Toaster/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Toaster/presentations/views')>()),
+    ToasterPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="ToasterPanel">{deviceId}</div>,
+}));
+
 vi.mock('#/modules/Levain/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Levain/presentations/views')>()),
-    LevainPanel: () => <div data-testid="levain-panel" />,
+    LevainPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="LevainPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/ProofChamber/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/ProofChamber/presentations/views')>()),
+    ProofChamberPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="ProofChamberPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Gluten/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Gluten/presentations/views')>()),
+    GlutenPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="GlutenPanel">{deviceId}</div>,
 }));
 
 vi.mock('#/modules/Bacteria/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Bacteria/presentations/views')>()),
-    BacteriaPanel: () => <div data-testid="bacteria-panel" />,
+    BacteriaPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="BacteriaPanel">{deviceId}</div>,
 }));
 
 vi.mock('#/modules/Grinder/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Grinder/presentations/views')>()),
-    GrinderPanel: () => <div data-testid="grinder-panel" />,
+    GrinderPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="GrinderPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Proof/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Proof/presentations/views')>()),
+    ProofPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="ProofPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Tuner/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Tuner/presentations/views')>()),
+    TunerPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="TunerPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Yeast/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/presentations/views')>()),
+    YeastPanel: ({ deviceId }: { deviceId: string | null }) => (
+        <div data-testid="YeastPanel">{deviceId === null ? 'selection fallback' : deviceId}</div>
+    ),
+}));
+
+vi.mock('#/modules/Crust/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crust/presentations/views')>()),
+    CrustPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="CrustPanel">{deviceId}</div>,
+}));
+
+vi.mock('#/modules/Crumbs/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crumbs/presentations/views')>()),
+    CrumbsPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="CrumbsPanel">{deviceId}</div>,
 }));
 
 vi.mock('#/modules/GrandBoule/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/GrandBoule/presentations/views')>()),
-    GrandBoulePanel: () => <div data-testid="grand-boule-panel" />,
+    GrandBoulePanel: ({ deviceId }: { deviceId: string }) => <div data-testid="GrandBoulePanel">{deviceId}</div>,
 }));
 
 vi.mock('../LaunchScreen', () => ({
@@ -1649,9 +1699,91 @@ describe('AppShell', () => {
         });
     });
 
-    // ── Bottom-dock drawer accent color tokens ────────────────────────────────────
-    describe('bottom drawer accent color tokens', () => {
-        const drawerTokenCases: Array<{
+    it('dismisses the floating editor after the nested menu, preserving text and select Escape', () => {
+        function Controls() {
+            const [menuOpen, setMenuOpen] = useState(true);
+            return (
+                <>
+                    <input aria-label="Preset name" />
+                    <select aria-label="Routing mode">
+                        <option>Mono</option>
+                    </select>
+                    {menuOpen
+                        ? createPortal(
+                              <div role="menu" aria-label="Presets">
+                                  <button role="menuitem" onKeyDown={() => setMenuOpen(false)}>
+                                      Choose preset
+                                  </button>
+                              </div>,
+                              document.body
+                          )
+                        : null}
+                </>
+            );
+        }
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'levain-1', trackId: null };
+        render(
+            <AppShell>
+                <Controls />
+            </AppShell>
+        );
+        const panel = screen.getByRole('dialog', { name: 'Levain' });
+        fireEvent.keyDown(screen.getByRole('menuitem'), { key: 'Escape' });
+        expect(screen.queryByRole('menu', { name: 'Presets' })).toBeNull();
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Preset name' }), { key: 'Escape' });
+        fireEvent.keyDown(screen.getByRole('combobox', { name: 'Routing mode' }), { key: 'Escape' });
+        fireEvent.keyDown(panel, { key: 'Escape', shiftKey: true });
+        fireEvent.keyDown(panel, { key: 'Escape', repeat: true });
+        expect(activeDevicePanelStateMock.closeActivePanel).not.toHaveBeenCalled();
+        fireEvent.keyDown(panel, { key: 'Escape' });
+        expect(activeDevicePanelStateMock.closeActivePanel).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['fermenter', 'Fermenter', 'FermenterPanel'],
+        ['toaster', 'Toaster', 'ToasterPanel'],
+        ['levain', 'Levain', 'LevainPanel'],
+        ['proofChamber', 'Dutch Oven', 'ProofChamberPanel'],
+        ['gluten', 'Gluten', 'GlutenPanel'],
+        ['bacteria', 'Bacteria', 'BacteriaPanel'],
+        ['grinder', 'Grinder', 'GrinderPanel'],
+        ['proof', 'Proof', 'ProofPanel'],
+        ['scoring', 'Scoring', 'TunerPanel'],
+        ['yeast', 'Yeast', 'YeastPanel'],
+        ['crust', 'Crust', 'CrustPanel'],
+        ['sampler', 'Sampler', 'CrumbsPanel'],
+        ['grandBoule', 'Grand Boule', 'GrandBoulePanel'],
+    ] as const)('routes %s to the correct view and device instance', (kind, label, view) => {
+        const deviceId = `bound-${kind}`;
+        activeDevicePanelStateMock.activePanel = { kind, deviceId, trackId: 'track-1' };
+        render(<AppShell>Content</AppShell>);
+        expect(within(screen.getByRole('dialog', { name: label })).getByTestId(view)).toHaveTextContent(deviceId);
+    });
+
+    it('passes a null instance through to the Yeast selection fallback', () => {
+        activeDevicePanelStateMock.activePanel = { kind: 'yeast', deviceId: null, trackId: null };
+        render(<AppShell>Content</AppShell>);
+        expect(within(screen.getByRole('dialog', { name: 'Yeast' })).getByTestId('YeastPanel')).toHaveTextContent(
+            'selection fallback'
+        );
+    });
+
+    it('unmounts the previous device instance when another editor of the same kind opens', () => {
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'first', trackId: null };
+        const shell = render(<AppShell>Content</AppShell>);
+        const previous = screen.getByTestId('LevainPanel');
+        expect(previous).toHaveTextContent('first');
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'second', trackId: null };
+        shell.rerender(<AppShell>Content</AppShell>);
+        expect(previous).not.toBeInTheDocument();
+        expect(within(screen.getByRole('dialog', { name: 'Levain' })).getByTestId('LevainPanel')).toHaveTextContent(
+            'second'
+        );
+    });
+
+    // ── Floating editor accent color tokens ────────────────────────────────────
+    describe('floating editor accent color tokens', () => {
+        const editorTokenCases: Array<{
             label: string;
             kind: ActiveDevicePanel['kind'];
             expectedLabelColor: string;
@@ -1693,13 +1825,15 @@ describe('AppShell', () => {
             },
         ];
 
-        it.each(drawerTokenCases)(
-            'passes tokenized accent classes to $label drawer and omits legacy Tailwind color classes',
+        it.each(editorTokenCases)(
+            'passes tokenized accent classes to $label editor and omits legacy Tailwind color classes',
             ({ label, kind, expectedLabelColor, expectedBorderColor, deprecatedLabelColor, deprecatedBorderColor }) => {
                 activeDevicePanelStateMock.activePanel = { kind, deviceId: `device-${kind}`, trackId: null };
 
                 render(<AppShell>Content</AppShell>);
 
+                const panelContainer = screen.getByRole('dialog', { name: label });
+                expect(panelContainer).toHaveAttribute('aria-modal', 'false');
                 const closeButton = screen.getByRole('button', { name: `Close ${label}` });
                 const headerRow = closeButton.parentElement;
                 const labelElement = headerRow?.querySelector('span');
@@ -1709,8 +1843,6 @@ describe('AppShell', () => {
                 expect(labelElement).toHaveClass(expectedLabelColor);
                 expect(labelElement).not.toHaveClass(deprecatedLabelColor);
 
-                const panelContainer = labelElement?.closest('div[class*="border-t"]');
-                expect(panelContainer).not.toBeNull();
                 expect(panelContainer).toHaveClass(expectedBorderColor);
                 expect(panelContainer).not.toHaveClass(deprecatedBorderColor);
             }

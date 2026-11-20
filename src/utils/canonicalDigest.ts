@@ -32,7 +32,11 @@ export function canonicalJson(value: unknown): string {
 }
 
 export function digest(value: unknown): string {
-    const bytes = new TextEncoder().encode(canonicalJson(value));
+    const bytes = sha256Bytes(new TextEncoder().encode(canonicalJson(value)));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function sha256Bytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
     padded.set(bytes);
     padded[bytes.length] = 0x80;
@@ -90,5 +94,10 @@ export function digest(value: unknown): string {
         state[6] = (state[6]! + g!) >>> 0;
         state[7] = (state[7]! + h!) >>> 0;
     }
-    return state.map((word) => word.toString(16).padStart(8, '0')).join('');
+    const hash = new Uint8Array(32);
+    const output = new DataView(hash.buffer);
+    for (const [index, word] of state.entries()) {
+        output.setUint32(index * 4, word);
+    }
+    return hash;
 }

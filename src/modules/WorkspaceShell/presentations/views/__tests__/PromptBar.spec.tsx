@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/useCases';
@@ -273,6 +273,58 @@ describe('PromptBar', () => {
             expect(module_mocks.execute_preset).toHaveBeenCalledWith({ preset, score: 1 });
         });
 
+        it('tracks only a rendered active option across result changes and closure', () => {
+            const result = {
+                preset: { id: 'p1', label: 'Play', category: 'Transport' as const, isDestructive: false },
+                score: 1,
+            };
+            setPromptState({ value: 'pl', fuzzyResults: [result], selectedIndex: 0 });
+            const { rerender } = render(<PromptBar onReviewRun={module_mocks.review_run} />);
+            const input = screen.getByRole('combobox', { name: 'Prompt command input' });
+            const option = screen.getByRole('option', { name: /Play/ });
+            expect(input).toHaveAttribute('aria-activedescendant', option.id);
+            expect(option.id).toBeTruthy();
+            setPromptState({ value: 'zzz', isFocused: true, fuzzyResults: [], selectedIndex: 0 });
+            rerender(<PromptBar onReviewRun={module_mocks.review_run} />);
+            expect(input).not.toHaveAttribute('aria-activedescendant');
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+            setPromptState({});
+            rerender(<PromptBar onReviewRun={module_mocks.review_run} />);
+            expect(input).not.toHaveAttribute('aria-controls');
+            expect(input).not.toHaveAttribute('aria-activedescendant');
+        });
+
+        it('keeps each instance connected to its own listbox and option', () => {
+            setPromptState({
+                fuzzyResults: [
+                    { preset: { id: 'p1', label: 'Play', category: 'Transport', isDestructive: false }, score: 1 },
+                ],
+                selectedIndex: 0,
+            });
+            render(
+                <>
+                    <div data-testid="first-prompt">
+                        <PromptBar onReviewRun={module_mocks.review_run} />
+                    </div>
+                    <div data-testid="second-prompt">
+                        <PromptBar onReviewRun={module_mocks.review_run} />
+                    </div>
+                </>
+            );
+            const first = within(screen.getByTestId('first-prompt'));
+            const second = within(screen.getByTestId('second-prompt'));
+            const firstList = first.getByRole('listbox');
+            const secondList = second.getByRole('listbox');
+            const firstOption = first.getByRole('option');
+            const secondOption = second.getByRole('option');
+            expect(firstList.id).not.toBe(secondList.id);
+            expect(firstOption.id).not.toBe(secondOption.id);
+            expect(first.getByRole('combobox')).toHaveAttribute('aria-controls', firstList.id);
+            expect(first.getByRole('combobox')).toHaveAttribute('aria-activedescendant', firstOption.id);
+            expect(second.getByRole('combobox')).toHaveAttribute('aria-controls', secondList.id);
+            expect(second.getByRole('combobox')).toHaveAttribute('aria-activedescendant', secondOption.id);
+        });
+
         it('shows a destructive-action warning icon for destructive presets', () => {
             setPromptState({
                 value: 'clear',
@@ -298,9 +350,12 @@ describe('PromptBar', () => {
 
             render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
-            expect(screen.getByRole('listbox')).toBeInTheDocument();
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
             expect(screen.getByText('No matching commands — press Enter to try AI')).toBeInTheDocument();
-            expect(screen.getByLabelText('Prompt command input')).toHaveAttribute('aria-expanded', 'true');
+            expect(screen.getByRole('combobox', { name: 'Prompt command input' })).toHaveAttribute(
+                'aria-expanded',
+                'false'
+            );
         });
 
         it('closes the empty-results hint when the input is not focused', () => {
@@ -325,13 +380,11 @@ describe('PromptBar', () => {
 
             render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
-            const input = screen.getByLabelText('Prompt command input');
+            const input = screen.getByRole('combobox', { name: 'Prompt command input' });
+            const listbox = screen.getByRole('listbox', { name: 'Command suggestions' });
             expect(input).toHaveAttribute('aria-expanded', 'true');
-            expect(input).toHaveAttribute('aria-controls', 'prompt-results');
-            expect(screen.getByRole('listbox', { name: 'Command suggestions' })).toHaveAttribute(
-                'id',
-                'prompt-results'
-            );
+            expect(input).toHaveAttribute('aria-controls', listbox.id);
+            expect(listbox.id).toBeTruthy();
         });
     });
 

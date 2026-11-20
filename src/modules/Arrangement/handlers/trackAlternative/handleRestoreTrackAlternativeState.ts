@@ -1,14 +1,22 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { type TrackAlternativeStateSnapshot } from '../../events/arrangementTrackAppActions';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 
 import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
 import { isRestorableAlternatives, isRestorableClips } from './isRestorableAlternativeState';
+import {
+    applyRetiredClipLanes,
+    applyRetiredClipRows,
+    applyRetiredTakeLanes,
+    retiredClipsTransitionIsAdmissible,
+} from './retiredAlternativeClips';
 
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
+type TrackClipCollections = Pick<Track, 'activeAlternativeId' | 'alternatives' | 'clips'>;
 
 // Compares the alternative id sequence and active id rather than deep-equating the
 // snapshot: a deep compare would spuriously conflict on recomputed fields, while an id
@@ -23,10 +31,89 @@ function alternativeStateMatches(track: Track, snapshot: TrackAlternativeStateSn
     return track.alternatives.every((alternative, index) => alternative.id === snapshot.alternatives[index]?.id);
 }
 
+function readRetiredClipOwners(track: TrackClipCollections, retiredIds: ReadonlySet<string>) {
+    const tagOwners = (clips: Track['clips'], alternativeId: string) =>
+        clips.filter((clip) => retiredIds.has(clip.id)).map((clip) => ({ clipId: clip.id, alternativeId }));
+    const owners = getHeldClips({
+        activeAlternativeId: track.activeAlternativeId,
+        clips: tagOwners(track.clips, track.activeAlternativeId),
+        alternatives: track.alternatives.map(({ id, clips }) => ({ id, clips: tagOwners(clips, id) })),
+    });
+    return Map.groupBy(owners, (owner) => owner.clipId);
+}
+
+function retiredClipOwnersMatch(
+    tracks: TrackState['tracks'],
+    track: Track,
+    expected: TrackAlternativeStateSnapshot,
+    replacement: TrackClipCollections,
+    clipIds: readonly string[]
+): boolean {
+    if (clipIds.length === 0) {
+        return true;
+    }
+    if (!isRestorableAlternatives(expected.alternatives, track.id) || !isRestorableClips(expected.clips, track.id)) {
+        return false;
+    }
+    const retiredIds = new Set(clipIds);
+    const hasOtherTrackOwner = tracks.some(
+        (candidate) => candidate.id !== track.id && getHeldClips(candidate).some((clip) => retiredIds.has(clip.id))
+    );
+    if (hasOtherTrackOwner) {
+        return false;
+    }
+    const liveOwners = readRetiredClipOwners(track, retiredIds);
+    const expectedOwners = readRetiredClipOwners(
+        { activeAlternativeId: track.activeAlternativeId, alternatives: expected.alternatives, clips: expected.clips },
+        retiredIds
+    );
+    const replacementOwners = readRetiredClipOwners(replacement, retiredIds);
+    return clipIds.every((clipId) => {
+        const live = liveOwners.get(clipId) ?? [];
+        const before = expectedOwners.get(clipId) ?? [];
+        const after = replacementOwners.get(clipId) ?? [];
+        // Undo adds one owner and redo removes it. An active alternative's stored copy is stale.
+        return (
+            before.length + after.length === 1 &&
+            live.length === before.length &&
+            live[0]?.alternativeId === before[0]?.alternativeId
+        );
+    });
+}
+
+type RetiredClipsTransition =
+    | { readonly kind: 'none' }
+    | {
+          readonly kind: 'move';
+          readonly expected: NonNullable<TrackAlternativeStateSnapshot['retiredClips']>;
+          readonly replacement: NonNullable<TrackAlternativeStateSnapshot['retiredClips']>;
+      }
+    | { readonly kind: 'refused' };
+
+// Entries recorded before deletes retired clip data carry neither side and move
+// nothing; a payload carrying only one side is not one the delete produced.
+function readRetiredClipsTransition(
+    expected: TrackAlternativeStateSnapshot,
+    replacement: TrackAlternativeStateSnapshot
+): RetiredClipsTransition {
+    if (expected.retiredClips === undefined && replacement.retiredClips === undefined) {
+        return { kind: 'none' };
+    }
+    if (
+        expected.retiredClips === undefined ||
+        replacement.retiredClips === undefined ||
+        !retiredClipsTransitionIsAdmissible(expected.retiredClips, replacement.retiredClips)
+    ) {
+        return { kind: 'refused' };
+    }
+    return { kind: 'move', expected: expected.retiredClips, replacement: replacement.retiredClips };
+}
+
 /**
  * Inverse and redo of `deleteTrackAlternative`. Deletion drops the alternative, may
- * promote a different one, and rewrites the track's live clips — all three come back
- * (or go forward again, for redo) together in one guarded write.
+ * promote a different one, rewrites the track's live clips, and retires the MIDI,
+ * satellite, clip-lane and take rows of the clips the alternative held — all of it comes
+ * back (or goes forward again, for redo) together in one guarded write.
  */
 export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlternativeState'>({
     execute: (action) => {
@@ -69,19 +156,35 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
             }
         }
 
+        const retiredClips = readRetiredClipsTransition(expected, replacement);
+        if (retiredClips.kind === 'refused') {
+            return { status: 'conflict' };
+        }
+        const replacementCollections = { alternatives, activeAlternativeId: replacementActiveAlternativeId, clips };
+        if (
+            retiredClips.kind === 'move' &&
+            (!retiredClipOwnersMatch(
+                state.tracks,
+                track,
+                expected,
+                replacementCollections,
+                retiredClips.expected.clipIds
+            ) ||
+                !applyRetiredClipLanes(retiredClips.expected, retiredClips.replacement))
+        ) {
+            return { status: 'conflict' };
+        }
+
         setTrackStoreState({
             ...state,
             tracks: state.tracks.map((candidate) =>
-                candidate.id === trackId
-                    ? {
-                          ...candidate,
-                          alternatives,
-                          activeAlternativeId: replacementActiveAlternativeId,
-                          clips,
-                      }
-                    : candidate
+                candidate.id === trackId ? { ...candidate, ...replacementCollections } : candidate
             ),
         });
+        if (retiredClips.kind === 'move') {
+            applyRetiredClipRows(retiredClips.expected, retiredClips.replacement);
+            applyRetiredTakeLanes(retiredClips.expected, retiredClips.replacement);
+        }
 
         return { status: 'written' };
     },

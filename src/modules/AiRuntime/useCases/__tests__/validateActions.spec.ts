@@ -26,6 +26,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'ineligible' })

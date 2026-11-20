@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn<() => void>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     buildProjectData: vi.fn<
-        (input?: { includeAudioBuffers?: boolean }) => Promise<{
+        () => Promise<{
             data: unknown;
             requiredAudioBufferIds: readonly string[];
             snapshotRevision: string;
@@ -73,7 +73,22 @@ vi.mock('../collectProjectDirectoryPcm', () => ({
         throw new Error('Unexpected directory PCM capture in this fixture');
     }),
 }));
+vi.mock('../buildPreparedProjectSaveData', () => ({
+    buildPreparedProjectSaveData: async () => {
+        const project = mocks.projectStoreValue.value;
+        if (project) {
+            mocks.projectStoreSet({ ...project, updatedAt: Date.now(), dirty: true });
+        }
+        const built = await mocks.buildProjectData();
+        if (!built) {
+            throw new Error('Project snapshot could not be built');
+        }
+        return { built, settledTakesAtSnapshot: 0 };
+    },
+}));
+
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'project-identity',
     exportSdawFile: vi.fn(() => {
         throw new Error('Unexpected directory document export in this fixture');
     }),
@@ -88,10 +103,6 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) =
 
 vi.mock('../../../recentProjects/addToRecentProjects', () => ({
     addToRecentProjects: mocks.addToRecentProjects,
-}));
-
-vi.mock('../../fileIO/buildProjectData', () => ({
-    buildProjectData: mocks.buildProjectData,
 }));
 
 vi.mock('../captureExternalPluginStates', () => ({
@@ -311,6 +322,54 @@ describe('saveProject durability', () => {
         );
     });
 
+    it('keeps the project dirty and tells the user when the whole plugin capture throws', async () => {
+        installFakeIndexedDb();
+        mocks.captureExternalPluginStates.mockRejectedValue(new Error('plugin host gone'));
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: true, identityPersistencePending: false })
+        );
+        expect(mocks.notifyUser).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('unsaved changes'), 'warning');
+    });
+
+    // #5989: the project already reads dirty while it saves, so markDirty cannot
+    // carry a plugin edit made after its state was read; the edit count does.
+    it('keeps the project dirty when a plugin reports an edit while the save writes', async () => {
+        installFakeIndexedDb();
+        const saveProject = await importSaveProject();
+        const { pluginStateEditCount } = await import('../pluginStateEditCount');
+        const persisting = Promise.withResolvers<void>();
+        mocks.persistCrdtProject.mockReturnValue(persisting.promise);
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(mocks.persistCrdtProject).toHaveBeenCalledOnce());
+        pluginStateEditCount.record();
+        persisting.resolve();
+
+        await expect(saving).resolves.toBe(true);
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: true, identityPersistencePending: false })
+        );
+    });
+
+    it('clears dirty when every plugin edit was reported before the save began', async () => {
+        installFakeIndexedDb();
+        const saveProject = await importSaveProject();
+        const { pluginStateEditCount } = await import('../pluginStateEditCount');
+        pluginStateEditCount.record();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: false, identityPersistencePending: false })
+        );
+    });
+
     it('releases the receipt and refuses completion when audio changes during document persistence', async () => {
         installFakeIndexedDb();
         let receiptCurrent = true;
@@ -431,56 +490,6 @@ describe('saveProject durability', () => {
         expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
     });
 
-    // AC-5. The live save snapshot references audio by id; the PCM itself lives
-    // in the runtime audio cache's IndexedDB store as raw Float32Array. The
-    // stand-in below embeds base64 PCM whenever the caller lets it, so the
-    // persisted bytes prove which shape `saveProject` asked for.
-    //
-    // Mutation: reverting saveProject to `buildProjectData()` (no argument) reds
-    // both `toHaveBeenCalledWith({ includeAudioBuffers: false })` and the exact
-    // persisted-snapshot equality — the stand-in then embeds 30 MB of base64.
-    it('persists a save snapshot that carries no embedded audio payload', async () => {
-        const controls = installFakeIndexedDb();
-        const snapshotWithoutAudio = { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } };
-        function embedAudio(data: Record<string, unknown>): Record<string, unknown> {
-            return {
-                ...data,
-                audioBuffers: {
-                    'buffer-1': {
-                        sampleRate: 48_000,
-                        numberOfChannels: 2,
-                        channelData: ['A'.repeat(BASE64_CHARS_FOR_60S_STEREO / 2)],
-                    },
-                },
-            };
-        }
-        mocks.buildProjectData.mockImplementation((input) =>
-            Promise.resolve({
-                data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),
-                requiredAudioBufferIds: ['buffer-1'],
-                snapshotRevision: 'saved-revision',
-            })
-        );
-
-        // Fixture pin: the stand-in really is capable of embedding base64 PCM,
-        // so the assertions below cannot be satisfied by an inert fixture.
-        await expect(mocks.buildProjectData({ includeAudioBuffers: true })).resolves.toHaveProperty(
-            'data.audioBuffers',
-            expect.any(Object)
-        );
-        mocks.buildProjectData.mockClear();
-
-        const saveProject = await importSaveProject();
-        await expect(saveProject()).resolves.toBe(true);
-
-        expect(mocks.buildProjectData).toHaveBeenCalledWith({ includeAudioBuffers: false });
-        expect(controls.values.get(RECENT_KEY)).toBe(JSON.stringify(snapshotWithoutAudio));
-    });
-
-    // AC-1 + AC-3. A project small enough for the localStorage write to succeed
-    // is the case where the dual-write is observable at all.
-    // Mutation: restoring `window.localStorage.setItem(key, json)` in
-    // writeNamedProjectJsonByKey reds `expect(localStorage.length).toBe(0)`.
     it('records the recent entry pointing at a snapshot that exists, and mirrors nothing', async () => {
         const controls = installFakeIndexedDb();
         const saveProject = await importSaveProject();
