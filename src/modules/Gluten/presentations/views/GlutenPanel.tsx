@@ -682,7 +682,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         title={preset.name}
                                         detail={preset.category}
                                         subtitle={describePreset(preset.patch)}
-                                        onPress={() => void selectGlutenFactoryPreset(deviceId, preset.id)}
+                                        onPress={() => {
+                                            void selectGlutenFactoryPreset(deviceId, preset.id);
+                                        }}
                                     />
                                 );
                             })
