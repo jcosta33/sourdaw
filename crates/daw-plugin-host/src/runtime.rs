@@ -242,6 +242,10 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.is_tail_active())
     }
 
+    fn apply_component_restart(&mut self) -> Result<bool, PluginError> {
+        delegate!(self, backend => HostedPluginRuntime::apply_component_restart(backend))
+    }
+
     fn report_plugin_observations(&mut self) {
         delegate!(self, backend => backend.report_plugin_observations())
     }
