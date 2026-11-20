@@ -164,7 +164,7 @@ const MICROPHONE_POSITIONS = [
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
-    // (note state changes on every MIDI noteOn). Previously: full
+    // (setActiveNotes fires on every MIDI noteOn). Previously: full
     // getAllTracks().find() scan per render.
     const trackState = useStore(trackStore, defaultTrackState);
     const projectParameterValues = trackState.tracks

@@ -1748,10 +1748,10 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     },
                     grandBouleControls: {
                         ready: true,
-                        startPreviewNote: result.startPreviewNote,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         noteExpression: result.noteExpression,
+                        startPreviewNote: result.startPreviewNote,
                         setParam: result.setParam,
                         setSustain: result.setSustain,
                         setUnaCorda: result.setUnaCorda,
