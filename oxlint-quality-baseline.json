@@ -16994,7 +16994,7 @@
     },
     "src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts": {
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
@@ -17060,7 +17060,7 @@
             "count": 5
         },
         "eslint/max-depth": {
-            "count": 17
+            "count": 16
         },
         "eslint/max-lines-per-function": {
             "count": 5

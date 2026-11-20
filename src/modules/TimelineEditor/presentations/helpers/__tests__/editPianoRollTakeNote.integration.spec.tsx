@@ -1,7 +1,7 @@
 import { createElement, useRef } from 'react';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -28,6 +28,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -50,6 +51,12 @@ import {
 } from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
 import { ROW_HEIGHT } from '../pianoRollConstants';
+import { movePianoRollTakeRows } from '../pianoRollTakeRowActions';
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    playAuditionNote: () => () => undefined,
+}));
 
 const original = {
     id: 'original-row',
@@ -210,10 +217,12 @@ function renderTakeMenu(
 function SelectedNoteEditor({
     projection,
     viewId,
+    selectedIds,
     stepInput = false,
 }: {
     projection: ReturnType<typeof projectPianoRollTakeNotes>;
     viewId?: string;
+    selectedIds?: Set<string>;
     stepInput?: boolean;
 }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -222,7 +231,7 @@ function SelectedNoteEditor({
         scrollRef: { current: null },
         clipId: 'clip',
         trackId: 'track',
-        notes: projection.notes,
+        notes: [...projection.baseNotes, ...projection.notes],
         takeProjections: new Map([['clip', projection]]),
         beatWidth: 40,
         rowHeight: ROW_HEIGHT,
@@ -237,7 +246,7 @@ function SelectedNoteEditor({
         chordType: 'major',
         paintMode: false,
         lassoMode: false,
-        selectedNoteIds: viewId ? new Set([viewId]) : new Set(),
+        selectedNoteIds: selectedIds ?? (viewId ? new Set([viewId]) : new Set()),
         setSelectedNoteIds: () => undefined,
         setZoom: () => undefined,
         draw: () => undefined,
@@ -610,6 +619,122 @@ describe('selected piano roll Command callbacks', () => {
         expect(rows()?.[1]?.find((note) => note.id === inserted?.id)).toEqual(inserted);
         expect(await undo()).toEqual({ headConsumed: true });
         expect(rows()?.map((takeRows) => takeRows?.length)).toEqual([3, 3]);
+    });
+
+    it('undoes one drag of repeated aliases and another selected source together', async () => {
+        const projection = mixedProjection();
+        const aliases = projection.notes.filter(
+            (note) => projection.ownersByViewId.get(note.id)?.row.id === original.id
+        );
+        const second = projection.notes.find(
+            (note) => projection.ownersByViewId.get(note.id)?.row.id === 'second-pass-row'
+        );
+        expect(aliases).toHaveLength(2);
+        if (!aliases[0] || !second) {
+            throw new Error('Expected selected owners');
+        }
+        render(
+            createElement(SelectedNoteEditor, {
+                projection,
+                selectedIds: new Set([...aliases.map((note) => note.id), second.id]),
+            })
+        );
+        const canvas = screen.getByLabelText('selected-note-editor');
+        const x = aliases[0].startBeat * 40 + 20;
+        const y = 22 + (127 - aliases[0].pitch) * 16 + 8;
+        fireEvent.mouseDown(canvas, { clientX: x, clientY: y });
+        fireEvent.mouseMove(canvas, { clientX: x + 20, clientY: y });
+        fireEvent.mouseUp(canvas, { clientX: x + 20, clientY: y });
+        await waitFor(() => {
+            expect(rows()?.[0]?.find((note) => note.id === original.id)?.startBeat).toBe(6);
+            expect(rows()?.[2]?.find((note) => note.id === 'second-pass-row')?.startBeat).toBeCloseTo(9.9);
+        });
+        expect(getCrdtDoc<{ takeLanes: typeof takeLaneStore.value }>('root')?.takeLanes).toEqual(takeLaneStore.value);
+        const movedProjection = projectPianoRollTakeNotes(loopingClip, 'track', takeLaneStore.value);
+        expect(
+            movedProjection.notes
+                .filter((note) => movedProjection.ownersByViewId.get(note.id)?.row.id === original.id)
+                .map((note) => note.startBeat)
+        ).toEqual(aliases.map((note) => note.startBeat + 0.5));
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(rows()?.[2]?.find((note) => note.id === 'second-pass-row')?.startBeat).toBe(9.4);
+        expect(rows()?.[3]?.find((note) => note.id === 'second-pass-row')?.startBeat).toBe(9.4);
+        expect(getCrdtDoc<{ takeLanes: typeof takeLaneStore.value }>('root')?.takeLanes).toEqual(takeLaneStore.value);
+        expect(rows()?.[1]?.find((note) => note.id === original.id)).toEqual(original);
+        await redo();
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual({ ...original, startBeat: 6 });
+        expect(rows()?.[1]?.find((note) => note.id === original.id)).toEqual({ ...original, startBeat: 6 });
+        expect(rows()?.[2]?.find((note) => note.id === 'second-pass-row')?.startBeat).toBeCloseTo(9.9);
+        expect(rows()?.[3]?.find((note) => note.id === 'second-pass-row')?.startBeat).toBeCloseTo(9.9);
+        expect(rows()?.[0]?.find((note) => note.id === expressive.id)).toEqual(expressive);
+        expect(getCrdtDoc<{ takeLanes: typeof takeLaneStore.value }>('root')?.takeLanes).toEqual(takeLaneStore.value);
+    });
+
+    it('undoes a drag of frozen and base gap owners together', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected frozen and base notes');
+        }
+        render(createElement(SelectedNoteEditor, { projection, selectedIds: new Set([frozen.id, base.id]) }));
+        const canvas = screen.getByLabelText('selected-note-editor');
+        const x = frozen.startBeat * 40 + 20;
+        const y = 22 + (127 - frozen.pitch) * 16 + 8;
+        fireEvent.mouseDown(canvas, { clientX: x, clientY: y });
+        fireEvent.mouseMove(canvas, { clientX: x + 20, clientY: y });
+        fireEvent.mouseUp(canvas, { clientX: x + 20, clientY: y });
+        await waitFor(() => {
+            expect(rows()?.[0]?.find((note) => note.id === original.id)?.startBeat).toBe(6);
+            expect(midiStore.value?.notesByClipId.clip?.[0]?.startBeat).toBe(5);
+        });
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(midiStore.value?.notesByClipId.clip?.[0]).toEqual(baseGapRow);
+        await redo();
+        expect(rows()?.[0]?.find((note) => note.id === original.id)?.startBeat).toBe(6);
+        expect(midiStore.value?.notesByClipId.clip?.[0]?.startBeat).toBe(5);
+    });
+
+    it('refuses a grouped move when a selected base owner changed', async () => {
+        const projection = mixedGapProjection();
+        const frozen = [...projection.ownersByViewId.values()].find((owner) => owner.row.id === original.id);
+        const base = [...projection.baseOwnersByViewId.values()].find((owner) => owner.row.id === baseGapRow.id);
+        if (!frozen || !base) {
+            throw new Error('Expected frozen and base owners');
+        }
+        const peer = { ...baseGapRow, velocity: 20 };
+        midiStore.set({ ...midiStore.value!, notesByClipId: { clip: [peer] } });
+        const before = structuredClone(takeLaneStore.value);
+        const historyLength = undoStore.value?.past.length;
+        expect(
+            await movePianoRollTakeRows([
+                {
+                    clipId: 'clip',
+                    id: frozen.row.id,
+                    beat: 0,
+                    displayBeat: frozen.displayedStartBeat + 0.5,
+                    pitch: frozen.row.pitch,
+                    owner: frozen,
+                    row: undefined,
+                },
+                {
+                    clipId: 'clip',
+                    id: base.row.id,
+                    beat: base.row.startBeat + 0.5,
+                    displayBeat: 0,
+                    pitch: base.row.pitch,
+                    owner: undefined,
+                    row: base.row,
+                },
+            ])
+        ).toBe(false);
+        expect(takeLaneStore.value).toEqual(before);
+        expect(midiStore.value?.notesByClipId.clip).toEqual([peer]);
+        expect(undoStore.value?.past.length).toBe(historyLength);
     });
 
     it('quantizes repeated aliases on their captured pass grid through one grouped menu edit', async () => {
