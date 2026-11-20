@@ -272,6 +272,7 @@ describe('Grinder disclosure in project truth', () => {
             });
             const original = captureUndoHistory().past;
             const raw = rawValues('a');
+            expect(Object.hasOwn(raw, 'gain')).toBe(false);
             writes.mockClear();
             render(<GrinderPanel deviceId="a" />);
             const knob = gainKnob();
@@ -301,7 +302,9 @@ describe('Grinder disclosure in project truth', () => {
             await act(undo);
             expect(captureUndoHistory().past).toEqual(original);
             expect(captureUndoHistory().future.map((entry) => entry.id)).toEqual([released?.id]);
-            expect(rawValues('a')).toEqual(raw);
+            const restored = rawValues('a');
+            expect(Object.hasOwn(restored, 'gain')).toBe(false);
+            expect(restored).toEqual(raw);
             expect(knob).toHaveAttribute('aria-valuenow', '5');
             expect(writes).toHaveBeenLastCalledWith('track', 'a', 'gain', 5);
 
