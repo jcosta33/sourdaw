@@ -1,6 +1,6 @@
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type MeasuredPreview } from './MeasuredPreview';
-import { type AdoptedRecipe, type RetainedCommand } from './RetainedCompilation';
+import { type CumulativePreview, type RetainedCommand } from './RetainedCompilation';
 
 /**
  * One `analysis.measure` call as the planning loop sees it: the receipt the provider reads, and —
@@ -11,8 +11,6 @@ export type AnalysisMeasureRead = {
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
     measuredPreview: MeasuredPreview | null;
-    /** A several-recipe preview's measurements of each shorter cumulative prefix of its batch, in step order. */
-    prefixPreviews?: readonly MeasuredPreview[];
-    /** The recipes a several-recipe preview holds, in batch order. */
-    adoptedRecipes?: readonly AdoptedRecipe[];
+    /** Set only by a preview of several retained recipes. */
+    cumulative?: CumulativePreview;
 };

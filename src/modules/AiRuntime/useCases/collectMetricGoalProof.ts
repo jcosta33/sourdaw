@@ -41,6 +41,14 @@ function readPreviewProof(
     return { preview: structuredClone(preview), receiptDigest: digest(receipt) };
 }
 
+/** A several-recipe preview measured each of its prefixes under the one call and receipt. */
+function measuredPreviewsOf(compilation: PreviewCompilation): readonly MeasuredPreview[] {
+    if (compilation.cumulative === undefined) {
+        return [compilation.measuredPreview];
+    }
+    return [...compilation.cumulative.prefixPreviews, compilation.measuredPreview];
+}
+
 /** Takes the retained producer projection only after the real raw receipt passed all loop bounds. */
 export function collectMetricGoalProof(input: {
     authorities: readonly MetricRequestAuthority[];
@@ -52,8 +60,7 @@ export function collectMetricGoalProof(input: {
         if (compilation.kind !== 'preview') {
             continue;
         }
-        // A several-recipe preview measured each of its prefixes under the one call and receipt.
-        for (const preview of [...(compilation.prefixPreviews ?? []), compilation.measuredPreview]) {
+        for (const preview of measuredPreviewsOf(compilation)) {
             const proof = readPreviewProof(input, compilation, preview);
             if (proof !== null) {
                 proofs.push(proof);

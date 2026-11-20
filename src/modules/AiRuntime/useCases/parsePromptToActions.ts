@@ -1719,7 +1719,7 @@ const planPromptIntent = inject({ logger })(
                     if (compiled.kind === 'recipe') {
                         return [compiled.recipe];
                     }
-                    return compiled.kind === 'preview' ? (compiled.adoptedRecipes ?? []) : [];
+                    return compiled.kind === 'preview' ? (compiled.cumulative?.adoptedRecipes ?? []) : [];
                 });
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const storedMetricState = refinedCard?.approvalSnapshot.metricGoalState;

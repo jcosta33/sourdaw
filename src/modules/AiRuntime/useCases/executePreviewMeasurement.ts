@@ -239,9 +239,10 @@ function compileProposals(input: ExecutePreviewMeasurementInput): CompiledPropos
         }
         batches.push(compiled);
     }
-    return sources.adoptedRecipes === undefined
-        ? { status: 'compiled', batches }
-        : { status: 'compiled', batches, adoptedRecipes: sources.adoptedRecipes };
+    if (sources.adoptedRecipes === undefined) {
+        return { status: 'compiled', batches };
+    }
+    return { status: 'compiled', batches, adoptedRecipes: sources.adoptedRecipes };
 }
 
 async function renderPreview(
@@ -286,11 +287,13 @@ type MeasuredBatch = {
     targets: MeasuredPreview['targets'];
 };
 
+/** Each batch's isolated workspace, in order; one that cannot be prepared releases those before it. */
+type PreparedBatch = { batch: CompiledProposal; preview: PreparedPreview };
+
 /** Render one batch's scope against the live project, then reduce each target's pair of renders. */
 async function renderAndReduce(
     input: ExecutePreviewMeasurementInput,
-    batch: CompiledProposal,
-    preview: PreparedPreview,
+    { batch, preview }: PreparedBatch,
     beats: MeasuredPreview['range'],
     run: MeasurementRun
 ): Promise<{ status: 'measured'; measured: MeasuredBatch } | { status: 'failed'; failure: PreviewMeasurementFailure }> {
@@ -323,9 +326,6 @@ async function renderAndReduce(
     return { status: 'measured', measured: { batch, rendered, pairs, targets: reduction.reduced } };
 }
 
-/** Each batch's isolated workspace, in order; one that cannot be prepared releases those before it. */
-type PreparedBatch = { batch: CompiledProposal; preview: PreparedPreview };
-
 function prepareWorkspaces(
     batches: readonly CompiledProposal[]
 ): { status: 'prepared'; prepared: PreparedBatch[] } | { status: 'failed'; failure: PreviewMeasurementFailure } {
@@ -354,16 +354,15 @@ function releaseWorkspaces(prepared: readonly PreparedBatch[]): void {
 async function measureBatches(
     input: ExecutePreviewMeasurementInput,
     prepared: readonly PreparedBatch[],
-    adoptedRecipes: CompiledProposals['adoptedRecipes'],
     beats: MeasuredPreview['range'],
     run: MeasurementRun
-): Promise<AnalysisMeasureRead> {
+): Promise<{ status: 'measured'; reads: AnalysisMeasureRead[] } | { status: 'failed'; read: AnalysisMeasureRead }> {
     const measured: MeasuredBatch[] = [];
-    for (const [index, { batch, preview }] of prepared.entries()) {
-        const result = await renderAndReduce(input, batch, preview, beats, run);
+    for (const [index, batch] of prepared.entries()) {
+        const result = await renderAndReduce(input, batch, beats, run);
         if (result.status === 'failed') {
             releaseWorkspaces(prepared.slice(index + 1));
-            return failure(input, result.failure);
+            return { status: 'failed', read: failure(input, result.failure) };
         }
         measured.push(result.measured);
     }
@@ -382,23 +381,30 @@ async function measureBatches(
             retentionWarnings,
         })
     );
-    const prefixes = reads.slice(0, -1);
+    return { status: 'measured', reads };
+}
+
+/** One source's read alone, or a several-recipe preview's whole-batch read carrying each prefix's measurement. */
+function combineReads(
+    input: ExecutePreviewMeasurementInput,
+    reads: readonly AnalysisMeasureRead[],
+    adoptedRecipes: CompiledProposals['adoptedRecipes']
+): AnalysisMeasureRead {
     const whole = reads.at(-1);
-    if (whole === undefined || adoptedRecipes === undefined) {
-        return (
-            whole ??
-            failure(input, {
-                code: 'preview-unavailable',
-                safeMessage: 'The preview measured no batch.',
-                retryable: false,
-            })
-        );
+    if (whole === undefined) {
+        return failure(input, {
+            code: 'preview-unavailable',
+            safeMessage: 'The preview measured no batch.',
+            retryable: false,
+        });
     }
-    return {
-        ...whole,
-        prefixPreviews: prefixes.flatMap((read) => (read.measuredPreview === null ? [] : [read.measuredPreview])),
-        adoptedRecipes,
-    };
+    if (adoptedRecipes === undefined) {
+        return whole;
+    }
+    const prefixPreviews = reads
+        .slice(0, -1)
+        .flatMap((read) => (read.measuredPreview === null ? [] : [read.measuredPreview]));
+    return { ...whole, cumulative: { prefixPreviews, adoptedRecipes } };
 }
 
 /**
@@ -439,7 +445,11 @@ export async function executePreviewMeasurement(input: ExecutePreviewMeasurement
         return failure(input, started.failure);
     }
     try {
-        return await measureBatches(input, workspaces.prepared, compiled.adoptedRecipes, resolved.beats, started.run);
+        const measured = await measureBatches(input, workspaces.prepared, resolved.beats, started.run);
+        if (measured.status === 'failed') {
+            return measured.read;
+        }
+        return combineReads(input, measured.reads, compiled.adoptedRecipes);
     } finally {
         started.run.settle();
     }
