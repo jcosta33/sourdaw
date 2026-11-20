@@ -1,14 +1,13 @@
 ---
 name: testing-file-layout
 description: >-
-    Place every Vitest spec and test helper in its canonical folder under its
-    canonical name, pick the right mock seam (DI injection or `vi.mock`), and
-    reproduce a defect with a failing test before touching behaviour. ALWAYS apply
-    when creating, moving, or renaming a `*.spec.ts` / `*.spec.tsx` file or a shared
-    test helper, choosing how a spec mocks a dependency, or reviewing a diff that
-    adds or relocates tests — even if it looks like a one-line rename. Skip what a
-    case asserts, its fixtures and its waits (test-design), writing production code,
-    configuring the test runner, and authoring docs.
+    Place Vitest specs and helpers in their canonical folders under their
+    canonical names, import through the right paths, and choose the mock seam
+    (DI injection or `vi.mock`). ALWAYS apply when creating, moving, or renaming
+    a `*.spec.ts` / `*.spec.tsx` file or shared test helper, changing its import
+    boundaries or mock seams, or reviewing a diff that adds or relocates tests.
+    Skip test behavior and evidence (test-design), production code, test runner
+    configuration, and docs.
 ---
 
 ## Purpose
@@ -27,11 +26,7 @@ For a single `path/to/SourceFile.ts` subject, default to `path/to/__tests__/Sour
 
 ### 2. Reproduce before you fix
 
-For behaviour changes and bug fixes: write or update a failing test first, see red, then fix, then see green. Paste both outputs. Never change production code solely to make a bad test pass — fix the test or surface the bug.
-
-**Why:** a fix without a red reproduction is a claim, not proof.
-
-**Enforced by:** review only.
+Follow the [red-before-fix procedure in test-design](../test-design/SKILL.md#7-reproduce-a-defect-with-a-red-test-before-the-fix) for behavior changes and bug fixes.
 
 ### 3. Import the subject one level up
 

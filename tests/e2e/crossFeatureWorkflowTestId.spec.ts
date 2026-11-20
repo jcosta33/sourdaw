@@ -49,7 +49,8 @@ async function openPianoRollOnNewClip(page: Page): Promise<void> {
     await canvas.click({ button: 'right', position: { x: 300, y } });
     await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
     await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
-    await canvas.dblclick({ position: { x: 300, y } });
+    await canvas.click({ position: { x: 300, y } });
+    await openBottomTab(page, 'Editor');
     await expect(page.getByLabel('Piano roll editor')).toBeVisible();
 }
 

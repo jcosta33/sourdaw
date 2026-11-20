@@ -1,10 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
+import { clipSelectionStore, defaultTrackState } from '#/modules/Arrangement/stores';
+import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import { captureProjectRevision, createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore, defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { projectPianoRollTakeNotes, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
+import { LocalModelDownloadRequiredError } from '../../../errors/LocalModelDownloadRequiredError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
@@ -30,6 +40,7 @@ import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsSto
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
+import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -42,10 +53,11 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
-import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
+import { describeNoAiBackendRemedy } from '../../describeNoAiBackendRemedy';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
 import { getProviderRouteView } from '../../getProviderRouteView';
@@ -54,6 +66,7 @@ import { getPlanningProviderSchemaContract } from '../../planningProviderSchema'
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
+import { answeringStatus } from '../answeringStatus';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();
@@ -258,6 +271,347 @@ describe('generateToolPlanningOutcome', () => {
         agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         vi.unstubAllGlobals();
+    });
+
+    it('replays actual contrasting musical query receipts to a hosted provider with MIDI disclosure', async () => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Hosted musical evidence');
+            const track = createTrack({ id: 'hosted-track', name: 'Phrase', kind: 'midi' });
+            const clip = {
+                id: 'hosted-clip',
+                trackId: track.id,
+                name: 'Phrase',
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            };
+            track.clips = [clip];
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+            clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
+            projectStore.set({
+                ...structuredClone(defaultProjectStoreState),
+                projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+                keyRoot: 7,
+                scaleName: 'minor',
+            });
+            chordTrackStore.set({
+                enabled: true,
+                events: [{ id: 'g-minor', beat: 0, root: 7, quality: 'minor', duration: 4 }],
+            });
+            mocks.backendChain.value = ['cloud'];
+            async function readPhrase(pitch: number) {
+                const note = { id: 'hosted-note', pitch, startBeat: 0, duration: 1, velocity: 90 };
+                setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [note] } });
+                const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+                setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+                const binding = captureMusicalContentBinding();
+                mocks.generateCloudToolCalls.mockReset();
+                const schemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
+                const providerContext = buildAgentContext({
+                    fixedPolicy: 'system',
+                    prompt: 'Read the phrase.',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                }).message;
+                const intake = nonAcousticMetricIntakeTurn({
+                    modeId: 'edit',
+                    targetObjectIds: [clip.id],
+                    dimensions: ['midi-content'],
+                })(providerContext, schemas);
+                mocks.generateCloudToolCalls
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [{ ...intake[0], id: 'interpret' }],
+                        strictToolSchemas: false,
+                        usage: null,
+                    })
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [
+                            {
+                                id: 'phrase',
+                                name: 'project.query',
+                                arguments: {
+                                    type: 'musical-content',
+                                    filters: { stableId: clip.id, startBeat: 0, endBeat: 4 },
+                                    page: { limit: 10 },
+                                },
+                            },
+                        ],
+                        strictToolSchemas: false,
+                        usage: null,
+                    })
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [],
+                        strictToolSchemas: false,
+                        usage: null,
+                    });
+                const attempts: ProviderAttemptAdmission[] = [];
+                const authority = {
+                    schemaVersion: 1 as const,
+                    authorityId: 'a',
+                    catalogId: 'catalog',
+                    requestDigest: 'request',
+                    revision: 'revision',
+                    selection: { trackId: track.id, clipId: clip.id, clipIds: [clip.id], activeView: 'clip' as const },
+                    mode: 'edit' as const,
+                    targets: [
+                        {
+                            provenance: 'contextual-selection' as const,
+                            objectType: 'clip' as const,
+                            objectIds: [clip.id],
+                            parentTrackId: track.id,
+                        },
+                    ],
+                    editDimensions: ['midi-content' as const],
+                    prohibitions: [],
+                    creationSlots: [],
+                    uncertainty: 'none' as const,
+                };
+                let admitted = false;
+                const result = await runApplicationOwnedToolLoop({
+                    loopId: `hosted-${String(pitch)}`,
+                    musicalContentBinding: binding,
+                    readCreativeAuthority: () => (admitted ? authority : undefined),
+                    interpretation: {
+                        toolName: 'selectCreativeInterpretation',
+                        admit: () => {
+                            admitted = true;
+                            return { status: 'admitted', receipt: { data: {}, summary: 'admitted' } };
+                        },
+                    },
+                    terminalToolNames: new Set(['command.batch.propose']),
+                    requestTurn: ({ receiptContext, directive, history, budgetNote }) =>
+                        generateToolPlanningOutcome(
+                            'system',
+                            receiptContext ?? 'Read the phrase.',
+                            schemas,
+                            undefined,
+                            'Read the phrase.',
+                            undefined,
+                            undefined,
+                            (attempt) => {
+                                attempts.push(attempt);
+                                return { status: 'admitted' };
+                            },
+                            directive,
+                            { firstUserMessage: 'Read the phrase.', history, budgetNote }
+                        ),
+                }).catch((error: unknown) => {
+                    if (error instanceof ApplicationOwnedToolLoopRequestError) {
+                        throw error.originalError;
+                    }
+                    throw error;
+                });
+                expect(result.receipts).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ toolName: 'project.query', status: 'success' })])
+                );
+                expect(attempts).toHaveLength(3);
+                expect(attempts[2]!.request.dataCategories).toContain('midi');
+                return attempts[2]!.request.messages
+                    .filter((message) => message.role === 'tool')
+                    .map((message) => message.content)
+                    .join('\n');
+            }
+            const first = await readPhrase(67);
+            const second = await readPhrase(70);
+            expect(first).toContain('"pitch":67');
+            expect(second).toContain('"pitch":70');
+            expect(first).toContain('"quality":"minor"');
+            expect(first).not.toEqual(second);
+        } finally {
+            mocks.generateCloudToolCalls.mockReset();
+            clipSelectionStore.set({ selectedClipId: null, selectedClipIds: [], marqueeSelection: null });
+            await database.dispose();
+        }
+    });
+
+    it('offers hosted clarification while musical evidence is pending and leaves notes unchanged', async () => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Hosted musical clarification');
+            const track = createTrack({ id: 'clarify-track', name: 'Phrase', kind: 'midi' });
+            const clip = {
+                id: 'clarify-clip',
+                trackId: track.id,
+                name: 'Phrase',
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            };
+            track.clips = [clip];
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+            clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
+            const note = { id: 'note', pitch: 67, startBeat: 0, duration: 1, velocity: 90 };
+            setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [note] } });
+            const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+            setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+            const binding = captureMusicalContentBinding();
+            const beforeRevision = captureProjectRevision();
+            const beforeMidi = structuredClone(midiStore.value);
+            const schemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
+            const context = buildAgentContext({
+                fixedPolicy: 'system',
+                prompt: 'Read the phrase.',
+                context: getProjectContext(),
+                projectRevision: 'revision',
+            }).message;
+            const intake = nonAcousticMetricIntakeTurn({
+                modeId: 'edit',
+                targetObjectIds: [clip.id],
+                dimensions: ['midi-content'],
+            })(context, schemas);
+            const authority = {
+                schemaVersion: 1 as const,
+                authorityId: 'a',
+                catalogId: 'catalog',
+                requestDigest: 'request',
+                revision: 'revision',
+                selection: { trackId: track.id, clipId: clip.id, clipIds: [clip.id], activeView: 'clip' as const },
+                mode: 'edit' as const,
+                targets: [
+                    {
+                        provenance: 'contextual-selection' as const,
+                        objectType: 'clip' as const,
+                        objectIds: [clip.id],
+                        parentTrackId: track.id,
+                    },
+                ],
+                editDimensions: ['midi-content' as const],
+                prohibitions: [],
+                creationSlots: [],
+                uncertainty: 'none' as const,
+            };
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockReset();
+            mocks.generateCloudToolCalls.mockResolvedValueOnce({
+                providerRequestId: null,
+                calls: [{ ...intake[0], id: 'interpret' }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+            const fetchRequest = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+                if (typeof init?.body !== 'string') {
+                    throw new TypeError('Expected a serialized request body');
+                }
+                const body = JSON.parse(init.body);
+                expect(body.tools.map((tool: ToolSchema) => tool.function.name)).toEqual([
+                    'project_query',
+                    'command_batch_decline',
+                ]);
+                expect(body.tool_choice).toBe('required');
+                return new Response(
+                    JSON.stringify({
+                        id: 'hosted-decline',
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            id: 'decline',
+                                            type: 'function',
+                                            function: {
+                                                name: 'command_batch_decline',
+                                                arguments: JSON.stringify({
+                                                    kind: 'clarify',
+                                                    reason: 'Which phrase?',
+                                                    questions: ['Which phrase?'],
+                                                }),
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            });
+            vi.stubGlobal('fetch', fetchRequest);
+            mocks.generateCloudToolCalls.mockImplementationOnce(
+                (
+                    systemPrompt: string,
+                    userMessage: string,
+                    advertised: ToolSchema[],
+                    maxOutputTokens: number,
+                    directive: HostedToolChoiceDirective,
+                    signal?: AbortSignal
+                ) => {
+                    expect(directive).toEqual({
+                        mode: 'required',
+                        toolNames: ['project.query', 'command.batch.decline'],
+                        parallelToolCalls: false,
+                    });
+                    return generateOpenAiCompatibleToolCalls({
+                        runtime: compatibleRuntime,
+                        systemPrompt,
+                        userMessage,
+                        toolSchemas: advertised,
+                        maxOutputTokens,
+                        directive,
+                        signal,
+                    });
+                }
+            );
+            let admitted = false;
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'hosted-clarify',
+                musicalContentBinding: binding,
+                readCreativeAuthority: () => (admitted ? authority : undefined),
+                interpretation: {
+                    toolName: 'selectCreativeInterpretation',
+                    admit: () => {
+                        admitted = true;
+                        return { status: 'admitted', receipt: { data: {}, summary: 'admitted' } };
+                    },
+                },
+                terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+                requestTurn: ({ receiptContext, directive, history, budgetNote }) =>
+                    generateToolPlanningOutcome(
+                        'system',
+                        receiptContext ?? context,
+                        schemas,
+                        undefined,
+                        'Read the phrase.',
+                        undefined,
+                        undefined,
+                        undefined,
+                        directive,
+                        { firstUserMessage: context, history, budgetNote }
+                    ),
+            }).catch((error: unknown) => {
+                if (error instanceof ApplicationOwnedToolLoopRequestError) {
+                    throw error.originalError;
+                }
+                throw error;
+            });
+            expect(result).toMatchObject({ status: 'complete', decline: { kind: 'clarify', reason: 'Which phrase?' } });
+            expect(result.receipts.some((receipt) => receipt.toolName === 'project.query')).toBe(false);
+            expect(fetchRequest).toHaveBeenCalledOnce();
+            expect(midiStore.value).toEqual(beforeMidi);
+            expect(captureProjectRevision()).toBe(beforeRevision);
+        } finally {
+            mocks.generateCloudToolCalls.mockReset();
+            clipSelectionStore.set({ selectedClipId: null, selectedClipIds: [], marqueeSelection: null });
+            await database.dispose();
+        }
     });
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
@@ -2277,6 +2631,54 @@ describe('generateToolPlanningOutcome', () => {
             expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
         });
 
+        // Red when the chain replaces the download-required error with a generic provider failure.
+        it('keeps the download-required error when the local model is the only backend', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).rejects.toBeInstanceOf(LocalModelDownloadRequiredError);
+        });
+
+        // Red when the badge shows the generic provider failure instead of the remedy.
+        it('settles the answering status to the remedy when the local model needs a download', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+
+            await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).rejects.toThrow();
+
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
+                state: 'error',
+                message: describeNoAiBackendRemedy(),
+            });
+        });
+
+        // Red when the typed error ends the chain instead of falling through to the next backend.
+        it('lets a hosted backend answer after the local model needs a download', async () => {
+            mocks.backendChain.value = ['webllm', 'cloud'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'hosted-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).resolves.toMatchObject({ status: 'complete' });
+
+            expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce();
+            expect(mocks.llmStatusSet).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'error' }));
+        });
+
         // Red when a refused attempt leaves the badge naming a model with nothing running.
         it.each([
             {
@@ -2322,6 +2724,103 @@ describe('generateToolPlanningOutcome', () => {
             ).resolves.toMatchObject({ status: 'rejected' });
 
             expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
+        });
+
+        describe('across two overlapping turns', () => {
+            const hostedAnswering = {
+                state: 'generating',
+                backend: 'cloud',
+                provider: 'openai',
+                modelId: 'hosted-model',
+            };
+            const localAnswering = { state: 'generating', backend: 'webllm', modelId: getActiveModelId() };
+            const completePlan = {
+                status: 'complete',
+                toolCalls: [{ id: 'call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            };
+
+            beforeEach(() => {
+                answeringStatus.clear();
+                // The store holds what was last published, as the real store does.
+                mocks.llmStatusSet.mockImplementation((status) => {
+                    mocks.llmStatus.value = status;
+                });
+            });
+
+            afterEach(() => {
+                mocks.llmStatusSet.mockReset();
+                answeringStatus.clear();
+            });
+
+            /** Turn A plans on the hosted model, then turn B on the local model while A still answers. */
+            async function startOverlappingTurns(bSignal?: AbortSignal) {
+                const hostedReply = Promise.withResolvers<unknown>();
+                const localReply = Promise.withResolvers<unknown>();
+                mocks.generateCloudToolCalls.mockReturnValueOnce(hostedReply.promise);
+                mocks.generateWebLlmToolCalls.mockReturnValueOnce(localReply.promise);
+                mocks.backendChain.value = ['cloud'];
+                const turnA = generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
+                await vi.waitFor(() => expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce());
+                mocks.backendChain.value = ['webllm'];
+                const turnB = generateToolPlanningOutcome('system', 'mute the first track', toolSchemas, bSignal);
+                await vi.waitFor(() => expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce());
+                expect(mocks.llmStatus.value).toEqual(localAnswering);
+                return {
+                    finishA: async () => {
+                        hostedReply.resolve({
+                            providerRequestId: null,
+                            calls: completePlan.toolCalls,
+                            strictToolSchemas: false,
+                            usage: null,
+                        });
+                        await expect(turnA).resolves.toMatchObject({ status: 'complete' });
+                    },
+                    finishB: async () => {
+                        localReply.resolve(completePlan);
+                        await expect(turnB).resolves.toMatchObject({ status: 'complete' });
+                    },
+                    turnB,
+                };
+            }
+
+            // Red when a stopped turn restores the generating status it saw when it started.
+            it('settles to the engine status when the last turn is stopped after the other finished', async () => {
+                const controller = new AbortController();
+                const turns = await startOverlappingTurns(controller.signal);
+
+                await turns.finishA();
+                controller.abort();
+                await expect(turns.turnB).rejects.toMatchObject({ name: 'AbortError' });
+
+                expect(mocks.llmStatus.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+            });
+
+            it('keeps the other answering turn named when one turn is stopped', async () => {
+                const controller = new AbortController();
+                const turns = await startOverlappingTurns(controller.signal);
+
+                controller.abort();
+                await expect(turns.turnB).rejects.toMatchObject({ name: 'AbortError' });
+                expect(mocks.llmStatus.value).toEqual(hostedAnswering);
+
+                await turns.finishA();
+                expect(mocks.llmStatus.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+            });
+
+            // Red when a finishing turn publishes ready over a turn still answering.
+            it('keeps the newest answering turn named when an earlier turn finishes', async () => {
+                const turns = await startOverlappingTurns();
+
+                await turns.finishA();
+                expect(mocks.llmStatus.value).toEqual(localAnswering);
+
+                await turns.finishB();
+                expect(mocks.llmStatus.value).toEqual({
+                    state: 'ready',
+                    backend: 'webllm',
+                    modelId: getActiveModelId(),
+                });
+            });
         });
     });
 

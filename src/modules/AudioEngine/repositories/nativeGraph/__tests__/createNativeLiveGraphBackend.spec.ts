@@ -148,6 +148,108 @@ describe('createNativeLiveGraphBackend', () => {
         });
     });
 
+    it('reads a live Grand Boule generation and sends addressed preview strikes on the graph wire', async () => {
+        const applyGraphCommands = vi
+            .fn<NativeGraphTransport['applyGraphCommands']>()
+            .mockResolvedValueOnce({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                reports: [
+                    {
+                        kind: 'track',
+                        id: 'audio-1',
+                        deviceIds: ['piano', 'effect'],
+                        grandBoulePreviewTargets: [{ deviceId: 'piano', generation: 'body-from-native' }],
+                    },
+                ],
+            })
+            .mockResolvedValue({ acceptance: 'accepted', application: 'applied', runtimeRevision: 2, reports: [] });
+        const backend = createNativeLiveGraphBackend({ transport: stubTransport(applyGraphCommands) });
+        const topology = await backend.apply(BATCH);
+        expect(topology).toMatchObject({
+            reports: [
+                {
+                    kind: 'track',
+                    id: 'audio-1',
+                    deviceIds: ['piano', 'effect'],
+                    grandBoulePreviewTargets: [{ deviceId: 'piano', generation: 'body-from-native' }],
+                },
+            ],
+        });
+        const generation =
+            topology.application === 'applied'
+                ? topology.reports[0]?.grandBoulePreviewTargets?.[0]?.generation
+                : undefined;
+        if (generation === undefined) {
+            throw new Error('live topology did not report a Grand Boule generation');
+        }
+        const target = { trackId: 'audio-1', deviceId: 'piano' };
+        await expect(
+            backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    { kind: 'start-grand-boule-preview', target, generation, strikeId: 14, note: 61, velocity: 0.42 },
+                ],
+            })
+        ).resolves.toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        await expect(
+            backend.apply({
+                schemaVersion: 1,
+                commands: [{ kind: 'release-grand-boule-preview', target, generation, strikeId: 14 }],
+            })
+        ).resolves.toMatchObject({ acceptance: 'accepted', application: 'applied' });
+
+        expect(applyGraphCommands.mock.calls.slice(1).map(([request]) => request.batch.commands)).toEqual([
+            [
+                {
+                    kind: 'start-grand-boule-preview',
+                    trackId: 'audio-1',
+                    deviceId: 'piano',
+                    generation: 'body-from-native',
+                    strikeId: 14,
+                    note: 61,
+                    velocity: 0.42,
+                },
+            ],
+            [
+                {
+                    kind: 'release-grand-boule-preview',
+                    trackId: 'audio-1',
+                    deviceId: 'piano',
+                    generation: 'body-from-native',
+                    strikeId: 14,
+                },
+            ],
+        ]);
+        backend.dispose();
+    });
+
+    it.each([
+        { targets: null },
+        { targets: [{ deviceId: 'piano', generation: 1 }] },
+        { targets: [{ deviceId: 'piano', generation: '' }] },
+        { targets: [{ deviceId: 'elsewhere', generation: 'body' }] },
+        {
+            targets: [
+                { deviceId: 'piano', generation: 'body' },
+                { deviceId: 'piano', generation: 'duplicate' },
+            ],
+        },
+    ])('refuses malformed Grand Boule preview readback ($targets)', async ({ targets }) => {
+        const transport = stubTransport(async () => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            runtimeRevision: 1,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['piano'], grandBoulePreviewTargets: targets }],
+        }));
+        const backend = createNativeLiveGraphBackend({ transport });
+        await expect(backend.apply(BATCH)).rejects.toThrow(
+            'apply_graph_commands answered malformed Grand Boule preview targets'
+        );
+        backend.dispose();
+    });
+
     it('carries only a canonical live incarnation with the actual admitted fence', async () => {
         const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
         for (const wireIdentity of [identity, undefined, null, 'engine:6']) {

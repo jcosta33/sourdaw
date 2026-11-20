@@ -5,6 +5,7 @@ import { loadKit } from '../../stores/toasterStore';
 import { getToasterControls } from '../getToasterControls';
 import { loadToasterKitPreset } from '../loadToasterKit';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
+import { setToasterKitParam } from '../toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../toasterParamBridge/setToasterPadParam';
 
 type MockTrack = {
@@ -65,6 +66,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('../../stores/toasterStore', () => ({
     loadKit: vi.fn(),
     updatePad: vi.fn(),
+    updateKit: vi.fn(),
 }));
 
 function minimalPad(overrides: Partial<PadState> = {}): PadState {
@@ -271,7 +273,7 @@ describe('loadToasterKitPreset', () => {
         expect(loadKitCallOrder).toBeLessThan(firstSetParamCallOrder);
     });
 
-    it('cancels a queued pad-param frame so a stale write cannot land after the preset projection', () => {
+    it('cancels queued pad and kit frames so stale writes cannot land after the preset projection', () => {
         // The rAF coalescer in setToasterPadParam writes the store immediately
         // but defers the engine write one frame. A preset load that fires in
         // that gap pushes the whole fresh projection synchronously — and the
@@ -300,7 +302,9 @@ describe('loadToasterKitPreset', () => {
         // 1. The user mutes pad 0 just before loading a preset: store written,
         //    engine write queued for the next frame.
         setToasterPadParam('d1', 0, 'muted', 1);
+        setToasterKitParam('d1', 'masterGain', 0);
         expect(setPadParam).not.toHaveBeenCalled();
+        expect(setParam).not.toHaveBeenCalled();
 
         // 2. The preset load replaces the kit; its projection carries pad 0
         //    unmuted (minimalPad's default).
@@ -318,6 +322,9 @@ describe('loadToasterKitPreset', () => {
         expect(setPadParam.mock.calls.length).toBe(writesAtLoad);
         const mutedWrites = setPadParam.mock.calls.filter((call) => call[0] === 0 && call[1] === 'muted');
         expect(mutedWrites.at(-1)).toEqual([0, 'muted', 0]);
+        expect(setParam.mock.calls.filter(([name]) => name === 'master_gain')).toEqual([
+            ['master_gain', minimalKit().masterGain],
+        ]);
 
         rafSpy.mockRestore();
         cafSpy.mockRestore();
@@ -375,11 +382,16 @@ describe('loadToasterKitPreset', () => {
         ]);
     });
 
-    it('should not throw when controls are unavailable', () => {
+    it('updates the native carrier when web controls are unavailable', () => {
         getAllTracksMock.mockReturnValue([]);
 
         const kit = minimalKit();
-        expect(() => loadToasterKitPreset('d1', kit)).not.toThrow();
+        loadToasterKitPreset('d1', kit);
         expect(loadKit).toHaveBeenCalledWith('d1', kit);
+        expect(writeNativeBuiltinParametersMock).toHaveBeenCalledExactlyOnceWith(
+            't1',
+            'd1',
+            expect.objectContaining({ master_gain: kit.masterGain, pad0_engine_type: TOASTER_ENGINE_MAP['kick-808'] })
+        );
     });
 });

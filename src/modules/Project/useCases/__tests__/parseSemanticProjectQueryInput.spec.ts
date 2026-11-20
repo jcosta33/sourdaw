@@ -14,6 +14,54 @@ import { MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH, MAX_SEMANTIC_QUERY_PAGE_SIZE } f
 import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
 
 describe('parseSemanticProjectQueryInput', () => {
+    it('admits a revision and selection-bound MIDI window and refuses an unbound window', () => {
+        const input = {
+            type: 'musical-content',
+            filters: { stableId: 'clip-1', startBeat: 8, endBeat: 12 },
+            expectedRevision: 'revision-1',
+            selectionToken: 'selection-1',
+            page: { limit: 4 },
+        };
+        expect(parseSemanticProjectQueryInput(input)).toEqual({ status: 'valid', input });
+        expect(parseSemanticProjectQueryInput({ type: 'musical-content', filters: input.filters })).toMatchObject({
+            status: 'invalid',
+        });
+    });
+
+    it.each([
+        ['missing clip', { startBeat: 8, endBeat: 12 }],
+        ['missing start', { stableId: 'clip-1', endBeat: 12 }],
+        ['missing end', { stableId: 'clip-1', startBeat: 8 }],
+        ['empty range', { stableId: 'clip-1', startBeat: 8, endBeat: 8 }],
+        ['reversed range', { stableId: 'clip-1', startBeat: 12, endBeat: 8 }],
+        ['non-finite beat', { stableId: 'clip-1', startBeat: 8, endBeat: Number.POSITIVE_INFINITY }],
+    ])('refuses a musical-content request with %s after admitting a complete window', (_label, filters) => {
+        const input = {
+            type: 'musical-content',
+            filters: { stableId: 'clip-1', startBeat: 8, endBeat: 12 },
+            expectedRevision: 'revision-1',
+            selectionToken: 'selection-1',
+        };
+        expect(parseSemanticProjectQueryInput(input)).toEqual({ status: 'valid', input });
+        expect(parseSemanticProjectQueryInput({ ...input, filters })).toMatchObject({ status: 'invalid' });
+    });
+
+    it.each([
+        ['revision', { expectedRevision: undefined }],
+        ['empty revision', { expectedRevision: '' }],
+        ['selection token', { selectionToken: undefined }],
+        ['empty selection token', { selectionToken: '' }],
+    ])('refuses a musical-content request with missing or invalid %s', (_label, missing) => {
+        const input = {
+            type: 'musical-content',
+            filters: { stableId: 'clip-1', startBeat: 8, endBeat: 12 },
+            expectedRevision: 'revision-1',
+            selectionToken: 'selection-1',
+        };
+        expect(parseSemanticProjectQueryInput(input)).toEqual({ status: 'valid', input });
+        expect(parseSemanticProjectQueryInput({ ...input, ...missing })).toMatchObject({ status: 'invalid' });
+    });
+
     it('refuses a key the contract does not publish rather than dropping it', () => {
         expect(parseSemanticProjectQueryInput({ type: 'project-summary', unknownKey: 1 })).toEqual({
             status: 'invalid',

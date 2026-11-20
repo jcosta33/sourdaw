@@ -22,10 +22,36 @@ test.describe('Prompt bar and AI action history', () => {
         await expect(page.getByText('No actions yet', { exact: true })).toHaveCount(0);
     });
 
+    test('exposes the focused suggestion and clears it when dismissed', async ({ page }) => {
+        const input = page.getByRole('combobox', { name: 'Prompt command input', exact: true });
+        await input.focus();
+        await input.fill('Add MIDI Track');
+        const listbox = page.getByRole('listbox', { name: 'Command suggestions', exact: true });
+        await expect(listbox).toBeVisible();
+        await expect(input).toBeFocused();
+        await expect(input).toHaveAttribute('aria-expanded', 'true');
+        const listboxId = await listbox.getAttribute('id');
+        expect(listboxId).toBeTruthy();
+        await expect(input).toHaveAttribute('aria-controls', listboxId!);
+        await input.press('ArrowDown');
+        await expect(input).toBeFocused();
+        const selected = listbox.getByRole('option', { selected: true });
+        await expect(selected).toBeVisible();
+        const selectedId = await selected.getAttribute('id');
+        expect(selectedId).toBeTruthy();
+        await expect(input).toHaveAttribute('aria-activedescendant', selectedId!);
+        await input.press('Escape');
+        await expect(input).toBeFocused();
+        await expect(listbox).toHaveCount(0);
+        await expect(input).toHaveAttribute('aria-expanded', 'false');
+        await expect(input).not.toHaveAttribute('aria-controls');
+        await expect(input).not.toHaveAttribute('aria-activedescendant');
+    });
+
     test('choosing Add MIDI Track from prompt suggestions creates a track and lists it in action history', async ({
         page,
     }) => {
-        const input = page.getByRole('textbox', { name: 'Prompt command input', exact: true });
+        const input = page.getByRole('combobox', { name: 'Prompt command input', exact: true });
         const status = page.getByRole('contentinfo', { name: 'Application status' });
         const close = page.getByRole('button', { name: 'Close action history', exact: true });
 

@@ -727,7 +727,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 ));
             }
 
-            plugin.get_state()
+            plugin.get_state().map_err(|error| error.to_string())
         })
     }
 
@@ -740,7 +740,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
-            plugin.set_state(plugin_state)?;
+            plugin
+                .set_state(plugin_state)
+                .map_err(|error| error.to_string())?;
             self.pending_parameters.clear();
             Ok(plugin.get_parameters())
         })
@@ -777,7 +779,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub(crate) fn refresh_latency_change(
         plugin: &mut Runtime,
     ) -> Result<Option<LatencyChange>, String> {
-        match plugin.poll_latency_change()? {
+        match plugin
+            .poll_latency_change()
+            .map_err(|error| error.to_string())?
+        {
             Some(_) => Ok(Some(LatencyChange {
                 latency_ms: plugin.latency_ms(),
                 latency_frames: plugin.latency_samples() as usize,
@@ -1357,7 +1362,7 @@ mod tests {
     // The engine's own figure, not the bridge's alias for it: the point of
     // these specs is that the two agree.
     use daw_engine::midi_fx::{MidiEventBuffer, MIDI_EVENT_BUFFER_CAPACITY};
-    use daw_plugin_host::{AudioPlugin, ClapWrapper};
+    use daw_plugin_host::{AudioPlugin, ClapWrapper, PluginError};
 
     /// A backend that records only what the runtime owner asked of its editor.
     ///
@@ -1385,11 +1390,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1437,7 +1442,7 @@ mod tests {
                 .push((param_id, value));
         }
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -1556,11 +1561,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -1605,7 +1610,7 @@ mod tests {
 
         fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -2316,7 +2321,7 @@ mod tests {
             Arc::new(CrumbsSlotLifetime::default()),
             metering,
         );
-        (slot, CrumbsCommandSender(tx), commit_rx, recycle_tx)
+        (slot, CrumbsCommandSender::new(tx), commit_rx, recycle_tx)
     }
 
     /// One chunk of the engine's input tap, as the render callback hands it
@@ -2944,11 +2949,11 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
 
-        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
 
@@ -3003,7 +3008,7 @@ mod tests {
 
         fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
-        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
             Ok(None)
         }
 
@@ -3417,6 +3422,7 @@ mod tests {
     /// the loss must be counted, never silent.
     #[test]
     fn events_a_full_retention_queue_cannot_hold_are_counted_as_dropped() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (mut slot, shared, notes) = seam_recording_slot();
         let first = full_block_of_held_notes(1);
         let overflow = [
@@ -3728,25 +3734,85 @@ impl std::fmt::Display for CrumbsCommandQueueFull {
 
 impl std::error::Error for CrumbsCommandQueueFull {}
 
-/// Keeps ordinary writes unchanged while the same FIFO carries take identity.
-pub struct CrumbsCommandSender(pub rtrb::Producer<NativeCrumbsCommand>);
+static LAST_PAD_AUDITION_ID: AtomicU32 = AtomicU32::new(0);
+
+/// The control-side producer for one attached slot. Each accepted pad audition
+/// reserves one entry of this FIFO until its release is written.
+pub struct CrumbsCommandSender {
+    producer: rtrb::Producer<NativeCrumbsCommand>,
+    held_auditions: Vec<u32>,
+}
+
 impl CrumbsCommandSender {
-    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
-        self.0
-            .push(NativeCrumbsCommand::Engine(command))
-            .map_err(|_| CrumbsCommandQueueFull)
+    pub fn new(producer: rtrb::Producer<NativeCrumbsCommand>) -> Self {
+        Self {
+            producer,
+            held_auditions: Vec::new(),
+        }
     }
+
+    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
+        self.push_native(NativeCrumbsCommand::Engine(command))
+    }
+
     pub fn push_native(
         &mut self,
         command: NativeCrumbsCommand,
     ) -> Result<(), CrumbsCommandQueueFull> {
-        self.0.push(command).map_err(|_| CrumbsCommandQueueFull)
+        if self.producer.slots() <= self.held_auditions.len() {
+            return Err(CrumbsCommandQueueFull);
+        }
+        self.producer
+            .push(command)
+            .map_err(|_| CrumbsCommandQueueFull)
     }
+
+    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, String> {
+        if self.producer.slots() < self.held_auditions.len() + 2 {
+            return Err(CrumbsCommandQueueFull.to_string());
+        }
+
+        // Receipts must never alias after a slot with the same instance id
+        // is attached, so stop issuing them when the counter is exhausted.
+        let previous = LAST_PAD_AUDITION_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
+                previous.checked_add(1)
+            })
+            .map_err(|_| "Crumbs pad audition ids exhausted".to_string())?;
+        let audition_id = previous + 1;
+        self.push(CrumbsCommand::PadAuditionOn {
+            note,
+            velocity,
+            audition_id,
+        })
+        .map_err(|error| error.to_string())?;
+        self.held_auditions.push(audition_id);
+        Ok(audition_id)
+    }
+
+    pub fn release_pad_audition(&mut self, audition_id: u32) -> Result<(), CrumbsCommandQueueFull> {
+        let Some(index) = self.held_auditions.iter().position(|id| *id == audition_id) else {
+            return Ok(());
+        };
+        // This sender is the only producer, and its other writes can never
+        // occupy the capacity reserved for an active audition's release.
+        self.producer
+            .push(NativeCrumbsCommand::Engine(CrumbsCommand::PadAuditionOff {
+                audition_id,
+            }))
+            .map_err(|_| CrumbsCommandQueueFull)?;
+        self.held_auditions.swap_remove(index);
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub fn slots(&self) -> usize {
-        self.0.slots()
+        self.producer.slots()
     }
+
+    #[cfg(test)]
     pub fn capacity(&self) -> usize {
-        self.0.buffer().capacity()
+        self.producer.buffer().capacity()
     }
 }
 

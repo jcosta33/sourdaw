@@ -340,6 +340,9 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
         const numeratorInput = screen.getByLabelText('Time signature numerator');
 
+        fireEvent.keyDown(numeratorInput, { key: 'Enter', isComposing: true });
+        expect(mockState.commitTimeSig).not.toHaveBeenCalled();
+
         fireEvent.keyDown(numeratorInput, { key: 'Enter' });
         expect(mockState.commitTimeSig).toHaveBeenCalledTimes(1);
 
@@ -408,6 +411,9 @@ describe('TempoEditor', () => {
 
         fireEvent.change(editInput, { target: { value: '150' } });
         expect(mockState.setEditingChangeTempo).toHaveBeenCalledWith('150');
+
+        fireEvent.keyDown(editInput, { key: 'Enter', isComposing: true });
+        expect(mockState.commitEditChange).not.toHaveBeenCalled();
 
         fireEvent.keyDown(editInput, { key: 'Enter' });
         expect(mockState.commitEditChange).toHaveBeenCalledTimes(1);

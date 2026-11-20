@@ -6,6 +6,7 @@ import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAu
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { automationPointSnapshotsMatch as pointsMatch } from './automationPointSnapshotsMatch';
+import { isRecordedAutomationPassSessionEntry } from './validateAutomationSessionEntries';
 import {
     isRestorableAutomationPointSet as isRestorablePointSet,
     isRestoreAutomationLanePointsPayload,
@@ -59,6 +60,8 @@ export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomatio
         isRestorablePayload(action.payload) && Object.hasOwn(action.payload, 'expectedPoints'),
     describe: () => ({ label: 'Restore automation points' }),
     validateSessionActionArguments: isRestoreAutomationLanePointsPayload,
+    // A recorded automation pass is the one entry this inverse begins; see its validator.
+    validateSessionEntry: isRecordedAutomationPassSessionEntry,
     canReportConflict: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

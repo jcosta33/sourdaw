@@ -6,6 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
+import { isLocalModelDownloadRequiredError } from '../../errors/LocalModelDownloadRequiredError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
@@ -28,7 +29,6 @@ import {
 } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderName,
-    type ModelProviderFailure,
     type ModelProviderMessage,
     type ModelProviderRequest,
     type ModelProviderResult,
@@ -58,7 +58,6 @@ import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
-import { llmStatusStore } from '../../stores/llmStatusStore';
 import { machineMemoryStore } from '../../stores/machineMemoryStore';
 import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanningRequest';
 import {
@@ -82,13 +81,17 @@ import {
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
+import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
+import { type AnsweringTurn, answeringStatus } from './answeringStatus';
 import { getBackendChain } from './backendResolution/getBackendChain';
 import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
+import { hostedAiHttpFailure } from './hostedAiHttpFailure';
+import { type AdmittedProviderAttempt, preSessionProviderResult } from './preSessionProviderResult';
 import { readAnsweringStatus } from './readAnsweringStatus';
 
 // The core planning contract and whichever interpretation control this live phase publishes.
@@ -160,27 +163,6 @@ function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
     error.name = 'AbortError';
     return error;
-}
-
-function hostedAiHttpSafeMessage(status: number): string {
-    if (status === 401 || status === 403) {
-        return `Hosted AI request failed (HTTP ${String(status)}) — check your API key.`;
-    }
-    if (status === 404) {
-        return 'Hosted AI request failed (HTTP 404) — the model or endpoint was not found.';
-    }
-    if (status === 429) {
-        return 'Hosted AI request failed (HTTP 429) — rate limited; retry later.';
-    }
-    return `Hosted AI request failed (HTTP ${String(status)}).`;
-}
-
-function hostedAiHttpFailure(status: number): Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'> {
-    return {
-        code: `hosted-http-${String(status)}`,
-        retryable: status === 429 || status === 503,
-        safeMessage: hostedAiHttpSafeMessage(status),
-    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -327,86 +309,6 @@ function isProviderAttemptAdmissionError(error: unknown): error is Error {
     return error instanceof Error && error.name === 'ProviderAttemptAdmissionError';
 }
 
-type AdmittedProviderAttempt = {
-    provider: ModelProviderName;
-    model: string | null;
-    request: ModelProviderRequest;
-    disclosurePublished: boolean;
-};
-
-function preSessionProviderResult(input: {
-    attempt: AdmittedProviderAttempt;
-    error: unknown;
-    cancelled: boolean;
-}): ModelProviderResult {
-    const normalizedFailure = isModelProviderFailureError(input.error) ? input.error : null;
-    const cancelled = input.cancelled || isAiRuntimeConfigurationChangedError(input.error);
-    let failure: Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'>;
-    if (cancelled) {
-        failure = {
-            code: 'cancelled',
-            retryable: true,
-            safeMessage: 'The model provider request was cancelled.',
-        };
-    } else if (normalizedFailure !== null) {
-        failure = {
-            code: normalizedFailure.code,
-            retryable: normalizedFailure.retryable,
-            safeMessage: normalizedFailure.message,
-        };
-    } else {
-        const httpStatus = snapshotHostedAiHttpStatus(input.error);
-        if (httpStatus !== null) {
-            failure = hostedAiHttpFailure(httpStatus);
-        } else {
-            failure = {
-                code: 'provider-attempt-failed',
-                retryable: true,
-                safeMessage: 'The model provider request failed before its session started.',
-            };
-        }
-    }
-    const dataCategories = input.attempt.request.dataCategories;
-    return {
-        schemaVersion: input.attempt.request.schemaVersion,
-        provider: input.attempt.provider,
-        model: input.attempt.model,
-        correlationId: input.attempt.request.correlationId,
-        status: cancelled ? 'cancelled' : 'failed',
-        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
-        usage: {
-            inputTokens: null,
-            outputTokens: null,
-            cachedInputTokens: null,
-            reasoningTokens: null,
-            provenance: 'unavailable',
-        },
-        finishReason: cancelled ? 'cancelled' : 'error',
-        partialOutputDisposition: 'none',
-        failure: {
-            ...failure,
-            correlationId: input.attempt.request.correlationId,
-            partialOutputDisposition: 'none',
-        },
-        ignoredProviderEvents: [],
-        ...(input.attempt.disclosurePublished && dataCategories !== undefined
-            ? {
-                  remoteDisclosure: {
-                      requestId: input.attempt.request.requestId,
-                      categories: [...dataCategories],
-                      retention: {
-                          applicationState: 'unknown' as const,
-                          abuseMonitoring: 'unknown' as const,
-                          promptCache: 'unknown' as const,
-                          safetyLegalException: 'unknown' as const,
-                          unknown: 'unknown' as const,
-                      },
-                  },
-              }
-            : {}),
-    };
-}
-
 type LocalToolPlanningAttempt =
     | { status: 'generated'; outcome: unknown }
     | { status: 'exceeded'; shortfall: LocalContextWindowShortfall }
@@ -422,6 +324,7 @@ async function generateLocalToolPlanningOutcome(input: {
     userMessage: string;
     tools: readonly ToolSchema[];
     configuredMaxOutputTokens: number;
+    answeringTurn: AnsweringTurn;
     signal?: AbortSignal;
 }): Promise<LocalToolPlanningAttempt> {
     const activeModelId = getActiveModelId();
@@ -447,7 +350,7 @@ async function generateLocalToolPlanningOutcome(input: {
     if (!isWebLlmLoaded()) {
         await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
         // Loading publishes its progress and then `ready`; the local model now answers the turn.
-        llmStatusStore.set(readAnsweringStatus('webllm'));
+        answeringStatus.publish(input.answeringTurn, readAnsweringStatus('webllm'));
     }
     const generatedInference = Promise.resolve<unknown>(
         Reflect.apply(generateWebLlmToolCalls, undefined, [
@@ -471,6 +374,24 @@ async function generateLocalToolPlanningOutcome(input: {
         }
         return { status: 'exceeded', shortfall };
     }
+}
+
+/** The download-required error escapes the chain as itself, so the planner can name its remedy. */
+function readChainAttemptFailure(error: unknown, normalizedAttemptError: Error | null): Error {
+    if (isLocalModelDownloadRequiredError(error)) {
+        return error;
+    }
+    if (normalizedAttemptError !== null) {
+        return normalizedAttemptError;
+    }
+    return error instanceof Error ? error : new Error(String(error));
+}
+
+function readChainFailureStatusMessage(lastError: Error | null): string {
+    if (isLocalModelDownloadRequiredError(lastError)) {
+        return describeNoAiBackendRemedy();
+    }
+    return lastError?.message ?? 'All backends failed';
 }
 
 /** A missing reading is an unread one, as in the picker. */
@@ -549,7 +470,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         return getCloudProviderInfo()?.provider ?? 'openai-compatible';
     }
 
-    return async function generateToolPlanningOutcome(
+    async function planToolsOnTurn(
+        answeringTurn: AnsweringTurn,
         systemPrompt: string,
         userMessage: string,
         toolSchemas: readonly ToolSchema[],
@@ -591,21 +513,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             throw new NoAiBackendError();
         }
 
-        const previousStatus = llmStatusStore.value;
+        const settleReady = (backend: RunnableAiBackend): void => {
+            answeringStatus.settle(answeringTurn, { state: 'ready', backend, modelId: getBackendModelId(backend) });
+        };
         // A request refused before the engine loaded leaves the engine as it was.
         const settleRefusedAttempt = (backend: RunnableAiBackend): void => {
-            llmStatusStore.set(
-                backend !== 'webllm' || isWebLlmLoaded()
-                    ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
-                    : previousStatus
-            );
+            if (backend !== 'webllm' || isWebLlmLoaded()) {
+                settleReady(backend);
+                return;
+            }
+            answeringStatus.settle(answeringTurn, answeringStatus.readSettled());
         };
 
         const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
-            llmStatusStore.set(readAnsweringStatus(backend));
+            answeringStatus.publish(answeringTurn, readAnsweringStatus(backend));
             let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
@@ -799,7 +723,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     });
                     providerSessionSettled = true;
                     settleRefusedAttempt(backend);
-                    return { status: 'rejected', reason: 'The model provider request is missing required messages.' };
+                    return {
+                        status: 'rejected',
+                        reason: 'The model provider request is missing required messages.',
+                    };
                 }
                 let outcome: ToolPlanningOutcome;
 
@@ -836,6 +763,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         userMessage: providerUserMessage,
                         tools: providerTools,
                         configuredMaxOutputTokens: providerRequest.limits.maxOutputTokens,
+                        answeringTurn,
                         signal,
                     });
                     if (local.status !== 'generated') {
@@ -951,7 +879,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                     ? null
                                     : decodeHostedProposalWireCall(call, canonicalSchema);
                             if (decoded === null) {
-                                llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                                settleReady(backend);
                                 return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };
                             }
                             normalizedToolCalls[index] = decoded;
@@ -997,7 +925,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
-                llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                settleReady(backend);
                 return outcome;
             } catch (error) {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
@@ -1095,37 +1023,53 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                 }
                 if (isAiRuntimeConfigurationChangedError(error)) {
-                    llmStatusStore.set({ state: 'idle' });
+                    answeringStatus.settle(answeringTurn, { state: 'idle' });
                     throw error;
                 }
                 if (!isTerminalModelRejection && !isExplicitAbort) {
                     failedBackends.add(backend);
                 }
                 if (signal?.aborted) {
+                    // The engine as it settled outside any answering attempt, never another turn's answer.
+                    const engineStatus = answeringStatus.readSettled();
                     const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
-                    const previousBackendFailed =
-                        previousStatus?.state === 'ready' && failedBackends.has(previousStatus.backend);
+                    const engineBackendFailed =
+                        engineStatus?.state === 'ready' && failedBackends.has(engineStatus.backend);
                     const preferenceChangedBackend =
                         currentPreference !== 'auto' &&
-                        previousStatus?.state === 'ready' &&
-                        previousStatus.backend !== currentPreference;
-                    if (previousBackendFailed || preferenceChangedBackend) {
-                        llmStatusStore.set({ state: 'idle' });
-                    } else {
-                        llmStatusStore.set(previousStatus);
-                    }
+                        engineStatus?.state === 'ready' &&
+                        engineStatus.backend !== currentPreference;
+                    answeringStatus.settle(
+                        answeringTurn,
+                        engineBackendFailed || preferenceChangedBackend ? { state: 'idle' } : engineStatus
+                    );
                     throw createToolPlanningAbortError();
                 }
                 if (isTerminalModelRejection || isAdmissionRejection) {
-                    llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                    settleReady(backend);
                     return { status: 'rejected', reason: error.message };
                 }
-                lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
+                lastError = readChainAttemptFailure(error, normalizedAttemptError);
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }
         }
 
-        llmStatusStore.set({ state: 'error', message: lastError?.message ?? 'All backends failed' });
+        answeringStatus.settle(answeringTurn, {
+            state: 'error',
+            message: readChainFailureStatusMessage(lastError),
+        });
         throw lastError ?? new Error('All AI backends failed');
+    }
+
+    type ToolPlanningArgs = Parameters<typeof planToolsOnTurn> extends [unknown, ...infer Rest] ? Rest : never;
+
+    return async function generateToolPlanningOutcome(...args: ToolPlanningArgs): Promise<ToolPlanningOutcome> {
+        const answeringTurn = answeringStatus.openTurn();
+        try {
+            return await planToolsOnTurn(answeringTurn, ...args);
+        } finally {
+            // Every exit settles its turn inside; an unexpected throw leaves the engine as it was.
+            answeringStatus.settle(answeringTurn, answeringStatus.readSettled());
+        }
     };
 });

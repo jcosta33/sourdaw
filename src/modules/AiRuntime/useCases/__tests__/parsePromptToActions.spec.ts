@@ -1,8 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { clearPianoRollSelection, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -12,6 +21,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
+import { llmStatusStore } from '../../stores/llmStatusStore';
 import {
     buildPresetContext,
     tryPresetMatch,
@@ -47,6 +57,7 @@ const {
     mockBuildLlmActionSystemPrompt,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
+    mockGenerateWebLlmToolCalls,
 } = vi.hoisted(() => ({
     mockLogger: {
         warn: vi.fn(),
@@ -55,6 +66,7 @@ const {
         debug: vi.fn(),
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
+    mockGenerateWebLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
@@ -96,6 +108,14 @@ vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
         tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
     };
 });
+
+vi.mock('../../repositories/webLlm/toolCalling', () => ({
+    generateWebLlmToolCalls: mockGenerateWebLlmToolCalls,
+}));
+
+vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
+
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 
 vi.mock('../getProjectContext', async (importOriginal) => {
     const original = await importOriginal<typeof import('../getProjectContext')>();
@@ -1433,6 +1453,47 @@ describe('parsePromptToActions', () => {
         });
     });
 
+    describe('with the local model chosen and its download awaiting consent', () => {
+        beforeEach(() => {
+            aiBackendPreferenceStore.set('auto');
+            capabilityStore.set({
+                phase: 'done',
+                report: {
+                    capability: 'supported',
+                    webGpu: { status: 'supported' },
+                    webGpuTier: 'not-measured',
+                    crossOriginIsolated: true,
+                    workerAvailable: true,
+                    opfsAvailable: true,
+                    inference: { status: 'not-measured', reason: 'not-requested' },
+                    detectedAt: 0,
+                },
+            });
+            mockGenerateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+        });
+
+        afterEach(() => {
+            capabilityStore.set({ phase: 'idle' });
+            mockGenerateWebLlmToolCalls.mockReset();
+        });
+
+        // The real chain loop and application tool loop run here, so the typed error must survive both.
+        it('denies with the remedy and settles the answering status to it, never a provider failure', async () => {
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(mockGenerateWebLlmToolCalls).toHaveBeenCalled();
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({ kind: 'denied', reason: describeNoAiBackendRemedy() });
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: describeNoAiBackendRemedy() });
+        });
+    });
+
     it.each([
         { prompt: 'save project', actionType: 'saveProject' },
         { prompt: 'new project', actionType: 'newProject' },
@@ -2489,63 +2550,151 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
-        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        const providerContext: ProjectContext = {
-            ...baseContext,
-            tracks: [
+        const previousTrack = structuredClone(trackStore.value);
+        const previousMidi = structuredClone(midiStore.value);
+        const previousProject = structuredClone(projectStore.value);
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Whole clip quantize');
+            const track = createTrack({ id: 'track-piano', name: 'Piano', kind: 'midi' });
+            track.clips = [
                 {
-                    id: 'track-piano',
-                    name: 'Piano',
-                    kind: 'midi',
+                    id: 'clip-piano-midi',
+                    trackId: track.id,
+                    name: 'Piano MIDI',
+                    type: 'midi',
+                    startBeat: 0,
+                    endBeat: 8,
                     muted: false,
-                    soloed: false,
-                    soloSafe: false,
-                    armed: false,
-                    gain: 0.8,
-                    pan: 0,
-                    automationMode: 'read',
-                    outputId: 'master',
-                    clipCount: 1,
-                    deviceCount: 0,
-                    clips: [
-                        {
-                            id: 'clip-piano-midi',
-                            name: 'Piano MIDI',
-                            type: 'midi',
-                            startBeat: 0,
-                            endBeat: 8,
-                            noteCount: 4,
-                        },
-                    ],
-                    devices: [],
-                    sends: [],
+                    locked: false,
+                    color: '',
+                    gain: 1,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
                 },
-            ],
-            selectedTrackId: 'track-piano',
-            selectedClipId: 'clip-piano-midi',
-            selectedClipIds: ['clip-piano-midi'],
-        };
-        vi.mocked(generateToolCalls).mockResolvedValue(
-            completePlan(
-                [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-piano-midi', gridSize: 0.25 } }],
-                nonAcousticMetricIntakeTurn({
-                    modeId: 'edit',
-                    targetObjectIds: ['clip-piano-midi'],
-                    dimensions: ['midi-content'],
-                })
-            )
-        );
+            ];
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track], selectedTrackId: track.id });
+            setMidiStoreState({
+                ...structuredClone(defaultMidiStoreState),
+                notesByClipId: {
+                    'clip-piano-midi': [
+                        { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 1 },
+                    ],
+                },
+            });
+            projectStore.set(structuredClone(defaultProjectStoreState));
+            setPianoRollSelection('clip-piano-midi', [], ['clip-piano-midi']);
+            const musicalContentBinding = captureMusicalContentBinding();
+            mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+            const providerContext: ProjectContext = {
+                ...baseContext,
+                tracks: [
+                    {
+                        id: 'track-piano',
+                        name: 'Piano',
+                        kind: 'midi',
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        armed: false,
+                        gain: 0.8,
+                        pan: 0,
+                        automationMode: 'read',
+                        outputId: 'master',
+                        clipCount: 1,
+                        deviceCount: 0,
+                        clips: [
+                            {
+                                id: 'clip-piano-midi',
+                                name: 'Piano MIDI',
+                                type: 'midi',
+                                startBeat: 0,
+                                endBeat: 8,
+                                noteCount: 4,
+                            },
+                        ],
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+                selectedTrackId: 'track-piano',
+                selectedClipId: 'clip-piano-midi',
+                selectedClipIds: ['clip-piano-midi'],
+            };
+            vi.mocked(generateToolCalls).mockResolvedValue(
+                scriptedPlan(
+                    nonAcousticMetricIntakeTurn({
+                        modeId: 'edit',
+                        targetObjectIds: ['clip-piano-midi'],
+                        dimensions: ['midi-content'],
+                    }),
+                    [
+                        {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    name: 'project.query',
+                                    arguments: {
+                                        type: 'musical-content',
+                                        filters: { stableId: 'clip-piano-midi', startBeat: 0, endBeat: 8 },
+                                        page: { limit: 50 },
+                                    },
+                                },
+                            ],
+                        },
+                        {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    name: 'agent.catalog.discover',
+                                    arguments: { category: 'command', names: ['quantizeNoteLengths'] },
+                                },
+                            ],
+                        },
+                        {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    name: 'command.batch.propose',
+                                    arguments: {
+                                        commands: [
+                                            {
+                                                name: 'quantizeNoteLengths',
+                                                arguments: { clipId: 'clip-piano-midi', gridSize: 0.25 },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    ]
+                )
+            );
 
-        const result = await parsePromptToActions({
-            prompt: 'quantize note lengths in Piano MIDI to a 0.25 beat grid',
-            context: providerContext,
-        });
+            const result = await parsePromptToActions({
+                prompt: 'quantize note lengths in Piano MIDI to a 0.25 beat grid',
+                context: providerContext,
+                musicalContentBinding,
+                projectRevision: musicalContentBinding.expectedRevision,
+            });
 
-        expect(result.actions).toEqual([
-            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-piano-midi', gridSize: 0.25 } },
-        ]);
-        expect(result.requiresConfirmation).toBe(true);
-        expect(result.executionMode).toBe('atomic');
+            expect(result.actions, JSON.stringify(result)).toEqual([
+                { type: 'quantizeNoteLengths', payload: { clipId: 'clip-piano-midi', gridSize: 0.25 } },
+            ]);
+            expect(result.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({ toolName: 'project.query', status: 'success' })
+            );
+            expect(result.requiresConfirmation).toBe(true);
+            expect(result.executionMode).toBe('atomic');
+        } finally {
+            clearPianoRollSelection();
+            trackStore.set(previousTrack);
+            midiStore.set(previousMidi);
+            projectStore.set(previousProject);
+            await database.dispose();
+            vi.unstubAllGlobals();
+        }
     });
 
     it('rejects provider MIDI transforms for audio, locked, empty, or missing selected clips', async () => {

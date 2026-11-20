@@ -45,8 +45,10 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
-    signal_pending_editor_resize, signal_pending_main_thread_callback,
-    take_pending_main_thread_callback_signal, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
+    signal_pending_editor_resize, signal_pending_latency_requery,
+    signal_pending_main_thread_callback, signal_pending_parameter_flush,
+    signal_pending_tail_change, take_pending_main_thread_callback_signal, AudioPlugin,
+    HostedPluginRuntime, PluginHostRequest,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -132,6 +134,34 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// costs a follow-up, never the record behind it.
 pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest) {
     queue_request((instance_id.to_string(), request, 0));
+}
+
+/// Carry every ask an instance may be holding, after an unload of it was
+/// cancelled.
+///
+/// An unload makes the instance refuse public control, and both retry rules give
+/// up on a refusing instance — rightly, since an unloading one is never coming
+/// back. A cancelled unload brings it back, but the asks it recorded meanwhile
+/// had their wakes spent on those refused visits, and a flag with no wake behind
+/// it waits until the plugin asks again. So this raises every process-wide hint
+/// and replays both channel asks for `instance_id`.
+///
+/// Replaying is safe because every ask is a recorded flag the visit reads and
+/// clears: an instance that recorded nothing has a visit that finds nothing and
+/// emits nothing. Call it only after the instance accepts public control again,
+/// from a control path — it allocates, so never from the audio thread.
+pub(crate) fn carry_standing_asks(instance_id: &str) {
+    carry_standing_asks_through(instance_id, notify_plugin_host_request);
+}
+
+fn carry_standing_asks_through(instance_id: &str, wake: impl Fn(&str, PluginHostRequest)) {
+    signal_pending_main_thread_callback();
+    signal_pending_parameter_flush();
+    signal_pending_editor_resize();
+    signal_pending_tail_change();
+    signal_pending_latency_requery();
+    wake(instance_id, PluginHostRequest::StateDirty);
+    wake(instance_id, PluginHostRequest::ParametersRescan);
 }
 
 fn queue_request(queued: QueuedRequest) {
@@ -777,16 +807,10 @@ mod tests {
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
     }
 
-    /// The main-thread callback hint is process-wide, so every test here that
-    /// raises it, sweeps on it or asserts it takes this first.
-    static MAIN_THREAD_CALLBACK_HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
-
+    /// The hints are process-wide, so every test here that raises one, sweeps on
+    /// it or asserts it takes the shared guard first.
     fn main_thread_callback_hint_guard() -> std::sync::MutexGuard<'static, ()> {
-        let guard = MAIN_THREAD_CALLBACK_HINT_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        take_pending_main_thread_callback_signal();
-        guard
+        crate::host::hint_test_support::guard()
     }
 
     /// One engine-owned instance in a real map, whose fixture has already
@@ -932,5 +956,89 @@ mod tests {
         // The sender is only installed by `start`, which no unit test runs; this
         // asserts a plugin loaded in a headless build cannot panic on its wake.
         notify_plugin_host_request("never-started", PluginHostRequest::StateDirty);
+    }
+
+    /// #6651. An ask recorded before an unload began, whose visit the unload
+    /// refused and the retry rule dropped, is carried once the unload is
+    /// cancelled: the cancel replays both channel asks, and serving them reaches
+    /// the plugin's recorded flag.
+    #[test]
+    fn a_state_change_asked_during_a_cancelled_unload_is_carried_afterwards() {
+        let _guard = main_thread_callback_hint_guard();
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("Dirty Fixture", vec![], false);
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_state_dirty();
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+        let sink = RecordingEventSink::default();
+
+        // The visit the plugin's wake bought, refused by the unload and dropped
+        // by the retry rule: no event, no replay.
+        runtime.begin_unload();
+        let dropped = serve_queued_request(
+            ("inst-1".to_string(), PluginHostRequest::StateDirty, 0),
+            |instance_id, _| report_state_change(&runtime, instance_id, &sink),
+            || runtime.ensure_public_control_allowed().is_ok(),
+        );
+        assert!(
+            dropped.is_none(),
+            "the retry rule gives up on an unloading instance"
+        );
+        assert!(sink.events.lock().expect("event log").is_empty());
+
+        runtime.cancel_unload();
+        let queued = std::cell::RefCell::new(Vec::new());
+        carry_standing_asks_through("inst-1", |instance_id, request| {
+            queued
+                .borrow_mut()
+                .push((instance_id.to_string(), request, 0u8));
+        });
+
+        for ask in queued.into_inner() {
+            serve_queued_request(
+                ask,
+                |instance_id, request| match request {
+                    PluginHostRequest::StateDirty => {
+                        report_state_change(&runtime, instance_id, &sink)
+                    }
+                    PluginHostRequest::ParametersRescan => Ok(()),
+                },
+                || true,
+            );
+        }
+
+        assert_eq!(
+            sink.events.lock().expect("event log").len(),
+            1,
+            "the standing state-change ask must reach the project after the cancel"
+        );
+    }
+
+    /// The replay is both channel asks, and it is every hint: an instance may be
+    /// holding any of them, and a hint the cancel left down is an ask nothing
+    /// carries.
+    #[test]
+    fn carrying_standing_asks_replays_both_channel_asks_and_raises_every_hint() {
+        let _guard = main_thread_callback_hint_guard();
+        let replayed = std::cell::RefCell::new(Vec::new());
+
+        carry_standing_asks_through("inst-1", |instance_id, request| {
+            replayed
+                .borrow_mut()
+                .push((instance_id.to_string(), request));
+        });
+
+        assert_eq!(
+            replayed.into_inner(),
+            [
+                ("inst-1".to_string(), PluginHostRequest::StateDirty),
+                ("inst-1".to_string(), PluginHostRequest::ParametersRescan),
+            ]
+        );
+        assert!(take_pending_main_thread_callback_signal());
+        assert!(daw_plugin_host::take_pending_parameter_flush_signal());
+        assert!(daw_plugin_host::take_pending_editor_resize_signal());
+        assert!(daw_plugin_host::take_pending_tail_change_signal());
+        assert!(daw_plugin_host::take_pending_latency_requery_signal());
     }
 }

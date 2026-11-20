@@ -3,11 +3,11 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "059c9d705853b5a34af7a37d8b5e46f7597569b160ef0ec2f0d6db4cfb4f6754"
+        "digest": "cd807df0b0f32d34c3576974858adb288f6d4bdf978161b29c3e36c572ad3bfa"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "d01fc9d0acd842de238de77357f2f6e11d04f890d7bfd807005f7219bc73bd4c"
+        "digest": "8a50a2e18b879ee1df061756bdfdf653f504bb412b163b977c8084bf7e9ee31a"
     },
     "census": {
         "digest": "bc024d8f218cf5df0e3227802cb6fe46787ad7fc4d75a67ac6ac694eeffd08ff"
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "6930b4836923bd5f1c451f1a7df020b998de1a350baf67bcc845e1f809a5a2fe"
+                    "digest": "a59824552bb5575402807adffc90e11beacff70f67849add9f42d94c6edd37e5"
                 }
             ]
         },
@@ -506,7 +506,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
-                    "digest": "4e15bea3a1dc801a65aea9c3318eb6f1a408f758de1eeb99c7ced8f08c2a4249"
+                    "digest": "e96b0910378f34213fa773040b7f7f276afb47449cfd86d8c77bea447329e034"
                 }
             ]
         },
@@ -614,7 +614,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "b378dd27df075cd186132d2d558e8fbd583265d6bd4dd4e3b681c772145c8423"
+                    "digest": "0b84252f3f202201cc201fd325f8a9d558cbbccc628f12bce0c3fc9c90aea86b"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
@@ -730,7 +730,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "e8b8b4de5c2e88c59cc8de5cee24ece20c531b034240606efd57d9fe876bc7ff"
+                    "digest": "aea0b21aa465d7ac6d72e94e5421436dcbd3515dac0ccf598d43b5ad61aade87"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
+                    "digest": "3d9024b4f780bc3857ab20797c4d6725573d665f3fa18d527e912c998c3a1f98"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "e2fe4c59c5211836bbda281ba3ec1ac28786b9af3df2ba30dfafc954e2afa8ae"
+                    "digest": "de2eb7c470d0f8d6c6d1919d1e3db449a3882c3f904b19c914ea397c2a3f99bd"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "5ca5fd53b70cd183725ceb5eeeb1286883d71653e8f56ba593335826c959d975"
+                    "digest": "b17a5ae78e9b01714278f0c0bd48571adbdf0178149c619c7dc9cc90bfff4bc1"
                 }
             ]
         },
@@ -838,7 +838,7 @@
             "fixtures": [
                 {
                     "path": "electron/__tests__/commands.spec.ts",
-                    "digest": "a54958d251eded5b34d210d91383c507903d6efb78999c15447f9b1cf74a400d"
+                    "digest": "41c3aa5a84e2bf845b4188ee613645774eb183a1d6798dc890e6ec75c911c3c0"
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",

@@ -64,13 +64,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-function setSelectedTrack(trackId: string | null): void {
-    // `tracks` is present but empty: the yeast open path looks for the
-    // selected track's Yeast device (issue #2422) and must find none.
-    trackStoreState.value = { selectedTrackId: trackId, tracks: [] };
+function publishTracks(state: TrackStoreValue): void {
+    trackStoreState.value = state;
     for (const callback of trackStoreSubscribers) {
-        callback(trackStoreState.value);
+        callback(state);
     }
+}
+
+function setSelectedTrack(trackId: string | null): void {
+    publishTracks({ selectedTrackId: trackId, tracks: [] });
 }
 
 describe('useActiveDevicePanel', () => {
@@ -215,6 +217,23 @@ describe('useActiveDevicePanel', () => {
         });
 
         expect(result.current.activePanel).toEqual({ kind: 'fermenter', deviceId: 'device-1', trackId: 'track-1' });
+    });
+
+    it.each(['track-1', null])('closes only on removal of the bound device with selection %s', (selectedTrackId) => {
+        const active = { id: 'fermenter-1', type: 'fermenter' };
+        const sibling = { id: 'fermenter-2', type: 'fermenter' };
+        const publishChain = (devices: (typeof active)[]) =>
+            publishTracks({
+                selectedTrackId,
+                tracks: [{ id: 'track-1', devices }],
+            });
+        publishChain([active, sibling]);
+        const { result } = renderHook(() => useActiveDevicePanel());
+        act(() => showDevicePanelForType('fermenter', active.id));
+        act(() => publishChain([active]));
+        expect(result.current.activePanel?.deviceId).toBe(active.id);
+        act(() => publishChain([sibling]));
+        expect(result.current.activePanel).toBeNull();
     });
 
     it('keeps a global panel (opened with no active track) open across track selection changes', () => {

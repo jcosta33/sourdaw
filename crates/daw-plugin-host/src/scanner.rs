@@ -55,6 +55,316 @@ const MAX_SCANNED_AUDIO_PORTS: u32 = 64;
 /// on a legal number of ports is describing something no host can route.
 const MAX_SCANNED_AUDIO_CHANNELS: u32 = 1024;
 
+/// What one parameter's name and module cost against
+/// [`MAX_SCANNED_PARAMETER_METADATA_BYTES`]. One formula for the helper's own
+/// running total and for [`validate_scanned_instance`], so the two cannot drift.
+fn parameter_metadata_cost(name: &str, module: Option<&str>) -> usize {
+    name.len() + module.map_or(0, str::len) + std::mem::size_of::<u32>() + 32
+}
+
+/// Which text field of a CLAP parameter a scan refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterTextField {
+    Name,
+    Module,
+}
+
+/// What was wrong with a CLAP parameter's text field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterTextDefect {
+    NotNullTerminated,
+    ExceedsBounds,
+    NotUtf8,
+    ControlCharacters,
+}
+
+/// Why a scan refused a path, a CLAP candidate, or the scan helper's answer.
+///
+/// `Display` is the reason a scan row or the registry carries to the
+/// renderer, so its text is a contract.
+#[derive(Debug)]
+pub enum ScanError {
+    /// The helper reported more plugins in one file than the scan accepts.
+    TooManyBundlePlugins { count: usize },
+    /// A descriptor named a format other than the candidate's own.
+    ForeignDescriptorFormat { format: PluginFormat },
+    /// A descriptor answer carried fields only the instance pass reports.
+    DescriptorCarriesInstanceFields,
+    /// The helper reported more parameters than the scan accepts.
+    TooManyParameters { count: usize },
+    /// The helper reported a parameter name past the byte cap.
+    ParameterNameTooLong,
+    /// The helper reported a parameter module past the byte cap.
+    ParameterModuleTooLong,
+    /// The helper reported more parameter metadata than the scan accepts.
+    ParameterMetadataTooLarge,
+    /// The helper reported more audio channels than the scan accepts.
+    TooManyAudioChannels,
+    /// A path component's metadata could not be read.
+    CannotInspect {
+        path: PathBuf,
+        cause: std::io::Error,
+    },
+    /// A CLAP bundle's name is not UTF-8, or it has none.
+    ClapBundleNoUsableName { bundle: PathBuf },
+    /// A CLAP directory bundle on a platform that has none.
+    ClapDirectoryBundleUnsupported { path: PathBuf },
+    /// The dynamic loader refused the CLAP candidate.
+    CandidateNotLoaded(libloading::Error),
+    /// The CLAP candidate exports no `clap_entry`.
+    CandidateNoEntry(libloading::Error),
+    /// The CLAP candidate's `clap_entry` is null.
+    CandidateNullEntry,
+    /// The CLAP candidate's path contains a NUL byte.
+    CandidatePathHasNul,
+    /// The CLAP candidate's `init` returned false.
+    CandidateInitFailed,
+    /// The CLAP entry has no `get_factory`.
+    EntryNoFactoryLookup,
+    /// The CLAP entry returned no plugin factory.
+    EntryNoFactory,
+    /// The CLAP factory has no `get_plugin_count`.
+    FactoryNoPluginCount,
+    /// The CLAP factory lists no plugins.
+    FactoryEmpty,
+    /// The CLAP factory lists more plugins than the scan accepts.
+    FactoryPluginCountExceedsBounds,
+    /// The CLAP factory has no `get_plugin_descriptor`.
+    FactoryNoDescriptorLookup,
+    /// The CLAP factory returned a null descriptor.
+    FactoryNullDescriptor,
+    /// A CLAP descriptor has an empty id.
+    DescriptorNoStableId,
+    /// A CLAP parameter's name or module is unusable.
+    ParameterText {
+        field: ParameterTextField,
+        defect: ParameterTextDefect,
+    },
+    /// `clap.params` has no `count`.
+    ParametersNoCount,
+    /// `clap.params` reports more parameters than the scan accepts.
+    ParameterCountExceedsBounds,
+    /// `clap.params` has no `get_info`.
+    ParametersNoInfo,
+    /// `clap.params` returned false for a parameter it counted.
+    ParametersIncomplete,
+    /// `clap.params` reported a duplicate or invalid id.
+    ParameterIdsInvalid,
+    /// `clap.params` reported non-finite or disordered bounds.
+    ParameterBoundsInvalid,
+    /// `clap.params` metadata exceeds the scan's byte cap.
+    ParameterMetadataExceedsBounds,
+    /// `clap.audio-ports` has no `count`.
+    AudioPortsNoCount,
+    /// `clap.audio-ports` reports more ports than the scan accepts.
+    AudioPortCountExceedsBounds,
+    /// `clap.audio-ports` has no `get`.
+    AudioPortsNoInfo,
+    /// `clap.audio-ports` returned false for a port it counted.
+    AudioPortsIncomplete,
+    /// `clap.audio-ports` declares more channels than the scan accepts.
+    AudioChannelCountExceedsBounds,
+    /// The instance pass was asked for no plugin id.
+    InstanceNoPluginId,
+    /// The descriptor id contains a NUL byte.
+    DescriptorIdHasNul,
+    /// The CLAP factory has no `create_plugin`.
+    FactoryNoCreate,
+    /// The CLAP factory returned no instance.
+    InstanceNotCreated,
+    /// The metadata instance has no `init`.
+    InstanceNoInit,
+    /// The metadata instance's `init` returned false.
+    InstanceInitFailed,
+    /// The metadata instance has no `destroy`.
+    InstanceNoDestroy,
+}
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooManyBundlePlugins { count } => write!(
+                f,
+                "The scan helper reported {count} plugins in one file, more than the {MAX_SCANNED_BUNDLE_PLUGINS} the scan accepts"
+            ),
+            Self::ForeignDescriptorFormat { format } => write!(
+                f,
+                "The scan helper's descriptor answer named a format other than {}",
+                format.wire_name()
+            ),
+            Self::TooManyParameters { count } => write!(
+                f,
+                "The scan helper reported {count} parameters, more than the {MAX_SCANNED_PARAMETER_DESCRIPTORS} the scan accepts"
+            ),
+            Self::ParameterNameTooLong => write!(
+                f,
+                "The scan helper reported a parameter name longer than {MAX_SCANNED_PARAMETER_NAME_BYTES} bytes"
+            ),
+            Self::ParameterModuleTooLong => write!(
+                f,
+                "The scan helper reported a parameter module longer than {MAX_SCANNED_PARAMETER_NAME_BYTES} bytes"
+            ),
+            Self::ParameterMetadataTooLarge => write!(
+                f,
+                "The scan helper reported more than {MAX_SCANNED_PARAMETER_METADATA_BYTES} bytes of parameter metadata"
+            ),
+            Self::TooManyAudioChannels => write!(
+                f,
+                "The scan helper reported more than {MAX_SCANNED_AUDIO_CHANNELS} audio channels in one direction"
+            ),
+            Self::CannotInspect { path, cause } => {
+                write!(f, "Cannot inspect {}: {cause}", path.display())
+            }
+            Self::ClapBundleNoUsableName { bundle } => {
+                write!(f, "CLAP bundle has no usable name: {}", bundle.display())
+            }
+            Self::ClapDirectoryBundleUnsupported { path } => write!(
+                f,
+                "CLAP directory bundles are not supported on this platform: {}",
+                path.display()
+            ),
+            Self::CandidateNotLoaded(cause) => write!(f, "Cannot load CLAP candidate: {cause}"),
+            Self::CandidateNoEntry(cause) => {
+                write!(f, "CLAP candidate has no clap_entry: {cause}")
+            }
+            Self::ParameterText { field, defect } => {
+                let field = match field {
+                    ParameterTextField::Name => "name",
+                    ParameterTextField::Module => "module",
+                };
+                let defect = match defect {
+                    ParameterTextDefect::NotNullTerminated => "is not null terminated",
+                    ParameterTextDefect::ExceedsBounds => "exceeds scanner bounds",
+                    ParameterTextDefect::NotUtf8 => "is not valid UTF-8",
+                    ParameterTextDefect::ControlCharacters => "contains control characters",
+                };
+                write!(f, "CLAP parameter {field} {defect}")
+            }
+            Self::DescriptorCarriesInstanceFields => f.write_str("The scan helper's descriptor answer carried parameter or capability data that only the instance inspection may report"),
+            Self::FactoryPluginCountExceedsBounds => f.write_str("CLAP bundle plugin count exceeds scanner bounds"),
+            Self::ParameterMetadataExceedsBounds => f.write_str("CLAP parameter metadata exceeds scanner bounds"),
+            Self::AudioPortsIncomplete => f.write_str("CLAP audio-ports extension returned incomplete port info"),
+            Self::AudioChannelCountExceedsBounds => f.write_str("CLAP audio channel count exceeds scanner bounds"),
+            Self::InstanceNoPluginId => f.write_str("CLAP instance inspection has no plugin id to instantiate"),
+            Self::CandidateNullEntry => f.write_str("CLAP candidate returned a null clap_entry"),
+            Self::CandidatePathHasNul => f.write_str("CLAP candidate path contains a null byte"),
+            Self::CandidateInitFailed => f.write_str("CLAP candidate initialization failed"),
+            Self::EntryNoFactoryLookup => f.write_str("CLAP entry has no factory lookup"),
+            Self::EntryNoFactory => f.write_str("CLAP entry returned no plugin factory"),
+            Self::FactoryNoPluginCount => f.write_str("CLAP factory has no plugin count"),
+            Self::FactoryEmpty => f.write_str("CLAP factory contains no plugins"),
+            Self::FactoryNoDescriptorLookup => f.write_str("CLAP factory has no descriptor lookup"),
+            Self::FactoryNullDescriptor => f.write_str("CLAP factory returned a null descriptor"),
+            Self::DescriptorNoStableId => f.write_str("CLAP descriptor has no stable plugin id"),
+            Self::ParametersNoCount => f.write_str("CLAP parameter extension has no count callback"),
+            Self::ParameterCountExceedsBounds => f.write_str("CLAP parameter count exceeds scanner bounds"),
+            Self::ParametersNoInfo => f.write_str("CLAP parameter extension has no info callback"),
+            Self::ParametersIncomplete => f.write_str("CLAP parameter extension returned incomplete metadata"),
+            Self::ParameterIdsInvalid => f.write_str("CLAP parameter metadata has duplicate or invalid ids"),
+            Self::ParameterBoundsInvalid => f.write_str("CLAP parameter metadata has invalid numeric bounds"),
+            Self::AudioPortsNoCount => f.write_str("CLAP audio-ports extension has no count callback"),
+            Self::AudioPortCountExceedsBounds => f.write_str("CLAP audio port count exceeds scanner bounds"),
+            Self::AudioPortsNoInfo => f.write_str("CLAP audio-ports extension has no info callback"),
+            Self::DescriptorIdHasNul => f.write_str("CLAP descriptor id contains a null byte"),
+            Self::FactoryNoCreate => f.write_str("CLAP factory has no plugin creation callback"),
+            Self::InstanceNotCreated => f.write_str("CLAP factory could not create a metadata instance"),
+            Self::InstanceNoInit => f.write_str("CLAP metadata instance has no init callback"),
+            Self::InstanceInitFailed => f.write_str("CLAP metadata instance initialization failed"),
+            Self::InstanceNoDestroy => f.write_str("CLAP metadata instance has no destroy callback"),
+        }
+    }
+}
+
+impl std::error::Error for ScanError {}
+
+/// Refuse a descriptor bundle that exceeds the caps the scan helper enforces.
+///
+/// The helper is the process running the untrusted binary, so its own checks
+/// are not evidence about what it sent: the parent re-applies them to the
+/// answer before using it. Only the helper's existing caps are mirrored here,
+/// and they are read from the constants above rather than restated.
+///
+/// A descriptor answer also may not carry the instance pass's fields
+/// (`parameters`, `parameter_metadata_reason`, `capabilities`). The honest
+/// extractors leave all three `None` (`descriptor_metadata`,
+/// `first_audio_module_class` and the module-info reader) and the instance
+/// pass fills them later, so a descriptor that arrives with them is refused
+/// rather than cleared: values the instance pass's caps never saw would
+/// otherwise be published when that pass fails, or on a load-time rescan that
+/// runs no instance pass.
+///
+/// Every descriptor's `format` must be the candidate's own wire name. The
+/// field is copied into the published row and decides which instance caps and
+/// which loader apply, so a helper that answered for another format would
+/// escape the caps of the format the file was scanned as.
+pub fn validate_scanned_bundle(
+    format: PluginFormat,
+    bundle: &[ScannedDescriptor],
+) -> Result<(), ScanError> {
+    if bundle.len() > MAX_SCANNED_BUNDLE_PLUGINS as usize {
+        return Err(ScanError::TooManyBundlePlugins {
+            count: bundle.len(),
+        });
+    }
+    if bundle
+        .iter()
+        .any(|descriptor| descriptor.format != format.wire_name())
+    {
+        return Err(ScanError::ForeignDescriptorFormat { format });
+    }
+    let carries_instance_fields = |descriptor: &ScannedDescriptor| {
+        descriptor.parameters.is_some()
+            || descriptor.parameter_metadata_reason.is_some()
+            || descriptor.capabilities.is_some()
+    };
+    if bundle.iter().any(carries_instance_fields) {
+        return Err(ScanError::DescriptorCarriesInstanceFields);
+    }
+    Ok(())
+}
+
+/// Refuse an instance answer that exceeds the caps the scan helper enforces.
+///
+/// Only CLAP's extraction enforces parameter and audio-channel caps; VST3's
+/// extraction bounds none of them, so a VST3 answer is not held to numbers its
+/// helper never applied.
+pub fn validate_scanned_instance(
+    format: PluginFormat,
+    instance: &ScannedInstance,
+) -> Result<(), ScanError> {
+    if format != PluginFormat::Clap {
+        return Ok(());
+    }
+    if instance.parameters.len() > MAX_SCANNED_PARAMETER_DESCRIPTORS as usize {
+        return Err(ScanError::TooManyParameters {
+            count: instance.parameters.len(),
+        });
+    }
+    let mut metadata_bytes = 0usize;
+    for parameter in &instance.parameters {
+        if parameter.name.len() > MAX_SCANNED_PARAMETER_NAME_BYTES {
+            return Err(ScanError::ParameterNameTooLong);
+        }
+        let module = parameter.module.as_deref();
+        if module.is_some_and(|module| module.len() > MAX_SCANNED_PARAMETER_NAME_BYTES) {
+            return Err(ScanError::ParameterModuleTooLong);
+        }
+        metadata_bytes =
+            metadata_bytes.saturating_add(parameter_metadata_cost(&parameter.name, module));
+    }
+    if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
+        return Err(ScanError::ParameterMetadataTooLarge);
+    }
+    if let Some(channels) = instance.capabilities.audio_channels {
+        if channels.inputs > MAX_SCANNED_AUDIO_CHANNELS
+            || channels.outputs > MAX_SCANNED_AUDIO_CHANNELS
+        {
+            return Err(ScanError::TooManyAudioChannels);
+        }
+    }
+    Ok(())
+}
+
 pub const PARAMETER_METADATA_UNAVAILABLE_REASON: &str =
     "The scanner could not safely complete external parameter inspection.";
 
@@ -531,8 +841,11 @@ fn detect_format_on(
     is_dir: bool,
     single_file_vst3_is_a_module: bool,
 ) -> Option<PluginFormat> {
-    let ext = path.extension()?.to_str()?;
-    match (ext, is_dir) {
+    // Bundle extensions compare ASCII-case-insensitively: Windows and default
+    // macOS volumes are case-insensitive, and a vendor or user rename can
+    // leave `Foo.VST3` on disk.
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match (ext.as_str(), is_dir) {
         ("vst3", true) => Some(PluginFormat::Vst3),
         ("vst3", false) if single_file_vst3_is_a_module => Some(PluginFormat::Vst3),
         ("clap", false) | ("clap", true) => Some(PluginFormat::Clap),
@@ -609,7 +922,7 @@ pub fn scan_directory_bounded(
         }
         Ok(false) => {}
         Err(error) => {
-            errors.push(error);
+            errors.push(error.to_string());
             return true;
         }
     }
@@ -799,7 +1112,7 @@ fn scanned_plugin_with_id(path: &Path, descriptor: ScannedDescriptor, id: String
     }
 }
 
-fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
+fn path_has_symlink_component(path: &Path) -> Result<bool, ScanError> {
     let mut current_path = std::path::PathBuf::new();
 
     for component in path.components() {
@@ -811,12 +1124,11 @@ fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => {
-                return Err(format!(
-                    "Cannot inspect {}: {}",
-                    current_path.display(),
-                    error
-                ));
+            Err(cause) => {
+                return Err(ScanError::CannotInspect {
+                    path: current_path,
+                    cause,
+                });
             }
         }
     }
@@ -994,6 +1306,260 @@ mod tests {
         };
         assert_eq!(collected, expected);
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// `Foo.VST3` is one bundle candidate and the walk never descends into it,
+    /// so the inner module is not collected as a second, single-file plugin.
+    ///
+    /// Mutation this catches: matching the extension case-sensitively leaves
+    /// neither bundle collected on macOS and Linux, and collects the inner
+    /// module instead of the bundle on Windows.
+    #[test]
+    fn an_uppercase_bundle_extension_is_one_candidate_the_walk_does_not_enter() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-uppercase-extension")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        let vst3 = temp_root.join("Upper.VST3");
+        let module_folder = vst3.join("Contents").join("x86_64-win");
+        std::fs::create_dir_all(&module_folder).expect("bundle should be created");
+        std::fs::write(module_folder.join("Upper.vst3"), b"").expect("module should be written");
+        let clap = temp_root.join("Upper.CLAP");
+        std::fs::create_dir_all(&clap).expect("CLAP bundle should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        let mut collected = plugins
+            .iter()
+            .map(|candidate| (candidate.path.clone(), candidate.format))
+            .collect::<Vec<_>>();
+        collected.sort();
+        assert_eq!(
+            collected,
+            vec![(clap, PluginFormat::Clap), (vst3, PluginFormat::Vst3)]
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// With the Windows single-file rule on, an uppercase bundle directory is
+    /// still the bundle, which is what stops the walk entering it.
+    #[test]
+    fn extensions_match_regardless_of_case_on_every_platform_rule() {
+        for single_file_vst3_is_a_module in [false, true] {
+            for (name, is_dir, expected) in [
+                ("X.VST3", true, Some(PluginFormat::Vst3)),
+                ("X.Vst3", true, Some(PluginFormat::Vst3)),
+                ("X.CLAP", true, Some(PluginFormat::Clap)),
+                ("X.CLAP", false, Some(PluginFormat::Clap)),
+                ("X.ClAp", false, Some(PluginFormat::Clap)),
+                ("X.COMPONENT", true, Some(PluginFormat::AudioUnit)),
+                ("X.VST", true, Some(PluginFormat::Vst2)),
+                (
+                    "X.VST3",
+                    false,
+                    single_file_vst3_is_a_module.then_some(PluginFormat::Vst3),
+                ),
+                ("X.TXT", true, None),
+            ] {
+                assert_eq!(
+                    detect_format_on(Path::new(name), is_dir, single_file_vst3_is_a_module),
+                    expected,
+                    "{name} (dir: {is_dir}, single-file rule: {single_file_vst3_is_a_module})"
+                );
+            }
+        }
+    }
+
+    fn parameter_named(id: u32, name: &str) -> ScannedParameterDescriptor {
+        ScannedParameterDescriptor {
+            id,
+            name: name.to_string(),
+            module: None,
+            min_value: 0.0,
+            max_value: 1.0,
+            default_value: 0.0,
+            is_automatable: true,
+            is_modulatable: false,
+            is_stepped: false,
+            is_enum: false,
+        }
+    }
+
+    fn bundle_descriptor() -> ScannedDescriptor {
+        ScannedDescriptor {
+            format: "clap".to_string(),
+            name: None,
+            vendor: String::new(),
+            descriptor_id: String::new(),
+            version: String::new(),
+            category: String::new(),
+            parameters: None,
+            parameter_metadata_reason: None,
+            capabilities: None,
+        }
+    }
+
+    #[test]
+    fn a_bundle_is_valid_up_to_the_plugin_cap_and_refused_one_past_it() {
+        let cap = MAX_SCANNED_BUNDLE_PLUGINS as usize;
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &vec![bundle_descriptor(); cap]).is_ok()
+        );
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &vec![bundle_descriptor(); cap + 1])
+                .is_err()
+        );
+    }
+
+    /// A validator refusal is the reason the scan row carries to the renderer,
+    /// so the variant and its text are pinned together.
+    #[test]
+    fn a_refused_helper_answer_names_its_cap_in_the_reason_the_renderer_receives() {
+        let cap = MAX_SCANNED_BUNDLE_PLUGINS as usize;
+        let refusal =
+            validate_scanned_bundle(PluginFormat::Clap, &vec![bundle_descriptor(); cap + 1])
+                .expect_err("one past the cap");
+
+        assert!(matches!(refusal, ScanError::TooManyBundlePlugins { count } if count == cap + 1));
+        assert_eq!(
+            refusal.to_string(),
+            "The scan helper reported 33 plugins in one file, more than the 32 the scan accepts"
+        );
+        let foreign = validate_scanned_bundle(PluginFormat::Vst3, &[bundle_descriptor()])
+            .expect_err("a clap row in a vst3 file");
+        assert_eq!(
+            foreign.to_string(),
+            "The scan helper's descriptor answer named a format other than vst3"
+        );
+    }
+
+    #[test]
+    fn a_descriptor_naming_another_format_is_refused_in_both_directions() {
+        let clap = bundle_descriptor();
+        let mut vst3 = bundle_descriptor();
+        vst3.format = PluginFormat::Vst3.wire_name().to_string();
+        assert!(validate_scanned_bundle(PluginFormat::Clap, std::slice::from_ref(&clap)).is_ok());
+        assert!(validate_scanned_bundle(PluginFormat::Vst3, std::slice::from_ref(&vst3)).is_ok());
+        assert!(validate_scanned_bundle(PluginFormat::Vst3, std::slice::from_ref(&clap)).is_err());
+        assert!(validate_scanned_bundle(PluginFormat::Clap, std::slice::from_ref(&vst3)).is_err());
+        let mut vst3_sibling = clap.clone();
+        vst3_sibling.format = PluginFormat::Vst3.wire_name().to_string();
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &[clap, vst3_sibling]).is_err(),
+            "one mismatching sibling refuses the bundle"
+        );
+    }
+
+    /// 256 parameters of 92-byte names cost 256 * (92 + 4 + 32) = 32 KiB
+    /// exactly. Mutation this catches: dropping the `u32` term or the `+ 32`
+    /// from `parameter_metadata_cost` leaves the one-byte-over case under the
+    /// cap and accepted.
+    #[test]
+    fn parameter_metadata_is_accepted_at_the_byte_limit_and_refused_one_byte_over() {
+        let at_limit = |last_name_len: usize| ScannedInstance {
+            parameters: (0..256)
+                .map(|id| {
+                    parameter_named(id, &"m".repeat(if id == 255 { last_name_len } else { 92 }))
+                })
+                .collect(),
+            ..ScannedInstance::default()
+        };
+        assert_eq!(MAX_SCANNED_PARAMETER_METADATA_BYTES, 256 * (92 + 4 + 32));
+        assert!(validate_scanned_instance(PluginFormat::Clap, &at_limit(92)).is_ok());
+        assert!(validate_scanned_instance(PluginFormat::Clap, &at_limit(93)).is_err());
+    }
+
+    #[test]
+    fn a_module_of_exactly_the_name_cap_is_accepted() {
+        let mut parameter = parameter_named(1, "p");
+        parameter.module = Some("m".repeat(128));
+        let instance = ScannedInstance {
+            parameters: vec![parameter],
+            ..ScannedInstance::default()
+        };
+        assert!(validate_scanned_instance(PluginFormat::Clap, &instance).is_ok());
+    }
+
+    #[test]
+    fn a_descriptor_carrying_an_instance_pass_field_is_refused() {
+        let mut with_parameters = bundle_descriptor();
+        with_parameters.parameters = Some(Vec::new());
+        let mut with_reason = bundle_descriptor();
+        with_reason.parameter_metadata_reason = Some("reason".to_string());
+        let mut with_capabilities = bundle_descriptor();
+        with_capabilities.capabilities = Some(ScannedInstanceCapabilities::default());
+        for (field, descriptor) in [
+            ("parameters", with_parameters),
+            ("parameter_metadata_reason", with_reason),
+            ("capabilities", with_capabilities),
+        ] {
+            assert!(
+                validate_scanned_bundle(PluginFormat::Clap, &[bundle_descriptor(), descriptor])
+                    .is_err(),
+                "{field}"
+            );
+        }
+        assert!(validate_scanned_bundle(PluginFormat::Clap, &[bundle_descriptor()]).is_ok());
+    }
+
+    #[test]
+    fn an_instance_is_held_to_each_clap_cap_on_both_sides_of_it() {
+        let instance_with = |parameters: Vec<ScannedParameterDescriptor>| ScannedInstance {
+            parameters,
+            ..ScannedInstance::default()
+        };
+        let clap = PluginFormat::Clap;
+        assert!(validate_scanned_instance(
+            clap,
+            &instance_with(vec![parameter_named(1, &"n".repeat(128))])
+        )
+        .is_ok());
+        assert!(validate_scanned_instance(
+            clap,
+            &instance_with(vec![parameter_named(1, &"n".repeat(129))])
+        )
+        .is_err());
+        let count =
+            |count: u32| instance_with((0..count).map(|id| parameter_named(id, "p")).collect());
+        assert!(validate_scanned_instance(clap, &count(256)).is_ok());
+        assert!(validate_scanned_instance(clap, &count(257)).is_err());
+        let mut with_module = parameter_named(1, "p");
+        with_module.module = Some("m".repeat(129));
+        assert!(validate_scanned_instance(clap, &instance_with(vec![with_module])).is_err());
+        let heavy = instance_with(
+            (0..256)
+                .map(|id| parameter_named(id, &"m".repeat(128)))
+                .collect(),
+        );
+        assert!(validate_scanned_instance(clap, &heavy).is_err());
+        let channels = |outputs: u32| {
+            let mut instance = ScannedInstance::default();
+            instance.capabilities.audio_channels =
+                Some(ScannedAudioChannelCounts { inputs: 0, outputs });
+            instance
+        };
+        assert!(validate_scanned_instance(clap, &channels(1024)).is_ok());
+        assert!(validate_scanned_instance(clap, &channels(1025)).is_err());
+        let inputs = |inputs: u32| {
+            let mut instance = ScannedInstance::default();
+            instance.capabilities.audio_channels =
+                Some(ScannedAudioChannelCounts { inputs, outputs: 0 });
+            instance
+        };
+        assert!(validate_scanned_instance(clap, &inputs(1024)).is_ok());
+        assert!(validate_scanned_instance(clap, &inputs(1025)).is_err());
+        assert!(
+            validate_scanned_instance(PluginFormat::Vst3, &channels(1025)).is_ok(),
+            "the VST3 helper enforces no channel cap, so none is applied to its answer"
+        );
     }
 
     /// One line per format, not one per plugin. A user with a folder of VST2
@@ -1319,11 +1885,13 @@ mod tests {
 // ── CLAP metadata extraction ────────────────────────────────────────────
 
 /// `Contents/MacOS/<name>` — the CLAP bundle's executable.
-pub fn clap_bundle_executable_path(bundle: &Path) -> Result<PathBuf, String> {
+pub fn clap_bundle_executable_path(bundle: &Path) -> Result<PathBuf, ScanError> {
     let stem = bundle
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .ok_or_else(|| format!("CLAP bundle has no usable name: {}", bundle.display()))?;
+        .ok_or_else(|| ScanError::ClapBundleNoUsableName {
+            bundle: bundle.to_path_buf(),
+        })?;
     Ok(bundle.join("Contents").join("MacOS").join(stem))
 }
 
@@ -1331,7 +1899,7 @@ pub fn clap_bundle_executable_path(bundle: &Path) -> Result<PathBuf, String> {
 ///
 /// On macOS, if `path` is a directory bundle, returns its `Contents/MacOS/<name>`
 /// executable binary. If `path` is a flat file (or on other platforms), returns `path`.
-pub fn clap_library_path(path: &Path) -> Result<PathBuf, String> {
+pub fn clap_library_path(path: &Path) -> Result<PathBuf, ScanError> {
     if path.is_dir() {
         #[cfg(target_os = "macos")]
         {
@@ -1352,10 +1920,9 @@ pub fn clap_library_path(path: &Path) -> Result<PathBuf, String> {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            Err(format!(
-                "CLAP directory bundles are not supported on this platform: {}",
-                path.display()
-            ))
+            Err(ScanError::ClapDirectoryBundleUnsupported {
+                path: path.to_path_buf(),
+            })
         }
     } else {
         Ok(path.to_path_buf())
@@ -1374,21 +1941,19 @@ pub fn clap_library_path(path: &Path) -> Result<PathBuf, String> {
 ///
 /// Loads the library at `path` and runs the plugin's entry points, so it must
 /// only run in the bounded scan worker, never in the app process.
-pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>, String> {
+pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>, ScanError> {
     let library_path = clap_library_path(path)?;
     // SAFETY: loading runs the library's initialisers; this runs only in the scan worker child process.
-    let lib = unsafe { Library::new(&library_path) }
-        .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+    let lib = unsafe { Library::new(&library_path) }.map_err(ScanError::CandidateNotLoaded)?;
 
     // SAFETY: `clap_entry` is declared by the CLAP ABI as a `clap_plugin_entry` object, so the
     // symbol's address is read as `*const clap_plugin_entry`; `lib` outlives the symbol.
     let entry: libloading::Symbol<*const clap_plugin_entry> =
-        unsafe { lib.get(b"clap_entry\0") }
-            .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
+        unsafe { lib.get(b"clap_entry\0") }.map_err(ScanError::CandidateNoEntry)?;
 
     let entry_ptr = *entry;
     if entry_ptr.is_null() {
-        return Err("CLAP candidate returned a null clap_entry".to_string());
+        return Err(ScanError::CandidateNullEntry);
     }
 
     // SAFETY: `entry_ptr` is non-null (checked above) and points into the loaded library `lib`,
@@ -1397,7 +1962,7 @@ pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>,
 
     let path_c = match CString::new(path.to_string_lossy().as_bytes()) {
         Ok(c) => c,
-        Err(_) => return Err("CLAP candidate path contains a null byte".to_string()),
+        Err(_) => return Err(ScanError::CandidatePathHasNul),
     };
 
     if let Some(init_fn) = entry_ref.init {
@@ -1405,7 +1970,7 @@ pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>,
         // that lives past the call.
         let initialized = unsafe { init_fn(path_c.as_ptr()) };
         if !initialized {
-            return Err("CLAP candidate initialization failed".to_string());
+            return Err(ScanError::CandidateInitFailed);
         }
     }
 
@@ -1431,31 +1996,29 @@ pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>,
 pub fn extract_clap_instance_metadata(
     path: &Path,
     plugin_id: &str,
-) -> Result<ScannedInstance, String> {
+) -> Result<ScannedInstance, ScanError> {
     let library_path = clap_library_path(path)?;
     // SAFETY: loading runs the library's initialisers; this runs only in the scan worker child process.
-    let library = unsafe { Library::new(&library_path) }
-        .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+    let library = unsafe { Library::new(&library_path) }.map_err(ScanError::CandidateNotLoaded)?;
     // SAFETY: `clap_entry` is declared by the CLAP ABI as a `clap_plugin_entry` object, so the
     // symbol's address is read as `*const clap_plugin_entry`; `library` outlives the symbol.
     let entry: libloading::Symbol<*const clap_plugin_entry> =
-        unsafe { library.get(b"clap_entry\0") }
-            .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
+        unsafe { library.get(b"clap_entry\0") }.map_err(ScanError::CandidateNoEntry)?;
     let entry_ptr = *entry;
     if entry_ptr.is_null() {
-        return Err("CLAP candidate returned a null clap_entry".to_string());
+        return Err(ScanError::CandidateNullEntry);
     }
     // SAFETY: `entry_ptr` is non-null (checked above) and points into the loaded `library`,
     // which stays alive until this function returns, past every use of `entry_ref`.
     let entry_ref = unsafe { &*entry_ptr };
     let path_c = CString::new(path.to_string_lossy().as_bytes())
-        .map_err(|_| "CLAP candidate path contains a null byte".to_string())?;
+        .map_err(|_| ScanError::CandidatePathHasNul)?;
     if let Some(init) = entry_ref.init {
         // SAFETY: `init` is the entry's own callback and `path_c` is a NUL-terminated string
         // that lives past the call.
         let initialized = unsafe { init(path_c.as_ptr()) };
         if !initialized {
-            return Err("CLAP candidate initialization failed".to_string());
+            return Err(ScanError::CandidateInitFailed);
         }
     }
 
@@ -1489,16 +2052,16 @@ unsafe fn owned_c_string(value: *const i8) -> String {
 /// # Safety
 /// `entry_ref` must belong to a loaded CLAP library that stays loaded, with its entry `init`
 /// called and `deinit` not yet called, for as long as the returned reference is used.
-unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
+unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, ScanError> {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
     let factory_ptr = match entry_ref.get_factory {
         // SAFETY: `get_factory` is the init'd entry's own callback and `factory_id` is a
         // NUL-terminated static CLAP factory id.
         Some(get_factory) => unsafe { get_factory(factory_id) },
-        None => return Err("CLAP entry has no factory lookup".to_string()),
+        None => return Err(ScanError::EntryNoFactoryLookup),
     };
     if factory_ptr.is_null() {
-        return Err("CLAP entry returned no plugin factory".to_string());
+        return Err(ScanError::EntryNoFactory);
     }
     // SAFETY: a non-null pointer for the plugin-factory id is a `clap_plugin_factory` owned by the
     // library, which stays loaded for the returned borrow per this fn's contract.
@@ -1518,21 +2081,21 @@ unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_f
 /// for as long as the returned descriptor references are used.
 unsafe fn factory_plugin_descriptors(
     factory: &clap_plugin_factory,
-) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, String> {
+) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, ScanError> {
     let count = match factory.get_plugin_count {
         // SAFETY: `get_plugin_count` is the live factory's own callback and receives that factory.
         Some(get_plugin_count) => unsafe { get_plugin_count(factory) },
-        None => return Err("CLAP factory has no plugin count".to_string()),
+        None => return Err(ScanError::FactoryNoPluginCount),
     };
     if count == 0 {
-        return Err("CLAP factory contains no plugins".to_string());
+        return Err(ScanError::FactoryEmpty);
     }
     if count > MAX_SCANNED_BUNDLE_PLUGINS {
-        return Err("CLAP bundle plugin count exceeds scanner bounds".to_string());
+        return Err(ScanError::FactoryPluginCountExceedsBounds);
     }
     let get_descriptor = match factory.get_plugin_descriptor {
         Some(get_descriptor) => get_descriptor,
-        None => return Err("CLAP factory has no descriptor lookup".to_string()),
+        None => return Err(ScanError::FactoryNoDescriptorLookup),
     };
     let mut descriptors = Vec::with_capacity(count as usize);
     for index in 0..count {
@@ -1540,7 +2103,7 @@ unsafe fn factory_plugin_descriptors(
         // requires, and the factory is live per this fn's contract.
         let descriptor = unsafe { get_descriptor(factory, index) };
         if descriptor.is_null() {
-            return Err("CLAP factory returned a null descriptor".to_string());
+            return Err(ScanError::FactoryNullDescriptor);
         }
         // SAFETY: `descriptor` is non-null (checked above); CLAP keeps a descriptor valid while
         // the library stays loaded, which this fn's contract guarantees.
@@ -1549,45 +2112,67 @@ unsafe fn factory_plugin_descriptors(
     Ok(descriptors)
 }
 
-unsafe fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Result<String, String> {
+unsafe fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Result<String, ScanError> {
     let Some(length) = value.iter().position(|character| *character == 0) else {
-        return Err("CLAP parameter name is not null terminated".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Name,
+            defect: ParameterTextDefect::NotNullTerminated,
+        });
     };
     if length == 0 || length > MAX_SCANNED_PARAMETER_NAME_BYTES {
-        return Err("CLAP parameter name exceeds scanner bounds".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Name,
+            defect: ParameterTextDefect::ExceedsBounds,
+        });
     }
     let bytes = value[..length]
         .iter()
         .map(|character| *character as u8)
         .collect::<Vec<_>>();
-    let name = std::str::from_utf8(&bytes)
-        .map_err(|_| "CLAP parameter name is not valid UTF-8".to_string())?;
+    let name = std::str::from_utf8(&bytes).map_err(|_| ScanError::ParameterText {
+        field: ParameterTextField::Name,
+        defect: ParameterTextDefect::NotUtf8,
+    })?;
     if name.chars().any(char::is_control) {
-        return Err("CLAP parameter name contains control characters".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Name,
+            defect: ParameterTextDefect::ControlCharacters,
+        });
     }
     Ok(name.to_string())
 }
 
 unsafe fn bounded_parameter_module(
     value: &[std::os::raw::c_char],
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, ScanError> {
     let Some(length) = value.iter().position(|character| *character == 0) else {
-        return Err("CLAP parameter module is not null terminated".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Module,
+            defect: ParameterTextDefect::NotNullTerminated,
+        });
     };
     if length == 0 {
         return Ok(None);
     }
     if length > MAX_SCANNED_PARAMETER_NAME_BYTES {
-        return Err("CLAP parameter module exceeds scanner bounds".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Module,
+            defect: ParameterTextDefect::ExceedsBounds,
+        });
     }
     let bytes = value[..length]
         .iter()
         .map(|character| *character as u8)
         .collect::<Vec<_>>();
-    let module = std::str::from_utf8(&bytes)
-        .map_err(|_| "CLAP parameter module is not valid UTF-8".to_string())?;
+    let module = std::str::from_utf8(&bytes).map_err(|_| ScanError::ParameterText {
+        field: ParameterTextField::Module,
+        defect: ParameterTextDefect::NotUtf8,
+    })?;
     if module.chars().any(char::is_control) {
-        return Err("CLAP parameter module contains control characters".to_string());
+        return Err(ScanError::ParameterText {
+            field: ParameterTextField::Module,
+            defect: ParameterTextDefect::ControlCharacters,
+        });
     }
     Ok(Some(module.to_string()))
 }
@@ -1598,19 +2183,19 @@ unsafe fn bounded_parameter_module(
 unsafe fn extract_parameters_from_extension(
     plugin: *const clap_sys::plugin::clap_plugin,
     parameters: &clap_plugin_params,
-) -> Result<Vec<ScannedParameterDescriptor>, String> {
+) -> Result<Vec<ScannedParameterDescriptor>, ScanError> {
     let count = match parameters.count {
         // SAFETY: `count` is the extension's own callback and `plugin` is the instance it came
         // from, per this fn's contract.
         Some(count) => unsafe { count(plugin) },
-        None => return Err("CLAP parameter extension has no count callback".to_string()),
+        None => return Err(ScanError::ParametersNoCount),
     };
     if count > MAX_SCANNED_PARAMETER_DESCRIPTORS {
-        return Err("CLAP parameter count exceeds scanner bounds".to_string());
+        return Err(ScanError::ParameterCountExceedsBounds);
     }
     let get_info = match parameters.get_info {
         Some(get_info) => get_info,
-        None => return Err("CLAP parameter extension has no info callback".to_string()),
+        None => return Err(ScanError::ParametersNoInfo),
     };
     let mut ids = BTreeSet::new();
     let mut metadata_bytes = 0usize;
@@ -1623,10 +2208,10 @@ unsafe fn extract_parameters_from_extension(
         // it reported, and `info` is a live out-parameter.
         let described = unsafe { get_info(plugin, index, &mut info) };
         if !described {
-            return Err("CLAP parameter extension returned incomplete metadata".to_string());
+            return Err(ScanError::ParametersIncomplete);
         }
         if info.id == CLAP_INVALID_ID || !ids.insert(info.id) {
-            return Err("CLAP parameter metadata has duplicate or invalid ids".to_string());
+            return Err(ScanError::ParameterIdsInvalid);
         }
         if !info.min_value.is_finite()
             || !info.max_value.is_finite()
@@ -1634,18 +2219,17 @@ unsafe fn extract_parameters_from_extension(
             || info.min_value > info.default_value
             || info.default_value > info.max_value
         {
-            return Err("CLAP parameter metadata has invalid numeric bounds".to_string());
+            return Err(ScanError::ParameterBoundsInvalid);
         }
         // SAFETY: the callee performs no unsafe operation; it only scans the `info.name` array
         // owned by this frame for a NUL within bounds.
         let name = unsafe { bounded_parameter_name(&info.name) }?;
         // SAFETY: as above, the callee only scans the `info.module` array owned by this frame.
         let module = unsafe { bounded_parameter_module(&info.module) }?;
-        metadata_bytes = metadata_bytes.saturating_add(
-            name.len() + module.as_ref().map_or(0, String::len) + std::mem::size_of::<u32>() + 32,
-        );
+        metadata_bytes =
+            metadata_bytes.saturating_add(parameter_metadata_cost(&name, module.as_deref()));
         if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
-            return Err("CLAP parameter metadata exceeds scanner bounds".to_string());
+            return Err(ScanError::ParameterMetadataExceedsBounds);
         }
         descriptors.push(ScannedParameterDescriptor {
             id: info.id,
@@ -1680,19 +2264,19 @@ unsafe fn audio_channel_count(
     plugin: *const clap_sys::plugin::clap_plugin,
     audio_ports: &clap_plugin_audio_ports,
     is_input: bool,
-) -> Result<u32, String> {
+) -> Result<u32, ScanError> {
     let count = match audio_ports.count {
         // SAFETY: `count` is the extension's own callback and `plugin` is the instance it came
         // from, per this fn's contract.
         Some(count) => unsafe { count(plugin, is_input) },
-        None => return Err("CLAP audio-ports extension has no count callback".to_string()),
+        None => return Err(ScanError::AudioPortsNoCount),
     };
     if count > MAX_SCANNED_AUDIO_PORTS {
-        return Err("CLAP audio port count exceeds scanner bounds".to_string());
+        return Err(ScanError::AudioPortCountExceedsBounds);
     }
     let get = match audio_ports.get {
         Some(get) => get,
-        None => return Err("CLAP audio-ports extension has no info callback".to_string()),
+        None => return Err(ScanError::AudioPortsNoInfo),
     };
 
     let mut channels: u32 = 0;
@@ -1704,11 +2288,11 @@ unsafe fn audio_channel_count(
         // reported, and `info` is a live out-parameter.
         let described = unsafe { get(plugin, index, is_input, &mut info) };
         if !described {
-            return Err("CLAP audio-ports extension returned incomplete port info".to_string());
+            return Err(ScanError::AudioPortsIncomplete);
         }
         channels = channels.saturating_add(info.channel_count);
         if channels > MAX_SCANNED_AUDIO_CHANNELS {
-            return Err("CLAP audio channel count exceeds scanner bounds".to_string());
+            return Err(ScanError::AudioChannelCountExceedsBounds);
         }
     }
     Ok(channels)
@@ -1729,7 +2313,7 @@ unsafe fn extract_audio_channels(
         *const clap_sys::plugin::clap_plugin,
         *const std::os::raw::c_char,
     ) -> *const std::ffi::c_void,
-) -> Result<Option<ScannedAudioChannelCounts>, String> {
+) -> Result<Option<ScannedAudioChannelCounts>, ScanError> {
     // SAFETY: `get_extension` belongs to `plugin` per this fn's contract and the id is a
     // NUL-terminated static CLAP extension id.
     let extension = unsafe { get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr()) };
@@ -1757,36 +2341,33 @@ unsafe fn extract_audio_channels(
 unsafe fn extract_instance_metadata_from_factory(
     entry_ref: &clap_plugin_entry,
     plugin_id: &str,
-) -> Result<ScannedInstance, String> {
+) -> Result<ScannedInstance, ScanError> {
     // SAFETY: `entry_ref` is init'd and its library loaded for this whole call, per this fn's contract.
     let factory = unsafe { plugin_factory(entry_ref) }?;
     if plugin_id.is_empty() {
-        return Err("CLAP instance inspection has no plugin id to instantiate".to_string());
+        return Err(ScanError::InstanceNoPluginId);
     }
-    let plugin_id = CString::new(plugin_id)
-        .map_err(|_| "CLAP descriptor id contains a null byte".to_string())?;
+    let plugin_id = CString::new(plugin_id).map_err(|_| ScanError::DescriptorIdHasNul)?;
     let host = create_host_descriptor();
     let create_plugin = match factory.create_plugin {
         Some(create_plugin) => create_plugin,
-        None => return Err("CLAP factory has no plugin creation callback".to_string()),
+        None => return Err(ScanError::FactoryNoCreate),
     };
     // SAFETY: `create_plugin` is the live factory's own callback; `host` is a live host
     // descriptor and `plugin_id` a NUL-terminated string, both outliving the call.
     let plugin = unsafe { create_plugin(factory, &host, plugin_id.as_ptr()) };
     if plugin.is_null() {
-        return Err("CLAP factory could not create a metadata instance".to_string());
+        return Err(ScanError::InstanceNotCreated);
     }
     // SAFETY: `plugin` is non-null (checked above) and stays valid until `destroy` below.
     let plugin_ref = unsafe { &*plugin };
     let destroy = plugin_ref.destroy;
     let result = (|| {
-        let init = plugin_ref
-            .init
-            .ok_or_else(|| "CLAP metadata instance has no init callback".to_string())?;
+        let init = plugin_ref.init.ok_or(ScanError::InstanceNoInit)?;
         // SAFETY: `init` is the instance's own callback, called once on a created, not yet destroyed instance.
         let initialized = unsafe { init(plugin) };
         if !initialized {
-            return Err("CLAP metadata instance initialization failed".to_string());
+            return Err(ScanError::InstanceInitFailed);
         }
         // No extension lookup at all: the plugin can declare no parameters, no
         // audio ports and no editor, and every one of those is a fact rather
@@ -1840,7 +2421,7 @@ unsafe fn extract_instance_metadata_from_factory(
         // once, after the last use of `plugin` above.
         unsafe { destroy(plugin) };
     } else {
-        return Err("CLAP metadata instance has no destroy callback".to_string());
+        return Err(ScanError::InstanceNoDestroy);
     }
     result
 }
@@ -1890,7 +2471,7 @@ pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<Strin
 /// for the call.
 unsafe fn descriptor_metadata(
     descriptor: &clap_sys::plugin::clap_plugin_descriptor,
-) -> Result<ClapDescriptorMetadata, String> {
+) -> Result<ClapDescriptorMetadata, ScanError> {
     let metadata = ClapDescriptorMetadata {
         // SAFETY: `name` is a CLAP descriptor string, null or NUL-terminated.
         name: unsafe { owned_c_string(descriptor.name) },
@@ -1907,7 +2488,7 @@ unsafe fn descriptor_metadata(
         capabilities: None,
     };
     if metadata.id.is_empty() {
-        return Err("CLAP descriptor has no stable plugin id".to_string());
+        return Err(ScanError::DescriptorNoStableId);
     }
     Ok(metadata)
 }
@@ -1920,7 +2501,7 @@ unsafe fn descriptor_metadata(
 /// called and `deinit` not yet called, for the whole call.
 unsafe fn extract_from_factory(
     entry_ref: &clap_plugin_entry,
-) -> Result<Vec<ClapDescriptorMetadata>, String> {
+) -> Result<Vec<ClapDescriptorMetadata>, ScanError> {
     // SAFETY: `entry_ref` is init'd and its library loaded for this whole call, per this fn's contract.
     let factory = unsafe { plugin_factory(entry_ref) }?;
     // SAFETY: `factory` comes from that live entry, which stays loaded until this fn returns.
@@ -2444,7 +3025,11 @@ mod instance_metadata_tests {
         // library to unload.
         let error = unsafe { extract_from_factory(&entry) }
             .expect_err("an absurd bundle plugin count must fail closed");
-        assert_eq!(error, "CLAP bundle plugin count exceeds scanner bounds");
+        assert!(matches!(error, ScanError::FactoryPluginCountExceedsBounds));
+        assert_eq!(
+            error.to_string(),
+            "CLAP bundle plugin count exceeds scanner bounds"
+        );
     }
 
     /// Instance inspection instantiates the plugin its id names. The id is the
@@ -2741,7 +3326,11 @@ mod instance_metadata_tests {
         // instance stands in for one.
         let error = unsafe { audio_channel_count(std::ptr::null(), &UNBOUNDED_PORTS, true) }
             .expect_err("an absurd port count must fail closed");
-        assert_eq!(error, "CLAP audio port count exceeds scanner bounds");
+        assert!(matches!(error, ScanError::AudioPortCountExceedsBounds));
+        assert_eq!(
+            error.to_string(),
+            "CLAP audio port count exceeds scanner bounds"
+        );
     }
 
     #[test]
@@ -2751,15 +3340,26 @@ mod instance_metadata_tests {
         let unbounded =
             unsafe { extract_parameters_from_extension(std::ptr::null(), &UNBOUNDED_PARAMETERS) }
                 .expect_err("an unterminated parameter name must fail closed");
-        assert_eq!(unbounded, "CLAP parameter name is not null terminated");
+        assert!(matches!(
+            unbounded,
+            ScanError::ParameterText {
+                field: ParameterTextField::Name,
+                defect: ParameterTextDefect::NotNullTerminated,
+            }
+        ));
+        assert_eq!(
+            unbounded.to_string(),
+            "CLAP parameter name is not null terminated"
+        );
 
         // SAFETY: the callbacks in `DUPLICATE_PARAMETERS` never dereference `plugin`, so a null
         // instance stands in for one.
         let duplicate =
             unsafe { extract_parameters_from_extension(std::ptr::null(), &DUPLICATE_PARAMETERS) }
                 .expect_err("duplicate parameter ids must fail closed");
+        assert!(matches!(duplicate, ScanError::ParameterIdsInvalid));
         assert_eq!(
-            duplicate,
+            duplicate.to_string(),
             "CLAP parameter metadata has duplicate or invalid ids"
         );
     }

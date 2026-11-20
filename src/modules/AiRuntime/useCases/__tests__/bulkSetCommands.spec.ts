@@ -2198,6 +2198,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             expect(agentRunLifecycle.get(first.runId)?.receipts).toHaveLength(2);
             expect(readChatThreadContext()?.lastCommit).toEqual({
                 runId: first.runId,
+                batchId: secondReceipt.workId,
                 receiptIds: [secondReceipt.receiptIdentity],
                 standing: 'standing',
                 commands: [{ name: 'muteTrack', label: 'Mute track' }],
@@ -2305,6 +2306,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             expect(agentRunLifecycle.get(middle.runId)?.receipts).toHaveLength(3);
             expect(readChatThreadContext()?.lastCommit).toEqual({
                 runId: middle.runId,
+                batchId: lastReceipt.workId,
                 receiptIds: [lastReceipt.receiptIdentity],
                 standing: 'standing',
                 commands: [{ name: 'setTrackPan', label: expect.any(String) }],
