@@ -334,6 +334,16 @@ impl CrumbsEngine {
             CrumbsCommand::NoteOff { note } => {
                 self.note_off(note);
             }
+            CrumbsCommand::PadAuditionOn {
+                note,
+                velocity,
+                audition_id,
+            } => {
+                self.trigger_note(note, velocity, Some(audition_id));
+            }
+            CrumbsCommand::PadAuditionOff { audition_id } => {
+                self.pad_audition_off(audition_id);
+            }
             CrumbsCommand::SetMode(mode) => {
                 self.mode = mode;
             }
@@ -430,6 +440,10 @@ impl CrumbsEngine {
     }
 
     fn note_on(&mut self, note: u8, velocity: u8) {
+        self.trigger_note(note, velocity, None);
+    }
+
+    fn trigger_note(&mut self, note: u8, velocity: u8, pad_audition_id: Option<u32>) {
         let mut params = match self.mode_trigger_params(note, velocity) {
             Some(params) => params,
             None => return,
@@ -522,7 +536,7 @@ impl CrumbsEngine {
                 self.move_voice_to_steal_tail(voice_index);
             }
 
-            self.voices[voice_index].trigger(&params);
+            self.voices[voice_index].trigger_owned(&params, pad_audition_id);
 
             // Pitch lives on the voice, not on the engine: `trigger` derives
             // `speed` from the voice's *own* `tune_cents`, and this loop is the
@@ -563,13 +577,21 @@ impl CrumbsEngine {
 
     fn note_off(&mut self, note: u8) {
         for (idx, voice) in self.voices.iter_mut().enumerate() {
-            if voice.active && voice.note == note {
+            if voice.active && voice.note == note && voice.pad_audition_id.is_none() {
                 voice.release();
                 // If the voice becomes inactive after release (e.g., zero release time),
                 // free the slot.
                 if !voice.active {
                     self.allocator.release(idx);
                 }
+            }
+        }
+    }
+
+    fn pad_audition_off(&mut self, audition_id: u32) {
+        for voice in &mut self.voices {
+            if voice.active && voice.pad_audition_id == Some(audition_id) {
+                voice.release_pad_audition();
             }
         }
     }

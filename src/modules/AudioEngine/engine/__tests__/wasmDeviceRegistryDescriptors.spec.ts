@@ -635,6 +635,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function createResult(): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),
@@ -1309,6 +1310,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeCrumbsResult(ready: Promise<Record<string, unknown>>): CrumbsNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                startPadAudition: vi.fn(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 allNotesOff: vi.fn(),

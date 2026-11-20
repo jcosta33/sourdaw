@@ -28,97 +28,81 @@ function makePad(index: number): PadConfig {
 }
 
 describe('PadGrid', () => {
+    it('releases an owned press when the window loses focus', () => {
+        const release = vi.fn();
+        render(<PadGrid pads={[makePad(0)]} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={() => release} />);
+        fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' });
+        fireEvent.blur(window);
+        expect(release).toHaveBeenCalledOnce();
+    });
+
     it('should render', () => {
         const pads = Array.from({ length: 16 }, (_, i) => makePad(i));
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
         expect(screen.getByText('P0')).toBeInTheDocument();
     });
 
-    it('releases the note on mouse up after a mouse-down trigger', () => {
-        const pads = Array.from({ length: 16 }, (_, i) => makePad(i));
-        const onTriggerPad = vi.fn();
-        const onTriggerPadOff = vi.fn();
-        render(
-            <PadGrid
-                pads={pads}
-                selectedIndex={0}
-                onSelectPad={vi.fn()}
-                onTriggerPad={onTriggerPad}
-                onTriggerPadOff={onTriggerPadOff}
-            />
-        );
-
-        const pad = screen.getByText('P3').closest('button');
-        expect(pad).not.toBeNull();
-
-        fireEvent.mouseDown(pad!);
-        expect(onTriggerPad).toHaveBeenCalledWith(3);
-        expect(onTriggerPadOff).not.toHaveBeenCalled();
-
-        fireEvent.mouseUp(pad!);
-        expect(onTriggerPadOff).toHaveBeenCalledWith(3);
-    });
-
-    it('releases the note only once when mouse up is followed by mouse leave', () => {
-        const pads = Array.from({ length: 16 }, (_, i) => makePad(i));
-        const onTriggerPadOff = vi.fn();
-        render(
-            <PadGrid
-                pads={pads}
-                selectedIndex={0}
-                onSelectPad={vi.fn()}
-                onTriggerPad={vi.fn()}
-                onTriggerPadOff={onTriggerPadOff}
-            />
-        );
-
-        const pad = screen.getByText('P0').closest('button')!;
-        fireEvent.mouseDown(pad);
-        fireEvent.mouseUp(pad);
-        fireEvent.mouseLeave(pad);
-
-        expect(onTriggerPadOff).toHaveBeenCalledTimes(1);
-    });
-
-    it('releases the note on key up after a keyboard trigger', () => {
-        const pads = Array.from({ length: 16 }, (_, i) => makePad(i));
-        const onTriggerPad = vi.fn();
-        const onTriggerPadOff = vi.fn();
-        render(
-            <PadGrid
-                pads={pads}
-                selectedIndex={0}
-                onSelectPad={vi.fn()}
-                onTriggerPad={onTriggerPad}
-                onTriggerPadOff={onTriggerPadOff}
-            />
-        );
-
-        const pad = screen.getByText('P5').closest('button')!;
+    it('owns pointer and keyboard presses independently and ignores repeat', () => {
+        const releases = [vi.fn(), vi.fn()];
+        const acquire = vi.fn().mockReturnValueOnce(releases[0]).mockReturnValueOnce(releases[1]);
+        render(<PadGrid pads={[makePad(0)]} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={acquire} />);
+        const pad = screen.getByRole('button');
+        fireEvent.pointerDown(pad, { pointerId: 1, isPrimary: true, button: 0, pointerType: 'mouse' });
         fireEvent.keyDown(pad, { key: 'Enter' });
-        expect(onTriggerPad).toHaveBeenCalledWith(5);
-        expect(onTriggerPadOff).not.toHaveBeenCalled();
-
+        fireEvent.keyDown(pad, { key: 'Enter', repeat: true });
+        expect(acquire).toHaveBeenCalledTimes(2);
         fireEvent.keyUp(pad, { key: 'Enter' });
-        expect(onTriggerPadOff).toHaveBeenCalledWith(5);
+        expect(releases[1]).toHaveBeenCalledOnce();
+        expect(releases[0]).not.toHaveBeenCalled();
+        fireEvent.pointerLeave(pad, { pointerId: 1 });
+        fireEvent.pointerUp(pad, { pointerId: 1 });
+        expect(releases[0]).toHaveBeenCalledOnce();
     });
 
-    it('does not release a pad that was never triggered', () => {
-        const pads = Array.from({ length: 16 }, (_, i) => makePad(i));
-        const onTriggerPadOff = vi.fn();
-        render(
-            <PadGrid
-                pads={pads}
-                selectedIndex={0}
-                onSelectPad={vi.fn()}
-                onTriggerPad={vi.fn()}
-                onTriggerPadOff={onTriggerPadOff}
-            />
-        );
+    it('releases the original press after reorder and on unmount', () => {
+        const first = vi.fn();
+        const second = vi.fn();
+        const acquire = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+        const pads = [makePad(0), makePad(1)];
+        const props = { selectedIndex: 0, onSelectPad: vi.fn(), onTriggerPad: acquire };
+        const view = render(<PadGrid {...props} pads={pads} />);
+        const firstPad = screen.getByRole('button', { name: 'P0 (empty)' });
+        fireEvent.keyDown(firstPad, { key: ' ' });
+        view.rerender(<PadGrid {...props} pads={[pads[1]!, pads[0]!]} />);
+        expect(first).toHaveBeenCalledOnce();
 
-        const pad = screen.getByText('P2').closest('button')!;
-        // A stray mouse leave with no preceding mouse down must not emit a note-off.
-        fireEvent.mouseLeave(pad);
-        expect(onTriggerPadOff).not.toHaveBeenCalled();
+        fireEvent.keyDown(firstPad, { key: 'Enter' });
+        expect(second).not.toHaveBeenCalled();
+        view.unmount();
+        expect(second).toHaveBeenCalledOnce();
+        expect(first).toHaveBeenCalledOnce();
+    });
+    it('retires a moved hold before a new pad takes the same key', () => {
+        const first = vi.fn();
+        const second = vi.fn();
+        const acquire = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+        const pads = [makePad(0), makePad(1)];
+        const props = { selectedIndex: 0, onSelectPad: vi.fn(), onTriggerPad: acquire };
+        const view = render(<PadGrid {...props} pads={pads} />);
+        const old = screen.getByRole('button', { name: 'P0 (empty)' });
+        fireEvent.keyDown(old, { key: 'Enter' });
+        view.rerender(<PadGrid {...props} pads={[pads[1]!, pads[0]!]} />);
+        expect(first).toHaveBeenCalledOnce();
+        const next = screen.getByRole('button', { name: 'P1 (empty)' });
+        fireEvent.keyDown(next, { key: 'Enter' });
+        fireEvent.keyUp(old, { key: 'Enter' });
+        expect(second).not.toHaveBeenCalled();
+        fireEvent.keyUp(next, { key: 'Enter' });
+        expect(second).toHaveBeenCalledOnce();
+    });
+
+    it('releases on pointer cancellation and ignores later terminals', () => {
+        const release = vi.fn();
+        render(<PadGrid pads={[makePad(0)]} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={() => release} />);
+        const pad = screen.getByRole('button');
+        fireEvent.pointerDown(pad, { pointerId: 7, isPrimary: true, button: 0 });
+        fireEvent.pointerCancel(document.body, { pointerId: 7 });
+        fireEvent.pointerUp(pad, { pointerId: 7 });
+        expect(release).toHaveBeenCalledOnce();
     });
 });

@@ -659,6 +659,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
             ready: false,
+            startPadAudition: () => undefined,
             noteOn: () => {},
             noteOff: () => {},
             allNotesOff: () => {},
@@ -699,6 +700,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                     },
                     crumbsControls: {
                         ready: true,
+                        startPadAudition: result.startPadAudition,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         allNotesOff: result.allNotesOff,
