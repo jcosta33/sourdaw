@@ -6,7 +6,7 @@ import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { refreshExternalPluginTails } from '../refreshExternalPluginTails';
 import { unloadPlugin } from '../unloadPlugin';
 
-import type { PluginInstance, PluginTailReading } from '../../../repositories/pluginBridge/types';
+import type { PluginInstance, PluginTailChange, PluginTailReading } from '../../../repositories/pluginBridge/types';
 
 // A VST3 plugin raises no tail-changed event, so the figure is re-read on
 // demand: the real activation and unload use cases down to the IPC repository
@@ -22,9 +22,22 @@ vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mo
 vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadPluginRepo }));
 vi.mock('../../../repositories/pluginBridge/readPluginTails', () => ({ readPluginTails: mocks.readPluginTailsRepo }));
 vi.mock('../../../repositories/pluginBridge/onPluginTailChanged', () => ({
-    onPluginTailChanged: () => Promise.resolve(() => {}),
+    onPluginTailChanged: (handler: (change: PluginTailChange) => void) => {
+        nativeTailHandler = handler;
+        return Promise.resolve(() => {});
+    },
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.loggerWarn } }));
+
+/** The handler the single live `plugin-tail-changed` subscription installed. */
+let nativeTailHandler: ((change: PluginTailChange) => void) | undefined;
+
+function emitTailChange(change: PluginTailChange): void {
+    if (!nativeTailHandler) {
+        throw new Error('no native tail subscription is live');
+    }
+    nativeTailHandler(change);
+}
 
 function loadedInstance(instanceId: string, tailSamples: number): PluginInstance {
     return {
@@ -93,6 +106,52 @@ describe('refreshExternalPluginTails', () => {
         await refresh;
 
         expect(tailOf('inst-1')).toBeUndefined();
+    });
+
+    it('does not let an older refresh that resolves last overwrite a newer one', async () => {
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        const olderAnswer = Promise.withResolvers<PluginTailReading[]>();
+        const newerAnswer = Promise.withResolvers<PluginTailReading[]>();
+        mocks.readPluginTailsRepo.mockReturnValueOnce(olderAnswer.promise).mockReturnValueOnce(newerAnswer.promise);
+
+        const older = refreshExternalPluginTails();
+        const newer = refreshExternalPluginTails();
+        newerAnswer.resolve([{ instance_id: 'inst-1', tail_samples: 240_000 }]);
+        await newer;
+        olderAnswer.resolve([{ instance_id: 'inst-1', tail_samples: 48_000 }]);
+        await older;
+
+        expect(tailOf('inst-1')).toBe(240_000);
+    });
+
+    it('does not overwrite a tail the plugin announced while the read was in flight', async () => {
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        const answer = Promise.withResolvers<PluginTailReading[]>();
+        mocks.readPluginTailsRepo.mockReturnValueOnce(answer.promise);
+
+        const refresh = refreshExternalPluginTails();
+        emitTailChange({ instance_id: 'inst-1', tail_samples: 300_000 });
+        answer.resolve([{ instance_id: 'inst-1', tail_samples: 240_000 }]);
+        await refresh;
+
+        expect(tailOf('inst-1')).toBe(300_000);
+    });
+
+    it('does not give an instance reloaded under the same id the old runtime figure', async () => {
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        const answer = Promise.withResolvers<PluginTailReading[]>();
+        mocks.readPluginTailsRepo.mockReturnValueOnce(answer.promise);
+
+        const refresh = refreshExternalPluginTails();
+        await unloadPlugin('inst-1');
+        mocks.loadPluginRepo.mockImplementationOnce((_pluginId, instanceId) =>
+            Promise.resolve(loadedInstance(instanceId, 50_000))
+        );
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        answer.resolve([{ instance_id: 'inst-1', tail_samples: 240_000 }]);
+        await refresh;
+
+        expect(tailOf('inst-1')).toBe(50_000);
     });
 
     it('keeps every stored tail and warns when the read is rejected', async () => {

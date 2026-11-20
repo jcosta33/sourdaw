@@ -31,7 +31,45 @@ export const externalPluginTailStore = createStore<ExternalPluginTailState>({
  * modules read this store and never write it.
  */
 
+/**
+ * Which write last touched each instance's tail. A seed, a revision and a drop
+ * each take the next value of one counter, and a drop keeps its own rather than
+ * resetting, so a stamp issued before an instance was dropped never matches one
+ * a later seed of the same id takes.
+ */
+const tailStamps = new Map<string, number>();
+let lastTailStamp = 0;
+
+function advanceTailStamp(instanceId: string): void {
+    lastTailStamp += 1;
+    tailStamps.set(instanceId, lastTailStamp);
+}
+
+/** Each instance's stamp as it stands now, for a read that is about to be issued. */
+export function issueExternalPluginTailRead(instanceIds: readonly string[]): ReadonlyMap<string, number | undefined> {
+    return new Map(instanceIds.map((instanceId) => [instanceId, tailStamps.get(instanceId)]));
+}
+
+/**
+ * Publish a tail a host read answered, only if nothing has written that
+ * instance's tail since the read was issued. A newer answer, a
+ * `plugin-tail-changed` revision, or an unload and reload under the same id
+ * each advance the stamp, and the answer is then older than what the store
+ * holds. Publishing advances the stamp too, so an older overlapping read drops.
+ */
+export function publishExternalPluginTailRead(
+    instanceId: string,
+    issuedStamp: number | undefined,
+    tailSamples: number
+): void {
+    if (tailStamps.get(instanceId) !== issuedStamp) {
+        return;
+    }
+    reviseExternalPluginTail(instanceId, tailSamples);
+}
+
 export function writeExternalPluginTail(instanceId: string, tailSamples: number): void {
+    advanceTailStamp(instanceId);
     externalPluginTailStore.update((state) => {
         const current = state ?? defaultExternalPluginTailState;
         return {
@@ -48,11 +86,12 @@ export function writeExternalPluginTail(instanceId: string, tailSamples: number)
  * and hands it to the load's seed instead.
  */
 export function reviseExternalPluginTail(instanceId: string, tailSamples: number): void {
+    if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] === undefined) {
+        return;
+    }
+    advanceTailStamp(instanceId);
     externalPluginTailStore.update((state) => {
         const current = state ?? defaultExternalPluginTailState;
-        if (current.tailSamplesByInstanceId[instanceId] === undefined) {
-            return current;
-        }
         return {
             ...current,
             tailSamplesByInstanceId: { ...current.tailSamplesByInstanceId, [instanceId]: tailSamples },
@@ -61,6 +100,7 @@ export function reviseExternalPluginTail(instanceId: string, tailSamples: number
 }
 
 export function dropExternalPluginTail(instanceId: string): void {
+    advanceTailStamp(instanceId);
     externalPluginTailStore.update((state) => {
         const current = state ?? defaultExternalPluginTailState;
         if (current.tailSamplesByInstanceId[instanceId] === undefined) {
