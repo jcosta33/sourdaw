@@ -1,8 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { COMPRESSOR_AUTO_MAKEUP_TWIN_NODE } from '../../models/DeviceParamLaws';
 import { createOfflineDeviceNode } from '../../repositories/deviceNodeFactory';
-import { resolveDeviceCurveWriteTargets, resolveDeviceParam, resolveDrumKit } from '../deviceResolution';
+import { applyBuiltinCompressorParams } from '../../repositories/devices/dynamics/applyCompressorAutoMakeup';
+import {
+    resolveDeviceCurveWriteTargets,
+    resolveDeviceParam,
+    resolveDeviceParamTargets,
+    resolveDrumKit,
+} from '../deviceResolution';
 
 describe('resolveDrumKit', () => {
     it('should return null when no drum kit device is present', () => {
@@ -90,4 +97,70 @@ describe('resolveDeviceCurveWriteTargets', () => {
         expect(resolveDeviceCurveWriteTargets('builtin-limiter', 'not-a-parameter', limiter)).toBeNull();
         expect(resolveDeviceCurveWriteTargets('builtin-gain', 'lim-ceiling', gain)).toBeNull();
     });
+});
+
+describe('resolveDeviceParamTargets compressor Auto Makeup twin', () => {
+    type CompressorParam = 'threshold' | 'ratio' | 'attack' | 'release' | 'knee';
+
+    function createCompressorNode(autoMakeup: 0 | 1) {
+        const context = createMockAudioContext();
+        const node = createOfflineDeviceNode({
+            context: asBaseAudioContext(context),
+            deviceType: 'builtin-compressor',
+        });
+        if (!node) {
+            throw new Error('expected a builtin-compressor offline node');
+        }
+        // The mock's nodes carry a bare context stub; the twin is built from the node's own context.
+        Object.defineProperty(node.nodes[0], 'context', { value: context });
+        applyBuiltinCompressorParams(node, { 'comp-auto-makeup': autoMakeup });
+        return node;
+    }
+
+    // Descriptor times are milliseconds; the compressor's are seconds.
+    const rows: readonly { parameterId: string; property: CompressorParam; scale: number }[] = [
+        { parameterId: 'comp-threshold', property: 'threshold', scale: 1 },
+        { parameterId: 'comp-ratio', property: 'ratio', scale: 1 },
+        { parameterId: 'comp-attack', property: 'attack', scale: 1 / 1000 },
+        { parameterId: 'comp-release', property: 'release', scale: 1 / 1000 },
+        { parameterId: 'comp-knee', property: 'knee', scale: 1 },
+    ];
+
+    it.each(rows)(
+        'targets the compressor and its Auto Makeup twin for $parameterId when Auto Makeup is off',
+        ({ parameterId, property, scale }) => {
+            const node = createCompressorNode(0);
+            const compressor = node.nodes[0] as DynamicsCompressorNode;
+            const twin = node.namedNodes?.[COMPRESSOR_AUTO_MAKEUP_TWIN_NODE] as DynamicsCompressorNode | undefined;
+            if (!twin) {
+                throw new Error('expected Auto Makeup off to build the twin');
+            }
+
+            const targets = resolveDeviceParamTargets('builtin-compressor', parameterId, node);
+
+            expect(targets).toHaveLength(2);
+            expect(new Set(targets.map((target) => target.audioParam))).toEqual(
+                new Set([compressor[property], twin[property]])
+            );
+            expect(targets.map((target) => [target.scale, target.offset, target.convert])).toEqual([
+                [scale, 0, undefined],
+                [scale, 0, undefined],
+            ]);
+        }
+    );
+
+    it.each(rows)(
+        'targets only the compressor for $parameterId when Auto Makeup is on',
+        ({ parameterId, property, scale }) => {
+            const node = createCompressorNode(1);
+            const compressor = node.nodes[0] as DynamicsCompressorNode;
+
+            expect(node.namedNodes?.[COMPRESSOR_AUTO_MAKEUP_TWIN_NODE]).toBeUndefined();
+            const targets = resolveDeviceParamTargets('builtin-compressor', parameterId, node);
+
+            expect(targets).toHaveLength(1);
+            expect(targets[0]?.audioParam).toBe(compressor[property]);
+            expect(targets[0]?.scale).toBe(scale);
+        }
+    );
 });
