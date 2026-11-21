@@ -12,6 +12,7 @@ import {
     resolveRecipeTarget,
 } from './resolveRecipeTarget';
 import { servesAnySourceScope } from './servesAnySourceScope';
+import { servesDrumPart } from './servesDrumPart';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -166,7 +167,7 @@ function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDesc
 /**
  * A recipe naming no role serves any source scope. Any other recipe matches the role resolved, or
  * every role when nothing resolved one; a target whose own role resolves none matches only the
- * recipes that need no role.
+ * recipes that need no role. A drum-family target matches only the recipes serving its drum part.
  */
 function matchesRole(recipe: MixRecipe, target: ResolvedTarget | null, role: ResolvedRole): boolean {
     if (recipe.roles.length === 0) {
@@ -175,7 +176,7 @@ function matchesRole(recipe: MixRecipe, target: ResolvedTarget | null, role: Res
     if (role.recipeRole === null) {
         return role.source === 'none';
     }
-    return recipe.roles.includes(role.recipeRole);
+    return recipe.roles.includes(role.recipeRole) && servesDrumPart(recipe, target?.canonicalRole);
 }
 
 function isExcludedForChain(recipe: MixRecipe, target: ResolvedTarget): boolean {

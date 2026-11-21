@@ -1,22 +1,13 @@
 import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
 import { type ToolCallResult } from '../../models/ToolCallResult';
+import { type VibeBatchChosenValue, type VibeBatchPairValues } from '../../models/VibeBatchValueChoice';
 
 import {
     VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME,
     VIBE_BATCH_VALUE_KEEP_DEFAULTS_TOOL_NAME,
     type VibeBatchValuePair,
 } from './buildVibeBatchValueRequest';
-
-/** One parameter value as recipe expansion takes it. */
-export type VibeBatchChosenValue = { readonly step: number; readonly paramId: string; readonly value: number };
-
-/** The values one recipe-and-track pair of the batch expands with. */
-export type VibeBatchPairValues = {
-    readonly targetId: string;
-    readonly recipeId: string;
-    readonly values: readonly VibeBatchChosenValue[];
-};
 
 export type VibeBatchValueReply =
     | { status: 'chosen'; pairs: readonly VibeBatchPairValues[] }

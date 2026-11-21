@@ -1,9 +1,9 @@
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
+import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { type getProjectContext } from '../getProjectContext';
 import { groundApplicationRecipeBatch } from '../groundApplicationRecipeBatch';
-import { type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
 import { compileVibeBatchMetricState } from '../vibeRun/compileVibeBatchMetricState';
 import { readVibeBatchPairs } from '../vibeRun/readVibeBatchPairs';
 
