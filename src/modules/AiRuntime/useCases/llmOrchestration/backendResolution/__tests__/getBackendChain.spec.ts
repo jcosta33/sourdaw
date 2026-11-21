@@ -118,4 +118,30 @@ describe('getBackendChain', () => {
         expect(mocks.runtimeStatus.value).toMatchObject({ state: 'generating' });
         expect(getBackendChain({ requireInstalledModel: true })).toEqual(['webllm']);
     });
+
+    it('puts the ready hosted backend first for a remote-allowed route planned while a turn answers', () => {
+        mocks.isWebGpuAvailable.mockReturnValue(true);
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { gpu: {} },
+            configurable: true,
+            writable: true,
+        });
+        mocks.runtimeStatus.value = { state: 'ready', backend: 'cloud', modelId: 'hosted-model' };
+        const turn = answeringStatus.openTurn();
+        answeringStatus.publish(turn, {
+            state: 'generating',
+            backend: 'cloud',
+            provider: 'anthropic',
+            modelId: 'hosted-model',
+        });
+
+        expect(mocks.runtimeStatus.value).toMatchObject({ state: 'generating' });
+        expect(
+            getBackendChain({
+                allowedTrust: ['release-owned-local', 'configured-remote'],
+                dataPolicy: 'remote-allowed',
+                costPolicy: 'allow-paid-remote',
+            })
+        ).toEqual(['cloud', 'webllm']);
+    });
 });
