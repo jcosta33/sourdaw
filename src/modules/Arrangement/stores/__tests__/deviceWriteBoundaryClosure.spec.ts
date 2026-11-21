@@ -1128,6 +1128,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: new file entry, measured 1 — the `devices:` copies a planned
+        // duplicate takes, cloned from the planned source with planned ids. A pure plan
+        // value returned to the batch planner; nothing is published.
+        'src/modules/Arrangement/handlers/plannedTrackConstruction.ts': 1,
         // Count provenance: member assignment, measured 1 — `projected.devices = devices`
         // in the prior-batch track projection (#7166 counts member writes).
         'src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts': 1,
@@ -1155,6 +1159,11 @@ const DEVICE_DATA_COUNTS = {
         // assignment (#7166): `target.owner.devices = …map(…)`.
         'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 4,
         'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        // Count provenance: new file entry, measured 2 — the copies type's `devices`
+        // field and the `devices:` the duplicate field law returns. A pure function of
+        // its arguments: duplicateTrack writes its result through `updateTrack` (counted
+        // there) and the batch planner keeps it as a plan value.
+        'src/modules/Arrangement/models/DuplicatedTrackFields.ts': 2,
         // Count provenance: measured 2 — the `Owner` type's `devices` field and
         // the owner pushed from a track's devices, both moved unchanged out of
         // DevicePatchWritePlan, plus 1 member assignment (#7166):

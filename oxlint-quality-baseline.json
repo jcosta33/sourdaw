@@ -7542,11 +7542,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/folder/createFolder.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 7
