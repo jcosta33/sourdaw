@@ -1176,6 +1176,55 @@ describe('mandatory planning tools', () => {
                 expect(outcome.reason).toContain('Use a hosted model');
             });
 
+            it('never loads the cached Pro model on a machine the picker hides it from; it refuses naming no local planner', async () => {
+                machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
+                engineState.activeModelId = PRO_MODEL_ID;
+                mocks.isWebLlmLoaded.mockReturnValue(false);
+
+                const { outcome } = await sendLocalRequest(emptyProject());
+
+                expect(initWebLlmEngine).not.toHaveBeenCalled();
+                expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                if (outcome.status !== 'rejected') {
+                    throw new Error('Expected the hidden planner to be refused.');
+                }
+                expect(outcome.reason).not.toContain('Pro');
+                expect(outcome.reason).toContain('Use a hosted model');
+            });
+
+            it('refuses without loading, naming no local model, when the machine fits no local model', async () => {
+                machineMemoryStore.set({ state: 'known', totalBytes: 2_000_000_000, gpuBudgetBytes: null });
+                engineState.activeModelId = PRO_MODEL_ID;
+                mocks.isWebLlmLoaded.mockReturnValue(false);
+
+                const { outcome } = await sendLocalRequest(emptyProject());
+
+                expect(initWebLlmEngine).not.toHaveBeenCalled();
+                if (outcome.status !== 'rejected') {
+                    throw new Error('Expected a machine fitting no local model to be refused.');
+                }
+                for (const name of ['Light', 'Standard', 'Pro', 'Large']) {
+                    expect(outcome.reason).not.toContain(name);
+                }
+                expect(outcome.reason).toContain('Use a hosted model');
+            });
+
+            it('loads the offered planner, not the hidden active model, when the active one does not fit', async () => {
+                machineMemoryStore.set({
+                    state: 'known',
+                    totalBytes: 16_000_000_000,
+                    gpuBudgetBytes: 16_000_000_000,
+                });
+                engineState.activeModelId = 'Llama-3.1-70B-Instruct-q3f16_1-MLC';
+                mocks.isWebLlmLoaded.mockReturnValue(false);
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+
+                await sendLocalRequest(emptyProject());
+
+                expect(initWebLlmEngine).toHaveBeenCalledTimes(1);
+                expect(vi.mocked(initWebLlmEngine).mock.calls[0]?.[0]).toBe(PRO_MODEL_ID);
+            });
+
             it('admits the Large model to plan like Pro, at the same window, instead of refusing it', async () => {
                 const largeModelId = 'Llama-3.1-70B-Instruct-q3f16_1-MLC';
                 engineState.activeModelId = largeModelId;

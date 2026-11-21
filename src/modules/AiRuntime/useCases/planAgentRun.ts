@@ -16,7 +16,7 @@ import {
     type TerminalMeasurementSettlement,
 } from '../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
-import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
+import { isRuntimeActionType } from '../models/RuntimeAction';
 import { type VibeRunInitialBaselineRefusal } from '../models/VibeRunPlan';
 import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
@@ -372,11 +372,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     if (input.actions.length !== input.actionLabels.length) {
         return { status: 'rejected', reason: 'Provider actions must have one canonical application label each.' };
     }
-    if (
-        input.actions.some(
-            (action) => !RUNTIME_ACTION_TYPES.includes(action.type as (typeof RUNTIME_ACTION_TYPES)[number])
-        )
-    ) {
+    if (input.actions.some((action) => !isRuntimeActionType(action.type))) {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
     const applicationAssignedTargetIds = new Set(input.applicationAssignedTargetIds ?? []);

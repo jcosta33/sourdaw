@@ -14,6 +14,7 @@ import {
     resolveRecipeTarget,
 } from './resolveRecipeTarget';
 import { servesAnySourceScope } from './servesAnySourceScope';
+import { servesDrumPart } from './servesDrumPart';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -90,8 +91,9 @@ function listDeviceIds(ids: readonly string[]): string {
 }
 
 /**
- * What a recipe may never be applied to, whatever its values: a folder, a frozen track, or another
- * role. A recipe naming no role serves any source track and is refused only on a bus or the master.
+ * What a recipe may never be applied to, whatever its values: a folder, a frozen track, another
+ * role, or a drum part a drums recipe does not serve. A recipe naming no role serves any source
+ * track and is refused only on a bus or the master.
  */
 function findTargetRefusal(recipe: MixRecipe, target: ResolvedTarget, role: ResolvedRole): Refusal | null {
     if (target.kind === 'folder') {
@@ -118,6 +120,11 @@ function findTargetRefusal(recipe: MixRecipe, target: ResolvedTarget, role: Reso
     if (!recipe.roles.includes(role.recipeRole)) {
         return refuse(
             `recipe "${recipe.id}" is authored for ${recipe.roles.join(', ')}, but target "${target.id}" resolves to ${role.recipeRole}.`
+        );
+    }
+    if (recipe.drumParts !== undefined && !servesDrumPart(recipe, target.canonicalRole)) {
+        return refuse(
+            `recipe "${recipe.id}" serves the drum parts ${recipe.drumParts.join(', ')}, but target "${target.id}" has the canonical role ${target.canonicalRole}.`
         );
     }
     return null;

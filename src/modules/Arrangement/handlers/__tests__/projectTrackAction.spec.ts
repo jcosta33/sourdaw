@@ -56,6 +56,8 @@ describe('projectTrackAction', () => {
                 'setSend',
                 'setClipGain',
                 'removeSend',
+                'freezeTrack',
+                'unfreezeTrack',
             ].sort()
         );
     });
@@ -79,6 +81,16 @@ describe('projectTrackAction', () => {
             soloed: true,
             outputId: 'out',
         });
+    });
+
+    it('projects a freeze and an unfreeze onto the track', () => {
+        const frozen = project([{ type: 'freezeTrack', payload: { trackId: 't' } }]);
+        expect(frozen.frozen).toBe(true);
+        const unfrozen = project([
+            { type: 'freezeTrack', payload: { trackId: 't' } },
+            { type: 'unfreezeTrack', payload: { trackId: 't' } },
+        ]);
+        expect(unfrozen.frozen).toBe(false);
     });
 
     it('adds, adjusts and removes a send', () => {

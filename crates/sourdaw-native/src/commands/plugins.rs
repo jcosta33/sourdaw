@@ -1,6 +1,7 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::commands::graph::{self, StripReportPayload};
+use crate::commands::graph_refusals::GraphRefusal;
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
     plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
@@ -13,22 +14,25 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
 };
-use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+use crate::state::{locked_or_poisoned, AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
 use daw_engine::timeline::DeviceKind;
+use daw_engine::CommandError;
 use daw_plugin_host::scanner::{
     self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
     ScannedPlugin,
 };
 use daw_plugin_host::{
-    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, ProcessMode, Vst3Wrapper,
+    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode,
+    Vst3Wrapper,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
@@ -82,6 +86,263 @@ pub struct PluginUnloadReply {
     pub errors: Vec<String>,
     pub reports: Vec<StripReportPayload>,
 }
+
+/// Why a plugin scan, load, unload or control command refused.
+///
+/// `Display` is the text the renderer receives through the napi edge, which
+/// converts with `to_string()`; each message is byte-identical to the one it
+/// replaced (ADR 0059). [`Self::Host`] and [`Self::Recorded`] pass through text
+/// this module does not build: the host seams (control path, UI-thread hop)
+/// still answer in `String`, and the registry store records a refusal's text.
+#[derive(Debug)]
+pub(crate) enum PluginCommandError {
+    /// A state store's mutex was poisoned.
+    Lock {
+        store: &'static str,
+        cause: String,
+    },
+    ScanInProgress,
+    ScanTask(tokio::task::JoinError),
+    RegistryLookupTask(tokio::task::JoinError),
+    NotInRegistry {
+        plugin_id: String,
+    },
+    /// The refusal the registry store recorded for this key earlier.
+    Recorded(String),
+    AlreadyBeingLookedFor {
+        name: String,
+        path: String,
+    },
+    AlreadyBeingChecked {
+        name: String,
+        path: String,
+    },
+    NotAuthorized {
+        name: String,
+        path: String,
+        refusal: ScanPolicyRefusal,
+    },
+    ResolvesElsewhere {
+        name: String,
+        path: String,
+        resolved: PathBuf,
+    },
+    ChangedBeforeOpen {
+        name: String,
+        path: String,
+    },
+    RescanDidNotFinish {
+        name: String,
+        path: String,
+        reason: String,
+    },
+    RescanTimedOutTwice {
+        name: String,
+        path: String,
+        reason: String,
+    },
+    GoneFromLastKnownPath {
+        name: String,
+        path: String,
+        reason: String,
+    },
+    ChangedSinceScanned {
+        name: String,
+        path: String,
+        reason: String,
+    },
+    UnknownFormat {
+        format: String,
+    },
+    /// A recognised format the scanner refuses, in the scanner's own words.
+    FormatNotHosted(&'static str),
+    NoHostBackend {
+        format: &'static str,
+    },
+    MissingDescriptorId {
+        backend: HostBackend,
+        path: String,
+        plugin_id: String,
+    },
+    /// The plugin backend refused: construction, or a state read or restore.
+    Runtime(PluginError),
+    InstanceAlreadyExists {
+        instance_id: String,
+    },
+    SessionFull,
+    ActivationFailed {
+        name: String,
+    },
+    ActivationRateMismatch {
+        name: String,
+        runtime_rate: f64,
+        engine_rate: f64,
+    },
+    /// The engine refused a command.
+    Engine(CommandError),
+    /// The graph registry could not report a touched strip.
+    Graph(GraphRefusal),
+    /// A host seam's own refusal text: the control path or the UI-thread hop.
+    Host(String),
+    RuntimeGateHeld,
+    LifecycleHeld,
+    NoEngineRunning,
+    EngineNotRunning,
+    NoInstance {
+        instance_id: String,
+    },
+    NoEngineInstance {
+        instance_id: String,
+    },
+}
+
+impl PluginCommandError {
+    /// The refusal for a poisoned `store`, for `map_err`.
+    fn lock<Guard>(store: &'static str) -> impl FnOnce(PoisonError<Guard>) -> Self {
+        move |error| Self::poisoned(store, &error)
+    }
+
+    /// The same refusal, leaving the poisoned guard with the caller.
+    fn poisoned<Guard>(store: &'static str, error: &PoisonError<Guard>) -> Self {
+        Self::Lock {
+            store,
+            cause: error.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for PluginCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Lock { store, cause } => write!(f, "Failed to lock {store}: {cause}"),
+            Self::ScanInProgress => f.write_str("Plugin scan already in progress"),
+            Self::ScanTask(error) => write!(f, "Plugin scan task failed: {error}"),
+            Self::RegistryLookupTask(error) => write!(f, "Plugin registry lookup failed: {error}"),
+            Self::NotInRegistry { plugin_id } => write!(
+                f,
+                "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
+            ),
+            Self::Recorded(reason) | Self::Host(reason) => f.write_str(reason),
+            Self::Graph(refusal) => write!(f, "{refusal}"),
+            Self::AlreadyBeingLookedFor { name, path } => write!(
+                f,
+                "Plugin '{name}' is already being looked for at {path}. Try again once that finishes."
+            ),
+            Self::AlreadyBeingChecked { name, path } => write!(
+                f,
+                "Plugin '{name}' is already being checked at {path}. Try again once that finishes."
+            ),
+            Self::NotAuthorized {
+                name,
+                path,
+                refusal,
+            } => write!(f, "Plugin '{name}' will not be loaded from {path}: {refusal}"),
+            Self::ResolvesElsewhere {
+                name,
+                path,
+                resolved,
+            } => write!(
+                f,
+                "Plugin '{name}' will not be loaded from {path}: it now resolves to {}, not the location that was checked.",
+                resolved.display()
+            ),
+            Self::ChangedBeforeOpen { name, path } => write!(
+                f,
+                "Plugin '{name}' at {path} changed after it was checked and before it was opened. Load it again to check it afresh."
+            ),
+            Self::RescanDidNotFinish { name, path, reason } => write!(
+                f,
+                "Plugin '{name}' at {path} could not be checked: {reason}. The check did not finish in time and nothing was decided about the plugin — try loading it again."
+            ),
+            Self::RescanTimedOutTwice { name, path, reason } => write!(
+                f,
+                "Plugin '{name}' at {path} could not be checked: {reason} on two attempts, so it will not be checked again this session. Rescan the folder it lives in."
+            ),
+            Self::GoneFromLastKnownPath { name, path, reason } => write!(
+                f,
+                "Plugin '{name}' could not be loaded from its last known location {path}: {reason}. It has been moved, removed or replaced since it was scanned — reinstall it there, or scan the folder it lives in now."
+            ),
+            Self::ChangedSinceScanned { name, path, reason } => write!(
+                f,
+                "Plugin '{name}' at {path} has changed since it was scanned and could not be checked again: {reason}. Rescan the folder it lives in."
+            ),
+            Self::UnknownFormat { format } => write!(f, "Unknown plugin format: {format}"),
+            Self::FormatNotHosted(refusal) => f.write_str(refusal),
+            Self::NoHostBackend { format } => {
+                write!(f, "No host backend for plugin format {format}")
+            }
+            Self::MissingDescriptorId {
+                backend,
+                path,
+                plugin_id,
+            } => write!(
+                f,
+                "{} plugin {path} reports no descriptor id in the registry entry for {plugin_id}. Rescan the plugin directory.",
+                backend.display_name()
+            ),
+            Self::Runtime(error) => write!(f, "{error}"),
+            Self::InstanceAlreadyExists { instance_id } => {
+                write!(f, "Plugin instance already exists: {instance_id}")
+            }
+            Self::SessionFull => write!(
+                f,
+                "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+            ),
+            Self::ActivationFailed { name } => {
+                write!(f, "plugin '{name}' failed to activate for engine-owned runtime")
+            }
+            Self::ActivationRateMismatch {
+                name,
+                runtime_rate,
+                engine_rate,
+            } => write!(
+                f,
+                "Cannot attach plugin '{name}': it was activated at {runtime_rate} Hz but the engine renders at {engine_rate} Hz"
+            ),
+            Self::Engine(error) => write!(f, "{error}"),
+            Self::RuntimeGateHeld => {
+                f.write_str("the plugin runtime gate is held by another operation")
+            }
+            Self::LifecycleHeld => f.write_str("a load or unload holds this instance"),
+            Self::NoEngineRunning => f.write_str("no native engine is running"),
+            Self::EngineNotRunning => f.write_str("Native engine not running"),
+            Self::NoInstance { instance_id } => write!(f, "No plugin instance: {instance_id}"),
+            Self::NoEngineInstance { instance_id } => {
+                write!(f, "No engine plugin for instance {instance_id}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PluginCommandError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ScanTask(error) | Self::RegistryLookupTask(error) => Some(error),
+            Self::NotAuthorized { refusal, .. } => Some(refusal),
+            Self::Runtime(error) => Some(error),
+            Self::Engine(error) => Some(error),
+            Self::Graph(refusal) => Some(refusal),
+            _ => None,
+        }
+    }
+}
+
+/// The scan policy's refusal of a plugin path, in the policy's own words.
+///
+/// `host::plugin_scan_policy` answers in text, so this carries that text
+/// unchanged; it is its own type so a load refusal can name the policy as its
+/// source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ScanPolicyRefusal(String);
+
+impl fmt::Display for ScanPolicyRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ScanPolicyRefusal {}
+
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
@@ -255,8 +516,8 @@ fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> 
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
     instance_id: &str,
-    scheduler_removal_result: Result<(), String>,
-) -> Result<Option<EnginePluginRecord>, String> {
+    scheduler_removal_result: Result<(), PluginCommandError>,
+) -> Result<Option<EnginePluginRecord>, PluginCommandError> {
     scheduler_removal_result?;
     Ok(engine_plugins.remove(instance_id))
 }
@@ -671,7 +932,8 @@ fn validated_bundle(
     answer: Result<Vec<ScannedDescriptor>, ScanFailure>,
 ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
     let bundle = answer?;
-    scanner::validate_scanned_bundle(format, &bundle).map_err(ScanFailure::Refused)?;
+    scanner::validate_scanned_bundle(format, &bundle)
+        .map_err(|error| ScanFailure::Refused(error.to_string()))?;
     Ok(bundle)
 }
 
@@ -681,7 +943,8 @@ fn validated_instance(
     answer: Result<ScannedInstance, ScanFailure>,
 ) -> Result<ScannedInstance, ScanFailure> {
     let instance = answer?;
-    scanner::validate_scanned_instance(format, &instance).map_err(ScanFailure::Refused)?;
+    scanner::validate_scanned_instance(format, &instance)
+        .map_err(|error| ScanFailure::Refused(error.to_string()))?;
     Ok(instance)
 }
 
@@ -710,6 +973,7 @@ pub async fn scan_plugins(
         state,
     )
     .await
+    .map_err(|error| error.to_string())
 }
 
 /// `scan_policy` is a parameter so a test can scan a fixture directory without
@@ -721,7 +985,7 @@ async fn scan_plugins_with_policy(
     retry_quarantined: bool,
     scan_policy: PluginScanPolicy,
     state: &AppState,
-) -> Result<ScanResult, String> {
+) -> Result<ScanResult, PluginCommandError> {
     let descriptor_store = Arc::clone(&state.plugin_registry_store);
     let instance_store = Arc::clone(&state.plugin_registry_store);
     scan_plugins_with_backend(
@@ -806,10 +1070,10 @@ async fn scan_plugins_with_backend(
     scan_instance: impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, ScanFailure>
         + Send
         + 'static,
-) -> Result<ScanResult, String> {
+) -> Result<ScanResult, PluginCommandError> {
     let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
-        .map_err(|_| "Plugin scan already in progress".to_string())?;
+        .map_err(|_| PluginCommandError::ScanInProgress)?;
     // Before the scan, not after: the publisher below replaces the scanned
     // roots' share of the registry and leaves the rest standing, so a registry
     // that has not yet been hydrated would have the persisted entries for every
@@ -1023,7 +1287,7 @@ async fn scan_plugins_with_backend(
             )
         })
         .await
-        .map_err(|error| format!("Plugin scan task failed: {error}"))?;
+        .map_err(PluginCommandError::ScanTask)?;
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
@@ -1208,25 +1472,15 @@ impl From<ScanFailure> for RescanFailure {
     }
 }
 
-/// The refusal for the one load whose targeted rescan did not finish.
-fn rescan_did_not_finish(name: &str, path: &str, reason: &str) -> String {
-    format!(
-        "Plugin '{name}' at {path} could not be checked: {reason}. The check did not finish in time and nothing was decided about the plugin — try loading it again."
-    )
-}
-
-/// The refusal recorded once the retry a timeout earned has timed out as well.
-fn rescan_timed_out_twice(name: &str, path: &str, reason: &str) -> String {
-    format!(
-        "Plugin '{name}' at {path} could not be checked: {reason} on two attempts, so it will not be checked again this session. Rescan the folder it lives in."
-    )
-}
-
-fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) -> String {
-    format!(
-        "Plugin '{}' could not be loaded from its last known location {}: {reason}. It has been moved, removed or replaced since it was scanned — reinstall it there, or scan the folder it lives in now.",
-        entry.plugin.name, entry.plugin.path
-    )
+fn plugin_gone_from_last_known_path(
+    entry: &PersistedPluginEntry,
+    reason: &str,
+) -> PluginCommandError {
+    PluginCommandError::GoneFromLastKnownPath {
+        name: entry.plugin.name.clone(),
+        path: entry.plugin.path.clone(),
+        reason: reason.to_string(),
+    }
 }
 
 /// A registry entry a load may open, and the fingerprint its file had when it
@@ -1278,17 +1532,17 @@ impl VettedRegistryEntry {
 
 /// What one pass of registry resolution produced.
 enum Resolution<Rescan> {
-    Settled(Box<Result<VettedRegistryEntry, String>>),
+    Settled(Box<Result<VettedRegistryEntry, PluginCommandError>>),
     /// Another caller holds this key's rescan. The rescan comes back unused,
     /// with the refusal to give if waiting for that caller does not settle it.
     RescanInProgress {
         rescan: Rescan,
-        busy: String,
+        busy: PluginCommandError,
     },
 }
 
 impl<Rescan> Resolution<Rescan> {
-    fn settled(result: Result<VettedRegistryEntry, String>) -> Self {
+    fn settled(result: Result<VettedRegistryEntry, PluginCommandError>) -> Self {
         Self::Settled(Box::new(result))
     }
 }
@@ -1346,7 +1600,7 @@ fn resolve_registry_entry<Rescan>(
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
     rescan: Rescan,
-) -> Result<VettedRegistryEntry, String>
+) -> Result<VettedRegistryEntry, PluginCommandError>
 where
     Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
 {
@@ -1401,21 +1655,23 @@ where
     }
 
     let Some(last_known) = registry_store.last_known_entry(plugin_id) else {
-        return Resolution::settled(Err(format!(
-            "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
-        )));
+        return Resolution::settled(Err(PluginCommandError::NotInRegistry {
+            plugin_id: plugin_id.to_string(),
+        }));
     };
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Resolution::settled(Err(reason)),
+        RescanClaim::Refused(reason) => {
+            return Resolution::settled(Err(PluginCommandError::Recorded(reason)))
+        }
         RescanClaim::InProgress => {
             return Resolution::RescanInProgress {
                 rescan,
-                busy: format!(
-                    "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
-                    last_known.plugin.name, last_known.plugin.path
-                ),
+                busy: PluginCommandError::AlreadyBeingLookedFor {
+                    name: last_known.plugin.name.clone(),
+                    path: last_known.plugin.path.clone(),
+                },
             };
         }
     };
@@ -1470,11 +1726,12 @@ where
     let authorized = match authorize_plugin_file(scan_policy, Path::new(&entry.path), &entry.format)
     {
         Ok(authorized) => authorized,
-        Err(reason) => {
-            return Resolution::settled(Err(format!(
-                "Plugin '{}' will not be loaded from {}: {reason}",
-                entry.name, entry.path
-            )));
+        Err(refusal) => {
+            return Resolution::settled(Err(PluginCommandError::NotAuthorized {
+                name: entry.name,
+                path: entry.path,
+                refusal,
+            }));
         }
     };
 
@@ -1491,14 +1748,16 @@ where
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Resolution::settled(Err(reason)),
+        RescanClaim::Refused(reason) => {
+            return Resolution::settled(Err(PluginCommandError::Recorded(reason)))
+        }
         RescanClaim::InProgress => {
             return Resolution::RescanInProgress {
                 rescan,
-                busy: format!(
-                    "Plugin '{}' is already being checked at {}. Try again once that finishes.",
-                    entry.name, entry.path
-                ),
+                busy: PluginCommandError::AlreadyBeingChecked {
+                    name: entry.name,
+                    path: entry.path,
+                },
             };
         }
     };
@@ -1516,11 +1775,10 @@ where
             last_known_descriptor_id: &entry.descriptor_id,
             replaces_rows_at: Some(&entry.path),
         },
-        |reason| {
-            format!(
-                "Plugin '{}' at {} has changed since it was scanned and could not be checked again: {reason}. Rescan the folder it lives in.",
-                entry.name, entry.path
-            )
+        |reason| PluginCommandError::ChangedSinceScanned {
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+            reason: reason.to_string(),
         },
         rescan,
     ))
@@ -1537,11 +1795,15 @@ fn authorize_plugin_file(
     scan_policy: &PluginScanPolicy,
     path: &Path,
     format: &str,
-) -> Result<PathBuf, String> {
-    let authorized = scan_policy.authorize_scan_root(path)?;
+) -> Result<PathBuf, ScanPolicyRefusal> {
+    let authorized = scan_policy
+        .authorize_scan_root(path)
+        .map_err(ScanPolicyRefusal)?;
     if let Some(module) = plugin_file_path(&authorized, format) {
         if module != authorized {
-            scan_policy.authorize_scan_root(&module)?;
+            scan_policy
+                .authorize_scan_root(&module)
+                .map_err(ScanPolicyRefusal)?;
         }
     }
     Ok(authorized)
@@ -1591,21 +1853,27 @@ fn rescan_and_publish(
     scan_policy: &PluginScanPolicy,
     attempt: RescanAttempt<'_>,
     target: TargetedRescan<'_>,
-    describe_refusal: impl FnOnce(&str) -> String,
+    describe_refusal: impl FnOnce(&str) -> PluginCommandError,
     rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
-) -> Result<VettedRegistryEntry, String> {
+) -> Result<VettedRegistryEntry, PluginCommandError> {
     let rescanned = authorize_plugin_file(scan_policy, target.path, target.format)
-        .map_err(RescanFailure::Verdict)
+        .map_err(|refusal| RescanFailure::Verdict(refusal.to_string()))
         .and_then(|authorized| rescan_holding_still(&authorized, &target, rescan));
     let (rescanned, fingerprint) = match rescanned {
         Ok(rescanned) => rescanned,
         Err(RescanFailure::Inconclusive(reason)) => {
             let path = target.path.display().to_string();
-            let repeated = rescan_timed_out_twice(target.name, &path, &reason);
-            return Err(match attempt.inconclusive(repeated.clone()) {
-                InconclusiveOutcome::RetryAllowed => {
-                    rescan_did_not_finish(target.name, &path, &reason)
-                }
+            let repeated = PluginCommandError::RescanTimedOutTwice {
+                name: target.name.to_string(),
+                path: path.clone(),
+                reason: reason.clone(),
+            };
+            return Err(match attempt.inconclusive(repeated.to_string()) {
+                InconclusiveOutcome::RetryAllowed => PluginCommandError::RescanDidNotFinish {
+                    name: target.name.to_string(),
+                    path,
+                    reason,
+                },
                 InconclusiveOutcome::GaveUp => repeated,
             });
         }
@@ -1614,7 +1882,7 @@ fn rescan_and_publish(
             if let Some(stale_path) = target.replaces_rows_at {
                 lock_registry(plugin_registry).retain(|_, entry| entry.path != stale_path);
             }
-            attempt.refuse(refusal.clone());
+            attempt.refuse(refusal.to_string());
             return Err(refusal);
         }
     };
@@ -1750,7 +2018,8 @@ fn rescanned_row(
     plugin_id: &str,
     last_known_descriptor_id: &str,
 ) -> Result<ScannedPlugin, RescanFailure> {
-    scanner::validate_scanned_bundle(format, &bundle).map_err(RescanFailure::Verdict)?;
+    scanner::validate_scanned_bundle(format, &bundle)
+        .map_err(|error| RescanFailure::Verdict(error.to_string()))?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -1813,7 +2082,7 @@ async fn resolve_plugin_registry_entry(
     state: &AppState,
     scan_policy: PluginScanPolicy,
     rescan: impl PluginRescan,
-) -> Result<VettedRegistryEntry, String> {
+) -> Result<VettedRegistryEntry, PluginCommandError> {
     let plugin_registry = Arc::clone(&state.plugin_registry);
     let registry_store = Arc::clone(&state.plugin_registry_store);
     let plugin_id = plugin_id.to_string();
@@ -1827,7 +2096,7 @@ async fn resolve_plugin_registry_entry(
         )
     })
     .await
-    .map_err(|error| format!("Plugin registry lookup failed: {error}"))?
+    .map_err(PluginCommandError::RegistryLookupTask)?
 }
 
 // ── Instance lifecycle commands ─────────────────────────────────────────
@@ -1837,7 +2106,7 @@ async fn resolve_plugin_registry_entry(
 /// An enum rather than a bool so [`create_hosted_runtime`]'s factory switch
 /// stays exhaustive: adding a backend adds an arm the compiler demands be
 /// written, instead of a string somebody remembers to add to a `match`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum HostBackend {
     /// `ClapWrapper`.
     Clap,
@@ -1867,22 +2136,26 @@ impl HostBackend {
 /// they are given for refusing to activate it — see
 /// `.agents/decisions/0031-native-plugin-format-strategy.md`. A name that is not
 /// a format at all is not something that decision covers, so it says only that.
-pub(crate) fn host_backend(format: &str) -> Result<HostBackend, String> {
+pub(crate) fn host_backend(format: &str) -> Result<HostBackend, PluginCommandError> {
     let Some(recognised) = PluginFormat::from_wire_name(format) else {
-        return Err(format!("Unknown plugin format: {format}"));
+        return Err(PluginCommandError::UnknownFormat {
+            format: format.to_string(),
+        });
     };
 
     match recognised {
         PluginFormat::Clap => Ok(HostBackend::Clap),
         PluginFormat::Vst3 => Ok(HostBackend::Vst3),
         unhosted => Err(match unhosted.scan_support() {
-            scanner::FormatScanSupport::NoExtractor(refusal) => refusal.to_string(),
+            scanner::FormatScanSupport::NoExtractor(refusal) => {
+                PluginCommandError::FormatNotHosted(refusal)
+            }
             // A format Sourdaw can scan but cannot yet host. None is in that
             // state today; the moment one is, this is the honest thing to say
             // about it, and it is not a sentence ADR 0031 has wording for.
-            scanner::FormatScanSupport::Extractor => {
-                format!("No host backend for plugin format {}", unhosted.wire_name())
-            }
+            scanner::FormatScanSupport::Extractor => PluginCommandError::NoHostBackend {
+                format: unhosted.wire_name(),
+            },
         }),
     }
 }
@@ -1934,12 +2207,12 @@ fn resolve_activation_sample_rate(
 /// device wait parks every other claim on `state.engine` behind it,
 /// including the quit cascade's claim on the JS thread, where parking stops
 /// the shell's force-exit timer from ever firing.
-fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
+fn native_activation_sample_rate(state: &AppState) -> Result<f64, PluginCommandError> {
     let engine_rate = {
         let engine_guard = state
             .engine
             .lock()
-            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+            .map_err(PluginCommandError::lock("engine"))?;
         engine_guard
             .as_ref()
             .map(|engine| f64::from(engine.sample_rate()))
@@ -1964,13 +2237,15 @@ pub(crate) fn create_hosted_runtime(
     descriptor_id: &str,
     sample_rate: f64,
     mode: ProcessMode,
-) -> Result<HostedRuntime, String> {
+) -> Result<HostedRuntime, PluginError> {
     match backend {
         HostBackend::Clap => ClapWrapper::new_with_mode(path, descriptor_id, sample_rate, mode)
-            .map(HostedRuntime::from),
+            .map(HostedRuntime::from)
+            .map_err(PluginError::from),
         HostBackend::Vst3 => {
             Vst3Wrapper::new_with_mode(Path::new(path), descriptor_id, sample_rate, mode)
                 .map(HostedRuntime::from)
+                .map_err(PluginError::from)
         }
     }
 }
@@ -1995,20 +2270,23 @@ pub(crate) fn create_hosted_runtime(
 fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
     windows_host: &dyn PluginWindowHost,
     runtime: &mut P,
-) -> Result<bool, String> {
+) -> Result<bool, PluginCommandError> {
     lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
+        .map_err(PluginCommandError::Host)
 }
 
 /// How a load builds its runtime: [`create_hosted_runtime`] in production, a
 /// fixture in a test. `Send + 'static` because it runs on the shell's UI thread,
 /// not on the worker that took the load.
 pub(crate) trait RuntimeConstructor:
-    FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String> + Send + 'static
+    FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, PluginError>
+    + Send
+    + 'static
 {
 }
 
 impl<Constructor> RuntimeConstructor for Constructor where
-    Constructor: FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>
+    Constructor: FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, PluginError>
         + Send
         + 'static
 {
@@ -2053,29 +2331,32 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     sample_rate: f64,
     mode: ProcessMode,
     create_runtime: impl RuntimeConstructor,
-) -> Result<HostedRuntime, String> {
+) -> Result<HostedRuntime, PluginCommandError> {
     call_on_ui_thread(ui, move || {
         let VettedRegistryEntry { entry, fingerprint } = vetted;
-        let authorized = authorize_plugin_file(&scan_policy, Path::new(&entry.path), &entry.format)
-            .map_err(|reason| {
-                format!(
-                    "Plugin '{}' will not be loaded from {}: {reason}",
-                    entry.name, entry.path
-                )
-            })?;
+        let authorized =
+            match authorize_plugin_file(&scan_policy, Path::new(&entry.path), &entry.format) {
+                Ok(authorized) => authorized,
+                Err(refusal) => {
+                    return Err(PluginCommandError::NotAuthorized {
+                        name: entry.name,
+                        path: entry.path,
+                        refusal,
+                    })
+                }
+            };
         if authorized != Path::new(&entry.path) {
-            return Err(format!(
-                "Plugin '{}' will not be loaded from {}: it now resolves to {}, not the location that was checked.",
-                entry.name,
-                entry.path,
-                authorized.display()
-            ));
+            return Err(PluginCommandError::ResolvesElsewhere {
+                name: entry.name,
+                path: entry.path,
+                resolved: authorized,
+            });
         }
         if plugin_file_fingerprint(Path::new(&entry.path), &entry.format) != Some(fingerprint) {
-            return Err(format!(
-                "Plugin '{}' at {} changed after it was checked and before it was opened. Load it again to check it afresh.",
-                entry.name, entry.path
-            ));
+            return Err(PluginCommandError::ChangedBeforeOpen {
+                name: entry.name,
+                path: entry.path,
+            });
         }
         create_runtime(
             backend,
@@ -2084,7 +2365,9 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
             sample_rate,
             mode,
         )
-    })?
+        .map_err(PluginCommandError::Runtime)
+    })
+    .map_err(PluginCommandError::Host)?
 }
 
 /// Run a runtime's teardown on the shell's UI thread.
@@ -2125,6 +2408,7 @@ pub async fn load_plugin(
         create_hosted_runtime,
     )
     .await
+    .map_err(|error| error.to_string())
 }
 
 /// `create_runtime` is a parameter so a test can inject a fixture runtime —
@@ -2149,7 +2433,7 @@ async fn load_plugin_with_backend(
     scan_policy: PluginScanPolicy,
     rescan: impl PluginRescan,
     create_runtime: impl RuntimeConstructor,
-) -> Result<PluginInstance, String> {
+) -> Result<PluginInstance, PluginCommandError> {
     let instance = load_plugin_under_runtime_gate(
         plugin_id,
         instance_id,
@@ -2197,7 +2481,7 @@ async fn load_plugin_under_runtime_gate(
     scan_policy: PluginScanPolicy,
     rescan: impl PluginRescan,
     create_runtime: impl RuntimeConstructor,
-) -> Result<PluginInstance, String> {
+) -> Result<PluginInstance, PluginCommandError> {
     // The rate is decided before anything is resolved, locked or constructed:
     // it is the native engine's own clock, never a caller's input, and a load
     // that cannot state its rate must not reach a plugin's entry point at all.
@@ -2234,7 +2518,7 @@ async fn load_plugin_under_runtime_gate(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         ensure_hosted_plugin_session_headroom(&engine_plugins)?;
     }
 
@@ -2247,12 +2531,11 @@ async fn load_plugin_under_runtime_gate(
     // name would have resolved to each other. An empty id means the scan of this
     // file yielded no usable descriptor, so say that, and say which file.
     if entry.descriptor_id.is_empty() {
-        return Err(format!(
-            "{} plugin {} reports no descriptor id in the registry entry for {}. Rescan the plugin directory.",
-            backend.display_name(),
-            entry.path,
-            plugin_id.0
-        ));
+        return Err(PluginCommandError::MissingDescriptorId {
+            backend,
+            path: entry.path,
+            plugin_id: plugin_id.0,
+        });
     }
 
     // Constructed on the shell's UI thread: see `construct_runtime_on_ui_thread`.
@@ -2358,7 +2641,7 @@ async fn load_plugin_under_runtime_gate(
         let mut engine_guard = match state.engine.lock() {
             Ok(engine_guard) => engine_guard,
             Err(error) => {
-                let reason = format!("Failed to lock engine: {error}");
+                let reason = PluginCommandError::poisoned("engine", &error);
                 return Err(refuse_load(
                     wrapper,
                     reason,
@@ -2425,7 +2708,7 @@ async fn load_plugin_under_runtime_gate(
             let mut plugins = match state.plugins.lock() {
                 Ok(plugins) => plugins,
                 Err(error) => {
-                    let reason = format!("Failed to lock plugins: {error}");
+                    let reason = PluginCommandError::poisoned("plugins", &error);
                     return Err(refuse_load(
                         wrapper,
                         reason,
@@ -2465,18 +2748,23 @@ async fn load_plugin_under_runtime_gate(
     Ok(instance)
 }
 
-fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> Result<(), String> {
+fn ensure_plugin_instance_id_available(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<(), PluginCommandError> {
     let plugins = state
         .plugins
         .lock()
-        .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+        .map_err(PluginCommandError::lock("plugins"))?;
     let engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
 
     if plugins.contains_key(instance_id) || engine_plugins.contains_key(instance_id) {
-        return Err(format!("Plugin instance already exists: {instance_id}"));
+        return Err(PluginCommandError::InstanceAlreadyExists {
+            instance_id: instance_id.to_string(),
+        });
     }
     Ok(())
 }
@@ -2499,11 +2787,9 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
 /// which is the ceiling that closes the count-then-act race.
 fn ensure_hosted_plugin_session_headroom(
     engine_plugins: &HashMap<String, crate::state::EnginePluginInstanceData>,
-) -> Result<(), String> {
+) -> Result<(), PluginCommandError> {
     if engine_plugins.len() >= HOSTED_PLUGIN_RESERVE {
-        return Err(format!(
-            "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
-        ));
+        return Err(PluginCommandError::SessionFull);
     }
     Ok(())
 }
@@ -2529,11 +2815,11 @@ fn insert_engine_plugin_record(
     state: &AppState,
     instance_id: &str,
     record: crate::state::EnginePluginInstanceData,
-) -> Result<(), String> {
+) -> Result<(), PluginCommandError> {
     let mut engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
     ensure_hosted_plugin_session_headroom(&engine_plugins)?;
     engine_plugins.insert(instance_id.to_string(), record);
     Ok(())
@@ -2554,8 +2840,10 @@ const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// a caller that matched on one of them would miss the other. The format is
 /// behind both: `create_hosted_runtime` was the last step that knew one, so this
 /// names the plugin rather than its backend.
-pub(crate) fn activation_refusal_reason(name: &str) -> String {
-    format!("plugin '{name}' failed to activate for engine-owned runtime")
+pub(crate) fn activation_refusal_reason(name: &str) -> PluginCommandError {
+    PluginCommandError::ActivationFailed {
+        name: name.to_string(),
+    }
 }
 
 /// Why a runtime activated at one rate is refused the engine running at
@@ -2566,10 +2854,16 @@ pub(crate) fn activation_refusal_reason(name: &str) -> String {
 /// plugin handed to an engine on another clock renders mistuned and reports a
 /// latency off by the ratio, so it is parked and left dormant and degraded
 /// rather than wrong.
-fn activation_rate_refusal_reason(name: &str, runtime_rate: f64, engine_rate: f64) -> String {
-    format!(
-        "Cannot attach plugin '{name}': it was activated at {runtime_rate} Hz but the engine renders at {engine_rate} Hz"
-    )
+fn activation_rate_refusal_reason(
+    name: &str,
+    runtime_rate: f64,
+    engine_rate: f64,
+) -> PluginCommandError {
+    PluginCommandError::ActivationRateMismatch {
+        name: name.to_string(),
+        runtime_rate,
+        engine_rate,
+    }
 }
 
 /// Refuse a load that has already built its runtime, in the order a refusal has
@@ -2602,11 +2896,11 @@ fn activation_rate_refusal_reason(name: &str, runtime_rate: f64, engine_rate: f6
 /// ([`tear_down_runtime_on_ui_thread`]), still inside the lease.
 fn refuse_load(
     runtime: HostedRuntime,
-    reason: String,
+    reason: PluginCommandError,
     gate: ObservedGateGuard<tokio::sync::RwLockReadGuard<'_, ()>>,
     ui: &dyn PluginWindowHost,
     state: &AppState,
-) -> String {
+) -> PluginCommandError {
     drop(gate);
     tear_down_runtime_on_ui_thread(ui, state, runtime);
     reason
@@ -2681,7 +2975,7 @@ enum EngineHandover {
 
 /// A registration the engine would not take.
 struct RegistrationRefusal {
-    reason: String,
+    reason: PluginCommandError,
     /// The runtime, handed back so the caller can park the instance again and
     /// retry on the next batch ([`attach_dormant_plugins`]) or drop it clear of
     /// the engine lock ([`load_plugin_under_runtime_gate`]).
@@ -2694,7 +2988,7 @@ struct RegistrationRefusal {
 impl RegistrationRefusal {
     /// A refusal that arrived before the runtime moved into the shared owner,
     /// so it never left the caller's hands.
-    fn parked(reason: String, runtime: HostedRuntime) -> Box<Self> {
+    fn parked(reason: PluginCommandError, runtime: HostedRuntime) -> Box<Self> {
         Box::new(Self {
             reason,
             runtime: Some(runtime),
@@ -2720,7 +3014,11 @@ impl RegistrationRefusal {
     /// would leave the final drop, and with it the plugin's teardown, to that
     /// other holder's thread, where neither format allows it. Retired, it is
     /// freed by the next sweep, on the shell's UI thread.
-    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Box<Self> {
+    fn recovered(
+        reason: PluginCommandError,
+        shared: Arc<SharedHostedPlugin>,
+        state: &AppState,
+    ) -> Box<Self> {
         match Arc::try_unwrap(shared) {
             Ok(owner) => Box::new(Self {
                 reason,
@@ -2815,7 +3113,10 @@ fn register_runtime_with_engine(
     // thread's own refusal is a counter it cannot return to the user, leaving a
     // plugin in the rack that passes dry audio forever.
     if let Err(reason) = engine.ensure_effect_table_headroom(1) {
-        return Err(RegistrationRefusal::parked(reason.to_string(), runtime));
+        return Err(RegistrationRefusal::parked(
+            PluginCommandError::Engine(reason),
+            runtime,
+        ));
     }
 
     let id = engine.reserve_plugin_id();
@@ -2875,14 +3176,14 @@ fn register_runtime_with_engine(
             }
             Err(lock_error) => {
                 return Err(RegistrationRefusal::recovered(
-                    format!("Failed to lock engine_plugins: {lock_error}"),
+                    PluginCommandError::poisoned("engine_plugins", &lock_error),
                     shared_plugin,
                     state,
                 ));
             }
         }
         return Err(RegistrationRefusal::recovered(
-            error.to_string(),
+            PluginCommandError::Engine(error),
             shared_plugin,
             state,
         ));
@@ -2984,16 +3285,16 @@ pub struct AttachedPlugin {
 /// holds `plugins` across the engine lock — nor `engine` across anything else.
 /// No path here nests those two at all, which is what leaves no order for a
 /// cycle to close.
-pub fn attach_dormant_plugins(
+pub(crate) fn attach_dormant_plugins(
     state: &AppState,
     limit: usize,
-) -> Result<Vec<AttachedPlugin>, String> {
+) -> Result<Vec<AttachedPlugin>, PluginCommandError> {
     if limit == 0 {
         return Ok(Vec::new());
     }
 
     let Ok(_runtime_guard) = PLUGIN_RUNTIME_GATE.try_read() else {
-        return Err("the plugin runtime gate is held by another operation".to_string());
+        return Err(PluginCommandError::RuntimeGateHeld);
     };
 
     // Sorted, because the map's own order is arbitrary and a short reservation
@@ -3004,7 +3305,7 @@ pub fn attach_dormant_plugins(
         let plugins = state
             .plugins
             .lock()
-            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
         let mut ids: Vec<String> = plugins.keys().cloned().collect();
         ids.sort();
         ids
@@ -3036,9 +3337,9 @@ pub fn attach_dormant_plugins(
 fn attach_one_dormant_plugin(
     state: &AppState,
     instance_id: &str,
-) -> Result<Option<AttachedPlugin>, String> {
+) -> Result<Option<AttachedPlugin>, PluginCommandError> {
     let Some(_lifecycle_guard) = try_lock_plugin_lifecycle(instance_id) else {
-        return Err("a load or unload holds this instance".to_string());
+        return Err(PluginCommandError::LifecycleHeld);
     };
 
     // The same ergonomic check the load path makes for the same reason: refuse
@@ -3049,7 +3350,7 @@ fn attach_one_dormant_plugin(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         ensure_hosted_plugin_session_headroom(&engine_plugins)?;
     }
 
@@ -3057,10 +3358,25 @@ fn attach_one_dormant_plugin(
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
         plugins.remove(instance_id)
     }) else {
         return Ok(None);
+    };
+    // From here the runtime has left the map, so no exit may drop it: its
+    // teardown belongs on the shell's UI thread, and this is the graph-batch
+    // thread. A poisoned engine lock parks it again and leaves the instance
+    // dormant, which is what the user still has loaded.
+    let engine_guard = match state.engine.lock() {
+        Ok(engine_guard) => engine_guard,
+        Err(error) => {
+            // The poisoned guard rides inside the error: drop it before the
+            // plugins lock is taken, so the engine lock is never held across it.
+            let reason = PluginCommandError::poisoned("engine", &error);
+            drop(error);
+            park_dormant_plugin(state, instance_id, dormant);
+            return Err(reason);
+        }
     };
     let PluginInstanceData {
         plugin,
@@ -3072,10 +3388,7 @@ fn attach_one_dormant_plugin(
     } = dormant;
 
     let registration = {
-        let mut engine_guard = state
-            .engine
-            .lock()
-            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        let mut engine_guard = engine_guard;
         match engine_guard.as_mut() {
             Some(engine) => register_runtime_with_engine(
                 engine,
@@ -3091,7 +3404,7 @@ fn attach_one_dormant_plugin(
                 },
             ),
             None => Err(RegistrationRefusal::parked(
-                "no native engine is running".to_string(),
+                PluginCommandError::NoEngineRunning,
                 plugin,
             )),
         }
@@ -3112,25 +3425,31 @@ fn attach_one_dormant_plugin(
             // is an owner some other holder is still inside, and there the
             // instance really is gone.
             if let Some(runtime) = refusal.runtime {
-                state
-                    .plugins
-                    .lock()
-                    .map_err(|error| format!("Failed to lock plugins: {error}"))?
-                    .insert(
-                        instance_id.to_string(),
-                        PluginInstanceData {
-                            plugin: runtime,
-                            name,
-                            parameters,
-                            has_gui,
-                            chain_kind,
-                            load_resolution,
-                        },
-                    );
+                park_dormant_plugin(
+                    state,
+                    instance_id,
+                    PluginInstanceData {
+                        plugin: runtime,
+                        name,
+                        parameters,
+                        has_gui,
+                        chain_kind,
+                        load_resolution,
+                    },
+                );
             }
             Err(refusal.reason)
         }
     }
+}
+
+/// Put a dormant instance back in the map it was taken from.
+///
+/// Read through [`locked_or_poisoned`] because the alternative to a poisoned
+/// store is dropping the instance here, on a graph-batch thread, which runs the
+/// plugin's teardown off the UI thread.
+fn park_dormant_plugin(state: &AppState, instance_id: &str, dormant: PluginInstanceData) {
+    locked_or_poisoned(&state.plugins).insert(instance_id.to_string(), dormant);
 }
 
 pub(crate) fn remove_plugin_window(
@@ -3162,7 +3481,7 @@ pub async fn unload_plugin(
                         reply.unloaded_instance_ids.push(instance_id.0);
                         reply.reports = reports;
                     }
-                    Err(error) => reply.errors.push(error),
+                    Err(error) => reply.errors.push(error.to_string()),
                 }
             }
             // The read guard above ends with the block, not with this
@@ -3174,7 +3493,9 @@ pub async fn unload_plugin(
             state.sweep_retired_engine_plugins(windows_host);
             Ok(reply)
         }
-        None => unload_all_plugin_runtimes(Some(windows_host), state).await,
+        None => unload_all_plugin_runtimes(Some(windows_host), state)
+            .await
+            .map_err(|error| error.to_string()),
     }
 }
 
@@ -3200,7 +3521,7 @@ fn dedupe_strip_reports_keeping_last(reports: Vec<StripReportPayload>) -> Vec<St
 async fn unload_all_plugin_runtimes(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<PluginUnloadReply, String> {
+) -> Result<PluginUnloadReply, PluginCommandError> {
     let mut reply = PluginUnloadReply::default();
     let mut reports = Vec::new();
     {
@@ -3209,11 +3530,11 @@ async fn unload_all_plugin_runtimes(
             let plugins = state
                 .plugins
                 .lock()
-                .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+                .map_err(PluginCommandError::lock("plugins"))?;
             let engine_plugins = state
                 .engine_plugins
                 .lock()
-                .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+                .map_err(PluginCommandError::lock("engine_plugins"))?;
             plugins
                 .keys()
                 .chain(engine_plugins.keys())
@@ -3226,7 +3547,7 @@ async fn unload_all_plugin_runtimes(
                     reply.unloaded_instance_ids.push(instance_id);
                     reports.extend(strip_reports);
                 }
-                Err(error) => reply.errors.push(error),
+                Err(error) => reply.errors.push(error.to_string()),
             }
         }
     }
@@ -3277,17 +3598,17 @@ pub(crate) fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn
 fn release_then_retire_engine_plugin(
     engine_plugin_id: usize,
     state: &AppState,
-) -> Result<Vec<StripReportPayload>, String> {
+) -> Result<Vec<StripReportPayload>, PluginCommandError> {
     let mut registry = state
         .graph
         .lock()
-        .map_err(|error| format!("Failed to lock graph registry: {}", error))?;
+        .map_err(PluginCommandError::lock("graph registry"))?;
     let mut engine_guard = state
         .engine
         .lock()
-        .map_err(|error| format!("Failed to lock engine: {}", error))?;
+        .map_err(PluginCommandError::lock("engine"))?;
     let Some(engine) = engine_guard.as_mut() else {
-        return Err("Native engine not running".to_string());
+        return Err(PluginCommandError::EngineNotRunning);
     };
 
     let mut working = registry.clone();
@@ -3295,7 +3616,8 @@ fn release_then_retire_engine_plugin(
     let mut reports = Vec::new();
     if !release.ops.is_empty() {
         // Read before the send, so the step after it has nothing left to fail.
-        let release_reports = graph::live_strip_reports(&working, &release.touched_strip_ids)?;
+        let release_reports = graph::live_strip_reports(&working, &release.touched_strip_ids)
+            .map_err(PluginCommandError::Graph)?;
         // The reserved slot is the `RemovePlugin` push below: the
         // retirement must not find the ring full behind the release.
         match engine.send_graph_batch_with_headroom(release.ops, 1) {
@@ -3320,7 +3642,7 @@ fn release_then_retire_engine_plugin(
 
     engine
         .remove_plugin(engine_plugin_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(PluginCommandError::Engine)?;
     Ok(reports)
 }
 
@@ -3335,13 +3657,13 @@ async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<Vec<StripReportPayload>, String> {
+) -> Result<Vec<StripReportPayload>, PluginCommandError> {
     let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
     let command_plugin = {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
         plugins.remove(instance_id)
     };
     if let Some(mut instance) = command_plugin {
@@ -3365,7 +3687,7 @@ async fn unload_plugin_runtime(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         let engine_plugin = engine_plugins.get(instance_id);
         if let Some(instance) = engine_plugin {
             instance.runtime.begin_unload();
@@ -3379,6 +3701,10 @@ async fn unload_plugin_runtime(
             Ok(reports) => reports,
             Err(error) => {
                 runtime.cancel_unload();
+                // Asks recorded while the instance refused control lost their
+                // wakes to that refusal; the instance is live again, so carry
+                // them now.
+                crate::host::plugin_host_requests::carry_standing_asks(instance_id);
                 return Err(error);
             }
         };
@@ -3438,8 +3764,8 @@ fn update_parameter_cache_after_enqueue(
     parameters: &mut [PluginParameter],
     param_id: u32,
     value: f64,
-    enqueue_result: Result<(), String>,
-) -> Result<(), String> {
+    enqueue_result: Result<(), PluginCommandError>,
+) -> Result<(), PluginCommandError> {
     enqueue_result?;
 
     if let Some(parameter) = parameters
@@ -3458,11 +3784,20 @@ pub async fn set_plugin_parameter(
     value: f64,
     state: &AppState,
 ) -> Result<(), String> {
+    write_plugin_parameter(instance_id, param_id, value, state).map_err(|error| error.to_string())
+}
+
+fn write_plugin_parameter(
+    instance_id: PluginInstanceId,
+    param_id: u32,
+    value: f64,
+    state: &AppState,
+) -> Result<(), PluginCommandError> {
     {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
 
         if let Some(instance) = plugins.get_mut(&instance_id.0) {
             instance.plugin.set_parameter(param_id, value);
@@ -3478,19 +3813,25 @@ pub async fn set_plugin_parameter(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         match engine_plugins.get(&instance_id.0) {
             Some(instance) => Arc::clone(&instance.runtime),
-            None => return Err(format!("No plugin instance: {}", instance_id.0)),
+            None => {
+                return Err(PluginCommandError::NoInstance {
+                    instance_id: instance_id.0,
+                })
+            }
         }
     };
 
-    let enqueue_result = runtime.enqueue_parameter(param_id, value);
+    let enqueue_result = runtime
+        .enqueue_parameter(param_id, value)
+        .map_err(PluginCommandError::Host);
 
     let mut engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
     match engine_plugins.get_mut(&instance_id.0) {
         // An unload+reload during the write leaves a different runtime under
         // the same id. The value was written to the old one, so it is not this
@@ -3511,11 +3852,18 @@ pub async fn get_plugin_parameters(
     instance_id: PluginInstanceId,
     state: &AppState,
 ) -> Result<Vec<PluginParameter>, String> {
+    read_plugin_parameters(instance_id, state).map_err(|error| error.to_string())
+}
+
+fn read_plugin_parameters(
+    instance_id: PluginInstanceId,
+    state: &AppState,
+) -> Result<Vec<PluginParameter>, PluginCommandError> {
     {
         let plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
 
         if let Some(instance) = plugins.get(&instance_id.0) {
             return Ok(instance.plugin.get_parameters());
@@ -3526,13 +3874,20 @@ pub async fn get_plugin_parameters(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         match engine_plugins.get(&instance_id.0) {
             Some(instance) => {
-                instance.runtime.ensure_public_control_allowed()?;
+                instance
+                    .runtime
+                    .ensure_public_control_allowed()
+                    .map_err(PluginCommandError::Host)?;
                 Arc::clone(&instance.runtime)
             }
-            None => return Err(format!("No plugin instance: {}", instance_id.0)),
+            None => {
+                return Err(PluginCommandError::NoInstance {
+                    instance_id: instance_id.0,
+                })
+            }
         }
     };
 
@@ -3544,15 +3899,20 @@ pub async fn get_plugin_parameters(
     // The lock is released first: the poll runs on the control seam, which can
     // wait on the audio thread, and holding the instance map across that would
     // stall every other command for the same reason.
-    let polled_parameters = runtime.poll_parameters(std::time::Duration::from_secs(2))?;
+    let polled_parameters = runtime
+        .poll_parameters(std::time::Duration::from_secs(2))
+        .map_err(PluginCommandError::Host)?;
 
     let mut engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    let instance = engine_plugins
-        .get_mut(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
+    let instance =
+        engine_plugins
+            .get_mut(&instance_id.0)
+            .ok_or_else(|| PluginCommandError::NoInstance {
+                instance_id: instance_id.0.clone(),
+            })?;
 
     // An unload+reload during the poll leaves a different runtime under the same
     // id. The snapshot describes the runtime that is gone, so it neither
@@ -3579,15 +3939,18 @@ pub async fn get_plugin_parameters(
 pub(crate) fn read_plugin_state_chunk(
     instance_id: &str,
     state: &AppState,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, PluginCommandError> {
     {
         let plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
 
         if let Some(instance) = plugins.get(instance_id) {
-            return instance.plugin.get_state();
+            return instance
+                .plugin
+                .get_state()
+                .map_err(PluginCommandError::Runtime);
         }
     }
 
@@ -3595,16 +3958,20 @@ pub(crate) fn read_plugin_state_chunk(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         engine_plugins
             .get(instance_id)
             .map(|instance| Arc::clone(&instance.runtime))
     };
     if let Some(runtime) = runtime {
-        return runtime.get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2));
+        return runtime
+            .get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2))
+            .map_err(PluginCommandError::Host);
     }
 
-    Err(format!("No plugin instance: {}", instance_id))
+    Err(PluginCommandError::NoInstance {
+        instance_id: instance_id.to_string(),
+    })
 }
 
 /// Restore a loaded plugin instance's opaque state chunk.
@@ -3615,15 +3982,18 @@ fn write_plugin_state_chunk(
     instance_id: &str,
     plugin_state: &[u8],
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<(), PluginCommandError> {
     {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("plugins"))?;
 
         if let Some(instance) = plugins.get_mut(instance_id) {
-            instance.plugin.set_state(plugin_state)?;
+            instance
+                .plugin
+                .set_state(plugin_state)
+                .map_err(PluginCommandError::Runtime)?;
             return Ok(());
         }
     }
@@ -3636,22 +4006,25 @@ fn write_plugin_state_chunk(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
         match engine_plugins.get(instance_id) {
             Some(instance) => Arc::clone(&instance.runtime),
-            None => return Err(format!("No plugin instance: {}", instance_id)),
+            None => {
+                return Err(PluginCommandError::NoInstance {
+                    instance_id: instance_id.to_string(),
+                })
+            }
         }
     };
 
-    let refreshed_parameters = runtime.set_state_invalidating_pending_parameters(
-        std::time::Duration::from_secs(2),
-        plugin_state,
-    )?;
+    let refreshed_parameters = runtime
+        .set_state_invalidating_pending_parameters(std::time::Duration::from_secs(2), plugin_state)
+        .map_err(PluginCommandError::Host)?;
 
     let mut engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
     if let Some(instance) = engine_plugins.get_mut(instance_id) {
         // An unload+reload during the restore leaves a different runtime under
         // the same id; the parameters the old one reported are not its values.
@@ -3675,7 +4048,7 @@ pub async fn get_plugin_state_bytes(
     instance_id: PluginInstanceId,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    read_plugin_state_chunk(&instance_id.0, state)
+    read_plugin_state_chunk(&instance_id.0, state).map_err(|error| error.to_string())
 }
 
 /// Restore a plugin instance's opaque state chunk from raw bytes.
@@ -3689,7 +4062,7 @@ pub async fn set_plugin_state_bytes(
     plugin_state: &[u8],
     state: &AppState,
 ) -> Result<(), String> {
-    write_plugin_state_chunk(&instance_id, plugin_state, state)
+    write_plugin_state_chunk(&instance_id, plugin_state, state).map_err(|error| error.to_string())
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
@@ -3711,11 +4084,25 @@ pub async fn send_plugin_midi(
     is_note_on: bool,
     state: &AppState,
 ) -> Result<(), String> {
+    send_note_to_engine_plugin(engine_plugin_id, note, velocity, channel, is_note_on, state)
+        .map_err(|error| error.to_string())
+}
+
+fn send_note_to_engine_plugin(
+    engine_plugin_id: usize,
+    note: u8,
+    velocity: u8,
+    channel: i16,
+    is_note_on: bool,
+    state: &AppState,
+) -> Result<(), PluginCommandError> {
     let mut engine_guard = state
         .engine
         .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+        .map_err(PluginCommandError::lock("engine"))?;
+    let engine = engine_guard
+        .as_mut()
+        .ok_or(PluginCommandError::EngineNotRunning)?;
 
     engine
         .send_midi_note(
@@ -3734,7 +4121,7 @@ pub async fn send_plugin_midi(
                 articulation_id: None,
             },
         )
-        .map_err(|error| error.to_string())
+        .map_err(PluginCommandError::Engine)
 }
 
 /// Resolve the engine plugin id an instance was registered under.
@@ -3743,15 +4130,20 @@ pub async fn send_plugin_midi(
 /// an instance with no engine-owned runtime has nothing on the audio thread to
 /// address, and guessing an id would address whichever plugin happens to hold
 /// it.
-fn engine_plugin_id_for_instance(instance_id: &str, state: &AppState) -> Result<usize, String> {
+fn engine_plugin_id_for_instance(
+    instance_id: &str,
+    state: &AppState,
+) -> Result<usize, PluginCommandError> {
     let engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        .map_err(PluginCommandError::lock("engine_plugins"))?;
     engine_plugins
         .get(instance_id)
         .map(|data| data.engine_plugin_id)
-        .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))
+        .ok_or_else(|| PluginCommandError::NoEngineInstance {
+            instance_id: instance_id.to_string(),
+        })
 }
 
 /// Bypass or un-bypass a natively hosted plugin on the audio thread.
@@ -3767,17 +4159,27 @@ pub async fn set_plugin_bypass(
     bypassed: bool,
     state: &AppState,
 ) -> Result<(), String> {
-    let engine_plugin_id = engine_plugin_id_for_instance(&instance_id, state)?;
+    bypass_engine_plugin(&instance_id, bypassed, state).map_err(|error| error.to_string())
+}
+
+fn bypass_engine_plugin(
+    instance_id: &str,
+    bypassed: bool,
+    state: &AppState,
+) -> Result<(), PluginCommandError> {
+    let engine_plugin_id = engine_plugin_id_for_instance(instance_id, state)?;
 
     let mut engine_guard = state
         .engine
         .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+        .map_err(PluginCommandError::lock("engine"))?;
+    let engine = engine_guard
+        .as_mut()
+        .ok_or(PluginCommandError::EngineNotRunning)?;
 
     engine
         .set_bypass(engine_plugin_id, bypassed)
-        .map_err(|error| error.to_string())
+        .map_err(PluginCommandError::Engine)
 }
 
 #[cfg(test)]
@@ -3791,6 +4193,7 @@ mod tests {
     use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
+    use daw_plugin_host::PluginError;
     use std::path::Path;
 
     /// The rate `daw_engine::engine_handle_for_command_capture`'s fixture
@@ -4014,7 +4417,7 @@ mod tests {
         .expect("a runtime activated on another clock must be refused");
 
         assert_eq!(
-            refusal.reason,
+            refusal.reason.to_string(),
             "Cannot attach plugin 'Mistuned Fixture': it was activated at 44100 Hz but the engine renders at 48000 Hz",
             "the refusal names both the runtime's own rate and the engine's"
         );
@@ -4123,7 +4526,8 @@ mod tests {
         insert_engine_owned_fixture(&state, "instance-shared-lookup", Vec::new());
 
         assert_eq!(
-            engine_plugin_id_for_instance("instance-shared-lookup", &state),
+            engine_plugin_id_for_instance("instance-shared-lookup", &state)
+                .map_err(|error| error.to_string()),
             Ok(17)
         );
     }
@@ -4151,7 +4555,9 @@ mod tests {
         // changed and the host wrote nothing.
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4390,7 +4796,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-restore");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4429,6 +4837,7 @@ mod tests {
 
             let writer = scope.spawn(move || {
                 write_plugin_state_chunk("instance-swapped-restore", &[9, 8, 7], state_ref)
+                    .map_err(|error| error.to_string())
             });
 
             assert_eq!(writer.join().expect("writer thread"), Ok(()));
@@ -4467,7 +4876,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-poll");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4556,7 +4967,9 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-late-write");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
+                    .map_err(|error| error.to_string())
             })
             .expect("fixture control access should succeed");
 
@@ -4704,7 +5117,8 @@ mod tests {
             unexpected_rescan,
             create_hosted_runtime,
         ))
-        .expect_err("a fake plugin path cannot load");
+        .expect_err("a fake plugin path cannot load")
+        .to_string();
 
         assert!(
             error.starts_with(&format!(
@@ -4738,6 +5152,7 @@ mod tests {
                 .expect("engine_plugins lock should be available");
             ensure_hosted_plugin_session_headroom(&engine_plugins)
                 .expect_err("a session at the ceiling must refuse the next instance")
+                .to_string()
         };
         assert_eq!(
             refusal,
@@ -4799,7 +5214,8 @@ mod tests {
         }
 
         let refusal = insert_engine_plugin_record(&state, "instance-overflow", record())
-            .expect_err("the insert section must refuse at the ceiling");
+            .expect_err("the insert section must refuse at the ceiling")
+            .to_string();
         assert_eq!(
             refusal,
             format!(
@@ -4869,7 +5285,7 @@ mod tests {
         .expect("a session at its ceiling must refuse the record insert");
 
         assert_eq!(
-            refusal.reason,
+            refusal.reason.to_string(),
             format!(
                 "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
             )
@@ -5022,7 +5438,8 @@ mod tests {
                 }
             },
         ))
-        .expect_err("a session already at its ceiling must refuse the load");
+        .expect_err("a session already at its ceiling must refuse the load")
+        .to_string();
 
         assert!(
             error.contains("native plugin instances"),
@@ -5113,7 +5530,8 @@ mod tests {
                 }
             },
         ))
-        .expect_err("a load whose editor ask never ran must not report a loaded plugin");
+        .expect_err("a load whose editor ask never ran must not report a loaded plugin")
+        .to_string();
 
         assert!(
             error.contains("UI thread"),
@@ -5318,6 +5736,114 @@ mod tests {
                 .chain_kind,
             DeviceKind::Generator,
             "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
+    /// A dormant instance whose teardown records the threads it ran on, parked
+    /// in `state.plugins`.
+    fn park_dormant_recording_teardown(
+        state: &AppState,
+        instance_id: &str,
+    ) -> Arc<Mutex<Vec<std::thread::ThreadId>>> {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Parked Dormant", Vec::new(), false);
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(std::thread::current().id());
+        }));
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                instance_id.to_string(),
+                PluginInstanceData::dormant_fixture(wrapper.into()),
+            );
+        torn_down_on
+    }
+
+    /// Panic on another thread while it holds `lock`, which poisons it.
+    fn poison<Value: Send>(lock: &Mutex<Value>) {
+        std::thread::scope(|scope| {
+            let poisoner = scope.spawn(|| {
+                let _guard = lock.lock().expect("the lock is free to poison");
+                panic!("poisoning the lock on purpose");
+            });
+            assert!(poisoner.join().is_err());
+        });
+        assert!(lock.is_poisoned());
+    }
+
+    /// The attach takes the dormant instance out of the map before it reaches
+    /// the engine, so a poisoned engine lock must not drop it: that would run
+    /// the plugin's teardown on the graph-batch thread, and lose an instance the
+    /// user still has loaded. It stays dormant.
+    #[test]
+    fn a_poisoned_engine_lock_leaves_the_dormant_instance_parked_and_alive() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let torn_down_on = park_dormant_recording_teardown(&state, "dormant-instance");
+        poison(&state.engine);
+
+        let attached =
+            attach_dormant_plugins(&state, 1).expect("the attach call itself must not error");
+
+        assert!(attached.is_empty());
+        assert!(
+            locked_or_poisoned(&state.plugins).contains_key("dormant-instance"),
+            "the instance must stay dormant in state.plugins"
+        );
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert!(
+            torn_down.is_empty(),
+            "the runtime must not be torn down on the batch thread"
+        );
+    }
+
+    /// The refusal branch puts the instance back through the same store, and
+    /// that store can be poisoned too, by a panic that lands while the attach is
+    /// between taking the instance out and putting it back. The engine lock is
+    /// what holds the attach in that window: the test keeps it, poisons the
+    /// map, and only then lets the attach reach its refusal (no engine).
+    #[test]
+    fn a_poisoned_plugin_store_still_takes_a_refused_instance_back() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let torn_down_on = park_dormant_recording_teardown(&state, "dormant-instance");
+
+        let engine_guard = state.engine.lock().expect("the engine slot is free");
+        std::thread::scope(|scope| {
+            let attach = scope.spawn(|| attach_one_dormant_plugin(&state, "dormant-instance"));
+
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while locked_or_poisoned(&state.plugins).contains_key("dormant-instance") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the attach must take the instance out of the map"
+                );
+                std::thread::yield_now();
+            }
+            poison(&state.plugins);
+            drop(engine_guard);
+
+            let attached = attach.join().expect("the attach must not panic");
+            assert!(
+                attached.is_err(),
+                "no engine runs, so the attach is refused and reports why"
+            );
+        });
+
+        assert!(
+            locked_or_poisoned(&state.plugins).contains_key("dormant-instance"),
+            "the refused instance must be parked again even through a poisoned store"
+        );
+        let torn_down = torn_down_on.lock().expect("teardown log").clone();
+        assert!(
+            torn_down.is_empty(),
+            "the runtime must not be torn down on the attaching thread"
         );
     }
 
@@ -5559,7 +6085,8 @@ mod tests {
                 }
             },
         ))
-        .expect_err("a plugin that never activated must not load, engine or no engine");
+        .expect_err("a plugin that never activated must not load, engine or no engine")
+        .to_string();
 
         assert!(
             state
@@ -5968,7 +6495,8 @@ mod tests {
             unexpected_rescan,
             create_hosted_runtime,
         ))
-        .expect_err("a load at the hosted session ceiling must refuse");
+        .expect_err("a load at the hosted session ceiling must refuse")
+        .to_string();
 
         assert_eq!(
             error,
@@ -6002,10 +6530,10 @@ mod tests {
         fn get_parameters(&self) -> Vec<PluginParameter> {
             Vec::new()
         }
-        fn get_state(&self) -> Result<Vec<u8>, String> {
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
             Ok(Vec::new())
         }
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
             Ok(())
         }
     }
@@ -6101,10 +6629,11 @@ mod tests {
             plugins.scan_policy(),
             unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
-                slot.lock()
+                Ok(slot
+                    .lock()
                     .expect("fixture runtime slot")
                     .take()
-                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+                    .expect("the fixture runtime is single-use"))
             },
         ))
         .expect("the fixture plugin should load");
@@ -6357,7 +6886,11 @@ mod tests {
         let shared = Arc::new(SharedHostedPlugin::new(runtime));
         let watcher_clone = Arc::clone(&shared);
 
-        let refusal = RegistrationRefusal::recovered("ring full".to_string(), shared, &state);
+        let refusal = RegistrationRefusal::recovered(
+            PluginCommandError::Host("ring full".to_string()),
+            shared,
+            &state,
+        );
         drop(watcher_clone);
 
         assert!(
@@ -6407,13 +6940,15 @@ mod tests {
             plugins.scan_policy(),
             unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
-                slot.lock()
+                Ok(slot
+                    .lock()
                     .expect("fixture runtime slot")
                     .take()
-                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+                    .expect("the fixture runtime is single-use"))
             },
         ))
-        .expect_err("a load whose editor-support lend fails must refuse");
+        .expect_err("a load whose editor-support lend fails must refuse")
+        .to_string();
 
         assert_eq!(
             error, "the shell's UI thread did not take the editor call",
@@ -6474,7 +7009,9 @@ mod tests {
             create_hosted_runtime,
         ));
 
-        let error = result.expect_err("a registry entry with no CLAP id must not load");
+        let error = result
+            .expect_err("a registry entry with no CLAP id must not load")
+            .to_string();
         // Exact, because the substitute id produced a library-load failure that
         // also named the file: only the refusal's own wording distinguishes
         // "this entry carries no CLAP id" from "the file would not load".
@@ -6743,6 +7280,7 @@ mod tests {
             rescan,
             recording_construction(log),
         ))
+        .map_err(|error| error.to_string())
     }
 
     /// The baseline the vetting must not tax: an unchanged file loads straight
@@ -7280,7 +7818,8 @@ mod tests {
             recording_construction(&log),
         )
         .err()
-        .expect("a path that now resolves elsewhere must not be opened");
+        .expect("a path that now resolves elsewhere must not be opened")
+        .to_string();
 
         assert_eq!(
             error,
@@ -7776,6 +8315,7 @@ mod tests {
                 rescan,
                 recording_construction(&log),
             ))
+            .map_err(|error| error.to_string())
         })
     }
 
@@ -8044,6 +8584,7 @@ mod tests {
             rescan,
             recording_construction(log),
         ))
+        .map_err(|error| error.to_string())
     }
 
     /// The entry a changed hit's rescan publishes carries the fingerprint the
@@ -10260,7 +10801,7 @@ mod tests {
 
         match result {
             Err(error) => assert_eq!(
-                error,
+                error.to_string(),
                 format!("VST3 plugin {path} reports no descriptor id in the registry entry for vst3-fixture. Rescan the plugin directory.")
             ),
             Ok(instance) => panic!("a VST3 row with no class id unexpectedly loaded: {instance:?}"),
@@ -10276,7 +10817,7 @@ mod tests {
             create_hosted_runtime,
         ));
         assert_eq!(
-            duplicate.unwrap_err(),
+            duplicate.unwrap_err().to_string(),
             "Plugin instance already exists: vst3-instance"
         );
     }
@@ -10335,7 +10876,7 @@ mod tests {
             ));
 
             match result {
-                Err(error) => assert_eq!(error, expected, "wrong refusal for {format}"),
+                Err(error) => assert_eq!(error.to_string(), expected, "wrong refusal for {format}"),
                 Ok(instance) => panic!("{format} unexpectedly loaded: {instance:?}"),
             }
         }
@@ -10360,7 +10901,8 @@ mod tests {
                 Some(refusal) => {
                     let error = looked_up
                         .err()
-                        .unwrap_or_else(|| panic!("{wire_name} must not be hostable"));
+                        .unwrap_or_else(|| panic!("{wire_name} must not be hostable"))
+                        .to_string();
                     assert_eq!(
                         error, refusal,
                         "{wire_name} must refuse in the scanner's own words"
@@ -10429,7 +10971,10 @@ mod tests {
             create_hosted_runtime,
         ));
 
-        assert_eq!(result.unwrap_err(), "Unknown plugin format: mystery");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Unknown plugin format: mystery"
+        );
     }
 
     #[test]
@@ -10449,6 +10994,7 @@ mod tests {
 
     #[test]
     fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
@@ -10525,8 +11071,8 @@ mod tests {
         let first = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
         let retry = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
 
-        assert_eq!(first, Ok(Vec::new()));
-        assert_eq!(retry, Ok(Vec::new()));
+        assert_eq!(first.map_err(|error| error.to_string()), Ok(Vec::new()));
+        assert_eq!(retry.map_err(|error| error.to_string()), Ok(Vec::new()));
         assert!(!state
             .plugins
             .lock()
@@ -10649,6 +11195,58 @@ mod tests {
             fenced_batches(&state),
             fences_before + 1,
             "the release the engine took is one fence, and the registry numbers it"
+        );
+    }
+
+    /// An ask the plugin recorded while its unload was under way lost its wake
+    /// to the refused visit. When the unload is cancelled the instance is live
+    /// again, and the hint that brings the watcher to its recorded ask has to be
+    /// raised again, or the ask waits until the plugin asks a second time.
+    ///
+    /// The cancel is the real one: no engine runs, so the scheduler removal
+    /// fails after `begin_unload` has already been called.
+    #[test]
+    fn a_cancelled_unload_raises_the_hints_its_refused_visits_spent() {
+        let _hint = crate::host::hint_test_support::guard();
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", Vec::new(), true);
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_main_thread_callback_requested();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .insert(
+                "inst-1".to_string(),
+                EnginePluginInstanceData {
+                    engine_plugin_id: 17,
+                    runtime: Arc::clone(&runtime),
+                    name: "Engine Owned Fixture".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    chain_kind: DeviceKind::Effect,
+                    parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
+                },
+            );
+        runtime.begin_unload();
+        // The watcher's visit while unloading: refused, and its wake spent.
+        daw_plugin_host::take_pending_main_thread_callback_signal();
+
+        let error = crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect_err("no engine runs, so the scheduler removal fails and the unload cancels");
+
+        assert_eq!(error.to_string(), "Native engine not running");
+        assert!(
+            runtime.ensure_public_control_allowed().is_ok(),
+            "the cancelled unload must return the instance to active"
+        );
+        assert!(
+            daw_plugin_host::take_pending_main_thread_callback_signal(),
+            "the cancel must raise the hint that carries the standing request_callback ask"
         );
     }
 
@@ -10973,7 +11571,7 @@ mod tests {
 
         let result = read_plugin_state_chunk("engine-owned-fixture", &state);
 
-        assert_eq!(result, Ok(vec![1, 2, 3]));
+        assert_eq!(result.map_err(|error| error.to_string()), Ok(vec![1, 2, 3]));
     }
 
     #[test]
@@ -10984,8 +11582,11 @@ mod tests {
         let set_result = write_plugin_state_chunk("engine-owned-fixture", &[9, 8, 7], &state);
         let get_result = read_plugin_state_chunk("engine-owned-fixture", &state);
 
-        assert_eq!(set_result, Ok(()));
-        assert_eq!(get_result, Ok(vec![9, 8, 7]));
+        assert_eq!(set_result.map_err(|error| error.to_string()), Ok(()));
+        assert_eq!(
+            get_result.map_err(|error| error.to_string()),
+            Ok(vec![9, 8, 7])
+        );
     }
 
     /// The body's contract is the bytes; how they cross the wire is the
@@ -11041,11 +11642,11 @@ mod tests {
         let write = write_plugin_state_chunk("no-such-instance", &[1], &state);
 
         assert_eq!(
-            read,
+            read.map_err(|error| error.to_string()),
             Err("No plugin instance: no-such-instance".to_string())
         );
         assert_eq!(
-            write,
+            write.map_err(|error| error.to_string()),
             Err("No plugin instance: no-such-instance".to_string())
         );
     }
@@ -11068,11 +11669,13 @@ mod tests {
             &mut parameters,
             7,
             0.75,
-            Err("Pending parameter queue full for plugin 'test'".to_string()),
+            Err(PluginCommandError::Host(
+                "Pending parameter queue full for plugin 'test'".to_string(),
+            )),
         );
 
         assert_eq!(
-            result,
+            result.map_err(|error| error.to_string()),
             Err("Pending parameter queue full for plugin 'test'".to_string())
         );
         assert_eq!(parameters[0].value, 0.25);
@@ -11086,11 +11689,13 @@ mod tests {
             &mut parameters,
             7,
             0.75,
-            Err("No engine-owned plugin instance: test".to_string()),
+            Err(PluginCommandError::Host(
+                "No engine-owned plugin instance: test".to_string(),
+            )),
         );
 
         assert_eq!(
-            result,
+            result.map_err(|error| error.to_string()),
             Err("No engine-owned plugin instance: test".to_string())
         );
         assert_eq!(parameters[0].value, 0.25);
@@ -11104,10 +11709,13 @@ mod tests {
         let result = remove_engine_plugin_record_after_scheduler_removal(
             &mut engine_plugins,
             "engine-owned-1",
-            Err("Audio command queue full".to_string()),
+            Err(PluginCommandError::Engine(CommandError::QueueFull)),
         );
 
-        assert_eq!(result, Err("Audio command queue full".to_string()));
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            Err("Audio command queue full".to_string())
+        );
         assert_eq!(engine_plugins.get("engine-owned-1"), Some(&42_u32));
     }
 
@@ -11122,7 +11730,7 @@ mod tests {
             Ok(()),
         );
 
-        assert_eq!(result, Ok(Some(42_u32)));
+        assert_eq!(result.map_err(|error| error.to_string()), Ok(Some(42_u32)));
         assert!(!engine_plugins.contains_key("engine-owned-1"));
     }
 
@@ -11536,7 +12144,8 @@ mod tests {
                 )))
             },
         )
-        .expect_err("a last known path symlinked outside the policy must not resolve");
+        .expect_err("a last known path symlinked outside the policy must not resolve")
+        .to_string();
 
         assert!(
             error.starts_with(&format!(
@@ -11617,7 +12226,8 @@ mod tests {
                 )))
             },
         )
-        .expect_err("a bundle whose module is symlinked outside the policy must not resolve");
+        .expect_err("a bundle whose module is symlinked outside the policy must not resolve")
+        .to_string();
 
         assert!(
             registry.lock().expect("registry lock").is_empty(),
@@ -11716,7 +12326,8 @@ mod tests {
             "aaaa1111",
             rescan,
         )
-        .expect_err("a removed plugin must not resolve");
+        .expect_err("a removed plugin must not resolve")
+        .to_string();
         let second = resolve_registry_entry(
             &registry,
             &store,
@@ -11724,7 +12335,8 @@ mod tests {
             "aaaa1111",
             rescan,
         )
-        .expect_err("a removed plugin must not resolve");
+        .expect_err("a removed plugin must not resolve")
+        .to_string();
 
         assert_eq!(
             rescans.get(),
@@ -11760,7 +12372,8 @@ mod tests {
                 )))
             },
         )
-        .expect_err("a removed plugin must not resolve");
+        .expect_err("a removed plugin must not resolve")
+        .to_string();
 
         assert!(
             error.contains("Vendor Reverb") && error.contains(&plugin_path.display().to_string()),
@@ -11800,7 +12413,8 @@ mod tests {
                 Err(a_helper_timeout())
             },
         )
-        .expect_err("a check that did not finish must refuse this load");
+        .expect_err("a check that did not finish must refuse this load")
+        .to_string();
         let second = resolve_registry_entry(
             &registry,
             &store,
@@ -11849,7 +12463,8 @@ mod tests {
                 Err(RescanFailure::Verdict("no plugin declared".to_string()))
             },
         )
-        .expect_err("a refused rescan must not resolve");
+        .expect_err("a refused rescan must not resolve")
+        .to_string();
 
         assert!(
             error.contains("no plugin declared") && error.contains("moved, removed or replaced"),
@@ -11938,7 +12553,8 @@ mod tests {
                 Err(RescanFailure::Verdict("no plugin declared".to_string()))
             },
         )
-        .expect_err("a refused rescan must not resolve");
+        .expect_err("a refused rescan must not resolve")
+        .to_string();
 
         assert!(
             error.contains("no plugin declared"),

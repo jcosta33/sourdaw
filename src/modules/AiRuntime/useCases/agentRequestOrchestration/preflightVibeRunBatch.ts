@@ -9,6 +9,7 @@ import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialRe
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
+import { type PlannedValueChoiceTier } from '../vibeRun/readPlannedValueChoiceDefaults';
 import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
 import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
@@ -100,6 +101,8 @@ export type VibeRunBatchPreflight =
           catalog: ReturnType<typeof getMixRecipeCatalog>;
           context: ReturnType<typeof getProjectContext>;
           revision: string;
+          /** The tier the run was planned under; a plan stored before it was recorded reads as `unrecorded`. */
+          valueChoiceTier: PlannedValueChoiceTier;
       }
     | { status: 'rejected'; reason: string };
 
@@ -137,5 +140,13 @@ export function preflightVibeRunBatch(
     if (targetRefusal !== null) {
         return { status: 'rejected', reason: targetRefusal };
     }
-    return { status: 'admitted', batch, initial: plan.initial, catalog, context, revision };
+    return {
+        status: 'admitted',
+        batch,
+        initial: plan.initial,
+        catalog,
+        context,
+        revision,
+        valueChoiceTier: plan.valueChoiceTier ?? 'unrecorded',
+    };
 }

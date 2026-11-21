@@ -5,7 +5,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -35,7 +35,14 @@ const defaultProps = {
 
 function ConnectedTransportControls(): React.ReactElement {
     const transport = useStore(transportStore, defaultTransportState);
-    return <TransportControls {...defaultProps} isLooping={transport.isLooping} />;
+    return (
+        <TransportControls
+            {...defaultProps}
+            isLooping={transport.isLooping}
+            countInEnabled={transport.countInEnabled}
+            countInBars={transport.countInBars}
+        />
+    );
 }
 
 function renderControls(props: Partial<typeof defaultProps> = {}): void {
@@ -106,6 +113,34 @@ describe('TransportControls command integration', () => {
         });
         await undo();
         expect(transportStore.value?.punchInEnabled).toBe(false);
+    });
+
+    it('records a count-in bar change from the control so undo restores it and redo reapplies it', async () => {
+        transportStore.set({ ...defaultTransportState, countInEnabled: true, countInBars: 1 });
+        render(
+            <TooltipProvider delayDuration={0}>
+                <ConnectedTransportControls />
+            </TooltipProvider>
+        );
+
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText('Count-in bars: 1. Click to cycle.'));
+        });
+        await waitFor(() => {
+            expect(transportStore.value?.countInBars).toBe(2);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        await act(async () => {
+            await undo();
+        });
+        expect(transportStore.value?.countInBars).toBe(1);
+        expect(screen.getByLabelText('Count-in bars: 1. Click to cycle.')).toBeInTheDocument();
+
+        await act(async () => {
+            await redo();
+        });
+        expect(transportStore.value?.countInBars).toBe(2);
     });
 
     it('changes neither project state nor history when clicked while busy', async () => {

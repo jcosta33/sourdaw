@@ -1925,7 +1925,7 @@ fn load(state: &Arc<FakeState>, class_id: TUID) -> Vst3Wrapper {
     try_load(state, class_id).expect("the fake plugin activates")
 }
 
-fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, String> {
+fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, Vst3Error> {
     Vst3Wrapper::activated(instantiate(state, class_id), class_id, 48_000.0)
 }
 
@@ -2486,7 +2486,7 @@ fn a_poll_with_no_flag_leaves_the_plugin_alone() {
     let mut wrapper = load(&state, COMBINED_CID);
     let setups_before = state.setup_calls.load(Ordering::Acquire);
 
-    assert_eq!(wrapper.poll_latency_change(), Ok(None));
+    assert!(matches!(wrapper.poll_latency_change(), Ok(None)));
     assert_eq!(state.setup_calls.load(Ordering::Acquire), setups_before);
 }
 
@@ -2709,7 +2709,17 @@ fn a_processor_that_refuses_the_saved_state_makes_the_restore_fail() {
         .set_state(&encode_state(b"processor-state", b""))
         .expect_err("the processor refused the chunk");
 
-    assert!(error.contains("refused the processor state"), "{error}");
+    assert!(
+        matches!(
+            &error,
+            PluginError::Vst3(Vst3Error::ProcessorStateRefused { name }) if name == "Fake Plugin"
+        ),
+        "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[VST3] 'Fake Plugin' refused the processor state saved in this project"
+    );
 }
 
 /// A refusal and an empty state are different answers, and only one of them may
@@ -2725,8 +2735,15 @@ fn a_processor_that_will_not_report_its_state_is_an_error_not_an_empty_save() {
         .expect_err("the processor refused to report");
 
     assert!(
-        error.contains("refused to report its processor state"),
+        matches!(
+            error,
+            PluginError::Vst3(Vst3Error::ProcessorStateUnreported { .. })
+        ),
         "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[VST3] 'Fake Plugin' refused to report its processor state"
     );
 }
 
@@ -2753,7 +2770,8 @@ fn a_split_controller_is_shown_the_processor_state_it_booted_beside() {
 fn a_blob_this_host_did_not_write_is_refused_by_name() {
     let error = decode_state(b"CLAPnot-a-vst3-state-at-all").expect_err("foreign magic");
 
-    assert!(error.contains("not written by this host"), "{error}");
+    assert!(matches!(error, Vst3Error::StateForeign), "{error}");
+    assert_eq!(error.to_string(), "VST3 state was not written by this host");
 }
 
 #[test]
@@ -2763,7 +2781,14 @@ fn a_blob_from_a_newer_host_is_refused_rather_than_misread() {
 
     let error = decode_state(&future).expect_err("an unknown version");
 
-    assert!(error.contains("version 99"), "{error}");
+    assert!(
+        matches!(error, Vst3Error::StateNewerVersion { version: 99 }),
+        "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "VST3 state version 99 was written by a newer host and cannot be read"
+    );
 }
 
 /// A truncated blob whose header still declares the full length would otherwise
@@ -2775,7 +2800,11 @@ fn a_blob_shorter_than_its_header_declares_is_refused() {
 
     let error = decode_state(&truncated).expect_err("a short blob");
 
-    assert!(error.contains("shorter than its own header"), "{error}");
+    assert!(matches!(error, Vst3Error::StateTruncated), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "VST3 state is shorter than its own header declares"
+    );
 }
 
 #[test]
@@ -2997,8 +3026,19 @@ fn a_plugin_that_refuses_every_arrangement_the_host_can_feed_is_refused_at_load(
         .err()
         .expect("six output channels cannot be fed");
 
-    assert!(error.contains("Fake Plugin"), "{error}");
-    assert!(error.contains("main output bus runs 6 channels"), "{error}");
+    assert!(
+        matches!(
+            &error,
+            Vst3Error::BusLayout(BusLayoutError::UnfeedableMainBus { name, channels: 6, .. })
+                if name == "Fake Plugin"
+        ),
+        "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[VST3] 'Fake Plugin' refused every main audio bus arrangement this host can feed: \
+         its main output bus runs 6 channels, and the host carries mono or stereo"
+    );
     assert!(
         state.arrangement_requests.load(Ordering::Acquire) > 0,
         "the host refused the plugin without ever offering it a width"
@@ -3314,8 +3354,17 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
         .expect_err("an unsupported platform must refuse");
 
     assert!(
-        refusal.contains("not one this platform can embed"),
+        matches!(
+            refusal,
+            PluginError::Vst3(Vst3Error::Editor(
+                EditorError::PlatformTypeUnsupported { .. }
+            ))
+        ),
         "got: {refusal}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' has an editor, but not one this platform can embed"
     );
     assert!(
         editor.position_of("attached").is_none(),
@@ -3424,7 +3473,14 @@ fn a_plugin_whose_create_view_answers_null_has_no_editor_and_refuses_to_open_one
     let refusal = wrapper
         .open_gui(ptr::null_mut())
         .expect_err("a plugin with no editor must refuse to open one");
-    assert!(refusal.contains("offers no editor"), "got: {refusal}");
+    assert!(
+        matches!(
+            refusal,
+            PluginError::Vst3(Vst3Error::Editor(EditorError::NoEditor { .. }))
+        ),
+        "got: {refusal}"
+    );
+    assert_eq!(refusal.to_string(), "[VST3] 'Fake Plugin' offers no editor");
 }
 
 /// The other side of the same question: a plugin that does answer with a view
@@ -3553,7 +3609,8 @@ fn a_fixed_size_editor_is_never_asked_to_change_size() {
         })
         .expect_err("a fixed-size editor must refuse");
 
-    assert!(refusal.contains("fixed size"), "got: {refusal}");
+    assert_eq!(refusal, EditorError::FixedSize);
+    assert_eq!(refusal.to_string(), "[VST3] this editor is a fixed size");
     assert!(
         editor.position_of("checkSizeConstraint").is_none(),
         "a fixed-size editor must not be asked to constrain a size, got: {:?}",
@@ -3587,9 +3644,10 @@ fn a_size_the_view_refuses_outright_stops_the_host_resize() {
         })
         .expect_err("a refused size must not be applied");
 
-    assert!(
-        refusal.contains("refused the requested size"),
-        "got: {refusal}"
+    assert_eq!(refusal, EditorError::SizeRefused);
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] this editor refused the requested size"
     );
     assert!(
         editor.position_of("checkSizeConstraint").is_some(),
@@ -3651,7 +3709,14 @@ fn the_seam_answers_resizability_from_the_open_editors_own_can_resize() {
     let refusal = wrapper
         .request_editor_size(1000, 900)
         .expect_err("a closed editor cannot be resized");
-    assert!(refusal.contains("no open editor"), "got: {refusal}");
+    assert!(
+        matches!(refusal, PluginError::Vst3(Vst3Error::NoOpenEditor { .. })),
+        "got: {refusal}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' has no open editor to address"
+    );
 
     wrapper
         .open_gui(ptr::null_mut())
@@ -3841,9 +3906,10 @@ fn a_host_initiated_resize_the_view_refuses_puts_the_window_back() {
         })
         .expect_err("a view that refuses to move must fail the resize");
 
-    assert!(
-        refusal.contains("refused to move to the constrained size"),
-        "got: {refusal}"
+    assert_eq!(refusal, EditorError::ConstrainedSizeRefused);
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] this editor refused to move to the constrained size"
     );
     assert_eq!(
         editor.calls_since(opened),
@@ -3918,7 +3984,17 @@ fn a_view_that_never_states_a_size_is_detached_before_the_open_fails() {
         .open_gui(ptr::null_mut())
         .expect_err("an editor with no size must refuse to open");
 
-    assert!(refusal.contains("would not state a size"), "got: {refusal}");
+    assert!(
+        matches!(
+            refusal,
+            PluginError::Vst3(Vst3Error::Editor(EditorError::NoStatedSize { .. }))
+        ),
+        "got: {refusal}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "[VST3] 'Fake Plugin' would not state a size for its editor"
+    );
     let calls = editor.calls();
     let attached = editor
         .position_of("attached")
@@ -4021,8 +4097,19 @@ fn a_wayland_session_refuses_before_the_plugin_is_asked_for_a_view() {
     };
 
     assert!(
-        refusal.contains("IWaylandHost") && refusal.contains("IWaylandFrame"),
-        "the refusal must name the host interfaces that are missing, got: {refusal}"
+        matches!(refusal, EditorError::SessionRefused { .. }),
+        "got: {refusal}"
+    );
+    let text = refusal.to_string();
+    assert!(
+        text.contains("IWaylandHost") && text.contains("IWaylandFrame"),
+        "the refusal must name the host interfaces that are missing, got: {text}"
+    );
+    assert_eq!(
+        text,
+        "[VST3] this is a Wayland session with no X server behind it, and Sourdaw's editor \
+         host implements neither IWaylandHost nor IWaylandFrame, so a VST3 editor cannot be \
+         embedded ('Fake Plugin')"
     );
     assert_eq!(
         editor.create_view_calls.load(Ordering::Acquire),

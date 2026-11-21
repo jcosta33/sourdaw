@@ -24,6 +24,99 @@ const MAX_CANCELLATION_ENTRIES: usize = 256;
 const MAX_CREDENTIAL_SESSIONS: usize = 8;
 const CANCELLATION_TOMBSTONE_TTL: Duration = Duration::from_secs(30);
 
+/// Why the provider gateway refused or abandoned a request.
+///
+/// No variant carries a value: the gateway never echoes an origin, a request
+/// body or a credential back into its error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderGatewayError {
+    InvalidRequestId,
+    InvalidSessionId,
+    OpenAiOriginRequired,
+    AnthropicOriginRequired,
+    AdapterNotCompiled,
+    InvalidCredentialSource,
+    CredentialTooLarge,
+    InvalidCredential,
+    CredentialBindingMismatch,
+    DnsReturnedNoAddresses,
+    NonGlobalResolution,
+    InvalidOrigin,
+    NonCanonicalOrigin,
+    OriginMissingHost,
+    OriginMissingPort,
+    RequestBodyTooLarge,
+    RequestUrlUncompilable,
+    CrossOriginRequest,
+    TransportUnavailable,
+    RequestIdActive,
+    TooManyCancellations,
+    SessionUnavailable,
+    Cancelled,
+    TooManySessions,
+    UnsupportedOperation,
+    DnsLookupFailed,
+    RequestFailed,
+    ResponseChannelClosed,
+    ResponseStreamFailed,
+    ResponseTooLarge,
+    TooManyResponseEvents,
+}
+
+impl std::fmt::Display for ProviderGatewayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidRequestId => "Provider gateway request ID is invalid",
+            Self::InvalidSessionId => "Provider gateway session ID is invalid",
+            Self::OpenAiOriginRequired => "OpenAI requires its compiled origin",
+            Self::AnthropicOriginRequired => "Anthropic requires its compiled origin",
+            Self::AdapterNotCompiled => {
+                "Provider gateway adapter is not compiled into this release"
+            }
+            Self::InvalidCredentialSource => "Provider gateway credential source is invalid",
+            Self::CredentialTooLarge => "Provider gateway credential exceeds its size limit",
+            Self::InvalidCredential => "Provider gateway credential is invalid",
+            Self::CredentialBindingMismatch => {
+                "Provider gateway credential source does not match its adapter and origin"
+            }
+            Self::DnsReturnedNoAddresses => "Provider gateway DNS lookup returned no addresses",
+            Self::NonGlobalResolution => {
+                "Provider gateway rejected a non-global or mixed DNS resolution"
+            }
+            Self::InvalidOrigin => "Provider gateway origin is invalid",
+            Self::NonCanonicalOrigin => {
+                "Provider gateway requires a canonical HTTPS host-and-port origin"
+            }
+            Self::OriginMissingHost => "Provider gateway origin is missing a host",
+            Self::OriginMissingPort => "Provider gateway origin is missing a port",
+            Self::RequestBodyTooLarge => "Provider gateway request exceeds its body limit",
+            Self::RequestUrlUncompilable => "Provider gateway could not compile the request URL",
+            Self::CrossOriginRequest => {
+                "Provider gateway refused to forward a request across origins"
+            }
+            Self::TransportUnavailable => "Provider gateway transport could not be initialized",
+            Self::RequestIdActive => "Provider gateway request ID is already active",
+            Self::TooManyCancellations => {
+                "Provider gateway has too many pending cancellation records"
+            }
+            Self::SessionUnavailable => "Provider gateway credential session is unavailable",
+            Self::Cancelled => "Provider gateway request was cancelled",
+            Self::TooManySessions => "Provider gateway has too many credential sessions",
+            Self::UnsupportedOperation => {
+                "Provider gateway operation is not supported by the compiled adapter"
+            }
+            Self::DnsLookupFailed => "Provider gateway DNS lookup failed",
+            Self::RequestFailed => "Provider gateway request failed",
+            Self::ResponseChannelClosed => "Provider gateway response channel closed",
+            Self::ResponseStreamFailed => "Provider gateway response stream failed",
+            Self::ResponseTooLarge => "Provider gateway response exceeded its size limit",
+            Self::TooManyResponseEvents => "Provider gateway response exceeded its event limit",
+        })
+    }
+}
+
+impl std::error::Error for ProviderGatewayError {}
+
 struct ProviderGatewayCancellation {
     sender: watch::Sender<bool>,
     registered: bool,
@@ -68,63 +161,70 @@ pub enum ProviderGatewayEvent {
     },
 }
 
-fn validate_request_id(request_id: &str) -> Result<(), String> {
+fn validate_request_id(request_id: &str) -> Result<(), ProviderGatewayError> {
     if request_id.is_empty()
         || request_id.len() > 128
         || !request_id
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
     {
-        return Err("Provider gateway request ID is invalid".to_string());
+        return Err(ProviderGatewayError::InvalidRequestId);
     }
     Ok(())
 }
 
-fn validate_session_id(session_id: &str) -> Result<(), String> {
+fn validate_session_id(session_id: &str) -> Result<(), ProviderGatewayError> {
     let Some(suffix) = session_id.strip_prefix("provider-session-") else {
-        return Err("Provider gateway session ID is invalid".to_string());
+        return Err(ProviderGatewayError::InvalidSessionId);
     };
     if suffix.len() != 32 || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("Provider gateway session ID is invalid".to_string());
+        return Err(ProviderGatewayError::InvalidSessionId);
     }
     Ok(())
 }
 
-fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
+fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), ProviderGatewayError> {
     match adapter_id {
         OPENAI_ADAPTER_ID => {
             parse_canonical_origin(origin)?;
         }
         OPENAI_RESPONSES_ADAPTER_ID => {
             if origin != OPENAI_ORIGIN {
-                return Err("OpenAI requires its compiled origin".to_string());
+                return Err(ProviderGatewayError::OpenAiOriginRequired);
             }
         }
         ANTHROPIC_ADAPTER_ID => {
             if origin != ANTHROPIC_ORIGIN {
-                return Err("Anthropic requires its compiled origin".to_string());
+                return Err(ProviderGatewayError::AnthropicOriginRequired);
             }
         }
-        _ => return Err("Provider gateway adapter is not compiled into this release".to_string()),
+        _ => return Err(ProviderGatewayError::AdapterNotCompiled),
     }
     Ok(())
 }
 
-fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(), String> {
+fn validate_credential(
+    source: &str,
+    credential: &Zeroizing<String>,
+) -> Result<(), ProviderGatewayError> {
     match source {
         "anthropic" | "openai" | "openai-compatible" => (),
-        _ => return Err("Provider gateway credential source is invalid".to_string()),
+        _ => return Err(ProviderGatewayError::InvalidCredentialSource),
     }
     if credential.len() > MAX_API_KEY_BYTES {
-        return Err("Provider gateway credential exceeds its size limit".to_string());
+        return Err(ProviderGatewayError::CredentialTooLarge);
     }
     if credential.is_empty() {
-        return Err("Provider gateway credential is invalid".to_string());
+        return Err(ProviderGatewayError::InvalidCredential);
     }
     Ok(())
 }
 
-fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> Result<(), String> {
+fn validate_credential_binding(
+    adapter_id: &str,
+    origin: &str,
+    source: &str,
+) -> Result<(), ProviderGatewayError> {
     let valid = match source {
         "anthropic" => adapter_id == ANTHROPIC_ADAPTER_ID && origin == ANTHROPIC_ORIGIN,
         "openai" => adapter_id == OPENAI_RESPONSES_ADAPTER_ID && origin == OPENAI_ORIGIN,
@@ -132,9 +232,7 @@ fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> 
         _ => false,
     };
     if !valid {
-        return Err(
-            "Provider gateway credential source does not match its adapter and origin".to_string(),
-        );
+        return Err(ProviderGatewayError::CredentialBindingMismatch);
     }
     Ok(())
 }
@@ -179,9 +277,9 @@ fn address_is_public_global(address: IpAddr) -> bool {
     }
 }
 
-fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), String> {
+fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), ProviderGatewayError> {
     if addresses.is_empty() {
-        return Err("Provider gateway DNS lookup returned no addresses".to_string());
+        return Err(ProviderGatewayError::DnsReturnedNoAddresses);
     }
     if addresses
         .iter()
@@ -191,14 +289,15 @@ fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), String> {
         if addresses.iter().all(|address| address.ip().is_loopback()) {
             return Ok(());
         }
-        return Err("Provider gateway rejected a non-global or mixed DNS resolution".to_string());
+        return Err(ProviderGatewayError::NonGlobalResolution);
     }
     Ok(())
 }
 
-fn parse_canonical_origin(origin: &str) -> Result<(reqwest::Url, String, u16), String> {
-    let parsed = reqwest::Url::parse(origin)
-        .map_err(|_| "Provider gateway origin is invalid".to_string())?;
+fn parse_canonical_origin(
+    origin: &str,
+) -> Result<(reqwest::Url, String, u16), ProviderGatewayError> {
+    let parsed = reqwest::Url::parse(origin).map_err(|_| ProviderGatewayError::InvalidOrigin)?;
     #[cfg(not(test))]
     let scheme_valid = parsed.scheme() == "https";
     #[cfg(test)]
@@ -212,31 +311,34 @@ fn parse_canonical_origin(origin: &str) -> Result<(reqwest::Url, String, u16), S
         || parsed.fragment().is_some()
         || parsed.origin().ascii_serialization() != origin
     {
-        return Err("Provider gateway requires a canonical HTTPS host-and-port origin".to_string());
+        return Err(ProviderGatewayError::NonCanonicalOrigin);
     }
     let host = parsed
         .host_str()
-        .ok_or_else(|| "Provider gateway origin is missing a host".to_string())?
+        .ok_or(ProviderGatewayError::OriginMissingHost)?
         .to_string();
     let port = parsed
         .port_or_known_default()
-        .ok_or_else(|| "Provider gateway origin is missing a port".to_string())?;
+        .ok_or(ProviderGatewayError::OriginMissingPort)?;
     Ok((parsed, host, port))
 }
 
-fn validate_request_body(body: Option<&str>) -> Result<(), String> {
+fn validate_request_body(body: Option<&str>) -> Result<(), ProviderGatewayError> {
     if body.is_some_and(|value| value.len() > MAX_REQUEST_BODY_BYTES) {
-        return Err("Provider gateway request exceeds its body limit".to_string());
+        return Err(ProviderGatewayError::RequestBodyTooLarge);
     }
     Ok(())
 }
 
-fn compile_request_url(origin_url: &reqwest::Url, path: &str) -> Result<reqwest::Url, String> {
+fn compile_request_url(
+    origin_url: &reqwest::Url,
+    path: &str,
+) -> Result<reqwest::Url, ProviderGatewayError> {
     let request_url = origin_url
         .join(path)
-        .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
+        .map_err(|_| ProviderGatewayError::RequestUrlUncompilable)?;
     if request_url.origin() != origin_url.origin() {
-        return Err("Provider gateway refused to forward a request across origins".to_string());
+        return Err(ProviderGatewayError::CrossOriginRequest);
     }
     Ok(request_url)
 }
@@ -244,25 +346,25 @@ fn compile_request_url(origin_url: &reqwest::Url, path: &str) -> Result<reqwest:
 fn build_provider_transport(
     host: &str,
     addresses: &[SocketAddr],
-) -> Result<reqwest::Client, String> {
+) -> Result<reqwest::Client, ProviderGatewayError> {
     reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .resolve_to_addrs(host, addresses)
         .build()
-        .map_err(|_| "Provider gateway transport could not be initialized".to_string())
+        .map_err(|_| ProviderGatewayError::TransportUnavailable)
 }
 
 async fn register_cancellation(
     state: &ProviderGatewayState,
     request_id: &str,
     session_id: &str,
-) -> Result<watch::Receiver<bool>, String> {
+) -> Result<watch::Receiver<bool>, ProviderGatewayError> {
     let mut cancellations = state.cancellations.lock().await;
     prune_cancellation_tombstones(&mut cancellations);
     if let Some(existing) = cancellations.get(request_id) {
         if existing.registered {
-            return Err("Provider gateway request ID is already active".to_string());
+            return Err(ProviderGatewayError::RequestIdActive);
         }
     }
     if let Some(existing) = cancellations.get_mut(request_id) {
@@ -272,7 +374,7 @@ async fn register_cancellation(
     }
     evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
     if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
-        return Err("Provider gateway has too many pending cancellation records".to_string());
+        return Err(ProviderGatewayError::TooManyCancellations);
     }
     let (sender, receiver) = watch::channel(false);
     cancellations.insert(
@@ -291,12 +393,12 @@ async fn admit_provider_gateway_request(
     state: &ProviderGatewayState,
     request_id: &str,
     session_id: &str,
-) -> Result<(ProviderCredentialSession, watch::Receiver<bool>), String> {
+) -> Result<(ProviderCredentialSession, watch::Receiver<bool>), ProviderGatewayError> {
     let sessions = state.sessions.lock().await;
     let session = sessions
         .get(session_id)
         .cloned()
-        .ok_or_else(|| "Provider gateway credential session is unavailable".to_string())?;
+        .ok_or(ProviderGatewayError::SessionUnavailable)?;
     let cancellation = register_cancellation(state, request_id, session_id).await?;
     drop(sessions);
     Ok((session, cancellation))
@@ -327,7 +429,7 @@ fn evict_oldest_cancellation_tombstone_if_full(
 async fn request_cancellation(
     state: &ProviderGatewayState,
     request_id: &str,
-) -> Result<(), String> {
+) -> Result<(), ProviderGatewayError> {
     let mut cancellations = state.cancellations.lock().await;
     prune_cancellation_tombstones(&mut cancellations);
     if let Some(cancellation) = cancellations.get(request_id) {
@@ -336,7 +438,7 @@ async fn request_cancellation(
     }
     evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
     if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
-        return Err("Provider gateway has too many pending cancellation records".to_string());
+        return Err(ProviderGatewayError::TooManyCancellations);
     }
     cancellations.insert(
         request_id.to_string(),
@@ -363,12 +465,12 @@ async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
 
 async fn await_provider_step_or_cancellation<T>(
     cancellation: &mut watch::Receiver<bool>,
-    operation: impl Future<Output = Result<T, String>>,
-) -> Result<T, String> {
+    operation: impl Future<Output = Result<T, ProviderGatewayError>>,
+) -> Result<T, ProviderGatewayError> {
     tokio::select! {
         biased;
         _ = wait_for_cancellation(cancellation) => {
-            Err("Provider gateway request was cancelled".to_string())
+            Err(ProviderGatewayError::Cancelled)
         }
         result = operation => result,
     }
@@ -378,8 +480,10 @@ pub async fn cancel_provider_gateway_request(
     request_id: String,
     state: &ProviderGatewayState,
 ) -> Result<(), String> {
-    validate_request_id(&request_id)?;
-    request_cancellation(state, &request_id).await
+    validate_request_id(&request_id).map_err(|error| error.to_string())?;
+    request_cancellation(state, &request_id)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 pub async fn open_provider_gateway_session(
@@ -389,6 +493,24 @@ pub async fn open_provider_gateway_session(
     credential: Zeroizing<String>,
     state: &ProviderGatewayState,
 ) -> Result<String, String> {
+    open_validated_provider_gateway_session(
+        adapter_id,
+        origin,
+        credential_source,
+        credential,
+        state,
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
+async fn open_validated_provider_gateway_session(
+    adapter_id: String,
+    origin: String,
+    credential_source: String,
+    credential: Zeroizing<String>,
+    state: &ProviderGatewayState,
+) -> Result<String, ProviderGatewayError> {
     validate_adapter(&adapter_id, &origin)?;
     validate_credential_binding(&adapter_id, &origin, &credential_source)?;
     validate_credential(&credential_source, &credential)?;
@@ -400,16 +522,16 @@ async fn open_provider_gateway_session_with_credential(
     origin: String,
     api_key: Zeroizing<String>,
     state: &ProviderGatewayState,
-) -> Result<String, String> {
+) -> Result<String, ProviderGatewayError> {
     validate_adapter(&adapter_id, &origin)?;
     if api_key.len() > MAX_API_KEY_BYTES
         || ((adapter_id == ANTHROPIC_ADAPTER_ID || origin == OPENAI_ORIGIN) && api_key.is_empty())
     {
-        return Err("Provider gateway credential is invalid".to_string());
+        return Err(ProviderGatewayError::InvalidCredential);
     }
     let mut sessions = state.sessions.lock().await;
     if sessions.len() >= MAX_CREDENTIAL_SESSIONS {
-        return Err("Provider gateway has too many credential sessions".to_string());
+        return Err(ProviderGatewayError::TooManySessions);
     }
     let session_id = format!("provider-session-{}", Uuid::new_v4().simple());
     sessions.insert(
@@ -427,7 +549,7 @@ pub async fn close_provider_gateway_session(
     session_id: String,
     state: &ProviderGatewayState,
 ) -> Result<(), String> {
-    validate_session_id(&session_id)?;
+    validate_session_id(&session_id).map_err(|error| error.to_string())?;
     state.sessions.lock().await.remove(&session_id);
     let cancellations = state.cancellations.lock().await;
     for cancellation in cancellations.values() {
@@ -441,7 +563,7 @@ pub async fn close_provider_gateway_session(
 fn resolve_provider_gateway_operation(
     adapter_id: &str,
     operation: &str,
-) -> Result<(reqwest::Method, &'static str), String> {
+) -> Result<(reqwest::Method, &'static str), ProviderGatewayError> {
     match (adapter_id, operation) {
         (OPENAI_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (OPENAI_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/chat/completions")),
@@ -449,7 +571,7 @@ fn resolve_provider_gateway_operation(
         (OPENAI_RESPONSES_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/responses")),
         (ANTHROPIC_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (ANTHROPIC_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/messages")),
-        _ => Err("Provider gateway operation is not supported by the compiled adapter".to_string()),
+        _ => Err(ProviderGatewayError::UnsupportedOperation),
     }
 }
 
@@ -461,6 +583,19 @@ pub async fn provider_gateway_request(
     on_event: &dyn EventStream<ProviderGatewayEvent>,
     state: &ProviderGatewayState,
 ) -> Result<(), String> {
+    relay_provider_gateway_request(request_id, session_id, operation, body, on_event, state)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn relay_provider_gateway_request(
+    request_id: String,
+    session_id: String,
+    operation: String,
+    body: Option<String>,
+    on_event: &dyn EventStream<ProviderGatewayEvent>,
+    state: &ProviderGatewayState,
+) -> Result<(), ProviderGatewayError> {
     validate_request_id(&request_id)?;
     validate_session_id(&session_id)?;
     let (session, mut cancellation) =
@@ -475,7 +610,7 @@ pub async fn provider_gateway_request(
         let resolved_addresses = await_provider_step_or_cancellation(&mut cancellation, async {
             tokio::net::lookup_host((host.as_str(), port))
                 .await
-                .map_err(|_| "Provider gateway DNS lookup failed".to_string())
+                .map_err(|_| ProviderGatewayError::DnsLookupFailed)
         })
         .await?;
         let mut addresses: Vec<SocketAddr> = resolved_addresses.collect();
@@ -505,10 +640,10 @@ pub async fn provider_gateway_request(
         let response = tokio::select! {
             biased;
             _ = wait_for_cancellation(&mut cancellation) => {
-                return Err("Provider gateway request was cancelled".to_string());
+                return Err(ProviderGatewayError::Cancelled);
             }
             response = request.send() => {
-                response.map_err(|_| "Provider gateway request failed".to_string())?
+                response.map_err(|_| ProviderGatewayError::RequestFailed)?
             }
         };
         let status = response.status().as_u16();
@@ -525,7 +660,7 @@ pub async fn provider_gateway_request(
                 status,
                 content_type,
             })
-            .map_err(|_| "Provider gateway response channel closed".to_string())?;
+            .map_err(|_| ProviderGatewayError::ResponseChannelClosed)?;
         sequence += 1;
 
         if !(200..300).contains(&status) {
@@ -534,7 +669,7 @@ pub async fn provider_gateway_request(
                     request_id: request_id.clone(),
                     sequence,
                 })
-                .map_err(|_| "Provider gateway response channel closed".to_string())?;
+                .map_err(|_| ProviderGatewayError::ResponseChannelClosed)?;
             return Ok(());
         }
 
@@ -544,23 +679,23 @@ pub async fn provider_gateway_request(
             let next = tokio::select! {
                 biased;
                 _ = wait_for_cancellation(&mut cancellation) => {
-                    return Err("Provider gateway request was cancelled".to_string());
+                    return Err(ProviderGatewayError::Cancelled);
                 }
                 next = stream.next() => next,
             };
             let Some(chunk) = next else {
                 break;
             };
-            let chunk = chunk.map_err(|_| "Provider gateway response stream failed".to_string())?;
+            let chunk = chunk.map_err(|_| ProviderGatewayError::ResponseStreamFailed)?;
             response_bytes = response_bytes
                 .checked_add(chunk.len())
-                .ok_or_else(|| "Provider gateway response exceeded its size limit".to_string())?;
+                .ok_or(ProviderGatewayError::ResponseTooLarge)?;
             if response_bytes > MAX_RESPONSE_BODY_BYTES {
-                return Err("Provider gateway response exceeded its size limit".to_string());
+                return Err(ProviderGatewayError::ResponseTooLarge);
             }
             for event_chunk in chunk.chunks(MAX_RESPONSE_EVENT_BYTES) {
                 if sequence >= MAX_RESPONSE_EVENTS {
-                    return Err("Provider gateway response exceeded its event limit".to_string());
+                    return Err(ProviderGatewayError::TooManyResponseEvents);
                 }
                 on_event
                     .send(ProviderGatewayEvent::BodyChunk {
@@ -568,19 +703,19 @@ pub async fn provider_gateway_request(
                         sequence,
                         bytes: event_chunk.to_vec(),
                     })
-                    .map_err(|_| "Provider gateway response channel closed".to_string())?;
+                    .map_err(|_| ProviderGatewayError::ResponseChannelClosed)?;
                 sequence += 1;
             }
         }
         if sequence >= MAX_RESPONSE_EVENTS {
-            return Err("Provider gateway response exceeded its event limit".to_string());
+            return Err(ProviderGatewayError::TooManyResponseEvents);
         }
         on_event
             .send(ProviderGatewayEvent::Done {
                 request_id: request_id.clone(),
                 sequence,
             })
-            .map_err(|_| "Provider gateway response channel closed".to_string())?;
+            .map_err(|_| ProviderGatewayError::ResponseChannelClosed)?;
         Ok(())
     }
     .await;
@@ -597,10 +732,11 @@ mod tests {
         parse_canonical_origin, provider_gateway_request, register_cancellation,
         request_cancellation, resolve_provider_gateway_operation, validate_adapter,
         validate_credential, validate_credential_binding, validate_request_body,
-        validate_resolved_addresses, ProviderCredentialSession, ProviderGatewayEvent,
-        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
-        MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS,
-        MAX_REQUEST_BODY_BYTES, OPENAI_ADAPTER_ID, OPENAI_ORIGIN, OPENAI_RESPONSES_ADAPTER_ID,
+        validate_resolved_addresses, ProviderCredentialSession, ProviderGatewayError,
+        ProviderGatewayEvent, ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN,
+        CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES,
+        MAX_CREDENTIAL_SESSIONS, MAX_REQUEST_BODY_BYTES, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
+        OPENAI_RESPONSES_ADAPTER_ID,
     };
     use std::io::{Read, Write};
     use std::net::SocketAddr;
@@ -612,6 +748,138 @@ mod tests {
     /// Compiles only while the stored credential keeps its zeroize-on-drop type.
     fn credential_type_is_zeroizing(session: &ProviderCredentialSession) -> &Zeroizing<String> {
         &session.api_key
+    }
+
+    #[test]
+    fn provider_gateway_errors_print_the_text_the_renderer_receives() {
+        for (error, text) in [
+            (
+                ProviderGatewayError::InvalidRequestId,
+                "Provider gateway request ID is invalid",
+            ),
+            (
+                ProviderGatewayError::InvalidSessionId,
+                "Provider gateway session ID is invalid",
+            ),
+            (
+                ProviderGatewayError::OpenAiOriginRequired,
+                "OpenAI requires its compiled origin",
+            ),
+            (
+                ProviderGatewayError::AnthropicOriginRequired,
+                "Anthropic requires its compiled origin",
+            ),
+            (
+                ProviderGatewayError::AdapterNotCompiled,
+                "Provider gateway adapter is not compiled into this release",
+            ),
+            (
+                ProviderGatewayError::InvalidCredentialSource,
+                "Provider gateway credential source is invalid",
+            ),
+            (
+                ProviderGatewayError::CredentialTooLarge,
+                "Provider gateway credential exceeds its size limit",
+            ),
+            (
+                ProviderGatewayError::InvalidCredential,
+                "Provider gateway credential is invalid",
+            ),
+            (
+                ProviderGatewayError::CredentialBindingMismatch,
+                "Provider gateway credential source does not match its adapter and origin",
+            ),
+            (
+                ProviderGatewayError::DnsReturnedNoAddresses,
+                "Provider gateway DNS lookup returned no addresses",
+            ),
+            (
+                ProviderGatewayError::NonGlobalResolution,
+                "Provider gateway rejected a non-global or mixed DNS resolution",
+            ),
+            (
+                ProviderGatewayError::InvalidOrigin,
+                "Provider gateway origin is invalid",
+            ),
+            (
+                ProviderGatewayError::NonCanonicalOrigin,
+                "Provider gateway requires a canonical HTTPS host-and-port origin",
+            ),
+            (
+                ProviderGatewayError::OriginMissingHost,
+                "Provider gateway origin is missing a host",
+            ),
+            (
+                ProviderGatewayError::OriginMissingPort,
+                "Provider gateway origin is missing a port",
+            ),
+            (
+                ProviderGatewayError::RequestBodyTooLarge,
+                "Provider gateway request exceeds its body limit",
+            ),
+            (
+                ProviderGatewayError::RequestUrlUncompilable,
+                "Provider gateway could not compile the request URL",
+            ),
+            (
+                ProviderGatewayError::CrossOriginRequest,
+                "Provider gateway refused to forward a request across origins",
+            ),
+            (
+                ProviderGatewayError::TransportUnavailable,
+                "Provider gateway transport could not be initialized",
+            ),
+            (
+                ProviderGatewayError::RequestIdActive,
+                "Provider gateway request ID is already active",
+            ),
+            (
+                ProviderGatewayError::TooManyCancellations,
+                "Provider gateway has too many pending cancellation records",
+            ),
+            (
+                ProviderGatewayError::SessionUnavailable,
+                "Provider gateway credential session is unavailable",
+            ),
+            (
+                ProviderGatewayError::Cancelled,
+                "Provider gateway request was cancelled",
+            ),
+            (
+                ProviderGatewayError::TooManySessions,
+                "Provider gateway has too many credential sessions",
+            ),
+            (
+                ProviderGatewayError::UnsupportedOperation,
+                "Provider gateway operation is not supported by the compiled adapter",
+            ),
+            (
+                ProviderGatewayError::DnsLookupFailed,
+                "Provider gateway DNS lookup failed",
+            ),
+            (
+                ProviderGatewayError::RequestFailed,
+                "Provider gateway request failed",
+            ),
+            (
+                ProviderGatewayError::ResponseChannelClosed,
+                "Provider gateway response channel closed",
+            ),
+            (
+                ProviderGatewayError::ResponseStreamFailed,
+                "Provider gateway response stream failed",
+            ),
+            (
+                ProviderGatewayError::ResponseTooLarge,
+                "Provider gateway response exceeded its size limit",
+            ),
+            (
+                ProviderGatewayError::TooManyResponseEvents,
+                "Provider gateway response exceeded its event limit",
+            ),
+        ] {
+            assert_eq!(error.to_string(), text);
+        }
     }
 
     #[test]
@@ -754,14 +1022,13 @@ mod tests {
         };
         let admission = await_provider_step_or_cancellation(
             &mut receiver,
-            std::future::pending::<Result<(), String>>(),
+            std::future::pending::<Result<(), ProviderGatewayError>>(),
         );
 
         let (result, ()) = tokio::join!(admission, cancellation);
-        assert_eq!(
-            result.expect_err("stalled admission must cancel"),
-            "Provider gateway request was cancelled"
-        );
+        let error = result.expect_err("stalled admission must cancel");
+        assert_eq!(error, ProviderGatewayError::Cancelled);
+        assert_eq!(error.to_string(), "Provider gateway request was cancelled");
     }
 
     #[tokio::test]
@@ -884,9 +1151,11 @@ mod tests {
         assert_eq!(method, reqwest::Method::GET);
         assert_eq!(path, "/v1/models");
 
+        let unsupported = resolve_provider_gateway_operation(ANTHROPIC_ADAPTER_ID, "unknown")
+            .expect_err("unsupported operations must fail");
+        assert_eq!(unsupported, ProviderGatewayError::UnsupportedOperation);
         assert_eq!(
-            resolve_provider_gateway_operation(ANTHROPIC_ADAPTER_ID, "unknown")
-                .expect_err("unsupported operations must fail"),
+            unsupported.to_string(),
             "Provider gateway operation is not supported by the compiled adapter"
         );
         assert!(resolve_provider_gateway_operation(OPENAI_ADAPTER_ID, "delete").is_err());
@@ -922,9 +1191,11 @@ mod tests {
             "openai-compatible"
         )
         .is_err());
+        let third_party = validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, "https://provider.example")
+            .expect_err("the responses adapter must refuse a third-party origin");
+        assert_eq!(third_party, ProviderGatewayError::OpenAiOriginRequired);
         assert_eq!(
-            validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, "https://provider.example")
-                .expect_err("the responses adapter must refuse a third-party origin"),
+            third_party.to_string(),
             "OpenAI requires its compiled origin"
         );
         assert!(validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, OPENAI_ORIGIN).is_ok());
@@ -1037,9 +1308,15 @@ mod tests {
             "//evil.example/v1/messages",
             "https://evil.example/v1/messages",
         ] {
+            let refusal = compile_request_url(&origin_url, crossed)
+                .expect_err("a cross-origin path must be refused");
             assert_eq!(
-                compile_request_url(&origin_url, crossed)
-                    .expect_err("a cross-origin path must be refused"),
+                refusal,
+                ProviderGatewayError::CrossOriginRequest,
+                "accepted {crossed}"
+            );
+            assert_eq!(
+                refusal.to_string(),
                 "Provider gateway refused to forward a request across origins",
                 "accepted {crossed}"
             );
@@ -1050,18 +1327,26 @@ mod tests {
     fn provider_gateway_webview_boundary_rejects_oversize_bodies_and_credentials() {
         assert!(validate_request_body(None).is_ok());
         assert!(validate_request_body(Some(&"a".repeat(MAX_REQUEST_BODY_BYTES))).is_ok());
+        let oversize_body = validate_request_body(Some(&"a".repeat(MAX_REQUEST_BODY_BYTES + 1)))
+            .expect_err("a body one byte over the limit must be refused");
+        assert_eq!(oversize_body, ProviderGatewayError::RequestBodyTooLarge);
         assert_eq!(
-            validate_request_body(Some(&"a".repeat(MAX_REQUEST_BODY_BYTES + 1)))
-                .expect_err("a body one byte over the limit must be refused"),
+            oversize_body.to_string(),
             "Provider gateway request exceeds its body limit"
         );
 
         assert!(
             validate_credential("openai", &Zeroizing::new("a".repeat(MAX_API_KEY_BYTES))).is_ok()
         );
-        assert_eq!(
+        let oversize_credential =
             validate_credential("openai", &Zeroizing::new("a".repeat(MAX_API_KEY_BYTES + 1)))
-                .expect_err("a credential over the limit must be refused"),
+                .expect_err("a credential over the limit must be refused");
+        assert_eq!(
+            oversize_credential,
+            ProviderGatewayError::CredentialTooLarge
+        );
+        assert_eq!(
+            oversize_credential.to_string(),
             "Provider gateway credential exceeds its size limit"
         );
 
