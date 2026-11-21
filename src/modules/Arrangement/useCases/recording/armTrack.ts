@@ -7,13 +7,10 @@ import {
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
-
-import { refusesArm } from './refusesArm';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 
 type ArmTrackOptions = {
     deferRuntimeEffect?: boolean;
-    /** The arm restores or projects an earlier state (undo, redo, isolated preview) rather than being a fresh user arm. */
-    replay?: boolean;
     midiInputTrackId?: string | null;
     expectedMidiInputTrackId?: string | null;
     midiInputOwnerId?: string | null;
@@ -78,7 +75,7 @@ export function armTrack(
     if (!projectStateChanged && !runtimeStateChanged) {
         return false;
     }
-    if (refusesArm(track, { armed, replay: options.replay === true })) {
+    if (armed && !getTrackEligibility(track.kind).acceptsArm) {
         return false;
     }
     if (projectStateChanged) {

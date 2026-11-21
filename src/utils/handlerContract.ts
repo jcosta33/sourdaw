@@ -105,8 +105,6 @@ export type HandlerValidationContext = {
     readonly workOwner?: AgentWorkOwnerIdentity | null;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
-    /** The action replays a history entry (undo, redo or a replay refresh), so it restores a state rather than being a fresh user edit. */
-    readonly replaysHistoryEntry?: true;
     /** Ephemeral Inspector preview owner; never part of persisted actions or replay. */
     readonly deviceParameterRuntimeAuthority?: {
         readonly trackId: string;

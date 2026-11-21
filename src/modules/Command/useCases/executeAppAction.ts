@@ -363,13 +363,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 actions: [action],
                 actionIndex: 0,
             };
-            const replayContext: { replaysHistoryEntry?: true } = {};
-            if (options?.undoEntryId !== undefined) {
-                replayContext.replaysHistoryEntry = true;
-            }
             const executionContext: HandlerValidationContext = {
                 ...runtimeAuthorityContext,
-                ...replayContext,
                 actions: [action],
                 actionIndex: 0,
                 undoEntryId: options?.undoEntryId ?? command.envelope.commandId,
