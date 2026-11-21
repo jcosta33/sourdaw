@@ -163,6 +163,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds, snapValue, transientSensitivity]);
 
     const beatWidth = Math.max(1, 40 * zoom);
+    const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
 
     useEffect(() => {
         const args: DrawArgs = {
@@ -172,6 +173,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             beatWidth,
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
+            clipLengthBeats,
             viewScrollLeft,
         };
         // Paint in the next frame, so a marker commit's task never also pays for the canvas;
@@ -192,7 +194,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };
-    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId]);
+    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId, clipLengthBeats]);
 
     if (clipId === null || !isAudioClip) {
         return (
@@ -572,6 +574,7 @@ type DrawArgs = {
     beatWidth: number;
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
+    clipLengthBeats: number;
     viewScrollLeft: number;
 };
 
@@ -612,8 +615,16 @@ function sameMarkerVisuals(previous: readonly WarpMarkerView[], current: readonl
 }
 
 function drawWaveform(args: DrawArgs): void {
-    const { canvasRef, containerRef, previousDrawingRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } =
-        args;
+    const {
+        canvasRef,
+        containerRef,
+        previousDrawingRef,
+        beatWidth,
+        warpState,
+        clipAudioBufferId,
+        clipLengthBeats,
+        viewScrollLeft,
+    } = args;
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) {
@@ -624,8 +635,11 @@ function drawWaveform(args: DrawArgs): void {
         return;
     }
     const dpr = window.devicePixelRatio || 1;
+    // The clip's own length sets the extent, so the canvas keeps its size when Detect adds markers:
+    // growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
         64,
+        clipLengthBeats + 8,
         warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
@@ -699,14 +713,9 @@ function drawWaveform(args: DrawArgs): void {
         }
     }
 
-    for (let beat = 0; beat < width / beatWidth; beat++) {
-        const x = beat * beatWidth;
-        ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-    }
+    const grid = { width, height, beatWidth };
+    strokeBeatGrid(ctx, grid, 'rgba(255,255,255,0.03)', (beat) => beat % 4 !== 0);
+    strokeBeatGrid(ctx, grid, 'rgba(255,255,255,0.1)', (beat) => beat % 4 === 0);
 
     const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, container.clientWidth);
     for (const marker of markers) {
@@ -753,6 +762,23 @@ function drawWaveform(args: DrawArgs): void {
         markers: structuredClone(warpState.markers),
         strokeStyle: ctx.strokeStyle,
     };
+}
+
+function strokeBeatGrid(
+    ctx: CanvasRenderingContext2D,
+    { width, height, beatWidth }: { width: number; height: number; beatWidth: number },
+    style: string,
+    includesBeat: (beat: number) => boolean
+): void {
+    ctx.strokeStyle = style;
+    ctx.beginPath();
+    for (let beat = 0; beat < width / beatWidth; beat++) {
+        if (includesBeat(beat)) {
+            ctx.moveTo(beat * beatWidth, 0);
+            ctx.lineTo(beat * beatWidth, height);
+        }
+    }
+    ctx.stroke();
 }
 
 function markerColor(marker: WarpMarkerView): string {

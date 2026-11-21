@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => {
         tracks: [
             {
                 id: 't1',
-                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
+                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1', startBeat: 0, endBeat: 8 }],
             },
         ],
         selectedTrackId: 't1',
@@ -256,7 +256,9 @@ describe('ElasticEditorPanel', () => {
         mocks.background = '#151515';
         preferencesStore.trySet(defaultPreferences);
         mocks.trackStoreValue = {
-            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
+            tracks: [
+                { id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1', startBeat: 0, endBeat: 8 }] },
+            ],
             selectedTrackId: 't1',
         };
         mocks.timelineEditingValue = { snapValue: 0.25 };
@@ -575,6 +577,28 @@ describe('ElasticEditorPanel', () => {
             expect(drawing.line).toHaveBeenCalledWith(8245, 0);
         });
 
+        it('keeps the canvas size when markers are added to a clip longer than the default extent', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            const state = mocks.warpStates.get('c1');
+            if (!clip || !state) {
+                throw new Error('Missing fixture clip or warp state');
+            }
+            clip.endBeat = 240;
+            state.markers = [];
+            const view = render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const widthBeforeDetect = canvas.width;
+            expect(widthBeforeDetect).toBe((240 + 8) * 40);
+
+            state.markers = [{ id: 'late', originalBeat: 200, warpedBeat: 200, origin: 'transient-auto' }];
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            flushFrame();
+
+            expect(canvas.width).toBe(widthBeforeDetect);
+        });
+
         it.each(['width', 'height', 'context reset', 'context restored'])(
             'restores pixels after an external %s even when visual inputs are unchanged',
             (reset) => {
@@ -749,7 +773,13 @@ describe('ElasticEditorPanel', () => {
 
     it('uses the saved sensitivity for the first Detect on a newly opened clip', () => {
         preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
-        mocks.trackStoreValue.tracks[0]?.clips.push({ id: 'c2', type: 'audio', audioBufferId: 'buf-2' });
+        mocks.trackStoreValue.tracks[0]?.clips.push({
+            id: 'c2',
+            type: 'audio',
+            audioBufferId: 'buf-2',
+            startBeat: 0,
+            endBeat: 8,
+        });
         mocks.elasticStoreValue.openClipId = 'c2';
 
         render(<ElasticEditorPanel />);
