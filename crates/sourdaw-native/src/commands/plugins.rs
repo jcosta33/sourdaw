@@ -2,17 +2,20 @@
 
 use crate::commands::graph::{self, StripReportPayload};
 use crate::commands::graph_refusals::GraphRefusal;
-use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
+use crate::host::native_bridge::{
+    HostedPluginSlot, ParameterWriteError, PluginControlError, PluginControlRefusal,
+    PluginStateError, SharedHostedPlugin,
+};
 use crate::host::plugin_registry_store::{
     plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
     PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
     RescanClaim, ScanRow,
 };
-use crate::host::plugin_scan_policy::PluginScanPolicy;
+use crate::host::plugin_scan_policy::{PluginScanPolicy, ScanPathRefusal};
 use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
-    call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
+    call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread, UiThreadError,
 };
 use crate::state::{locked_or_poisoned, AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
@@ -91,9 +94,8 @@ pub struct PluginUnloadReply {
 ///
 /// `Display` is the text the renderer receives through the napi edge, which
 /// converts with `to_string()`; each message is byte-identical to the one it
-/// replaced (ADR 0059). [`Self::Host`] and [`Self::Recorded`] pass through text
-/// this module does not build: the host seams (control path, UI-thread hop)
-/// still answer in `String`, and the registry store records a refusal's text.
+/// replaced (ADR 0059). [`Self::Recorded`] passes through text this module
+/// does not build: the registry store records a refusal's text.
 #[derive(Debug)]
 pub(crate) enum PluginCommandError {
     /// A state store's mutex was poisoned.
@@ -120,7 +122,7 @@ pub(crate) enum PluginCommandError {
     NotAuthorized {
         name: String,
         path: String,
-        refusal: ScanPolicyRefusal,
+        refusal: ScanPathRefusal,
     },
     ResolvesElsewhere {
         name: String,
@@ -182,8 +184,16 @@ pub(crate) enum PluginCommandError {
     Engine(CommandError),
     /// The graph registry could not report a touched strip.
     Graph(GraphRefusal),
-    /// A host seam's own refusal text: the control path or the UI-thread hop.
-    Host(String),
+    /// The control path refused to run an operation on the instance.
+    Control(PluginControlRefusal),
+    /// The host refused a parameter write.
+    ParameterWrite(ParameterWriteError),
+    /// The control path refused a state read, or the read failed.
+    StateRead(PluginControlError<PluginStateError>),
+    /// The control path refused a state restore, or the plugin did.
+    StateWrite(PluginControlError<PluginError>),
+    /// The shell's UI thread did not take the call.
+    UiThread(UiThreadError),
     RuntimeGateHeld,
     LifecycleHeld,
     NoEngineRunning,
@@ -222,7 +232,12 @@ impl fmt::Display for PluginCommandError {
                 f,
                 "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
             ),
-            Self::Recorded(reason) | Self::Host(reason) => f.write_str(reason),
+            Self::Recorded(reason) => f.write_str(reason),
+            Self::Control(refusal) => write!(f, "{refusal}"),
+            Self::ParameterWrite(error) => write!(f, "{error}"),
+            Self::StateRead(error) => write!(f, "{error}"),
+            Self::StateWrite(error) => write!(f, "{error}"),
+            Self::UiThread(error) => write!(f, "{error}"),
             Self::Graph(refusal) => write!(f, "{refusal}"),
             Self::AlreadyBeingLookedFor { name, path } => write!(
                 f,
@@ -322,26 +337,15 @@ impl std::error::Error for PluginCommandError {
             Self::Runtime(error) => Some(error),
             Self::Engine(error) => Some(error),
             Self::Graph(refusal) => Some(refusal),
+            Self::Control(refusal) => Some(refusal),
+            Self::ParameterWrite(error) => Some(error),
+            Self::StateRead(error) => Some(error),
+            Self::StateWrite(error) => Some(error),
+            Self::UiThread(error) => Some(error),
             _ => None,
         }
     }
 }
-
-/// The scan policy's refusal of a plugin path, in the policy's own words.
-///
-/// `host::plugin_scan_policy` answers in text, so this carries that text
-/// unchanged; it is its own type so a load refusal can name the policy as its
-/// source.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ScanPolicyRefusal(String);
-
-impl fmt::Display for ScanPolicyRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ScanPolicyRefusal {}
 
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -1374,7 +1378,7 @@ fn authorize_scan_roots(
         let canonical = match policy.authorize_scan_root(&path) {
             Ok(canonical) => canonical,
             Err(error) => {
-                errors.push(error);
+                errors.push(error.to_string());
                 continue;
             }
         };
@@ -1795,15 +1799,11 @@ fn authorize_plugin_file(
     scan_policy: &PluginScanPolicy,
     path: &Path,
     format: &str,
-) -> Result<PathBuf, ScanPolicyRefusal> {
-    let authorized = scan_policy
-        .authorize_scan_root(path)
-        .map_err(ScanPolicyRefusal)?;
+) -> Result<PathBuf, ScanPathRefusal> {
+    let authorized = scan_policy.authorize_scan_root(path)?;
     if let Some(module) = plugin_file_path(&authorized, format) {
         if module != authorized {
-            scan_policy
-                .authorize_scan_root(&module)
-                .map_err(ScanPolicyRefusal)?;
+            scan_policy.authorize_scan_root(&module)?;
         }
     }
     Ok(authorized)
@@ -2272,7 +2272,7 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
     runtime: &mut P,
 ) -> Result<bool, PluginCommandError> {
     lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
-        .map_err(PluginCommandError::Host)
+        .map_err(PluginCommandError::UiThread)
 }
 
 /// How a load builds its runtime: [`create_hosted_runtime`] in production, a
@@ -2367,7 +2367,7 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
         )
         .map_err(PluginCommandError::Runtime)
     })
-    .map_err(PluginCommandError::Host)?
+    .map_err(PluginCommandError::UiThread)?
 }
 
 /// Run a runtime's teardown on the shell's UI thread.
@@ -3243,7 +3243,7 @@ fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
                 request,
             );
         }));
-        Ok(())
+        Ok::<_, std::convert::Infallible>(())
     }) {
         eprintln!(
             "[Plugin] instance '{instance_id}' will not carry its own host requests: {error}"
@@ -3826,7 +3826,7 @@ fn write_plugin_parameter(
 
     let enqueue_result = runtime
         .enqueue_parameter(param_id, value)
-        .map_err(PluginCommandError::Host);
+        .map_err(PluginCommandError::ParameterWrite);
 
     let mut engine_plugins = state
         .engine_plugins
@@ -3880,7 +3880,7 @@ fn read_plugin_parameters(
                 instance
                     .runtime
                     .ensure_public_control_allowed()
-                    .map_err(PluginCommandError::Host)?;
+                    .map_err(PluginCommandError::Control)?;
                 Arc::clone(&instance.runtime)
             }
             None => {
@@ -3901,7 +3901,7 @@ fn read_plugin_parameters(
     // stall every other command for the same reason.
     let polled_parameters = runtime
         .poll_parameters(std::time::Duration::from_secs(2))
-        .map_err(PluginCommandError::Host)?;
+        .map_err(PluginCommandError::Control)?;
 
     let mut engine_plugins = state
         .engine_plugins
@@ -3966,7 +3966,7 @@ pub(crate) fn read_plugin_state_chunk(
     if let Some(runtime) = runtime {
         return runtime
             .get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2))
-            .map_err(PluginCommandError::Host);
+            .map_err(PluginCommandError::StateRead);
     }
 
     Err(PluginCommandError::NoInstance {
@@ -4019,7 +4019,7 @@ fn write_plugin_state_chunk(
 
     let refreshed_parameters = runtime
         .set_state_invalidating_pending_parameters(std::time::Duration::from_secs(2), plugin_state)
-        .map_err(PluginCommandError::Host)?;
+        .map_err(PluginCommandError::StateWrite)?;
 
     let mut engine_plugins = state
         .engine_plugins
@@ -4118,8 +4118,9 @@ fn read_tails<Runtime: HostedPluginRuntime>(
     runtimes
         .into_iter()
         .filter_map(|(instance_id, runtime)| {
-            let read =
-                runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| Ok(plugin.tail_samples()));
+            let read = runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| {
+                Ok::<_, std::convert::Infallible>(plugin.tail_samples())
+            });
             match read {
                 Ok(tail_samples) => Some(PluginTailReading {
                     instance_id,
@@ -4323,7 +4324,10 @@ mod tests {
             false
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             let carries = self
                 .carries
                 .lock()
@@ -4331,7 +4335,9 @@ mod tests {
                 .pop_front()
                 .unwrap_or(true);
             if !carries {
-                return Err("the shell's UI thread did not take the editor call".to_string());
+                return Err("the shell's UI thread did not take the editor call"
+                    .to_string()
+                    .into());
             }
             task.run();
             Ok(())
@@ -4348,8 +4354,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err(crate::host::plugin_window::PluginWindowError::NoWindowServer)
         }
 
         fn destroy_window(&self, _label: &str) {}
@@ -4816,7 +4823,7 @@ mod tests {
                         "instance-swapped-write",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4900,7 +4907,7 @@ mod tests {
                         "instance-swapped-restore",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4980,7 +4987,7 @@ mod tests {
                         "instance-swapped-poll",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -5064,7 +5071,7 @@ mod tests {
                     poll_may_run
                         .recv_timeout(Duration::from_secs(5))
                         .expect("the test opens the gate once the map is held");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -5110,7 +5117,7 @@ mod tests {
                 // schedule leaves the write-back guard unexercised but no
                 // schedule of correct code fails.
                 event_runtime
-                    .with_control(Duration::from_secs(2), |_plugin| Ok(()))
+                    .with_control(Duration::from_secs(2), |_plugin| Ok::<_, String>(()))
                     .expect("fixture control access should succeed");
                 event_runtime
                     .enqueue_parameter(7, 0.75)
@@ -6958,11 +6965,8 @@ mod tests {
         let shared = Arc::new(SharedHostedPlugin::new(runtime));
         let watcher_clone = Arc::clone(&shared);
 
-        let refusal = RegistrationRefusal::recovered(
-            PluginCommandError::Host("ring full".to_string()),
-            shared,
-            &state,
-        );
+        let refusal =
+            RegistrationRefusal::recovered(PluginCommandError::SessionFull, shared, &state);
         drop(watcher_clone);
 
         assert!(
@@ -8030,7 +8034,10 @@ mod tests {
             false
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             (self.change)();
             task.run();
             Ok(())
@@ -8047,8 +8054,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err(crate::host::plugin_window::PluginWindowError::NoWindowServer)
         }
 
         fn destroy_window(&self, _label: &str) {}
@@ -11836,7 +11844,7 @@ mod tests {
 
         let answer = busy
             .with_control(Duration::from_millis(50), |_| {
-                Ok(read_tails(vec![
+                Ok::<_, std::convert::Infallible>(read_tails(vec![
                     ("busy".to_string(), Arc::clone(&busy)),
                     ("idle".to_string(), Arc::clone(&idle)),
                 ]))
@@ -11922,8 +11930,10 @@ mod tests {
             &mut parameters,
             7,
             0.75,
-            Err(PluginCommandError::Host(
-                "Pending parameter queue full for plugin 'test'".to_string(),
+            Err(PluginCommandError::ParameterWrite(
+                ParameterWriteError::QueueFull {
+                    plugin: "test".to_string(),
+                },
             )),
         );
 
@@ -11942,14 +11952,16 @@ mod tests {
             &mut parameters,
             7,
             0.75,
-            Err(PluginCommandError::Host(
-                "No engine-owned plugin instance: test".to_string(),
+            Err(PluginCommandError::ParameterWrite(
+                ParameterWriteError::Refused(PluginControlRefusal::Retired {
+                    plugin: "test".to_string(),
+                }),
             )),
         );
 
         assert_eq!(
             result.map_err(|error| error.to_string()),
-            Err("No engine-owned plugin instance: test".to_string())
+            Err("Engine-owned plugin instance 'test' has been retired".to_string())
         );
         assert_eq!(parameters[0].value, 0.25);
     }

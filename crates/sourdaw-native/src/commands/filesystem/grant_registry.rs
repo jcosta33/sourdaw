@@ -518,10 +518,15 @@ mod tests {
             read_write_paths_under(Ok(None)).unwrap(),
             Vec::<PathBuf>::new()
         );
-        let refusal = read_write_paths_under(Err(FileRefusal::RuntimeScope("refused".to_string())))
-            .unwrap_err();
+        let refusal = read_write_paths_under(Err(FileRefusal::RuntimeScope(
+            crate::host::runtime_scope::RuntimeScopeRefusal::Invalid,
+        )))
+        .unwrap_err();
         assert!(matches!(refusal, FileRefusal::RuntimeScope(_)));
-        assert_eq!(refusal.to_string(), "refused");
+        assert_eq!(
+            refusal.to_string(),
+            "Native runtime scope must be an existing canonical UUID directory in the reserved namespace"
+        );
     }
 
     #[test]

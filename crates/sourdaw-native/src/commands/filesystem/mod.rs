@@ -435,7 +435,7 @@ pub(crate) fn ipc_temp_dir() -> Result<PathBuf, FileRefusal> {
     Ok(std::env::temp_dir().join(IPC_TEMP_DIR_NAME))
 }
 
-/// The runtime scope's path for `relative`, with its refusal carried as text.
+/// The runtime scope's path for `relative`, with its refusal as the source.
 fn scoped_path(relative: &str) -> Result<Option<PathBuf>, FileRefusal> {
     RuntimeScope::path(relative).map_err(FileRefusal::RuntimeScope)
 }

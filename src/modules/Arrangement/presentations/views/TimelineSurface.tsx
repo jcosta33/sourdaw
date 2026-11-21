@@ -60,6 +60,7 @@ export const TimelineSurface = (): ReactElement => {
     );
     const inlineLanes = useStoreSelector(automationStore, (state) => (inlineEditing ? (state?.lanes ?? null) : null));
     const inlineAutomation = { editing: inlineEditing, lanes: inlineLanes };
+    const showHiddenTracks = useStoreSelector(timelineEditingStore, (state) => state?.showHiddenTracks ?? false);
     useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container || viewportMeasurementRevision === 0) {
@@ -71,7 +72,8 @@ export const TimelineSurface = (): ReactElement => {
     const timelineMinimumHeight = getTimelineSurfaceMinimumHeight(
         currentTrackStore.tracks,
         currentTrackStore.selectedTrackId,
-        heightMode
+        heightMode,
+        showHiddenTracks
     );
 
     const {
