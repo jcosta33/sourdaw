@@ -15,3 +15,13 @@
  * same floor. In seconds; the descriptor declares `flanger-depth` in ms.
  */
 export const FLANGER_MIN_DELAY_SECONDS = 0.001;
+
+/**
+ * `namedNodes` key of the Auto Makeup twin of the built-in compressor and
+ * limiter. The applier creates it when the switch is off; the binding map
+ * schedules automation of every parameter that reaches the device's
+ * `DynamicsCompressorNode` (the compressor's threshold, knee, ratio, attack
+ * and release; the limiter's threshold and release) on it as well, so the
+ * twin's measured makeup moves with the device's.
+ */
+export const COMPRESSOR_AUTO_MAKEUP_TWIN_NODE = 'autoMakeupTwin';

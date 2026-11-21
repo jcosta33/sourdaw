@@ -22,6 +22,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { hasPadOutputHost } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { cn } from '#/utils/Styles/cn';
@@ -98,7 +99,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     ) : null;
 
     if (track.kind === 'folder') {
-        const isDrumMachine = track.devices.some((data) => data.type === 'toaster');
+        const isDrumMachine = hasPadOutputHost(track.devices);
         const FolderIcon = isDrumMachine ? Drum : Folder;
 
         return (

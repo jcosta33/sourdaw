@@ -179,6 +179,7 @@ export function getDrumRenderComparisonPromptScope(
             parallelBusName: PARALLEL_BUS_NAME,
             parallelBusBinding: PARALLEL_BUS_BINDING,
             compressorDeviceType: COMPRESSOR_DEVICE_TYPE,
+            compressorAutoMakeup: 1,
             sendLevelDb: SEND_LEVEL_DB,
             sendLevel: SEND_LEVEL,
             sendPreFader: false,

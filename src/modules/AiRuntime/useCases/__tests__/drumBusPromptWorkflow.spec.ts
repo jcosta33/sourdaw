@@ -221,14 +221,17 @@ vi.hoisted(() => {
         const base = new (
             OriginalAudioContext as unknown as new (opts?: AudioContextOptions) => Record<string, unknown>
         )(options);
-        return Object.assign(base, {
+        const context: Record<string, unknown> = Object.assign(base, {
             currentTime: 0,
             createStereoPanner: () => ({
                 pan: createAudioParam(0),
                 connect: (dest: unknown) => dest,
                 disconnect: () => undefined,
             }),
+            // Every real AudioNode carries `context`: the compressor's Auto Makeup
+            // canceller builds its probe, scale and shaper from it.
             createDynamicsCompressor: () => ({
+                context,
                 threshold: createAudioParam(-24),
                 knee: createAudioParam(30),
                 ratio: createAudioParam(12),
@@ -238,7 +241,20 @@ vi.hoisted(() => {
                 connect: (dest: unknown) => dest,
                 disconnect: () => undefined,
             }),
+            createConstantSource: () => ({
+                offset: createAudioParam(1),
+                start: () => undefined,
+                stop: () => undefined,
+                connect: (dest: unknown) => dest,
+                disconnect: () => undefined,
+            }),
+            createWaveShaper: () => ({
+                curve: null,
+                connect: (dest: unknown) => dest,
+                disconnect: () => undefined,
+            }),
         });
+        return context;
     }
     globalThis.AudioContext = AudioContextWithStereoPanner as unknown as typeof AudioContext;
 });
@@ -1513,6 +1529,7 @@ describe('drum bus prompt workflow', () => {
             'setTrackOutput',
             'createBus',
             'addDevice',
+            'setDeviceParameter',
             'addSend',
             'setTrackGain',
             'renderProjectSections',
@@ -1570,6 +1587,22 @@ describe('drum bus prompt workflow', () => {
                     deviceId: compressorDeviceId,
                     expectedDeviceIds: [],
                     expectedFrozen: false,
+                },
+            },
+            // The placed compressor starts with Auto Makeup off; the workflow's parallel gain
+            // was voiced with it on (ADR 0064).
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: compressorDeviceId,
+                    paramId: 'comp-auto-makeup',
+                    value: 1,
+                    expectedTrackId: parallelBusId,
+                    expectedDeviceType: 'builtin-compressor',
+                    expectedDeviceIds: [compressorDeviceId],
+                    expectedValue: 0,
+                    expectedTrackFrozen: false,
+                    automationRecordingPolicy: 'suppressed',
                 },
             },
             {
@@ -1707,6 +1740,7 @@ describe('drum bus prompt workflow', () => {
             'setTrackOutput',
             'createBus',
             'addDevice',
+            'setDeviceParameter',
             'addSend',
             'setTrackGain',
             'renderProjectSections',
@@ -1922,7 +1956,7 @@ describe('drum bus prompt workflow', () => {
         expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('comparison renderer unavailable');
         expect(receipt?.content).toContain('the project mutation will not replay');
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
 
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'failed',
@@ -2444,7 +2478,7 @@ describe('drum bus prompt workflow', () => {
             tailSeconds: failedJob.tailSeconds,
         });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
@@ -2483,7 +2517,7 @@ describe('drum bus prompt workflow', () => {
             })
         );
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
@@ -2527,7 +2561,7 @@ describe('drum bus prompt workflow', () => {
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
 
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: committedConfirmation.runId,
@@ -2550,7 +2584,7 @@ describe('drum bus prompt workflow', () => {
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
         ).toMatchObject({
@@ -3150,7 +3184,7 @@ describe('drum bus prompt workflow', () => {
 
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(artifactIds);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(undoStore.value?.future).toEqual([]);
 
         trackStore.set({

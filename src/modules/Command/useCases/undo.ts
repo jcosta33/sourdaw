@@ -1,6 +1,10 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
+import {
+    AppActionBlockedError,
+    AppActionCommittedError,
+    AppActionConflictError,
+} from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { isInertUndoUnit, newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
@@ -106,6 +110,9 @@ async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Prom
         await runExecuteAppAction(inverseAction, options);
         return { status: 'undone', applied };
     } catch (error) {
+        if (error instanceof AppActionBlockedError) {
+            return { status: 'conflict', blocked: true };
+        }
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
@@ -200,8 +207,8 @@ type CandidateOutcome =
       }
     /** Nothing to undo and nothing written: the unit is dropped. */
     | { readonly status: 'inert' }
-    /** Nothing was written. `retained` stays on `past` and stays retryable. */
-    | { readonly status: 'conflict'; readonly retained: readonly UndoEntry[] };
+    /** Nothing was written. `retained` stays on `past` and stays retryable. `blocked`: a transient refusal the handler already reported, never stepped over. */
+    | { readonly status: 'conflict'; readonly retained: readonly UndoEntry[]; readonly blocked?: true };
 
 /** Undoes a unit member by member, newest first. Used for every unit that is not
  *  an atomic action group: a single entry, or a group mixing callbacks, inert
@@ -221,9 +228,12 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
             // Nothing was written for this entry, so it and every older member of
             // its unit stay on `past` and stay retryable.
             const retained = entries.slice(0, index + 1);
-            return undone.length === 0
-                ? { status: 'conflict', retained }
-                : { status: 'undone', undone, retained, partialConflict: true, applied };
+            if (undone.length === 0) {
+                return outcome.blocked === true
+                    ? { status: 'conflict', retained, blocked: true }
+                    : { status: 'conflict', retained };
+            }
+            return { status: 'undone', undone, retained, partialConflict: true, applied };
         }
 
         applied ||= outcome.status === 'committed' || outcome.applied === true;
@@ -245,6 +255,13 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
         : { status: 'undone', undone, retained: [], partialConflict: false, applied };
 }
 
+function conflictOutcome(retained: readonly UndoEntry[], blocked: boolean): CandidateOutcome {
+    if (blocked) {
+        return { status: 'conflict', retained, blocked: true };
+    }
+    return { status: 'conflict', retained };
+}
+
 async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome> {
     if (!candidate.head.groupId || !isAtomicActionGroup(candidate.entries)) {
         return undoEntriesNewestFirst(candidate.entries);
@@ -257,7 +274,7 @@ async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome
         },
     });
     if (outcome.status === 'conflict') {
-        return { status: 'conflict', retained: candidate.entries };
+        return conflictOutcome(candidate.entries, outcome.blocked === true);
     }
     if (outcome.status === 'inert') {
         return { status: 'inert' };
@@ -379,6 +396,32 @@ async function stepOverConflictedHeadOrSettle({
     return result;
 }
 
+type ConflictedHeadInput = StepOverInput & {
+    readonly blocked: boolean;
+    readonly stepOverConflicts: boolean;
+};
+
+/**
+ * A head whose inverse refused. A blocked refusal (a transient state the handler already
+ * reported) leaves the history untouched and steps over nothing; a diverged document is
+ * reported here and may step onto the unit beneath.
+ */
+function settleConflictedHead({
+    blocked,
+    stepOverConflicts,
+    ...input
+}: ConflictedHeadInput): Promise<UndoResult> | UndoResult {
+    const { initialPast, headId, beneath, retained } = input;
+    if (blocked) {
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+    }
+    notifyUndoConflict(undoEntryLabel(input.conflictedHead));
+    if (!stepOverConflicts) {
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+    }
+    return stepOverConflictedHeadOrSettle(input);
+}
+
 async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
@@ -442,20 +485,14 @@ async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
             continue;
         }
         if (outcome.status === 'conflict') {
-            notifyUndoConflict(undoEntryLabel(candidate.head));
-            if (!stepOverConflicts) {
-                return settleWithoutUndo({
-                    initialPast,
-                    headId,
-                    retainedPast: [...past, ...outcome.retained],
-                });
-            }
-            return stepOverConflictedHeadOrSettle({
+            return settleConflictedHead({
                 initialPast,
                 headId,
                 conflictedHead: candidate.head,
                 retained: outcome.retained,
                 beneath: past,
+                blocked: outcome.blocked === true,
+                stepOverConflicts,
                 onCommitted,
             });
         }

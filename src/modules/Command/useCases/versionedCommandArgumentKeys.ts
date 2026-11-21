@@ -1626,7 +1626,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            color: 1,
             folderTrackId: 1,
+            initialAlternativeId: 1,
             name: 1,
         },
         required: ['name'],

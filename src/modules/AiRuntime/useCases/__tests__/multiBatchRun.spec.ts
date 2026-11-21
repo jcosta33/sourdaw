@@ -984,7 +984,10 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                 '- Batch 4 of 4: warm bass — Bass',
             ].join('\n')
         );
-        expect(content).not.toContain('bright');
+        // The withheld quality plans no batch; the brief records it as a hold instead.
+        const batchLines = content.split('\n').filter((line) => line.startsWith('- Batch '));
+        expect(batchLines.filter((line) => line.includes('bright'))).toEqual([]);
+        expect(content).toContain("Must hold (Vocal): don't let the vocal get brighter");
     });
 
     it('proposes warmth without widening for a contrastive request, with each batch still awaiting approval', async () => {

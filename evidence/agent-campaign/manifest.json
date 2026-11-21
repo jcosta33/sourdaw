@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "48655f3a6d8b6e16a8a6f37498dd85b8ad793a2034f61ef86e64cddc67a9b1ea"
+        "digest": "b6ea1964319b82eed910c952353bb2321d8c4956149153e3bd724dc59c71aaca"
     },
     "census": {
         "digest": "b4cd8eb0e28ec0fda93d1daf27a0451c789dc16e7042f5a419e4baf6dac0d705"
@@ -402,7 +402,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
-                    "digest": "c492b50626a8b32f78d46a0c22381d400b4cf61f968c119f71eb1a06e754c2f4"
+                    "digest": "7118e46dbcbfa4d210879ac3a6a2b20b214fb96c3f39e2e19766b91baf01707d"
                 },
                 {
                     "path": "src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "48b09ebfd14be879a851ff2110b25f7cd5273449577af77390428770f65bf19c"
+                    "digest": "98db0f84d9f6d0e849d2920520f58d072f1196f9bbff94646a8600d251b03864"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "b8cba0f2af6886b084a68393d0d0ffe994acfd789949e554b7cc56f7fab5de17"
+                    "digest": "21788fea99ed48fa4c017eafdd4b961f99f9afa4661f8e3d55f58c3ca4f311f2"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",

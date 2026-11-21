@@ -6,12 +6,16 @@ import {
     builtinSynthVoice,
     type classifyNoteReceivingDevice,
     ensureTrackStrip,
+    findMidiTransformDevice,
+    findPadOutputHost,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
+    hostsPadOutputs,
     isBypassedNoteReceiver,
+    isMidiTransformDevice,
     registerScheduledSource,
     resolveDrumKitBy,
     resolveDrumKitOutputGain,
@@ -93,7 +97,7 @@ type NoteReceivingInstrumentKind = NonNullable<ReturnType<typeof classifyNoteRec
 // A Toaster child's notes go to its parent's kit, whatever else the parent's
 // chain holds; only this parent arm looks for a toaster outside the receiver.
 function findToasterDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
-    return devices.find((device) => device.type === 'toaster');
+    return findPadOutputHost(devices);
 }
 
 // The receiver of a track's own notes when it is of one family, else undefined.
@@ -152,7 +156,9 @@ function resolveToasterTarget(
     }
     const toasterDevice = device;
     const ownerStrip = ownerTrack.id === track.id ? strip : ensureTrackStrip(ownerTrack.id);
-    const node = ownerStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id || data.type === 'toaster');
+    const node = ownerStrip.deviceNodes.find(
+        (data) => data.deviceId === toasterDevice.id || hostsPadOutputs(data.type)
+    );
     return node?.toasterControls ? { ownerTrack, device: toasterDevice, pad, controls: node.toasterControls } : null;
 }
 
@@ -168,7 +174,7 @@ function resolveStoredControllerDevice(
     track: SchedulerTrack,
     tracks: readonly SchedulerTrack[]
 ): { device: SchedulerTrack['devices'][number]; node: SchedulerTrackStrip['deviceNodes'][number] } | null {
-    if (track.devices.some((candidate) => candidate.type === 'yeast')) {
+    if (track.devices.some((candidate) => isMidiTransformDevice(candidate.type))) {
         return null;
     }
     const strip = ensureTrackStrip(track.id);
@@ -806,7 +812,7 @@ export async function scheduleMidiNotes(
         const drumKit = receivesOnDrumKit && !drumKitDef ? resolveDrumKit(track.devices) : null;
         const drumKitGain = resolveDrumKitOutputGain(track.devices);
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
-        const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+        const yeastDevice = findMidiTransformDevice(track.devices);
         let yeastNotes: PreparedYeastTrackNotes | null | undefined;
         if (preparedInitialWindow) {
             yeastNotes = preparedInitialWindow.yeastByTrack.get(track.id);
