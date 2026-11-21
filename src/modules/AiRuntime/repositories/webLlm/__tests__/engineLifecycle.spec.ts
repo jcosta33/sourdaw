@@ -651,4 +651,72 @@ describe('WebLLM engineLifecycle injectables', () => {
             await Promise.all([supersededRejection, replacementRejection]);
         });
     });
+
+    describe('an abandoned load publishes the status the engine is in', () => {
+        type Consume = (admission: unknown) => Promise<void>;
+
+        function holdAdmission(): { release: () => void } {
+            let release: () => void = () => undefined;
+            artifactAdmissionMock.mockImplementationOnce(async (_modelId: string, options?: { consume?: Consume }) => {
+                await new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                await options?.consume?.({ appConfig: { cacheBackend: 'cache', model_list: [] } });
+            });
+            return { release: () => release() };
+        }
+
+        it('reads idle when the only waiter leaves a first load and nothing is installed', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const held = holdAdmission();
+            const controller = new AbortController();
+            const pending = initWebLlmEngine('model-x', { signal: controller.signal });
+            const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+
+            controller.abort();
+            held.release();
+
+            await rejection;
+            await vi.waitFor(() => expect(llmStatusStore.value).toEqual({ state: 'idle' }));
+        });
+
+        it('settles a stopped turn to idle, not to the loading text of the load it abandoned', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const generating = { state: 'generating', backend: 'webllm', modelId: 'model-x' } as const;
+            const turn = answeringStatus.openTurn();
+            answeringStatus.publish(turn, generating);
+            const held = holdAdmission();
+            const controller = new AbortController();
+            const pending = initWebLlmEngine('model-x', { signal: controller.signal });
+            const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(answeringStatus.readSettled()?.state).toBe('loading'));
+
+            controller.abort();
+            held.release();
+            await rejection;
+            await vi.waitFor(() => expect(answeringStatus.readSettled()).toEqual({ state: 'idle' }));
+            answeringStatus.settle(turn, answeringStatus.readSettled());
+
+            expect(llmStatusStore.value).toEqual({ state: 'idle' });
+        });
+
+        it('reads ready on the loaded model when a switch to another model is abandoned', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await initWebLlmEngine('model-x');
+            const held = holdAdmission();
+            const controller = new AbortController();
+            const pending = initWebLlmEngine('model-y', { signal: controller.signal });
+            const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+
+            controller.abort();
+            held.release();
+
+            await rejection;
+            await vi.waitFor(() =>
+                expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'model-x' })
+            );
+        });
+    });
 });

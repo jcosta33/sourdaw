@@ -55,8 +55,9 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         new DOMException('WebLLM initialization superseded', 'AbortError')
                     );
                 }
-                // A refused load leaves its error showing, and an aborted one its loading text, while this one
-                // answers; a switch still loading owns the status.
+                // A refused load leaves its error showing while this one answers, and an aborted one its loading
+                // text until its own rejection republishes the engine's status; a switch still loading owns the
+                // status.
                 const shown = answeringStatus.readEngineStatus()?.state;
                 const switchLoading = engineState.initPromise !== null && !engineState.initSignal?.aborted;
                 if (shown === 'error' || (shown === 'loading' && !switchLoading)) {
@@ -233,7 +234,10 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                     attemptWorker.terminate();
                     engineState.worker = null;
                 }
-                if (!attemptSignal.aborted) {
+                if (attemptSignal.aborted) {
+                    // An abandoned load must not leave its loading text behind with no load running.
+                    answeringStatus.publishEngineStatus(describeEngineStatus());
+                } else {
                     answeringStatus.publishEngineStatus(describeLoadFailure(error));
                 }
                 engineState.initPromise = null;
@@ -251,6 +255,13 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             });
         }
 );
+
+function describeEngineStatus(): LlmEngineStatus {
+    if (engineState.engine) {
+        return { state: 'ready', backend: 'webllm', modelId: engineState.activeModelId };
+    }
+    return { state: 'idle' };
+}
 
 function retirePreviousWebLlmEngine(): void {
     const previous = engineState.engine;
