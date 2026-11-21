@@ -19,7 +19,7 @@ import {
     MODAL_NEGATION,
     NEGATION,
     normalizeObjectText,
-    NOT_AFTER_CLAUSE_NEGATION,
+    NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_PREPOSITION,
     PURPOSE_HEAD,
@@ -93,8 +93,15 @@ const NOUN_CONTINUATION = new RegExp(
 
 type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
 
-/** "keep the mix from getting louder"; a negation before it in its clause permits the move instead. */
-const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
+/**
+ * "keep the mix from getting louder"; a negation governing the keep or stop permits the move instead.
+ * It is read after the kept qualities, so a kept quality before it keeps its own object ("keep the
+ * vocal bright and the mix from getting wider" never reads "the vocal bright" as an object here).
+ */
+const KEPT_FROM = new RegExp(
+    String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    'dgiu'
+);
 
 function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
     return { pattern: new RegExp(source, 'dgiu'), continuation };
@@ -126,15 +133,16 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
     ),
     // "don't widen the drums", "without squashing the mix"
     holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
-    // "keep the mix from getting louder"; "don't stop the mix from getting wider" permits the move
-    holdPattern(KEPT_FROM, null),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
     holdPattern(
-        String.raw`\b${KEEP_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
+        String.raw`${NOT_PERMITTED}\b${KEEP_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
         NOUN_CONTINUATION
     ),
     // "keep the Keys at the same level"
-    holdPattern(String.raw`\b${KEEP}\s+${OBJECT_LIST}\s+at\s+${THE_SAME}\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`, null),
+    holdPattern(
+        String.raw`${NOT_PERMITTED}\b${KEEP}\s+${OBJECT_LIST}\s+at\s+${THE_SAME}\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`,
+        null
+    ),
 ];
 /**
  * A character of a fallback object: it never crosses a conjunction, a negation or a "please" into the
@@ -285,8 +293,17 @@ function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldCl
     };
 }
 
-/** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
-export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
+/**
+ * The holds read before the kept qualities, or the kept and stopped moves ("keep the mix from getting
+ * louder") read after them, on the text the qualities left.
+ */
+export type HoldStage = 'before-qualities' | 'kept-moves';
+
+/** Every measured-hold clause of its stage in the order it appears, never two over one span, a readable one first. */
+export function readHoldClauses(masked: string, prompt: string, stage: HoldStage): HoldClause[] {
+    if (stage === 'kept-moves') {
+        return Array.from(masked.matchAll(KEPT_FROM), (match) => readHoldMatch([match], prompt));
+    }
     const readable = HOLD_PATTERNS.flatMap(({ pattern, continuation }) =>
         Array.from(masked.matchAll(pattern), (match) =>
             readHoldMatch(withContinuations(match, continuation, masked), prompt)

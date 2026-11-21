@@ -164,16 +164,10 @@ const BARE_NEGATION = words([NO_WORD, 'not']);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
 export const NO = words([NO_WORD]);
 const NEGATED_CONTRACTION = String.raw`\p{L}+n${APOSTROPHE}t`;
-/** Any negation at all: one may permit a move a later keep or stop names ("you don't have to keep …"). */
+/** Any negation at all, which a keep or stop right after it permits: "don't keep …", "no need to keep …". */
 const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
 /** A character of the same clause short of its boundary words. */
 export const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})`;
-/**
- * Not after a negation earlier in the same clause ("you don't have to keep …", "there's no need to
- * prevent …", "don't stop …"), which permits what a keep, stop, prevent or leave after it names, so
- * neither a reader nor the net reads a protection there.
- */
-export const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!\b${ANY_NEGATION}\b${IN_CLAUSE_CHARACTER}*)`;
 
 const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'do', 'does', 'did'];
 const PREDICATE_VERB_WORDS = ['needs', 'need', 'wants', 'want', 'gets', 'got'];
@@ -182,6 +176,16 @@ const TO = 'to';
 const COMPLEMENT_WORDS = [TO, FROM_WORD];
 /** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
 export const FROM = words([FROM_WORD]);
+/** What a negation leads a permitted verb through: "you don't have to keep …", "no need to prevent …". */
+const PERMISSION_LEAD = words([`have ${TO}`, `need ${TO}`]);
+/**
+ * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
+ * …") or through a permission ("you don't have to keep …", "there's no need to prevent …"), which
+ * permits what a keep, stop, prevent or leave names, so neither a reader nor the net reads a
+ * protection there. A negation governing an earlier verb ("without changing the tempo keep the vocal
+ * bright") permits nothing.
+ */
+export const NOT_PERMITTED = String.raw`(?<!\b${ANY_NEGATION}(?:\s+${PERMISSION_LEAD})?\s+)`;
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
 /**
  * The words opening a predicate or its complement, which an object member never holds, so "the vocal
@@ -240,4 +244,4 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_J
  */
 const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:on${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
-export const HOLDING_KEEP = String.raw`${NOT_AFTER_CLAUSE_NEGATION}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
+export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;

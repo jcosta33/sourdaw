@@ -2039,8 +2039,8 @@ describe('reading only governed protections and whole object names', () => {
         }
     );
 
-    // A negation earlier in the clause permits what a keep, stop, prevent or leave after it names, so
-    // the clause protects nothing and records nothing.
+    // A negation governing a keep, stop, prevent or leave, directly or through a permission, permits
+    // what it names, so the clause protects nothing and records nothing, in every keep reader.
     it.each([
         "you don't have to keep the mix from getting wider",
         "there's no need to prevent the vocal from getting brighter",
@@ -2049,9 +2049,45 @@ describe('reading only governed protections and whole object names', () => {
         "there's no need to leave the width alone",
         // a negation right before the keep permits the move too
         "don't keep the mix from getting wider",
+        // the held-noun keep, the same-level keep and the low-end keep read the same guard
+        "there's no need to keep the level of the vocal",
+        "you don't have to keep the Keys at the same level",
+        "there's no need to leave the low end untouched",
     ])('reads nothing from the permission "%s"', (prompt) => {
-        expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints: [], unsupported: [] });
+        expect(compilePerceptualConstraints(prompt, grammarContext('Keys'))).toEqual({
+            constraints: [],
+            unsupported: [],
+        });
     });
+
+    // A negation governing an earlier verb permits nothing: the keep after it still holds, with or
+    // without a comma between them.
+    const VOCAL_BRIGHT = measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'));
+    it.each([
+        ['without changing the tempo keep the vocal bright', [VOCAL_BRIGHT], []],
+        ['without changing the tempo, keep the vocal bright', [VOCAL_BRIGHT], []],
+        ["I don't care about the reverb keep the vocal bright", [VOCAL_BRIGHT], []],
+        ["I don't care about the reverb, keep the vocal bright", [VOCAL_BRIGHT], []],
+        ["don't over-compress keep the vocal bright", [VOCAL_BRIGHT], []],
+        ["don't over-compress, keep the vocal bright", [VOCAL_BRIGHT], []],
+        ['no fx please keep the vocal bright and the mix from getting wider', [VOCAL_BRIGHT], []],
+        // a kept move after an unrelated negation is the bound the same clause states alone
+        [
+            'never mind the drums keep the mix from getting wider',
+            [measured('stereo-width-not-widened-v1', 'keep the mix from getting wider', MIX)],
+            [],
+        ],
+        [
+            'not too much reverb keep the vocal from getting brighter',
+            [measured('brightness-not-raised-v1', 'keep the vocal from getting brighter', onTracks('vocal'))],
+            [],
+        ],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s" past an unrelated negation',
+        (prompt, constraints, unsupported) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints, unsupported });
+        }
+    );
 });
 
 function lowEndUntouched(clause: string): PerceptualConstraintReading['constraints'][number] {

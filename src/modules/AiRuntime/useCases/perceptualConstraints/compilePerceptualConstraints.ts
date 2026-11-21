@@ -15,6 +15,7 @@ import {
     AND_JOIN,
     AS,
     CLAUSE_END,
+    FROM,
     HOLDING_KEEP,
     KEEP_VERBS,
     LEAVE_VERB,
@@ -27,6 +28,7 @@ import {
     NEGATION,
     NO,
     normalizeObjectText,
+    NOT_PERMITTED,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
     OBJECT_PREPOSITION,
@@ -64,11 +66,15 @@ const LOW_END_PROHIBITION = new RegExp(
     'dgiu'
 );
 const LOW_END_PRESERVATION = new RegExp(
-    String.raw`\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+${THE}\s+${LOW_END}${OBJECT_TAIL}\s+${LEFT_STATE}${CLAUSE_END}`,
+    String.raw`${NOT_PERMITTED}\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+${THE}\s+${LOW_END}${OBJECT_TAIL}\s+${LEFT_STATE}${CLAUSE_END}`,
     'dgiu'
 );
-/** At most four words, so a quality later in the request never reads as this clause's object. */
-const QUALITY_OBJECT = String.raw`(?<object>(?:${WORD_CHARACTER}+\s+){0,3}?${WORD_CHARACTER}+)`;
+/**
+ * At most four words, so a quality later in the request never reads as this clause's object, and never
+ * "from", after which a keep names the move it prevents ("keep the mix from getting wider").
+ */
+const QUALITY_OBJECT_WORD = String.raw`(?!${FROM}\b)${WORD_CHARACTER}+`;
+const QUALITY_OBJECT = String.raw`(?<object>(?:${QUALITY_OBJECT_WORD}\s+){0,3}?${QUALITY_OBJECT_WORD})`;
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
 /** A quality no recipe produces but a crest factor measures, read beside the catalog's terms. */
@@ -230,8 +236,16 @@ function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: 
     }
 }
 
+function pushHoldClauses(reader: RequestReader, clauses: readonly HoldClause[]) {
+    for (const hold of clauses) {
+        for (const part of hold.parts) {
+            pushMeasuredHolds(reader, hold.clause, part);
+        }
+    }
+}
+
 /** The masked text with each consumed clause blanked, so no later reader reads its words again. */
-function maskClauses(masked: string, clauses: readonly HoldClause[]): string {
+function maskClauses(masked: string, clauses: readonly ConsumedSpan[]): string {
     const characters = masked.split('');
     for (const { start, end } of clauses) {
         characters.fill(' ', start, end);
@@ -434,14 +448,16 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     const reader: RequestReader = { masked, prompt, context, reading };
     const lowEnd = readLowEndConstraints(masked, prompt, context, reading);
-    const holds = readHoldClauses(masked, prompt);
-    for (const hold of holds) {
-        for (const part of hold.parts) {
-            pushMeasuredHolds(reader, hold.clause, part);
-        }
-    }
+    const holds = readHoldClauses(masked, prompt, 'before-qualities');
+    pushHoldClauses(reader, holds);
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    const qualities = readQualityConstraints(maskClauses(masked, holds), reader);
-    reading.unsupported.push(...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...qualities]));
+    const unheld = maskClauses(masked, holds);
+    const qualities = readQualityConstraints(unheld, reader);
+    // "keep the vocal bright and the mix from getting wider" keeps its quality, never an object "the vocal bright".
+    const keptMoves = readHoldClauses(maskClauses(unheld, qualities), prompt, 'kept-moves');
+    pushHoldClauses(reader, keptMoves);
+    reading.unsupported.push(
+        ...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...qualities, ...keptMoves])
+    );
     return unionPerceptualConstraintReadings(reading);
 }

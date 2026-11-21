@@ -19,7 +19,7 @@ import {
     MODAL_VERB_NEGATION,
     NEGATION,
     NO,
-    NOT_AFTER_CLAUSE_NEGATION,
+    NOT_PERMITTED,
     OBJECT_MEMBERS,
     POSSESSIVE_DETERMINER,
     PREDICATE_WORD,
@@ -55,13 +55,13 @@ const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATI
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
  * it governs the quality through, or a direction ("mustn't get louder"); a keep-type verb continuing
  * no move, or a leave; a stop or prevent; or "no" before the measured word itself ("no louder"). A
- * keep, leave, stop or prevent after a negation earlier in its clause is permitted, not protective
- * ("don't stop the mix getting wider", "there's no need to leave the width alone"). A negation of
+ * keep, leave, stop or prevent a negation governs is permitted, not protective ("don't stop the mix
+ * getting wider", "there's no need to leave the width alone"). A negation of
  * anything else ("don't forget to make the bass wider", "no reverb") governs no measured word, so it
  * opens nothing.
  */
 const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_AFTER_CLAUSE_NEGATION}(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_AFTER_CLAUSE_NEGATION}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
+    String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_PERMITTED}(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_PERMITTED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
     'iu'
 );
 /**
