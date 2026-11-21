@@ -409,8 +409,8 @@ export function proposePendingActionConfirmation(
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
         ...(input.briefReadings === undefined ? {} : { briefReadings: structuredClone(input.briefReadings) }),
         vibeValueChoice: structuredClone(input.vibeValueChoice),
-        plannedRunLines: input.plannedRunLines && [...input.plannedRunLines],
-        keptDirectionActionIndexes: input.keptDirectionActionIndexes && [...input.keptDirectionActionIndexes],
+        plannedRunLines: structuredClone(input.plannedRunLines),
+        keptDirectionActionIndexes: structuredClone(input.keptDirectionActionIndexes),
         workflowCapabilityId: input.workflowCapabilityId,
     };
     const confirmation: PendingAppActionConfirmation = {
