@@ -33,7 +33,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {
             return { tracks: mocks.tracks };

@@ -1,6 +1,6 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { trackStore } from '../../stores';
+import { trackStore } from '../../stores/trackStore';
 
 const FROZEN_TRACK_NOTE_EDIT_MESSAGE = 'This track is frozen. Unfreeze it to edit its notes.';
 
