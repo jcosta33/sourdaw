@@ -7301,13 +7301,7 @@
     },
     "src/modules/Arrangement/useCases/comping/compRegionInterval.ts": {
         "eslint/complexity": {
-            "count": 4
-        },
-        "eslint/max-params": {
-            "count": 1
-        },
-        "typescript/no-non-null-assertion": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/Arrangement/useCases/comping/compRegionIntervalValidation.ts": {
@@ -7359,7 +7353,7 @@
     },
     "src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         },
         "typescript/no-non-null-assertion": {
             "count": 2
