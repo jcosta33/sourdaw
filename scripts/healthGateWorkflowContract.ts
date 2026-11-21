@@ -61,8 +61,11 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+// Ahead of dependency installation so the browser runtime proof still opens the run.
+const KOKORO_FIXTURE_STEPS = ['Restore Kokoro fixtures', 'Prefetch Kokoro fixtures'] as const;
+const BROWSER_SETUP = [...NODE_SETUP_ACTIONS, ...KOKORO_FIXTURE_STEPS, 'Install dependencies'] as const;
 const SHARDED_BROWSER_STEPS = [
-    ...SETUP_NODE,
+    ...BROWSER_SETUP,
     'Verify preinstalled browser runtime',
     'Run shard',
     'Report shard failure',
@@ -243,7 +246,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'validation-gate': ['Require selected validation jobs to succeed'],
     },
     'heavy-gates.yml': {
-        e2e: [...SETUP_NODE, 'Download shared E2E build', ...SHARDED_BROWSER_STEPS.slice(SETUP_NODE.length)],
+        e2e: [...BROWSER_SETUP, 'Download shared E2E build', ...SHARDED_BROWSER_STEPS.slice(BROWSER_SETUP.length)],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
@@ -310,7 +313,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
-            ...SETUP_NODE,
+            ...BROWSER_SETUP,
             'Verify preinstalled browser runtime',
             'Run shard with coverage',
             'Upload coverage records',

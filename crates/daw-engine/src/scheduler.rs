@@ -6499,6 +6499,14 @@ impl AudioScheduler {
             .write(self.timeline.diagnostics());
     }
 
+    /// The MIDI refusal counters, read directly by same-thread drivers: the
+    /// offline renderer has no callback to publish them through
+    /// [`Self::publish_midi_rt_diagnostics`], and this thread is the render
+    /// thread.
+    pub const fn midi_rt_diagnostics(&self) -> ActiveMidiRtDiagnosticsSnapshot {
+        self.midi_rt_diagnostics.snapshot()
+    }
+
     /// The progress echo, read directly by same-thread drivers (the offline
     /// renderer, tests). The live path publishes the same value through
     /// [`Self::publish_graph_progress`] at the end of each callback.

@@ -16,7 +16,6 @@ use super::timeline_sample_lifecycle::TimelineMaterialError;
 
 use daw_dsp::grinder::nam::NamAdmissionError;
 use daw_dsp::toaster::transient::TransientShaperError;
-use daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
 use daw_engine::offline::OfflineCommandError;
 use daw_engine::scheduler::TIMELINE_CHAIN_SLOT_BUDGET;
 use daw_engine::timeline::{
@@ -191,6 +190,12 @@ pub(crate) enum GraphRefusal {
     OfflineDroppedCommands {
         diagnostics: TimelineRtDiagnosticsSnapshot,
     },
+    /// The engine refused scheduled notes after admission: the print would
+    /// carry them as rests.
+    OfflineDroppedMidi {
+        batches_refused: u64,
+        event_buffer_overflows: u64,
+    },
     TransientShaper(TransientShaperError),
     InvalidBatch(serde_json::Error),
     CorrelationMalformed(serde_json::Error),
@@ -313,8 +318,11 @@ pub(crate) enum GraphRefusal {
         command: &'static str,
         channel: i16,
     },
+    /// More note events scheduled at one device than its store may hold: in
+    /// one batch, or across an offline render's whole batch.
     MidiNoteCeiling {
         notes: usize,
+        ceiling: usize,
     },
     VelocityOutOfRange {
         velocity: u8,
@@ -395,10 +403,6 @@ pub(crate) enum GraphRefusal {
     HostedInstanceNotAttached {
         device_id: String,
         instance_id: String,
-    },
-    HostedInstrumentOffline {
-        device_id: String,
-        plugin_name: String,
     },
     DeviceAlreadyInChain {
         device_id: String,
@@ -537,6 +541,16 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "offline-render-dropped-commands: the engine refused part of the batch after \
                  admission ({diagnostics:?}); the output is not the batch and is discarded"
+            ),
+            Self::OfflineDroppedMidi {
+                batches_refused,
+                event_buffer_overflows,
+            } => write!(
+                f,
+                "offline-render-dropped-midi: the engine refused scheduled notes after \
+                 admission (note-store batch refusals: {batches_refused}, event-buffer \
+                 overflows: {event_buffer_overflows}); the output is not the batch and is \
+                 discarded"
             ),
             Self::TransientShaper(error) => error.fmt(f),
             Self::InvalidBatch(error) => write!(f, "Invalid graph command batch: {error}"),
@@ -709,10 +723,10 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "{command}: channel {channel} has no address in the note store"
             ),
-            Self::MidiNoteCeiling { notes } => write!(
+            Self::MidiNoteCeiling { notes, ceiling } => write!(
                 f,
-                "schedule-midi: batch carries {notes} notes, past the store's ceiling of \
-                 {MIDI_NOTE_STORE_CAPACITY}"
+                "schedule-midi: {notes} notes for one device, past the store's ceiling of \
+                 {ceiling}"
             ),
             Self::VelocityOutOfRange { velocity } => write!(
                 f,
@@ -826,14 +840,6 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
                  not attached to the engine"
-            ),
-            Self::HostedInstrumentOffline {
-                device_id,
-                plugin_name,
-            } => write!(
-                f,
-                "device '{device_id}' hosts the plugin '{plugin_name}', an instrument: hosted \
-                 instruments do not render offline yet"
             ),
             Self::DeviceAlreadyInChain { device_id } => {
                 write!(f, "device id '{device_id}' is already in a chain")

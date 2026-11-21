@@ -271,6 +271,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     return {
         engineSampleRateOf: vi.fn((): number | null => null),
         findPadOutputHost: actual.findPadOutputHost,
+        hostsStoredControllers: actual.hostsStoredControllers,
+        readStoredControllerDefault: actual.readStoredControllerDefault,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,

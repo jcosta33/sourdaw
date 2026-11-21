@@ -72,6 +72,7 @@ import {
     type OfflineChordPitchProjector,
 } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { GENERATIVE_MIDI_EXCLUSION_REASON } from '../nativeMidiNoteSink';
 import { projectLiveMidiProgramme, type LiveMidiProgrammeInput } from '../projectLiveMidiProgramme';
 
@@ -192,6 +193,8 @@ function projectProgramme(
         bakedStripIds: new Set(),
         carriedStripIds: new Set(overrides.stripTracks.map((track) => track.id)),
         notesByClipId: {},
+        takeLanes: takeLaneStore.value,
+        tempoTimeline: liveTempoTimeline,
         probabilitySeed: PROBABILITY_SEED,
         defaultTempo: TEMPO,
         sampleRate: SAMPLE_RATE,
@@ -356,6 +359,8 @@ describe('projectLiveMidiProgramme', () => {
                 bakedStripIds: new Set(),
                 carriedStripIds: new Set([trackId]),
                 notesByClipId: midiStore.value.notesByClipId,
+                takeLanes: takeLaneStore.value,
+                tempoTimeline: liveTempoTimeline,
                 probabilitySeed: midiStore.value.probabilitySeed,
                 defaultTempo: 120,
                 sampleRate,
@@ -1241,6 +1246,8 @@ describe('projectLiveMidiProgramme for a take a split or Delete Time freezes, ag
             bakedStripIds: new Set(),
             carriedStripIds: new Set([trackId]),
             notesByClipId: midiStore.value.notesByClipId,
+            takeLanes: takeLaneStore.value,
+            tempoTimeline: liveTempoTimeline,
             probabilitySeed: midiStore.value.probabilitySeed,
             defaultTempo: TEMPO,
             sampleRate: SAMPLE_RATE,
