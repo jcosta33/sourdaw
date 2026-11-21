@@ -100,7 +100,7 @@ export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
 const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
 /** Every word a clause may open or end at. */
-export const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
+const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
 export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
@@ -165,7 +165,15 @@ const BARE_NEGATION = words([NO_WORD, 'not']);
 export const NO = words([NO_WORD]);
 const NEGATED_CONTRACTION = String.raw`\p{L}+n${APOSTROPHE}t`;
 /** Any negation at all: one may permit a move a later keep or stop names ("you don't have to keep …"). */
-export const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
+const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
+/** A character of the same clause short of its boundary words. */
+export const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})`;
+/**
+ * Not after a negation earlier in the same clause ("you don't have to keep …", "there's no need to
+ * prevent …", "don't stop …"), which permits what a keep, stop, prevent or leave after it names, so
+ * neither a reader nor the net reads a protection there.
+ */
+export const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!\b${ANY_NEGATION}\b${IN_CLAUSE_CHARACTER}*)`;
 
 const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'do', 'does', 'did'];
 const PREDICATE_VERB_WORDS = ['needs', 'need', 'wants', 'want', 'gets', 'got'];
@@ -231,5 +239,5 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_J
  * reaches past a separator into the next clause's move.
  */
 const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:on${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
-/** A keep-type verb that holds what follows, never one continuing a move. */
-export const HOLDING_KEEP = String.raw`${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
+/** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
+export const HOLDING_KEEP = String.raw`${NOT_AFTER_CLAUSE_NEGATION}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;

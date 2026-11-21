@@ -2039,16 +2039,18 @@ describe('reading only governed protections and whole object names', () => {
         }
     );
 
-    // A negation earlier in the clause may permit the move, so the clause states no bound and is
-    // recorded unsupported rather than read either way.
+    // A negation earlier in the clause permits what a keep, stop, prevent or leave after it names, so
+    // the clause protects nothing and records nothing.
     it.each([
         "you don't have to keep the mix from getting wider",
         "there's no need to prevent the vocal from getting brighter",
-    ])('reads no bound from "%s"', (prompt) => {
-        const reading = compilePerceptualConstraints(prompt, grammarContext());
-        expect(reading.constraints).toEqual([]);
-        expect(reading.unsupported).toHaveLength(1);
-        expect(reading.unsupported[0]?.constraintId).toBe('unsupported');
+        "you don't need to stop the mix from getting wider",
+        'no need to prevent the vocal from getting louder',
+        "there's no need to leave the width alone",
+        // a negation right before the keep permits the move too
+        "don't keep the mix from getting wider",
+    ])('reads nothing from the permission "%s"', (prompt) => {
+        expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints: [], unsupported: [] });
     });
 });
 
@@ -2203,6 +2205,10 @@ describe('reading a protection only over the words it governs', () => {
         // the net ends a clause at the same separators, so a move after one is the request, as after a comma
         ["don't make it harsh - brighten the vocal", [], []],
         ["don't make it harsh, brighten the vocal", [], []],
+        // a hard boundary word ends the clause as the comma does
+        ["don't make it harsh but brighten the vocal", [], []],
+        ["don't make it harsh then brighten the vocal", [], []],
+        ["don't make it harsh please brighten the vocal", [], []],
         ['without making it harsh\nmake the vocal brighter', [], []],
         ['stop it clipping - make the drums louder', [], []],
         ['avoid making the vocal harsh - brighten it', [], []],

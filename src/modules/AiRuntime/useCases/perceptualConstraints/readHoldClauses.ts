@@ -2,8 +2,6 @@ import {
     AND_JOIN,
     AND_WORD,
     ANY,
-    ANY_BOUNDARY_WORD,
-    ANY_NEGATION,
     BECOMING_VERB,
     CAUSING_VERB,
     CLAUSE_END,
@@ -12,6 +10,7 @@ import {
     DOES_NOT,
     FROM,
     HELD_STATE,
+    IN_CLAUSE_CHARACTER,
     KEEP,
     KEEP_VERBS,
     LINKING_VERB,
@@ -20,10 +19,10 @@ import {
     MODAL_NEGATION,
     NEGATION,
     normalizeObjectText,
+    NOT_AFTER_CLAUSE_NEGATION,
     OBJECT_LIST,
     OBJECT_PREPOSITION,
     PURPOSE_HEAD,
-    SAME_CLAUSE_CHARACTER,
     SCOPE_WORD,
     STOP_VERB,
     THE,
@@ -94,14 +93,8 @@ const NOUN_CONTINUATION = new RegExp(
 
 type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
 
-/**
- * Not after a negation earlier in the same clause ("you don't have to keep …", "there's no need to
- * prevent …"), which may permit the move a keep, stop or prevent … from names, so no bound is read.
- */
-const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})`;
-const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!\b${ANY_NEGATION}\b${IN_CLAUSE_CHARACTER}*)`;
-/** "keep the mix from getting louder"; a negation right before it permits the move instead. */
-const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}(?<permitted>\b${NEGATION}\s+)?\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
+/** "keep the mix from getting louder"; a negation before it in its clause permits the move instead. */
+const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
 
 function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
     return { pattern: new RegExp(source, 'dgiu'), continuation };
@@ -226,14 +219,8 @@ function readNounPart(match: RegExpExecArray, verb: string | undefined, prompt: 
     };
 }
 
-/**
- * The holds a direction clause states. A negated stop, prevent or keep … from permits the move it
- * names, so it states none, though its words stay consumed and no other reader reads them.
- */
+/** The holds a direction clause states. */
 function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
-    if (match.groups?.permitted !== undefined) {
-        return [];
-    }
     const direction = match.groups?.direction;
     return direction === undefined ? [FAMILY_IDS.loudness.held] : directionConstraintIds(direction);
 }

@@ -16,10 +16,10 @@ import {
     LIST_JOINER,
     MASK_GLYPH,
     MIX_PRONOUN,
-    MODAL_NEGATION,
     MODAL_VERB_NEGATION,
     NEGATION,
     NO,
+    NOT_AFTER_CLAUSE_NEGATION,
     OBJECT_MEMBERS,
     POSSESSIVE_DETERMINER,
     PREDICATE_WORD,
@@ -51,17 +51,17 @@ const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${NOUN_VER
  * doesn't get lost"), and the bound it states alone ("the mix doesn't get louder") a reader consumes.
  */
 const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}`;
-/** A negated stop or prevent permits what it governs: "don't stop the mix getting wider". */
-const NOT_NEGATED = String.raw`(?<!(?:${NEGATION}|${MODAL_NEGATION})\s+)`;
 /**
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
  * it governs the quality through, or a direction ("mustn't get louder"); a keep-type verb continuing
- * no move; a leave; a stop or prevent no negation permits; or "no" before the measured word itself
- * ("no louder"). A negation of anything else ("don't forget to make the bass wider", "no reverb")
- * governs no measured word, so it opens nothing.
+ * no move, or a leave; a stop or prevent; or "no" before the measured word itself ("no louder"). A
+ * keep, leave, stop or prevent after a negation earlier in its clause is permitted, not protective
+ * ("don't stop the mix getting wider", "there's no need to leave the width alone"). A negation of
+ * anything else ("don't forget to make the bass wider", "no reverb") governs no measured word, so it
+ * opens nothing.
  */
 const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATED_GOVERNOR}|(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_NEGATED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
+    String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_AFTER_CLAUSE_NEGATION}(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_AFTER_CLAUSE_NEGATION}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
     'iu'
 );
 /**
