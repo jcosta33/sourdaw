@@ -2,6 +2,7 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { type AiBackendPreference } from '../../../models/LlmOrchestrationTypes';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { stopGenerating } from '../../../stores/chatStore';
 import { engineInitializationState } from '../../../stores/engineInitializationState';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
@@ -15,11 +16,13 @@ function normalizeAiBackendPreference(preference: unknown): AiBackendPreference 
 
 export function setAiBackendPreference(preference: unknown): void {
     const normalizedPreference = normalizeAiBackendPreference(preference);
-    const status = llmStatusStore.value;
+    // A turn answering shows `generating` while the engine's own status is the one it settles to.
+    const answering = llmStatusStore.value?.state === 'generating';
+    const status = answeringStatus.readEngineStatus();
     const activeBackendWithheld =
         status?.state === 'ready' && status.backend === 'webllm' && !MODEL_RELEASE_ADMISSION.webLlm;
     const preferenceChanged = aiBackendPreferenceStore.value !== normalizedPreference;
-    if (status?.state === 'generating') {
+    if (answering) {
         stopGenerating();
     }
     if (preferenceChanged && status?.state === 'loading') {
@@ -28,10 +31,10 @@ export function setAiBackendPreference(preference: unknown): void {
     aiBackendPreferenceStore.set(normalizedPreference);
     if (
         activeBackendWithheld ||
-        status?.state === 'generating' ||
+        answering ||
         (preferenceChanged && status?.state === 'loading') ||
         (status?.state === 'ready' && normalizedPreference !== 'auto' && status.backend !== normalizedPreference)
     ) {
-        llmStatusStore.set({ state: 'idle' });
+        answeringStatus.publishEngineStatus({ state: 'idle' });
     }
 }

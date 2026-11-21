@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { answeringStatus } from '../../../stores/answeringStatus';
+import { type LlmEngineStatus } from '../../../stores/llmStatusStore';
 import { configureCloudProvider } from '../configureCloudProvider';
 
 const mocks = vi.hoisted(() => {
-    const llmStatusValue: { value: Record<string, unknown> } = { value: { state: 'idle' } };
+    const llmStatusValue: { value: LlmEngineStatus | null } = { value: { state: 'idle' } };
     return {
         setCloudProviderConfig: vi.fn(async () => undefined),
         llmStatusSet: vi.fn(),
@@ -19,14 +21,38 @@ vi.mock('../../../stores/llmStatusStore', () => ({
         get value() {
             return mocks.llmStatusValue.value;
         },
-        set: mocks.llmStatusSet,
+        set: (status: LlmEngineStatus | null) => {
+            mocks.llmStatusValue.value = status;
+            mocks.llmStatusSet(status);
+        },
     },
 }));
 
 describe('configureCloudProvider', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        answeringStatus.clear();
         mocks.llmStatusValue.value = { state: 'idle' };
+    });
+
+    it('keeps the answering status showing and settles to idle when a turn answers', async () => {
+        const generating: LlmEngineStatus = { state: 'generating', backend: 'cloud', modelId: 'old-model' };
+        mocks.llmStatusValue.value = { state: 'ready', backend: 'cloud', modelId: 'old-model' };
+        const turn = answeringStatus.openTurn();
+        answeringStatus.publish(turn, { state: 'generating', backend: 'cloud', modelId: 'old-model' });
+
+        await configureCloudProvider({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+        });
+
+        expect(mocks.llmStatusValue.value).toEqual(generating);
+
+        answeringStatus.settle(turn, { state: 'ready', backend: 'cloud', modelId: 'old-model' });
+
+        expect(mocks.llmStatusValue.value).toEqual({ state: 'idle' });
     });
 
     it('normalizes models and fixed provider origins without altering the API key', async () => {
