@@ -3,6 +3,7 @@ import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { failUnresponsiveExternalPlugins } from './failUnresponsiveExternalPlugins';
+import { pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadEveryPluginCarryingLiveState } from './unloadEveryPluginCarryingLiveState';
 import { warnLiveStatesLost } from './warnLiveStatesLost';
@@ -26,6 +27,7 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     externalPluginStateCaptureAuthority.invalidateAll();
     externalPluginActivationEpoch.current += 1;
     const admittedActivations = new Map(externalPluginActivationTasks);
+    const admittedUnloads = new Map(pendingKeyedUnloads);
     const lostPlugins = new Set<string>();
     let reopened = false;
     function endFence(): void {
@@ -37,7 +39,10 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     }
     return {
         retire: async (): Promise<void> => {
-            failUnresponsiveExternalPlugins(await rebuild.waitForExistingOperations(admittedActivations));
+            failUnresponsiveExternalPlugins(
+                await rebuild.waitForExistingOperations(admittedActivations),
+                admittedUnloads
+            );
             // The fence holds every lifecycle turn, so the reads run directly.
             await unloadEveryPluginCarryingLiveState('inside-lifecycle', lostPlugins);
             clearLoadedExternalPlugins();

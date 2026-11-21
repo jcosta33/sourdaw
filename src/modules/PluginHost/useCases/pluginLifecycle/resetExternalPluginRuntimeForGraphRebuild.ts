@@ -4,6 +4,7 @@ import { externalPluginActivationEpoch, externalPluginActivationTasks } from './
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { failUnresponsiveExternalPlugins } from './failUnresponsiveExternalPlugins';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarries';
@@ -20,9 +21,13 @@ export function resetExternalPluginRuntimeForGraphRebuild(): Promise<void> {
     externalPluginActivationEpoch.current += 1;
     const rebuild = pluginLifecycleScheduler.beginRebuild();
     const admittedActivations = new Map(externalPluginActivationTasks);
+    const admittedUnloads = new Map(pendingKeyedUnloads);
     const reset = (async () => {
         try {
-            failUnresponsiveExternalPlugins(await rebuild.waitForExistingOperations(admittedActivations));
+            failUnresponsiveExternalPlugins(
+                await rebuild.waitForExistingOperations(admittedActivations),
+                admittedUnloads
+            );
             // The fence holds every lifecycle turn, so the reads run directly.
             const loadedBeforeUnload = [...loadedExternalInstances];
             const reads = await readLiveStatesForTeardown(loadedBeforeUnload, 'inside-lifecycle');

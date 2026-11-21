@@ -315,6 +315,40 @@ describe('activateExternalPlugin', () => {
         expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
     });
 
+    it('lets a restore that succeeds after a rebuild gave up on it clear nothing on the next generation', async () => {
+        const lateRestore = Promise.withResolvers<void>();
+        // Answer at last however the case ends, so the held turn cannot leak into later cases.
+        onTestFinished(() => lateRestore.resolve());
+        mocks.setPluginStateRepo.mockReturnValueOnce(lateRestore.promise);
+        const abandoned = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledOnce());
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+        await rebuild;
+
+        // The next generation's own restore is rejected, so it holds an error
+        // status and a restore-failure marker.
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+        const statusBeforeLateAnswer = externalPluginActivationStore.value?.byInstanceId['inst-1'];
+        expect(statusBeforeLateAnswer).toMatchObject({ status: 'error' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        lateRestore.resolve();
+        await abandoned;
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual(statusBeforeLateAnswer);
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+    });
+
     // Issue 3693: a plugin that rejects its saved chunk holds its own defaults,
     // so its runtime state must not reach a save. The marker records exactly
     // that, resolves on the first successful restore, and never resolves on a

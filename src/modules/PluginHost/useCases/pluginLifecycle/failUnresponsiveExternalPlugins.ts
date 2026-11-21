@@ -18,12 +18,17 @@ import { pluginUnresponsiveMessage } from './pluginUnresponsiveMessage';
  * once its control gate outlives its own deadline. Each slot shows the
  * unresponsive message, and the user is told by plugin name. A keyed unload
  * among those calls is let go with them, so a reactivation loads afresh rather
- * than waiting on an unload that may never settle; the entry's own late
- * settlement removes only itself, so dropping it here is safe.
+ * than waiting on an unload that may never settle. Only an unload admitted
+ * before the fence (`admittedUnloads`, read when the fence began) is let go: one
+ * scheduled while the fence stood has not reached the plugin yet and still owns
+ * the instance, so a reactivation must keep waiting for it.
  */
-export function failUnresponsiveExternalPlugins(instanceIds: ReadonlySet<string>): void {
+export function failUnresponsiveExternalPlugins(
+    instanceIds: ReadonlySet<string>,
+    admittedUnloads: ReadonlyMap<string, Promise<void>>
+): void {
     for (const instanceId of instanceIds) {
-        pendingKeyedUnloads.delete(instanceId);
+        letGoOfAdmittedUnload(instanceId, admittedUnloads.get(instanceId));
         const pluginId = loadedExternalInstancePluginIds.get(instanceId) ?? instanceId;
         const message = pluginUnresponsiveMessage(pluginId);
         externalPluginActivationStore.update((state) => {
@@ -35,5 +40,11 @@ export function failUnresponsiveExternalPlugins(instanceIds: ReadonlySet<string>
         });
         logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
         notifyUser(message, 'error');
+    }
+}
+
+function letGoOfAdmittedUnload(instanceId: string, admitted: Promise<void> | undefined): void {
+    if (admitted !== undefined && pendingKeyedUnloads.get(instanceId) === admitted) {
+        pendingKeyedUnloads.delete(instanceId);
     }
 }

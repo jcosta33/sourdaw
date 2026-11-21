@@ -310,6 +310,51 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         ).resolves.toEqual({ status: 'active' });
     });
 
+    it('keeps a keyed unload scheduled during the fence, so a reactivation still waits for it', async () => {
+        await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' });
+        const hungUnload = Promise.withResolvers<UnloadReply>();
+        const bulkUnload = Promise.withResolvers<UnloadReply>();
+        onTestFinished(() => {
+            hungUnload.resolve({ unloadedInstanceIds: ['plugin-instance-1'], errors: [], reports: [] });
+            bulkUnload.resolve(EMPTY_UNLOAD_REPLY);
+        });
+        let keyedUnloadsOfInstance = 0;
+        mocks.unloadPlugin.mockImplementation((requested?: string) => {
+            if (requested === undefined) {
+                return bulkUnload.promise;
+            }
+            keyedUnloadsOfInstance += 1;
+            if (keyedUnloadsOfInstance === 1) {
+                return hungUnload.promise;
+            }
+            return Promise.resolve({ unloadedInstanceIds: [requested], errors: [], reports: [] });
+        });
+        void unloadPlugin('plugin-instance-1');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith('plugin-instance-1'));
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const reset = resetExternalPluginRuntimeForGraphRebuild();
+        // Scheduled while the fence stands: it waits for the fence, and it is
+        // not the call the fence is about to give up on.
+        void unloadPlugin('plugin-instance-1');
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined));
+
+        // Issued inside the fence too, so it is admitted right behind that
+        // unload; it must wait for the unload rather than load into its path.
+        const reactivation = activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' });
+        bulkUnload.resolve(EMPTY_UNLOAD_REPLY);
+        await reset;
+
+        await expect(reactivation).resolves.toEqual({ status: 'active' });
+        expect(keyedUnloadsOfInstance).toBe(1);
+        expect(loadedExternalInstances.has('plugin-instance-1')).toBe(true);
+    });
+
     it('ends a project-session retirement behind a lifecycle call that never answers', async () => {
         await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: 'plugin-instance-1' });
         const { releaseBulkUnload } = hangKeyedUnload('plugin-instance-1');

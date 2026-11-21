@@ -25,7 +25,7 @@ use daw_plugin_host::{
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{fence, AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -384,10 +384,31 @@ fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
     }
 }
 
+/// A held control gate. Letting go of it withdraws an unresponsive verdict:
+/// the call that outlived the deadline has returned, so the plugin answers
+/// again, and it must not wait for some later control call to say so.
+///
+/// The release allocates nothing and logs nothing — it runs at the end of
+/// every control call. The SeqCst fence between the unlock and the verdict
+/// read pairs with the one in `give_up_on_gate`, between the verdict write and
+/// its last try of the gate.
+struct ControlGateGuard<'gate, Runtime: HostedPluginRuntime> {
+    gate: Option<MutexGuard<'gate, ()>>,
+    owner: &'gate SharedHostedPlugin<Runtime>,
+}
+
+impl<Runtime: HostedPluginRuntime> Drop for ControlGateGuard<'_, Runtime> {
+    fn drop(&mut self) {
+        drop(self.gate.take());
+        fence(Ordering::SeqCst);
+        self.owner.recover_if_unresponsive();
+    }
+}
+
 struct PluginRuntimeLifecycle {
     state: AtomicU8,
     /// Set when a control call gave up on the instance's control gate, and
-    /// cleared by the next control call that finds the gate free again.
+    /// cleared as soon as that gate is let go again.
     /// Separate from `state` because unload and retire still move `state`
     /// along while the call that outlived the deadline may still be executing
     /// inside the plugin.
@@ -402,22 +423,28 @@ impl PluginRuntimeLifecycle {
         }
     }
 
+    // The verdict and the lifecycle state are SeqCst: a recovery (clear the
+    // verdict, then read the state) and a cancelled unload (reactivate, then
+    // read the verdict) each write one flag and read the other, and only a
+    // single total order over both guarantees that at least one of them sees
+    // the other's write and asks the instance to process again.
+
     /// Record the verdict; `true` only for the call that made it.
     fn mark_unresponsive(&self) -> bool {
-        !self.unresponsive.swap(true, Ordering::AcqRel)
+        !self.unresponsive.swap(true, Ordering::SeqCst)
     }
 
     /// Withdraw the verdict; `true` only when there was one to withdraw.
     fn clear_unresponsive(&self) -> bool {
-        self.unresponsive.swap(false, Ordering::AcqRel)
+        self.unresponsive.swap(false, Ordering::SeqCst)
     }
 
     fn is_unresponsive(&self) -> bool {
-        self.unresponsive.load(Ordering::Acquire)
+        self.unresponsive.load(Ordering::SeqCst)
     }
 
     fn is_active(&self) -> bool {
-        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE
+        self.state.load(Ordering::SeqCst) == PLUGIN_LIFECYCLE_ACTIVE
     }
 
     fn begin_unload(&self) {
@@ -433,8 +460,8 @@ impl PluginRuntimeLifecycle {
         let _ = self.state.compare_exchange(
             PLUGIN_LIFECYCLE_UNLOADING,
             PLUGIN_LIFECYCLE_ACTIVE,
-            Ordering::AcqRel,
-            Ordering::Acquire,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
         );
     }
 
@@ -825,8 +852,16 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.lifecycle.begin_unload();
     }
 
+    /// Reactivate first, then restart unless the instance is unresponsive. A
+    /// recovery racing this clears the verdict first and then restarts if the
+    /// instance is active, so whichever of the two reads second sees the
+    /// other's write and the restart is never lost.
     pub fn cancel_unload(&self) {
         self.lifecycle.cancel_unload();
+        self.restart_unless_unresponsive();
+    }
+
+    fn restart_unless_unresponsive(&self) {
         if !self.lifecycle.is_unresponsive() {
             self.processing.request_start();
         }
@@ -992,9 +1027,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// behind it. The holder is not interrupted — nothing can stop a vendor call
     /// from outside — so the instance stays allocated for as long as that call
     /// holds its reference; see [`Self::mark_unresponsive`]. A call that was
-    /// only slow lets go of the gate eventually, and the next control call to
-    /// take it withdraws the verdict ([`Self::try_take_gate`]).
-    fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+    /// only slow lets go of the gate eventually, and letting go withdraws the
+    /// verdict ([`ControlGateGuard`]), so the instance processes again even if
+    /// no further control call ever comes.
+    fn lock_non_rt_control(&self) -> Result<ControlGateGuard<'_, Runtime>, String> {
         without_stalling_async_worker(|| {
             let deadline = Instant::now() + self.control_gate_deadline;
             loop {
@@ -1008,13 +1044,32 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 self.refuse_if_unresponsive()?;
 
                 if Instant::now() >= deadline {
-                    self.mark_unresponsive();
-                    return Err(unresponsive_control_error(&self.name));
+                    return self.give_up_on_gate();
                 }
 
                 thread::sleep(CONTROL_GATE_POLL);
             }
         })
+    }
+
+    /// The deadline has passed: one last look at the gate, then the verdict.
+    ///
+    /// The holder may let go between the verdict and this waiter's refusal, and
+    /// a holder that let go before the verdict was recorded had nothing to
+    /// withdraw. So the gate is tried once more after marking, across a SeqCst
+    /// fence matched by the one in [`ControlGateGuard`]'s release: either that
+    /// release sees the verdict and withdraws it, or this try sees the gate
+    /// free and takes it, withdrawing the verdict on the way.
+    fn give_up_on_gate(&self) -> Result<ControlGateGuard<'_, Runtime>, String> {
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
+        }
+        self.mark_unresponsive();
+        fence(Ordering::SeqCst);
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
+        }
+        Err(unresponsive_control_error(&self.name))
     }
 
     fn refuse_if_unresponsive(&self) -> Result<(), String> {
@@ -1028,38 +1083,42 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// unresponsive verdict on the way.
     ///
     /// A free gate is the proof the verdict was waiting for: the call that held
-    /// it past the deadline has returned, so the plugin answers again. The
-    /// intent to process is restored before the verdict is withdrawn, so the
-    /// audio thread never meets a processable instance that is still asked to
-    /// stop — and only for an instance whose lifecycle is still active, since an
-    /// unloading or retired one must not start again.
+    /// it past the deadline has returned, so the plugin answers again.
     ///
     /// A poisoned gate is taken rather than refused — the panic that poisoned
     /// it happened inside some earlier operation's body, the gate itself is
     /// free, and refusing forever would both silence this instance for the life
     /// of the process and have a caller that retries spin on every tick.
-    fn try_take_gate(&self) -> Option<MutexGuard<'_, ()>> {
+    fn try_take_gate(&self) -> Option<ControlGateGuard<'_, Runtime>> {
         let guard = match self.non_rt_control_lock.try_lock() {
             Ok(guard) => guard,
             Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
             Err(TryLockError::WouldBlock) => return None,
         };
         self.recover_if_unresponsive();
-        Some(guard)
+        Some(ControlGateGuard {
+            gate: Some(guard),
+            owner: self,
+        })
     }
 
+    /// Withdraw the verdict, then restart an instance whose lifecycle is
+    /// still active; an unloading or retired one must not start again.
+    ///
+    /// The verdict goes first so a racing [`Self::cancel_unload`], which
+    /// reactivates first and restarts unless unresponsive, cannot lose the
+    /// restart: each writes one flag before reading the other. The cost is
+    /// that the audio thread may meet a processable instance still asked to
+    /// stop for a block, which only delays its start by that block.
     fn recover_if_unresponsive(&self) {
-        if !self.lifecycle.is_unresponsive() {
-            return;
+        if self.lifecycle.clear_unresponsive() {
+            self.restart_if_active();
         }
+    }
+
+    fn restart_if_active(&self) {
         if self.lifecycle.is_active() {
             self.processing.request_start();
-        }
-        if self.lifecycle.clear_unresponsive() {
-            eprintln!(
-                "[Plugin] '{}' answers again; its control gate is free",
-                self.name
-            );
         }
     }
 
@@ -1068,8 +1127,13 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// The verdict withdraws the intent to process, so the audio thread — which
     /// already skips the instance while the late call holds the RT seam — leaves
     /// the processing state on its own thread once that call returns, and
-    /// processes the instance again only after a control call has found the
-    /// gate free and withdrawn the verdict.
+    /// processes the instance again only once that gate is let go and the
+    /// verdict withdrawn.
+    ///
+    /// The intent to process is withdrawn before the verdict is recorded: a
+    /// recovery that clears this verdict restarts after it, so a stop landing
+    /// later can only be one whose verdict that recovery has not seen, and the
+    /// caller's retry of the gate ([`Self::give_up_on_gate`]) withdraws it.
     ///
     /// Nothing here frees anything, and nothing may: the late call may still be
     /// executing inside the plugin's code. An unload of an unresponsive instance
@@ -1080,8 +1144,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// runtime — wrapper, plugin and library — stays allocated until that call
     /// returns, or for the rest of the process if it never does.
     fn mark_unresponsive(&self) {
+        self.processing.request_stop();
         if self.lifecycle.mark_unresponsive() {
-            self.processing.request_stop();
             eprintln!(
                 "[Plugin] '{}' held its control gate past {:?}; treating it as unresponsive",
                 self.name, self.control_gate_deadline
@@ -1094,7 +1158,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// No async hand-off, because there is nothing to hand off: this never
     /// blocks. A held gate answers busy, or the unresponsive refusal when the
     /// holder is the call a waiter already gave up on.
-    fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+    fn try_lock_non_rt_control(&self) -> Result<ControlGateGuard<'_, Runtime>, String> {
         if let Some(guard) = self.try_take_gate() {
             return Ok(guard);
         }
@@ -2500,6 +2564,8 @@ mod tests {
                 controlling.try_with_control(Duration::from_secs(2), |_| Ok(())),
             )
         });
+        let still_hung_processable = shared.lifecycle.allows_process();
+        let still_hung_asked_to_process = shared.processing_gate().wants_processing();
         let _ = release.send(());
         let Some(((later_control, later_try_control), later_waited)) = later else {
             panic!("a control call on an instance already found unresponsive never answered");
@@ -2527,18 +2593,14 @@ mod tests {
             "the hung call itself is left to finish whenever it does"
         );
         assert!(
-            shared.with_process(|_, _| ()).is_none(),
-            "an unresponsive instance must not be processed once its late call returns, until a control call withdraws the verdict"
-        );
-        assert!(
-            shared.processing_gate().has_stopped(),
-            "the audio thread must leave the processing state of an instance found unresponsive"
+            !still_hung_processable && !still_hung_asked_to_process,
+            "an instance whose call is still hung must be neither processable nor asked to process"
         );
     }
 
     /// A call that outlived the gate deadline but did return was slow, not
-    /// hung: the next control call that finds the gate free withdraws the
-    /// verdict, and the instance processes again.
+    /// hung: once it lets go, the next control call runs, and the instance
+    /// processes again.
     #[test]
     fn an_instance_found_unresponsive_recovers_once_its_slow_call_returns() {
         let gate_deadline = Duration::from_millis(100);
@@ -2551,8 +2613,8 @@ mod tests {
         let gave_up = answer_within(Duration::from_secs(5), move || {
             waiting.with_unload_control(Duration::from_secs(2), |_| Ok(()))
         });
-        let _ = release.send(());
         let Some((gave_up, _)) = gave_up else {
+            let _ = release.send(());
             panic!("a waiter behind a slow control call never answered");
         };
         assert!(
@@ -2560,6 +2622,7 @@ mod tests {
             "the waiter must give up at the deadline while the slow call holds the gate"
         );
         assert!(shared.lifecycle.is_unresponsive());
+        let _ = release.send(());
         assert_eq!(
             holder.join().expect("the holding thread must not panic"),
             Ok(())
@@ -2590,6 +2653,105 @@ mod tests {
             shared.with_process(|_, _| ()).is_some(),
             "a recovered instance must be processed again"
         );
+    }
+
+    /// A plugin found unresponsive that nobody calls again — no editor open, no
+    /// parameter write, no unload — must not stay silent once its slow call
+    /// returns: letting go of the gate is itself the proof it answers again.
+    #[test]
+    fn an_instance_found_unresponsive_processes_again_when_its_slow_call_lets_go() {
+        let gate_deadline = Duration::from_millis(100);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared =
+            Arc::new(SharedHostedPlugin::new(wrapper).with_control_gate_deadline(gate_deadline));
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let waiting = Arc::clone(&shared);
+        let gave_up = answer_within(Duration::from_secs(5), move || {
+            waiting.with_control(Duration::from_secs(2), |_| Ok(()))
+        });
+        let Some((gave_up, _)) = gave_up else {
+            let _ = release.send(());
+            panic!("a waiter behind a slow control call never answered");
+        };
+        assert!(
+            gave_up.is_err_and(|error| error.starts_with("plugin-unresponsive:")),
+            "the waiter must give up at the deadline while the slow call holds the gate"
+        );
+        assert!(shared.lifecycle.is_unresponsive());
+
+        let _ = release.send(());
+        assert_eq!(
+            holder.join().expect("the holding thread must not panic"),
+            Ok(())
+        );
+
+        assert!(
+            !shared.lifecycle.is_unresponsive(),
+            "the slow call letting go of the gate must withdraw the verdict"
+        );
+        assert!(
+            shared.processing_gate().wants_processing(),
+            "a recovered active instance must be asked to process again"
+        );
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "a recovered instance must be processed with no further control call"
+        );
+    }
+
+    /// A recovery and a cancelled unload can race on an instance that is both
+    /// unresponsive and unloading. Each half of each is run here in every
+    /// order the two threads could interleave them, and in every one the
+    /// instance must end up asked to process and processable. The halves are
+    /// called the way `recover_if_unresponsive` and `cancel_unload` compose
+    /// them; the composition itself is two lines each and is read, not run.
+    #[test]
+    fn a_recovery_racing_a_cancelled_unload_never_loses_the_restart() {
+        #[derive(Clone, Copy, Debug)]
+        enum Step {
+            WithdrawVerdict,
+            RestartIfActive,
+            Reactivate,
+            RestartUnlessUnresponsive,
+        }
+        let recovery = [Step::WithdrawVerdict, Step::RestartIfActive];
+        let cancel = [Step::Reactivate, Step::RestartUnlessUnresponsive];
+        let interleavings: [[usize; 4]; 6] = [
+            [0, 0, 1, 1],
+            [0, 1, 0, 1],
+            [0, 1, 1, 0],
+            [1, 0, 0, 1],
+            [1, 0, 1, 0],
+            [1, 1, 0, 0],
+        ];
+        for interleaving in interleavings {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+            let shared = SharedHostedPlugin::new(wrapper);
+            shared.processing.request_stop();
+            shared.lifecycle.begin_unload();
+            assert!(shared.lifecycle.mark_unresponsive());
+            let mut cursors = [0usize, 0usize];
+            let mut withdrew = false;
+            let mut taken = Vec::new();
+            for side in interleaving {
+                let step = [recovery, cancel][side][cursors[side]];
+                cursors[side] += 1;
+                taken.push(step);
+                match step {
+                    Step::WithdrawVerdict => withdrew = shared.lifecycle.clear_unresponsive(),
+                    Step::RestartIfActive if withdrew => shared.restart_if_active(),
+                    Step::RestartIfActive => {}
+                    Step::Reactivate => shared.lifecycle.cancel_unload(),
+                    Step::RestartUnlessUnresponsive => shared.restart_unless_unresponsive(),
+                }
+            }
+            assert!(
+                shared.processing_gate().wants_processing() && shared.lifecycle.allows_process(),
+                "the restart was lost in the order {taken:?}"
+            );
+        }
     }
 
     /// Ordinary contention is not a hang: a holder that lets go inside the
