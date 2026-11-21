@@ -273,6 +273,43 @@ describe('handleStemSeparate', () => {
         expect(mocks.releaseReplacedPlugins).toHaveBeenCalledTimes(2);
     });
 
+    it('releases the replaced tracks of every stem a re-run produces', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'src',
+                    clips: [{ id: 'c1', name: 'Mix', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 }],
+                },
+                { id: 't-vocals', name: 'Mix — vocals', clips: [] },
+                { id: 't-drums', name: 'Mix — drums', clips: [] },
+            ],
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue({});
+        mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
+        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer, drums: {} as AudioBuffer });
+        mocks.addTrack.mockReturnValue({ id: 't-new' });
+        mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+        const releases = new Map<string, ReturnType<typeof vi.fn<() => Promise<void>>>>();
+        mocks.captureRemovedTrackPluginRelease.mockImplementation((trackIds) => {
+            const release = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+            releases.set(trackIds.join(','), release);
+            return release;
+        });
+
+        const result = await handleStemSeparate.execute({
+            type: 'stemSeparate',
+            payload: { clipId: 'c1', stems: ['vocals', 'drums'] },
+        });
+        if (!result || result.status !== 'written') {
+            throw new Error('expected a written result');
+        }
+        await result.afterCommit?.();
+
+        expect([...releases.keys()]).toEqual(['t-vocals', 't-drums']);
+        expect(releases.get('t-vocals')).toHaveBeenCalledTimes(1);
+        expect(releases.get('t-drums')).toHaveBeenCalledTimes(1);
+    });
+
     it('logs warning if separation throws', async () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
