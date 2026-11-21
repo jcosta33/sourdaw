@@ -9,6 +9,11 @@
 //! the note an octave up, one frame later, in `outputEvents`. Audio passes
 //! through unchanged.
 //!
+//! Two writes put the host's guards to the test: with `Drive` it also claims an
+//! output queue for [`EMPTY_CLAIM_PARAM_ID`] and adds no point to it, and a
+//! write to [`REFUSE_PARAM_ID`] makes it report [`REFUSED_REPORT`] for the
+//! modulated control and then fail the block.
+//!
 //! The controller half holds only what the host tells it, so a test reads
 //! through the controller exactly what the host forwarded.
 
@@ -44,6 +49,15 @@ pub const METER_PARAM_ID: ParamID = 21;
 /// moves.
 pub const MODULATED_PARAM_ID: ParamID = 22;
 const PARAMS: [ParamID; 3] = [DRIVE_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID];
+
+/// An output queue the processor claims on every `Drive` write and never
+/// fills. Not a declared parameter: only the host's output list sees it.
+pub const EMPTY_CLAIM_PARAM_ID: ParamID = 23;
+/// Writing this makes the processor report [`REFUSED_REPORT`] and then refuse
+/// the block. Not a declared parameter.
+pub const REFUSE_PARAM_ID: ParamID = 24;
+/// What a refused block reports for [`MODULATED_PARAM_ID`] before failing.
+pub const REFUSED_REPORT: ParamValue = 0.25;
 
 /// How far an emitted note sits from the note that caused it.
 pub const EMITTED_TRANSPOSE: i16 = 12;
@@ -87,11 +101,14 @@ fn is_direction(direction: BusDirection) -> bool {
         || direction == BusDirections_::kOutput as BusDirection
 }
 
-/// The last value one call's input list carries for `Drive`, if any.
+/// The last value one call's input list carries for `param_id`, if any.
 ///
 /// # Safety
 /// `changes` must be the live input list of the current `process` call.
-unsafe fn drive_written(changes: ComRef<'_, IParameterChanges>) -> Option<ParamValue> {
+unsafe fn last_written(
+    changes: ComRef<'_, IParameterChanges>,
+    param_id: ParamID,
+) -> Option<ParamValue> {
     let mut written = None;
     // SAFETY: the list is live for this call.
     let count = unsafe { changes.getParameterCount() };
@@ -103,7 +120,7 @@ unsafe fn drive_written(changes: ComRef<'_, IParameterChanges>) -> Option<ParamV
             continue;
         };
         // SAFETY: a live queue.
-        if unsafe { queue.getParameterId() } != DRIVE_PARAM_ID {
+        if unsafe { queue.getParameterId() } != param_id {
             continue;
         }
         // SAFETY: a live queue.
@@ -119,6 +136,16 @@ unsafe fn drive_written(changes: ComRef<'_, IParameterChanges>) -> Option<ParamV
         }
     }
     written
+}
+
+/// Claim an output queue for `id` and add no point to it.
+///
+/// # Safety
+/// `changes` must be the live output list of the current `process` call.
+unsafe fn claim_without_point(changes: ComRef<'_, IParameterChanges>, id: ParamID) {
+    let mut index = 0;
+    // SAFETY: the list is live; `id` and `index` are locals.
+    unsafe { changes.addParameterData(&id, &mut index) };
 }
 
 /// Add one value at the head of the block to an output list.
@@ -396,11 +423,19 @@ impl IAudioProcessorTrait for Emitter {
         let data = unsafe { &*data };
 
         // SAFETY: the input list is live for this call, or null.
-        let written = match unsafe { ComRef::from_raw(data.inputParameterChanges) } {
-            // SAFETY: the current call's live input list.
-            Some(changes) => unsafe { drive_written(changes) },
-            None => None,
-        };
+        let inputs = unsafe { ComRef::from_raw(data.inputParameterChanges) };
+        // SAFETY: the current call's live input list.
+        let written = inputs.and_then(|changes| unsafe { last_written(changes, DRIVE_PARAM_ID) });
+        // SAFETY: as above.
+        let refuse = inputs.and_then(|changes| unsafe { last_written(changes, REFUSE_PARAM_ID) });
+        if refuse.is_some() {
+            // SAFETY: the output list is live for this call, or null.
+            if let Some(changes) = unsafe { ComRef::from_raw(data.outputParameterChanges) } {
+                // SAFETY: the current call's live output list.
+                unsafe { report(changes, MODULATED_PARAM_ID, REFUSED_REPORT) };
+            }
+            return kResultFalse;
+        }
         // SAFETY: the current call's live `ProcessData`.
         let peak = unsafe { pass_audio(data) };
 
@@ -411,6 +446,8 @@ impl IAudioProcessorTrait for Emitter {
                 unsafe { report(changes, DRIVE_PARAM_ID, value) };
                 // SAFETY: as above.
                 unsafe { report(changes, MODULATED_PARAM_ID, value * 0.5) };
+                // SAFETY: as above.
+                unsafe { claim_without_point(changes, EMPTY_CLAIM_PARAM_ID) };
             }
             // SAFETY: as above.
             unsafe { report(changes, METER_PARAM_ID, f64::from(peak.min(1.0))) };

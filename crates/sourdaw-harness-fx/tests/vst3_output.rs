@@ -19,8 +19,10 @@ use daw_plugin_host::{
 };
 use sourdaw_harness_fx::{
     DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE,
-    METER_PARAM_ID, MODULATED_PARAM_ID, VST3_EMITTER_CLASS_ID,
+    EMPTY_CLAIM_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID,
+    VST3_EMITTER_CLASS_ID,
 };
+use std::cell::Cell;
 use std::sync::Mutex;
 use support::InstalledPlugin;
 
@@ -62,6 +64,13 @@ fn drive(value: f64) -> HostParameterUpdate {
     }
 }
 
+fn refuse() -> HostParameterUpdate {
+    HostParameterUpdate {
+        param_id: REFUSE_PARAM_ID,
+        value: 1.0,
+    }
+}
+
 fn controller_value(wrapper: &Vst3Wrapper, id: u32) -> f64 {
     wrapper
         .get_parameters()
@@ -87,7 +96,147 @@ fn note(note: u8, is_note_on: bool, frame_offset: u32) -> HostMidiEvent {
     }
 }
 
+// ── Allocation counting ─────────────────────────────────────────────────
+
+/// This test binary's global allocator, counting per thread so tests running
+/// concurrently do not count each other's allocations. The counter is a
+/// `const`-initialised thread-local `Cell`, which neither allocates nor
+/// recurses into the allocator.
+struct CountingAllocator;
+
+thread_local! {
+    static ALLOCATIONS: Cell<u64> = const { Cell::new(0) };
+}
+
+fn allocation_count() -> u64 {
+    ALLOCATIONS.with(Cell::get)
+}
+
+/// `try_with`: an allocation during thread teardown finds the thread local
+/// destroyed, and panicking there would abort the process.
+fn count_allocation() {
+    let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+}
+
+// SAFETY: every method forwards the caller's layout and pointer unchanged to
+// `std::alloc::System`, which upholds the `GlobalAlloc` contract; the only
+// extra work is the non-allocating, non-panicking counter above.
+unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+        count_allocation();
+        // SAFETY: the caller's layout, which `alloc` requires to be non-zero.
+        unsafe { std::alloc::System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
+        // SAFETY: only `System` blocks are handed out, with this same layout.
+        unsafe { std::alloc::System.dealloc(pointer, layout) }
+    }
+
+    unsafe fn realloc(
+        &self,
+        pointer: *mut u8,
+        layout: std::alloc::Layout,
+        new_size: usize,
+    ) -> *mut u8 {
+        count_allocation();
+        // SAFETY: a `System` block with `layout`; `new_size` is the caller's.
+        unsafe { std::alloc::System.realloc(pointer, layout, new_size) }
+    }
+}
+
+#[global_allocator]
+static COUNTING_ALLOCATOR: CountingAllocator = CountingAllocator;
+
 // ── Output parameter changes (#6562) ────────────────────────────────────
+
+/// The reporting path runs on the audio thread, so a block whose processor
+/// reports parameters and writes notes allocates nothing — measured on a block
+/// that did both, so a zero is not the count of a block that reported nothing.
+#[test]
+fn a_block_that_reports_parameters_and_notes_performs_no_heap_allocation() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-no-allocation");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    process(&mut wrapper, &[], &[]);
+    observed(&wrapper);
+
+    let left = vec![0.5f32; BLOCK_FRAMES];
+    let right = vec![-0.2f32; BLOCK_FRAMES];
+    let (mut out_left, mut out_right) = (vec![0.0f32; BLOCK_FRAMES], vec![0.0f32; BLOCK_FRAMES]);
+    let midi = [note(60, true, 3)];
+    let updates = [drive(0.8)];
+    let inputs: [&[f32]; 2] = [&left, &right];
+    let mut outputs: [&mut [f32]; 2] = [&mut out_left, &mut out_right];
+
+    let before = allocation_count();
+    wrapper.process_with_midi_and_parameters(&inputs, &mut outputs, BLOCK_FRAMES, &midi, &updates);
+    let after = allocation_count();
+
+    assert_eq!(
+        observed(&wrapper),
+        [PluginParameterEvent::value(MODULATED_PARAM_ID, 0.4)],
+        "the measured block was the one that reported"
+    );
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    assert_eq!(captured.len(), 2, "and the one that wrote notes");
+    assert_eq!(
+        after - before,
+        0,
+        "the reporting block allocated {} times",
+        after - before
+    );
+}
+
+/// A queue the processor claims and never adds a point to carries no value,
+/// so nothing is reported for it rather than a move to zero.
+#[test]
+fn an_output_queue_claimed_without_a_point_reports_nothing() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-empty-claim");
+    let mut wrapper = emitter(&plugin);
+    observed(&wrapper);
+
+    process(&mut wrapper, &[], &[drive(0.8)]);
+
+    let events = observed(&wrapper);
+    assert!(
+        events
+            .iter()
+            .all(|event| event.param_id != EMPTY_CLAIM_PARAM_ID),
+        "an empty claim reached the observers: {events:?}"
+    );
+    assert!(
+        events.contains(&PluginParameterEvent::value(MODULATED_PARAM_ID, 0.4)),
+        "the block that claimed the queue did report"
+    );
+}
+
+/// A block the processor refuses is not its output: what it reported on the
+/// way to failing reaches neither the observers nor the controller.
+#[test]
+fn a_refused_block_forwards_nothing_the_processor_reported() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-refused");
+    let mut wrapper = emitter(&plugin);
+    observed(&wrapper);
+
+    process(&mut wrapper, &[], &[refuse()]);
+
+    assert_eq!(
+        observed(&wrapper),
+        [],
+        "observers hear nothing of a refused block"
+    );
+    wrapper.flush_parameters_off_audio_thread();
+    assert_ne!(
+        controller_value(&wrapper, MODULATED_PARAM_ID),
+        REFUSED_REPORT,
+        "the controller is not told a refused block's report"
+    );
+}
 
 /// The project hears what the processor moved on its own and nothing else:
 /// its echo of the value the host just wrote is dropped (#6956), and a
@@ -216,15 +365,24 @@ fn notes_the_plugin_emits_are_captured_with_their_frame_offsets() {
     let delay = EMITTED_DELAY_FRAMES as u32;
     let up = |pitch: u8| pitch + EMITTED_TRANSPOSE as u8;
 
-    process(&mut wrapper, &[note(60, true, 3), note(64, false, 17)], &[]);
+    let on_channel = |channel: i16, event: HostMidiEvent| HostMidiEvent { channel, ..event };
+
+    process(
+        &mut wrapper,
+        &[
+            on_channel(3, note(60, true, 3)),
+            on_channel(5, note(64, false, 17)),
+        ],
+        &[],
+    );
 
     let mut captured = Vec::new();
     notes.drain(&mut captured);
     assert_eq!(
         captured,
         [
-            note(up(60), true, 3 + delay),
-            note(up(64), false, 17 + delay)
+            on_channel(3, note(up(60), true, 3 + delay)),
+            on_channel(5, note(up(64), false, 17 + delay))
         ]
     );
     assert_eq!(notes.take_dropped(), 0);
