@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 
@@ -22,10 +22,12 @@ describe('commandBatchPreflightPort', () => {
         expect(() => commandBatchPreflightPort.capture(input)).toThrow('commandBatchPreflightPort.setProvider');
     });
 
-    it('returns what the registered provider captures', () => {
-        commandBatchPreflightPort.setProvider(() => firstState);
+    it('returns what the registered provider captures for the given input', () => {
+        const provider = vi.fn(() => firstState);
+        commandBatchPreflightPort.setProvider(provider);
 
         expect(commandBatchPreflightPort.capture(input)).toBe(firstState);
+        expect(provider).toHaveBeenCalledExactlyOnceWith(input);
     });
 
     it('returns what the second provider captures after a second fill', () => {

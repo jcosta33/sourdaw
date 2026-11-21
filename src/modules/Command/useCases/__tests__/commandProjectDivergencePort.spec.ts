@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
 
@@ -13,10 +13,12 @@ describe('commandProjectDivergencePort', () => {
         expect(() => commandProjectDivergencePort.classify(input)).toThrow('commandProjectDivergencePort.setProvider');
     });
 
-    it('returns what the registered provider classifies', () => {
-        commandProjectDivergencePort.setProvider(() => first);
+    it('returns what the registered provider classifies for the given input', () => {
+        const provider = vi.fn(() => first);
+        commandProjectDivergencePort.setProvider(provider);
 
         expect(commandProjectDivergencePort.classify(input)).toBe(first);
+        expect(provider).toHaveBeenCalledExactlyOnceWith(input);
     });
 
     it('returns what the second provider classifies after a second fill', () => {

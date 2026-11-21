@@ -35,6 +35,11 @@ describe('commandBatchIdempotencyPort', () => {
 
         await expect(commandBatchIdempotencyPort.lookup(key)).resolves.toEqual({ status: 'missing' });
         expect(lookup).toHaveBeenCalledWith(key);
+        await expect(commandBatchIdempotencyPort.claim(key)).resolves.toEqual({ status: 'claimed' });
+        expect(repository.claim).toHaveBeenCalledWith(key);
+        const receipt = { ...key, serializedReceipt: '{}' };
+        await commandBatchIdempotencyPort.complete(receipt);
+        expect(repository.complete).toHaveBeenCalledWith(receipt);
         expect(commandBatchIdempotencyPort.release(key)).toBeNull();
     });
 
