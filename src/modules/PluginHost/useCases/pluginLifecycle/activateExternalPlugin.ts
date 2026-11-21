@@ -232,9 +232,13 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
-            // The retry queues ahead of any later keyed unload, so only a runtime rebuild can overtake it.
+            // An engine retire forgets the instance without ending the graph generation.
             function isCurrentRestore(): boolean {
-                return activationEpoch === externalPluginActivationEpoch.current;
+                return (
+                    activationEpoch === externalPluginActivationEpoch.current &&
+                    externalPluginActivationTasks.get(instanceId) === restoreTask &&
+                    loadedExternalInstances.has(instanceId)
+                );
             }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {

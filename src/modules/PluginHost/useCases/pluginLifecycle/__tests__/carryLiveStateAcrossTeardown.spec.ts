@@ -217,6 +217,70 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
         });
 
+        it('answers superseded when the restore an earlier removal overtook resolves', async () => {
+            const nativeLoad = Promise.withResolvers<PluginInstance>();
+            mocks.loadPlugin.mockReturnValueOnce(nativeLoad.promise);
+
+            const firstActivation = activate(SAVED_CHUNK);
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            nativeLoad.resolve(pluginInstance());
+            await removal;
+
+            await expect(firstActivation).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(mocks.setPluginState).toHaveBeenCalledOnce();
+        });
+
+        it('answers superseded when a restore retry the runtime clear overtook resolves', async () => {
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            const retryWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(retryWrite.promise);
+
+            const retry = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledTimes(2));
+            clearLoadedExternalPlugins();
+            retryWrite.resolve();
+
+            await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('active');
+        });
+
+        // An engine retire forgets the instance without ending the graph generation.
+        it('writes no restore failure for a restore retry an engine retire forgot', async () => {
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            const retryWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(retryWrite.promise);
+
+            const retry = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledTimes(2));
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            retryWrite.reject(new Error(`unknown plugin instance ${INSTANCE_ID}`));
+
+            await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
+        });
+
+        it('leaves a newer activation of the id unmarked when the forgotten one restores into nothing', async () => {
+            const firstWrite = Promise.withResolvers<void>();
+            const secondWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(firstWrite.promise).mockReturnValueOnce(secondWrite.promise);
+
+            const firstActivation = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            // The newer load queues behind the forgotten activation's restore on the instance's lifecycle.
+            const newerActivation = activate(SAVED_CHUNK);
+            firstWrite.reject(new Error(`unknown plugin instance ${INSTANCE_ID}`));
+
+            await expect(firstActivation).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
+            secondWrite.resolve();
+            await expect(newerActivation).resolves.toEqual({ status: 'active' });
+        });
+
         // A graph rebuild or whole-runtime clear admitted while the activation waits owns the instance.
         it('does not reload a waiting reactivation once the runtime is cleared', async () => {
             await activateAndEdit(SAVED_CHUNK);
