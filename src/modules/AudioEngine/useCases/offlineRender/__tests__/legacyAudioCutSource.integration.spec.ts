@@ -144,7 +144,6 @@ describe('legacy audio cut source seconds through Command and saved CRDT replay'
         clearHandlerRegistry();
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
-        setTimeOperationDependencies(null);
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();
