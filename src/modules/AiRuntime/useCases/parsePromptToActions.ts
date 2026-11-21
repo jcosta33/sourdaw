@@ -1719,9 +1719,12 @@ const planPromptIntent = inject({ logger })(
                           planningOutcome.retainedCompilations.filter((compiled) => compiled.callId === callId)
                       )
                     : [];
-                const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
-                    compiled.kind === 'recipe' ? [compiled.recipe] : []
-                );
+                const adoptedRecipes = selectedCompilations.flatMap((compiled) => {
+                    if (compiled.kind === 'recipe') {
+                        return [compiled.recipe];
+                    }
+                    return compiled.kind === 'preview' ? (compiled.cumulative?.adoptedRecipes ?? []) : [];
+                });
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const storedMetricState = refinedCard?.approvalSnapshot.metricGoalState;
                 const inheritedMetricState = metricGoalStateCodec(storedMetricState);

@@ -1372,10 +1372,7 @@ export function executeSelectedTimeRangeDeletion(
         return rejectResult();
     }
 
-    const deps = timeOperationDependencies;
-    if (!deps) {
-        throw new Error('Arrangement time operation dependencies are not registered');
-    }
+    const deps = timeOperationDependencies.read('executeSelectedTimeRangeDeletion');
 
     const requests = createClipIdentityRequests(normalized, validated.operation);
     const existingClipIds = collectExistingClipIds(normalized);

@@ -35,6 +35,9 @@ export async function tryNativeOfflineRender(
     // the capture, so the selection and the programme admit the same devices.
     const hostedPluginRuntime = readNativeOfflineHostedRuntime(input.loadedExternalInstanceIds);
     const selection = await selectOfflineRenderEngine({
+        // The exact count the native render requests below, so an export past
+        // its ceiling stays on Web Audio instead of failing there.
+        frameCount,
         renderableTracks: allRenderableTracks,
         scheduledTracks,
         gainEnvelopes: input.scheduling.gainEnvelopes,
