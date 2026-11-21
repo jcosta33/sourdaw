@@ -152,8 +152,9 @@ describe('createTrackStrips', () => {
         expect([node('a').nativeCarried, node('b').nativeCarried]).toEqual([true, true]);
 
         strips.forgetNativeCarriedTracks();
-        strips.ensureTrackStrip('c');
-        expect(node('c').nativeCarried).toBe(false);
+        strips.removeTrackStrip('b');
+        strips.ensureTrackStrip('b');
+        expect(node('b').nativeCarried).toBe(false);
     });
 
     it('ensures the strip through the assembled engine before muting it', () => {
