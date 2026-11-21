@@ -54,11 +54,11 @@ export const QUALITY_OF: Readonly<Record<MeasuredConstraintId, string>> = {
     'brightness-not-lowered-v1': 'brightness',
 };
 
-/** The comparatives that move each family, by the way they move its metric. */
+/** The comparatives that move each family, by the way they move its metric: "less bright" moves it down. */
 const COMPARATIVES: Readonly<Record<QualityFamily, Readonly<Record<Movement, readonly string[]>>>> = {
-    loudness: { up: ['louder'], down: ['quieter', 'softer'] },
-    width: { up: ['wider'], down: ['narrower'] },
-    brightness: { up: ['brighter'], down: ['darker', 'duller'] },
+    loudness: { up: ['louder', 'more loud'], down: ['quieter', 'softer', 'less loud'] },
+    width: { up: ['wider', 'more wide'], down: ['narrower', 'less wide'] },
+    brightness: { up: ['brighter', 'more bright'], down: ['darker', 'duller', 'less bright'] },
     dynamics: {
         up: ['more dynamic', 'less compressed'],
         down: ['less dynamic', 'flatter', 'more compressed', 'more squashed'],
@@ -193,11 +193,23 @@ const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
 export const MEASURED_NOUN = String.raw`${words(FREE_TEXT_NOUNS)}s?`;
 /** A word naming a way a measured quality moves: a quality verb or a direction. */
 export const MOVE_WORD = String.raw`(?:${words(VERB_PHRASES)}${WORD_END}|${DIRECTION})`;
+/** The plain adjectives a family's comparatives grade: "bright" of "brighter" and "less bright". */
+const PLAIN_ADJECTIVES: Readonly<Record<QualityFamily, readonly string[]>> = {
+    loudness: ['loud', 'quiet', 'soft'],
+    width: ['wide', 'narrow'],
+    brightness: ['bright', 'dark', 'dull'],
+    dynamics: [DYNAMIC_TERM, 'compressed', 'flat', 'squashed'],
+};
+/**
+ * A plain adjective past a threshold the request never states: "too bright". It names a measured
+ * quality, but no fixed tolerance says where "too" begins, so no reader binds it.
+ */
+const EXCESS_WORD = String.raw`too\s+${words(FAMILIES.flatMap((family) => PLAIN_ADJECTIVES[family]))}${WORD_END}`;
 /**
  * Any word naming a measured quality or a way it moves, as free text names it. A plain adjective
- * ("bright", "wide") is none: elsewhere it mostly describes a sound.
+ * ("bright", "wide") is none: elsewhere it mostly describes a sound. One "too" grades is ("too bright").
  */
-export const MEASURED_WORD = String.raw`(?:${MEASURED_NOUN}|${MOVE_WORD})`;
+export const MEASURED_WORD = String.raw`(?:${MEASURED_NOUN}|${MOVE_WORD}|${EXCESS_WORD})`;
 
 function headWord(phrase: string): string {
     const [head = phrase] = phrase.split(' ');

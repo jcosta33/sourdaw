@@ -1645,6 +1645,17 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'hideTrack',
+        "Hide a track's row from the arrangement and mixer, or show it again; a hidden track still plays.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            hidden: { type: 'boolean', description: 'true=hide, false=show' },
+        },
+        ['trackId', 'hidden'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'foldTrack',
         "Fold a folder track to hide its children's rows, or unfold it.",
         {
@@ -3037,6 +3048,19 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['reorder yeast processor', 'move midi effect'],
         targetRules: [],
         valueRules: [],
+    },
+    {
+        actionType: 'hideTrack',
+        intentPhrases: ['hide', 'unhide'],
+        targetRules: [{ argument: 'trackId', capability: 'hideable-track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'hidden',
+                kind: 'boolean-intent',
+                truePhrases: ['hide'],
+                falsePhrases: ['unhide'],
+            },
+        ],
     },
     {
         actionType: 'foldTrack',

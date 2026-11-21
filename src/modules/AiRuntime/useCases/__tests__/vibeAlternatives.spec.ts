@@ -86,6 +86,21 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     }),
 }));
 
+const planning = vi.hoisted(() => ({ afterPlanned: null as (() => Promise<void>) | null }));
+
+// The planner itself runs for real; a case may land its own project edit once the plan has resolved.
+vi.mock('../vibeRun/planBriefVibeRun', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../vibeRun/planBriefVibeRun')>();
+    return {
+        ...actual,
+        planBriefVibeRun: async (...args: Parameters<typeof actual.planBriefVibeRun>) => {
+            const planned = await actual.planBriefVibeRun(...args);
+            await planning.afterPlanned?.();
+            return planned;
+        },
+    };
+});
+
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
     renderOffline: vi.fn(),
@@ -101,6 +116,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    planning.afterPlanned = null;
     tearDownVibeRunFixture();
 });
 
@@ -410,6 +426,21 @@ describe('the rules a reading list must meet', () => {
         }
     });
 
+    it('retains on each reading the perceptual constraints its request states, not an empty reading', () => {
+        const prompt = "make this mix warmer but don't make it louder";
+        const expected = compilePerceptualConstraints(prompt, getProjectContext());
+        // Without a stated constraint both sides would be empty readings and any stored value would match.
+        expect(expected.constraints.length).toBeGreaterThan(0);
+
+        const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), prompt);
+
+        expect(result.receipt.status).toBe('success');
+        expect(result.mixAlternatives).toHaveLength(2);
+        for (const alternative of result.mixAlternatives ?? []) {
+            expect(alternative.plan.constraintReading).toEqual(expected);
+        }
+    });
+
     it('offers no reading to a request without a live run, as a correctable failure', () => {
         for (const sourceRunId of [null, 'run-that-does-not-exist']) {
             const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), AMBIGUOUS_PROMPT, sourceRunId);
@@ -543,6 +574,58 @@ describe('the rules a reading list must meet', () => {
             error: { code: 'invalid-tool-arguments', retryable: true },
         });
         expect(result.receipt.error?.safeMessage).toMatch(/"Nothing here".*no authored recipe that plans/u);
+    });
+
+    describe('when only a later reading cannot be planned', () => {
+        const PLANS_ON_A_HI_HAT = { name: 'Darker top end', requestedDescriptors: ['dark'] };
+        const NO_HI_HAT_RECIPE = { name: 'More low-mid body', requestedDescriptors: ['warm'] };
+        const FITS_TWELVE_RENDERS = { name: 'Brighter', requestedDescriptors: ['bright'] };
+        const NEEDS_SIXTEEN_RENDERS = { name: 'Airy and punchy', requestedDescriptors: ['airy', 'punchy'] };
+
+        function expectRefusedNamingOnly(result: ReturnType<typeof compileWith>, named: RegExp, notNamed: string) {
+            expect(result.commands).toBeNull();
+            expect(result.mixAlternatives).toBeUndefined();
+            expect(result.receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+            const message = result.receipt.error?.safeMessage ?? '';
+            expect(message).toMatch(named);
+            expect(message).not.toContain(notNamed);
+        }
+
+        it('refuses a second reading no authored recipe plans, naming it, though the first plans', async () => {
+            // Only a hi-hat is left to plan: the "dark" recipe serves one, the "warm" recipe serves kick, snare and toms.
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: DRUMS_ID, name: 'Hi-Hat' } });
+            const leaveOthers = 'make this mix warmer but leave the Vocal and the Bass alone';
+            const control = compileWith(
+                mixIntentWith([PLANS_ON_A_HI_HAT, { name: 'Brighter', requestedDescriptors: ['bright'] }]),
+                leaveOthers
+            );
+            expect(control.receipt.status).toBe('success');
+
+            const result = compileWith(mixIntentWith([PLANS_ON_A_HI_HAT, NO_HI_HAT_RECIPE]), leaveOthers);
+
+            expectRefusedNamingOnly(result, /"More low-mid body".*no authored recipe that plans/u, '"Darker top end"');
+        });
+
+        it('refuses a second reading that does not fit the run, naming it and the budget, though the first fits', () => {
+            const limits = { maxRenderJobs: 12 };
+            const control = compileWith(
+                mixIntentWith([FITS_TWELVE_RENDERS, PLANS_ON_A_HI_HAT]),
+                AMBIGUOUS_PROMPT,
+                createLiveRun(limits)
+            );
+            expect(control.receipt.status).toBe('success');
+
+            const result = compileWith(
+                mixIntentWith([FITS_TWELVE_RENDERS, NEEDS_SIXTEEN_RENDERS]),
+                AMBIGUOUS_PROMPT,
+                createLiveRun(limits)
+            );
+
+            expectRefusedNamingOnly(result, /"Airy and punchy".*maxRenderJobs/u, '"Brighter"');
+        });
     });
 });
 
@@ -826,12 +909,30 @@ describe('a chosen reading that cannot be planned once its card is retired', () 
         expect(planningMessage()?.stoppableRunId).toBeUndefined();
     });
 
+    it('ends the run as failed, with no card, when the project changes after the plan was measured', async () => {
+        planning.afterPlanned = editBrief;
+
+        const { card, outcome } = await chooseDarker();
+
+        const reason =
+            'the project changed while the reading was planned, so no plan was made. Ask again for the change you want';
+        expect(outcome).toEqual({ status: 'refused', reason });
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalled();
+        expect(agentRunLifecycle.get(card.runId)?.phase).toBe('failed');
+        expect(agentRunLifecycle.get(card.runId)?.plan?.batchSchedule).toBeUndefined();
+        expect(proposedCards()).toEqual([]);
+        expect(planningMessage()).toMatchObject({
+            content: `No plan was made for the reading "Darker top end": ${reason}`,
+            error: reason,
+        });
+        expect(planningMessage()?.stoppableRunId).toBeUndefined();
+    });
+
     it('leaves a stopped reading cancelled, with no recorded error, when Stop lands while it measures', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         const errorsBefore = agentRunLifecycle.get(card.runId)?.errors.length;
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: Parameters<typeof renderTrack>[0]) => {
             void agentRunCancellation.cancel({ runId: card.runId, reason: 'Cancelled by user' });
-            await Promise.resolve();
             return renderTrack(input);
         });
 
@@ -980,6 +1081,41 @@ describe('a choice that no longer applies', () => {
         ).resolves.toEqual({ status: 'missing' });
     });
 
+    it('refuses, telling why, when the run ends between admitting the choice and claiming its work', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const live = agentRunLifecycle.get(card.runId);
+        if (live === null) {
+            throw new TypeError('Expected a live run');
+        }
+        // The run ended after the choice was admitted: admission reads the run as it was, the claim reads it as it is.
+        agentRunLifecycle.transitionPhase({ runId: card.runId, phase: 'cancelled' });
+        const readRun = agentRunLifecycle.get.bind(agentRunLifecycle);
+        const staleRead = vi
+            .spyOn(agentRunLifecycle, 'get')
+            .mockImplementation((runId) => (runId === card.runId ? live : readRun(runId)));
+        const messagesBefore = chatStore.value?.messages.length ?? 0;
+        const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
+
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+        staleRead.mockRestore();
+
+        const reason = 'The reading could not be planned: terminal-run.';
+        expect(outcome).toEqual({ status: 'refused', reason });
+        const told = (chatStore.value?.messages ?? []).slice(messagesBefore);
+        expect(told).toEqual([
+            expect.objectContaining({
+                role: 'assistant',
+                error: reason,
+                content: `Could not plan the reading "Darker top end": ${reason}`,
+            }),
+        ]);
+        expect(getPendingActionConfirmation(card.id)?.status).toBe('proposed');
+        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBe(rendersBefore);
+    });
+
     describe('whose retained plan no longer holds', () => {
         const READING = 'Darker top end';
 
@@ -1098,6 +1234,24 @@ describe('a choice that no longer applies', () => {
             return { outcome, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
         }
 
+        /** The chat tells the user why no plan was made, in the one message that said it was planning. */
+        function expectReasonTold(outcome: unknown, expectedReason: RegExp) {
+            if (typeof outcome !== 'object' || outcome === null || !('reason' in outcome)) {
+                throw new TypeError('Expected a refusal carrying its reason');
+            }
+            const { reason } = outcome;
+            if (typeof reason !== 'string') {
+                throw new TypeError('Expected the reason to be text');
+            }
+            expect(reason).toMatch(expectedReason);
+            const told = (chatStore.value?.messages ?? []).filter((message) =>
+                message.content.startsWith('No plan was made for the reading')
+            );
+            expect(told).toHaveLength(1);
+            expect(told[0]?.content).toBe(`No plan was made for the reading "Darker top end": ${reason}`);
+            expect(told[0]?.error).toBe(reason);
+        }
+
         function expectRunEndedWithoutPlan(card: Confirmation, renders: number) {
             expect(renders).toBe(0);
             expect(proposedCards()).toEqual([]);
@@ -1124,6 +1278,7 @@ describe('a choice that no longer applies', () => {
                 reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
             });
             expectRunEndedWithoutPlan(card, renders);
+            expectReasonTold(outcome, new RegExp(`"${removedName}".*no longer in the project`, 'u'));
         });
 
         it('refuses a reading whose plan is unchanged but whose brief moved during the retire, and measures nothing', async () => {
@@ -1136,6 +1291,7 @@ describe('a choice that no longer applies', () => {
                 reason: expect.stringMatching(/production brief changed/u),
             });
             expectRunEndedWithoutPlan(card, renders);
+            expectReasonTold(outcome, /production brief changed/u);
         });
     });
 

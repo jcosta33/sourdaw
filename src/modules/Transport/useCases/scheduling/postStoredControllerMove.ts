@@ -1,3 +1,4 @@
+import { resolveStoredControllerHosting } from '#/modules/AudioEngine/useCases';
 import { CC_SUSTAIN_PEDAL, isPianoPedalMoveEngaged, resolvePianoPedalMove } from '#/utils/pianoPedalController';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
@@ -30,7 +31,8 @@ export function postStoredControllerMove({
     value,
     sampleFrame,
 }: PostStoredControllerMoveInput): void {
-    const grandBoule = device.type === 'grand-boule' ? node.grandBouleControls : undefined;
+    const moves = resolveStoredControllerHosting(device.type)?.moves;
+    const grandBoule = moves === 'pedal-positions' ? node.grandBouleControls : undefined;
     if (grandBoule) {
         const pedal = resolvePianoPedalMove(controller, value);
         if (pedal === null) {
@@ -53,7 +55,7 @@ export function postStoredControllerMove({
         });
         return;
     }
-    const levain = device.type === 'levain' ? node.levainControls : undefined;
+    const levain = moves === 'raw-controllers' ? node.levainControls : undefined;
     if (!levain) {
         return;
     }

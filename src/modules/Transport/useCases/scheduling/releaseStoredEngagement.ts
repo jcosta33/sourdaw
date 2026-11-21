@@ -1,3 +1,4 @@
+import { resolveStoredControllerHosting } from '#/modules/AudioEngine/useCases';
 import { CC_SOSTENUTO_PEDAL, CC_SUSTAIN_PEDAL, CC_UNA_CORDA_PEDAL } from '#/utils/pianoPedalController';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
@@ -26,7 +27,8 @@ export function releaseStoredEngagement({
     controllers,
     sampleFrame,
 }: ReleaseStoredEngagementInput): void {
-    if (deviceType === 'grand-boule' && node.grandBouleControls) {
+    const moves = resolveStoredControllerHosting(deviceType)?.moves;
+    if (moves === 'pedal-positions' && node.grandBouleControls) {
         if (controllers.has(CC_SUSTAIN_PEDAL)) {
             node.grandBouleControls.setSustain(0, sampleFrame, true);
         }
@@ -36,7 +38,7 @@ export function releaseStoredEngagement({
         if (controllers.has(CC_UNA_CORDA_PEDAL)) {
             node.grandBouleControls.setUnaCorda(false, sampleFrame, true);
         }
-    } else if (deviceType === 'levain' && node.levainControls) {
+    } else if (moves === 'raw-controllers' && node.levainControls) {
         if (controllers.has(CC_SUSTAIN_PEDAL)) {
             node.levainControls.handleCc(CC_SUSTAIN_PEDAL, 0, sampleFrame, true);
         }
