@@ -2,17 +2,112 @@
 //! Reservations count before bytes arrive; weak retirement records keep the same
 //! budget charged until the scheduler/reclaimer and offline readers actually let go.
 
+use crate::commands::graph_refusals::EngineNotRendering;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
+use daw_engine::GraphBatchError;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Weak};
+use std::fmt;
+use std::sync::{Arc, PoisonError, Weak};
 
 const MAX_OWNERS: usize = 64;
 const MAX_LEASES: usize = 256;
 const MAX_MATERIALS: usize = 8192;
 const MAX_ID_BYTES: usize = 256;
 const MAX_FRAMES: usize = 48_000 * 600;
+
+/// Why a timeline material lifecycle step was refused.
+#[derive(Debug)]
+pub(crate) enum TimelineMaterialError {
+    InvalidDescriptor,
+    MaterialByteCountOverflow,
+    TokenSpaceExhausted,
+    LeaseClosed,
+    OwnerClosed,
+    LeaseHasPendingUploads,
+    LeaseRequired,
+    UnknownSample {
+        source: String,
+    },
+    MaterialVersionRequired,
+    MaterialOutsideLease,
+    MaterialNotResident,
+    LeaseCapacityExceeded,
+    DuplicateDescriptor,
+    VersionChangedShape,
+    ByteCountOverflow,
+    WorkingSetOverBudget,
+    InvalidRequest(serde_json::Error),
+    /// A control-side lock was poisoned by a panicking holder.
+    StatePoisoned,
+    OwnerRetirementCapacityExceeded,
+    LegacyReadersActive,
+    InvalidOwner,
+    EngineNotRendering(EngineNotRendering),
+    GraphRetirementRefused(GraphBatchError),
+    UploadOutsideLease,
+    ReservationDisappeared,
+    UploadMismatch,
+    VersionImmutable,
+}
+
+impl fmt::Display for TimelineMaterialError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDescriptor => f.write_str("Invalid timeline material descriptor"),
+            Self::MaterialByteCountOverflow => f.write_str("Timeline material byte count overflow"),
+            Self::TokenSpaceExhausted => f.write_str("Timeline token space exhausted"),
+            Self::LeaseClosed => f.write_str("Timeline material lease is closed"),
+            Self::OwnerClosed => f.write_str("Timeline material owner is closed"),
+            Self::LeaseHasPendingUploads => {
+                f.write_str("Timeline material lease has pending uploads")
+            }
+            Self::LeaseRequired => f.write_str("schedule-clip requires a timeline material lease"),
+            Self::UnknownSample { source } => write!(
+                f,
+                "schedule-clip: unknown sample '{source}' — register it with register_timeline_sample first"
+            ),
+            Self::MaterialVersionRequired => {
+                f.write_str("schedule-clip requires an exact materialVersion")
+            }
+            Self::MaterialOutsideLease => f.write_str("schedule-clip material is outside its lease"),
+            Self::MaterialNotResident => f.write_str("schedule-clip material is not resident"),
+            Self::LeaseCapacityExceeded => f.write_str("Timeline material lease capacity exceeded"),
+            Self::DuplicateDescriptor => f.write_str("Duplicate timeline material descriptor"),
+            Self::VersionChangedShape => f.write_str("Timeline material version changed shape"),
+            Self::ByteCountOverflow => f.write_str("Timeline byte count overflow"),
+            Self::WorkingSetOverBudget => f.write_str(
+                "Timeline material working set exceeds the native pool budget or material capacity",
+            ),
+            Self::InvalidRequest(cause) => write!(f, "Invalid timeline lifecycle request: {cause}"),
+            Self::StatePoisoned => PoisonError::new(()).fmt(f),
+            Self::OwnerRetirementCapacityExceeded => {
+                f.write_str("Timeline owner retirement capacity exceeded")
+            }
+            Self::LegacyReadersActive => f.write_str(
+                "Legacy timeline readers must finish before opening fenced material ownership",
+            ),
+            Self::InvalidOwner => f.write_str("Invalid timeline owner"),
+            Self::EngineNotRendering(refusal) => refusal.fmt(f),
+            Self::GraphRetirementRefused(error) => {
+                write!(f, "Timeline graph retirement refused: {error:?}")
+            }
+            Self::UploadOutsideLease => f.write_str("Upload is outside its timeline lease"),
+            Self::ReservationDisappeared => f.write_str("Timeline reservation disappeared"),
+            Self::UploadMismatch => f.write_str("Timeline upload does not match its reservation"),
+            Self::VersionImmutable => f.write_str("Timeline material version is immutable"),
+        }
+    }
+}
+
+impl std::error::Error for TimelineMaterialError {}
+
+impl<Guard> From<PoisonError<Guard>> for TimelineMaterialError {
+    fn from(_: PoisonError<Guard>) -> Self {
+        Self::StatePoisoned
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -25,7 +120,7 @@ pub(crate) struct MaterialDescriptor {
 }
 
 impl MaterialDescriptor {
-    fn bytes(&self) -> Result<usize, String> {
+    fn bytes(&self) -> Result<usize, TimelineMaterialError> {
         if self.source_id.is_empty()
             || self.source_id.len() > MAX_ID_BYTES
             || self.version.is_empty()
@@ -37,12 +132,12 @@ impl MaterialDescriptor {
             || self.sample_rate <= 0.0
             || self.sample_rate > f64::from(f32::MAX)
         {
-            return Err("Invalid timeline material descriptor".into());
+            return Err(TimelineMaterialError::InvalidDescriptor);
         }
         self.frames
             .checked_mul(self.channels)
             .and_then(|n| n.checked_mul(4))
-            .ok_or_else(|| "Timeline material byte count overflow".into())
+            .ok_or(TimelineMaterialError::MaterialByteCountOverflow)
     }
 
     fn wire(&self) -> Value {
@@ -158,11 +253,11 @@ impl TimelineMaterialResidency {
         }
     }
 
-    fn token(&mut self, prefix: &str) -> Result<String, String> {
+    fn token(&mut self, prefix: &str) -> Result<String, TimelineMaterialError> {
         self.next_token = self
             .next_token
             .checked_add(1)
-            .ok_or("Timeline token space exhausted")?;
+            .ok_or(TimelineMaterialError::TokenSpaceExhausted)?;
         Ok(format!("{prefix}-{}", self.next_token))
     }
 
@@ -208,14 +303,14 @@ impl TimelineMaterialResidency {
 }
 
 impl TimelineSamplePool {
-    pub(crate) fn timeline_lease_owner(&self, lease: &str) -> Result<&str, String> {
+    pub(crate) fn timeline_lease_owner(&self, lease: &str) -> Result<&str, TimelineMaterialError> {
         let row = self
             .residency
             .leases
             .get(lease)
-            .ok_or("Timeline material lease is closed")?;
+            .ok_or(TimelineMaterialError::LeaseClosed)?;
         if !self.residency.owners.contains(&row.owner) {
-            return Err("Timeline material owner is closed".into());
+            return Err(TimelineMaterialError::OwnerClosed);
         }
         if row.keys.iter().any(|key| {
             self.residency
@@ -224,7 +319,7 @@ impl TimelineSamplePool {
                 .and_then(|entry| entry.sample.as_ref())
                 .is_none()
         }) {
-            return Err("Timeline material lease has pending uploads".into());
+            return Err(TimelineMaterialError::LeaseHasPendingUploads);
         }
         Ok(&row.owner)
     }
@@ -234,15 +329,19 @@ impl TimelineSamplePool {
         lease: Option<&str>,
         source: &str,
         version: Option<&str>,
-    ) -> Result<&TimelineSample, String> {
+    ) -> Result<&TimelineSample, TimelineMaterialError> {
         let Some(lease) = lease else {
             if self.residency.fenced {
-                return Err("schedule-clip requires a timeline material lease".into());
+                return Err(TimelineMaterialError::LeaseRequired);
             }
-            return self.get(source).ok_or_else(|| format!("schedule-clip: unknown sample '{source}' — register it with register_timeline_sample first"));
+            return self
+                .get(source)
+                .ok_or_else(|| TimelineMaterialError::UnknownSample {
+                    source: source.to_string(),
+                });
         };
         let owner = self.timeline_lease_owner(lease)?;
-        let version = version.ok_or("schedule-clip requires an exact materialVersion")?;
+        let version = version.ok_or(TimelineMaterialError::MaterialVersionRequired)?;
         let key = MaterialKey {
             owner: owner.into(),
             source_id: source.into(),
@@ -252,27 +351,27 @@ impl TimelineSamplePool {
             .residency
             .leases
             .get(lease)
-            .ok_or("Timeline material lease is closed")?;
+            .ok_or(TimelineMaterialError::LeaseClosed)?;
         if !held.keys.contains(&key) {
-            return Err("schedule-clip material is outside its lease".into());
+            return Err(TimelineMaterialError::MaterialOutsideLease);
         }
         self.residency
             .materials
             .get(&key)
             .and_then(|row| row.sample.as_ref())
-            .ok_or_else(|| "schedule-clip material is not resident".into())
+            .ok_or(TimelineMaterialError::MaterialNotResident)
     }
 
     fn prepare_timeline_materials(
         &mut self,
         owner: String,
         materials: Vec<MaterialDescriptor>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, TimelineMaterialError> {
         if !self.residency.owners.contains(&owner) {
-            return Err("Timeline material owner is closed".into());
+            return Err(TimelineMaterialError::OwnerClosed);
         }
         if self.residency.leases.len() >= MAX_LEASES || materials.len() > MAX_MATERIALS {
-            return Err("Timeline material lease capacity exceeded".into());
+            return Err(TimelineMaterialError::LeaseCapacityExceeded);
         }
         self.residency.retired.retain(RetiredMaterial::reading);
         let mut keys = Vec::new();
@@ -287,16 +386,16 @@ impl TimelineSamplePool {
                 version: descriptor.version.clone(),
             };
             if !unique.insert(key.clone()) {
-                return Err("Duplicate timeline material descriptor".into());
+                return Err(TimelineMaterialError::DuplicateDescriptor);
             }
             if let Some(row) = self.residency.materials.get(&key) {
                 if row.descriptor != *descriptor {
-                    return Err("Timeline material version changed shape".into());
+                    return Err(TimelineMaterialError::VersionChangedShape);
                 }
             } else {
                 additional = additional
                     .checked_add(bytes)
-                    .ok_or("Timeline byte count overflow")?;
+                    .ok_or(TimelineMaterialError::ByteCountOverflow)?;
                 additional_rows += 1;
             }
             keys.push(key);
@@ -327,7 +426,7 @@ impl TimelineSamplePool {
         let mut accounted = self
             .total_bytes()
             .checked_add(additional)
-            .ok_or("Timeline byte count overflow")?;
+            .ok_or(TimelineMaterialError::ByteCountOverflow)?;
         let mut evictions = Vec::new();
         let row_count =
             self.residency.materials.len() + self.residency.retired.len() + additional_rows;
@@ -339,10 +438,7 @@ impl TimelineSamplePool {
             evictions.push(key);
         }
         if accounted > self.max_bytes() || row_count - evictions.len() > MAX_MATERIALS {
-            return Err(
-                "Timeline material working set exceeds the native pool budget or material capacity"
-                    .into(),
-            );
+            return Err(TimelineMaterialError::WorkingSetOverBudget);
         }
         let lease = self.residency.token("lease")?;
         for key in evictions {
@@ -391,11 +487,15 @@ enum LifecycleRequest {
 }
 
 pub async fn timeline_sample_lifecycle(request: Value, state: &AppState) -> Result<Value, String> {
-    let request: LifecycleRequest = serde_json::from_value(request)
-        .map_err(|error| format!("Invalid timeline lifecycle request: {error}"))?;
+    run_lifecycle_request(request, state).map_err(|e| e.to_string())
+}
+
+fn run_lifecycle_request(request: Value, state: &AppState) -> Result<Value, TimelineMaterialError> {
+    let request: LifecycleRequest =
+        serde_json::from_value(request).map_err(TimelineMaterialError::InvalidRequest)?;
     match request {
         LifecycleRequest::Open => {
-            let mut pool = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+            let mut pool = state.timeline_samples.lock()?;
             pool.residency.retired.retain(RetiredMaterial::reading);
             if pool.residency.owners.len()
                 + pool.residency.retirement_fences.len()
@@ -408,11 +508,11 @@ pub async fn timeline_sample_lifecycle(request: Value, state: &AppState) -> Resu
                     .len()
                 >= MAX_OWNERS
             {
-                return Err("Timeline owner retirement capacity exceeded".into());
+                return Err(TimelineMaterialError::OwnerRetirementCapacityExceeded);
             }
             if !pool.residency.fenced {
                 if pool.has_legacy_material_readers() {
-                    return Err("Legacy timeline readers must finish before opening fenced material ownership".into());
+                    return Err(TimelineMaterialError::LegacyReadersActive);
                 }
                 pool.clear();
                 pool.residency.fenced = true;
@@ -423,45 +523,38 @@ pub async fn timeline_sample_lifecycle(request: Value, state: &AppState) -> Resu
         }
         LifecycleRequest::Prepare { owner, materials } => state
             .timeline_samples
-            .lock()
-            .map_err(|e| e.to_string())?
+            .lock()?
             .prepare_timeline_materials(owner, materials),
         LifecycleRequest::Release { lease } => {
-            state
-                .timeline_samples
-                .lock()
-                .map_err(|e| e.to_string())?
-                .residency
-                .release(&lease);
+            state.timeline_samples.lock()?.residency.release(&lease);
             Ok(json!({"released": true}))
         }
         LifecycleRequest::Retire { owner } => retire_owner(&owner, state),
     }
 }
 
-fn retire_owner(owner: &str, state: &AppState) -> Result<Value, String> {
+fn retire_owner(owner: &str, state: &AppState) -> Result<Value, TimelineMaterialError> {
     if owner.is_empty() || owner.len() > MAX_ID_BYTES {
-        return Err("Invalid timeline owner".into());
+        return Err(TimelineMaterialError::InvalidOwner);
     }
     // Same order as graph apply: registry -> engine -> samples. Nothing here
     // boots or stops the process-wide engine, capture, or hosted instances.
-    let mut registry = state.graph.lock().map_err(|e| e.to_string())?;
-    let mut engine = state.engine.lock().map_err(|e| e.to_string())?;
-    let mut pool = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+    let mut registry = state.graph.lock()?;
+    let mut engine = state.engine.lock()?;
+    let mut pool = state.timeline_samples.lock()?;
     pool.residency.close(owner);
     if registry.timeline_owner.as_deref() == Some(owner) {
         let mut working = registry.clone();
         let ops = working.take_topology_down();
         if let Some(engine) = engine.as_mut() {
             if !engine.is_rendering() {
-                return Err(
-                    crate::commands::graph_refusals::EngineNotRendering::TimelineRetirement
-                        .to_string(),
-                );
+                return Err(TimelineMaterialError::EngineNotRendering(
+                    EngineNotRendering::TimelineRetirement,
+                ));
             }
             engine
                 .send_graph_batch(ops)
-                .map_err(|error| format!("Timeline graph retirement refused: {error:?}"))?;
+                .map_err(TimelineMaterialError::GraphRetirementRefused)?;
             let fence = working.record_fenced_batch();
             pool.residency
                 .retirement_fences
@@ -502,14 +595,35 @@ pub async fn register_timeline_material(
     pcm: Vec<u8>,
     state: &AppState,
 ) -> Result<Value, String> {
-    let mut pool = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+    publish_timeline_material(
+        lease,
+        source_id,
+        version,
+        sample_rate,
+        channels,
+        &pcm,
+        state,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn publish_timeline_material(
+    lease: String,
+    source_id: String,
+    version: String,
+    sample_rate: f64,
+    channels: u32,
+    pcm: &[u8],
+    state: &AppState,
+) -> Result<Value, TimelineMaterialError> {
+    let mut pool = state.timeline_samples.lock()?;
     let held = pool
         .residency
         .leases
         .get(&lease)
-        .ok_or("Timeline material lease is closed")?;
+        .ok_or(TimelineMaterialError::LeaseClosed)?;
     if !pool.residency.owners.contains(&held.owner) {
-        return Err("Timeline material owner is closed".into());
+        return Err(TimelineMaterialError::OwnerClosed);
     }
     let key = MaterialKey {
         owner: held.owner.clone(),
@@ -517,18 +631,18 @@ pub async fn register_timeline_material(
         version,
     };
     if !held.keys.contains(&key) {
-        return Err("Upload is outside its timeline lease".into());
+        return Err(TimelineMaterialError::UploadOutsideLease);
     }
     let row = pool
         .residency
         .materials
         .get_mut(&key)
-        .ok_or("Timeline reservation disappeared")?;
+        .ok_or(TimelineMaterialError::ReservationDisappeared)?;
     if row.descriptor.sample_rate != sample_rate
         || row.descriptor.channels != channels as usize
         || row.descriptor.bytes()? != pcm.len()
     {
-        return Err("Timeline upload does not match its reservation".into());
+        return Err(TimelineMaterialError::UploadMismatch);
     }
     let stride = channels as usize * 4;
     if let Some(sample) = &row.sample {
@@ -539,7 +653,7 @@ pub async fn register_timeline_material(
                         == u32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]))
         });
         if !equal {
-            return Err("Timeline material version is immutable".into());
+            return Err(TimelineMaterialError::VersionImmutable);
         }
     } else {
         let left: Arc<[f32]> = pcm
@@ -686,5 +800,32 @@ mod tests {
         .await;
         assert!(refused.unwrap_err().contains("lease"));
         assert!(state.timeline_samples.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn timeline_material_errors_keep_the_text_their_strings_carried() {
+        assert_eq!(
+            TimelineMaterialError::EngineNotRendering(EngineNotRendering::TimelineRetirement)
+                .to_string(),
+            "engine-not-rendering: timeline retirement requires engine recovery"
+        );
+        let poisoned = std::sync::Mutex::new(());
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = poisoned.lock().unwrap();
+            panic!("poison the lock");
+        });
+        let refusal = TimelineMaterialError::from(poisoned.lock().unwrap_err());
+        assert!(matches!(refusal, TimelineMaterialError::StatePoisoned));
+        assert_eq!(
+            refusal.to_string(),
+            poisoned.lock().unwrap_err().to_string()
+        );
+        assert_eq!(
+            TimelineMaterialError::UnknownSample {
+                source: "kick".to_string()
+            }
+            .to_string(),
+            "schedule-clip: unknown sample 'kick' — register it with register_timeline_sample first"
+        );
     }
 }

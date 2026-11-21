@@ -54,16 +54,18 @@ function releaseNote(receiver: WebMidiNoteReceiver, sampleFrame?: number) {
 
 describe('routeYeastNoteOffsForTargetTrack', () => {
     it('releases the Crumbs voice of a track whose receiver is Crumbs', () => {
-        const { controls } = releasePanicNote(CRUMBS);
+        const { controls, emitGrandBouleEvent } = releasePanicNote(CRUMBS);
 
         expect(controls.crumbs).toHaveBeenCalledExactlyOnceWith(60);
+        expect(emitGrandBouleEvent).not.toHaveBeenCalled();
     });
 
     it('releases only the receiver, leaving the other instruments on the strip alone', () => {
-        const { controls } = releasePanicNote(LEVAIN);
+        const { controls, emitGrandBouleEvent } = releasePanicNote(LEVAIN);
 
         expect(controls.levain).toHaveBeenCalledExactlyOnceWith(60);
         expect(controls.fermenter).not.toHaveBeenCalled();
+        expect(emitGrandBouleEvent).not.toHaveBeenCalled();
     });
 
     it('releases a Grand Boule receiver with a zero release velocity and emits its event', () => {
@@ -100,9 +102,10 @@ describe('routeYeastNoteOffToInstrument', () => {
         ['levain', LEVAIN],
         ['crumbs', CRUMBS],
     ] as const)('releases %s without a sample frame', (key, receiver) => {
-        const { controls } = releaseNote(receiver);
+        const { controls, emitGrandBouleEvent } = releaseNote(receiver);
 
         expect(controls[key]).toHaveBeenCalledExactlyOnceWith(60);
+        expect(emitGrandBouleEvent).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -110,9 +113,10 @@ describe('routeYeastNoteOffToInstrument', () => {
         ['levain', LEVAIN],
         ['crumbs', CRUMBS],
     ] as const)('releases %s at a sample frame', (key, receiver) => {
-        const { controls } = releaseNote(receiver, 4096);
+        const { controls, emitGrandBouleEvent } = releaseNote(receiver, 4096);
 
         expect(controls[key]).toHaveBeenCalledExactlyOnceWith(60, 4096);
+        expect(emitGrandBouleEvent).not.toHaveBeenCalled();
     });
 
     it('passes the release velocity and sample frame to Grand Boule', () => {

@@ -14,6 +14,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
+import { LocalModelDownloadRequiredError } from '../../../errors/LocalModelDownloadRequiredError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
@@ -56,6 +57,7 @@ import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } fro
 import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
+import { describeNoAiBackendRemedy } from '../../describeNoAiBackendRemedy';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
 import { getProviderRouteView } from '../../getProviderRouteView';
@@ -64,6 +66,7 @@ import { getPlanningProviderSchemaContract } from '../../planningProviderSchema'
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
+import { answeringStatus } from '../answeringStatus';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();
@@ -2628,6 +2631,54 @@ describe('generateToolPlanningOutcome', () => {
             expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
         });
 
+        // Red when the chain replaces the download-required error with a generic provider failure.
+        it('keeps the download-required error when the local model is the only backend', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).rejects.toBeInstanceOf(LocalModelDownloadRequiredError);
+        });
+
+        // Red when the badge shows the generic provider failure instead of the remedy.
+        it('settles the answering status to the remedy when the local model needs a download', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+
+            await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).rejects.toThrow();
+
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
+                state: 'error',
+                message: describeNoAiBackendRemedy(),
+            });
+        });
+
+        // Red when the typed error ends the chain instead of falling through to the next backend.
+        it('lets a hosted backend answer after the local model needs a download', async () => {
+            mocks.backendChain.value = ['webllm', 'cloud'];
+            mocks.generateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'hosted-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).resolves.toMatchObject({ status: 'complete' });
+
+            expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce();
+            expect(mocks.llmStatusSet).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'error' }));
+        });
+
         // Red when a refused attempt leaves the badge naming a model with nothing running.
         it.each([
             {
@@ -2673,6 +2724,103 @@ describe('generateToolPlanningOutcome', () => {
             ).resolves.toMatchObject({ status: 'rejected' });
 
             expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
+        });
+
+        describe('across two overlapping turns', () => {
+            const hostedAnswering = {
+                state: 'generating',
+                backend: 'cloud',
+                provider: 'openai',
+                modelId: 'hosted-model',
+            };
+            const localAnswering = { state: 'generating', backend: 'webllm', modelId: getActiveModelId() };
+            const completePlan = {
+                status: 'complete',
+                toolCalls: [{ id: 'call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            };
+
+            beforeEach(() => {
+                answeringStatus.clear();
+                // The store holds what was last published, as the real store does.
+                mocks.llmStatusSet.mockImplementation((status) => {
+                    mocks.llmStatus.value = status;
+                });
+            });
+
+            afterEach(() => {
+                mocks.llmStatusSet.mockReset();
+                answeringStatus.clear();
+            });
+
+            /** Turn A plans on the hosted model, then turn B on the local model while A still answers. */
+            async function startOverlappingTurns(bSignal?: AbortSignal) {
+                const hostedReply = Promise.withResolvers<unknown>();
+                const localReply = Promise.withResolvers<unknown>();
+                mocks.generateCloudToolCalls.mockReturnValueOnce(hostedReply.promise);
+                mocks.generateWebLlmToolCalls.mockReturnValueOnce(localReply.promise);
+                mocks.backendChain.value = ['cloud'];
+                const turnA = generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
+                await vi.waitFor(() => expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce());
+                mocks.backendChain.value = ['webllm'];
+                const turnB = generateToolPlanningOutcome('system', 'mute the first track', toolSchemas, bSignal);
+                await vi.waitFor(() => expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce());
+                expect(mocks.llmStatus.value).toEqual(localAnswering);
+                return {
+                    finishA: async () => {
+                        hostedReply.resolve({
+                            providerRequestId: null,
+                            calls: completePlan.toolCalls,
+                            strictToolSchemas: false,
+                            usage: null,
+                        });
+                        await expect(turnA).resolves.toMatchObject({ status: 'complete' });
+                    },
+                    finishB: async () => {
+                        localReply.resolve(completePlan);
+                        await expect(turnB).resolves.toMatchObject({ status: 'complete' });
+                    },
+                    turnB,
+                };
+            }
+
+            // Red when a stopped turn restores the generating status it saw when it started.
+            it('settles to the engine status when the last turn is stopped after the other finished', async () => {
+                const controller = new AbortController();
+                const turns = await startOverlappingTurns(controller.signal);
+
+                await turns.finishA();
+                controller.abort();
+                await expect(turns.turnB).rejects.toMatchObject({ name: 'AbortError' });
+
+                expect(mocks.llmStatus.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+            });
+
+            it('keeps the other answering turn named when one turn is stopped', async () => {
+                const controller = new AbortController();
+                const turns = await startOverlappingTurns(controller.signal);
+
+                controller.abort();
+                await expect(turns.turnB).rejects.toMatchObject({ name: 'AbortError' });
+                expect(mocks.llmStatus.value).toEqual(hostedAnswering);
+
+                await turns.finishA();
+                expect(mocks.llmStatus.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+            });
+
+            // Red when a finishing turn publishes ready over a turn still answering.
+            it('keeps the newest answering turn named when an earlier turn finishes', async () => {
+                const turns = await startOverlappingTurns();
+
+                await turns.finishA();
+                expect(mocks.llmStatus.value).toEqual(localAnswering);
+
+                await turns.finishB();
+                expect(mocks.llmStatus.value).toEqual({
+                    state: 'ready',
+                    backend: 'webllm',
+                    modelId: getActiveModelId(),
+                });
+            });
         });
     });
 

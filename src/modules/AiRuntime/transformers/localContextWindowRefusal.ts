@@ -25,6 +25,11 @@ export function describeLocalPlannerRequired(activeModelId: string, offeredPlann
     return `${refusal} Switch to ${planners.join(' or ')}, or use a hosted model.`;
 }
 
+/** The user-visible refusal of any local-model request on a machine whose memory fits no local model. */
+export function describeNoLocalModelOffered(): string {
+    return 'This machine has too little memory to run any local model. Use a hosted model.';
+}
+
 /**
  * The user-visible refusal of a local planning request the local model's window cannot hold.
  * `largerLocalModel` names a local model whose window would hold it, when there is one.

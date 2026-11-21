@@ -10,6 +10,7 @@ import {
     proposePendingActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { type persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => ({
     compileApproval: vi.fn(),
     compilePartial: vi.fn(),
     getRun: vi.fn(),
-    persistConfirmation: vi.fn(),
+    persistConfirmation: vi.fn<typeof persistPromptActionConfirmation>(),
     preview: vi.fn(),
     recordBatch: vi.fn(),
     refresh: vi.fn(),
@@ -429,6 +430,27 @@ describe('reproposePendingChatActions', () => {
         });
         expect(mocks.cancelRun).not.toHaveBeenCalled();
         expect(mocks.transitionPhase).not.toHaveBeenCalled();
+    });
+
+    // Red when the replacement card says only that it was re-previewed and drops the description of
+    // what it changes (#6551).
+    it('keeps the card description of the refreshed batch beside the re-preview sentence', async () => {
+        propose('confirmation-described');
+        mocks.refresh.mockReturnValue(readyRefresh(refreshedBatch));
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-described' })).resolves.toMatchObject({
+            status: 'reproposed',
+        });
+
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        if (persisted === undefined) {
+            throw new TypeError('Expected the re-preview to persist its replacement card');
+        }
+        const { content } = persisted;
+        expect(content.startsWith('This prompt requires confirmation before execution.')).toBe(true);
+        expect(content.match(/^- \*\*setTrackGain\*\*: /gmu)).toHaveLength(3);
+        expect(content.endsWith('\n\nRe-previewed against the current project.')).toBe(true);
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content }));
     });
 
     // Red when a partial selection re-proposes actions its dependency closure never included.

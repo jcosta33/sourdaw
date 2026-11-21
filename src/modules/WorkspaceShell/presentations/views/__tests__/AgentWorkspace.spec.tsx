@@ -226,7 +226,7 @@ const routeView = () => ({
     capability: null,
     fidelity: null,
     fallback: { attempted: false, reasons: [] },
-    fallbackPolicy: 'hosted-then-local',
+    fallbackPolicy: 'hosted-only',
     dataDisclosure: null,
     usage: { provenance: 'provider-reported', inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, attempts: 1 },
     cost: [],
@@ -1172,7 +1172,8 @@ describe('AgentWorkspace', () => {
         expect(options[0]).toHaveTextContent('webllm: platform-unavailable, model-not-installed');
         expect(options[1]).toHaveAttribute('data-admitted', 'true');
         expect(options[1]).toHaveTextContent('cloud');
-        expect(screen.getByText('hosted first, local fallback')).toBeInTheDocument();
+        expect(screen.getByText('hosted provider only, no local fallback')).toBeInTheDocument();
+        expect(screen.queryByText('hosted first, local fallback')).not.toBeInTheDocument();
 
         getProviderRouteViewMock.mockReturnValue({ ...routeView(), fallbackPolicy: 'local-only' });
         rerender(<AgentWorkspace />);

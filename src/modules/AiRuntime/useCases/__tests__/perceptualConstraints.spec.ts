@@ -1583,6 +1583,17 @@ describe('reading measured holds and bounds', () => {
             unsupported: [],
         });
     });
+
+    it('reads no clause from a quality word inside a section name', () => {
+        const context = {
+            ...grammarContext(),
+            sections: [{ id: 'section-louder', name: "Don't Make It Louder", startBeat: 0, endBeat: 16 }],
+        };
+        expect(compilePerceptualConstraints("Lift the trim but don't make it louder", context)).toEqual({
+            constraints: [],
+            unsupported: [],
+        });
+    });
 });
 
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';
@@ -1739,7 +1750,18 @@ describe('measured holds and bounds at admission', () => {
             commandBatch: compiled.commandBatch,
         });
         expect(evaluation.reason).toMatch(
-            /integrated loudness on .* rose from -20 to -19 LUFS, beyond its 0\.5 LUFS tolerance/u
+            /integrated loudness on .* rose from -20 to -19 LUFS, a movement of 1 LUFS, beyond its 0\.5 LUFS tolerance/u
+        );
+    });
+
+    it('prints a bound broken by a hair at endpoints that differ by more than the tolerance', () => {
+        const { compiled, state } = compiledState("Lower the trim but don't make it louder");
+        const evaluation = evaluateMetricGoalAdmission({
+            state: withFigures(state, 'master', 'integratedLoudness', { baseline: -14, preview: -13.4996 }),
+            commandBatch: compiled.commandBatch,
+        });
+        expect(evaluation.reason).toMatch(
+            /integrated loudness on .* rose from -14 to -13\.4996 LUFS, a movement of 0\.5004 LUFS, beyond its 0\.5 LUFS tolerance/u
         );
     });
 
@@ -1750,7 +1772,7 @@ describe('measured holds and bounds at admission', () => {
             commandBatch: compiled.commandBatch,
         });
         expect(evaluation.reason).toMatch(
-            /integrated loudness on .* fell from -20 to -21 LUFS, beyond its 0\.5 LUFS tolerance/u
+            /integrated loudness on .* fell from -20 to -21 LUFS, a movement of 1 LUFS, beyond its 0\.5 LUFS tolerance/u
         );
     });
 

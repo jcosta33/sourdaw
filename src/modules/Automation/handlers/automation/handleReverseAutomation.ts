@@ -5,6 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
 import { findFollowerLaneRefusal } from './followerLaneRefusal';
+import { isLaneTransformSessionEntry } from './validateAutomationSessionEntries';
 
 export const handleReverseAutomation = createHandler<'reverseAutomation'>({
     execute: (alpha) => {
@@ -22,6 +23,7 @@ export const handleReverseAutomation = createHandler<'reverseAutomation'>({
     // Pre-execute snapshot of the lane's points; undo restores them. See
     // describeLaneTransformUndo.
     describe: (alpha) => describeLaneTransformUndo(alpha.payload.laneId, 'Reverse automation', { type: 'reverse' }),
+    validateSessionEntry: isLaneTransformSessionEntry,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
