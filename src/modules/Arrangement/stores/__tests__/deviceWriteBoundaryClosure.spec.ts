@@ -1206,7 +1206,7 @@ const DEVICE_DATA_COUNTS = {
         // part of the owning store write.
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 2,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
-        // Count provenance: 2 key writes plus 1 member assignment (#7166),
+        // Count provenance: 2 lexical device keys plus 1 member assignment (#7166),
         // `target.devices = devices`.
         'src/modules/Arrangement/stores/trackStore.ts': 3,
         // Snapshot capture reads serializable device topology for a later command.
@@ -1287,7 +1287,7 @@ const DEVICE_DATA_COUNTS = {
         // project identity, and read-only synth/drum-filtered Web Audio projection.
         'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 3,
         'src/modules/Project/stores/arrangementStore.ts': 3,
-        // Count provenance: 4 key writes plus 1 member assignment (#7166),
+        // Count provenance: 4 lexical device keys plus 1 member assignment (#7166),
         // `track.devices = preset.devices.map(…)`.
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 5,
         // Count provenance: measured 7 in code — the `parameterValues:` patch
@@ -1300,14 +1300,14 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
-        // Count provenance: 1 key plus 1 member assignment (#7166), `track.devices = […]`.
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `track.devices = […]`.
         'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 2,
-        // Count provenance: 1 key plus 1 member assignment (#7166), `input.track.devices = …`.
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `input.track.devices = …`.
         'src/modules/Project/useCases/projectTemplates/templateHelpers/attachSidechainCompressor.ts': 2,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts': 1,
         // Count provenance: member assignment, measured 1 — `track.devices = …map(buildDevice)` (#7166).
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createAudioTrack.ts': 1,
-        // Count provenance: 1 key plus 1 member assignment (#7166), `bus.devices = …`.
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `bus.devices = …`.
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 2,
         // Count provenance: member assignment, measured 1 — `track.devices = [instrument, …extras]` (#7166).
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createInstrumentTrack.ts': 1,
@@ -1975,24 +1975,9 @@ function codeMayContainDeviceDataAstWrites(code: string): boolean {
     return code.includes('updateTrack') || code.includes('trackStore');
 }
 
-const ASSIGNMENT_OPERATORS: ReadonlySet<SyntaxKind> = new Set([
-    SyntaxKind.EqualsToken,
-    SyntaxKind.PlusEqualsToken,
-    SyntaxKind.MinusEqualsToken,
-    SyntaxKind.AsteriskEqualsToken,
-    SyntaxKind.AsteriskAsteriskEqualsToken,
-    SyntaxKind.SlashEqualsToken,
-    SyntaxKind.PercentEqualsToken,
-    SyntaxKind.LessThanLessThanEqualsToken,
-    SyntaxKind.GreaterThanGreaterThanEqualsToken,
-    SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
-    SyntaxKind.AmpersandEqualsToken,
-    SyntaxKind.BarEqualsToken,
-    SyntaxKind.CaretEqualsToken,
-    SyntaxKind.AmpersandAmpersandEqualsToken,
-    SyntaxKind.BarBarEqualsToken,
-    SyntaxKind.QuestionQuestionEqualsToken,
-]);
+function isAssignmentOperator(kind: SyntaxKind): boolean {
+    return kind >= SyntaxKind.FirstAssignment && kind <= SyntaxKind.LastAssignment;
+}
 
 // A member target writes a device-data property when it is `x.devices`,
 // `x['devices']`, or a destructuring pattern whose targets include one.
@@ -2045,7 +2030,7 @@ function countDeviceDataMemberAssignments(file: SourceText): number {
     );
     const writes = new Set<Node>();
     const visit = (node: Node): void => {
-        if (isBinaryExpression(node) && ASSIGNMENT_OPERATORS.has(node.operatorToken.kind)) {
+        if (isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
             collectDeviceDataTargets(node.left, writes);
         } else if ((isForOfStatement(node) || isForInStatement(node)) && !isVariableDeclarationList(node.initializer)) {
             collectDeviceDataTargets(node.initializer, writes);
@@ -2421,6 +2406,7 @@ describe('device write boundary closure', () => {
         ['track.devices ||= [];', 1],
         ['track.parameterValues &&= {};', 1],
         ['track.devices += [];', 1],
+        ['track.parameterValues ^= 1;', 1],
         ['device.parameterValues -= 1;', 1],
         ["track['devices'] = [];", 1],
         ['track[`parameterValues`] = {};', 1],
