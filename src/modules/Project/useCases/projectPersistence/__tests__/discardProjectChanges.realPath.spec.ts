@@ -47,6 +47,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         commitPitchEdit: vi.fn(),

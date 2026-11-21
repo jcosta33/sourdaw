@@ -42,6 +42,8 @@ import { type OfflineYeastMidiProcessor } from '../../repositories/offlineSchedu
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
+import { hasPadOutputHost } from '../deviceCapabilities/hasPadOutputHost';
+import { hostsPadOutputs } from '../deviceCapabilities/hostsPadOutputs';
 import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
@@ -474,7 +476,7 @@ export async function scheduleTrackClips({
         silent: receiverSilent,
     } = selectOfflineNoteReceiver(track.devices, deviceEntries);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
-    const isToaster = instrumentEntry?.deviceType === 'toaster';
+    const isToaster = instrumentEntry !== undefined && hostsPadOutputs(instrumentEntry.deviceType);
     const toasterDeviceId = isToaster ? instrumentEntry.deviceId : null;
 
     // If this is a Toaster track, gather all clips from its child tracks.
@@ -588,7 +590,7 @@ export async function scheduleTrackClips({
     }
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
-    const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
+    const isToasterChild = !instrumentControls && parentTrack && hasPadOutputHost(parentTrack.devices);
     const workletEvents: WorkletMidiEvent[] = [];
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
