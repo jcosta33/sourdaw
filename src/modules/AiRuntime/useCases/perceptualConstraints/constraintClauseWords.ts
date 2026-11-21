@@ -44,12 +44,15 @@ export const SCOPE_WORD = words([...ROLE_WORDS.keys(), ...MIX_WORDS]);
 /** The brackets opening an aside, which a joining word after one may continue a list across. */
 const OPENING_BRACKET_MARKS = String.raw`(\[`;
 const OPENING_BRACKET = `[${OPENING_BRACKET_MARKS}]`;
+const CLOSING_BRACKET_MARKS = String.raw`)\]`;
+const BRACKET_MARKS = `${OPENING_BRACKET_MARKS}${CLOSING_BRACKET_MARKS}`;
 /**
  * The marks that end a clause, one character class each way: a mark, and any character but one. A bracket,
  * opening or closing, ends the clause before it, so no word holds one: "keep the vocal bright (and make
- * the drums louder)" holds the vocal's brightness as its unbracketed form does.
+ * the drums louder)" holds the vocal's brightness as its unbracketed form does. An aside the clause goes
+ * on after is read inside it instead (`readInnerAsides`).
  */
-const CLAUSE_MARKS = String.raw`,.;:!?${OPENING_BRACKET_MARKS})\]`;
+const CLAUSE_MARKS = `,.;:!?${BRACKET_MARKS}`;
 export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
@@ -82,8 +85,8 @@ export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
 export const POSSESSIVE_DETERMINER = words(['its', 'their']);
 const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
-/** A quotation mark or an apostrophe, which an object's name is read without. */
-const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
+/** A quotation mark, an apostrophe or a bracket, which an object's name is read without. */
+const QUOTE_MARK = new RegExp(`["“”‘${BRACKET_MARKS}]|${APOSTROPHE}`, 'gu');
 
 export function normalizeObjectText(text: string): string {
     return normalizePhrase(text.replaceAll(QUOTE_MARK, '')).replace(LEADING_DETERMINER, '');
@@ -126,11 +129,21 @@ const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
 /** Every word a clause may open or end at. */
 const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
+/** Any bracket, opening or closing. */
+export const BRACKET = `[${BRACKET_MARKS}]`;
+/** A closed aside the clause goes on after: "keep the level (of the vocal) the same", never "… bright (please)". */
+export const INNER_ASIDE = String.raw`${OPENING_BRACKET}[^${BRACKET_MARKS}]*[${CLOSING_BRACKET_MARKS}](?!${CLAUSE_END})`;
+
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
 export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
 const ON_WORD = 'on';
 export const OBJECT_PREPOSITION = words(['of', ON_WORD, 'in']);
+/**
+ * The bracket opening an aside that goes on naming the object before it, closed or not: "keep the
+ * brightness (of the vocal)", "don't touch the low end (of the bass".
+ */
+export const OBJECT_ASIDE_OPENING = String.raw`${OPENING_BRACKET}(?=\s*${OBJECT_PREPOSITION}\b)`;
 /** "on" alone, which a keep continuing a move may carry: "keep on widening". */
 const ON = words([ON_WORD]);
 /** "at", which a level is kept at: "keep the Keys at the same level". */

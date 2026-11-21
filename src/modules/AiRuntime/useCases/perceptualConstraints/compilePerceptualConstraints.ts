@@ -59,6 +59,7 @@ import {
 } from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
+import { readInnerAsides } from './readInnerAsides';
 import { type ConsumedSpan, readUnreadConstraintClauses, type UnreadClause } from './readUnreadConstraintClauses';
 import { HYPHEN_OR_SPACE, words } from './words';
 
@@ -575,7 +576,7 @@ function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpa
 export function compilePerceptualConstraints(prompt: string, context: ProjectContext): PerceptualConstraintReading {
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
-    const masked = maskTrackReferences(prompt, context, MASK_GLYPH);
+    const masked = readInnerAsides(maskTrackReferences(prompt, context, MASK_GLYPH));
     const reader: RequestReader = { masked, prompt, context, constraints: [], unsupported: [] };
     const lowEnd = readLowEndConstraints(reader);
     const holds = readHoldClauses(masked, prompt);

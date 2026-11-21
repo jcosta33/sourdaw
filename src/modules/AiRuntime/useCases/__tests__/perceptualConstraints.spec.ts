@@ -2168,6 +2168,66 @@ describe('reading only governed protections and whole object names', () => {
             ],
             [],
         ],
+        // an aside inside a protection's object or between its parts reads as its unbracketed form does,
+        // on the object it names, or records the clause unsupported, never a reading on another scope
+        [
+            'keep the level (of the vocal) the same',
+            [measured('loudness-held-v1', 'keep the level (of the vocal) the same', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the level [of the vocal] the same',
+            [measured('loudness-held-v1', 'keep the level [of the vocal] the same', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the width (of the mix) intact',
+            [measured('stereo-width-held-v1', 'keep the width (of the mix) intact', MIX)],
+            [],
+        ],
+        [
+            'keep the brightness (of the vocal)',
+            [measured('brightness-held-v1', 'keep the brightness (of the vocal', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal (lead) bright',
+            [],
+            [
+                unread(
+                    'keep the vocal (lead) bright',
+                    '“the vocal (lead” names no track or mix whose brightness can be measured.'
+                ),
+            ],
+        ],
+        [
+            "don't make the vocal (the lead) louder",
+            [],
+            [
+                unread(
+                    "don't make the vocal (the lead) louder",
+                    '“the vocal (the lead” names no track or mix whose loudness can be measured.'
+                ),
+            ],
+        ],
+        ['keep the drums (and bass) punchy', [], [unread('keep the drums (and bass) punchy', unmeasured('punchy'))]],
+        [
+            "don't make (the) vocal louder",
+            [measured('loudness-not-raised-v1', "don't make (the) vocal louder", onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't touch the low end (of the bass)",
+            [
+                {
+                    constraintId: 'low-end-untouched-v1',
+                    clause: "don't touch the low end (of the bass",
+                    scope: onTracks('bass'),
+                    protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
+                },
+            ],
+            [],
+        ],
         // no clause ends in its bracket
         [
             "don't make it louder (and add reverb)",
