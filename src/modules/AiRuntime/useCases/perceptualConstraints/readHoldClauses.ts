@@ -22,10 +22,12 @@ import {
     OBJECT_LIST,
     OBJECT_MEMBERS,
     OBJECT_PREPOSITION,
+    OPENING_NEGATION,
     PURPOSE_HEAD,
     SCOPE_WORD,
     THE,
     THE_SAME,
+    WANTING_VERB,
 } from './constraintClauseWords';
 import {
     APOSTROPHE,
@@ -114,12 +116,13 @@ function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
 
 /** In reading order: on one span the earlier pattern's reading stands. */
 const HOLD_PATTERNS: readonly HoldPattern[] = [
-    // "don't make it sound louder", "without making the drums any quieter", "don't make the mix any wider"
+    // "don't make it sound louder", "without making the drums any quieter", "don't make the mix any wider",
+    // "don't go louder", "I don't want it louder"
     holdPattern(
-        String.raw`\b${NEGATION}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
+        String.raw`\b${OPENING_NEGATION}\s+(?:${CAUSING_VERB}|${WANTING_VERB})(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
-    // "the mix must not get louder", "the vocal shouldn't be louder"
+    // "the mix must not get louder", "the vocal shouldn't be louder", "the drums should never get wider"
     holdPattern(
         String.raw`${CLAUSE_HEAD}${OBJECT_LIST}\s+${MODAL_NEGATION}\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
@@ -137,7 +140,10 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         null
     ),
     // "don't widen the drums", "without squashing the mix"
-    holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
+    holdPattern(
+        String.raw`\b${OPENING_NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`,
+        null
+    ),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
     holdPattern(
         String.raw`${NOT_PERMITTED}\b${KEEP_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
@@ -159,7 +165,7 @@ const IN_CLAUSE = String.raw`(?:(?!\b${NEGATION}${WORD_END})${IN_CLAUSE_CHARACTE
  * louder"): recorded unsupported rather than held on a guessed scope or dropped.
  */
 const UNREADABLE_DIRECTION = new RegExp(
-    String.raw`\b${NEGATION}\s+${CAUSING_VERB}\s+(?<object>${IN_CLAUSE}+?(?:\s+${LIST_JOINER})?)\s+${DIRECTION_CLAUSE}`,
+    String.raw`\b${OPENING_NEGATION}\s+${CAUSING_VERB}\s+(?<object>${IN_CLAUSE}+?(?:\s+${LIST_JOINER})?)\s+${DIRECTION_CLAUSE}`,
     'dgiu'
 );
 

@@ -97,8 +97,8 @@ export const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
 const ANY_WORD = 'any';
 const SO = 'so';
-/** The degree words a comparative or a measured word may carry: "any louder", "too bright". */
-export const DEGREE_WORD = words([ANY_WORD, 'more', 'less', 'too', SO]);
+/** The degree words a comparative or a measured word may carry: "any louder", "too bright", "much louder". */
+export const DEGREE_WORD = words([ANY_WORD, 'more', 'less', 'too', 'much', SO]);
 /** "any" alone, which a comparative may carry ("any wider") and an object never opens with. */
 export const ANY = words([ANY_WORD]);
 
@@ -187,18 +187,18 @@ const RELEASED_VERB = String.raw`(?:${KEEP_VERBS}|${STOPPING_WORD}|${LEAVE_VERB}
 export const STOP_VERB = String.raw`${STOPPING_WORD}(?!\s+${RELEASED_VERB}${WORD_END})`;
 /** "avoid making it louder" governs what follows as a negation does. */
 export const AVOID_VERB = words(['avoid', 'avoiding']);
-/** The verbs a subject becomes a level through on its own: "the mix must not get louder". */
-export const BECOMING_VERB = words(['get', 'getting', 'become', 'becoming']);
+/** The verbs a subject becomes a level through on its own: "the mix must not get louder", "don't go louder". */
+export const BECOMING_VERB = words(['get', 'getting', 'become', 'becoming', 'go', 'going']);
 /** The verbs that make a quality become a level ("don't make it louder"), beside those a held noun takes. */
 const MAKING_VERB = words(['make', 'making', 'let', 'letting']);
 export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
+/** The verb a level is wanted through, which a negation bounds as it bounds a causing verb: "I don't want it louder". */
+export const WANTING_VERB = words(['want', 'wanting']);
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
 /** The verbs a quality changes into a level through beside "get" and "become": "from going brighter". */
 const CHANGING_VERB = words([
-    'go',
     'goes',
-    'going',
     'turn',
     'turns',
     'turning',
@@ -255,10 +255,20 @@ export const HELD_STATE = String.raw`(?:${THE_SAME}|${words([`where ${IT} ${IS}`
 const CONTRACTION = `${APOSTROPHE}?`;
 const WITHOUT = 'without';
 const NOT = 'not';
-export const NEGATION = String.raw`(?:${words([`do ${NOT}`, 'never', WITHOUT])}|${words(['don t'], CONTRACTION)})`;
+const NEVER = 'never';
+export const NEGATION = String.raw`(?:${words([`do ${NOT}`, NEVER, WITHOUT])}|${words(['don t'], CONTRACTION)})`;
 const CAN = 'can';
 const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
 const MODAL = words(MODAL_WORDS);
+/**
+ * A negation no modal stands before, which opens a clause of its own ("never get wider"). The "never" of
+ * "the drums should never get wider" is the modal's, and the modal clause reads its subject.
+ */
+export const OPENING_NEGATION = String.raw`(?<!\b${MODAL}\s+)${NEGATION}`;
+/** A modal with "never" after it, which states a bound as "must not" does: "the drums should never get wider". */
+const MODAL_NEVER = words(MODAL_WORDS.map((modal) => `${modal} ${NEVER}`));
+/** A subject's own "never", which states a bound on that subject: "the drums never get wider". */
+const SUBJECT_NEVER = words([NEVER]);
 /** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
 const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
@@ -273,13 +283,13 @@ export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\
  * Each modal followed by "not", and "cannot", the one modal written as one word with it: "must not", "cannot".
  */
 const MODAL_NOT = words([...MODAL_WORDS.map((modal) => `${modal} ${NOT}`), `${CAN}${NOT}`]);
-/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get", "cannot be". */
-export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION})`;
+/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get", "cannot be", "should never get". */
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION}|${MODAL_NEVER})`;
 /**
- * A modal negation states a clause, and so does "doesn't get"; a plain copula negation ("isn't",
- * "aren't", "wasn't") describes the sound as it is, so it is none.
+ * A modal negation states a clause, and so do "doesn't get" and a subject's "never"; a plain copula
+ * negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
  */
-export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION})`;
+export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION}|${SUBJECT_NEVER})`;
 const NO_WORD = 'no';
 const BARE_NEGATION = words([NO_WORD, NOT]);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
