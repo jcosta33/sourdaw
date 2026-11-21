@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 
 const canExecute = () => true;
+const REGISTRAR_CALL = 'call configureCommandBatchIdempotency() from #/app/bootstrap';
 
 // Vitest gives each spec file a fresh module graph, so the cases below run in
 // order: the unfilled read first, then the fill.
 describe('commandBatchExecutionAuthorityPort', () => {
     it('throws on a read before registration, naming the registrar', () => {
-        expect(() => commandBatchExecutionAuthorityPort.canExecute()).toThrow('#/app/bootstrap');
+        expect(() => commandBatchExecutionAuthorityPort.canExecute()).toThrow(REGISTRAR_CALL);
     });
 
     it('serves the registered provider', () => {

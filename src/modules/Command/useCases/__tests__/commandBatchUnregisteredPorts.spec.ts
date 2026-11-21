@@ -12,7 +12,7 @@ import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalT
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
-const REGISTRAR = '#/app/bootstrap';
+const REGISTRAR = 'call configureCommandBatchIdempotency() from #/app/bootstrap';
 const execute = vi.fn(() => ({ status: 'written' as const }));
 
 function compileBatch() {

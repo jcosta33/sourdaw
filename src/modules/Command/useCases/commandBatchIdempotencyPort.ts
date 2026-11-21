@@ -9,7 +9,7 @@ let registeredRepository: CommandBatchIdempotencyRepository | null = null;
 function readRepository(caller: string): CommandBatchIdempotencyRepository {
     if (registeredRepository === null) {
         throw new Error(
-            `${caller}: the command batch idempotency repository is not registered; call commandBatchIdempotencyPort.setRepository() from #/app/bootstrap`
+            `${caller}: the command batch idempotency repository is not registered; call configureCommandBatchIdempotency() from #/app/bootstrap`
         );
     }
     return registeredRepository;
