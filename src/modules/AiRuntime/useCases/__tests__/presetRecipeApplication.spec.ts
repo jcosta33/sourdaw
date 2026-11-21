@@ -18,6 +18,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
+import { RECIPE_EXPANSION_MAX_COMMANDS } from '../../models/RecipeExpansionLimits';
 import { type RetainedCommand } from '../../models/RetainedCompilation';
 import { expandMixRecipe } from '../expandMixRecipe';
 import { getProjectContext } from '../getProjectContext';
@@ -144,13 +145,16 @@ afterEach(() => {
 });
 
 describe('a preset recipe applied through its expansion', () => {
-    // Red when a left-out write was not already held by the added device, so the chains differ.
+    // Red when a left-out write was not already held by the added device, so the chains differ. The
+    // high-cut EQ states values a new EQ already holds, so its expansion leaves writes out. Every
+    // value the drum-bus compressor states differs from a new compressor's, its Auto Makeup switch
+    // included, so nothing is left out and the switch's write must land.
     it.each([
-        ['fx-eq-high-cut', 'preset:fx-eq-high-cut:dark', 'audio', null],
-        ['fx-chain-master-bus', 'preset:fx-chain-master-bus:glued', 'bus', 'bus'],
+        ['fx-eq-high-cut', 'preset:fx-eq-high-cut:dark', 'audio', null, true],
+        ['fx-comp-drum-bus', 'preset:fx-comp-drum-bus:glued', 'bus', 'bus', false],
     ] as const)(
         '%s leaves its chain exactly as writing every stated value does',
-        async (presetId, recipeId, kind, role) => {
+        async (presetId, recipeId, kind, role, leavesWritesOut) => {
             trackStore.set({
                 tracks: [
                     createTrack({ id: EXPANDED_TRACK, name: 'Expanded', kind }),
@@ -176,9 +180,29 @@ describe('a preset recipe applied through its expansion', () => {
             await applyExpansion(expansion.commands);
             await applyEveryStatedValue(presetId);
 
-            expect(emittedWrites).toBeLessThan(statedWrites);
+            expect(emittedWrites).toBeLessThanOrEqual(statedWrites);
+            expect(emittedWrites < statedWrites).toBe(leavesWritesOut);
             expect(chainOn(EXPANDED_TRACK)).toEqual(chainOn(STATED_TRACK));
             expect(chainOn(EXPANDED_TRACK).length).toBeGreaterThan(0);
         }
     );
+
+    it('refuses to expand Master Bus Polish, whose chain needs more commands than the ceiling', () => {
+        trackStore.set({
+            tracks: [createTrack({ id: EXPANDED_TRACK, name: 'Expanded', kind: 'bus' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const expansion = expandMixRecipe(
+            { recipeId: 'preset:fx-chain-master-bus:glued', targetId: EXPANDED_TRACK, role: 'bus', values: [] },
+            getProjectContext(),
+            1
+        );
+
+        expect(expansion.status).not.toBe('expanded');
+        expect(expansion.status === 'expanded' ? null : expansion.reason).toContain(
+            `above the ${String(RECIPE_EXPANSION_MAX_COMMANDS)}`
+        );
+    });
 });

@@ -3,6 +3,7 @@ import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommand
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
 import { blankRanges } from './blankRanges';
+import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
 import { protectionCandidates } from './protectionCandidates';
 import {
     CONNECTIVE_WORDS,
@@ -104,7 +105,7 @@ function countLeadingVerbs(tokens: readonly Token[]): number {
     return firstOther === -1 ? tokens.length : firstOther;
 }
 
-const isBoundToken = (token: Token) => token.text.includes('□');
+const isBoundToken = (token: Token) => token.text.includes(PROJECT_REFERENCE_MASK_GLYPH);
 
 type MemberInput = {
     tokens: readonly Token[];
@@ -205,7 +206,9 @@ function fullyStatesTrackMember(tokens: readonly Token[]): boolean {
         const [first, ...rest] = parts;
         return (
             SELECTION_PHRASES.has(parts.join(' ')) ||
-            (first !== undefined && first.includes('□') && rest.every((word) => TRACK_KIND_NOUNS.has(word)))
+            (first !== undefined &&
+                first.includes(PROJECT_REFERENCE_MASK_GLYPH) &&
+                rest.every((word) => TRACK_KIND_NOUNS.has(word)))
         );
     };
     const ofIndex = words.findIndex((word) => word === 'of' || word === 'on');

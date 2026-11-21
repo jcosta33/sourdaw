@@ -1,5 +1,7 @@
 import { stepRecordStore } from '../../stores/stepRecordStore';
 
+import { refuseStepRecordingOnFrozenTrack } from './refuseStepRecordingOnFrozenTrack';
+
 type ToggleStepRecordingForClipInput = {
     clipId: string;
 };
@@ -11,6 +13,9 @@ export function toggleStepRecordingForClip({ clipId }: ToggleStepRecordingForCli
     }
 
     const active = !state.active;
+    if (active && refuseStepRecordingOnFrozenTrack(clipId)) {
+        return;
+    }
 
     stepRecordStore.set({
         ...state,

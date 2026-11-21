@@ -1,5 +1,13 @@
+import { COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE } from '#/utils/dynamicsCompressorMakeupLaw';
+
 /**
- * Stored device parameter values that predate a change to a declared unit.
+ * Stored device parameter values that predate a change to a parameter's
+ * declaration. Two kinds of change are read here: a declared unit that moved
+ * (a rescale), and a parameter that did not exist when the value was stored
+ * but whose default for a new device is not the sound the old device made (a
+ * fill).
+ *
+ * ## Rescale
  *
  * A `DeviceParameter`'s `minValue`/`maxValue` are enforced on the way in —
  * `clampDeviceParameterValue` pins a write to the nearest legal value, and the
@@ -28,6 +36,28 @@
  * after, so no stored ceiling was ever out of range. `lookahead` is new: the
  * parameter did not exist in the catalog before, so no project can hold a value
  * for it.
+ *
+ * ## Fill
+ *
+ * The built-in compressor's Auto Makeup switch (`comp-auto-makeup`) is new, and
+ * a new device starts with it off. Every compressor stored before it existed
+ * sounded with the browser's makeup gain, which is the switch on, so a record
+ * without the key reads as on (ADR 0064). A record that carries the key, either
+ * value, is the user's setting and is never touched. The fill is idempotent the
+ * same way the rescale is: once filled the key is present, and a present key
+ * never fires it again.
+ *
+ * ## Stored encoding of a fill
+ *
+ * The fill runs on the CRDT projection, so every store reader sees an explicit
+ * value. The document must not: a store write reconciles the projected value
+ * back into the document, and a filled key the document lacks would land there
+ * on the first unrelated edit of the track, rewriting every legacy device.
+ * `encodeStoredDeviceParameterValues` is the fill's inverse on the way out: a
+ * fill key holding its `legacyValue` is stored as absence, which already reads
+ * as that value, and any other value is stored as written. The two directions
+ * are symmetric, so a projection followed by an encode returns the record the
+ * document held.
  */
 
 type StoredParameterMigration = {
@@ -47,6 +77,23 @@ const STORED_PARAMETER_MIGRATIONS: readonly StoredParameterMigration[] = [
     { deviceType: 'faust-brick-wall-limiter', paramId: 'release', newMinimum: 1, factor: 1000 },
 ];
 
+/** A parameter added after devices were stored, read as `legacyValue` where a record lacks it. */
+type StoredParameterFill = {
+    /** `Device.type`, matched against `PluginDescriptor.id`. */
+    deviceType: string;
+    paramId: string;
+    /** What a device stored before the parameter existed sounded like. */
+    legacyValue: number;
+};
+
+const STORED_PARAMETER_FILLS: readonly StoredParameterFill[] = [
+    {
+        deviceType: 'builtin-compressor',
+        paramId: 'comp-auto-makeup',
+        legacyValue: COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE,
+    },
+];
+
 /**
  * The parameter values a stored device should be read as holding.
  *
@@ -57,7 +104,7 @@ export function migrateStoredDeviceParameterValues(
     deviceType: string,
     parameterValues: Record<string, number>
 ): Record<string, number> {
-    let migrated: Record<string, number> | null = null;
+    let migrated = parameterValues;
     for (const migration of STORED_PARAMETER_MIGRATIONS) {
         if (migration.deviceType !== deviceType) {
             continue;
@@ -66,8 +113,35 @@ export function migrateStoredDeviceParameterValues(
         if (stored === undefined || stored >= migration.newMinimum) {
             continue;
         }
-        migrated ??= { ...parameterValues };
-        migrated[migration.paramId] = stored * migration.factor;
+        migrated = { ...migrated, [migration.paramId]: stored * migration.factor };
     }
-    return migrated ?? parameterValues;
+    for (const fill of STORED_PARAMETER_FILLS) {
+        if (fill.deviceType !== deviceType || Object.hasOwn(parameterValues, fill.paramId)) {
+            continue;
+        }
+        migrated = { ...migrated, [fill.paramId]: fill.legacyValue };
+    }
+    return migrated;
+}
+
+/**
+ * The parameter values a device should be stored as holding: the inverse of
+ * the fill. A fill key equal to its `legacyValue` is dropped, because absence
+ * already reads as that value.
+ *
+ * Returns the input untouched when nothing applies.
+ */
+export function encodeStoredDeviceParameterValues(
+    deviceType: string,
+    parameterValues: Record<string, number>
+): Record<string, number> {
+    let encoded = parameterValues;
+    for (const fill of STORED_PARAMETER_FILLS) {
+        if (fill.deviceType !== deviceType || parameterValues[fill.paramId] !== fill.legacyValue) {
+            continue;
+        }
+        const { [fill.paramId]: _legacy, ...rest } = encoded;
+        encoded = rest;
+    }
+    return encoded;
 }

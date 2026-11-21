@@ -326,6 +326,7 @@ export function demo5_NebulaDrift(): void {
         'eq-high-q': 0.62,
     });
     addDev(masterTrack, 'builtin-compressor', 'Glue', {
+        'comp-auto-makeup': 1,
         'comp-threshold': -14,
         'comp-ratio': 2.4,
         'comp-attack': 35,

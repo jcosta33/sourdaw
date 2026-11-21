@@ -1,4 +1,5 @@
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
 
 /**
  * A sign spoken or typeset before the figure, touching it or a space away: "minus 1.5 dB", and any
@@ -10,7 +11,6 @@ const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
  * "⁻", "＋"). The glyph a masked object name is written in is no such mark.
  */
 const UNREAD_MARK = /[\p{S}\p{P}]/u;
-const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
 /** The sign a figure's preceding text closes on, as `SIGN_MARK` reads it, or `null` for none. */
 function readSignBefore(before: string): RegExpExecArray | null {
@@ -33,7 +33,10 @@ function findUnreadMark(text: string): string | null {
 }
 
 /** A quotation of object names alone ("the "Bass" track"), read as the names it quotes. */
-const QUOTED_NAMES = /["“'‘]\s*(?:□|clip)[\s□]*["”'’]/gu;
+const QUOTED_NAMES = new RegExp(
+    String.raw`["“'‘]\s*(?:${PROJECT_REFERENCE_MASK_GLYPH}|clip)[\s${PROJECT_REFERENCE_MASK_GLYPH}]*["”'’]`,
+    'gu'
+);
 /** An apostrophe inside a word ("don't", "let's", "that's"), read with the word it joins. */
 const WORD_APOSTROPHE = /(?<=\p{L})['’](?=\p{L})/gu;
 /** A percent sign a space after its figure ("50 %"), which states the figure's unit. */

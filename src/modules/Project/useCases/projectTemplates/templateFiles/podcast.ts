@@ -28,6 +28,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Broadcast Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 4,
                     'comp-attack': 5,
@@ -110,6 +111,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -145,6 +147,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -180,6 +183,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,

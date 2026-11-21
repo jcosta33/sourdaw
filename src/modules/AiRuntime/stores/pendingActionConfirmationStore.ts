@@ -12,6 +12,7 @@ import { type ProposalGroundingBasis, type ProposalProtectionFacts } from '../mo
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type VibeBatchValueChoice } from '../models/VibeBatchValueChoice';
+import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
@@ -142,6 +143,12 @@ type PendingActionApprovalSnapshot = {
     briefReadings?: BriefReadings;
     /** The values a vibe-run batch card expands with, so a re-preview composes the card again; absent elsewhere. */
     vibeValueChoice?: VibeBatchValueChoice;
+    /** The lines a brief card shows after its description (readings, or planned batches), so a re-preview shows them again. */
+    plannedRunLines?: string[];
+    /** The positions of the actions a refinement keeps from the card it replaced, so a re-preview notes them again. */
+    keptDirectionActionIndexes?: number[];
+    /** The workflow the proposal was planned for, which a re-preview describes it under again. */
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 type PendingActionBatchPosition = { index: number; total: number };
@@ -349,6 +356,9 @@ type ProposePendingActionConfirmationInput = {
     protectionFacts?: ProposalProtectionFacts;
     briefReadings?: BriefReadings;
     vibeValueChoice?: VibeBatchValueChoice;
+    plannedRunLines?: string[];
+    keptDirectionActionIndexes?: number[];
+    workflowCapabilityId?: WorkflowCapabilityId;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -399,6 +409,9 @@ export function proposePendingActionConfirmation(
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
         ...(input.briefReadings === undefined ? {} : { briefReadings: structuredClone(input.briefReadings) }),
         vibeValueChoice: structuredClone(input.vibeValueChoice),
+        plannedRunLines: structuredClone(input.plannedRunLines),
+        keptDirectionActionIndexes: structuredClone(input.keptDirectionActionIndexes),
+        workflowCapabilityId: input.workflowCapabilityId,
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

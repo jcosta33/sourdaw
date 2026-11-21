@@ -120,6 +120,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mockPanicYeast }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mockStopActiveRecording }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    findMidiTransformDevice: vi.fn(),
+    isMidiTransformDevice: vi.fn(() => false),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     ensureCachedAudioBuffersDurable: vi.fn(),
     advanceNoteExpression: vi.fn(),

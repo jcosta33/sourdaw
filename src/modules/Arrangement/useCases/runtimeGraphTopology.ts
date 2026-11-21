@@ -2,6 +2,7 @@ import {
     createRuntimeGraphTopologyFingerprint,
     isBuiltinSynthDevice,
     isDrumDevice,
+    isMidiTransformDevice,
 } from '#/modules/AudioEngine/useCases';
 
 import { getAllTracks } from '../repositories/track/getAllTracks';
@@ -25,7 +26,7 @@ function createRuntimeGraphTopologyNode(track: Track): RuntimeGraphTopologyNode 
         id: track.id,
         kind: track.kind,
         devices: track.devices
-            .filter((device) => device.type !== 'yeast')
+            .filter((device) => !isMidiTransformDevice(device.type))
             .map((device) => ({
                 id: device.id,
                 type: device.type,

@@ -60,6 +60,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         builtinSynthVoice: { read: vi.fn() },
         startFaustNote: vi.fn(),
         soundsNativeNotes: vi.fn(() => false),

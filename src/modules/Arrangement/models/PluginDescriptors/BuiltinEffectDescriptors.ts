@@ -220,6 +220,22 @@ const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
                 automatable: true,
                 hasAutomation: false,
             },
+            // On adds the gain the browser's compressor derives from threshold,
+            // knee and ratio. A new device starts off; a stored device without
+            // the value reads as on (`StoredDeviceParameterMigration`, ADR 0064).
+            {
+                id: 'comp-auto-makeup',
+                deviceId: 'builtin-compressor',
+                name: 'Auto Makeup',
+                type: 'bool',
+                value: 0,
+                defaultValue: 0,
+                minValue: 0,
+                maxValue: 1,
+                unit: '',
+                automatable: false,
+                hasAutomation: false,
+            },
         ],
     },
     {

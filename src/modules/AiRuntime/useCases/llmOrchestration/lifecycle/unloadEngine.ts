@@ -1,8 +1,8 @@
 import { unloadWebLlmEngine } from '../../../repositories/webLlm/unloadWebLlmEngine';
-import { llmStatusStore } from '../../../stores/llmStatusStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 
 /** Unload the browser model and return the runtime to idle. */
 export function unloadEngine(): void {
     unloadWebLlmEngine();
-    llmStatusStore.set({ state: 'idle' });
+    answeringStatus.publishEngineStatus({ state: 'idle' });
 }
