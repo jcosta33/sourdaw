@@ -162,6 +162,61 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
         });
 
+        // The removal's unload queues behind the first load, and that load's restore queues behind the
+        // unload, so the restore reaches a native host that no longer holds the instance.
+        it('writes no restore failure for an instance removed while its first load was in flight', async () => {
+            const nativeLoad = Promise.withResolvers<PluginInstance>();
+            mocks.loadPlugin.mockReturnValueOnce(nativeLoad.promise);
+            mocks.setPluginState.mockImplementation((instanceId) => {
+                if (loadedExternalInstances.has(instanceId)) {
+                    return Promise.resolve();
+                }
+                return Promise.reject(new Error(`unknown plugin instance ${instanceId}`));
+            });
+
+            const firstActivation = activate(SAVED_CHUNK);
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            nativeLoad.resolve(pluginInstance());
+            await removal;
+
+            await expect(firstActivation).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(mocks.setPluginState).toHaveBeenCalledOnce();
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
+        });
+
+        // A rejected unload settles the wait too: the instance's fate is the unload's caller's to report.
+        it('reactivates after a pending unload of the instance rejects', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const nativeUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(nativeUnload.promise);
+
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+            const reactivation = activate(SAVED_CHUNK);
+            nativeUnload.reject(new Error('native unload failed'));
+            await expect(removal).rejects.toThrow('native unload failed');
+
+            await expect(reactivation).resolves.toEqual({ status: 'active' });
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+        });
+
+        it('writes no restore failure for a restore retry the runtime clear overtook', async () => {
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            const retryWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(retryWrite.promise);
+
+            const retry = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledTimes(2));
+            clearLoadedExternalPlugins();
+            retryWrite.reject(new Error(`unknown plugin instance ${INSTANCE_ID}`));
+
+            await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
+        });
+
         // A graph rebuild or whole-runtime clear admitted while the activation waits owns the instance.
         it('does not reload a waiting reactivation once the runtime is cleared', async () => {
             await activateAndEdit(SAVED_CHUNK);

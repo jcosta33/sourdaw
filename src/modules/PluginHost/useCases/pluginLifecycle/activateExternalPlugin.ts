@@ -52,6 +52,12 @@ type ActivateExternalPluginInput = {
     onLatencyMs?: (latencyMs: number) => void;
 };
 
+const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
+    status: 'failed',
+    stage: 'restore',
+    reason: 'External plugin activation was superseded by a runtime teardown',
+};
+
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
     externalPluginActivationStore.update((state) => {
         const current = state ?? defaultExternalPluginActivationState;
@@ -94,7 +100,7 @@ async function restoreCarriedState(
     instanceId: string,
     pluginId: string,
     carried: CarriedExternalPluginState,
-    activationEpoch: number
+    isCurrentActivation: () => boolean
 ): Promise<'restored' | 'rejected' | 'superseded'> {
     let rejection: string | null = null;
     try {
@@ -102,7 +108,7 @@ async function restoreCarriedState(
     } catch (error) {
         rejection = String(error);
     }
-    if (activationEpoch !== externalPluginActivationEpoch.current || !loadedExternalInstances.has(instanceId)) {
+    if (!isCurrentActivation()) {
         return 'superseded';
     }
     if (rejection === null) {
@@ -226,14 +232,14 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
+            // The retry queues ahead of any later keyed unload, so only a runtime rebuild can overtake it.
+            function isCurrentRestore(): boolean {
+                return activationEpoch === externalPluginActivationEpoch.current;
+            }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (activationEpoch !== externalPluginActivationEpoch.current) {
-                        return {
-                            status: 'failed',
-                            stage: 'restore',
-                            reason: 'External plugin activation was superseded by a runtime graph rebuild',
-                        };
+                    if (!isCurrentRestore()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     setActivationStatus(instanceId, 'active');
                     // The saved chunk is in the plugin again, so what it reports
@@ -242,6 +248,9 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
+                    if (!isCurrentRestore()) {
+                        return SUPERSEDED_RESTORE;
+                    }
                     const reason = String(error);
                     setActivationStatus(instanceId, 'error', reason);
                     // The plugin rejected the chunk and holds its defaults; its
@@ -368,13 +377,9 @@ export function activateExternalPlugin({
         // instance is never carried; a capture writes the live state itself.
         const carried = takeCarriedState(instanceId, pluginId);
         if (carried !== undefined) {
-            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, activationEpoch);
+            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, isCurrentActivation);
             if (carriedRestore === 'superseded') {
-                return {
-                    status: 'failed',
-                    stage: 'restore',
-                    reason: 'External plugin activation was superseded by a runtime teardown',
-                };
+                return SUPERSEDED_RESTORE;
             }
             if (carriedRestore === 'restored') {
                 restoredCarry = carried;
@@ -387,11 +392,19 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            if (!isCurrentActivation()) {
+                return SUPERSEDED_RESTORE;
+            }
             // The saved chunk is in the plugin again, so what it reports over
             // get-state is authoritative state.
             clearExternalPluginRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
+            // A teardown that overtook the load owns the instance now, and a newer activation may hold
+            // the same id: this restore's outcome is no longer this instance's state.
+            if (!isCurrentActivation()) {
+                return SUPERSEDED_RESTORE;
+            }
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
             setActivationStatus(instanceId, 'error', String(error));
