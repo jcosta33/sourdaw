@@ -602,6 +602,8 @@ const CLAUSE_OPENING_VERB = String.raw`(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPI
  * "and" does: "keep the vocal bright&stop making the mix wider".
  */
 export const CLAUSE_JOINING_AMPERSAND = String.raw`\s*${AMPERSAND}\s*(?=${CLAUSE_OPENING_VERB}${WORD_END})`;
+/** A clause end, or an ampersand opening the next clause: "keep the mix from getting wider&keep the vocal bright". */
+export const JOINED_CLAUSE_END = String.raw`(?:${CLAUSE_END}|(?=${CLAUSE_JOINING_AMPERSAND}))`;
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
  * making the drums wider", "keep the vocal getting brighter". It asks for more of the move through a

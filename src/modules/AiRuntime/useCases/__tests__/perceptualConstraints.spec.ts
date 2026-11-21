@@ -2676,6 +2676,30 @@ describe('reading only governed protections and whole object names', () => {
             [unread('stop making the mix wider', NET_REASON)],
         ],
         ['keep the vocal&stop making the mix wider', [], [unread('stop making the mix wider', NET_REASON)]],
+        [
+            "don't make the mix wider&keep the vocal bright",
+            [
+                measured('stereo-width-not-widened-v1', "don't make the mix wider", MIX),
+                measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the mix from getting louder&keep the vocal bright',
+            [
+                measured('loudness-not-raised-v1', 'keep the mix from getting louder', MIX),
+                measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the vocal bright & wide&stop making the mix wider',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright & wide', onTracks('vocal')),
+                measured('stereo-width-held-v1', 'keep the vocal bright & wide', onTracks('vocal')),
+            ],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
         // a finite verb after a kept quality opens a clause of its own; only a gerund continues the keep's move
         [
             'keep the vocal bright make the drums louder',

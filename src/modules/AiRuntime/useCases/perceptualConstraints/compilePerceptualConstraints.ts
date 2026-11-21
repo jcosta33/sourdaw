@@ -20,6 +20,7 @@ import {
     FROM,
     holdingKeep,
     IN_CLAUSE_CHARACTER,
+    JOINED_CLAUSE_END,
     KEEP,
     KEEP_VERBS,
     LEAVE_VERB,
@@ -364,7 +365,7 @@ function readQualityPattern(): QualityPattern {
         HYPHEN_OR_SPACE
     );
     const term = String.raw`${terms}${WORD_END}`;
-    const more = String.raw`(?<more>(?:${TERM_JOIN}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
+    const more = String.raw`(?<more>(?:${TERM_JOIN}(?:${AS}\s+)?${term})+${JOINED_CLAUSE_END})?`;
     const pattern = new RegExp(
         String.raw`\b${holdingKeep(terms)}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
         'dgiu'
@@ -433,12 +434,12 @@ type KeepPart =
 
 /** "keep the mix from getting louder": a keep, stop or prevent naming the move it prevents. */
 const KEPT_MOVE = new RegExp(
-    String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${JOINED_CLAUSE_END}`,
     'dgiu'
 );
 /** A later move under the same keep, its object its own or the one before: "and the drums from getting louder", ", from getting brighter". */
 const KEPT_MOVE_CONTINUATION = new RegExp(
-    String.raw`${AND_JOIN}(?:${OBJECT_LIST}\s+)?${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    String.raw`${AND_JOIN}(?:${OBJECT_LIST}\s+)?${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${JOINED_CLAUSE_END}`,
     'dyiu'
 );
 
