@@ -8,6 +8,8 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
+    type PostfixUnaryExpression,
+    type PrefixUnaryExpression,
     LanguageVariant,
     NodeFlags,
     ScriptKind,
@@ -36,6 +38,8 @@ import {
     isObjectLiteralExpression,
     isParenthesizedExpression,
     isPropertyAccessExpression,
+    isPostfixUnaryExpression,
+    isPrefixUnaryExpression,
     isPropertyAssignment,
     isReturnStatement,
     isSatisfiesExpression,
@@ -1136,8 +1140,13 @@ const DEVICE_DATA_COUNTS = {
         // snapshots declare two empty scalar footprints. Count provenance: 6
         // lexical device keys plus 0 member assignments (#7166) plus 1 nested
         // device-data write (#7213), `device.parameterValues[paramId] = …` in
-        // `projectDeviceWrite`, which writes a structuredClone'd chain the
-        // projection owns (`DeviceChainActionProjection.ts`), never a store.
+        // `projectDeviceWrite`. Its only caller is the projector table in
+        // `DeviceChainProjectorByActionType.ts`, reached only through
+        // `DeviceChainActionProjection.ts`, whose `lookup` hands the projector
+        // `source.map((device) => structuredClone(device))`. The callers of that
+        // entry point (`projectTrackThroughPriorBatchActions.ts`,
+        // `PlannedOwnerProjection.ts`) may pass live state; the clone is that
+        // `lookup`, so the write lands on a copy, never a store.
         'src/modules/Arrangement/models/DeviceChainProjectors.ts': 7,
         // Count provenance: measured 3 — the empty working-owner parameter map,
         // plus the two snapshot projections of owner and source devices. These
@@ -2014,8 +2023,9 @@ function targetsDeviceData(target: Expression): boolean {
 // A member target writes device data when its chain is or passes through
 // `.devices` / `.parameterValues` (`x.devices`, `x['devices']`,
 // `x.parameterValues[k]`), or it is a destructuring pattern whose targets
-// include one. A nested `a = b` default is its own assignment, counted when
-// the walk reaches it.
+// include one. The operand of a prefix or postfix `++` / `--` is a target too,
+// as an increment writes it. A nested `a = b` default is its own assignment,
+// counted when the walk reaches it.
 function collectDeviceDataTargets(target: Expression, writes: Set<Node>): void {
     const expression = unwrapStateExpression(target);
     if (isPropertyAccessExpression(expression) || isElementAccessExpression(expression)) {
@@ -2041,6 +2051,13 @@ function collectDeviceDataTargets(target: Expression, writes: Set<Node>): void {
     }
 }
 
+function isIncrementOrDecrement(node: Node): node is PrefixUnaryExpression | PostfixUnaryExpression {
+    if (isPrefixUnaryExpression(node) || isPostfixUnaryExpression(node)) {
+        return node.operator === SyntaxKind.PlusPlusToken || node.operator === SyntaxKind.MinusMinusToken;
+    }
+    return false;
+}
+
 function countDeviceDataMemberAssignments(file: SourceText): number {
     const sourceFile = createSourceFile(
         file.path,
@@ -2055,6 +2072,8 @@ function countDeviceDataMemberAssignments(file: SourceText): number {
             collectDeviceDataTargets(node.left, writes);
         } else if ((isForOfStatement(node) || isForInStatement(node)) && !isVariableDeclarationList(node.initializer)) {
             collectDeviceDataTargets(node.initializer, writes);
+        } else if (isIncrementOrDecrement(node)) {
+            collectDeviceDataTargets(node.operand, writes);
         }
         forEachChild(node, visit);
     };
@@ -2464,6 +2483,12 @@ describe('device write boundary closure', () => {
         ['for (x.parameterValues[k] of values) { void 0; }', 1],
         ['for (x.devices[0] in chains) { void 0; }', 1],
         ['track.devices = (x.parameterValues[k] = v);', 2],
+        ['t.parameterValues[k]++;', 1],
+        ['--t.devices.length;', 1],
+        ['x.parameterValues.gain--;', 1],
+        ['++a.devices[0].parameterValues[k];', 1],
+        ['(t.parameterValues[k])++;', 1],
+        ['t.devices.length++; --t.parameterValues[k];', 2],
     ])('counts a device-data member assignment: %s', (source, expected) => {
         const file = { path: 'src/modules/Arrangement/memberWrite.ts', source };
         expect(countDeviceDataMemberAssignments(file)).toBe(expected);
@@ -2495,6 +2520,11 @@ describe('device write boundary closure', () => {
         '({ chain: track.devices || [] } = source);',
         'for (const devices of chains) { void devices; }',
         'for (const parameterValues in chains) { void parameterValues; }',
+        'let i = 0; i++;',
+        '-t.parameterValues[k];',
+        '!t.devices;',
+        '+t.devices.length;',
+        'let i = 0; i++; --i; t.name++;',
     ])('does not count a read or unrelated assignment as a member write: %s', (source) => {
         expect(countDeviceDataMemberAssignments({ path: 'src/modules/Arrangement/readOnly.ts', source })).toBe(0);
     });
