@@ -9,7 +9,7 @@ type PayloadHasKey<
     Key extends PropertyKey,
 > = Key extends keyof RuntimePayload<ActionType> ? true : false;
 
-// A literal copy of the hand-kept list the membership record replaced.
+// A literal copy of the vocabulary as it stood before the undispatched actions below were retired (#6473).
 const PREVIOUS_RUNTIME_ACTION_TYPES = [
     'importStemSet',
     'addTrack',
@@ -272,12 +272,63 @@ const PREVIOUS_RUNTIME_ACTION_TYPES = [
     'variationMidi',
 ] as const;
 
+// Actions no AI runtime path dispatches. Their AppAction handlers stay; only the runtime vocabulary dropped them.
+const RETIRED_RUNTIME_ACTION_TYPES = [
+    'removeAllTracks',
+    'setTrackInput',
+    'autoOrganizeProject',
+    'setWarpAlgorithm',
+    'setWarpPitchShift',
+    'generateBassline',
+    'completeMidi',
+    'variationMidi',
+    'generateFill',
+    'generateAllTransitions',
+    'captureScratchPad',
+    'clearScratchPad',
+    'commitScratchPad',
+    'removeAutomationPoint',
+    'loadPreset',
+    'loadExternalPlugin',
+    'addCvOutput',
+    'loadRaveModel',
+    'setRaveBlend',
+    'clearAllMidiMappings',
+    'importAudioFile',
+    'importMidiFile',
+    'createProjectVersion',
+    'createVersionBranch',
+    'restoreProjectVersion',
+    'restoreLoopRegion',
+    'restoreClip',
+    'restoreTrack',
+    'restoreAutomationLanePoints',
+    'compareToReference',
+    'getMentorTips',
+    'searchSamples',
+    'detectSongStructure',
+    'detectTransients',
+] as const;
+
 describe('RuntimeAction', () => {
-    it('lists exactly the types the hand-kept list held, in its order', () => {
-        expect(RUNTIME_ACTION_TYPES).toEqual(PREVIOUS_RUNTIME_ACTION_TYPES);
+    it('lists the previous vocabulary less the retired types, in its order', () => {
+        const retired: ReadonlySet<string> = new Set(RETIRED_RUNTIME_ACTION_TYPES);
+
+        expect(RUNTIME_ACTION_TYPES).toEqual(PREVIOUS_RUNTIME_ACTION_TYPES.filter((type) => !retired.has(type)));
     });
 
-    it.each([...PREVIOUS_RUNTIME_ACTION_TYPES.slice(0, 3), 'undo', 'variationMidi'])('admits %s', (type) => {
+    it('retires only types the previous vocabulary held', () => {
+        const previous: ReadonlySet<string> = new Set(PREVIOUS_RUNTIME_ACTION_TYPES);
+
+        expect(RETIRED_RUNTIME_ACTION_TYPES.filter((type) => !previous.has(type))).toEqual([]);
+        expect(new Set(RETIRED_RUNTIME_ACTION_TYPES).size).toBe(RETIRED_RUNTIME_ACTION_TYPES.length);
+    });
+
+    it.each(RETIRED_RUNTIME_ACTION_TYPES)('rejects the retired %s', (type) => {
+        expect(isRuntimeActionType(type)).toBe(false);
+    });
+
+    it.each([...PREVIOUS_RUNTIME_ACTION_TYPES.slice(0, 3), 'undo', 'setTempo'])('admits %s', (type) => {
         expect(isRuntimeActionType(type)).toBe(true);
     });
 
@@ -296,14 +347,14 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(259);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(225);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(2_644_134_533);
+        expect(digest >>> 0).toBe(2_548_119_355);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -317,7 +368,6 @@ describe('RuntimeAction', () => {
                 payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' },
             },
             { type: 'addAutomationPoint', payload: { laneId: 'lane-1', beat: 4, value: 0.5 } },
-            { type: 'removeAutomationPoint', payload: { laneId: 'lane-1', pointIndex: 0 } },
             { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-1', enabled: false } },
             { type: 'setAutomationMode', payload: { trackId: 'track-1', mode: 'touch' } },
             { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
@@ -370,7 +420,6 @@ describe('RuntimeAction', () => {
             'duplicateClip',
             'addAutomationLane',
             'addAutomationPoint',
-            'removeAutomationPoint',
             'setAutomationLaneEnabled',
             'setAutomationMode',
             'addSidechainRoute',
@@ -402,7 +451,6 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'addTrack', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
-        expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<true>();
