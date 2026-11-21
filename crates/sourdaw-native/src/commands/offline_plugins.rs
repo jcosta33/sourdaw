@@ -1,10 +1,12 @@
 //! An offline render's own hosted plugin instances, and the renders in flight.
 //!
-//! A print contains the hosted effects its strips carry, so an offline render
-//! cannot borrow the live instances: those run on the device's clock, at its
-//! rate, in real-time mode, inside the live engine. It hosts an independent
-//! offline instance of each engine-attached effect a sounding strip names
-//! instead, built here for that render alone and released when it ends.
+//! A print contains the hosted effects and instruments its strips carry, so an
+//! offline render cannot borrow the live instances: those run on the device's
+//! clock, at its rate, in real-time mode, inside the live engine. It hosts an
+//! independent offline instance of each engine-attached effect or instrument a
+//! sounding strip names instead, built here for that render alone and released
+//! when it ends. An instrument sounds the notes the batch schedules on it,
+//! through the note store its slot is registered with.
 //!
 //! The live instance is touched exactly once, by the state read that captures
 //! what the user set on it ([`read_live_state`]). The runtime it reads and the
@@ -956,7 +958,7 @@ fn construct_unless_cancelled(
     }
 }
 
-/// Build an offline instance of every bound effect, at `sample_rate`, with the
+/// Build an offline instance of every bound effect or instrument, at `sample_rate`, with the
 /// live instance's state restored on it.
 ///
 /// Every live state is captured first, at render start, so the print is one

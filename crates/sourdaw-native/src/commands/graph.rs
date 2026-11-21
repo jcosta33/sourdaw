@@ -2995,12 +2995,10 @@ enum HostedBindingLaw {
     #[default]
     Engine,
     /// An offline render's graph: a device on a sounding strip gets an
-    /// independent offline instance of the effect the live one is, built for
-    /// this render alone, under the live instance's own engine plugin id
-    /// (`commands::offline_plugins`). A device on a strip that contributes
-    /// nothing is omitted, so no instance is built for silence, and an
-    /// instrument refuses by name, because no offline instance of a hosted
-    /// instrument is built yet.
+    /// independent offline instance of the effect or instrument the live one
+    /// is, built for this render alone, under the live instance's own engine
+    /// plugin id (`commands::offline_plugins`). A device on a strip that
+    /// contributes nothing is omitted, so no instance is built for silence.
     Offline,
 }
 
@@ -3141,12 +3139,6 @@ impl HostedInstances {
             HostedBindingLaw::Offline => {
                 if !contributes_audio {
                     return Ok(None);
-                }
-                if instance.device.chain_kind != DeviceKind::Effect {
-                    return Err(GraphRefusal::HostedInstrumentOffline {
-                        device_id: device_id.to_string(),
-                        plugin_name: instance.plugin_name.clone(),
-                    });
                 }
                 self.bound
                     .entry(instance_id.to_string())
@@ -6606,6 +6598,20 @@ fn render_offline_ops(
     };
     if refusals != TimelineRtDiagnosticsSnapshot::default() {
         return Err(GraphRefusal::OfflineDroppedCommands { diagnostics });
+    }
+
+    // Scheduled notes have their own refusal counters, and a refusal there is
+    // a rest in the print where the project has a note: a batch the device's
+    // store could not hold whole (two batches that each passed the per-batch
+    // check can still exceed it together), or notes past the block's event
+    // buffer. Late notes are no refusal: a render located past a note's frame
+    // stores it behind the playhead on purpose.
+    let midi = renderer.midi_diagnostics();
+    if midi.midi_note_batches_refused != 0 || midi.scheduler_event_buffer_overflows != 0 {
+        return Err(GraphRefusal::OfflineDroppedMidi {
+            batches_refused: midi.midi_note_batches_refused,
+            event_buffer_overflows: midi.scheduler_event_buffer_overflows,
+        });
     }
     Ok(rendered)
 }
@@ -15107,10 +15113,9 @@ mod tests {
     }
 
     /// The offline law's refusal side: an instance the engine does not hold
-    /// still refuses a sounding strip, and an attached instrument refuses by
-    /// device and plugin name, because no offline instance of one is built.
+    /// still refuses a sounding strip, by device and instance name.
     #[test]
-    fn an_offline_render_refuses_an_unattached_instance_and_a_hosted_instrument_by_name() {
+    fn an_offline_render_refuses_an_unattached_instance_by_name() {
         let Err(unattached) = map_offline_against(
             &batch(hosted_plugin_strip(true, false)),
             &AppState::default(),
@@ -15121,19 +15126,29 @@ mod tests {
             unattached.contains("'d-plugin'") && unattached.contains("not attached to the engine"),
             "{unattached}"
         );
+    }
 
-        let Err(instrument) = map_offline_against(
-            &batch(hosted_plugin_strip(true, false)),
-            &state_attaching("inst-1", 1_007, DeviceKind::Generator),
-        ) else {
-            panic!("a hosted instrument must not render offline yet");
+    /// An attached hosted instrument is admitted exactly as an effect is: on a
+    /// sounding strip it binds under the live instance's engine plugin id as a
+    /// generator, and on a silent strip nothing is bound for it.
+    #[test]
+    fn an_offline_render_binds_an_attached_instrument_on_a_sounding_strip_only() {
+        let state = state_attaching("inst-1", 1_007, DeviceKind::Generator);
+
+        let Ok((_, bound)) = map_offline_against(&batch(hosted_plugin_strip(true, false)), &state)
+        else {
+            panic!("an attached instrument on a sounding strip is admitted");
         };
-        assert!(
-            instrument.contains("'d-plugin'")
-                && instrument.contains("'Pro-Q Fixture'")
-                && instrument.contains("hosted instruments do not render offline yet"),
-            "{instrument}"
-        );
+        assert_eq!(bound.len(), 1);
+        assert_eq!(bound[0].engine_plugin_id, 1_007);
+        assert_eq!(bound[0].chain_kind, DeviceKind::Generator);
+
+        let Ok((_, silent)) =
+            map_offline_against(&batch(hosted_plugin_strip(false, false)), &state)
+        else {
+            panic!("an instrument on a silent strip is omitted, not refused");
+        };
+        assert!(silent.is_empty(), "no instance is built for silence");
     }
 
     /// The offline law's admission side: an attached effect on a sounding
@@ -15176,7 +15191,7 @@ mod tests {
     /// One decision for both offline seams: the probe `map_graph_batch`
     /// admits and refuses exactly the hosted devices the render's mapping
     /// does, with the same reason. Mutation: map the probe against an empty
-    /// lookup again — the attached-effect rows diverge.
+    /// lookup again — the attached rows diverge.
     #[test]
     fn the_offline_probe_admits_and_refuses_exactly_what_the_render_maps() {
         let cases = [
@@ -15213,8 +15228,8 @@ mod tests {
             admitted += usize::from(probe.is_ok());
         }
         assert_eq!(
-            admitted, 2,
-            "both the attached effect and its silent strip map"
+            admitted, 3,
+            "the attached effect, its silent strip and the attached instrument map"
         );
     }
 
@@ -16316,6 +16331,99 @@ mod tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the offline render"
+        );
+    }
+
+    /// The offline renderer's one view of the engine's MIDI refusals: a
+    /// scheduled batch the device's store cannot hold, after another batch
+    /// filled it, is counted on the render thread and nowhere else, so the
+    /// print must be refused rather than carry the batch as rests.
+    #[test]
+    fn an_offline_render_refuses_a_scheduled_batch_the_notes_store_refused() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        // Five frames apart: no block holds more than its event buffer does.
+        let filling: Vec<Value> = (0..MIDI_NOTE_STORE_CAPACITY)
+            .map(|index| note_at((480 + 5 * index) as f64 / f64::from(SAMPLE_RATE), 60, 0))
+            .collect();
+        let commands = |second: Value| {
+            json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": filling },
+                second,
+            ])
+        };
+        let second_batch = |notes: Value| {
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let render = |second: Value| {
+            render_offline_batch(
+                &midi_batch(commands(second)),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                12_000,
+                SAMPLE_RATE,
+            )
+        };
+
+        let refusal = render(second_batch(json!([note_at(0.005, 62, 0)])))
+            .expect_err("the store is full when the second batch arrives");
+        assert!(
+            refusal.starts_with("offline-render-dropped-midi:")
+                && refusal.contains("note-store batch refusals: 1, event-buffer overflows: 0"),
+            "{refusal}"
+        );
+
+        // The same render with an empty second batch fits the store exactly.
+        render(second_batch(json!([]))).expect("a batch that fits the store prints");
+    }
+
+    /// More notes at one frame than a block's event buffer holds: the buffer
+    /// refuses the rest, and a print without them is not the batch.
+    #[test]
+    fn an_offline_render_refuses_notes_past_the_blocks_event_buffer() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        let chord: Vec<Value> = (0..200u32)
+            .map(|index| note_at(0.01, (index % 128) as u8, (index / 128) as u8))
+            .collect();
+
+        let refusal = render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": chord },
+            ])),
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            1_440,
+            SAMPLE_RATE,
+        )
+        .expect_err("the block's event buffer cannot hold the chord");
+
+        assert!(
+            refusal.starts_with("offline-render-dropped-midi:")
+                && refusal.contains("note-store batch refusals: 0, event-buffer overflows: ")
+                && !refusal.contains("event-buffer overflows: 0"),
+            "{refusal}"
         );
     }
 

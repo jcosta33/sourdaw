@@ -191,6 +191,12 @@ pub(crate) enum GraphRefusal {
     OfflineDroppedCommands {
         diagnostics: TimelineRtDiagnosticsSnapshot,
     },
+    /// The engine refused scheduled notes after admission: the print would
+    /// carry them as rests.
+    OfflineDroppedMidi {
+        batches_refused: u64,
+        event_buffer_overflows: u64,
+    },
     TransientShaper(TransientShaperError),
     InvalidBatch(serde_json::Error),
     CorrelationMalformed(serde_json::Error),
@@ -396,10 +402,6 @@ pub(crate) enum GraphRefusal {
         device_id: String,
         instance_id: String,
     },
-    HostedInstrumentOffline {
-        device_id: String,
-        plugin_name: String,
-    },
     DeviceAlreadyInChain {
         device_id: String,
     },
@@ -537,6 +539,16 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "offline-render-dropped-commands: the engine refused part of the batch after \
                  admission ({diagnostics:?}); the output is not the batch and is discarded"
+            ),
+            Self::OfflineDroppedMidi {
+                batches_refused,
+                event_buffer_overflows,
+            } => write!(
+                f,
+                "offline-render-dropped-midi: the engine refused scheduled notes after \
+                 admission (note-store batch refusals: {batches_refused}, event-buffer \
+                 overflows: {event_buffer_overflows}); the output is not the batch and is \
+                 discarded"
             ),
             Self::TransientShaper(error) => error.fmt(f),
             Self::InvalidBatch(error) => write!(f, "Invalid graph command batch: {error}"),
@@ -826,14 +838,6 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
                  not attached to the engine"
-            ),
-            Self::HostedInstrumentOffline {
-                device_id,
-                plugin_name,
-            } => write!(
-                f,
-                "device '{device_id}' hosts the plugin '{plugin_name}', an instrument: hosted \
-                 instruments do not render offline yet"
             ),
             Self::DeviceAlreadyInChain { device_id } => {
                 write!(f, "device id '{device_id}' is already in a chain")
