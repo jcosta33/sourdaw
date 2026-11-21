@@ -1,5 +1,7 @@
 import { countSettledOverdubPasses, isOverdubLanding, waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
+import { recordingStartStore } from '../../stores/recordingStartStore';
+
 import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
 import type { NativeCaptureSnapshot, NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
 
@@ -103,6 +105,38 @@ const commitsInFlight = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
+let watchingOverdubLanding = false;
+
+/**
+ * MIDI owns the landing registry and has no change signal, so a published landing is
+ * watched through its own settle wait and republished once it settles.
+ */
+function watchOverdubLanding(): void {
+    if (watchingOverdubLanding) {
+        return;
+    }
+    watchingOverdubLanding = true;
+    void waitForOverdubLanding().then(() => {
+        watchingOverdubLanding = false;
+        publishRecordingStartState();
+    });
+}
+
+/** Mirrors what is starting or closing into the runtime store handlers read. */
+function publishRecordingStartState(): void {
+    const landing = isOverdubLanding();
+    if (landing) {
+        watchOverdubLanding();
+    }
+    recordingStartStore.set(
+        landing ||
+            pendingRecordingStartToken !== null ||
+            countInTimerId !== null ||
+            closingStops.size > 0 ||
+            commitsInFlight.size > 0
+    );
+}
+
 function isClosingRecording(): boolean {
     return closingStops.size > 0 || commitsInFlight.size > 0 || isOverdubLanding();
 }
@@ -113,12 +147,14 @@ function trackTakeCommit(commit: Promise<'refused' | 'closed'>): void {
         if (outcome !== 'refused') {
             settledCommitCount++;
         }
+        publishRecordingStartState();
     };
     const settled = commit.then(
         (outcome) => onSettled(outcome),
         () => onSettled()
     );
     commitsInFlight.add(settled);
+    publishRecordingStartState();
     pendingCommits.add(
         commit.then((outcome) => {
             void outcome;
@@ -132,11 +168,13 @@ function trackCommit(commit: Promise<void | 'refused'>): void {
         if (outcome !== 'refused') {
             settledCommitCount++;
         }
+        publishRecordingStartState();
     };
     // Registered before any waiter can be, and reactions run in registration
     // order, so a waiter resumes only once the commit counts as settled.
     const settled = commit.then(onSettled, () => onSettled());
     commitsInFlight.add(settled);
+    publishRecordingStartState();
     pendingCommits.add(commit);
 }
 
@@ -154,9 +192,11 @@ async function waitForCommits(): Promise<void> {
 function trackClosing(closing: Promise<void>): void {
     const onSettled = (): void => {
         closingStops.delete(settled);
+        publishRecordingStartState();
     };
     const settled = closing.then(onSettled, onSettled);
     closingStops.add(settled);
+    publishRecordingStartState();
 }
 
 async function waitForClosing(): Promise<void> {
@@ -197,16 +237,19 @@ export const recordingLifecycle: RecordingLifecycle = {
     beginPendingRecordingStart: () => {
         const token = ++nextRecordingStartToken;
         pendingRecordingStartToken = token;
+        publishRecordingStartState();
         return token;
     },
     cancelPendingRecordingStart: () => {
         pendingRecordingStartToken = null;
+        publishRecordingStartState();
     },
     completePendingRecordingStart: (token) => {
         if (pendingRecordingStartToken !== token) {
             return false;
         }
         pendingRecordingStartToken = null;
+        publishRecordingStartState();
         return true;
     },
     hasPendingRecordingStart: () => pendingRecordingStartToken !== null || countInTimerId !== null,
@@ -215,6 +258,7 @@ export const recordingLifecycle: RecordingLifecycle = {
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
+        publishRecordingStartState();
     },
     registerEnding: (end) => {
         recordingEndings.add(end);
