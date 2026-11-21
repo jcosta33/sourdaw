@@ -92,9 +92,9 @@ const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
 ];
 
 const VIRTUALIZE_THRESHOLD = 200;
-// Chromium (Skia) refuses a 2D canvas wider or taller than this many backing pixels; the canvas then stays blank.
-const MAX_CANVAS_DIMENSION = 32767;
-// Chromium's 2D canvas area limit (16384 x 16384 backing pixels).
+// Chromium 73+ per-side canvas limit: a 2D canvas wider or taller than this many backing pixels stays blank.
+const MAX_CANVAS_DIMENSION = 65535;
+// Chromium 73+ canvas area limit: 16384 x 16384 backing pixels.
 const MAX_CANVAS_AREA = 268435456;
 const EMPTY_WARP_STATE: WarpStateView = { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 

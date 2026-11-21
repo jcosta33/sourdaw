@@ -613,17 +613,17 @@ describe('ElasticEditorPanel', () => {
             if (!clip) {
                 throw new Error('Missing fixture clip');
             }
-            clip.endBeat = 800;
+            clip.endBeat = 1000;
             vi.stubGlobal('devicePixelRatio', 2);
             const drawing = observeDrawing();
             render(<ElasticEditorPanel />);
             flushFrame();
             const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
-            const cssWidth = (800 + 8) * 40;
+            const cssWidth = (1000 + 8) * 40;
 
             expect(canvas.width).toBeGreaterThan(0);
-            expect(canvas.width).toBeLessThanOrEqual(32767);
-            expect(canvas.height).toBeLessThanOrEqual(32767);
+            expect(canvas.width).toBeLessThanOrEqual(65535);
+            expect(canvas.height).toBeLessThanOrEqual(65535);
             expect(canvas.width * canvas.height).toBeLessThanOrEqual(268435456);
             expect(canvas.style.width).toBe(`${cssWidth}px`);
             expect(drawing.fill).toHaveBeenCalledWith(0, 0, cssWidth, 120);
