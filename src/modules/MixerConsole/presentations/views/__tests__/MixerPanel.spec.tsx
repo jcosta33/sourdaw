@@ -1,5 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 
 import { MixerPanel } from '../MixerPanel';
 
@@ -111,6 +113,50 @@ describe('MixerPanel', () => {
         fireEvent.click(screen.getByLabelText('Recall mixer snapshot'));
 
         expect(screen.getByText('Snapshot 1').closest('[role="menu"]')).not.toBeNull();
+    });
+
+    describe('hidden tracks', () => {
+        const hiddenTracks: (MockMixerTrack & { parentId?: string | null; hidden?: boolean })[] = [
+            { id: 'track-1', kind: 'audio', name: 'Audio 1' },
+            { id: 'track-2', kind: 'midi', name: 'Midi 1', hidden: true },
+            { id: 'folder', kind: 'folder', name: 'Folder', hidden: true },
+            { id: 'in-folder', kind: 'audio', name: 'In folder', parentId: 'folder' },
+        ];
+
+        beforeEach(() => {
+            trackMocks.useTracks.mockReturnValue({ tracks: hiddenTracks, selectedTrackId: null });
+        });
+
+        afterEach(() => {
+            timelineEditingStore.set(defaultTimelineEditingState);
+            trackMocks.useTracks.mockReturnValue({
+                tracks: [
+                    { id: 'track-1', kind: 'audio', name: 'Audio 1' },
+                    { id: 'track-2', kind: 'midi', name: 'Midi 1' },
+                ],
+                selectedTrackId: 'track-1',
+            });
+        });
+
+        it('leaves out a hidden track and the children of a hidden folder', () => {
+            render(<MixerPanel />);
+
+            expect(screen.getByTestId('channel-strip-track-1')).toBeInTheDocument();
+            expect(screen.queryByTestId('channel-strip-track-2')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('channel-strip-in-folder')).not.toBeInTheDocument();
+            expect(screen.getByText(/Mixer - 1 channels/i)).toBeInTheDocument();
+            expect(screen.getByTestId('master-channel-strip')).toBeInTheDocument();
+        });
+
+        it('shows them again while the session shows hidden tracks', () => {
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+
+            render(<MixerPanel />);
+
+            expect(screen.getByTestId('channel-strip-track-2')).toBeInTheDocument();
+            expect(screen.getByTestId('channel-strip-in-folder')).toBeInTheDocument();
+            expect(screen.getByText(/Mixer - 3 channels/i)).toBeInTheDocument();
+        });
     });
 
     it('should render correct title based on track count', () => {

@@ -66,6 +66,16 @@ import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
 
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
 const CANCELLED_PROMPT = `${PROMPT} Actually, cancel that command.`;
@@ -899,8 +909,8 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                 tempo: 120,
             });
             setAutomationRecordingDependencies({
-                getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
-                getCompensationDelay: () => 0,
+                getAudioContext: getZeroLatencyContext,
+                getCompensationDelay: getZeroCompensationDelay,
             });
             startAutomationRecording();
             recordAutomationValue('track-bass-di', parameterId, -22, 2);

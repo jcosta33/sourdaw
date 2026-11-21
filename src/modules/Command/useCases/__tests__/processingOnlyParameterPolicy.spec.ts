@@ -52,6 +52,16 @@ import { undo } from '../undo';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const TRACK_ID = 'track-mix';
 const DEVICE_ID = 'device-filter';
 const PARAM_ID = 'filter-cutoff';
@@ -235,8 +245,8 @@ describe('processing-only parameter policy', () => {
         });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setAutomationRecordingDependencies({
-            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
-            getCompensationDelay: () => 0,
+            getAudioContext: getZeroLatencyContext,
+            getCompensationDelay: getZeroCompensationDelay,
         });
         commandProjectRevisionPort.setProvider(() => REVISION);
         commandBatchPreflightPort.setProvider(() => ({

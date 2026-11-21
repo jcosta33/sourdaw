@@ -194,80 +194,122 @@ function createCandidateRows(
     return { targets, constraints, scopes, ranges };
 }
 
-function createMetricTables(answer: AnswerInterpretationCatalog, metric?: MetricIntentCatalog) {
-    const metricEligibility: number[][] = [];
-    const metricRoles = [...new Set(metric?.objectives.flatMap((objective) => objective.roles) ?? [])];
-    const metricRoleSets: number[][] = [];
-    const metricMetrics: Array<[string, string | null]> = [];
-    const metricPolicies: string[] = [];
-    type Relation = MetricIntentCatalog['objectives'][number]['goals'][number]['relation'];
-    const metricExpectations: Array<[number, string | null, Relation, number | null, number, number | null]> = [];
-    const metricObjectives: Array<[string, string | null, string, number, number, number, number[]]> = [];
-    function intern<Value>(table: Value[], value: Value): number {
-        const key = JSON.stringify(value);
-        const prior = table.findIndex((entry) => JSON.stringify(entry) === key);
-        if (prior >= 0) {
-            return prior;
+/**
+ * How a recipe objective is printed. `inline` prints its title and metric expectations in its row;
+ * `discovered` prints only its recipe id and the scopes and roles it admits, leaving the title, ranges
+ * and expectations to `recipe.discover`, so a local window holds every recipe objective (#6706).
+ */
+export type RecipeObjectiveDetail = 'inline' | 'discovered';
+
+type Objective = MetricIntentCatalog['objectives'][number];
+type Goal = Objective['goals'][number];
+type MetricObjectiveRow =
+    [string, string | null, string, number, number, number, number[]] | [recipeId: string, recipeScopeRef: number];
+
+type MetricTables = {
+    metricObjectives: MetricObjectiveRow[];
+    metricRecipeScopes: Array<[number, number, number]>;
+    metricEligibility: number[][];
+    metricRoles: string[];
+    metricRoleSets: number[][];
+    metricMetrics: Array<[string, string | null]>;
+    metricExpectations: Array<[number, string | null, Goal['relation'], number | null, number, number | null]>;
+    metricPolicies: string[];
+};
+
+function createEmptyMetricTables(metric: MetricIntentCatalog | undefined): MetricTables {
+    return {
+        metricObjectives: [],
+        metricRecipeScopes: [],
+        metricEligibility: [],
+        metricRoles: [...new Set(metric?.objectives.flatMap((objective) => objective.roles) ?? [])],
+        metricRoleSets: [],
+        metricMetrics: [],
+        metricExpectations: [],
+        metricPolicies: [],
+    };
+}
+
+function intern<Value>(table: Value[], value: Value): number {
+    const key = JSON.stringify(value);
+    const prior = table.findIndex((entry) => JSON.stringify(entry) === key);
+    if (prior >= 0) {
+        return prior;
+    }
+    table.push(value);
+    return table.length - 1;
+}
+
+function scopeIndices(answer: AnswerInterpretationCatalog, ids: readonly string[]): number[] {
+    return ids.map((id) => {
+        const index = answer.scopes.findIndex((scope) => scope.candidateId === id);
+        if (index < 0) {
+            throw new Error('Metric eligibility names an unpublished shared scope.');
         }
-        table.push(value);
-        return table.length - 1;
+        return index;
+    });
+}
+
+/** The eligibility, default eligibility and role set references one objective row carries. */
+function internScopeRefs(
+    tables: MetricTables,
+    answer: AnswerInterpretationCatalog,
+    objective: Objective
+): [number, number, number] {
+    return [
+        intern(tables.metricEligibility, scopeIndices(answer, objective.eligibleScopeIds)),
+        intern(tables.metricEligibility, scopeIndices(answer, objective.defaultScopeIds)),
+        intern(
+            tables.metricRoleSets,
+            objective.roles.map((role) => tables.metricRoles.indexOf(role))
+        ),
+    ];
+}
+
+function internExpectation(tables: MetricTables, goal: Goal): number {
+    let unit: string | null = null;
+    if (goal.metricId !== null) {
+        unit = OBJECTIVE_METRIC_UNITS[goal.metricId];
     }
-    function scopeIndices(ids: readonly string[]): number[] {
-        return ids.map((id) => {
-            const index = answer.scopes.findIndex((scope) => scope.candidateId === id);
-            if (index < 0) {
-                throw new Error('Metric eligibility names an unpublished shared scope.');
-            }
-            return index;
-        });
+    const metricIndex = intern(tables.metricMetrics, [goal.metricName, unit]);
+    let policyIndex: number | null = null;
+    if (goal.source.kind === 'policy') {
+        policyIndex = intern(tables.metricPolicies, goal.source.policyId);
     }
+    return intern(tables.metricExpectations, [
+        metricIndex,
+        goal.band,
+        goal.relation,
+        goal.targetValue,
+        goal.tolerance,
+        policyIndex,
+    ]);
+}
+
+function createMetricTables(
+    answer: AnswerInterpretationCatalog,
+    metric: MetricIntentCatalog | undefined,
+    recipeDetail: RecipeObjectiveDetail
+): MetricTables {
+    const tables = createEmptyMetricTables(metric);
     for (const objective of metric?.objectives ?? []) {
-        const expectations = objective.goals.map((goal) => {
-            let unit: string | null = null;
-            if (goal.metricId !== null) {
-                unit = OBJECTIVE_METRIC_UNITS[goal.metricId];
-            }
-            const metricIndex = intern(metricMetrics, [goal.metricName, unit]);
-            let policyIndex: number | null = null;
-            if (goal.source.kind === 'policy') {
-                policyIndex = intern(metricPolicies, goal.source.policyId);
-            }
-            return intern(metricExpectations, [
-                metricIndex,
-                goal.band,
-                goal.relation,
-                goal.targetValue,
-                goal.tolerance,
-                policyIndex,
-            ]);
-        });
         const source = objective.goals[0]?.source;
-        let identity: string | null = null;
-        if (source?.kind === 'recipe') {
-            identity = source.recipeId;
+        if (source?.kind === 'recipe' && recipeDetail === 'discovered') {
+            const scopeRef = intern(tables.metricRecipeScopes, internScopeRefs(tables, answer, objective));
+            tables.metricObjectives.push([source.recipeId, scopeRef]);
+            continue;
         }
-        metricObjectives.push([
+        const expectations = objective.goals.map((goal) => internExpectation(tables, goal));
+        const identity = source?.kind === 'recipe' ? source.recipeId : null;
+        tables.metricObjectives.push([
             source?.kind ?? 'unsupported',
             identity,
             objective.label,
-            intern(metricEligibility, scopeIndices(objective.eligibleScopeIds)),
-            intern(metricEligibility, scopeIndices(objective.defaultScopeIds)),
-            intern(
-                metricRoleSets,
-                objective.roles.map((role) => metricRoles.indexOf(role))
-            ),
+            ...internScopeRefs(tables, answer, objective),
             expectations,
         ]);
     }
-    return {
-        metricObjectives,
-        metricEligibility,
-        metricRoles,
-        metricRoleSets,
-        metricMetrics,
-        metricExpectations,
-        metricPolicies,
-    };
+    return tables;
 }
 
 /** Candidate-contract facts only; source records, paths and media identities never enter this view. */
@@ -275,9 +317,9 @@ export function createPlanningCandidateView(
     creative: CreativeInterpretationCatalog,
     answer: AnswerInterpretationCatalog,
     binding: PlanningContextBinding,
-    metric?: MetricIntentCatalog
+    metric?: { catalog: MetricIntentCatalog; recipeDetail: RecipeObjectiveDetail }
 ) {
-    assertCandidateBinding(creative, answer, binding, metric);
+    assertCandidateBinding(creative, answer, binding, metric?.catalog);
     const { fallback, facts, objectReference } = createCandidateReferences(creative, answer, binding);
     const { targets, constraints, scopes, ranges } = createCandidateRows(
         creative,
@@ -286,16 +328,9 @@ export function createPlanningCandidateView(
         facts,
         objectReference
     );
-    const {
-        metricObjectives,
-        metricEligibility,
-        metricRoles,
-        metricRoleSets,
-        metricMetrics,
-        metricExpectations,
-        metricPolicies,
-    } = createMetricTables(answer, metric);
-    return {
+    const recipeDetail = metric?.recipeDetail ?? 'inline';
+    const { metricRecipeScopes, ...metricTables } = createMetricTables(answer, metric?.catalog, recipeDetail);
+    const view = {
         activeView: creative.selection.activeView,
         unresolved: creative.unresolvedExplicitReferences,
         targets,
@@ -305,12 +340,11 @@ export function createPlanningCandidateView(
         scopes,
         ranges,
         fallback,
-        metricObjectives,
-        metricEligibility,
-        metricRoles,
-        metricRoleSets,
-        metricMetrics,
-        metricExpectations,
-        metricPolicies,
+        ...metricTables,
     };
+    // Only the discovered view prints recipe rows that reference this table; the inline view stays as it was.
+    if (recipeDetail === 'inline') {
+        return view;
+    }
+    return { ...view, metricRecipeScopes };
 }

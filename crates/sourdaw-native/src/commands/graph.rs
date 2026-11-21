@@ -6683,6 +6683,7 @@ pub async fn render_graph_offline(
         &OfflinePluginSeams::production(),
     )
     .await
+    .map_err(|refusal| refusal.to_string())
 }
 
 /// [`render_graph_offline`] over chosen plugin seams.
@@ -6694,32 +6695,25 @@ pub(crate) async fn render_graph_offline_with(
     ui: &dyn UiThread,
     state: &AppState,
     seams: &OfflinePluginSeams,
-) -> Result<Vec<u8>, String> {
-    let batch = parse_batch(batch).map_err(|refusal| refusal.to_string())?;
+) -> Result<Vec<u8>, GraphRefusal> {
+    let batch = parse_batch(batch)?;
     if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
-        return Err(format!(
-            "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
-             {} to {} Hz",
-            OFFLINE_RENDER_SAMPLE_RATES.start(),
-            OFFLINE_RENDER_SAMPLE_RATES.end()
-        ));
+        return Err(GraphRefusal::OfflineSampleRateOutOfRange { sample_rate });
     }
     let frames = frames as usize;
     if frames == 0 {
-        return Err("Frame count must be at least 1".to_string());
+        return Err(GraphRefusal::OfflineFrameCountZero);
     }
     if frames > MAX_OFFLINE_RENDER_FRAMES {
-        return Err(format!(
-            "Frame count {frames} exceeds the offline render ceiling of {MAX_OFFLINE_RENDER_FRAMES}"
-        ));
+        return Err(GraphRefusal::OfflineFrameCountTooLarge { frames });
     }
 
-    let render = InFlightRender::begin(state, render_id).map_err(|error| error.to_string())?;
+    let render = InFlightRender::begin(state, render_id).map_err(GraphRefusal::OfflineRender)?;
     #[cfg(test)]
     if let Some(after_admission) = &seams.after_admission {
         after_admission();
     }
-    let mut hosted = HostedInstances::offline(state).map_err(|refusal| refusal.to_string())?;
+    let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
     // into its clip command there and every sampler's instance is built there,
@@ -6733,23 +6727,22 @@ pub(crate) async fn render_graph_offline_with(
         let samples = state
             .timeline_samples
             .lock()
-            .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("timeline samples", &error))?;
         let mut levain_banks = state
             .levain_banks
             .lock()
-            .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("levain banks", &error))?;
         map_offline_batch(
             &batch,
             &samples,
             &mut levain_banks,
             sample_rate as f32,
             &mut hosted,
-        )
-        .map_err(|refusal| refusal.to_string())?
+        )?
     };
     // A render cancelled before it starts builds no plugin instance.
     if render.control().is_cancelled() {
-        return Err(render.cancelled().to_string());
+        return Err(GraphRefusal::OfflineRender(render.cancelled()));
     }
     #[cfg(test)]
     if let Some(after_mapping) = &seams.after_mapping {
@@ -6757,10 +6750,9 @@ pub(crate) async fn render_graph_offline_with(
     }
     let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams, &render)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(GraphRefusal::OfflineRender)?;
     let (left, right) =
-        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)
-            .map_err(|refusal| refusal.to_string())?;
+        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
     drop(plugins);
 
     // Interleave straight into the byte payload; the render's planar pair is

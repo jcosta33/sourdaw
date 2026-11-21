@@ -8,6 +8,7 @@ import {
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
+import { activationFailureMessage } from './activationFailureMessage';
 import {
     carriedExternalPluginStateFence,
     carriedExternalPluginStates,
@@ -52,6 +53,18 @@ type ActivateExternalPluginInput = {
     onLatencyMs?: (latencyMs: number) => void;
 };
 
+const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
+    status: 'failed',
+    stage: 'restore',
+    reason: 'External plugin activation was superseded by a runtime teardown',
+};
+
+const SUPERSEDED_RETRY: ExternalPluginActivationResult = {
+    status: 'failed',
+    stage: 'restore',
+    reason: 'External plugin activation was superseded by a runtime graph rebuild',
+};
+
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
     externalPluginActivationStore.update((state) => {
         const current = state ?? defaultExternalPluginActivationState;
@@ -94,7 +107,7 @@ async function restoreCarriedState(
     instanceId: string,
     pluginId: string,
     carried: CarriedExternalPluginState,
-    activationEpoch: number
+    isCurrentActivation: () => boolean
 ): Promise<'restored' | 'rejected' | 'superseded'> {
     let rejection: string | null = null;
     try {
@@ -102,7 +115,7 @@ async function restoreCarriedState(
     } catch (error) {
         rejection = String(error);
     }
-    if (activationEpoch !== externalPluginActivationEpoch.current || !loadedExternalInstances.has(instanceId)) {
+    if (!isCurrentActivation()) {
         return 'superseded';
     }
     if (rejection === null) {
@@ -226,14 +239,18 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
+            // A rebuild fence can give up on this task, so its answer may land in
+            // a later generation that reuses the instance ID.
+            function isCurrentRetry(): boolean {
+                return (
+                    activationEpoch === externalPluginActivationEpoch.current &&
+                    externalPluginActivationTasks.get(instanceId) === restoreTask
+                );
+            }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (activationEpoch !== externalPluginActivationEpoch.current) {
-                        return {
-                            status: 'failed',
-                            stage: 'restore',
-                            reason: 'External plugin activation was superseded by a runtime graph rebuild',
-                        };
+                    if (!isCurrentRetry()) {
+                        return SUPERSEDED_RETRY;
                     }
                     setActivationStatus(instanceId, 'active');
                     // The saved chunk is in the plugin again, so what it reports
@@ -242,8 +259,11 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
+                    if (!isCurrentRetry()) {
+                        return SUPERSEDED_RETRY;
+                    }
                     const reason = String(error);
-                    setActivationStatus(instanceId, 'error', reason);
+                    setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, reason));
                     // The plugin rejected the chunk and holds its defaults; its
                     // runtime state must not reach a save until real state
                     // exists again.
@@ -368,7 +388,7 @@ export function activateExternalPlugin({
         // instance is never carried; a capture writes the live state itself.
         const carried = takeCarriedState(instanceId, pluginId);
         if (carried !== undefined) {
-            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, activationEpoch);
+            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, isCurrentActivation);
             if (carriedRestore === 'superseded') {
                 return {
                     status: 'failed',
@@ -387,14 +407,23 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            // A rebuild fence can give up on this activation while its restore
+            // is still out, and a later generation can hold the instance ID by
+            // the time it answers.
+            if (!isCurrentActivation()) {
+                return SUPERSEDED_RESTORE;
+            }
             // The saved chunk is in the plugin again, so what it reports over
             // get-state is authoritative state.
             clearExternalPluginRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
+            if (!isCurrentActivation()) {
+                return SUPERSEDED_RESTORE;
+            }
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
-            setActivationStatus(instanceId, 'error', String(error));
+            setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, String(error)));
             // The plugin rejected the chunk and holds its defaults; its runtime
             // state must not reach a save until real state exists again.
             markExternalPluginRestoreFailure(instanceId);

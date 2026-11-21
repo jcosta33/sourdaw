@@ -77,8 +77,10 @@ roots, at most 100, none repeating a root or thread; the comment IDs are decimal
 non-empty, unique and all appear in `findings`. `findings` and `reviewBodies` are either both
 non-empty or both empty. The empty pair is the finding-free form for a PR that never received a
 finding: every review proof must then read zero review threads, zero `REQUEST_CHANGES` reviews
-and zero reviews of any state from any actor, so any thread, resolved or not, or any review
-(commented, dismissed, approved, pending or requesting changes) refuses it.
+and zero reviews of any state visible to the author App, so any thread, resolved or not, or any
+visible review (commented, dismissed, approved, requesting changes, or the author App's own
+pending review) refuses it. GitHub's reviews connection returns only reviews visible to the
+reading actor, so another actor's unsubmitted pending review is not visible to the proof.
 Every retirement, with findings or finding-free, also requires the PR to have been opened by the
 author App (its author node ID is `AUTHOR_BOT_NODE_ID`) and no other open PR in the repository to
 target its head branch as base. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
