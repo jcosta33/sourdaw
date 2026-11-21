@@ -26,38 +26,45 @@ const setPadParam = vi.fn();
 const setSuccessorParam = vi.fn();
 const scheduleHit = vi.fn();
 const allNotesOff = vi.fn();
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    getAudioTime: vi.fn(() => 0),
-    getAudioSampleRate: vi.fn(() => 48_000),
-    getToasterDeviceControls: vi.fn(() => ({
-        ready: true,
-        scheduleHit,
-        cancelScheduled: vi.fn(),
-        allNotesOff,
-    })),
-    getTrackStrip: vi.fn((trackId: string) => ({
-        deviceNodes: [DEVICE, PENDING_ONLY_DEVICE].map((deviceId) => ({
-            deviceId,
-            toasterControls: {
-                ready: trackId !== LOADING_TRACK,
-                setPadParam,
-                setParam: trackId === SUCCESSOR_TRACK ? setSuccessorParam : vi.fn(),
-            },
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        builtinSynthVoice: { read: vi.fn() },
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        getAudioTime: vi.fn(() => 0),
+        getAudioSampleRate: vi.fn(() => 48_000),
+        getToasterDeviceControls: vi.fn(() => ({
+            ready: true,
+            scheduleHit,
+            cancelScheduled: vi.fn(),
+            allNotesOff,
         })),
-    })),
-    applyNoteExpression: vi.fn(),
-    audioEngine: {},
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+        getTrackStrip: vi.fn((trackId: string) => ({
+            deviceNodes: [DEVICE, PENDING_ONLY_DEVICE].map((deviceId) => ({
+                deviceId,
+                toasterControls: {
+                    ready: trackId !== LOADING_TRACK,
+                    setPadParam,
+                    setParam: trackId === SUCCESSOR_TRACK ? setSuccessorParam : vi.fn(),
+                },
+            })),
+        })),
+        applyNoteExpression: vi.fn(),
+        audioEngine: {},
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+    };
+});
 
 // findDeviceRef walks getAllTracks(); return a track owning DEVICE so the
 // rAF-coalescing path in setToasterPadParam actually schedules a frame.
