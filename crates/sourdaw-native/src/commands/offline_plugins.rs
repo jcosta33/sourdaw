@@ -1,10 +1,12 @@
 //! An offline render's own hosted plugin instances, and the renders in flight.
 //!
-//! A print contains the hosted effects its strips carry, so an offline render
-//! cannot borrow the live instances: those run on the device's clock, at its
-//! rate, in real-time mode, inside the live engine. It hosts an independent
-//! offline instance of each engine-attached effect a sounding strip names
-//! instead, built here for that render alone and released when it ends.
+//! A print contains the hosted effects and instruments its strips carry, so an
+//! offline render cannot borrow the live instances: those run on the device's
+//! clock, at its rate, in real-time mode, inside the live engine. It hosts an
+//! independent offline instance of each engine-attached effect or instrument a
+//! sounding strip names instead, built here for that render alone and released
+//! when it ends. An instrument sounds the notes the batch schedules on it,
+//! through the note store its slot is registered with.
 //!
 //! The live instance is touched exactly once, by the state read that captures
 //! what the user set on it ([`read_live_state`]). The runtime it reads and the
@@ -46,12 +48,12 @@ use crate::host::plugin_folder_grants::ForbiddenRoots;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use crate::state::AppState;
-use daw_engine::midi::note_store::MidiNoteStore;
+use daw_engine::midi::note_store::{MidiNoteStore, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::offline::{OfflineCommandError, OfflineRenderControl, OfflineRenderer};
 use daw_engine::pdc::CompensationDelay;
 use daw_engine::scheduler::{GraphCommand, HOSTED_PLUGIN_RESERVE};
 use daw_plugin_host::{AudioPlugin, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
 #[cfg(test)]
 use std::path::Path;
@@ -60,6 +62,31 @@ use std::time::Duration;
 
 #[cfg(test)]
 mod tests;
+
+/// The most note events one instrument may be scheduled across an offline
+/// render, which bounds the memory its note store reserves.
+///
+/// An offline render holds the whole arrangement at once where live playback
+/// streams a few seconds of it, so the live store's reserve
+/// ([`MIDI_NOTE_STORE_CAPACITY`]) is no song-length limit there and the store
+/// is sized from what the batch sends instead. A store reserves two buffers
+/// (entries and the merge's scratch) of 64-byte `TimedMidiNote`s, so at this
+/// ceiling one instrument costs 2 * 2^18 * 64 B = 32 MiB, reserved on the
+/// control thread before the first block. 2^18 events is 131,072 notes, a
+/// dense part many hours long.
+pub(crate) const OFFLINE_NOTE_EVENT_CEILING: usize = 1 << 18;
+
+/// Note events an offline render schedules, by the engine plugin id they are
+/// scheduled at.
+pub(crate) type ScheduledNoteEvents = BTreeMap<usize, usize>;
+
+/// The note store an offline instrument is registered with for `events`
+/// scheduled events: the live reserve, or more when the batch needs it.
+///
+/// Built on the control thread, ahead of the first block (ADR 0020).
+pub(crate) fn offline_note_store(events: usize) -> Box<MidiNoteStore> {
+    MidiNoteStore::with_capacity(events.max(MIDI_NOTE_STORE_CAPACITY))
+}
 
 /// How long the control path waits for an offline instance's seam. Nothing
 /// else holds it — the instance is this render's alone — so the bound only
@@ -690,17 +717,22 @@ impl OfflinePluginInstances<'_> {
     /// Register every instance in `renderer` ahead of the mapped batch: the
     /// slot, then the instance's own latency, so the graph compensates every
     /// route it sits on from the first block.
+    ///
+    /// Each instance's note store is sized from the events the batch schedules
+    /// at it (`scheduled`), so a part longer than the live reserve prints whole.
     pub(crate) fn register(
         &self,
         renderer: &mut OfflineRenderer,
+        scheduled: &ScheduledNoteEvents,
     ) -> Result<(), OfflineRenderError> {
         for instance in &self.instances {
             let id = instance.bound.engine_plugin_id;
+            let events = scheduled.get(&id).copied().unwrap_or(0);
             renderer
                 .push(GraphCommand::AddHostedPlugin(
                     id,
                     Box::new(HostedPluginSlot::new(Arc::clone(&instance.runtime))),
-                    MidiNoteStore::new(),
+                    offline_note_store(events),
                 ))
                 .map_err(OfflineRenderError::Command)?;
             renderer
@@ -956,7 +988,7 @@ fn construct_unless_cancelled(
     }
 }
 
-/// Build an offline instance of every bound effect, at `sample_rate`, with the
+/// Build an offline instance of every bound effect or instrument, at `sample_rate`, with the
 /// live instance's state restored on it.
 ///
 /// Every live state is captured first, at render start, so the print is one
