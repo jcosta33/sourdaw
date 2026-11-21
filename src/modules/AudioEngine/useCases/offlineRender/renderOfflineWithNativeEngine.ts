@@ -293,7 +293,8 @@ function readMidiProjection(input: NativeOfflineRenderInput): NativeOfflineMidiP
  */
 function nativeOfflineMidiSource(
     input: NativeOfflineRenderInput,
-    musical: Pick<NativeOfflineRenderInput, 'sampleRate' | 'defaultTempo' | 'changes' | 'projectPpqEndpoints'>
+    musical: Pick<NativeOfflineRenderInput, 'sampleRate' | 'defaultTempo' | 'changes' | 'projectPpqEndpoints'>,
+    tempoTimeline: NativeOfflineMidiSource['tempoTimeline']
 ): NativeOfflineMidiSource | null {
     const { midi, projectMidiEvents, selectProbability, projectChordPitch, resolveArticulationId } =
         readMidiProjection(input);
@@ -302,6 +303,9 @@ function nativeOfflineMidiSource(
     }
     return {
         notesByClipId: midi.notesByClipId,
+        // The captured lanes the audio path comps against; absent capture falls to the live lanes.
+        takeLanes: input.captured?.scheduling.takeLanes,
+        tempoTimeline,
         probabilitySeed: midi.probabilitySeed,
         defaultTempo: musical.defaultTempo,
         sampleRate: musical.sampleRate,
@@ -460,7 +464,11 @@ export async function renderOfflineWithNativeEngine(
         if (!contributingTrackIds.has(track.id) || nativeOfflineInstrumentSink(track, hostedRuntime) === null) {
             return { outcome: 'converted', commands: [] };
         }
-        const source = nativeOfflineMidiSource(input, { sampleRate, defaultTempo, changes, projectPpqEndpoints });
+        const source = nativeOfflineMidiSource(
+            input,
+            { sampleRate, defaultTempo, changes, projectPpqEndpoints },
+            renderTempoTimeline(projectBeatToSeconds, resolveClipTempo)
+        );
         if (source === null) {
             return { outcome: 'declined', reason: 'the MIDI projection is not configured for the native render' };
         }

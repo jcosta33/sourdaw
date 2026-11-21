@@ -9,10 +9,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import { createGrooveMidiEventProjector, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import { defaultTransportState } from '#/modules/Transport/stores';
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: vi.fn(() => 0),
@@ -26,8 +27,12 @@ import {
 import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { offlineMidiEventProjectorState } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
+import { captureOfflineRenderInput } from '../captureOfflineRenderInput';
 import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
+import { offlineRenderCapturePorts } from '../offlineRenderCapturePorts';
+import { type OfflineRenderProjectSource } from '../OfflineRenderSource';
 import { renderOfflineWithNativeEngine, type NativeOfflineRenderInput } from '../renderOfflineWithNativeEngine';
 
 registerDeviceEnginePorts();
@@ -946,11 +951,21 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
     afterEach(() => {
         vi.unstubAllGlobals();
         midiStore.set(null);
+        takeLaneStore.set(null);
+        offlineRenderCapturePorts.createMidiProjector = null;
+        offlinePpqEndpointProjectorState.project = null;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
+        offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor = null;
         offlineMidiEventProjectorState.createProjector = null;
         offlineMidiEventProjectorState.selectProbability = null;
     });
 
-    function renderKeys(input: { transport: NativeGraphTransport; clips: Clip[]; devices?: Device[] }) {
+    function renderKeys(input: {
+        transport: NativeGraphTransport;
+        clips: Clip[];
+        devices?: Device[];
+        captured?: NativeOfflineRenderInput['captured'];
+    }) {
         const keys = createTrack({
             id: 'midi-1',
             name: 'Keys',
@@ -974,6 +989,7 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
             soloGatedByTrackId: new Map(),
             vcaMultiplierByTrackId: new Map(),
             hostedPluginRuntime: loadedInstrument,
+            captured: input.captured,
         });
     }
 
@@ -1016,6 +1032,66 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         ]);
         const kinds = commands.map((command) => command.kind);
         expect(kinds.indexOf('schedule-midi')).toBeGreaterThan(kinds.indexOf('create-track-strip'));
+    });
+
+    it('prints the notes of the comp the render captured, not the live comp edited since', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+        const clips = [
+            midiClip({ id: 'clip-x', startBeat: 0, endBeat: 4 }),
+            midiClip({ id: 'clip-y', startBeat: 0, endBeat: 4 }),
+        ];
+        midiStore.set({
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: {
+                'clip-x': [{ id: 'n-x', pitch: 72, startBeat: 1, duration: 1, velocity: 100 }],
+                'clip-y': [{ id: 'n-y', pitch: 76, startBeat: 1, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const keys = createTrack({ id: 'midi-1', name: 'Keys', kind: 'midi', devices: [synth], clips });
+        const compOf = (takeId: string, clipId: string): NonNullable<typeof takeLaneStore.value> => ({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'midi-1',
+                    takes: [{ id: takeId, clipId, name: takeId, startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId }],
+                },
+            ],
+        });
+        const project: OfflineRenderProjectSource = {
+            tracks: { tracks: [keys], selectedTrackId: null },
+            midi: midiStore.value,
+            transport: { ...defaultTransportState, tempo: 120 },
+            tempoMap: null,
+            timeSignatureMap: null,
+            automationLanes: [],
+            // The export started with take X comped over the whole clip span.
+            takeLanes: compOf('take-x', 'clip-x'),
+            gainEnvelopes: {},
+            sidechainRoutes: [],
+            vcaGroups: [],
+            grooveTemplates: null,
+            chordTrack: null,
+            yeastProcessorsByDevice: {},
+        };
+        offlineRenderCapturePorts.createMidiProjector = () => createGrooveMidiEventProjector();
+        offlinePpqEndpointProjectorState.project = halfSecondPerBeat;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = ({ defaultTempo }) => defaultTempo;
+        offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor = (_changes, anchorBeat, elapsedSeconds, tempo) =>
+            anchorBeat + (elapsedSeconds * tempo) / 60;
+        const captured = captureOfflineRenderInput({ durationBeats: 8, sampleRate: 48_000 }, { project });
+        // The musician then comped take Y instead.
+        takeLaneStore.set(compOf('take-y', 'clip-y'));
+
+        await renderKeys({ transport, clips, captured });
+
+        const scheduled = commands.find((command) => command.kind === 'schedule-midi');
+        expect(scheduled?.kind === 'schedule-midi' ? scheduled.notes : null).toEqual([
+            noteEvent(0.5, 72, 100, true),
+            noteEvent(1, 72, 0, false),
+        ]);
     });
 
     it('moves every note by the strip’s latency compensation, as the audio clips and the web notes move', async () => {

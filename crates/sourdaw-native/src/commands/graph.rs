@@ -6189,9 +6189,12 @@ const MAX_MAPPING_SESSIONS: usize = 4;
 
 /// One kept probe registry: the graph a session's accepted commands built,
 /// and the count of those commands (`revision`) that names which history it
-/// represents.
+/// represents. `scheduled` is the note events that history already schedules
+/// at each device, so a resume counts them against the offline ceiling as a
+/// replay would.
 struct GraphMappingSession {
     registry: GraphRegistry,
+    scheduled: ScheduledNoteEvents,
     revision: u64,
     touched: u64,
 }
@@ -6210,7 +6213,11 @@ impl GraphMappingSessions {
     /// The kept registry for `session_id` at exactly `revision`, cloned so the
     /// caller can map onto it without committing, or `None` when this process
     /// does not hold that history.
-    fn resume(&mut self, session_id: &str, revision: u64) -> Option<GraphRegistry> {
+    fn resume(
+        &mut self,
+        session_id: &str,
+        revision: u64,
+    ) -> Option<(GraphRegistry, ScheduledNoteEvents)> {
         self.touch_counter += 1;
         let touch = self.touch_counter;
         let session = self.sessions.get_mut(session_id)?;
@@ -6218,18 +6225,25 @@ impl GraphMappingSessions {
             return None;
         }
         session.touched = touch;
-        Some(session.registry.clone())
+        Some((session.registry.clone(), session.scheduled.clone()))
     }
 
     /// Keep `registry` as `session_id`'s state at `revision`, evicting the
     /// least-recently-touched session past [`MAX_MAPPING_SESSIONS`].
-    fn store(&mut self, session_id: &str, registry: GraphRegistry, revision: u64) {
+    fn store(
+        &mut self,
+        session_id: &str,
+        registry: GraphRegistry,
+        scheduled: ScheduledNoteEvents,
+        revision: u64,
+    ) {
         self.touch_counter += 1;
         let touched = self.touch_counter;
         self.sessions.insert(
             session_id.to_string(),
             GraphMappingSession {
                 registry,
+                scheduled,
                 revision,
                 touched,
             },
@@ -6260,7 +6274,7 @@ struct MappingSessionKeyPayload {
 }
 
 /// Replay already-accepted history onto a fresh registry, one ceiling-sized
-/// chunk at a time. Concatenated session history can exceed what a single
+/// chunk at a time, answering the note events that history schedules. Concatenated session history can exceed what a single
 /// honest batch may carry; packing it into one `GraphBatchPayload` would
 /// refuse commands this process already took. Each chunk is at most
 /// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
@@ -6272,7 +6286,8 @@ fn replay_prior_commands(
     sample_rate: f32,
     hosted: &mut HostedInstances,
     levain_banks: &mut LevainBankStore,
-) -> Result<(), MappingFault> {
+) -> Result<ScheduledNoteEvents, MappingFault> {
+    let mut scheduled = ScheduledNoteEvents::new();
     while !commands.is_empty() {
         let rest = if commands.len() > MAX_BATCH_COMMANDS {
             commands.split_off(MAX_BATCH_COMMANDS)
@@ -6286,7 +6301,7 @@ fn replay_prior_commands(
             replace_topology: false,
             commands,
         };
-        map_batch(
+        let mapped = map_batch(
             &replay,
             registry,
             samples,
@@ -6298,9 +6313,10 @@ fn replay_prior_commands(
         .map_err(|reason| MappingFault::PriorNoLongerMaps {
             reason: Box::new(reason),
         })?;
+        add_scheduled_note_events(&mut scheduled, &scheduled_note_events(&mapped.ops));
         commands = rest;
     }
-    Ok(())
+    Ok(scheduled)
 }
 
 /// Map one batch against the graph a prior command sequence built — the
@@ -6396,7 +6412,7 @@ fn map_probe_batch(
 
     // Resume before replay: a held session at the stated revision *is* the
     // prior graph, so the replay below runs only to establish one.
-    let resumed: Option<GraphRegistry> = match &session_key {
+    let resumed: Option<(GraphRegistry, ScheduledNoteEvents)> = match &session_key {
         Some(key) => {
             let mut sessions = state
                 .graph_mapping_sessions
@@ -6437,12 +6453,13 @@ fn map_probe_batch(
         .lock()
         .map_err(|error| GraphRefusal::lock_poisoned("levain banks", &error))?;
 
-    let mut registry = match resumed {
-        Some(registry) => registry,
+    let (mut registry, prior_scheduled) = match resumed {
+        Some(resumed) => resumed,
         None => {
             let mut registry = GraphRegistry::default();
+            let mut prior_scheduled = ScheduledNoteEvents::new();
             if !prior_commands.is_empty() {
-                replay_prior_commands(
+                prior_scheduled = replay_prior_commands(
                     prior_commands,
                     batch.timeline_lease.as_deref(),
                     &mut registry,
@@ -6452,20 +6469,23 @@ fn map_probe_batch(
                     &mut levain_banks,
                 )?;
             }
-            registry
+            (registry, prior_scheduled)
         }
     };
 
     // `map_batch` mutates the registry it maps onto, so the pre-batch state is
     // kept aside: a rejected batch must leave the session exactly where the
     // accepted history put it.
-    let pre_batch = session_key.as_ref().map(|_| registry.clone());
+    let pre_batch = session_key
+        .as_ref()
+        .map(|_| (registry.clone(), prior_scheduled.clone()));
     let base_revision = session_key.as_ref().map(|key| key.revision).unwrap_or(0);
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
     // The probe refuses what the render refuses, so the offline note total is
-    // checked on its mapped batch as the render checks it.
+    // checked as the render checks it: the events at one device across the
+    // replayed history and this batch together, which one render store holds.
     let mapped = map_batch(
         &batch,
         &mut registry,
@@ -6476,8 +6496,10 @@ fn map_probe_batch(
         &mut levain_banks,
     )
     .and_then(|mapped| {
-        check_offline_note_totals(&scheduled_note_events(&mapped.ops))?;
-        Ok(mapped)
+        let mut scheduled = prior_scheduled;
+        add_scheduled_note_events(&mut scheduled, &scheduled_note_events(&mapped.ops));
+        check_offline_note_totals(&scheduled)?;
+        Ok((mapped, scheduled))
     });
     drop(levain_banks);
     drop(samples);
@@ -6488,12 +6510,19 @@ fn map_probe_batch(
             .lock()
             .map_err(|error| GraphRefusal::lock_poisoned("mapping sessions", &error))?;
         match (&mapped, pre_batch) {
-            (Ok(_), _) => sessions.store(&key.session_id, registry, base_revision + batch_len),
-            (Err(_), Some(pre_batch)) => sessions.store(&key.session_id, pre_batch, base_revision),
+            (Ok((_, scheduled)), _) => sessions.store(
+                &key.session_id,
+                registry,
+                scheduled.clone(),
+                base_revision + batch_len,
+            ),
+            (Err(_), Some((pre_batch, scheduled))) => {
+                sessions.store(&key.session_id, pre_batch, scheduled, base_revision)
+            }
             (Err(_), None) => {}
         }
         return match mapped {
-            Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+            Ok((mapped, _)) => result_json(&GraphApplyResultPayload::mapped(
                 correlation,
                 mapped.reports,
             )),
@@ -6502,7 +6531,7 @@ fn map_probe_batch(
     }
 
     match mapped {
-        Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+        Ok((mapped, _)) => result_json(&GraphApplyResultPayload::mapped(
             correlation,
             mapped.reports,
         )),
@@ -6565,6 +6594,13 @@ fn scheduled_note_events(ops: &[GraphCommand]) -> ScheduledNoteEvents {
         }
     }
     scheduled
+}
+
+/// Add the note events one span of commands schedules to the running total.
+fn add_scheduled_note_events(total: &mut ScheduledNoteEvents, span: &ScheduledNoteEvents) {
+    for (plugin_id, events) in span {
+        *total.entry(*plugin_id).or_default() += events;
+    }
 }
 
 /// Refuse a batch that schedules more note events at one device than an
@@ -16498,6 +16534,72 @@ mod tests {
                 "past the store's ceiling of {OFFLINE_NOTE_EVENT_CEILING}"
             )),
             "{refusal}"
+        );
+    }
+
+    /// The probe refuses what the render refuses: note events at one device
+    /// across the replayed prior and the incoming batch share one render store,
+    /// so each part under the ceiling can still pass it together.
+    #[test]
+    fn map_graph_batch_counts_note_events_across_the_prior_and_the_batch() {
+        const PRIOR_EVENTS: usize = OFFLINE_NOTE_EVENT_CEILING / 2;
+        let schedule = |count: usize, first_index: usize| {
+            let notes: Vec<Value> = (first_index..first_index + count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let strip = json!({
+            "kind": "create-track-strip",
+            "trackId": "t1",
+            "name": "Lead",
+            "state": strip_state(1.0),
+            "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                           "parameterValues": {} } ],
+            "honorMuted": true,
+            "contributesAudio": true
+        });
+        let probe = |batch_events: usize| {
+            let state = AppState::default();
+            block_on_test(map_graph_batch(
+                json!([strip.clone(), schedule(PRIOR_EVENTS, 0)]),
+                json!({ "schemaVersion": 1,
+                        "commands": [schedule(batch_events, PRIOR_EVENTS)] }),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+
+        let at_ceiling = probe(OFFLINE_NOTE_EVENT_CEILING - PRIOR_EVENTS);
+        assert_eq!(at_ceiling["acceptance"], "accepted", "{at_ceiling}");
+
+        let over = probe(OFFLINE_NOTE_EVENT_CEILING - PRIOR_EVENTS + 1);
+        assert_eq!(over["acceptance"], "rejected", "{over}");
+        // The refusal one batch holding every event gets from the render
+        let single = map_offline_batch(
+            &midi_batch(json!([
+                strip.clone(),
+                schedule(OFFLINE_NOTE_EVENT_CEILING + 1, 0)
+            ])),
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            48_000.0,
+            &mut HostedInstances::default(),
+        )
+        .map(|ops| ops.len())
+        .expect_err("one batch past the offline ceiling is refused")
+        .to_string();
+        // (it also names the command it indexes, which a total has none to name).
+        assert!(
+            single.ends_with(
+                over["reason"]
+                    .as_str()
+                    .expect("a rejection names its reason")
+            ),
+            "probe: {over}; render: {single}"
         );
     }
 
