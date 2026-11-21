@@ -393,13 +393,13 @@ describe('the rules a reading list must meet', () => {
         expect(result.receipt.status).toBe('success');
         expect(result.mixIntent).toEqual({ catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] });
         expect(
-            result.mixAlternatives?.map(({ name, requestedDescriptors }) => ({ name, requestedDescriptors }))
+            result.mixReadings?.alternatives.map(({ name, requestedDescriptors }) => ({ name, requestedDescriptors }))
         ).toEqual(THREE_READINGS.slice(0, 2));
         const brief = result.composedBrief;
         if (brief === null) {
             throw new TypeError('Expected a composed brief');
         }
-        for (const alternative of result.mixAlternatives ?? []) {
+        for (const alternative of result.mixReadings?.alternatives ?? []) {
             const expected = preparedFor(runId, brief, alternative.requestedDescriptors);
             expect(alternative.plan.planDigest).toBe(expected.planDigest);
             expect(planShape(alternative.plan.batches)).toEqual(planShape(expected.batches));
@@ -411,7 +411,7 @@ describe('the rules a reading list must meet', () => {
             const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), AMBIGUOUS_PROMPT, sourceRunId);
 
             expect(result.commands).toBeNull();
-            expect(result.mixAlternatives).toBeUndefined();
+            expect(result.mixReadings).toBeUndefined();
             expect(result.receipt).toMatchObject({
                 status: 'failure',
                 error: { code: 'invalid-tool-arguments', retryable: true },
@@ -428,7 +428,7 @@ describe('the rules a reading list must meet', () => {
         );
 
         expect(result.commands).toBeNull();
-        expect(result.mixAlternatives).toBeUndefined();
+        expect(result.mixReadings).toBeUndefined();
         expect(result.receipt).toMatchObject({
             status: 'failure',
             error: { code: 'invalid-tool-arguments', retryable: true },
@@ -506,7 +506,7 @@ describe('the rules a reading list must meet', () => {
         const result = compileWith(mixIntent);
 
         expect(result.commands).toBeNull();
-        expect(result.mixAlternatives).toBeUndefined();
+        expect(result.mixReadings).toBeUndefined();
         expect(result.receipt).toMatchObject({
             status: 'failure',
             error: { code: 'invalid-tool-arguments', retryable: true },

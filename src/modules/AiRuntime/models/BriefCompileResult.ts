@@ -1,7 +1,6 @@
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type BriefMixIntent } from './BriefMixIntent';
-import { type PlannedBriefMixAlternative } from './BriefReading';
-import { type PerceptualConstraintReading } from './PerceptualConstraint';
+import { type BriefMixReadings } from './BriefReading';
 import { type ProjectContextProductionBrief } from './ProjectContext';
 import { type RetainedCommand } from './RetainedCompilation';
 
@@ -14,7 +13,5 @@ export type BriefCompileResult = {
     composedBrief: ProjectContextProductionBrief | null;
     mixIntent: BriefMixIntent | null;
     /** The named readings the request admits, kept apart so the two-key mix intent and its digest never change. */
-    mixAlternatives?: readonly PlannedBriefMixAlternative[];
-    /** The request's constraints the readings were prepared against; set whenever `mixAlternatives` is. */
-    constraintReading?: PerceptualConstraintReading;
+    mixReadings?: BriefMixReadings;
 };

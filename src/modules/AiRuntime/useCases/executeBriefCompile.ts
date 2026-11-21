@@ -393,8 +393,7 @@ export function executeBriefCompile(input: {
         },
     };
     if (alternatives.length > 0) {
-        result.mixAlternatives = readings.alternatives;
-        result.constraintReading = constraintReading;
+        result.mixReadings = { alternatives: readings.alternatives, constraintReading };
     }
     return result;
 }

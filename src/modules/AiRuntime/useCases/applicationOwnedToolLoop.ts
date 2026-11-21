@@ -39,7 +39,7 @@ import {
 } from '../models/ApplicationOwnedTool';
 import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
-import { type PlannedBriefMixAlternative } from '../models/BriefReading';
+import { type BriefMixReadings } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
@@ -51,7 +51,6 @@ import {
 } from '../models/HostedTurnHistory';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
-import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContextProductionBrief } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
@@ -1488,8 +1487,7 @@ type ExecutedRead = {
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
-    mixAlternatives?: readonly PlannedBriefMixAlternative[];
-    constraintReading?: PerceptualConstraintReading;
+    mixReadings?: BriefMixReadings;
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
@@ -1507,8 +1505,7 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
             changeLines: executed.briefChangeLines,
             brief: executed.composedBrief,
             mixIntent: executed.mixIntent,
-            ...(executed.mixAlternatives === undefined ? {} : { mixAlternatives: executed.mixAlternatives }),
-            constraintReading: executed.constraintReading,
+            ...(executed.mixReadings === undefined ? {} : { mixReadings: executed.mixReadings }),
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {

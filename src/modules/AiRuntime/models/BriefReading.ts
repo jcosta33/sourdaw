@@ -25,6 +25,12 @@ export type BriefReadingPlan = {
 /** A reading offered with the plan it stands for. */
 export type PlannedBriefMixAlternative = BriefMixAlternative & { plan: BriefReadingPlan };
 
+/** The readings a request admits, with the constraints they were prepared against. */
+export type BriefMixReadings = {
+    alternatives: readonly PlannedBriefMixAlternative[];
+    constraintReading: PerceptualConstraintReading;
+};
+
 /** A reading as the brief card carries it, with an id unique within that card. */
 export type BriefReading = {
     id: string;
