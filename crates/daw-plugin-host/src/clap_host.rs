@@ -262,9 +262,8 @@ impl HostCallbackState {
     /// install wins; a second call changes nothing and reports `false`, so the
     /// wake cannot be hijacked mid-life.
     ///
-    /// The install is also the `[thread-safe]` asks' acceptance gate — see
-    /// [`Self::request_editor_resize`] — and the moment the instance joins the
-    /// set the request watcher sweeps. A main-thread callback the plugin asked
+    /// The install is also the moment the instance joins the set the request
+    /// watcher sweeps. A main-thread callback the plugin asked
     /// for before then had its hint raised while no sweep could find it, so the
     /// hint is raised again here and the ask is served on the next sweep rather
     /// than left until the plugin happens to ask again.
@@ -310,12 +309,12 @@ impl HostCallbackState {
     /// Record an editor size the plugin asked for, and report whether it will
     /// actually be applied.
     ///
-    /// Three ways it will not, and each is a `false` rather than a silent drop:
-    /// a dimension with no area is not a size; an editor with no host window has
-    /// nothing to resize; and an instance with no wake installed is one the
-    /// drain thread never serves, so accepting would be a claim nothing backs.
-    /// CLAP lets the host refuse, and a refusal a plugin can see beats an
-    /// acceptance it cannot verify.
+    /// Two ways it will not, and each is a `false` rather than a silent drop: a
+    /// dimension with no area is not a size, and an editor with no host window
+    /// has nothing to resize. A window is installed only on an instance the
+    /// embedding host's editor drain serves, engine-owned or not yet attached,
+    /// so the window is the whole gate: a dormant instance has no
+    /// host-request wake yet and must still be answered.
     ///
     /// The recording is [`Self::request_parameters_flush`]'s discipline exactly:
     /// the packed size slot is the record, the process-wide hint is the wake,
@@ -328,9 +327,6 @@ impl HostCallbackState {
             return false;
         }
         if !self.editor_resize_available.load(Ordering::Acquire) {
-            return false;
-        }
-        if self.request_notifier.get().is_none() {
             return false;
         }
 
@@ -352,9 +348,6 @@ impl HostCallbackState {
     /// plugin asks to be shown again.
     pub fn request_editor_visibility(&self, visibility: EditorVisibility) -> bool {
         if !self.editor_resize_available.load(Ordering::Acquire) {
-            return false;
-        }
-        if self.request_notifier.get().is_none() {
             return false;
         }
 
@@ -1531,7 +1524,7 @@ mod tests {
     }
 
     #[test]
-    fn a_show_or_hide_is_accepted_only_where_a_window_and_a_wake_will_carry_it() {
+    fn a_show_or_hide_is_accepted_only_where_a_window_will_carry_it() {
         let _guard = resize_signal_guard();
         let (state, _requests) = state_with_open_editor();
         let host = host_with_state(&state);
@@ -1548,12 +1541,17 @@ mod tests {
         assert!(!unsafe { host_gui_request_show(&host as *const clap_host) });
         assert!(state.take_editor_window_asks().is_empty());
 
-        let unwoken = HostCallbackState::default();
-        unwoken.set_editor_resize_available(true);
-        let unwoken_host = host_with_state(&unwoken);
-        // SAFETY: as above, for `unwoken`.
-        assert!(!unsafe { host_gui_request_show(&unwoken_host as *const clap_host) });
-        assert!(unwoken.take_editor_window_asks().is_empty());
+        // An instance loaded before the engine ran has a window and no
+        // host-request wake, and its editor drain still serves it.
+        let dormant = HostCallbackState::default();
+        dormant.set_editor_resize_available(true);
+        let dormant_host = host_with_state(&dormant);
+        // SAFETY: as above, for `dormant`.
+        assert!(unsafe { host_gui_request_show(&dormant_host as *const clap_host) });
+        assert_eq!(
+            dormant.take_editor_window_asks().visibility,
+            Some(EditorVisibility::Show)
+        );
     }
 
     /// gui.h: with `was_destroyed` the host must acknowledge with `destroy`, so
@@ -1829,10 +1827,12 @@ mod tests {
         );
     }
 
-    /// With no wake installed nothing carries the ask onto the control path, so
-    /// accepting it would be a claim the host cannot keep.
+    /// An instance loaded before the engine ran has an editor window and no
+    /// host-request wake yet; the editor drain serves it all the same, so its
+    /// resize is recorded rather than refused.
     #[test]
-    fn a_resize_request_is_refused_when_no_wake_is_installed() {
+    fn a_resize_request_is_recorded_with_a_window_and_no_wake_installed() {
+        let _guard = resize_signal_guard();
         let state = HostCallbackState::default();
         state.set_editor_resize_available(true);
         let host = host_with_state(&state);
@@ -1840,8 +1840,8 @@ mod tests {
         // SAFETY: `host` is a live local descriptor whose `host_data` points at
         // a `state` that outlives the call.
         let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
-        assert!(!accepted);
-        assert_eq!(state.take_editor_resize(), None);
+        assert!(accepted);
+        assert_eq!(state.take_editor_resize(), Some((1024, 768)));
     }
 
     #[test]

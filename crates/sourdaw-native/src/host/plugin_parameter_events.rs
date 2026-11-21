@@ -393,7 +393,7 @@ mod tests {
     use crate::host::plugin_window::{PluginEditorWindow, PluginWindowHost};
     use crate::state::PluginInstanceData;
     use daw_engine::timeline::DeviceKind;
-    use daw_plugin_host::ClapWrapper;
+    use daw_plugin_host::{ClapWrapper, EditorVisibility};
 
     /// Both hints are process-wide, so any test that pushes an event or arms a
     /// flush raises one for every test running beside it. Every test below that
@@ -450,9 +450,8 @@ mod tests {
         let mut wrapper = fixture_wrapper();
         let applied: WindowSizes = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&applied);
-        // The notifier install is what marks the instance as one whose asks get
-        // carried — without it the ask is refused outright.
-        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        // No host-request wake: the window alone admits the ask, as it does on
+        // an instance loaded before the engine ran.
         wrapper.set_editor_window_resizer(Arc::new(move |width, height| {
             sink.lock().expect("resize log").push((width, height));
         }));
@@ -1293,7 +1292,6 @@ mod tests {
         let shell = DedicatedUiWindowHost::start();
         let mut wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
-        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
         let window: Arc<dyn PluginEditorWindow> = Arc::from(
             shell
                 .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
@@ -1312,6 +1310,37 @@ mod tests {
         tick_with_dormant(&command_plugins);
 
         assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+    }
+
+    /// A dormant load installs no host-request wake, so the window is all that
+    /// admits a plugin's hide; the tick still carries it to the shell window.
+    #[test]
+    fn a_tick_hides_the_editor_a_dormant_instance_asked_to_hide() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        let window: Arc<dyn PluginEditorWindow> = Arc::from(
+            shell
+                .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                .expect("the shell opens a window"),
+        );
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        assert!(
+            wrapper
+                .engine_owned_command_fixture_host_state()
+                .request_editor_visibility(EditorVisibility::Hide),
+            "a window admits the hide with no wake installed"
+        );
+        let command_plugins = dormant_map(wrapper);
+
+        tick_with_dormant(&command_plugins);
+
+        assert_eq!(shell.window_calls(), vec![("hide", shell.thread_id)]);
     }
 
     #[test]

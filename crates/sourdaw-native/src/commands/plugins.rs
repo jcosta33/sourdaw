@@ -3216,15 +3216,14 @@ fn register_runtime_with_engine(
 /// state change, a parameter rescan), and the drain thread answers the
 /// `[thread-safe]` ones (an editor resize, a flush).
 ///
-/// Engine-owned only, because both carriers reach an instance through
-/// `engine_plugins`: one the engine never took is not reachable from there, and
-/// installing the wake on one would have the plugin told its resize was accepted
-/// by a follow-up that could never run. So it is installed past every refusal
+/// Engine-owned only, because the watcher reaches an instance through
+/// `engine_plugins` alone: one the engine never took is not reachable from
+/// there, and the install's re-raise of an ask the plugin made before it would
+/// be spent where no watcher visits. So it is installed past every refusal
 /// rather than on the runtime before it moved — the wake is a `OnceLock`, first
 /// install wins for the instance's whole life, and a refusal hands the runtime
-/// back to be parked. A parked instance carrying a wake answers `request_resize`
-/// with true while `apply_pending_editor_resizes` walks only `engine_plugins`, so
-/// the plugin lays its editor out to a size no window will ever take.
+/// back to be parked. The editor asks need no wake: the drain answers them on
+/// a dormant or parked instance as well, through its editor window.
 ///
 /// **Called clear of `state.engine`.** Reaching the runtime waits twice: on the
 /// instance's non-RT control gate, which an open editor holds across the
@@ -5441,9 +5440,8 @@ mod tests {
         );
         // And it comes back clean. The host-request wake is a `OnceLock` — one
         // install for the instance's whole life, with no way to take it off —
-        // and a parked instance carrying one answers `request_resize` with true
-        // while the follow-up that would honour it walks only `engine_plugins`,
-        // so the plugin lays its editor out to a size no window ever takes. A
+        // and one installed on a parked instance would spend its re-raise where
+        // the watcher, which walks only `engine_plugins`, never visits. A
         // successful install here is the proof that nothing was installed
         // before.
         assert!(
