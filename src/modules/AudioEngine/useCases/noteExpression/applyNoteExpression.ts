@@ -1,12 +1,10 @@
-import { inject } from '#/infra/di/inject';
-
 import {
     hasNoteExpression,
     normalizeNoteExpression,
     resolveNoteExpressionControls,
     type NoteExpressionWireValues,
 } from '../../engine/noteExpression';
-import { audioEngine } from '../../repositories/createWebAudioEngine';
+import { audioEngine } from '../engineAccess/getAudioContext';
 
 type ApplyNoteExpressionInput = {
     /** Track owning the instrument — the resolved instrument track, not the source track. */
@@ -45,32 +43,29 @@ type ApplyNoteExpressionInput = {
  * engine; the editor gates those lanes per device from the same registry, so a
  * user is never offered a control the instrument cannot sound.
  */
-export const applyNoteExpression = inject({ audioEngine })(
-    ({ audioEngine }) =>
-        function applyNoteExpression({
-            trackId,
-            note,
-            channel = 0,
-            expression,
-            sampleFrame,
-            bendRangeSemitones,
-        }: ApplyNoteExpressionInput): boolean {
-            if (!hasNoteExpression(expression)) {
-                return false;
-            }
+export function applyNoteExpression({
+    trackId,
+    note,
+    channel = 0,
+    expression,
+    sampleFrame,
+    bendRangeSemitones,
+}: ApplyNoteExpressionInput): boolean {
+    if (!hasNoteExpression(expression)) {
+        return false;
+    }
 
-            const strip = audioEngine.getTrackStrip(trackId);
-            if (!strip) {
-                return false;
-            }
+    const strip = audioEngine.getTrackStrip(trackId);
+    if (!strip) {
+        return false;
+    }
 
-            const controls = resolveNoteExpressionControls(strip.deviceNodes);
-            if (!controls) {
-                return false;
-            }
+    const controls = resolveNoteExpressionControls(strip.deviceNodes);
+    if (!controls) {
+        return false;
+    }
 
-            const { bendSemitones, pressure, slide } = normalizeNoteExpression(expression, bendRangeSemitones);
-            controls.noteExpression(note, channel, bendSemitones, pressure, slide, sampleFrame);
-            return true;
-        }
-);
+    const { bendSemitones, pressure, slide } = normalizeNoteExpression(expression, bendRangeSemitones);
+    controls.noteExpression(note, channel, bendSemitones, pressure, slide, sampleFrame);
+    return true;
+}

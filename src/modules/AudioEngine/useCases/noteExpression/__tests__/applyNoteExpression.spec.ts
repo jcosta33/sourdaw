@@ -13,7 +13,7 @@ const { mockAudioEngine, mockHasNoteExpression, mockResolveControls, mockNormali
     })),
 }));
 
-vi.mock('../../../repositories/createWebAudioEngine', () => ({ audioEngine: mockAudioEngine }));
+vi.mock('../../engineAccess/getAudioContext', () => ({ audioEngine: mockAudioEngine }));
 vi.mock('../../../engine/noteExpression', () => ({
     hasNoteExpression: mockHasNoteExpression,
     resolveNoteExpressionControls: mockResolveControls,

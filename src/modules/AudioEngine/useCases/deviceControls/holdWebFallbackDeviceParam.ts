@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
@@ -26,20 +25,12 @@ import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRunti
  * stamps, so writing it here would be the double drive this exists to avoid; a
  * web-only device is never carried, so its curve belongs on the ordinary door.
  */
-export const holdWebFallbackDeviceParam = inject({ audioEngine })(
-    ({ audioEngine }) =>
-        function holdWebFallbackDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
-            const type = deviceTypeOnStrip(trackId, deviceId);
-            if (type === null || !nativeBuiltinBody(type)) {
-                return;
-            }
-            withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, undefined, () => {
-                audioEngine.updateDeviceParam(
-                    trackId,
-                    deviceId,
-                    paramId,
-                    clampDeviceParamWrite({ deviceId, paramId, value })
-                );
-            });
-        }
-);
+export function holdWebFallbackDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
+    const type = deviceTypeOnStrip(trackId, deviceId);
+    if (type === null || !nativeBuiltinBody(type)) {
+        return;
+    }
+    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, undefined, () => {
+        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clampDeviceParamWrite({ deviceId, paramId, value }));
+    });
+}

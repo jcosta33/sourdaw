@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
@@ -21,11 +20,8 @@ import { effectiveMasterGain, masterGainState } from './masterGainState';
  * Recording the level precedes the forward, because the forward reads it back on
  * the session's queue rather than carrying it.
  */
-export const setMasterGainValue = inject({ audioEngine })(
-    ({ audioEngine }) =>
-        function setMasterGainValue(value: number): void {
-            masterGainState.gain = clampFaderGain(value);
-            audioEngine.setMasterGain(effectiveMasterGain());
-            forwardMasterGainToNativeLiveGraphSession();
-        }
-);
+export function setMasterGainValue(value: number): void {
+    masterGainState.gain = clampFaderGain(value);
+    audioEngine.setMasterGain(effectiveMasterGain());
+    forwardMasterGainToNativeLiveGraphSession();
+}
