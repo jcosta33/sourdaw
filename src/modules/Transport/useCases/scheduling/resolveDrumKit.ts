@@ -1,5 +1,4 @@
-import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases';
-import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
+import { getDrumKitByIndex, resolveDrumKitBy } from '#/modules/AudioEngine/useCases';
 
 type SynthParams = NonNullable<ReturnType<typeof getDrumKitByIndex>>['voices'][number]['params'];
 
