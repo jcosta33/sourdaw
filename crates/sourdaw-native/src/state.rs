@@ -1,6 +1,7 @@
 use crate::commands::plugins::VettedRegistryEntry;
-use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::native_bridge::{PluginControlError, SharedHostedPlugin};
 use crate::host::plugin_registry_store::FileFingerprint;
+use crate::host::runtime_scope::RuntimeScopeRefusal;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
@@ -401,6 +402,31 @@ struct TimelineSampleEntry {
     byte_len: usize,
 }
 
+/// Why a legacy timeline registration was not admitted into the sample pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyMaterialRefusal {
+    /// The pool is fenced: registration must go through a material lease.
+    LeaseRequired,
+    /// The pool's byte count would overflow.
+    ByteCountOverflow,
+    /// The sample exceeds the byte budget or the retirement capacity.
+    OverBudget,
+}
+
+impl std::fmt::Display for LegacyMaterialRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::LeaseRequired => "Legacy timeline registration requires a material lease",
+            Self::ByteCountOverflow => "Timeline byte count overflow",
+            Self::OverBudget => {
+                "Timeline sample exceeds the native pool budget or retirement capacity"
+            }
+        })
+    }
+}
+
+impl std::error::Error for LegacyMaterialRefusal {}
+
 /// A bounded, LRU-evicting pool of decoded timeline PCM material (#2229).
 ///
 /// Decoded timeline material is registered once via `register_timeline_sample` and
@@ -476,9 +502,13 @@ impl TimelineSamplePool {
         }) || self.residency.has_legacy_readers()
     }
 
-    pub(crate) fn admit_legacy_material(&self, id: &str, bytes: usize) -> Result<(), String> {
+    pub(crate) fn admit_legacy_material(
+        &self,
+        id: &str,
+        bytes: usize,
+    ) -> Result<(), LegacyMaterialRefusal> {
         if self.residency.fenced() {
-            return Err("Legacy timeline registration requires a material lease".into());
+            return Err(LegacyMaterialRefusal::LeaseRequired);
         }
         let reclaimable: usize = self
             .samples
@@ -492,7 +522,7 @@ impl TimelineSamplePool {
         let minimum = self
             .total_bytes()
             .checked_add(bytes)
-            .ok_or("Timeline byte count overflow")?
+            .ok_or(LegacyMaterialRefusal::ByteCountOverflow)?
             .saturating_sub(reclaimable);
         if bytes > self.max_bytes
             || minimum > self.max_bytes
@@ -500,9 +530,7 @@ impl TimelineSamplePool {
                 self.samples.len() + usize::from(!self.samples.contains_key(id)),
             )
         {
-            return Err(
-                "Timeline sample exceeds the native pool budget or retirement capacity".into(),
-            );
+            return Err(LegacyMaterialRefusal::OverBudget);
         }
         Ok(())
     }
@@ -685,7 +713,7 @@ impl AppState {
     ///
     /// Refused when the runtime scope selection was: a store at the legacy
     /// location would read and rewrite the unscoped registry.
-    pub fn with_persisted_plugin_registry() -> Result<Self, String> {
+    pub fn with_persisted_plugin_registry() -> Result<Self, RuntimeScopeRefusal> {
         Ok(Self {
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::at_default_location()?,
@@ -913,51 +941,87 @@ impl Drop for InFlightReleases<'_> {
     }
 }
 
+/// Why an operation against an engine-owned plugin instance did not succeed:
+/// the instance could not be found, or its control path refused or failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnginePluginControlError<E> {
+    /// The engine plugin table was poisoned; `cause` is the poison's text.
+    TableUnlockable {
+        cause: String,
+    },
+    NoInstance {
+        instance_id: String,
+    },
+    Control(PluginControlError<E>),
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for EnginePluginControlError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TableUnlockable { cause } => {
+                write!(f, "Failed to lock engine_plugins: {}", cause)
+            }
+            Self::NoInstance { instance_id } => {
+                write!(f, "No engine-owned plugin instance: {}", instance_id)
+            }
+            Self::Control(error) => error.fmt(f),
+        }
+    }
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> std::error::Error for EnginePluginControlError<E> {}
+
+impl<E> From<PluginControlError<E>> for EnginePluginControlError<E> {
+    fn from(error: PluginControlError<E>) -> Self {
+        Self::Control(error)
+    }
+}
+
 impl AppState {
-    pub fn with_engine_plugin_control<ResultValue>(
+    /// The engine-owned runtime `instance_id` names.
+    fn engine_plugin_runtime<E>(
         &self,
         instance_id: &str,
-        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
-        let runtime = {
-            let engine_plugins = self
-                .engine_plugins
+    ) -> Result<Arc<SharedHostedPlugin>, EnginePluginControlError<E>> {
+        let engine_plugins =
+            self.engine_plugins
                 .lock()
-                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-            engine_plugins
-                .get(instance_id)
-                .map(|instance| Arc::clone(&instance.runtime))
-                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
-        };
+                .map_err(|e| EnginePluginControlError::TableUnlockable {
+                    cause: e.to_string(),
+                })?;
+        engine_plugins
+            .get(instance_id)
+            .map(|instance| Arc::clone(&instance.runtime))
+            .ok_or_else(|| EnginePluginControlError::NoInstance {
+                instance_id: instance_id.to_string(),
+            })
+    }
 
-        runtime.with_control(Duration::from_secs(2), operation)
+    pub fn with_engine_plugin_control<ResultValue, OperationError>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, EnginePluginControlError<OperationError>> {
+        let runtime = self.engine_plugin_runtime(instance_id)?;
+        Ok(runtime.with_control(Duration::from_secs(2), operation)?)
     }
 
     /// The same operation, but refusing an instance whose control gate is busy
     /// rather than waiting for it.
     ///
-    /// For callers that must not park: the gate's wait is unbounded, and a
-    /// caller running on the shell's UI thread cannot afford one — the worker
+    /// For callers that must not park: the gate's wait runs to its 10 s
+    /// deadline, and a caller running on the shell's UI thread cannot afford
+    /// one — the worker
     /// holding the gate may itself be waiting for that very thread, and the
     /// refusal is what breaks the cycle. See
     /// [`SharedHostedPlugin::try_with_control`](crate::host::native_bridge::SharedHostedPlugin::try_with_control).
-    pub fn try_with_engine_plugin_control<ResultValue>(
+    pub fn try_with_engine_plugin_control<ResultValue, OperationError>(
         &self,
         instance_id: &str,
-        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
-        let runtime = {
-            let engine_plugins = self
-                .engine_plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-            engine_plugins
-                .get(instance_id)
-                .map(|instance| Arc::clone(&instance.runtime))
-                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
-        };
-
-        runtime.try_with_control(Duration::from_secs(2), operation)
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, EnginePluginControlError<OperationError>> {
+        let runtime = self.engine_plugin_runtime(instance_id)?;
+        Ok(runtime.try_with_control(Duration::from_secs(2), operation)?)
     }
 
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {
@@ -1597,8 +1661,8 @@ mod tests {
             fn run_on_ui_thread(
                 &self,
                 _task: &Arc<crate::host::ui_thread::UiThreadTask>,
-            ) -> Result<(), String> {
-                Err("the shell's UI thread is wedged".to_string())
+            ) -> Result<(), crate::host::ui_thread::UiThreadError> {
+                Err("the shell's UI thread is wedged".to_string().into())
             }
         }
         let state = AppState::default();
@@ -1633,7 +1697,7 @@ mod tests {
         struct ReadsTheCountDuringTheHop<'state> {
             state: &'state AppState,
             seen_during_hop: Mutex<Vec<(usize, usize)>>,
-            outcome: Result<(), String>,
+            outcome: Result<(), crate::host::ui_thread::UiThreadError>,
         }
         impl UiThread for ReadsTheCountDuringTheHop<'_> {
             fn is_ui_thread(&self) -> bool {
@@ -1642,7 +1706,7 @@ mod tests {
             fn run_on_ui_thread(
                 &self,
                 task: &Arc<crate::host::ui_thread::UiThreadTask>,
-            ) -> Result<(), String> {
+            ) -> Result<(), crate::host::ui_thread::UiThreadError> {
                 self.seen_during_hop.lock().expect("hop log").push((
                     self.state.unreclaimed_retirement_count(),
                     self.state.retired_engine_plugins.lock().expect("vec").len(),
@@ -1654,7 +1718,7 @@ mod tests {
             }
         }
 
-        for outcome in [Err("the shell is wedged".to_string()), Ok(())] {
+        for outcome in [Err("the shell is wedged".to_string().into()), Ok(())] {
             let state = AppState::default();
             let torn_down_on = retired_runtime_recording_teardown(&state);
             let ui = ReadsTheCountDuringTheHop {

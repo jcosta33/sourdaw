@@ -149,6 +149,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         builtinSynthVoice: { read: () => synthVoices },
         // The bounce's own Yeast projection: what the export renders is what the

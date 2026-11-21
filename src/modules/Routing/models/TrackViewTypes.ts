@@ -21,4 +21,6 @@ export type Track = {
     color: string;
     sends: Send[];
     outputId: string;
+    parentId: string | null;
+    hidden: boolean;
 };

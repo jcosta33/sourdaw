@@ -3705,9 +3705,6 @@
     "src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/agentReference/levenshteinDistance.ts": {
@@ -8001,7 +7998,7 @@
     },
     "src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts": {
         "eslint/complexity": {
-            "count": 7
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 3
@@ -10815,11 +10812,6 @@
     "src/modules/Automation/useCases/modulation/restoreTrackModulationReferences.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 2
-        }
-    },
-    "src/modules/Automation/useCases/modulation/revertMappingsToBase.ts": {
-        "sourdaw-craft/no-silent-catch": {
-            "count": 1
         }
     },
     "src/modules/Automation/useCases/modulation/updateMapping.ts": {
@@ -14498,9 +14490,6 @@
         }
     },
     "src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 1
         }
@@ -18245,7 +18234,7 @@
             "count": 1
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 16
+            "count": 14
         },
         "typescript/no-non-null-assertion": {
             "count": 3

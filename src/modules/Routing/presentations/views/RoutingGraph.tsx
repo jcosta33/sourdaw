@@ -5,7 +5,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { selectTrack } from '#/modules/Arrangement/useCases';
+import { getHiddenTrackIds, selectTrackRevealingHidden } from '#/modules/Arrangement/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -82,21 +82,29 @@ function getNodeCenter(pos: NodePosition, side: 'left' | 'right'): { x: number; 
     };
 }
 
-const TrackNode = ({ pos, isSelected }: { pos: NodePosition; isSelected: boolean }): ReactElement => {
+const TrackNode = ({
+    pos,
+    isSelected,
+    isHidden,
+}: {
+    pos: NodePosition;
+    isSelected: boolean;
+    isHidden: boolean;
+}): ReactElement => {
     const fill = KIND_FILLS[pos.track.kind] ?? resolveToken('--color-text-tertiary', '#737373');
 
     return (
         <g
-            className="cursor-pointer"
+            className={isHidden ? 'cursor-pointer opacity-50' : 'cursor-pointer'}
             onClick={() => {
-                selectTrack(pos.track.id);
+                selectTrackRevealingHidden(pos.track.id);
             }}
             role="button"
             tabIndex={0}
-            aria-label={`Select ${pos.track.name}`}
+            aria-label={`Select ${pos.track.name}${isHidden ? ' (hidden)' : ''}`}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
-                    selectTrack(pos.track.id);
+                    selectTrackRevealingHidden(pos.track.id);
                 }
             }}
         >
@@ -194,6 +202,7 @@ export const RoutingGraph = (): ReactElement => {
     const { tracks, selectedTrackId } = state;
     const sidechainRoutes: RoutingSidechainRoute[] = sidechainState.routes;
 
+    const hiddenTrackIds = getHiddenTrackIds(tracks);
     const { sources, buses, master, width, height } = layoutNodes(tracks);
 
     const allPositions = [...sources, ...buses, ...(master ? [master] : [])];
@@ -353,7 +362,12 @@ export const RoutingGraph = (): ReactElement => {
                     })}
 
                     {allPositions.map((pos) => (
-                        <TrackNode key={pos.track.id} pos={pos} isSelected={pos.track.id === selectedTrackId} />
+                        <TrackNode
+                            key={pos.track.id}
+                            pos={pos}
+                            isSelected={pos.track.id === selectedTrackId}
+                            isHidden={hiddenTrackIds.has(pos.track.id)}
+                        />
                     ))}
                 </svg>
             </div>

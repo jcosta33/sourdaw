@@ -117,6 +117,19 @@ function automationBase(value: number): ReadonlyMap<string, ReadonlyMap<string, 
     return new Map([['d1', new Map([['distortionMode', value]])]]);
 }
 
+function getDescriptorParamRange(deviceType: string, paramId: string) {
+    const paramDef = getPluginById(deviceType)?.parameters.find((param) => param.id === paramId);
+    if (!paramDef) {
+        return null;
+    }
+    return {
+        min: paramDef.minValue,
+        max: paramDef.maxValue,
+        defaultValue: paramDef.defaultValue,
+        automatable: paramDef.automatable,
+    };
+}
+
 describe('applyModulationToEngine — stepped device parameters', () => {
     beforeEach(() => {
         resetModulationSlew();
@@ -124,18 +137,7 @@ describe('applyModulationToEngine — stepped device parameters', () => {
         mocks.updateDeviceParam.mockReset();
         setModulationDependencies({
             updateDeviceParam: mocks.updateDeviceParam,
-            getPluginParamRange: (deviceType, paramId) => {
-                const paramDef = getPluginById(deviceType)?.parameters.find((param) => param.id === paramId);
-                if (!paramDef) {
-                    return null;
-                }
-                return {
-                    min: paramDef.minValue,
-                    max: paramDef.maxValue,
-                    defaultValue: paramDef.defaultValue,
-                    automatable: paramDef.automatable,
-                };
-            },
+            getPluginParamRange: getDescriptorParamRange,
             quantiseValue: quantiseDeviceParameterValue,
         });
         // The persisted base is 0 (the parameter's default). Every case below

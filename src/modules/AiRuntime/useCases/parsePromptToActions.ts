@@ -139,6 +139,7 @@ import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransfo
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { readBriefMixIntent } from './readBriefMixIntent';
+import { selectRecipeObjectiveDetail } from './selectRecipeObjectiveDetail';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
@@ -1055,6 +1056,7 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
+                const recipeObjectiveDetail = selectRecipeObjectiveDetail();
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
@@ -1476,6 +1478,7 @@ const planPromptIntent = inject({ logger })(
                                               answer: answerCatalog,
                                               binding: planningContext.planningBinding,
                                               metric: metricCatalog,
+                                              recipeObjectiveDetail,
                                           }),
                                       ]),
                             ],
@@ -1716,9 +1719,12 @@ const planPromptIntent = inject({ logger })(
                           planningOutcome.retainedCompilations.filter((compiled) => compiled.callId === callId)
                       )
                     : [];
-                const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
-                    compiled.kind === 'recipe' ? [compiled.recipe] : []
-                );
+                const adoptedRecipes = selectedCompilations.flatMap((compiled) => {
+                    if (compiled.kind === 'recipe') {
+                        return [compiled.recipe];
+                    }
+                    return compiled.kind === 'preview' ? (compiled.cumulative?.adoptedRecipes ?? []) : [];
+                });
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const storedMetricState = refinedCard?.approvalSnapshot.metricGoalState;
                 const inheritedMetricState = metricGoalStateCodec(storedMetricState);

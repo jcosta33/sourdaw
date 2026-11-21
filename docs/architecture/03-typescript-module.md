@@ -661,7 +661,9 @@ Use cases and other injectable functions declare their dependencies explicitly u
 
 ### Why `inject()`
 
-Use cases and service repositories get collaborators only through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
+Use cases and service repositories get mockable collaborators through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
+
+The exception is a collaborator the module tier order or a cycle forbids importing. The consuming module then declares a registered port that `src/app` fills at composition, per [ADR 0065](../../.agents/decisions/0065-cross-module-dependencies-are-registered-ports.md).
 
 Do not wire **varying** collaborators by **`Container.get()`** at module scope. Prefer **`inject()`** for event buses, loggers, and other mockable services. Thin same-module repository functions that only read/write the owned store may stay as static imports (common in Arrangement) — see the `publishTrackRemoved` sample below and `docs/01-dependency-injection.md`.
 
@@ -924,6 +926,7 @@ A module sometimes needs a collaborator it cannot import: the import would close
 Rules:
 
 - The slot exists so the module need not import the provider's module; the app does the binding.
+- A port that replaces an import the tier order or a cycle forbids follows [ADR 0065](../../.agents/decisions/0065-cross-module-dependencies-are-registered-ports.md): reading it unfilled throws an error naming its registrar.
 - An unconfigured slot must have a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal, never an unhandled `null`.
 - Install a provider through the port's setter or the `configure*` entry; calling code reads the slot through the port.
 - `init*` is the naming convention for startup wiring (some unrelated use cases also use the prefix for plain initialization). A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.

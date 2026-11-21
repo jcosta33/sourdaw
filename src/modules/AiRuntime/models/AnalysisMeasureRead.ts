@@ -1,6 +1,6 @@
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type MeasuredPreview } from './MeasuredPreview';
-import { type RetainedCommand } from './RetainedCompilation';
+import { type CumulativePreview, type RetainedCommand } from './RetainedCompilation';
 
 /**
  * One `analysis.measure` call as the planning loop sees it: the receipt the provider reads, and —
@@ -11,4 +11,6 @@ export type AnalysisMeasureRead = {
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
     measuredPreview: MeasuredPreview | null;
+    /** Set only by a preview of several retained recipes. */
+    cumulative?: CumulativePreview;
 };

@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use daw_collab::discovery::{LanDiscovery, NearbySession};
+use daw_collab::discovery::{DiscoveryError, LanDiscovery, NearbySession};
 use daw_collab::document_store::DocumentStore;
 
 use super::filesystem;
@@ -23,14 +23,14 @@ impl Default for CollabState {
     }
 }
 
-fn get_or_create_discovery(guard: &mut Option<LanDiscovery>) -> Result<&mut LanDiscovery, String> {
-    if guard.is_none() {
-        *guard = Some(LanDiscovery::new().map_err(|error| error.to_string())?);
-    }
-
-    guard
-        .as_mut()
-        .ok_or_else(|| "Failed to initialize LAN discovery".to_string())
+fn get_or_create_discovery(
+    guard: &mut Option<LanDiscovery>,
+) -> Result<&mut LanDiscovery, DiscoveryError> {
+    let discovery = match guard.take() {
+        Some(discovery) => discovery,
+        None => LanDiscovery::new()?,
+    };
+    Ok(guard.insert(discovery))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -143,7 +143,7 @@ pub fn collab_start_advertising(
     approval_required: bool,
 ) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = get_or_create_discovery(&mut guard)?;
+    let discovery = get_or_create_discovery(&mut guard).map_err(|error| error.to_string())?;
     discovery
         .advertise(
             &session_id,
@@ -168,7 +168,7 @@ pub fn collab_stop_advertising(state: &CollabState) -> Result<bool, String> {
 
 pub fn collab_start_browsing(state: &CollabState) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = get_or_create_discovery(&mut guard)?;
+    let discovery = get_or_create_discovery(&mut guard).map_err(|error| error.to_string())?;
     discovery
         .start_browsing()
         .map_err(|error| error.to_string())?;

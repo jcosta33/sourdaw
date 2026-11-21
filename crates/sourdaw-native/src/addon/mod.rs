@@ -28,9 +28,9 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::commands;
-use crate::events::{EventSink, EventStream};
+use crate::events::{EventSink, EventStream, EventStreamError};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
-use crate::host::runtime_scope::RuntimeScope;
+use crate::host::runtime_scope::{RuntimeScope, RuntimeScopeRefusal};
 use crate::NativeSingletons;
 
 pub use gpu::gpu_memory_budget;
@@ -94,18 +94,30 @@ struct TsfnEventStream {
 }
 
 impl<Event: Serialize> EventStream<Event> for TsfnEventStream {
-    fn send(&self, event: Event) -> std::result::Result<(), String> {
-        let payload = serde_json::to_value(event)
-            .map_err(|error| format!("Response event did not serialize: {error}"))?;
+    fn send(&self, event: Event) -> std::result::Result<(), EventStreamError> {
+        let payload = serde_json::to_value(event).map_err(EventStreamError::NotSerializable)?;
         match self
             .emit
             .call(payload, ThreadsafeFunctionCallMode::Blocking)
         {
             Status::Ok => Ok(()),
-            status => Err(format!("Response channel closed: {status}")),
+            status => Err(EventStreamError::Closed(Box::new(CallStatus(status)))),
         }
     }
 }
+
+/// A threadsafe-function call's status other than `Ok`, as the reason the call
+/// was refused.
+#[derive(Debug)]
+struct CallStatus(Status);
+
+impl std::fmt::Display for CallStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for CallStatus {}
 
 /// Every long-lived native singleton, and the commands that address them.
 #[napi]
@@ -127,23 +139,27 @@ impl SourdawNative {
     /// have somewhere to push.
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Result<Self> {
-        reason(RuntimeScope::select(None))?;
-        reason(Self::build(on_event))
+        reason(RuntimeScope::select(None).map_err(|error| error.to_string()))?;
+        reason(Self::build(on_event).map_err(|error| error.to_string()))
     }
 
     /// Main-process-only selection. A legacy constructor cannot accept this contract.
     #[napi(factory)]
     pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
-        reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
-        reason(Self::build(on_event))
+        reason(
+            RuntimeScope::select(Some(std::path::Path::new(&root)))
+                .map_err(|error| error.to_string()),
+        )?;
+        reason(Self::build(on_event).map_err(|error| error.to_string()))
     }
 
     #[napi]
     pub fn runtime_scope_info_v1(&self) -> Result<Value> {
-        let path = |relative| reason(RuntimeScope::path(relative));
+        let path =
+            |relative| reason(RuntimeScope::path(relative).map_err(|error| error.to_string()));
         Ok(serde_json::json!({
             "version": 1,
-            "root": reason(RuntimeScope::root())?,
+            "root": reason(RuntimeScope::root().map_err(|error| error.to_string()))?,
             "data": path("native/data")?,
             "private": path("native/data/private")?,
             "cache": path("native/cache")?,
@@ -154,7 +170,7 @@ impl SourdawNative {
         }))
     }
 
-    fn build(on_event: EventEmitter) -> std::result::Result<Self, String> {
+    fn build(on_event: EventEmitter) -> std::result::Result<Self, RuntimeScopeRefusal> {
         // Before any command can be dispatched. `ensure_allowed_root` answers
         // an application-data path from the built-in roots without touching
         // the grant registry, so a private directory created lazily by the
@@ -786,6 +802,15 @@ impl SourdawNative {
             )
             .await,
         )?))
+    }
+
+    /// Re-read the processing tail of each named instance; see
+    /// `commands::plugins::read_plugin_tails`.
+    #[napi]
+    pub async fn read_plugin_tails(&self, instance_ids: Vec<String>) -> Result<Value> {
+        json(reason(
+            commands::plugins::read_plugin_tails(instance_ids, &self.singletons.app_state).await,
+        )?)
     }
 
     #[napi]

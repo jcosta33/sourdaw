@@ -8,12 +8,13 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
-import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers, getAutomationParameterRange } from '#/modules/Arrangement/useCases';
 import * as engineApi from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationApi from '#/modules/Automation/useCases';
 import {
     addAutomationLane,
+    setAutomationParameterRangeResolver,
     setAutomationRecordingDependencies,
     stopAutomationRecording,
 } from '#/modules/Automation/useCases';
@@ -58,6 +59,16 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
 }));
+
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
 
 const TRACK = 'crust-track';
 const DEVICE = 'crust-device';
@@ -178,8 +189,12 @@ describe('Crust numeric controller with real Command and CRDT', () => {
                 return createMockAudioContext();
             })
         );
-        const context = new AudioContext();
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        setAutomationParameterRangeResolver(getAutomationParameterRange);
+        recordingContext = new AudioContext();
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
     });
 
     afterEach(() => {

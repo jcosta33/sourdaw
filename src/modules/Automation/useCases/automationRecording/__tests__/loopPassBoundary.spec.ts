@@ -30,6 +30,16 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
  * all replace the previous pass on lap two.
  */
 
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as unknown as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const TRACK_ID = 'looped-track';
 
 function seedWriteModeTrack(): void {
@@ -99,8 +109,8 @@ describe('automation recording across a loop boundary', () => {
         touchActive.clear();
         laneBaselines.clear();
         setAutomationRecordingDependencies({
-            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as unknown as AudioContext,
-            getCompensationDelay: () => 0,
+            getAudioContext: getZeroLatencyContext,
+            getCompensationDelay: getZeroCompensationDelay,
         });
         transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120, playheadPosition: 0 });
         seedWriteModeTrack();

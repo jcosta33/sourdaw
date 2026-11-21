@@ -7,7 +7,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
-import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getArrangementHandlers,
+    setVcaRuntimeProjectionDependencies,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane, getAutomationHandlers } from '#/modules/Automation/useCases';
 import {
@@ -148,6 +152,7 @@ describe('decibel arguments on level-bearing commands', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain: vi.fn() });
         registerHandlerMap(getTransportHandlers());
         registerHandlerMap(getAutomationHandlers());
         clearUndoHistory();

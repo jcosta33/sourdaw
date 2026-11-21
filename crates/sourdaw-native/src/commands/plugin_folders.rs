@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::host::plugin_folder_grants::{self, ForbiddenRoots, GrantStatus, PluginFolderRefusal};
+use crate::host::plugin_folder_grants::{
+    self, ForbiddenRoots, ForbiddenRootsError, GrantStatus, PluginFolderRefusal,
+};
 
 /// One granted plugin folder and, when it grants nothing right now, why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,8 +75,8 @@ pub async fn revoke_plugin_folder_grant(path: String) -> Result<(), String> {
 #[derive(Debug)]
 enum PluginFolderCommandError {
     Refused(PluginFolderRefusal),
-    /// The forbidden roots could not be read, in the grant store's own words.
-    ForbiddenRoots(String),
+    /// The forbidden roots could not be read.
+    ForbiddenRoots(ForbiddenRootsError),
     Task(tokio::task::JoinError),
 }
 
@@ -82,7 +84,7 @@ impl fmt::Display for PluginFolderCommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(refusal) => write!(f, "{refusal}"),
-            Self::ForbiddenRoots(reason) => f.write_str(reason),
+            Self::ForbiddenRoots(error) => write!(f, "{error}"),
             Self::Task(error) => write!(f, "Plugin folder task failed: {error}"),
         }
     }
@@ -92,7 +94,7 @@ impl std::error::Error for PluginFolderCommandError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Refused(refusal) => Some(refusal),
-            Self::ForbiddenRoots(_) => None,
+            Self::ForbiddenRoots(error) => Some(error),
             Self::Task(error) => Some(error),
         }
     }
