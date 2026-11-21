@@ -9,7 +9,16 @@ type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trac
 const mocks = vi.hoisted(() => {
     const waveformPeaks = new Map<string, Float32Array>();
     const trackStoreValue: {
-        tracks: { id: string; clips: { id: string; type: string; audioBufferId: string | undefined }[] }[];
+        tracks: {
+            id: string;
+            clips: {
+                id: string;
+                type: string;
+                audioBufferId: string | undefined;
+                startBeat: number;
+                endBeat: number;
+            }[];
+        }[];
         selectedTrackId: string;
     } = {
         tracks: [
@@ -659,7 +668,13 @@ describe('ElasticEditorPanel', () => {
 
     it.each(['missing', 'midi'])('does not fall through an explicitly opened %s target to selected audio', (id) => {
         if (id === 'midi') {
-            mocks.trackStoreValue.tracks[0]?.clips.push({ id, type: 'midi', audioBufferId: undefined });
+            mocks.trackStoreValue.tracks[0]?.clips.push({
+                id,
+                type: 'midi',
+                audioBufferId: undefined,
+                startBeat: 0,
+                endBeat: 8,
+            });
         }
         mocks.elasticStoreValue.openClipId = id;
         render(<ElasticEditorPanel />);
@@ -965,7 +980,12 @@ describe('ElasticEditorPanel', () => {
 
     it('shows an empty state when the selected clip is not audio', () => {
         mocks.trackStoreValue = {
-            tracks: [{ id: 't1', clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined, startBeat: 0, endBeat: 8 }],
+                },
+            ],
             selectedTrackId: 't1',
         };
         mocks.timelineEditingValue = { snapValue: 0.25 };
