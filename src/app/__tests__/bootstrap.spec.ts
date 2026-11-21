@@ -427,7 +427,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     initStalenessDetection: noop,
     initTimelineViewReconciliation: initTimelineViewReconciliationMock,
     setArrangementEventBus: setArrangementEventBusMock,
-    setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
