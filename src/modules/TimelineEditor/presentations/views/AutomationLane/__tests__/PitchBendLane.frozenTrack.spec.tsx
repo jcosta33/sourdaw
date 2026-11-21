@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
         pushUndoEntry: vi.fn(),
     },
     notifyUser: vi.fn(),
+    playheadBeat: 1 as number | undefined,
     midiState: {
         notesByClipId: {},
         ccByClipId: {},
@@ -50,7 +51,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     restorePitchBend: mocks.writes.restorePitchBend,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
-vi.mock('../../../helpers/clipPlayheadBeat', () => ({ readClipPlayheadBeat: vi.fn(() => 1) }));
+vi.mock('../../../helpers/clipPlayheadBeat', () => ({ readClipPlayheadBeat: () => mocks.playheadBeat }));
 
 const FROZEN_MESSAGE = 'This track is frozen. Unfreeze it to edit its notes.';
 
@@ -86,6 +87,7 @@ const gestures: Array<{ name: string; perform: () => void }> = [
 describe('PitchBendLane on a frozen track', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.playheadBeat = 1;
         mocks.writes.addPitchBend.mockReturnValue({ id: 'pb-new', value: 1, beat: 1 });
     });
 
@@ -113,5 +115,16 @@ describe('PitchBendLane on a frozen track', () => {
             expect(writeCallCount()).toBeGreaterThan(0);
             expect(frozenWarnings()).toHaveLength(0);
         });
+    });
+
+    it('does not warn for Enter when the playhead is outside the clip, which inserts nothing', () => {
+        mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+        mocks.playheadBeat = undefined;
+        render(<PitchBendLane clipId="clip-1" beatWidth={40} contentWidth={800} />);
+
+        fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
+
+        expect(writeCallCount()).toBe(0);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

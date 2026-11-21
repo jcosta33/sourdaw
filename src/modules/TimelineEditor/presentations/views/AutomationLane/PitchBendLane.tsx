@@ -85,11 +85,11 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     };
 
     const insertPointAtPlayhead = (): void => {
-        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
+        if (!clipId) {
             return;
         }
         const beat = readClipPlayheadBeat(clipId);
-        if (beat === undefined) {
+        if (beat === undefined || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         // An empty lane has no line to follow; the centre is no bend.

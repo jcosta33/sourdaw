@@ -6,6 +6,7 @@ import { keyClips, ownerClipIds, refuseNoteEditOnFrozenTrack, releaseClips } fro
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
+    playheadBeat: 1 as number | undefined,
     trackState: { tracks: [] as Array<{ id: string; frozen: boolean; clips: Array<{ id: string }> }> },
 }));
 
@@ -18,6 +19,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+vi.mock('../clipPlayheadBeat', () => ({ readClipPlayheadBeat: () => mocks.playheadBeat }));
 
 describe('refuseNoteEditOnFrozenTrack', () => {
     beforeEach(() => {
@@ -80,6 +82,10 @@ describe('keyClips', () => {
         isTakeView,
     });
 
+    beforeEach(() => {
+        mocks.playheadBeat = 1;
+    });
+
     afterEach(() => {
         stepRecordStore.set(defaultStepRecordState);
     });
@@ -101,7 +107,11 @@ describe('keyClips', () => {
         ['arrow in step input moves the cursor', press('ArrowUp'), context(['p1'], true), []],
         ['legato in one clip', press('l'), context(['o1']), ['other']],
         ['join in one clip', press('j'), context(['p1', 'p2']), ['primary']],
+        ['join with one note selected does nothing', press('j'), context(['p1']), []],
+        ['join in step input does nothing', press('j'), context(['p1', 'p2'], true), []],
         ['split in one clip', press('S', { shiftKey: true }), context(['p1']), ['primary']],
+        ['split in step input still splits', press('S', { shiftKey: true }), context(['o1'], true), ['other']],
+        ['split across two clips does nothing', press('S', { shiftKey: true }), context(['p1', 'o1']), []],
         ['legato across two clips does nothing', press('l'), context(['p1', 'o1']), []],
         ['legato on a take view does nothing', press('l'), context(['p1'], false, () => ({})), []],
         ['select all', press('a', { metaKey: true }), context(['p1']), []],
@@ -110,6 +120,12 @@ describe('keyClips', () => {
         ['Cmd+L', press('l', { metaKey: true }), context(['p1']), []],
     ])('%s', (_name, event, keyContext, expected) => {
         expect(keyClips(event, keyContext)).toEqual(expected);
+    });
+
+    it('resolves split to nothing when the playhead is outside the clip, so no beat resolves', () => {
+        mocks.playheadBeat = undefined;
+
+        expect(keyClips(press('S', { shiftKey: true }), context(['p1']))).toEqual([]);
     });
 
     it('resolves Ctrl+D with nothing selected in an empty primary clip to nothing', () => {
@@ -134,36 +150,72 @@ describe('keyClips', () => {
 });
 
 describe('releaseClips', () => {
+    const drag = (mode: string, noteId: string | null = 'o1') => ({ mode, noteId, origBeat: 2, origDuration: 2 });
+    type PreviewOverrides = {
+        noteIds?: Set<string>;
+        beatDelta?: number;
+        pitchDelta?: number;
+        beatOverride?: Map<string, { beat: number; duration: number }>;
+        durationOverride?: Map<string, number>;
+    };
+    const preview = (overrides: PreviewOverrides = {}) => ({
+        noteIds: new Set(['o1']),
+        beatDelta: 0,
+        pitchDelta: 0,
+        ...overrides,
+    });
     const refs = (
-        preview: { noteIds: ReadonlySet<string> } | null,
+        dragPreview: ReturnType<typeof preview> | null,
         pendingStamp: unknown,
         rubberBand: { w: number; h: number } | null
     ) => ({
-        dragPreviewRef: { current: preview },
+        dragPreviewRef: { current: dragPreview },
         pendingStampRef: { current: pendingStamp },
         rubberBandRef: { current: rubberBand },
     });
     const targetOther = { ...owners, targetClipId: 'other' };
+    const twoClipMove = preview({ noteIds: new Set(['p1', 'o1']), beatDelta: 1 });
 
     it.each([
-        ['a resized note of one clip', 'resize-right', refs({ noteIds: new Set(['o1']) }, null, null), ['other']],
         [
-            'a move of notes from two clips',
-            'move',
-            refs({ noteIds: new Set(['p1', 'o1']) }, null, null),
-            ['primary', 'other'],
+            'a right resize that changes the duration',
+            drag('resize-right'),
+            refs(preview({ durationOverride: new Map([['o1', 3]]) }), null, null),
+            ['other'],
         ],
-        ['a press on a note that never moved', 'move', refs(null, null, null), []],
+        [
+            'a right resize back to its own duration',
+            drag('resize-right'),
+            refs(preview({ durationOverride: new Map([['o1', 2]]) }), null, null),
+            [],
+        ],
+        [
+            'a left resize that moves the start',
+            drag('resize-left'),
+            refs(preview({ beatOverride: new Map([['o1', { beat: 1, duration: 3 }]]) }), null, null),
+            ['other'],
+        ],
+        [
+            'a left resize back to its own extent',
+            drag('resize-left'),
+            refs(preview({ beatOverride: new Map([['o1', { beat: 2, duration: 2 }]]) }), null, null),
+            [],
+        ],
+        ['a move of notes from two clips', drag('move'), refs(twoClipMove, null, null), ['primary', 'other']],
+        ['a move by pitch only', drag('move'), refs(preview({ pitchDelta: -2 }), null, null), ['other']],
+        ['a zero-delta move, which is a selection click', drag('move'), refs(preview(), null, null), []],
+        ['a zero-delta alt-duplicate', drag('duplicate'), refs(preview(), null, null), []],
+        ['a press on a note that never moved', drag('move'), refs(null, null, null), []],
         [
             'a click-stamp left pending in the target clip',
-            'rubber-band',
+            drag('rubber-band', null),
             refs(null, { pitch: 60 }, { w: 0, h: 0 }),
             ['other'],
         ],
-        ['a rubber-band drag that grew', 'rubber-band', refs(null, { pitch: 60 }, { w: 40, h: 40 }), []],
-        ['a rubber-band with no stamp', 'rubber-band', refs(null, null, { w: 0, h: 0 }), []],
-        ['paint mode', 'paint', refs(null, null, null), []],
-    ])('%s writes %j', (_name, mode, releaseRefs, expected) => {
-        expect(releaseClips(mode, releaseRefs, targetOther)).toEqual(expected);
+        ['a rubber-band drag that grew', drag('rubber-band', null), refs(null, { pitch: 60 }, { w: 40, h: 40 }), []],
+        ['a rubber-band with no stamp', drag('rubber-band', null), refs(null, null, { w: 0, h: 0 }), []],
+        ['paint mode', drag('paint', null), refs(null, null, null), []],
+    ])('%s', (_name, releaseDrag, releaseRefs, expected) => {
+        expect(releaseClips(releaseDrag, releaseRefs, targetOther)).toEqual(expected);
     });
 });

@@ -1118,7 +1118,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             auditionRef.current = null;
         }
 
-        const writtenClips = releaseClips(drag.mode, { dragPreviewRef, pendingStampRef, rubberBandRef }, owners);
+        const writtenClips = releaseClips(drag, { dragPreviewRef, pendingStampRef, rubberBandRef }, owners);
         if (refuseNoteEditOnFrozenTrack(writtenClips)) {
             dragPreviewRef.current = null;
             pendingStampRef.current = null;

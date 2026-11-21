@@ -2,6 +2,8 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { stepRecordStore } from '#/modules/MIDI/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { readClipPlayheadBeat } from './clipPlayheadBeat';
+
 export const FROZEN_TRACK_NOTE_EDIT_MESSAGE = 'This track is frozen. Unfreeze it to edit its notes.';
 
 /**
@@ -67,12 +69,27 @@ type NoteEditKeyContext = {
 
 const VELOCITY_PRESET_KEYS = new Set(['1', '2', '3', '4', '5', '6', '7']);
 
-function isSingleClipTransformKey({ key, metaKey, ctrlKey, shiftKey }: KeyPress): boolean {
-    const hasModifier = metaKey || ctrlKey;
-    if (key === 'S') {
-        return shiftKey && !hasModifier;
+/** Legato, join and split act on one clip's notes and do nothing across clips or on take views. */
+function singleClipOwners(context: NoteEditKeyContext): string[] {
+    const hasTakeView = [...context.selectedNoteIds].some((id) => context.isTakeView(id) !== undefined);
+    const selectedOwners = ownerClipIds(context.selectedNoteIds, context.owners);
+    return !hasTakeView && selectedOwners.length === 1 ? selectedOwners : [];
+}
+
+/** Split needs the playhead inside the clip to resolve its beat, in step input too. */
+function splitKeyClips(context: NoteEditKeyContext): string[] {
+    return singleClipOwners(context).filter((clipId) => readClipPlayheadBeat(clipId) !== undefined);
+}
+
+/** Legato (`l`) and join (`j`, which needs two notes outside step input) with no modifier. */
+function clipsWrittenByLegatoOrJoin({ key, metaKey, ctrlKey, shiftKey }: KeyPress, context: NoteEditKeyContext) {
+    if (metaKey || ctrlKey || shiftKey || context.stepInput) {
+        return [];
     }
-    return (key === 'l' || key === 'j') && !hasModifier && !shiftKey;
+    if (key === 'l' || (key === 'j' && context.selectedNoteIds.size >= 2)) {
+        return singleClipOwners(context);
+    }
+    return [];
 }
 
 function clipsWrittenBySelectionKey(event: KeyPress, context: NoteEditKeyContext): string[] {
@@ -80,16 +97,13 @@ function clipsWrittenBySelectionKey(event: KeyPress, context: NoteEditKeyContext
     if (event.key === 'Delete' || event.key === 'Backspace') {
         return selectedOwners;
     }
+    if (event.key === 'S' && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        return splitKeyClips(context);
+    }
     if (context.stepInput) {
         return VELOCITY_PRESET_KEYS.has(event.key) ? selectedOwners : [];
     }
-    if (event.key.startsWith('Arrow')) {
-        return selectedOwners;
-    }
-    // Legato, join and split act on one clip's notes and do nothing across clips.
-    const hasTakeView = [...context.selectedNoteIds].some((id) => context.isTakeView(id) !== undefined);
-    const singleClip = !hasTakeView && selectedOwners.length === 1;
-    return singleClip && isSingleClipTransformKey(event) ? selectedOwners : [];
+    return event.key.startsWith('Arrow') ? selectedOwners : clipsWrittenByLegatoOrJoin(event, context);
 }
 
 /**
@@ -117,26 +131,57 @@ function duplicateKeyClips({ selectedNoteIds, owners }: NoteEditKeyContext): str
     return owners.notes.length > 0 ? [owners.clipId] : [];
 }
 
+type DragPreview = {
+    noteIds: ReadonlySet<string>;
+    beatDelta: number;
+    pitchDelta: number;
+    beatOverride?: ReadonlyMap<string, { beat: number; duration: number }>;
+    durationOverride?: ReadonlyMap<string, number>;
+};
+
+type ReleaseDrag = {
+    mode: string;
+    noteId: string | null;
+    origBeat: number;
+    origDuration: number;
+};
+
 type ReleaseRefs = {
-    dragPreviewRef: { current: { noteIds: ReadonlySet<string> } | null };
+    dragPreviewRef: { current: DragPreview | null };
     pendingStampRef: { current: unknown };
     rubberBandRef: { current: { w: number; h: number } | null };
 };
 
-const NOTE_DRAG_MODES = new Set(['move', 'duplicate', 'resize-left', 'resize-right']);
+/** Whether the drag preview moves, resizes or duplicates a note away from where the press found it. */
+function previewChangesNote(drag: ReleaseDrag, preview: DragPreview): boolean {
+    if (drag.mode === 'move' || drag.mode === 'duplicate') {
+        return preview.beatDelta !== 0 || preview.pitchDelta !== 0;
+    }
+    const noteId = drag.noteId ?? '';
+    if (drag.mode === 'resize-left') {
+        const override = preview.beatOverride?.get(noteId);
+        return override !== undefined && (override.beat !== drag.origBeat || override.duration !== drag.origDuration);
+    }
+    if (drag.mode === 'resize-right') {
+        const duration = preview.durationOverride?.get(noteId);
+        return duration !== undefined && duration !== drag.origDuration;
+    }
+    return false;
+}
 
 /**
  * The clips releasing the pointer now would write: the owners of a moved,
- * resized or duplicated note that produced a preview, or the target clip of a
- * click-stamp / chord stamp left pending by a press on empty grid that did not
- * become a rubber-band drag. Empty when the release writes nothing.
+ * resized or duplicated note whose preview really changes it (a zero-delta
+ * drag is a selection click), or the target clip of a click-stamp / chord
+ * stamp left pending by a press on empty grid that did not become a
+ * rubber-band drag. Empty when the release writes nothing.
  */
-export function releaseClips(mode: string, refs: ReleaseRefs, owners: NoteOwners): string[] {
-    if (mode === 'rubber-band') {
+export function releaseClips(drag: ReleaseDrag, refs: ReleaseRefs, owners: NoteOwners): string[] {
+    if (drag.mode === 'rubber-band') {
         const rubberBand = refs.rubberBandRef.current;
         const draggedOut = rubberBand !== null && (rubberBand.w > 2 || rubberBand.h > 2);
         return refs.pendingStampRef.current !== null && !draggedOut ? [owners.targetClipId] : [];
     }
     const preview = refs.dragPreviewRef.current;
-    return NOTE_DRAG_MODES.has(mode) && preview !== null ? ownerClipIds(preview.noteIds, owners) : [];
+    return preview !== null && previewChangesNote(drag, preview) ? ownerClipIds(preview.noteIds, owners) : [];
 }

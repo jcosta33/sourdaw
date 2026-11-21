@@ -142,11 +142,11 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     };
 
     const insertPointAtPlayhead = (): void => {
-        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
+        if (!clipId) {
             return;
         }
         const beat = readClipPlayheadBeat(clipId);
-        if (beat === undefined) {
+        if (beat === undefined || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const value = Math.round(readLaneValueAtBeat(points, beat) ?? CC_INSERT_DEFAULT_VALUE);

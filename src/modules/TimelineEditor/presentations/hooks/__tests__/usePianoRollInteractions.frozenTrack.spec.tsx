@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     },
     getNotesForClip: vi.fn(),
     notifyUser: vi.fn(),
+    playheadBeat: 1 as number | undefined,
     trackState: { tracks: [] as Array<{ id: string; frozen: boolean; clips: Array<{ id: string }> }> },
 }));
 
@@ -52,6 +53,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+vi.mock('../../helpers/clipPlayheadBeat', () => ({ readClipPlayheadBeat: () => mocks.playheadBeat }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     ...mocks.writes,
@@ -307,6 +309,7 @@ describe('usePianoRollInteractions with a frozen clip opened beside an unfrozen 
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.playheadBeat = 1;
         let reads = 0;
         mocks.getNotesForClip.mockImplementation(() => {
             reads += 1;
@@ -431,6 +434,43 @@ describe('usePianoRollInteractions with a frozen clip opened beside an unfrozen 
 
         expect(mocks.writes.stepRecordNoteOn).toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses Shift+S in step input when the playhead resolves a split beat in a frozen clip', () => {
+        const canvas = renderRoll({ ...withOpenedFrozenClip, stepInput: true, selectedNoteIds: new Set(['n2']) });
+
+        fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+        expect(writeCallCount()).toBe(0);
+        expect(frozenWarnings()).toHaveLength(1);
+    });
+
+    it('does not warn for Shift+S when the playhead is outside the clip, which splits nothing', () => {
+        mocks.playheadBeat = undefined;
+        const canvas = renderRoll({ ...withOpenedFrozenClip, selectedNoteIds: new Set(['n2']) });
+
+        fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not warn for j with a single note selected, which joins nothing', () => {
+        renderRoll({ ...withOpenedFrozenClip, selectedNoteIds: new Set(['n2']) });
+
+        fireEvent.keyDown(screen.getByLabelText('piano-roll-test-surface'), { key: 'j' });
+
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not warn for a zero-movement press and release on a note of the frozen clip', () => {
+        const canvas = renderRoll(withOpenedFrozenClip);
+
+        fireEvent.mouseDown(canvas, { clientX: 120, clientY: yForPitch(72) });
+        fireEvent.mouseMove(canvas, { clientX: 120, clientY: yForPitch(72) });
+        fireEvent.mouseUp(canvas, { clientX: 120, clientY: yForPitch(72) });
+
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(writeCallCount()).toBe(0);
     });
 
     it.each<[string, Partial<HarnessArgs>, Parameters<typeof fireEvent.keyDown>[1]]>([
