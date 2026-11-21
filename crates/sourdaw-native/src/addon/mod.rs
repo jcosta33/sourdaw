@@ -127,23 +127,27 @@ impl SourdawNative {
     /// have somewhere to push.
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Result<Self> {
-        reason(RuntimeScope::select(None))?;
+        reason(RuntimeScope::select(None).map_err(|error| error.to_string()))?;
         reason(Self::build(on_event))
     }
 
     /// Main-process-only selection. A legacy constructor cannot accept this contract.
     #[napi(factory)]
     pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
-        reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
+        reason(
+            RuntimeScope::select(Some(std::path::Path::new(&root)))
+                .map_err(|error| error.to_string()),
+        )?;
         reason(Self::build(on_event))
     }
 
     #[napi]
     pub fn runtime_scope_info_v1(&self) -> Result<Value> {
-        let path = |relative| reason(RuntimeScope::path(relative));
+        let path =
+            |relative| reason(RuntimeScope::path(relative).map_err(|error| error.to_string()));
         Ok(serde_json::json!({
             "version": 1,
-            "root": reason(RuntimeScope::root())?,
+            "root": reason(RuntimeScope::root().map_err(|error| error.to_string()))?,
             "data": path("native/data")?,
             "private": path("native/data/private")?,
             "cache": path("native/cache")?,

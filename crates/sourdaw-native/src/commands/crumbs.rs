@@ -1258,7 +1258,9 @@ pub async fn crumbs_pad_audition_on(
     let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
         return Err("Native engine not running".to_string());
     };
-    ends.command_tx.start_pad_audition(note, velocity)
+    ends.command_tx
+        .start_pad_audition(note, velocity)
+        .map_err(|error| error.to_string())
 }
 
 /// Release the audition if the attached slot still owns its receipt.

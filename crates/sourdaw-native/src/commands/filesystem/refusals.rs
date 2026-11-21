@@ -11,6 +11,8 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
+use crate::host::runtime_scope::RuntimeScopeRefusal;
+
 use super::MAX_FILE_IPC_BYTES;
 use super::MAX_RENDERER_PATH_BYTES;
 
@@ -44,8 +46,8 @@ pub enum FileRefusal {
     EscapesFilesystemRoot,
     /// Staging names belong only to the export registry.
     ExportStagingPath,
-    /// The runtime scope refused to name a directory; its text passes through.
-    RuntimeScope(String),
+    /// The runtime scope refused to name a directory.
+    RuntimeScope(RuntimeScopeRefusal),
     NoFileName,
     TemporaryFileUncreatable(io::Error),
     TemporaryFileUnsynced(io::Error),
@@ -103,7 +105,7 @@ impl fmt::Display for FileRefusal {
                 f.write_str("Renderer path must not escape the filesystem root")
             }
             Self::ExportStagingPath => f.write_str("Export temporary paths are native-only"),
-            Self::RuntimeScope(message) => f.write_str(message),
+            Self::RuntimeScope(refusal) => refusal.fmt(f),
             Self::NoFileName => f.write_str("Atomic write error: path has no file name"),
             Self::TemporaryFileUncreatable(cause) => {
                 write!(f, "Failed to create temporary file: {cause}")
@@ -142,7 +144,14 @@ impl fmt::Display for FileRefusal {
     }
 }
 
-impl std::error::Error for FileRefusal {}
+impl std::error::Error for FileRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::RuntimeScope(refusal) => Some(refusal),
+            _ => None,
+        }
+    }
+}
 
 /// A failed atomic replace: either the replace itself refused, or the caller's
 /// write step failed with its own error.
@@ -409,8 +418,8 @@ mod tests {
     #[test]
     fn runtime_scope_passes_its_text_through() {
         assert_eq!(
-            FileRefusal::RuntimeScope("Runtime scope was refused".to_string()).to_string(),
-            "Runtime scope was refused"
+            FileRefusal::RuntimeScope(RuntimeScopeRefusal::SelectedDifferently).to_string(),
+            "Native runtime scope was already selected differently"
         );
     }
 

@@ -20,6 +20,7 @@
 //! now, and every other one reports nothing.
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::native_bridge::{PluginControlError, PluginControlRefusal};
 use crate::host::{all_engine_runtimes, retry_unreached_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{signal_pending_tail_change, HostedPluginRuntime};
@@ -66,7 +67,7 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// which downstream would read as the plugin having shortened its decay.
 pub fn tail_change_payload(
     instance_id: &str,
-    refreshed: Result<Option<u32>, String>,
+    refreshed: Result<Option<u32>, PluginControlRefusal>,
 ) -> Option<PluginTailChanged> {
     match refreshed {
         Ok(Some(tail_samples)) => Some(PluginTailChanged {
@@ -89,8 +90,11 @@ pub fn tail_change_payload(
 /// Called from the parameter-event drain's tick, once it has taken the hint.
 pub fn publish_pending_tail_changes(engine_plugins: &EnginePlugins, events: &dyn EventSink) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "tail re-read") {
-        let refreshed =
-            runtime.try_with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_tail_change()));
+        let refreshed = runtime
+            .try_with_control(CONTROL_TIMEOUT, |plugin| {
+                Ok::<_, std::convert::Infallible>(plugin.take_tail_change())
+            })
+            .map_err(PluginControlError::into_refusal);
 
         if let Err(error) = &refreshed {
             retry_unreached_instance(
@@ -131,7 +135,12 @@ mod tests {
     #[test]
     fn a_failed_reread_emits_nothing_rather_than_a_fabricated_tail() {
         assert_eq!(
-            tail_change_payload("inst-1", Err("control path is busy".to_string())),
+            tail_change_payload(
+                "inst-1",
+                Err(PluginControlRefusal::GateBusy {
+                    plugin: "fixture".to_string()
+                })
+            ),
             None,
             "a failed re-read must not publish a tail the plugin never reported"
         );
