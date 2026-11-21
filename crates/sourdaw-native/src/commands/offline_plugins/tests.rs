@@ -237,14 +237,12 @@ impl RecordingUiThread {
         let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
         let (announce, announced) = mpsc::channel();
         let tasks_run = Arc::new(AtomicUsize::new(0));
-        let counted = Arc::clone(&tasks_run);
         let thread = thread::spawn(move || {
             announce
                 .send(thread::current().id())
                 .expect("the UI thread announces itself");
             while let Ok(task) = queued.recv() {
                 task.run();
-                counted.fetch_add(1, Ordering::SeqCst);
             }
         });
         let thread_id = announced.recv().expect("the UI thread starts");
@@ -276,18 +274,88 @@ impl UiThread for RecordingUiThread {
         thread::current().id() == self.thread_id
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+    fn run_on_ui_thread(
+        &self,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), crate::host::ui_thread::UiThreadError> {
         let (done, waited) = mpsc::sync_channel(1);
         let queued = Arc::clone(task);
+        let counted = Arc::clone(&self.tasks_run);
         self.work
             .send(UiThreadTask::new(move || {
                 queued.run();
+                // Counted before the answer: the caller reads the count as soon
+                // as it is answered.
+                counted.fetch_add(1, Ordering::SeqCst);
                 let _ = done.send(());
             }))
             .map_err(|_| "the UI thread is gone".to_string())?;
         waited
             .recv()
-            .map_err(|_| "the UI thread never answered".to_string())
+            .map_err(|_| "the UI thread never answered".to_string().into())
+    }
+}
+
+/// Every count below is read straight after the call that ran the task
+/// returns, so a task has to be counted before its caller is answered.
+///
+/// The window between the answer and a late count is a few instructions, so
+/// the loop runs with half the cores kept busy: preempting the UI thread inside
+/// it is what a loaded CI runner does. The other half, and the time bound, are
+/// for the tests of this process running beside it, several of which hold
+/// wall-clock deadlines.
+#[test]
+fn a_ui_thread_task_is_counted_before_its_caller_is_answered() {
+    const ROUND_TRIPS: usize = 20_000;
+    const LOAD_BOUND: std::time::Duration = std::time::Duration::from_millis(500);
+    let cores = thread::available_parallelism().map_or(2, usize::from);
+    let _load = SpinLoad::start((cores / 2).max(1));
+    let ui = RecordingUiThread::start();
+    let started = std::time::Instant::now();
+
+    for expected in 1..=ROUND_TRIPS {
+        if started.elapsed() > LOAD_BOUND {
+            break;
+        }
+        ui.run_on_ui_thread(&UiThreadTask::new(|| {}))
+            .expect("the UI thread runs the task");
+        assert_eq!(
+            ui.tasks_run(),
+            expected,
+            "an answered task must already be counted"
+        );
+    }
+}
+
+/// Threads that keep cores busy until dropped, on every path out of a test.
+struct SpinLoad {
+    spinning: Arc<std::sync::atomic::AtomicBool>,
+    spinners: Vec<thread::JoinHandle<()>>,
+}
+
+impl SpinLoad {
+    fn start(threads: usize) -> Self {
+        let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let spinners = (0..threads)
+            .map(|_| {
+                let spinning = Arc::clone(&spinning);
+                thread::spawn(move || {
+                    while spinning.load(Ordering::Relaxed) {
+                        std::hint::spin_loop();
+                    }
+                })
+            })
+            .collect();
+        Self { spinning, spinners }
+    }
+}
+
+impl Drop for SpinLoad {
+    fn drop(&mut self) {
+        self.spinning.store(false, Ordering::Relaxed);
+        for spinner in self.spinners.drain(..) {
+            let _ = spinner.join();
+        }
     }
 }
 
@@ -587,7 +655,7 @@ fn record_offline_state(runtimes: &[Arc<SharedHostedPlugin>]) {
             .expect("the offline instance gives its state");
         let rate = runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                Ok(plugin.activation_sample_rate())
+                Ok::<_, String>(plugin.activation_sample_rate())
             })
             .expect("the offline instance answers");
         OFFLINE_STATE.with(|states| states.borrow_mut().push((chunk, rate)));
@@ -653,7 +721,7 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
     assert_eq!(live_recorded.gain, LIVE_GAIN);
     let live_rate = live
         .with_control(Duration::from_secs(2), |plugin| {
-            Ok(plugin.activation_sample_rate())
+            Ok::<_, String>(plugin.activation_sample_rate())
         })
         .expect("the live instance answers");
     assert_eq!(live_rate, LIVE_RATE, "the live instance was never re-rated");
@@ -1173,7 +1241,13 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| Err(PluginCommandError::Host("the seam keeps it".to_string()));
+    seams.capture_state = |_, _| {
+        Err(PluginCommandError::Control(
+            PluginControlRefusal::TimedOut {
+                plugin: "the seam keeps it".to_string(),
+            },
+        ))
+    };
 
     let refusal = render(
         batch(impulse_track(json!([fx_device()]))),
@@ -1187,7 +1261,10 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     assert!(
         refusal.contains("'d-fx'")
             && refusal.contains("'Sourdaw Harness Fx'")
-            && refusal.contains("its live state could not be read: the seam keeps it"),
+            && refusal.contains(
+                "its live state could not be read: Timed out waiting for plugin control access: \
+                 the seam keeps it"
+            ),
         "{refusal}"
     );
     assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
@@ -1767,8 +1844,10 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
     seams.capture_state = |_, _| {
-        Err(PluginCommandError::Host(
-            "a refused rate reads no live state".to_string(),
+        Err(PluginCommandError::Control(
+            PluginControlRefusal::TimedOut {
+                plugin: "a refused rate reads no live state".to_string(),
+            },
         ))
     };
     let render_at = |devices: Value, sample_rate: f64| {

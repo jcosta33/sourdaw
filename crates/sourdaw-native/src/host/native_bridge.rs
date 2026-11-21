@@ -21,7 +21,7 @@ use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, Tr
 use daw_engine::{CaptureFirstInput, CapturePeriodObservation};
 use daw_plugin_host::{
     signal_pending_process_refusal, HostMidiEvent, HostParameterUpdate, HostTransport,
-    HostedPluginRuntime, HostedRuntime, PluginParameter, ProcessingGate,
+    HostedPluginRuntime, HostedRuntime, PluginError, PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -354,6 +354,183 @@ fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
     }
 }
 
+/// Why the control path refused to run an operation against one hosted
+/// plugin instance. Built on the control path only, never on the audio
+/// callback; each variant names the plugin it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginControlRefusal {
+    Unloading {
+        plugin: String,
+    },
+    Retired {
+        plugin: String,
+    },
+    InvalidLifecycle {
+        plugin: String,
+        state: u8,
+    },
+    /// The non-RT control gate was poisoned; `cause` is the poison's text.
+    GateUnlockable {
+        plugin: String,
+        cause: String,
+    },
+    /// The non-RT control gate is held and the caller refused to wait.
+    GateBusy {
+        plugin: String,
+    },
+    /// The audio thread held the access seam past the control timeout.
+    TimedOut {
+        plugin: String,
+    },
+}
+
+impl std::fmt::Display for PluginControlRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unloading { plugin } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' is unloading",
+                plugin
+            ),
+            Self::Retired { plugin } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' has been retired",
+                plugin
+            ),
+            Self::InvalidLifecycle { plugin, state } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' is in invalid lifecycle state {}",
+                plugin, state
+            ),
+            Self::GateUnlockable { plugin, cause } => write!(
+                formatter,
+                "Failed to lock plugin non-RT control path for '{}': {}",
+                plugin, cause
+            ),
+            Self::GateBusy { plugin } => write!(
+                formatter,
+                "Plugin non-RT control path for '{}' is busy",
+                plugin
+            ),
+            Self::TimedOut { plugin } => write!(
+                formatter,
+                "Timed out waiting for plugin control access: {}",
+                plugin
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PluginControlRefusal {}
+
+/// A control operation's outcome when it did not succeed: the control path
+/// refused to run it, or it ran and failed with its own error `E`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginControlError<E> {
+    Refused(PluginControlRefusal),
+    Operation(E),
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for PluginControlError<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::Operation(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> std::error::Error for PluginControlError<E> {}
+
+impl<E> From<PluginControlRefusal> for PluginControlError<E> {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl PluginControlError<std::convert::Infallible> {
+    /// The refusal of an operation that cannot fail on its own.
+    pub fn into_refusal(self) -> PluginControlRefusal {
+        match self {
+            Self::Refused(refusal) => refusal,
+            Self::Operation(never) => match never {},
+        }
+    }
+}
+
+/// Why a host-side parameter write was not queued for the audio thread.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterWriteError {
+    Refused(PluginControlRefusal),
+    NotActivated { plugin: String },
+    NonFinite { plugin: String, value: f64 },
+    QueueFull { plugin: String },
+}
+
+impl std::fmt::Display for ParameterWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::NotActivated { plugin } => write!(
+                formatter,
+                "CLAP plugin '{}' is not activated; parameter update rejected",
+                plugin
+            ),
+            Self::NonFinite { plugin, value } => write!(
+                formatter,
+                "Invalid parameter value for plugin '{}': {}",
+                plugin, value
+            ),
+            Self::QueueFull { plugin } => write!(
+                formatter,
+                "Pending parameter queue full for plugin '{}'",
+                plugin
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ParameterWriteError {}
+
+impl From<PluginControlRefusal> for ParameterWriteError {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+/// Why a state save or restore through the control path failed on its own.
+#[derive(Debug)]
+pub enum PluginStateError {
+    /// Host writes are still queued for the audio thread, so a saved state
+    /// would miss them.
+    PendingWrites {
+        plugin: String,
+    },
+    Plugin(PluginError),
+}
+
+impl std::fmt::Display for PluginStateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PendingWrites { plugin } => write!(
+                formatter,
+                "Plugin '{}' has pending parameter writes awaiting audio processing; retry state save after the process path drains them",
+                plugin
+            ),
+            Self::Plugin(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for PluginStateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::PendingWrites { .. } => None,
+            Self::Plugin(error) => Some(error),
+        }
+    }
+}
+
 struct PluginRuntimeLifecycle {
     state: AtomicU8,
 }
@@ -392,21 +569,16 @@ impl PluginRuntimeLifecycle {
         self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE
     }
 
-    fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), String> {
+    fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), PluginControlRefusal> {
+        let plugin = || plugin_name.to_string();
         match self.state.load(Ordering::Acquire) {
             PLUGIN_LIFECYCLE_ACTIVE => Ok(()),
-            PLUGIN_LIFECYCLE_UNLOADING => Err(format!(
-                "Engine-owned plugin instance '{}' is unloading",
-                plugin_name
-            )),
-            PLUGIN_LIFECYCLE_RETIRED => Err(format!(
-                "Engine-owned plugin instance '{}' has been retired",
-                plugin_name
-            )),
-            lifecycle_state => Err(format!(
-                "Engine-owned plugin instance '{}' is in invalid lifecycle state {}",
-                plugin_name, lifecycle_state
-            )),
+            PLUGIN_LIFECYCLE_UNLOADING => Err(PluginControlRefusal::Unloading { plugin: plugin() }),
+            PLUGIN_LIFECYCLE_RETIRED => Err(PluginControlRefusal::Retired { plugin: plugin() }),
+            state => Err(PluginControlRefusal::InvalidLifecycle {
+                plugin: plugin(),
+                state,
+            }),
         }
     }
 }
@@ -662,27 +834,28 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.pending_parameters.enqueue(param_id, value).is_ok()
     }
 
-    pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
+    pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), ParameterWriteError> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
         if !self.activated {
-            return Err(format!(
-                "CLAP plugin '{}' is not activated; parameter update rejected",
-                self.name
-            ));
+            return Err(ParameterWriteError::NotActivated {
+                plugin: self.name.clone(),
+            });
         }
 
         if !value.is_finite() {
-            return Err(format!(
-                "Invalid parameter value for plugin '{}': {}",
-                self.name, value
-            ));
+            return Err(ParameterWriteError::NonFinite {
+                plugin: self.name.clone(),
+                value,
+            });
         }
 
         self.pending_parameters
             .enqueue(param_id, value)
-            .map_err(|()| format!("Pending parameter queue full for plugin '{}'", self.name))?;
+            .map_err(|()| ParameterWriteError::QueueFull {
+                plugin: self.name.clone(),
+            })?;
 
         // The processor learns about this write from the audio thread. The
         // editor is a different object in some formats and has to be told
@@ -715,19 +888,18 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn get_state_after_pending_parameters_drain(
         &self,
         timeout: Duration,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
             if self.pending_parameters.has_pending() {
-                return Err(format!(
-                    "Plugin '{}' has pending parameter writes awaiting audio processing; retry state save after the process path drains them",
-                    self.name
-                ));
+                return Err(PluginStateError::PendingWrites {
+                    plugin: self.name.clone(),
+                });
             }
 
-            plugin.get_state().map_err(|error| error.to_string())
+            plugin.get_state().map_err(PluginStateError::Plugin)
         })
     }
 
@@ -735,14 +907,12 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         &self,
         timeout: Duration,
         plugin_state: &[u8],
-    ) -> Result<Vec<PluginParameter>, String> {
+    ) -> Result<Vec<PluginParameter>, PluginControlError<PluginError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
-            plugin
-                .set_state(plugin_state)
-                .map_err(|error| error.to_string())?;
+            plugin.set_state(plugin_state)?;
             self.pending_parameters.clear();
             Ok(plugin.get_parameters())
         })
@@ -766,7 +936,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.lifecycle.retire();
     }
 
-    pub fn ensure_public_control_allowed(&self) -> Result<(), String> {
+    pub fn ensure_public_control_allowed(&self) -> Result<(), PluginControlRefusal> {
         self.ensure_active_lifecycle()
     }
 
@@ -778,11 +948,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// same ask with different conversions.
     pub(crate) fn refresh_latency_change(
         plugin: &mut Runtime,
-    ) -> Result<Option<LatencyChange>, String> {
-        match plugin
-            .poll_latency_change()
-            .map_err(|error| error.to_string())?
-        {
+    ) -> Result<Option<LatencyChange>, PluginError> {
+        match plugin.poll_latency_change()? {
             Some(_) => Ok(Some(LatencyChange {
                 latency_ms: plugin.latency_ms(),
                 latency_frames: plugin.latency_samples() as usize,
@@ -803,7 +970,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Runs on the non-RT control path through the existing CAS control seam, so
     /// the deactivate/reactivate a latency change requires cannot race the RT
     /// `process` path — and it adds no new audio-thread calls.
-    pub fn poll_latency_change(&self, timeout: Duration) -> Result<Option<LatencyChange>, String> {
+    pub fn poll_latency_change(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
         self.with_control(timeout, |plugin| Self::refresh_latency_change(plugin))
     }
 
@@ -834,11 +1004,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn poll_parameters(
         &self,
         timeout: Duration,
-    ) -> Result<Option<Vec<PluginParameter>>, String> {
+    ) -> Result<Option<Vec<PluginParameter>>, PluginControlRefusal> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
-        self.with_control_locked(timeout, |plugin| {
+        self.with_control_locked(timeout, |plugin| -> Result<_, std::convert::Infallible> {
             // The regular control-path visit, and so the place a write that
             // could not be delivered when it was made finally reaches the
             // editor.
@@ -850,6 +1020,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
             Ok(Some(plugin.get_parameters()))
         })
+        .map_err(PluginControlError::into_refusal)
     }
 
     /// Whether any host-side parameter write is still queued for the audio
@@ -862,11 +1033,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.pending_parameters.has_pending()
     }
 
-    pub fn with_control<ResultValue>(
+    pub fn with_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
         self.with_control_locked(timeout, operation)
@@ -888,21 +1059,21 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// caller, which is the one that knows whether coming back later is cheap.
     /// The bounded RT wait is kept: that one is the audio thread holding the seam
     /// for the length of a block, which is what `timeout` was sized for.
-    pub fn try_with_control<ResultValue>(
+    pub fn try_with_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.try_lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
         self.with_control_locked(timeout, operation)
     }
 
-    pub fn with_unload_control<ResultValue>(
+    pub fn with_unload_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
     }
@@ -915,7 +1086,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// operation's control timeout. Only the acquisition is handed off — the
     /// guard comes back to the caller — which is sound because `block_in_place`
     /// runs its closure on the calling thread.
-    fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+    fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, PluginControlRefusal> {
         without_stalling_async_worker(|| {
             if let Ok(guard) = self.non_rt_control_lock.try_lock() {
                 return Ok(guard);
@@ -923,11 +1094,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
             self.non_rt_control_lock.lock()
         })
-        .map_err(|error| {
-            format!(
-                "Failed to lock plugin non-RT control path for '{}': {}",
-                self.name, error
-            )
+        .map_err(|error| PluginControlRefusal::GateUnlockable {
+            plugin: self.name.clone(),
+            cause: error.to_string(),
         })
     }
 
@@ -938,26 +1107,25 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// poisoned it happened inside some earlier operation's body, the gate itself
     /// is free, and refusing forever would both silence this instance for the
     /// life of the process and have a caller that retries spin on every tick.
-    fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+    fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, PluginControlRefusal> {
         match self.non_rt_control_lock.try_lock() {
             Ok(guard) => Ok(guard),
             Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
-            Err(TryLockError::WouldBlock) => Err(format!(
-                "Plugin non-RT control path for '{}' is busy",
-                self.name
-            )),
+            Err(TryLockError::WouldBlock) => Err(PluginControlRefusal::GateBusy {
+                plugin: self.name.clone(),
+            }),
         }
     }
 
-    fn ensure_active_lifecycle(&self) -> Result<(), String> {
+    fn ensure_active_lifecycle(&self) -> Result<(), PluginControlRefusal> {
         self.lifecycle.ensure_public_control_allowed(&self.name)
     }
 
-    fn with_control_locked<ResultValue>(
+    fn with_control_locked<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         // The whole body runs under the hand-off, not just the contended wait:
         // `operation` is third-party CLAP code of unbounded duration (`set_state`
         // on a large preset, `open_gui`), so the ordinary uncontended claim —
@@ -969,7 +1137,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 // SAFETY: `_guard` holds the control side of the access seam
                 // until this return, so neither the audio thread nor another
                 // control visit can be inside the wrapper.
-                return operation(unsafe { &mut *self.wrapper.get() });
+                return operation(unsafe { &mut *self.wrapper.get() })
+                    .map_err(PluginControlError::Operation);
             }
 
             self.spin_for_control(timeout, operation)
@@ -1004,11 +1173,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// CLAP entry points from the caller's own thread is what the GUI and state
     /// call sites depend on. `with_control_locked` owns the async-worker
     /// hand-off so this stays a plain wait.
-    fn spin_for_control<ResultValue>(
+    fn spin_for_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let deadline = Instant::now() + timeout;
 
         loop {
@@ -1016,13 +1185,15 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 // SAFETY: `_guard` holds the control side of the access seam
                 // until this return, so neither the audio thread nor another
                 // control visit can be inside the wrapper.
-                return operation(unsafe { &mut *self.wrapper.get() });
+                return operation(unsafe { &mut *self.wrapper.get() })
+                    .map_err(PluginControlError::Operation);
             }
 
             if Instant::now() >= deadline {
-                return Err(format!(
-                    "Timed out waiting for plugin control access: {}",
-                    self.name
+                return Err(PluginControlError::Refused(
+                    PluginControlRefusal::TimedOut {
+                        plugin: self.name.clone(),
+                    },
                 ));
             }
 
@@ -2106,7 +2277,7 @@ mod tests {
 
         let name = shared
             .with_control(Duration::from_millis(50), |plugin| {
-                Ok(plugin.get_name().to_string())
+                Ok::<_, String>(plugin.get_name().to_string())
             })
             .expect("an idle seam must hand the wrapper straight to the operation");
 
@@ -2127,11 +2298,19 @@ mod tests {
             .store(PLUGIN_ACCESS_PROCESSING, Ordering::Release);
 
         let started = Instant::now();
-        let outcome = shared.with_control(Duration::from_millis(60), |_| Ok(()));
+        let outcome = shared.with_control(Duration::from_millis(60), |_| Ok::<_, String>(()));
 
         assert_eq!(
             outcome,
-            Err("Timed out waiting for plugin control access: fixture".to_string())
+            Err(PluginControlError::Refused(
+                PluginControlRefusal::TimedOut {
+                    plugin: "fixture".to_string()
+                }
+            ))
+        );
+        assert_eq!(
+            outcome.unwrap_err().to_string(),
+            "Timed out waiting for plugin control access: fixture"
         );
         assert!(
             started.elapsed() >= Duration::from_millis(60),
@@ -2167,7 +2346,7 @@ mod tests {
 
             let waiting_plugin = Arc::clone(&shared);
             let waiter = tokio::spawn(async move {
-                waiting_plugin.with_control(Duration::from_secs(2), |_| Ok(()))
+                waiting_plugin.with_control(Duration::from_secs(2), |_| Ok::<_, String>(()))
             });
 
             // The waiter holds the non-RT gate for as long as it is spinning, so
@@ -2229,7 +2408,7 @@ mod tests {
             let operation = tokio::spawn(async move {
                 operating_plugin.with_control(Duration::from_secs(2), |_| {
                     thread::sleep(Duration::from_millis(600));
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
 
@@ -2280,9 +2459,78 @@ mod tests {
 
         assert_eq!(
             lifecycle.ensure_public_control_allowed("fixture"),
-            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+            Err(PluginControlRefusal::Unloading {
+                plugin: "fixture".to_string()
+            })
+        );
+        assert_eq!(
+            lifecycle
+                .ensure_public_control_allowed("fixture")
+                .unwrap_err()
+                .to_string(),
+            "Engine-owned plugin instance 'fixture' is unloading"
         );
         assert!(!lifecycle.allows_process());
+    }
+
+    #[test]
+    fn control_refusals_keep_their_historical_text() {
+        let plugin = || "fixture".to_string();
+        let cases = [
+            (
+                PluginControlRefusal::Retired { plugin: plugin() },
+                "Engine-owned plugin instance 'fixture' has been retired",
+            ),
+            (
+                PluginControlRefusal::InvalidLifecycle {
+                    plugin: plugin(),
+                    state: 7,
+                },
+                "Engine-owned plugin instance 'fixture' is in invalid lifecycle state 7",
+            ),
+            (
+                PluginControlRefusal::GateUnlockable {
+                    plugin: plugin(),
+                    cause: "poisoned lock: another task failed inside".to_string(),
+                },
+                "Failed to lock plugin non-RT control path for 'fixture': poisoned lock: another task failed inside",
+            ),
+            (
+                PluginControlRefusal::GateBusy { plugin: plugin() },
+                "Plugin non-RT control path for 'fixture' is busy",
+            ),
+        ];
+        for (refusal, text) in cases {
+            assert_eq!(refusal.to_string(), text);
+        }
+        assert_eq!(
+            ParameterWriteError::NotActivated { plugin: plugin() }.to_string(),
+            "CLAP plugin 'fixture' is not activated; parameter update rejected"
+        );
+        assert_eq!(
+            ParameterWriteError::NonFinite {
+                plugin: plugin(),
+                value: f64::NAN
+            }
+            .to_string(),
+            "Invalid parameter value for plugin 'fixture': NaN"
+        );
+        assert_eq!(
+            ParameterWriteError::QueueFull { plugin: plugin() }.to_string(),
+            "Pending parameter queue full for plugin 'fixture'"
+        );
+        assert_eq!(
+            PluginStateError::PendingWrites { plugin: plugin() }.to_string(),
+            "Plugin 'fixture' has pending parameter writes awaiting audio processing; retry state save after the process path drains them"
+        );
+        assert_eq!(
+            PadAuditionError::IdsExhausted.to_string(),
+            "Crumbs pad audition ids exhausted"
+        );
+        assert_eq!(
+            PadAuditionError::QueueFull(CrumbsCommandQueueFull).to_string(),
+            "Command queue full"
+        );
     }
 
     #[test]
@@ -3734,6 +3982,26 @@ impl std::fmt::Display for CrumbsCommandQueueFull {
 
 impl std::error::Error for CrumbsCommandQueueFull {}
 
+/// Why a pad audition was not started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadAuditionError {
+    /// No room for the audition and the release it reserves.
+    QueueFull(CrumbsCommandQueueFull),
+    /// Every audition receipt id has been issued.
+    IdsExhausted,
+}
+
+impl std::fmt::Display for PadAuditionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::QueueFull(full) => full.fmt(f),
+            Self::IdsExhausted => f.write_str("Crumbs pad audition ids exhausted"),
+        }
+    }
+}
+
+impl std::error::Error for PadAuditionError {}
+
 static LAST_PAD_AUDITION_ID: AtomicU32 = AtomicU32::new(0);
 
 /// The control-side producer for one attached slot. Each accepted pad audition
@@ -3767,9 +4035,9 @@ impl CrumbsCommandSender {
             .map_err(|_| CrumbsCommandQueueFull)
     }
 
-    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, String> {
+    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, PadAuditionError> {
         if self.producer.slots() < self.held_auditions.len() + 2 {
-            return Err(CrumbsCommandQueueFull.to_string());
+            return Err(PadAuditionError::QueueFull(CrumbsCommandQueueFull));
         }
 
         // Receipts must never alias after a slot with the same instance id
@@ -3778,14 +4046,14 @@ impl CrumbsCommandSender {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
                 previous.checked_add(1)
             })
-            .map_err(|_| "Crumbs pad audition ids exhausted".to_string())?;
+            .map_err(|_| PadAuditionError::IdsExhausted)?;
         let audition_id = previous + 1;
         self.push(CrumbsCommand::PadAuditionOn {
             note,
             velocity,
             audition_id,
         })
-        .map_err(|error| error.to_string())?;
+        .map_err(PadAuditionError::QueueFull)?;
         self.held_auditions.push(audition_id);
         Ok(audition_id)
     }

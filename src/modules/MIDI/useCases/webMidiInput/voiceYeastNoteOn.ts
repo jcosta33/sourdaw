@@ -4,6 +4,7 @@ import {
     isBypassedNoteReceiver,
     resolveDrumKitBy,
     resolveDrumKitOutputGain,
+    resolveLiveNoteControls,
     type resolveNoteReceivingInstrument,
 } from '#/modules/AudioEngine/useCases';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
@@ -21,7 +22,6 @@ const FALLBACK_GENERATED_NOTE_SECONDS = 0.5;
 type CapturedVoiceRelease = (sampleFrame?: number, releaseVelocity?: number) => void;
 
 type YeastVoicingStrip = ReturnType<typeof audioEngine.getTrackStrip>;
-type YeastVoicingNode = NonNullable<YeastVoicingStrip>['deviceNodes'][number];
 
 /** The note surface Fermenter, Levain and Crumbs share: velocity in MIDI units, release by pitch and channel. */
 type KeyboardVoice = Readonly<{
@@ -99,24 +99,19 @@ function generatedNoteSeconds(input: VoiceYeastNoteOnInput): number {
     return Math.max(0, input.durationSamples) / input.context.sampleRate;
 }
 
-function keyboardVoice(deviceNode: YeastVoicingNode | undefined, deviceType: string): KeyboardVoice | undefined {
-    if (deviceType === 'fermenter') {
-        return deviceNode?.fermenterControls;
-    }
-    if (deviceType === 'levain') {
-        return deviceNode?.levainControls;
-    }
-    return deviceNode?.crumbsControls;
-}
-
 function voiceWorkletSynth(input: VoiceYeastNoteOnInput, device: Device): void {
     const { note, velocity, channel, sampleFrame, capture } = input;
     const deviceNode = resolveDeviceNode(input.strip, { deviceId: device.id, type: device.type });
-    if (device.type === 'grand-boule') {
+    const liveNoteControls = resolveLiveNoteControls(device.type);
+    if (liveNoteControls === null) {
+        return;
+    }
+    if (liveNoteControls.controlsKey === 'grandBouleControls') {
         const control = deviceNode?.grandBouleControls;
+        const scaledVelocity = liveNoteControls.scaleVelocity(velocity);
         if (control) {
             capture(
-                () => control.noteOn(note, velocity / 127, sampleFrame, channel),
+                () => control.noteOn(note, scaledVelocity, sampleFrame, channel),
                 (releaseFrame, releaseVelocity) => {
                     control.noteOff(note, releaseFrame, releaseVelocity, channel);
                     void input.deps.eventBus.emit('midi.noteOff', {
@@ -127,15 +122,16 @@ function voiceWorkletSynth(input: VoiceYeastNoteOnInput, device: Device): void {
                 }
             );
         }
-        void input.deps.eventBus.emit('midi.noteOn', { deviceId: device.id, midiNote: note, velocity: velocity / 127 });
+        void input.deps.eventBus.emit('midi.noteOn', { deviceId: device.id, midiNote: note, velocity: scaledVelocity });
         return;
     }
-    const voice = keyboardVoice(deviceNode, device.type);
+    const voice: KeyboardVoice | undefined = deviceNode?.[liveNoteControls.controlsKey];
     if (!voice) {
         return;
     }
+    const scaledVelocity = liveNoteControls.scaleVelocity(velocity);
     capture(
-        () => voice.noteOn(note, velocity, sampleFrame, channel),
+        () => voice.noteOn(note, scaledVelocity, sampleFrame, channel),
         (releaseFrame) => voice.noteOff(note, releaseFrame, channel)
     );
 }

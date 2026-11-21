@@ -40,7 +40,7 @@ use crate::commands::plugins::{
     activation_refusal_reason, construct_runtime_on_ui_thread, create_hosted_runtime,
     hold_plugin_runtime_gate, host_backend, HostBackend, PluginCommandError, VettedRegistryEntry,
 };
-use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
+use crate::host::native_bridge::{HostedPluginSlot, PluginControlRefusal, SharedHostedPlugin};
 #[cfg(test)]
 use crate::host::plugin_folder_grants::ForbiddenRoots;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
@@ -241,7 +241,7 @@ pub(crate) enum OfflinePluginRefusal {
         missed: u64,
     },
     /// The control path could not read the wrapper's failure latch.
-    ProcessingUnreadable(String),
+    ProcessingUnreadable(PluginControlRefusal),
     FailedABlock,
     NeverStartedProcessing,
     Unloaded,
@@ -252,7 +252,7 @@ pub(crate) enum OfflinePluginRefusal {
     Load(PluginCommandError),
     StateNotRestored(PluginError),
     /// The control path's own refusal while restoring the state.
-    Control(String),
+    Control(PluginControlRefusal),
 }
 
 impl fmt::Display for OfflinePluginRefusal {
@@ -291,7 +291,7 @@ impl fmt::Display for OfflinePluginRefusal {
             Self::StateNotRestored(reason) => {
                 write!(f, "its live state could not be restored: {reason}")
             }
-            Self::Control(reason) => f.write_str(reason),
+            Self::Control(refusal) => write!(f, "{refusal}"),
         }
     }
 }
@@ -301,6 +301,7 @@ impl std::error::Error for OfflinePluginRefusal {
         match self {
             Self::StateUnreadable(error) | Self::Load(error) => Some(error),
             Self::StateNotRestored(error) => Some(error),
+            Self::ProcessingUnreadable(refusal) | Self::Control(refusal) => Some(refusal),
             _ => None,
         }
     }
@@ -566,7 +567,7 @@ pub(crate) fn read_live_state(
 ) -> Result<Vec<u8>, PluginCommandError> {
     runtime
         .get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
-        .map_err(PluginCommandError::Host)
+        .map_err(PluginCommandError::StateRead)
 }
 
 /// A test's look at every built instance just before the render.
@@ -737,7 +738,7 @@ impl OfflinePluginInstances<'_> {
             let (failed, never_processing) = instance
                 .runtime
                 .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                    Ok((
+                    Ok::<_, std::convert::Infallible>((
                         plugin.has_failed_a_process_call(),
                         plugin.has_passed_a_block_unprocessed(),
                     ))
@@ -745,7 +746,7 @@ impl OfflinePluginInstances<'_> {
                 .map_err(|reason| {
                     refusal(
                         &instance.bound,
-                        OfflinePluginRefusal::ProcessingUnreadable(reason),
+                        OfflinePluginRefusal::ProcessingUnreadable(reason.into_refusal()),
                     )
                 })?;
             if failed {
@@ -1014,11 +1015,16 @@ pub(crate) async fn build_offline_instances<'a>(
         }
         let latency_frames = shared
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                Ok(AudioPlugin::set_state(plugin, &chunk).map(|()| {
-                    <HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize
-                }))
+                Ok::<_, std::convert::Infallible>(AudioPlugin::set_state(plugin, &chunk).map(
+                    |()| <HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize,
+                ))
             })
-            .map_err(|reason| refusal(instance, OfflinePluginRefusal::Control(reason)))?
+            .map_err(|reason| {
+                refusal(
+                    instance,
+                    OfflinePluginRefusal::Control(reason.into_refusal()),
+                )
+            })?
             .map_err(|reason| refusal(instance, OfflinePluginRefusal::StateNotRestored(reason)))?;
         if let Some(last) = built.instances.last_mut() {
             last.latency_frames = latency_frames;
