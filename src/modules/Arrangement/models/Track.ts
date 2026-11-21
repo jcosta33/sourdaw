@@ -1,3 +1,5 @@
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+
 import { TRACK_COLOR_PALETTE } from './ColorPalette';
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
@@ -320,6 +322,14 @@ function normalizeMidiFx(fx: Partial<MidiFxDevice> & { id: string; type: MidiFxD
     };
 }
 
+const DEFAULT_DECODED_TRACK_HEIGHT = 80;
+
+/** A stored height outside the setter's range is shown at the nearest bound, so an undo of a
+ *  height edit restores the height the track was shown with; a missing or zero one is the default. */
+function decodeTrackHeight(height: number | undefined): number {
+    return Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, height || DEFAULT_DECODED_TRACK_HEIGHT));
+}
+
 export function normalizeTrack(track: Partial<Track> & { id: string; name: string; kind: TrackKind }): Track {
     // Derived deterministically from track.id so re-hydration (CRDT sync) produces the
     // same alternative id each time. A random UUID here would flip on every remote change.
@@ -348,7 +358,7 @@ export function normalizeTrack(track: Partial<Track> & { id: string; name: strin
         inputMonitoring: track.inputMonitoring ?? 'auto',
         hidden: track.hidden ?? false,
         disabled: track.disabled ?? false,
-        height: track.height || 80,
+        height: decodeTrackHeight(track.height),
         outputId: track.outputId ?? (track.kind === 'master' ? 'hw_out' : 'master'),
         automationMode: track.automationMode ?? 'read',
         groupId: track.groupId ?? null,

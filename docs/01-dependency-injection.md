@@ -4,6 +4,8 @@ Business-layer code wires **mockable** collaborators through **`inject()`** from
 
 **Canonical reference:** `docs/architecture/03-typescript-module.md` §4.11 — _Dependency injection with `inject()`_.
 
+When the module tier order or a cycle forbids importing a collaborator, the consuming module declares a registered port that `src/app` fills, per [ADR 0065](../.agents/decisions/0065-cross-module-dependencies-are-registered-ports.md).
+
 **Testing:** `docs/06-testing.md` §5 — use **`injectDependencies()`** for inject-map keys; `vi.mock` is OK for static repo imports that are not in the map.
 
 ---

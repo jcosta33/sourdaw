@@ -1,10 +1,8 @@
 /**
  * Route Yeast-rack Note Off events to the live instrument on their origin track strip.
  *
- * Extracted from `handleNoteOff` so the same device-node delivery is reused by
- * (a) the live-keyboard Note Off path and (b) the processor-removal panic path.
- * The use-case layer resolves the originating Arrangement track before this
- * repository port is called.
+ * The use-case layer resolves the originating Arrangement track and its
+ * receiving instrument before this repository port is called.
  */
 
 import { routeYeastNoteOffToInstrument, type WebMidiInstrumentTrack } from './routeYeastNoteOffToInstrument';
@@ -23,7 +21,7 @@ type RoutedYeastNoteOff = {
 /**
  * Route a batch of channel-complete Note Off identities to the resolved
  * instrument track. Resolves the live strip once, then delivers each note. A
- * no-op when the origin track is missing or has no supported instrument.
+ * no-op when the origin track is missing or has no receiving worklet instrument.
  */
 export function routeYeastNoteOffsForTargetTrack(
     instrumentTrack: WebMidiInstrumentTrack | null,

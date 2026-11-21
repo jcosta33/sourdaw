@@ -19,6 +19,14 @@ describe('getMixRecipeCatalog', () => {
         });
     });
 
+    it('keeps the master-tight recipe stating Auto Makeup on, so the retune never switches the level compensation off', () => {
+        const tight = getMixRecipeCatalog().recipes.find((recipe) => recipe.id === 'master-tight');
+        const limiterStep = tight?.steps.find((step) => step.deviceType === 'builtin-limiter');
+        const autoMakeup = limiterStep?.parameters.find((target) => target.paramId === 'lim-auto-makeup');
+
+        expect(autoMakeup).toEqual({ paramId: 'lim-auto-makeup', minimum: 1, maximum: 1 });
+    });
+
     it('is reachable through the module contract barrel', () => {
         expect(getMixRecipeCatalogFromBarrel).toBe(getMixRecipeCatalog);
     });

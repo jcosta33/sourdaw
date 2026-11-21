@@ -289,6 +289,7 @@ function buildAgentApproval(fixture: BatchFixture): NonNullable<AgentApproval> {
     const command = getReceiptCommandFixture(fixture);
     return {
         schemaVersion: 1,
+        explicitApprovalRequired: true,
         actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
         sourceRevision: fixture.envelope.baseRevision,
         targetFingerprints: {},
@@ -496,6 +497,7 @@ describe('executePromptActionGroup', () => {
         const command = getReceiptCommandFixture(fixture);
         const approval = {
             schemaVersion: 1,
+            explicitApprovalRequired: true,
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: fixture.envelope.baseRevision,
             targetFingerprints: {},

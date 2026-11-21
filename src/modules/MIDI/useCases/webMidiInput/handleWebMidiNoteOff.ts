@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, isMidiTransformDevice } from '#/modules/AudioEngine/useCases';
 import { readBeatAtSamples } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
@@ -112,7 +112,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         // through one the chain gained since.
         const yeastDeviceId = noteData.yeastDeviceId;
         const yeastDevice = instrumentTrack?.devices.find(
-            (device) => yeastDeviceId !== undefined && device.id === yeastDeviceId && device.type === 'yeast'
+            (device) => yeastDeviceId !== undefined && device.id === yeastDeviceId && isMidiTransformDevice(device.type)
         );
         if (yeastDeviceId !== undefined && yeastDevice === undefined) {
             // No key-up reaches the rack, so the note's idle pump is retired

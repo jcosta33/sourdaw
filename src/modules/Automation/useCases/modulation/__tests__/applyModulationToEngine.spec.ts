@@ -104,6 +104,27 @@ function createCutoffLane([id, parameterId, value, clipId]: [string, string, num
     });
 }
 
+function getMockedPluginParamRange(deviceType: string, paramId: string) {
+    const descriptor = mocks.getPluginById(deviceType);
+    const paramDef = descriptor?.parameters.find((param: { id: string }) => param.id === paramId);
+    if (!paramDef) {
+        return null;
+    }
+    return {
+        min: paramDef.minValue,
+        max: paramDef.maxValue,
+        defaultValue: paramDef.defaultValue,
+        automatable: paramDef.automatable !== false,
+    };
+}
+
+// Identity: every case in this file rides `builtin-filter/cutoff`,
+// whose descriptor mock declares no type, and the assertions are on
+// the continuous combined value. The stepped law has its own file.
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('applyModulationToEngine', () => {
     beforeEach(() => {
         // The slew map is module-level and survives across ticks; clear it so a
@@ -117,23 +138,8 @@ describe('applyModulationToEngine', () => {
         mocks.makeRecordingKey.mockClear();
         setModulationDependencies({
             updateDeviceParam: mocks.updateDeviceParam,
-            getPluginParamRange: (deviceType, paramId) => {
-                const descriptor = mocks.getPluginById(deviceType);
-                const paramDef = descriptor?.parameters.find((param: { id: string }) => param.id === paramId);
-                if (!paramDef) {
-                    return null;
-                }
-                return {
-                    min: paramDef.minValue,
-                    max: paramDef.maxValue,
-                    defaultValue: paramDef.defaultValue,
-                    automatable: paramDef.automatable !== false,
-                };
-            },
-            // Identity: every case in this file rides `builtin-filter/cutoff`,
-            // whose descriptor mock declares no type, and the assertions are on
-            // the continuous combined value. The stepped law has its own file.
-            quantiseValue: ({ value }) => value,
+            getPluginParamRange: getMockedPluginParamRange,
+            quantiseValue: quantiseIdentity,
         });
 
         mocks.trackStore.value = {

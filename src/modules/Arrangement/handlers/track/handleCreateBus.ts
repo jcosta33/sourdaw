@@ -4,6 +4,7 @@ import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapsh
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { handleAddTrack } from './handleAddTrack';
+import { pinCreationIdentity } from './pinTrackCreationInputs';
 
 type CreateBusAction = {
     payload: {
@@ -26,6 +27,13 @@ function ensureBusId(action: CreateBusAction): string {
     const busId = `bus-ai-${crypto.randomUUID()}`;
     action.payload.busId = busId;
     return busId;
+}
+
+// The palette color and alternative id are pinned onto the bus payload once, so the add-track
+// execution and the batch planner (`planCreatedBus`) agree on the created bus's identity.
+function toCreatingAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddTrack.execute>[0] {
+    pinCreationIdentity(action.payload);
+    return toAddTrackAction(action);
 }
 
 function toAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddTrack.execute>[0] {
@@ -70,13 +78,13 @@ function matchesExpectedScope(action: CreateBusAction): boolean {
 export const handleCreateBus = createHandler<'createBus'>({
     previewExecution: 'isolated-project',
     validate: (action, context) =>
-        matchesExpectedScope(action) && Boolean(handleAddTrack.validate?.(toAddTrackAction(action), context)),
+        matchesExpectedScope(action) && Boolean(handleAddTrack.validate?.(toCreatingAddTrackAction(action), context)),
     execute: (action) => {
         if (!matchesExpectedScope(action)) {
             pendingCreatedBusGuards.delete(action);
             return { status: 'conflict' };
         }
-        const result = handleAddTrack.execute(toAddTrackAction(action));
+        const result = handleAddTrack.execute(toCreatingAddTrackAction(action));
         if (result instanceof Promise) {
             throw new TypeError('The certified add-track handler returned asynchronously');
         }
@@ -100,7 +108,7 @@ export const handleCreateBus = createHandler<'createBus'>({
         return result;
     },
     describe: (action) => {
-        const description = handleAddTrack.describe(toAddTrackAction(action));
+        const description = handleAddTrack.describe(toCreatingAddTrackAction(action));
         const generatedMidiStateGuard = {
             entityJson: '',
             midiByClipIdJson: JSON.stringify({}),

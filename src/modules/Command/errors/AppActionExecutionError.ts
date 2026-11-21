@@ -28,6 +28,14 @@ export class AppActionConflictError extends Error {
 }
 
 /**
+ * A handler refused because of a transient runtime state (a recording in progress), not because the
+ * document diverged from what the action expects. It is a conflict to every caller that only checks
+ * for conflicts, so batches and agent commands refuse as before. Undo and redo alone tell it apart:
+ * the history entry stays where it was and nothing beneath it is stepped over.
+ */
+export class AppActionBlockedError extends AppActionConflictError {}
+
+/**
  * The admission gate refused the action (repair required or production brief locked),
  * either at the preflight before any handler ran or at the commit, when the gate
  * started refusing while the handler ran. Handlers report their own conflicts as plain

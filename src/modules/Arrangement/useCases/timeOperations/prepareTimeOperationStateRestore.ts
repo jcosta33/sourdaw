@@ -445,10 +445,9 @@ function validateCombinedPlan(value: unknown): CombinedStateRestorePlan | null {
 /** Validate a persisted replay plan without consulting or writing live project state. */
 export const timeOperationRestorePlan = {
     isValid(value: unknown, deletedRange?: { startBeat: number; endBeat: number }): boolean {
-        const validators = timeOperationDependencies?.savedRestorePlanValidators;
-        if (!validators) {
-            return false;
-        }
+        const { savedRestorePlanValidators: validators } = timeOperationDependencies.read(
+            'timeOperationRestorePlan.isValid'
+        );
         const plan = validateCombinedPlan(value);
         return (
             plan !== null &&
@@ -1269,10 +1268,7 @@ function rejectedPreparation() {
 }
 
 export function prepareTimeOperationStateRestore(plan: unknown) {
-    const deps = timeOperationDependencies;
-    if (!deps) {
-        throw new Error('Arrangement time operation dependencies are not registered');
-    }
+    const deps = timeOperationDependencies.read('prepareTimeOperationStateRestore');
 
     const prepared = prepareCombinedState(plan, deps);
     if (!prepared) {

@@ -1,17 +1,20 @@
 import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getAlternativeClips } from '../../models/TrackAlternativeClips';
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from '../../useCases/device/unloadDiscardedHostedPlugins';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
+import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
 
@@ -83,6 +86,24 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
     return true;
 }
 
+/**
+ * The track is restored as the earlier actions of its batch left its display state, so a hide, fold
+ * or resize the batch made before the removal is not undone by the restore and the inverse of that
+ * edit finds the state it guards.
+ */
+function withDisplayStateOfBatch(
+    snapshot: NonNullable<ReturnType<typeof captureTrackRemovalSnapshot>>,
+    context: HandlerValidationContext | undefined
+): NonNullable<ReturnType<typeof captureTrackRemovalSnapshot>> {
+    const live = getTrackStoreState()?.tracks.find((track) => track.id === snapshot.trackSnapshot.id);
+    if (!context || !live) {
+        return snapshot;
+    }
+    const { hidden, collapsed, height } = projectTrackThroughPriorBatchActions(live, context);
+    const trackSnapshot = { ...snapshot.trackSnapshot, hidden, collapsed, height };
+    return { ...snapshot, trackSnapshot };
+}
+
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     validate: (action) => currentStateMatches(action),
     execute: (action, context) => {
@@ -95,6 +116,8 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         if (removedTrack && context?.undoEntryId !== undefined) {
             recordDiscardedPluginStates(context.undoEntryId, [removedTrack]);
         }
+        // Read before removeTrack: the instances are unreachable once the track leaves the store.
+        const hostedInstances = removedTrack ? collectHostedPluginInstances(removedTrack) : [];
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
@@ -113,6 +136,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 runAllAsyncEffects(
                     [
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
                         finalizeModulationRemoval.afterCommit,
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
@@ -141,6 +167,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     effects.unshift(
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
                         )
                     );
@@ -166,7 +195,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         }
         return {
             label: `Remove track "${snapshot.trackName}"`,
-            inverseAction: { type: 'restoreTrack', payload: snapshot },
+            inverseAction: { type: 'restoreTrack', payload: withDisplayStateOfBatch(snapshot, context) },
         };
     },
     previewExecution: 'isolated-project',

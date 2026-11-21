@@ -1,10 +1,10 @@
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
+
 import {
     isBypassedNoteReceiver,
     type NoteReceivingInstrument,
     resolveNoteReceivingInstrument,
-} from '#/utils/deviceTypeMatching';
-
+} from '../../models/NoteReceivingInstrument';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 
 type OfflineNoteReceiver<TDevice> = Readonly<{

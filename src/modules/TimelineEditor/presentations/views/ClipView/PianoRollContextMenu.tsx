@@ -39,6 +39,7 @@ import {
     transformPianoRollTakeNotes,
 } from '../../helpers/applyPianoRollTakeMenuAction';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
+import { refuseNoteEditOnFrozenTrack } from '../../helpers/refuseNoteEditOnFrozenTrack';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
@@ -78,12 +79,23 @@ export const PianoRollContextMenu = ({
     useContextMenuDismiss(ref, onClose);
     const [grooveTemplateId, setGrooveTemplateId] = useState<string | null>(null);
 
-    const act = (fn: () => void) => () => {
+    const actReadOnly = (fn: () => void) => () => {
         fn();
         onClose();
     };
 
+    // Every other menu item edits notes, so a frozen track refuses it here.
+    const act = (fn: () => void) =>
+        actReadOnly(() => {
+            if (!refuseNoteEditOnFrozenTrack([clipId])) {
+                fn();
+            }
+        });
+
     const handleAIGenerate = async (): Promise<void> => {
+        if (refuseNoteEditOnFrozenTrack([clipId])) {
+            return;
+        }
         try {
             await executeUserAppAction(
                 { type: 'completeMidi', payload: { clipId, direction: 'forward', bars: 4 } },
@@ -102,7 +114,8 @@ export const PianoRollContextMenu = ({
     };
 
     const handleApplyGroove = async (): Promise<void> => {
-        if (!grooveTemplateId) {
+        // A groove assignment is part of the clip's content, locked with its notes.
+        if (!grooveTemplateId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         await executeUserAppAction({
@@ -146,7 +159,7 @@ export const PianoRollContextMenu = ({
     return (
         <DawContextMenuSurface onClose={onClose} ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
             {/* Select/Clipboard */}
-            <DawMenuButton role="menuitem" shortcut="⌘A" onClick={act(onSelectAll)}>
+            <DawMenuButton role="menuitem" shortcut="⌘A" onClick={actReadOnly(onSelectAll)}>
                 Select All
             </DawMenuButton>
             <DawMenuSeparator className="border-border/50" />
@@ -154,7 +167,7 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 shortcut="⌘C"
                 disabled={selectedNoteIds.size === 0}
-                onClick={act(() => {
+                onClick={actReadOnly(() => {
                     if (usesFrozenRows && takeProjection) {
                         copyPianoRollTakeNotes(takeProjection, selectedNoteIds);
                     } else {

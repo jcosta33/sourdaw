@@ -9,14 +9,24 @@ type DurableAssetCommitProofProvider = {
     ) => DurableAssetCommitDisposition | Promise<DurableAssetCommitDisposition>;
 };
 
-let provider: DurableAssetCommitProofProvider = { getDisposition: () => 'unknown' };
+let registeredProvider: DurableAssetCommitProofProvider | null = null;
 
 export function configureDurableAssetCommitProof(nextProvider: DurableAssetCommitProofProvider): void {
-    provider = nextProvider;
+    registeredProvider = nextProvider;
 }
 
 export const durableAssetCommitProof = {
+    /**
+     * Reading before registration throws rather than answering `unknown`: an
+     * unknown disposition makes the caller treat a committed asset as possibly
+     * not committed.
+     */
     getDisposition(proof: DurableAssetCommitProof): Promise<DurableAssetCommitDisposition> {
-        return Promise.resolve(provider.getDisposition(proof));
+        if (registeredProvider === null) {
+            throw new Error(
+                'durableAssetCommitProof.getDisposition: the durable asset commit proof is not registered; call configureDurableAssetCommitProof() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return Promise.resolve(registeredProvider.getDisposition(proof));
     },
 };

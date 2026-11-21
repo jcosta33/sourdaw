@@ -21,6 +21,17 @@ import { applyModulationToEngine } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
 import { resetModulationSlew } from '../resetModulationSlew';
 
+function getNoParamRange(): null {
+    return null;
+}
+
+// Identity: these cases assert the discontinuity snap on a device
+// that declares no contract at all, so the delivered value is the
+// filter value and the snap stays observable.
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('applyModulationToEngine transport discontinuity (AU-4 modulation)', () => {
     beforeEach(() => {
         resetModulationSlew();
@@ -30,11 +41,8 @@ describe('applyModulationToEngine transport discontinuity (AU-4 modulation)', ()
         mocks.resolveModulationBinding.mockReturnValue({ baseValue: 500, paramMin: 0, paramMax: 1000 });
         setModulationDependencies({
             updateDeviceParam: mocks.updateDeviceParam,
-            getPluginParamRange: () => null,
-            // Identity: these cases assert the discontinuity snap on a device
-            // that declares no contract at all, so the delivered value is the
-            // filter value and the snap stays observable.
-            quantiseValue: ({ value }) => value,
+            getPluginParamRange: getNoParamRange,
+            quantiseValue: quantiseIdentity,
         });
         modulationStore.set({
             modulators: [

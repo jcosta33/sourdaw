@@ -38,6 +38,16 @@ describe('getTimelineSurfaceMinimumHeight', () => {
         expect(getTimelineSurfaceMinimumHeight(tracks, 'child')).toBe(64);
     });
 
+    it('skips a hidden track unless hidden tracks are shown', () => {
+        const tracks = [
+            makeTrack({ id: 'hidden', kind: 'midi', height: 96, hidden: true }),
+            makeTrack({ id: 'fallback', kind: 'midi', height: 64 }),
+        ];
+
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'hidden')).toBe(64);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'hidden', undefined, true)).toBe(96);
+    });
+
     it('excludes master tracks and falls back to the rendered folder row', () => {
         const tracks = [
             makeTrack({ id: 'master', kind: 'master', height: 200 }),

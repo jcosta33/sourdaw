@@ -824,6 +824,9 @@ async function dispatchPromptPlan(input: {
                     result.briefReadings === undefined
                         ? undefined
                         : { ...result.briefReadings, trustCeiling: request.options?.trustCeiling ?? null },
+                plannedRunLines: result.plannedRunLines,
+                keptDirectionActionIndexes: result.keptDirectionActionIndexes,
+                workflowCapabilityId: result.workflowCapabilityId,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,

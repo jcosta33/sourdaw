@@ -1580,10 +1580,7 @@ function rejectResult(): RejectedGlobalTimeResult {
 }
 
 export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInput): GlobalTimeResult {
-    const deps = timeOperationDependencies;
-    if (!deps) {
-        throw new Error('Arrangement time operation dependencies are not registered');
-    }
+    const deps = timeOperationDependencies.read('executeGlobalTimeOperation');
 
     const validatedInput = validateInput(input);
     if (!validatedInput) {

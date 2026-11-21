@@ -1,7 +1,5 @@
-import {
-    getNoteExpressionDimensions as resolveDimensions,
-    type NoteExpressionDimension,
-} from '../../engine/noteExpression';
+import { getNoteExpressionDimensions as resolveDimensions } from '../../engine/noteExpression';
+import { type NoteExpressionDimension } from '../../models/LiveNoteControlsByDeviceType';
 
 /**
  * The MPE dimensions a device type's engine actually sounds (audit MD-2),

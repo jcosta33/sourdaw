@@ -1,8 +1,11 @@
+use crate::host::runtime_scope::RuntimeScopeRefusal;
 use daw_plugin_host::scanner::{
     extract_clap_instance_metadata, extract_clap_metadata, ClapDescriptorMetadata, PluginFormat,
-    ScannedDescriptor, ScannedInstance,
+    ScanError, ScannedDescriptor, ScannedInstance,
 };
-use daw_plugin_host::vst3_scanner::{extract_vst3_instance_metadata, extract_vst3_metadata};
+use daw_plugin_host::vst3_scanner::{
+    extract_vst3_instance_metadata, extract_vst3_metadata, Vst3ScanError,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -141,8 +144,38 @@ pub enum ScanFailure {
     /// supervisor's own write into the same directory failed with a storage
     /// fault; see [`process_failure`].
     ResponseWriteRefused { path: PathBuf },
-    /// Any other refusal: the read failed, not the plugin's process, so it is
-    /// never quarantine evidence.
+    /// No scan backend is registered for the format.
+    NoBackend { format: PluginFormat },
+    /// The default launcher, this executable, could not be resolved.
+    LauncherUnresolvable { cause: String },
+    /// [`SCAN_WORKER_COMMAND_ENV`] did not parse as a command.
+    LauncherInvalid { cause: String },
+    /// [`SCAN_WORKER_COMMAND_ENV`] parsed but names an empty program.
+    LauncherNamesNoProgram,
+    /// [`SCAN_WORKER_COMMAND_ENV`] is not valid UTF-8.
+    LauncherNotUtf8,
+    /// The runtime scope that holds response directories refused.
+    Scope(RuntimeScopeRefusal),
+    /// The private response directory could not be created.
+    ResponseDirectoryUncreatable { cause: String },
+    /// The private response directory could not be pinned.
+    ResponseDirectoryUnopenable { cause: String },
+    /// The helper, or its tree supervisor, could not be spawned.
+    HelperUnstartable { cause: String },
+    /// The helper's exit could not be observed.
+    HelperUnobservable { cause: String },
+    /// The tree supervisor ended before it said it was spawning the helper.
+    SupervisorEndedEarly,
+    /// The response file could not be opened or read.
+    ResponseUnreadable { cause: String },
+    /// The helper exited cleanly without leaving a response.
+    NoResponse { cause: String },
+    /// The response did not parse as the helper's envelope.
+    ResponseInvalid { cause: String },
+    /// The response names this process as its writer.
+    SameProcess,
+    /// Text this module does not generate: the error the helper reported in
+    /// its response (the plugin's own), or a caller's refusal.
     Refused(String),
 }
 
@@ -202,12 +235,64 @@ impl std::fmt::Display for ScanFailure {
                 "Plugin scan helper could not write its response for {}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
                 path.display()
             ),
+            Self::NoBackend { format } => write!(
+                formatter,
+                "No plugin scan backend for format {}",
+                format.wire_name()
+            ),
+            Self::LauncherUnresolvable { cause } => write!(
+                formatter,
+                "Cannot resolve plugin scan helper executable: {cause}"
+            ),
+            Self::LauncherInvalid { cause } => write!(
+                formatter,
+                "{SCAN_WORKER_COMMAND_ENV} is not a valid command: {cause}"
+            ),
+            Self::LauncherNamesNoProgram => {
+                write!(formatter, "{SCAN_WORKER_COMMAND_ENV} names no program")
+            }
+            Self::LauncherNotUtf8 => write!(formatter, "{SCAN_WORKER_COMMAND_ENV} is not valid UTF-8"),
+            Self::Scope(refusal) => refusal.fmt(formatter),
+            Self::ResponseDirectoryUncreatable { cause } => write!(
+                formatter,
+                "Cannot create plugin scan response directory: {cause}"
+            ),
+            Self::ResponseDirectoryUnopenable { cause } => write!(
+                formatter,
+                "Cannot open plugin scan response directory: {cause}"
+            ),
+            Self::HelperUnstartable { cause } => {
+                write!(formatter, "Cannot start plugin scan helper: {cause}")
+            }
+            Self::HelperUnobservable { cause } => {
+                write!(formatter, "Cannot observe plugin scan helper: {cause}")
+            }
+            Self::SupervisorEndedEarly => {
+                formatter.write_str("Plugin scan tree supervisor ended before it started a helper")
+            }
+            Self::ResponseUnreadable { cause } => {
+                write!(formatter, "Cannot read plugin scan helper response: {cause}")
+            }
+            Self::NoResponse { cause } => {
+                write!(formatter, "Plugin scan helper returned no metadata: {cause}")
+            }
+            Self::ResponseInvalid { cause } => {
+                write!(formatter, "Plugin scan helper returned invalid metadata: {cause}")
+            }
+            Self::SameProcess => formatter
+                .write_str("Plugin metadata extraction did not cross a process boundary"),
             Self::Refused(message) => formatter.write_str(message),
         }
     }
 }
 
 impl std::error::Error for ScanFailure {}
+
+impl From<RuntimeScopeRefusal> for ScanFailure {
+    fn from(refusal: RuntimeScopeRefusal) -> Self {
+        Self::Scope(refusal)
+    }
+}
 
 /// The leaf worker's exit code when it could not create or write its
 /// response file.
@@ -264,10 +349,12 @@ pub struct ScanWorkerCommand {
 
 impl ScanWorkerCommand {
     /// Re-execute this process: the application binary scans its own argv.
-    fn from_current_exe() -> Result<Self, String> {
+    fn from_current_exe() -> Result<Self, ScanFailure> {
         Ok(Self {
             program: std::env::current_exe().map_err(|error| {
-                format!("Cannot resolve plugin scan helper executable: {error}")
+                ScanFailure::LauncherUnresolvable {
+                    cause: error.to_string(),
+                }
             })?,
             args: Vec::new(),
             env: BTreeMap::new(),
@@ -281,24 +368,23 @@ impl ScanWorkerCommand {
     /// every plugin on the machine and report each one as a scan failure, which
     /// reads to a user as "this system has no working plugins" instead of "this
     /// setting is wrong".
-    fn from_json(declared: &str) -> Result<Self, String> {
-        let command: Self = serde_json::from_str(declared).map_err(|error| {
-            format!("{SCAN_WORKER_COMMAND_ENV} is not a valid command: {error}")
-        })?;
+    fn from_json(declared: &str) -> Result<Self, ScanFailure> {
+        let command: Self =
+            serde_json::from_str(declared).map_err(|error| ScanFailure::LauncherInvalid {
+                cause: error.to_string(),
+            })?;
         if command.program.as_os_str().is_empty() {
-            return Err(format!("{SCAN_WORKER_COMMAND_ENV} names no program"));
+            return Err(ScanFailure::LauncherNamesNoProgram);
         }
         Ok(command)
     }
 
     /// Read the host's declaration, or fall back to re-execution.
-    fn resolve() -> Result<Self, String> {
+    fn resolve() -> Result<Self, ScanFailure> {
         let Some(declared) = std::env::var_os(SCAN_WORKER_COMMAND_ENV) else {
             return Self::from_current_exe();
         };
-        let declared = declared
-            .to_str()
-            .ok_or_else(|| format!("{SCAN_WORKER_COMMAND_ENV} is not valid UTF-8"))?;
+        let declared = declared.to_str().ok_or(ScanFailure::LauncherNotUtf8)?;
         Self::from_json(declared)
     }
 }
@@ -345,11 +431,16 @@ fn a_refused_scope_creates_no_scan_response_directory() {
             module_path!(),
             "::a_refused_scope_creates_no_scan_response_directory"
         ),
-        || assert!(ResponseDirectory::create().is_err()),
+        || {
+            assert!(matches!(
+                ResponseDirectory::create(),
+                Err(ScanFailure::Scope(RuntimeScopeRefusal::Invalid))
+            ))
+        },
     );
 }
 impl ResponseDirectory {
-    fn create() -> Result<Self, String> {
+    fn create() -> Result<Self, ScanFailure> {
         let parent =
             crate::host::runtime_scope::RuntimeScope::path("native/data/private/scan-responses")?
                 .unwrap_or_else(std::env::temp_dir);
@@ -362,12 +453,17 @@ impl ResponseDirectory {
         }
         builder
             .create(&path)
-            .map_err(|error| format!("Cannot create plugin scan response directory: {error}"))?;
+            .map_err(|error| ScanFailure::ResponseDirectoryUncreatable {
+                cause: error.to_string(),
+            })?;
         // Owned before the pin is opened, so a refused pin still removes the
         // directory on the way out.
         let mut directory = Self { path, pin: None };
-        directory.pin = pin_directory(&directory.path)
-            .map_err(|error| format!("Cannot open plugin scan response directory: {error}"))?;
+        directory.pin = pin_directory(&directory.path).map_err(|error| {
+            ScanFailure::ResponseDirectoryUnopenable {
+                cause: error.to_string(),
+            }
+        })?;
         Ok(directory)
     }
 
@@ -492,12 +588,30 @@ impl Drop for ResponseDirectory {
 struct FormatScanBackend {
     /// Read every plugin descriptor the file declares — one bundle may hold
     /// several. No instance is created.
-    descriptor: fn(&Path) -> Result<Vec<ScannedDescriptor>, String>,
+    descriptor: fn(&Path) -> Result<Vec<ScannedDescriptor>, BackendError>,
     /// Create one live-but-unactivated instance of the plugin `plugin_id`
     /// names in the file, and read its parameter contract and capability
     /// extensions.
-    instance: fn(&Path, plugin_id: &str) -> Result<ScannedInstance, String>,
+    instance: fn(&Path, plugin_id: &str) -> Result<ScannedInstance, BackendError>,
 }
+
+/// A format backend's refusal, as the helper reports it in its response.
+#[derive(Debug)]
+enum BackendError {
+    Clap(ScanError),
+    Vst3(Vst3ScanError),
+}
+
+impl std::fmt::Display for BackendError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Clap(error) => error.fmt(formatter),
+            Self::Vst3(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for BackendError {}
 
 /// The registered scan backend for a format, or `None` when Sourdaw has none.
 ///
@@ -521,31 +635,27 @@ fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
                             .map(ClapDescriptorMetadata::into_scanned_descriptor)
                             .collect()
                     })
-                    .map_err(|error| error.to_string())
+                    .map_err(BackendError::Clap)
             },
             instance: |path, plugin_id| {
-                extract_clap_instance_metadata(path, plugin_id).map_err(|error| error.to_string())
+                extract_clap_instance_metadata(path, plugin_id).map_err(BackendError::Clap)
             },
         }),
         PluginFormat::Vst3 => Some(FormatScanBackend {
             descriptor: |path| {
                 extract_vst3_metadata(path)
                     .map(|metadata| vec![metadata.into_scanned_descriptor()])
-                    .map_err(|error| error.to_string())
+                    .map_err(BackendError::Vst3)
             },
             // VST3's extractor resolves its own class from the bundle, so the
             // selector adds nothing there — and its descriptor pass declares
             // exactly one row, so only one instance is ever asked for.
             instance: |path, _plugin_id| {
-                extract_vst3_instance_metadata(path).map_err(|error| error.to_string())
+                extract_vst3_instance_metadata(path).map_err(BackendError::Vst3)
             },
         }),
         PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }
-}
-
-fn no_scan_backend(format: PluginFormat) -> String {
-    format!("No plugin scan backend for format {}", format.wire_name())
 }
 
 pub fn run_from_process_args() -> Option<i32> {
@@ -667,14 +777,16 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: (backend.instance)(Path::new(plugin_path), plugin_id),
+                result: (backend.instance)(Path::new(plugin_path), plugin_id)
+                    .map_err(|error| error.to_string()),
             },
         ),
         None => write_response(
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: (backend.descriptor)(Path::new(plugin_path)),
+                result: (backend.descriptor)(Path::new(plugin_path))
+                    .map_err(|error| error.to_string()),
             },
         ),
     };
@@ -1643,12 +1755,15 @@ fn process_start(pid: libc::pid_t) -> Option<ProcessStart> {
 /// alone: the file is extended to the serialized size without its bytes
 /// (sparse where the filesystem allows), and the supervisor's own size check
 /// reads that as [`ScanFailure::ResponseOverLimit`] with the true size.
-fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
+fn write_response<T: Serialize>(
+    path: &Path,
+    response: &WorkerResponse<T>,
+) -> Result<(), ResponseWriteError> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|error| format!("Cannot create plugin scan response: {error}"))?;
+        .map_err(ResponseWriteError::Uncreatable)?;
     let bytes = match serde_json::to_vec(response) {
         Ok(bytes) => bytes,
         Err(error) => unserializable_response(response.worker_pid, &error)?,
@@ -1656,19 +1771,57 @@ fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Re
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
         return file
             .set_len(bytes.len() as u64)
-            .map_err(|error| format!("Cannot write plugin scan response: {error}"));
+            .map_err(ResponseWriteError::Unwritable);
     }
     file.write_all(&bytes)
-        .map_err(|error| format!("Cannot write plugin scan response: {error}"))
+        .map_err(ResponseWriteError::Unwritable)
 }
 
-/// The response that stands in for one that would not serialize.
-fn unserializable_response(worker_pid: u32, error: &serde_json::Error) -> Result<Vec<u8>, String> {
+/// Why the helper could not write its response: the one failure
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] reports.
+#[derive(Debug)]
+enum ResponseWriteError {
+    Uncreatable(std::io::Error),
+    Unwritable(std::io::Error),
+    Unserializable(serde_json::Error),
+}
+
+impl std::fmt::Display for ResponseWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Uncreatable(error) => {
+                write!(formatter, "Cannot create plugin scan response: {error}")
+            }
+            Self::Unwritable(error) => {
+                write!(formatter, "Cannot write plugin scan response: {error}")
+            }
+            Self::Unserializable(error) => {
+                write!(formatter, "Cannot serialize plugin scan response: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ResponseWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Uncreatable(error) | Self::Unwritable(error) => Some(error),
+            Self::Unserializable(error) => Some(error),
+        }
+    }
+}
+
+/// The response that stands in for one that would not serialize. Its `Err`
+/// is the worker protocol's wire text, read back as [`ScanFailure::Refused`].
+fn unserializable_response(
+    worker_pid: u32,
+    error: &serde_json::Error,
+) -> Result<Vec<u8>, ResponseWriteError> {
     serde_json::to_vec(&WorkerResponse::<()> {
         worker_pid,
         result: Err(format!("Cannot serialize plugin scan response: {error}")),
     })
-    .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))
+    .map_err(ResponseWriteError::Unserializable)
 }
 /// One helper run's answer, and how much free space its response volume lost
 /// between the spawn and the helper's exit.
@@ -1915,11 +2068,13 @@ fn scan_worker<T: DeserializeOwned>(
     // format is unhostable spends a spawn and a deadline to reach the same
     // answer, and the child's refusal is an exit code with no reason in it.
     if scan_backend(request.format).is_none() {
-        return ScanAttempt::without_spawn(ScanFailure::Refused(no_scan_backend(request.format)));
+        return ScanAttempt::without_spawn(ScanFailure::NoBackend {
+            format: request.format,
+        });
     }
     let launcher = match ScanWorkerCommand::resolve() {
         Ok(launcher) => launcher,
-        Err(reason) => return ScanAttempt::without_spawn(ScanFailure::Refused(reason)),
+        Err(failure) => return ScanAttempt::without_spawn(failure),
     };
     scan_worker_with(
         &launcher,
@@ -1962,7 +2117,7 @@ fn scan_worker_with<T: DeserializeOwned>(
 ) -> ScanAttempt<T> {
     let response_directory = match ResponseDirectory::create() {
         Ok(directory) => directory,
-        Err(reason) => return ScanAttempt::without_spawn(ScanFailure::Refused(reason)),
+        Err(failure) => return ScanAttempt::without_spawn(failure),
     };
     let response_path = response_directory.path.join("metadata.json");
     let mut command = helper_command(launcher, request, &response_path);
@@ -2034,15 +2189,12 @@ fn read_helper_answer<T: DeserializeOwned>(
         }));
     }
     let bytes = read_response_bytes(response_path, path)?;
-    let response: WorkerResponse<T> = serde_json::from_slice(&bytes).map_err(|error| {
-        ScanFailure::Refused(format!(
-            "Plugin scan helper returned invalid metadata: {error}"
-        ))
-    })?;
+    let response: WorkerResponse<T> =
+        serde_json::from_slice(&bytes).map_err(|error| ScanFailure::ResponseInvalid {
+            cause: error.to_string(),
+        })?;
     if response.worker_pid == std::process::id() {
-        return Err(ScanFailure::Refused(
-            "Plugin metadata extraction did not cross a process boundary".to_string(),
-        ));
+        return Err(ScanFailure::SameProcess);
     }
     response.result.map_err(ScanFailure::Refused)
 }
@@ -2082,11 +2234,15 @@ fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u
 }
 
 fn cannot_read_response(error: &std::io::Error) -> ScanFailure {
-    ScanFailure::Refused(format!("Cannot read plugin scan helper response: {error}"))
+    ScanFailure::ResponseUnreadable {
+        cause: error.to_string(),
+    }
 }
 
 fn returned_no_metadata(error: &std::io::Error) -> ScanFailure {
-    ScanFailure::Refused(format!("Plugin scan helper returned no metadata: {error}"))
+    ScanFailure::NoResponse {
+        cause: error.to_string(),
+    }
 }
 
 /// Open the response without following a final symlink, and on Unix without
@@ -2206,9 +2362,11 @@ impl HelperRegistry {
 
     fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
         let mut state = self.lock_unless_stopped();
-        let child = command.spawn().map_err(|error| {
-            ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
-        })?;
+        let child = command
+            .spawn()
+            .map_err(|error| ScanFailure::HelperUnstartable {
+                cause: error.to_string(),
+            })?;
         state.live.insert(child.id());
         Ok(child)
     }
@@ -2432,19 +2590,17 @@ fn parse_tree_report(bytes: &[u8]) -> TreeReport {
 #[cfg(unix)]
 fn tree_report_refusal(report: &TreeReport) -> Option<ScanFailure> {
     if let Some(reason) = &report.spawn_refused {
-        return Some(ScanFailure::Refused(format!(
-            "Cannot start plugin scan helper: {reason}"
-        )));
+        return Some(ScanFailure::HelperUnstartable {
+            cause: reason.clone(),
+        });
     }
     if let Some(reason) = &report.unobservable {
-        return Some(ScanFailure::Refused(format!(
-            "Cannot observe plugin scan helper: {reason}"
-        )));
+        return Some(ScanFailure::HelperUnobservable {
+            cause: reason.clone(),
+        });
     }
     if !report.spawning {
-        return Some(ScanFailure::Refused(
-            "Plugin scan tree supervisor ended before it started a helper".to_string(),
-        ));
+        return Some(ScanFailure::SupervisorEndedEarly);
     }
     None
 }
@@ -2497,8 +2653,8 @@ fn run_bounded_in(
 ) -> Result<ExitStatus, ScanFailure> {
     use std::os::unix::process::CommandExt;
     let (application_end, supervisor_end) =
-        std::os::unix::net::UnixStream::pair().map_err(|error| {
-            ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
+        std::os::unix::net::UnixStream::pair().map_err(|error| ScanFailure::HelperUnstartable {
+            cause: error.to_string(),
         })?;
     let mut supervised = supervisor.command_for(command);
     supervised
@@ -2652,9 +2808,9 @@ fn wait_bounded(
             }
             Err(error) => {
                 terminate_process_tree(registry, child, tie);
-                return Err(ScanFailure::Refused(format!(
-                    "Cannot observe plugin scan helper: {error}"
-                )));
+                return Err(ScanFailure::HelperUnobservable {
+                    cause: error.to_string(),
+                });
             }
         }
     }
@@ -4207,10 +4363,17 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let refusal = run_bounded(&mut missing, WORKER_TIMEOUT)
             .expect_err("a helper that cannot start is refused");
         assert!(
-            matches!(&refusal, ScanFailure::Refused(message)
-                if message.starts_with("Cannot start plugin scan helper: ")),
+            matches!(&refusal, ScanFailure::HelperUnstartable { .. }),
             "{refusal}"
         );
+        assert!(
+            refusal
+                .to_string()
+                .starts_with("Cannot start plugin scan helper: "),
+            "{refusal}"
+        );
+        assert!(!refusal.is_process_failure(), "{refusal}");
+        assert!(!refusal.is_response_limit_refusal(), "{refusal}");
     }
 
     #[cfg(unix)]
@@ -4224,27 +4387,36 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
                 String::from_utf8_lossy(report)
             );
         }
-        let cases: [(&[u8], &str); 4] = [
+        let cases: [(&[u8], &str, ScanFailure); 4] = [
             (
                 b"",
                 "Plugin scan tree supervisor ended before it started a helper",
+                ScanFailure::SupervisorEndedEarly,
             ),
             (
                 b"X\n",
                 "Plugin scan tree supervisor ended before it started a helper",
+                ScanFailure::SupervisorEndedEarly,
             ),
             (
                 b"P\nFno such file\n",
                 "Cannot start plugin scan helper: no such file",
+                ScanFailure::HelperUnstartable {
+                    cause: "no such file".to_string(),
+                },
             ),
             (
                 b"P\nR4242\nUgone\nD\n",
                 "Cannot observe plugin scan helper: gone",
+                ScanFailure::HelperUnobservable {
+                    cause: "gone".to_string(),
+                },
             ),
         ];
-        for (report, message) in cases {
+        for (report, message, variant) in cases {
             let refusal = tree_report_refusal(&parse_tree_report(report))
                 .expect("a supervisor that never reached its spawn refuses");
+            assert_eq!(refusal, variant);
             assert_eq!(refusal.to_string(), message);
             assert!(!refusal.is_process_failure(), "{message}");
         }
@@ -4363,8 +4535,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             scan_leaving_a_setsid_child("exit-setsid", "0");
 
         assert!(
-            matches!(&result, Err(ScanFailure::Refused(message))
-                if message.starts_with("Plugin scan helper returned no metadata")),
+            matches!(&result, Err(failure @ ScanFailure::NoResponse { .. })
+                if failure.to_string().starts_with("Plugin scan helper returned no metadata: ")),
             "a helper that exits 0 without answering returned nothing: {:?}",
             result.as_ref().err()
         );
@@ -4786,6 +4958,130 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ScanFailure::Refused("No plugin scan backend for format vst2".to_string()).to_string(),
             "No plugin scan backend for format vst2"
         );
+    }
+
+    /// Every failure this module generates beside the classified ones, each
+    /// with the full text it carried as a `String` before it had a variant.
+    fn generated_data_level_failures() -> Vec<(ScanFailure, &'static str)> {
+        let cause = || "denied".to_string();
+        vec![
+            (
+                ScanFailure::NoBackend {
+                    format: PluginFormat::Vst2,
+                },
+                "No plugin scan backend for format vst2",
+            ),
+            (
+                ScanFailure::LauncherUnresolvable { cause: cause() },
+                "Cannot resolve plugin scan helper executable: denied",
+            ),
+            (
+                ScanFailure::LauncherInvalid { cause: cause() },
+                "SOURDAW_PLUGIN_SCAN_WORKER_COMMAND is not a valid command: denied",
+            ),
+            (
+                ScanFailure::LauncherNamesNoProgram,
+                "SOURDAW_PLUGIN_SCAN_WORKER_COMMAND names no program",
+            ),
+            (
+                ScanFailure::LauncherNotUtf8,
+                "SOURDAW_PLUGIN_SCAN_WORKER_COMMAND is not valid UTF-8",
+            ),
+            (
+                ScanFailure::Scope(RuntimeScopeRefusal::Invalid),
+                "Native runtime scope must be an existing canonical UUID directory in the reserved namespace",
+            ),
+            (
+                ScanFailure::ResponseDirectoryUncreatable { cause: cause() },
+                "Cannot create plugin scan response directory: denied",
+            ),
+            (
+                ScanFailure::ResponseDirectoryUnopenable { cause: cause() },
+                "Cannot open plugin scan response directory: denied",
+            ),
+            (
+                ScanFailure::HelperUnstartable { cause: cause() },
+                "Cannot start plugin scan helper: denied",
+            ),
+            (
+                ScanFailure::HelperUnobservable { cause: cause() },
+                "Cannot observe plugin scan helper: denied",
+            ),
+            (
+                ScanFailure::SupervisorEndedEarly,
+                "Plugin scan tree supervisor ended before it started a helper",
+            ),
+            (
+                ScanFailure::ResponseUnreadable { cause: cause() },
+                "Cannot read plugin scan helper response: denied",
+            ),
+            (
+                ScanFailure::NoResponse { cause: cause() },
+                "Plugin scan helper returned no metadata: denied",
+            ),
+            (
+                ScanFailure::ResponseInvalid { cause: cause() },
+                "Plugin scan helper returned invalid metadata: denied",
+            ),
+            (
+                ScanFailure::SameProcess,
+                "Plugin metadata extraction did not cross a process boundary",
+            ),
+        ]
+    }
+
+    #[test]
+    fn generated_data_level_failures_keep_their_historical_text() {
+        for (failure, text) in generated_data_level_failures() {
+            assert_eq!(failure.to_string(), text);
+        }
+    }
+
+    /// Mutation this catches: adding any generated data-level variant to
+    /// either classification, which would quarantine a binary over a read
+    /// failure or blame a row on the helper's limit.
+    #[test]
+    fn generated_data_level_failures_are_neither_classification() {
+        for (failure, text) in generated_data_level_failures() {
+            assert!(!failure.is_process_failure(), "{text}");
+            assert!(!failure.is_response_limit_refusal(), "{text}");
+        }
+    }
+
+    /// The launcher declaration's refusals are their variants, not text.
+    #[test]
+    fn launcher_declaration_refusals_are_typed() {
+        assert!(matches!(
+            ScanWorkerCommand::from_json("not json"),
+            Err(ScanFailure::LauncherInvalid { .. })
+        ));
+        assert_eq!(
+            ScanWorkerCommand::from_json(r#"{"program":""}"#),
+            Err(ScanFailure::LauncherNamesNoProgram)
+        );
+    }
+
+    /// A format with no backend is refused by its variant before any spawn.
+    #[test]
+    fn a_format_without_a_backend_is_refused_as_no_backend() {
+        let attempt: ScanAttempt<Vec<ScannedDescriptor>> = scan_descriptor_metadata(
+            PluginFormat::Vst2,
+            Path::new("/plugins/Legacy.dll"),
+            WORKER_TIMEOUT,
+            None,
+        );
+        let failure = attempt.result.expect_err("vst2 has no scan backend");
+        assert_eq!(
+            failure,
+            ScanFailure::NoBackend {
+                format: PluginFormat::Vst2
+            }
+        );
+        assert_eq!(
+            failure.to_string(),
+            "No plugin scan backend for format vst2"
+        );
+        assert_eq!(attempt.consumed_bytes, None);
     }
 
     /// Each variant answers both classification questions exactly as the

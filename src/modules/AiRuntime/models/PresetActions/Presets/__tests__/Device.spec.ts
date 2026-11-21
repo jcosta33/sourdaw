@@ -37,4 +37,18 @@ describe('device palette presets', () => {
 
         expect(unresolved).toEqual([]);
     });
+
+    // A new limiter starts with Auto Makeup off; only factory sites state it on.
+    it('adds a bare limiter that names no Auto Makeup value, so the descriptor default of off applies', () => {
+        const addLimiter = devicePresets.find((preset) => preset.id === 'add-limiter');
+        const action = addLimiter?.buildAction(context);
+        if (!action || Array.isArray(action) || action.type !== 'addDevice') {
+            throw new Error('Expected an addDevice action for add-limiter');
+        }
+        const descriptor = getPlatformPlugins().find((plugin) => plugin.id === 'builtin-limiter');
+        const autoMakeup = descriptor?.parameters.find((parameter) => parameter.id === 'lim-auto-makeup');
+
+        expect(JSON.stringify(action.payload)).not.toContain('lim-auto-makeup');
+        expect(autoMakeup?.defaultValue).toBe(0);
+    });
 });

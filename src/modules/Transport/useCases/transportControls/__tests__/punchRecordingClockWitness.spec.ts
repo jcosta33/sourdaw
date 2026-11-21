@@ -351,6 +351,35 @@ describe('installed punch capture clock observer', () => {
         expect(fixture.port.sent).toEqual([expect.objectContaining({ type: 'init' }), { type: 'stop' }]);
     });
 
+    it('waits out a producer that stays mid-publication when the Pause button is clicked', async () => {
+        const fixture = await installFixture();
+        const pause = document.createElement('button');
+        pause.dataset.testid = 'transport-play';
+        document.body.append(pause);
+        const busyAttempts = 40;
+        const readsAtStart = fixture.clockReads();
+        fixture.beginPublication();
+        fixture.setClockRead(() => {
+            if (fixture.clockReads() - readsAtStart === busyAttempts) {
+                fixture.finishPublication();
+            }
+        });
+        pause.click();
+        pause.remove();
+        expect(witnessField('events')).toEqual([
+            expect.objectContaining({
+                kind: 'capture-pause-click',
+                recording: {
+                    contextFrame: SAMPLE_ZERO + INITIAL_FRAMES + 128,
+                    sampleRate: SAMPLE_RATE,
+                    publishedFrames: INITIAL_FRAMES + 128,
+                    sampleZeroContextFrame: SAMPLE_ZERO,
+                },
+            }),
+        ]);
+        expect(witnessField('readDiagnostics')).toMatchObject({ exhaustedReads: 0 });
+    });
+
     it('gives up on a producer that never finishes publishing and still sends Stop', async () => {
         const fixture = await installFixture();
         let now = 0;

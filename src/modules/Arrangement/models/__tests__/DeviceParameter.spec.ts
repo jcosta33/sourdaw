@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { DRUM_KIT_DEFAULT_LEVEL_DB } from '#/utils/deviceTypeMatching';
+import { DRUM_KIT_DEFAULT_LEVEL_DB } from '#/modules/AudioEngine/useCases';
 
 import { BUILTIN_PLUGINS, getPluginById, isDeviceSupportedOnCurrentPlatform } from '../DeviceParameter';
 

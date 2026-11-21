@@ -99,6 +99,17 @@ export const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE_DYNAMICS = [
                 ['Excess makeup can clip later devices in the chain.'],
                 noExternalModulation
             ),
+            'comp-auto-makeup': parameterGuidance(
+                'Automatic makeup gain',
+                'On adds a fixed gain set by comp-threshold, comp-knee and comp-ratio on top of comp-makeup; off leaves comp-makeup as the only gain.',
+                0,
+                0,
+                ['comp-makeup is the only gain while this is off: keep it off and set comp-makeup to level-match.'],
+                [
+                    'On, a low comp-threshold with a high comp-ratio adds many decibels of gain that can clip later devices.',
+                ],
+                noExternalModulation
+            ),
         }
     ),
     descriptorGuidance(
@@ -217,6 +228,17 @@ export const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE_DYNAMICS = [
                     'lim-threshold sets how much reduction reaches this cap: set lim-ceiling before driving lim-threshold down.',
                 ],
                 ['A ceiling too close to 0 dB can clip on inter-sample peaks after conversion.'],
+                noExternalModulation
+            ),
+            'lim-auto-makeup': parameterGuidance(
+                'Automatic makeup gain',
+                'On adds a fixed gain set by lim-threshold to everything the limiter passes; off passes material below lim-threshold at its own level.',
+                0,
+                0,
+                [
+                    'lim-threshold sets this gain while it is on: keep it off so lowering lim-threshold only catches more peaks.',
+                ],
+                ['On, a low lim-threshold adds up to 17 dB of gain that the ceiling then has to remove.'],
                 noExternalModulation
             ),
         }

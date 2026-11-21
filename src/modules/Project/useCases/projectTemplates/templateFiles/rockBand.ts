@@ -30,6 +30,7 @@ export async function createRockBandTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'NY Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -28,
                     'comp-ratio': 8,
                     'comp-attack': 2,
@@ -116,6 +117,7 @@ export async function createRockBandTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Kick Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -14,
                     'comp-ratio': 4,
                     'comp-attack': 10,
@@ -149,6 +151,7 @@ export async function createRockBandTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Snare Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -16,
                     'comp-ratio': 4,
                     'comp-attack': 5,
@@ -195,6 +198,7 @@ export async function createRockBandTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Bass Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -14,
                     'comp-ratio': 4,
                     'comp-attack': 8,
@@ -247,6 +251,7 @@ export async function createRockBandTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Vox Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -16,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -284,6 +289,7 @@ export async function createRockBandTemplate(): Promise<void> {
             type: 'builtin-compressor',
             name: 'Kick Punch',
             params: {
+                'comp-auto-makeup': 1,
                 'comp-threshold': -12,
                 'comp-ratio': 4,
                 'comp-attack': 15,

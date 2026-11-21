@@ -72,5 +72,5 @@ export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>>
  * path for it — the only case in which an export refuses rather than degrades.
  */
 export function isUnrenderableCatalogDeviceType(deviceType: string): boolean {
-    return UNRENDERABLE_CATALOG_DEVICE_TYPES[deviceType] !== undefined;
+    return Object.hasOwn(UNRENDERABLE_CATALOG_DEVICE_TYPES, deviceType);
 }

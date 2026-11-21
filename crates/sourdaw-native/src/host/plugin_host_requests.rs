@@ -46,8 +46,8 @@
 //! saved with.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::ui_thread::{lend_on_ui_thread, UiThread};
+use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
@@ -192,6 +192,41 @@ fn queue_request(queued: QueuedRequest) {
 /// a block, and the next attempt finds it free — and an instance that is
 /// unloading or retired, which will refuse every attempt until the budget runs
 /// out and is never coming back.
+/// Why a follow-up did not reach the plugin, which is what decides a retry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HostRequestError {
+    /// The control path refused the visit.
+    Refused(PluginControlRefusal),
+    /// The UI thread hop for a component restart did not run.
+    UiThread(UiThreadError),
+}
+
+impl std::fmt::Display for HostRequestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::UiThread(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for HostRequestError {}
+
+impl From<PluginControlRefusal> for HostRequestError {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl From<PluginControlError<UiThreadError>> for HostRequestError {
+    fn from(error: PluginControlError<UiThreadError>) -> Self {
+        match error {
+            PluginControlError::Refused(refusal) => Self::Refused(refusal),
+            PluginControlError::Operation(error) => Self::UiThread(error),
+        }
+    }
+}
+
 fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
     control_still_allowed && attempt + 1 < MAX_FOLLOW_UP_ATTEMPTS
 }
@@ -203,9 +238,9 @@ fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
 /// the lifecycle. Split that way so the retry can be driven to its end — a
 /// failure replayed and then succeeding, and a run of failures giving up — which
 /// a test cannot do against a real control lock it has no way to hold.
-fn serve_queued_request(
+fn serve_queued_request<CarryError>(
     queued: QueuedRequest,
-    carry: impl FnOnce(&str, PluginHostRequest) -> Result<(), String>,
+    carry: impl FnOnce(&str, PluginHostRequest) -> Result<(), CarryError>,
     control_still_allowed: impl FnOnce() -> bool,
 ) -> Option<QueuedRequest> {
     let (instance_id, request, attempt) = queued;
@@ -231,7 +266,7 @@ fn serve_queued_request(
 /// saved over work the user never did.
 pub fn state_dirty_payload(
     instance_id: &str,
-    taken: Result<bool, String>,
+    taken: Result<bool, PluginControlRefusal>,
 ) -> Option<PluginStateDirty> {
     match taken {
         Ok(true) => Some(PluginStateDirty {
@@ -273,7 +308,7 @@ pub fn state_dirty_payload(
 pub fn apply_pending_editor_resizes(engine_plugins: &EnginePlugins) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor resize") {
         let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
-            Ok(plugin.apply_pending_editor_resize())
+            Ok::<_, std::convert::Infallible>(plugin.apply_pending_editor_resize())
         });
 
         if let Err(error) = &applied {
@@ -305,14 +340,16 @@ fn rescan_parameters(
     instance_id: &str,
     engine_plugins: &EnginePlugins,
     events: &dyn EventSink,
-) -> Result<(), String> {
-    let rescanned = runtime.with_control(CONTROL_TIMEOUT, |plugin| {
-        if !plugin.take_parameters_rescan() {
-            return Ok(None);
-        }
-        Ok(Some(plugin.get_parameters()))
-    });
-    let reached_plugin = rescanned.as_ref().map(|_| ()).map_err(String::clone);
+) -> Result<(), PluginControlRefusal> {
+    let rescanned = runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            if !plugin.take_parameters_rescan() {
+                return Ok::<_, std::convert::Infallible>(None);
+            }
+            Ok(Some(plugin.get_parameters()))
+        })
+        .map_err(PluginControlError::into_refusal);
+    let reached_plugin = rescanned.as_ref().map(|_| ()).map_err(Clone::clone);
 
     if let Some(parameters) = rescanned_parameters(instance_id, rescanned) {
         cache_parameters(engine_plugins, instance_id, parameters);
@@ -337,7 +374,7 @@ fn rescan_parameters(
 /// ranges out of nowhere.
 pub fn rescanned_parameters(
     instance_id: &str,
-    rescanned: Result<Option<Vec<daw_plugin_host::PluginParameter>>, String>,
+    rescanned: Result<Option<Vec<daw_plugin_host::PluginParameter>>, PluginControlRefusal>,
 ) -> Option<Vec<daw_plugin_host::PluginParameter>> {
     match rescanned {
         Ok(parameters) => parameters,
@@ -396,7 +433,7 @@ fn service_pending_main_thread_callbacks(engine_plugins: &EnginePlugins) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "main-thread callback") {
         let serviced = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
             plugin.service_main_thread_callback();
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         });
 
         if let Err(error) = &serviced {
@@ -418,9 +455,13 @@ fn report_state_change(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     events: &dyn EventSink,
-) -> Result<(), String> {
-    let taken = runtime.with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_state_dirty()));
-    let reached_plugin = taken.as_ref().map(|_| ()).map_err(String::clone);
+) -> Result<(), PluginControlRefusal> {
+    let taken = runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            Ok::<_, std::convert::Infallible>(plugin.take_state_dirty())
+        })
+        .map_err(PluginControlError::into_refusal);
+    let reached_plugin = taken.as_ref().map(|_| ()).map_err(Clone::clone);
 
     if let Some(payload) = state_dirty_payload(instance_id, taken) {
         events.emit(PLUGIN_STATE_DIRTY_EVENT, payload);
@@ -467,7 +508,7 @@ fn restart_component(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     ui: Option<&dyn UiThread>,
-) -> Result<(), String> {
+) -> Result<(), HostRequestError> {
     let Some(ui) = ui else {
         eprintln!(
             "[Plugin] instance {instance_id} asked for a component restart, but no UI thread is \
@@ -480,6 +521,7 @@ fn restart_component(
             lend_on_ui_thread(ui, plugin, |plugin| plugin.apply_component_restart())
         })
         .map(|_routed_or_refused| ())
+        .map_err(HostRequestError::from)
 }
 
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
@@ -567,11 +609,14 @@ fn carry_request(
     request: PluginHostRequest,
     engine_plugins: &EnginePlugins,
     events: &dyn EventSink,
-) -> Result<(), String> {
+) -> Result<(), HostRequestError> {
     match request {
-        PluginHostRequest::StateDirty => report_state_change(runtime, instance_id, events),
+        PluginHostRequest::StateDirty => {
+            report_state_change(runtime, instance_id, events).map_err(HostRequestError::from)
+        }
         PluginHostRequest::ParametersRescan => {
             rescan_parameters(runtime, instance_id, engine_plugins, events)
+                .map_err(HostRequestError::from)
         }
         PluginHostRequest::ComponentRestart => {
             restart_component(runtime, instance_id, registered_ui_thread().as_deref())
@@ -600,7 +645,7 @@ mod tests {
         fn run_on_ui_thread(
             &self,
             task: &Arc<crate::host::ui_thread::UiThreadTask>,
-        ) -> Result<(), String> {
+        ) -> Result<(), UiThreadError> {
             self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             task.run();
             Ok(())
@@ -797,6 +842,12 @@ mod tests {
 </plist>
 "#;
 
+    fn timed_out() -> PluginControlRefusal {
+        PluginControlRefusal::TimedOut {
+            plugin: "fixture".to_string(),
+        }
+    }
+
     #[test]
     fn a_recorded_state_change_becomes_an_event_naming_the_instance() {
         assert_eq!(
@@ -818,7 +869,7 @@ mod tests {
     #[test]
     fn a_failed_follow_up_emits_nothing_rather_than_a_dirty_mark_it_cannot_confirm() {
         assert_eq!(
-            state_dirty_payload("inst-1", Err("control path timed out".to_string())),
+            state_dirty_payload("inst-1", Err(timed_out())),
             None,
             "a failed follow-up must not ask the user to save work the plugin never reported"
         );
@@ -975,10 +1026,7 @@ mod tests {
     #[test]
     fn a_failed_rescan_leaves_the_cached_contract_standing() {
         assert_eq!(
-            published_ids(rescanned_parameters(
-                "inst-1",
-                Err("control path timed out".to_string())
-            )),
+            published_ids(rescanned_parameters("inst-1", Err(timed_out()))),
             None,
             "a failed re-enumeration must not replace a contract it could not read"
         );
@@ -1193,7 +1241,7 @@ mod tests {
                 .with_control(CONTROL_TIMEOUT, |_| {
                     entered_sender.send(()).expect("signal entry");
                     release_receiver.recv().expect("wait for release");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("the holder reaches the control seam");
         });

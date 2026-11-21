@@ -1,3 +1,5 @@
+import { hostsPadOutputs } from '#/modules/AudioEngine/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDeviceWriteTarget';
@@ -74,7 +76,7 @@ export function restoreDevice(
     const beforeTrack = structuredClone(track);
     let afterTrack = beforeTrack;
     const wasLive = shouldCreateLiveTrackStrip(track);
-    const activatesFolderStrip = !wasLive && track.kind === 'folder' && device.type === 'toaster';
+    const activatesFolderStrip = !wasLive && track.kind === 'folder' && hostsPadOutputs(device.type);
     updateTrack(trackId, (current) => {
         const devices = [...current.devices];
         devices.splice(deviceIndex, 0, device);

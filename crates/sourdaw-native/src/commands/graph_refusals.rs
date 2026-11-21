@@ -11,9 +11,11 @@
 
 use std::fmt;
 
+use super::levain::LevainBankError;
+use super::timeline_sample_lifecycle::TimelineMaterialError;
+
 use daw_dsp::grinder::nam::NamAdmissionError;
 use daw_dsp::toaster::transient::TransientShaperError;
-use daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
 use daw_engine::offline::OfflineCommandError;
 use daw_engine::scheduler::TIMELINE_CHAIN_SLOT_BUDGET;
 use daw_engine::timeline::{
@@ -26,8 +28,9 @@ use super::graph::{
     BACTERIA_MOD_SOURCE_COUNT, BACTERIA_MOD_TARGET_COUNT, GRAND_BOULE_PREVIEW_LIVE_ONLY,
     MAX_BACTERIA_MOD_ASSIGNMENTS, MAX_BATCH_COMMANDS, MAX_IMMEDIATE_DEVICE_PARAMETERS,
     MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
-    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES,
+    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES, OFFLINE_RENDER_SAMPLE_RATES,
 };
+use super::offline_plugins::OfflineRenderError;
 
 /// A queue-ledger refusal: the batch is refused whole instead of letting the
 /// engine drop a write silently.
@@ -177,15 +180,21 @@ pub(crate) enum GraphRefusal {
     Poisoned {
         cause: String,
     },
-    /// Text from a timeline-material check this module does not own.
-    TimelineMaterial(String),
-    /// Text from a levain bank build this module does not own.
-    LevainBank(String),
-    /// Text from the offline plugin instances this module does not own.
-    OfflineRender(String),
+    /// A refusal from the timeline-material lifecycle.
+    TimelineMaterial(TimelineMaterialError),
+    /// A levain bank build's refusal.
+    LevainBank(LevainBankError),
+    /// A refusal from the offline render's plugin instances or its cancel.
+    OfflineRender(OfflineRenderError),
     OfflineCommand(OfflineCommandError),
     OfflineDroppedCommands {
         diagnostics: TimelineRtDiagnosticsSnapshot,
+    },
+    /// The engine refused scheduled notes after admission: the print would
+    /// carry them as rests.
+    OfflineDroppedMidi {
+        batches_refused: u64,
+        event_buffer_overflows: u64,
     },
     TransientShaper(TransientShaperError),
     InvalidBatch(serde_json::Error),
@@ -309,8 +318,11 @@ pub(crate) enum GraphRefusal {
         command: &'static str,
         channel: i16,
     },
+    /// More note events scheduled at one device than its store may hold: in
+    /// one batch, or across an offline render's whole batch.
     MidiNoteCeiling {
         notes: usize,
+        ceiling: usize,
     },
     VelocityOutOfRange {
         velocity: u8,
@@ -392,10 +404,6 @@ pub(crate) enum GraphRefusal {
         device_id: String,
         instance_id: String,
     },
-    HostedInstrumentOffline {
-        device_id: String,
-        plugin_name: String,
-    },
     DeviceAlreadyInChain {
         device_id: String,
     },
@@ -447,6 +455,14 @@ pub(crate) enum GraphRefusal {
     },
     PcmEmpty,
     PcmTooLong {
+        frames: usize,
+    },
+
+    OfflineSampleRateOutOfRange {
+        sample_rate: f64,
+    },
+    OfflineFrameCountZero,
+    OfflineFrameCountTooLarge {
         frames: usize,
     },
 }
@@ -517,14 +533,24 @@ impl fmt::Display for GraphRefusal {
             }
             Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
             Self::Poisoned { cause } => f.write_str(cause),
-            Self::TimelineMaterial(text) | Self::LevainBank(text) | Self::OfflineRender(text) => {
-                f.write_str(text)
-            }
+            Self::TimelineMaterial(refusal) => refusal.fmt(f),
+            Self::LevainBank(refusal) => refusal.fmt(f),
+            Self::OfflineRender(error) => error.fmt(f),
             Self::OfflineCommand(error) => error.fmt(f),
             Self::OfflineDroppedCommands { diagnostics } => write!(
                 f,
                 "offline-render-dropped-commands: the engine refused part of the batch after \
                  admission ({diagnostics:?}); the output is not the batch and is discarded"
+            ),
+            Self::OfflineDroppedMidi {
+                batches_refused,
+                event_buffer_overflows,
+            } => write!(
+                f,
+                "offline-render-dropped-midi: the engine refused scheduled notes after \
+                 admission (note-store batch refusals: {batches_refused}, event-buffer \
+                 overflows: {event_buffer_overflows}); the output is not the batch and is \
+                 discarded"
             ),
             Self::TransientShaper(error) => error.fmt(f),
             Self::InvalidBatch(error) => write!(f, "Invalid graph command batch: {error}"),
@@ -697,10 +723,10 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "{command}: channel {channel} has no address in the note store"
             ),
-            Self::MidiNoteCeiling { notes } => write!(
+            Self::MidiNoteCeiling { notes, ceiling } => write!(
                 f,
-                "schedule-midi: batch carries {notes} notes, past the store's ceiling of \
-                 {MIDI_NOTE_STORE_CAPACITY}"
+                "schedule-midi: {notes} notes for one device, past the store's ceiling of \
+                 {ceiling}"
             ),
             Self::VelocityOutOfRange { velocity } => write!(
                 f,
@@ -815,14 +841,6 @@ impl fmt::Display for GraphRefusal {
                 "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
                  not attached to the engine"
             ),
-            Self::HostedInstrumentOffline {
-                device_id,
-                plugin_name,
-            } => write!(
-                f,
-                "device '{device_id}' hosts the plugin '{plugin_name}', an instrument: hosted \
-                 instruments do not render offline yet"
-            ),
             Self::DeviceAlreadyInChain { device_id } => {
                 write!(f, "device id '{device_id}' is already in a chain")
             }
@@ -913,15 +931,58 @@ impl fmt::Display for GraphRefusal {
                 "PCM payload holds {frames} frames per channel, above the \
                  {MAX_OFFLINE_RENDER_FRAMES}-frame ceiling"
             ),
+
+            Self::OfflineSampleRateOutOfRange { sample_rate } => write!(
+                f,
+                "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+                 {} to {} Hz",
+                OFFLINE_RENDER_SAMPLE_RATES.start(),
+                OFFLINE_RENDER_SAMPLE_RATES.end()
+            ),
+            Self::OfflineFrameCountZero => f.write_str("Frame count must be at least 1"),
+            Self::OfflineFrameCountTooLarge { frames } => write!(
+                f,
+                "Frame count {frames} exceeds the offline render ceiling of \
+                 {MAX_OFFLINE_RENDER_FRAMES}"
+            ),
         }
     }
 }
 
-impl std::error::Error for GraphRefusal {}
+impl std::error::Error for GraphRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::OfflineRender(error) => Some(error),
+            Self::TimelineMaterial(error) => Some(error),
+            Self::LevainBank(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_render_bound_refusals_keep_their_text() {
+        assert_eq!(
+            GraphRefusal::OfflineSampleRateOutOfRange {
+                sample_rate: 7_999.0
+            }
+            .to_string(),
+            "Sample rate 7999 Hz is outside the offline render's supported range of 8000 to \
+             384000 Hz"
+        );
+        assert_eq!(
+            GraphRefusal::OfflineFrameCountZero.to_string(),
+            "Frame count must be at least 1"
+        );
+        assert_eq!(
+            GraphRefusal::OfflineFrameCountTooLarge { frames: 28_800_001 }.to_string(),
+            "Frame count 28800001 exceeds the offline render ceiling of 28800000"
+        );
+    }
 
     #[test]
     fn queue_capacity_refusals_start_with_the_tokens_typescript_matches() {

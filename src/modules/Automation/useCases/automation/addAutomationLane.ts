@@ -3,7 +3,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createAutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
-import { getAutomationParameterRangeResolver } from './getAutomationParameterRangeResolver';
+import { automationParameterRangePort } from './automationParameterRangeDependencies';
 
 export function addAutomationLane(trackId: string, parameterId: string, parameterName: string, laneId?: string): void {
     const state = automationStore.value;
@@ -20,8 +20,8 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
 
     let parameterRange = null;
     if (parameterId !== 'gain' && parameterId !== 'pan') {
-        const resolveParameterRange = getAutomationParameterRangeResolver();
-        parameterRange = resolveParameterRange?.({ trackId, parameterTargetId: parameterId }) ?? null;
+        const resolveParameterRange = automationParameterRangePort.read();
+        parameterRange = resolveParameterRange({ trackId, parameterTargetId: parameterId }) ?? null;
     }
     const minValue = parameterRange?.minValue ?? (parameterId === 'pan' ? -1 : 0);
     const maxValue = parameterRange?.maxValue ?? (parameterId === 'gain' ? FADER_MAX_GAIN : 1);

@@ -11,8 +11,9 @@
  * accepts, so the two read the same published records, plus the schema version
  * this module publishes as each operation's contract version.
  *
- * With no provider registered there is nothing published, which normalization
- * reports as every operation deferred — never as a contract it invented.
+ * Reading before registration throws: an empty manifest would report every
+ * operation as deferred, which is a claim about the build, not a missing
+ * registration.
  */
 
 import { type getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
@@ -23,13 +24,18 @@ type ExternalClientProtocolContract = Parameters<typeof getAgentCapabilityCatalo
 
 type ExternalClientManifestProvider = () => readonly ExternalClientProtocolContract[];
 
-let provider: ExternalClientManifestProvider | null = null;
+let registeredProvider: ExternalClientManifestProvider | null = null;
 
 export const externalClientManifestPort = {
     read(): readonly ExternalClientProtocolContract[] {
-        return provider?.() ?? [];
+        if (registeredProvider === null) {
+            throw new Error(
+                'externalClientManifestPort.read: the protocol manifest is not registered; call externalClientManifestPort.setProvider() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return registeredProvider();
     },
-    setProvider(nextProvider: ExternalClientManifestProvider | null): void {
-        provider = nextProvider;
+    setProvider(nextProvider: ExternalClientManifestProvider): void {
+        registeredProvider = nextProvider;
     },
 };

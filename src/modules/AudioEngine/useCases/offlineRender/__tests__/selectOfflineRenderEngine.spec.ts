@@ -36,6 +36,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { NATIVE_OFFLINE_RENDER_MAX_FRAMES } from '../constants';
 import { nativeOfflineDeviceEntries } from '../nativeOfflineDeviceEntries';
 import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
 import { readScannedPluginKind } from '../readScannedPluginKind';
@@ -138,15 +139,28 @@ function createClip(
     };
 }
 
+/** Ten minutes at 44.1 kHz: inside the native render's frame ceiling. */
+const FITTING_FRAME_COUNT = 44_100 * 600;
+
 /** A project the native engine can hold: no gate applies. */
-function cleanProject(): { renderableTracks: Track[]; scheduledTracks: Track[]; sidechainRoutes: [] } {
+function cleanProject(): {
+    renderableTracks: Track[];
+    scheduledTracks: Track[];
+    frameCount: number;
+    sidechainRoutes: [];
+} {
     const track = createTrack({
         id: 'track-a',
         clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
         sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] as Track['sends'],
     });
     const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus' });
-    return { renderableTracks: [track, bus], scheduledTracks: [track], sidechainRoutes: [] };
+    return {
+        renderableTracks: [track, bus],
+        scheduledTracks: [track],
+        frameCount: FITTING_FRAME_COUNT,
+        sidechainRoutes: [],
+    };
 }
 
 /** Seed one clip's envelope straight into the store the gates read. */
@@ -223,6 +237,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const selection = await selectOfflineRenderEngine({
             renderableTracks: [master, track, bus],
             scheduledTracks: [track],
+            frameCount: FITTING_FRAME_COUNT,
             sidechainRoutes: [],
         });
 
@@ -243,6 +258,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const { renderableTracks, scheduledTracks } = cleanProject();
         const project = {
             scheduledTracks,
+            frameCount: FITTING_FRAME_COUNT,
             sidechainRoutes: [],
             renderableTracks: renderableTracks.map((track) => (track.kind === 'bus' ? { ...track, ...bus } : track)),
         };
@@ -272,6 +288,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             const busB = createTrack({ id: 'bus-b', name: 'Bus B', kind: 'bus' });
             return {
                 scheduledTracks,
+                frameCount: FITTING_FRAME_COUNT,
                 sidechainRoutes: [],
                 renderableTracks: [...renderableTracks.filter((track) => track.kind !== 'bus'), busA, busB],
             };
@@ -325,6 +342,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const selection = await selectOfflineRenderEngine({
             renderableTracks: [track],
             scheduledTracks: [track],
+            frameCount: FITTING_FRAME_COUNT,
             sidechainRoutes: [],
         });
 
@@ -350,10 +368,42 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const selection = await selectOfflineRenderEngine({
             renderableTracks: [track],
             scheduledTracks: [track],
+            frameCount: FITTING_FRAME_COUNT,
             sidechainRoutes: [],
         });
 
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
+    /**
+     * #6782 — the native render refuses a frame count past its ceiling from
+     * inside the render phase, which does not fall back, so the selection
+     * keeps such an export on Web Audio.
+     */
+    describe('the native frame ceiling', () => {
+        it('degrades an export one frame past the ceiling, naming both figures', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const frameCount = NATIVE_OFFLINE_RENDER_MAX_FRAMES + 1;
+
+            const selection = await selectOfflineRenderEngine({ ...cleanProject(), frameCount });
+
+            expect(selection).toEqual({
+                engine: 'web-audio/offline',
+                reason: `the export is ${frameCount} frames long, past the native render's ceiling of ${NATIVE_OFFLINE_RENDER_MAX_FRAMES} frames`,
+                degraded: true,
+            });
+        });
+
+        it('hands an export exactly at the ceiling to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({
+                ...cleanProject(),
+                frameCount: NATIVE_OFFLINE_RENDER_MAX_FRAMES,
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
     });
 
     describe('content gates — a shape the native engine refuses degrades instead', () => {
@@ -376,7 +426,12 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         frozen: true,
                         freezeState: { status: 'frozen', frozenBufferId: 'freeze-1' },
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
+                    return {
+                        renderableTracks: [track],
+                        scheduledTracks: [track],
+                        frameCount: FITTING_FRAME_COUNT,
+                        sidechainRoutes: [],
+                    };
                 },
                 reason: 'track "Frozen A" is frozen and replays a pre-rendered buffer',
             },
@@ -388,7 +443,12 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         name: 'Keys A',
                         clips: [createClip({ id: 'clip-a', trackId: 'track-a', type: 'midi' })],
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
+                    return {
+                        renderableTracks: [track],
+                        scheduledTracks: [track],
+                        frameCount: FITTING_FRAME_COUNT,
+                        sidechainRoutes: [],
+                    };
                 },
                 reason: 'track "Keys A" plays MIDI programme',
             },
@@ -404,7 +464,12 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         name: 'Env A',
                         clips: [createClip({ id: 'clip-env', trackId: 'track-a', audioBufferId: 'mat-a' })],
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
+                    return {
+                        renderableTracks: [track],
+                        scheduledTracks: [track],
+                        frameCount: FITTING_FRAME_COUNT,
+                        sidechainRoutes: [],
+                    };
                 },
                 reason: 'track "Env A" plays a clip gain envelope the native render does not apply',
             },
@@ -418,7 +483,12 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         kind: 'bus',
                         outputId: 'track-a',
                     });
-                    return { renderableTracks: [track, bus], scheduledTracks: [], sidechainRoutes: [] };
+                    return {
+                        renderableTracks: [track, bus],
+                        scheduledTracks: [],
+                        frameCount: FITTING_FRAME_COUNT,
+                        sidechainRoutes: [],
+                    };
                 },
                 reason: 'bus "Feeder" routes into a track, which the native engine refuses',
             },
@@ -597,6 +667,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             const selection = await selectOfflineRenderEngine({
                 renderableTracks: [track],
                 scheduledTracks: [track],
+                frameCount: FITTING_FRAME_COUNT,
                 sidechainRoutes: [],
             });
 
@@ -660,6 +731,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             const selection = await selectOfflineRenderEngine({
                 renderableTracks: [track],
                 scheduledTracks: [track],
+                frameCount: FITTING_FRAME_COUNT,
                 sidechainRoutes: [],
             });
 
@@ -673,6 +745,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             const selection = await selectOfflineRenderEngine({
                 renderableTracks: [track],
                 scheduledTracks: [track],
+                frameCount: FITTING_FRAME_COUNT,
                 sidechainRoutes: keyedDeviceId === undefined ? [] : [{ targetDeviceId: keyedDeviceId }],
             });
 
@@ -680,7 +753,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         });
     });
 
-    describe('hosted plugins — a loaded effect renders natively, anything else keeps its route (#4592)', () => {
+    describe('hosted plugins — a loaded effect or instrument renders natively, anything else keeps its route (#4592, #6777)', () => {
         const hostedReverb: Device = {
             id: 'plug-1',
             name: 'Valhalla',
@@ -713,6 +786,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             return selectOfflineRenderEngine({
                 renderableTracks: [track],
                 scheduledTracks: [track],
+                frameCount: FITTING_FRAME_COUNT,
                 sidechainRoutes: keyedDeviceId === undefined ? [] : [{ targetDeviceId: keyedDeviceId }],
                 hostedPluginRuntime,
             });
@@ -749,11 +823,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         });
 
         const degraded: { name: string; runtime: NativeOfflineHostedRuntime; keyed?: boolean; reason: string }[] = [
-            {
-                name: 'a loaded hosted instrument, named',
-                runtime: runtime({ pluginKind: () => 'instrument' }),
-                reason: 'track "Vocals" carries hosted instrument "Valhalla", which the native render does not host offline',
-            },
             {
                 name: 'a loaded hosted plugin the scan holds no kind for',
                 runtime: runtime({ pluginKind: () => null }),
@@ -809,6 +878,122 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                 expect(selection.engine === 'native/offline').toBe(stamped);
             }
         );
+
+        describe('a MIDI track played by a hosted instrument', () => {
+            function plugin(id: string, name: string, externalPluginId: string): Device {
+                return { ...hostedReverb, id, name, externalPluginId, externalInstanceId: `instance-${id}` };
+            }
+            const instrumentA = plugin('a', 'Synth', 'synth-a');
+            const instrumentB = plugin('b', 'Other', 'synth-b');
+            const effectDevice = plugin('fx', 'Verb', 'verb');
+            const unknownDevice = plugin('u', 'Mystery', 'mystery');
+            const toaster: Device = {
+                id: 'toaster-1',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const gluten: Device = {
+                id: 'glue-1',
+                name: 'Gluten',
+                type: 'gluten',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const scanKinds: Record<string, 'instrument' | 'effect'> = {
+                'synth-a': 'instrument',
+                'synth-b': 'instrument',
+                verb: 'effect',
+            };
+
+            function midiTrack(devices: Device[]): Track {
+                return createTrack({
+                    id: 'track-m',
+                    name: 'Keys',
+                    kind: 'midi',
+                    devices,
+                    clips: [createClip({ id: 'clip-m', trackId: 'track-m', type: 'midi' })],
+                });
+            }
+
+            function loadedRuntime(devices: Device[]): NativeOfflineHostedRuntime {
+                return runtime({
+                    loadedInstanceIds: new Set(devices.flatMap((device) => device.externalInstanceId ?? [])),
+                    pluginKind: (externalPluginId) => scanKinds[externalPluginId] ?? null,
+                });
+            }
+
+            const NATIVE = 'native/offline';
+            const WEB = 'web-audio/offline';
+            type Case = {
+                name: string;
+                devices: Device[];
+                /** The devices whose instance is loaded; the rest sit on the chain with nothing loaded. */
+                loaded: Device[];
+            };
+            const nativeCases: Case[] = [
+                {
+                    name: 'a loaded hosted instrument first',
+                    devices: [instrumentA],
+                    loaded: [instrumentA],
+                },
+                {
+                    name: 'a loaded hosted instrument then an effect',
+                    devices: [instrumentA, gluten],
+                    loaded: [instrumentA],
+                },
+                {
+                    name: 'two loaded hosted instruments',
+                    devices: [instrumentA, instrumentB],
+                    loaded: [instrumentA, instrumentB],
+                },
+            ];
+            const webCases: (Case & { reason: string })[] = [
+                {
+                    name: 'a loaded hosted instrument behind a loaded hosted effect',
+                    devices: [effectDevice, instrumentA],
+                    loaded: [effectDevice, instrumentA],
+                    reason: 'track "Keys" plays MIDI programme',
+                },
+                {
+                    name: 'a built-in instrument',
+                    devices: [toaster],
+                    loaded: [],
+                    reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
+                },
+                {
+                    name: 'a hosted instrument after a built-in instrument',
+                    devices: [toaster, instrumentA],
+                    loaded: [instrumentA],
+                    reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
+                },
+                {
+                    name: 'a hosted plugin the scan holds no kind for',
+                    devices: [unknownDevice],
+                    loaded: [unknownDevice],
+                    reason: 'track "Keys" carries hosted plugin "Mystery", which the plugin scan records no kind for',
+                },
+                {
+                    name: 'a hosted instrument with nothing loaded',
+                    devices: [instrumentA],
+                    loaded: [],
+                    reason: 'track "Keys" carries device "external-plugin", which the native render has no body for',
+                },
+            ];
+
+            it.each(nativeCases)('selects the native render for $name', async ({ devices, loaded }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
+
+                expect(selection).toEqual({ engine: NATIVE, transport: stubTransport });
+            });
+
+            it.each(webCases)('keeps Web Audio for $name', async ({ devices, loaded, reason }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
+
+                expect(selection).toEqual({ engine: WEB, reason, degraded: true });
+            });
+        });
 
         it('reads a plugin’s kind from the scan the native chain splices on', () => {
             const scanned = (id: string, category: string) => ({

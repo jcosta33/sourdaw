@@ -27,14 +27,14 @@
 //! never run here and never parked.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::{LatencyChange, SharedHostedPlugin};
+use crate::host::native_bridge::{LatencyChange, PluginControlError, SharedHostedPlugin};
 use crate::host::plugin_host_requests::registered_ui_thread;
-use crate::host::ui_thread::{lend_on_ui_thread, UiThread};
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
-use daw_plugin_host::take_pending_latency_requery_signal;
 use daw_plugin_host::HostedRuntime;
+use daw_plugin_host::{take_pending_latency_requery_signal, PluginError};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -45,7 +45,9 @@ use std::time::Duration;
 pub const PLUGIN_LATENCY_CHANGED_EVENT: &str = "plugin-latency-changed";
 
 /// How long a latency re-query may wait for the RT path to release the plugin.
-/// Matches the timeout every other control-path command uses.
+/// The visit first waits up to the control gate deadline
+/// (`CONTROL_GATE_DEADLINE` in `native_bridge`), then up to this long for the
+/// RT seam.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long a hint-driven sweep's visit may hold one instance. Sized for the
@@ -62,8 +64,28 @@ const SWEEP_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
 /// plugin that asked to restart is owed a latency correction, not a deadline.
 const IDLE_HINT_POLL: Duration = Duration::from_millis(100);
 
-/// Why a flagged latency restart was not run: there is no thread it may run on.
-const NO_UI_THREAD: &str = "no UI thread is registered to run its latency restart on";
+/// Why a latency restart lent to the UI thread did not answer with a latency.
+#[derive(Debug)]
+enum UiRequeryError {
+    /// No UI thread is registered, so the restart was not run anywhere.
+    NoUiThread,
+    /// The UI thread hop did not run the restart or did not answer.
+    UiThread(UiThreadError),
+    /// The plugin's own restart or re-query failed.
+    Plugin(PluginError),
+}
+
+impl std::fmt::Display for UiRequeryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoUiThread => {
+                formatter.write_str("no UI thread is registered to run its latency restart on")
+            }
+            Self::UiThread(error) => error.fmt(formatter),
+            Self::Plugin(error) => error.fmt(formatter),
+        }
+    }
+}
 
 /// Payload of `plugin-latency-changed`. snake_case on the wire, matching the
 /// other plugin DTOs (`PluginInstance`).
@@ -108,9 +130,9 @@ pub fn notify_latency_change(instance_id: &str) {
 /// plugin or an event sink: only a real change emits; an unchanged poll and a
 /// failed re-query emit nothing (a failure must not publish a fabricated
 /// latency, which would corrupt compensation on every track using the plugin).
-pub fn latency_change_payload(
+pub fn latency_change_payload<E: std::fmt::Display>(
     instance_id: &str,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, E>,
 ) -> Option<PluginLatencyChanged> {
     match refreshed {
         Ok(Some(change)) => Some(PluginLatencyChanged {
@@ -135,9 +157,9 @@ pub fn latency_change_payload(
 /// nothing rather than addressing an id the effect table never took. Silent on
 /// failure because [`latency_change_payload`] already reported that poll —
 /// one failed re-query is one diagnostic.
-pub fn latency_compensation(
+pub fn latency_compensation<E>(
     engine_plugin_id: Option<usize>,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, E>,
 ) -> Option<LatencyCompensation> {
     let Ok(Some(change)) = refreshed else {
         return None;
@@ -189,8 +211,10 @@ fn publish_compensation(engine: &Engine, instance_id: &str, compensation: Latenc
 fn requery_on_ui_thread(
     ui: &dyn UiThread,
     plugin: &mut HostedRuntime,
-) -> Result<Option<LatencyChange>, String> {
-    lend_on_ui_thread(ui, plugin, SharedHostedPlugin::refresh_latency_change)?
+) -> Result<Option<LatencyChange>, UiRequeryError> {
+    lend_on_ui_thread(ui, plugin, SharedHostedPlugin::refresh_latency_change)
+        .map_err(UiRequeryError::UiThread)?
+        .map_err(UiRequeryError::Plugin)
 }
 
 /// Re-query one woken instance, and report what it answered.
@@ -217,7 +241,7 @@ fn serve_channel_wake(
         Some(ui) => {
             runtime.with_control(CONTROL_TIMEOUT, |plugin| requery_on_ui_thread(ui, plugin))
         }
-        None => Err(NO_UI_THREAD.to_string()),
+        None => Err(PluginControlError::Operation(UiRequeryError::NoUiThread)),
     };
     if let Some(payload) = latency_change_payload(instance_id, &refreshed) {
         events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
@@ -254,8 +278,9 @@ fn service_pending_restarts(
 ) {
     let Some(ui) = ui else {
         eprintln!(
-            "[Plugin] a plugin asked for a latency restart, but {NO_UI_THREAD}; \
-             it is not carried until the plugin asks again"
+            "[Plugin] a plugin asked for a latency restart, but {}; \
+             it is not carried until the plugin asks again",
+            UiRequeryError::NoUiThread
         );
         return;
     };
@@ -362,11 +387,26 @@ fn serve_wakes_and_hints(
 mod tests {
     use super::*;
 
-    fn changed(latency_ms: f64, latency_frames: usize) -> Result<Option<LatencyChange>, String> {
+    fn changed(
+        latency_ms: f64,
+        latency_frames: usize,
+    ) -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
         Ok(Some(LatencyChange {
             latency_ms,
             latency_frames,
         }))
+    }
+
+    fn unchanged() -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
+        Ok(None)
+    }
+
+    fn timed_out() -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
+        Err(PluginControlError::Refused(
+            crate::host::native_bridge::PluginControlRefusal::TimedOut {
+                plugin: "fixture".to_string(),
+            },
+        ))
     }
 
     #[test]
@@ -384,13 +424,13 @@ mod tests {
 
     #[test]
     fn an_unchanged_poll_emits_nothing() {
-        assert_eq!(latency_change_payload("inst-1", &Ok(None)), None);
+        assert_eq!(latency_change_payload("inst-1", &unchanged()), None);
     }
 
     #[test]
     fn a_failed_requery_emits_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_change_payload("inst-1", &Err("control path timed out".to_string())),
+            latency_change_payload("inst-1", &timed_out()),
             None,
             "a failed re-query must not publish a latency the plugin never reported"
         );
@@ -409,13 +449,13 @@ mod tests {
 
     #[test]
     fn an_unchanged_poll_compensates_nothing() {
-        assert_eq!(latency_compensation(Some(7), &Ok(None)), None);
+        assert_eq!(latency_compensation(Some(7), &unchanged()), None);
     }
 
     #[test]
     fn a_failed_requery_compensates_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_compensation(Some(7), &Err("control path timed out".to_string())),
+            latency_compensation(Some(7), &timed_out()),
             None,
             "a failed re-query must not aim a delay line at a latency the plugin never reported"
         );
@@ -752,7 +792,7 @@ mod tests {
         fn run_on_ui_thread(
             &self,
             task: &Arc<crate::host::ui_thread::UiThreadTask>,
-        ) -> Result<(), String> {
+        ) -> Result<(), UiThreadError> {
             self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             task.run();
             Ok(())
