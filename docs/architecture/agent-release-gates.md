@@ -134,7 +134,9 @@ Schema version 2 carries, per corpus file:
   from the objectives the run itself published, never by a minted id; `expand` calls
   `recipe.expand` for one recipe on one named track, stating the role the recipe serves; and
   `measure-preview` calls `analysis.measure` with subject `preview` over one named section, measuring
-  an earlier expansion or a list of plain commands in the live project and in the isolated preview;
+  an earlier expansion, several earlier expansions as one cumulative batch (`recipeCallIds`, one per
+  target of a multi-target request, each prefix rendered and measured), or a list of plain commands
+  in the live project and in the isolated preview;
   `propose-compiled` then adopts those measured commands by call id and adds none of its own, so the
   figures stay bound to the exact batch that persists. A comparative names its subject and reference
   as fixture tracks, whether the request names them outright or by role ("the drums", "the backing

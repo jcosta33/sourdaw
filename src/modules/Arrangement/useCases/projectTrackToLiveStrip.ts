@@ -1,5 +1,6 @@
 import {
     initializeTrackStripFromSnapshot,
+    isMidiTransformDevice,
     reportLatency,
     setTrackGain,
     setTrackPan,
@@ -203,7 +204,7 @@ export function projectTrackToLiveStrip(
     }
     const { deferSidechainWiring = false, deferSends = false } = input;
 
-    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
+    const audioDevices = track.devices.filter((device) => !isMidiTransformDevice(device.type));
     for (const device of audioDevices) {
         const target = resolveEligibleDeviceWriteTarget(device.id);
         if (target.status !== 'eligible' || target.trackId !== track.id || target.deviceId !== device.id) {

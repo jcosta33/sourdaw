@@ -32,6 +32,8 @@ export type DrumRenderComparisonCapability = {
         parallelBusName: 'Parallel Compression';
         parallelBusBinding: 'parallel-compression';
         compressorDeviceType: 'builtin-compressor';
+        /** The compressor's Auto Makeup switch, on: the parallel gain was voiced with Chromium's makeup gain in the output. */
+        compressorAutoMakeup: 1;
         sendLevelDb: -12;
         sendLevel: number;
         sendPreFader: false;

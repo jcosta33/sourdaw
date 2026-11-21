@@ -104,6 +104,7 @@
                 "createBus",
                 "setTrackOutput",
                 "addDevice",
+                "setDeviceParameter",
                 "addSend",
                 "setTrackGain",
                 "renderProjectSections"
@@ -111,6 +112,7 @@
             "risk": [
                 "bounded-reversible",
                 "authority-sensitive",
+                "bounded-reversible",
                 "bounded-reversible",
                 "authority-sensitive",
                 "bounded-reversible",

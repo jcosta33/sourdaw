@@ -2304,6 +2304,27 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
         );
 
+        it('undoes a height edit to the clamped height a stored out-of-range height was shown with', async () => {
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', height: 500 })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            reloadSavedProject();
+            expect(trackNamed(TRACK_ID).height).toBe(300);
+
+            expect(
+                await runAsAgent([{ type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } }])
+            ).toMatchObject({ status: 'committed' });
+            expect(trackNamed(TRACK_ID).height).toBe(120);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackNamed(TRACK_ID).height).toBe(300);
+
+            await redo();
+            expect(trackNamed(TRACK_ID).height).toBe(120);
+        });
+
         it('restores the exact prior heights of a zoom that clamped some tracks, across reloads', async () => {
             expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: 20 } }])).toMatchObject({
                 status: 'committed',

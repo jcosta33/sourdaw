@@ -4,7 +4,8 @@
 //! the host gave the instance, so a host test observes the mode through the
 //! ordinary state read rather than through a side channel, and the block sizes
 //! the host promised at activation and then handed over. The editor class
-//! appends a record of its editor (see [`GuiRecord`]). Loading restores only
+//! appends a record of its editor and its run loop (see [`GuiRecord`] and
+//! [`RunLoopRecord`]). Loading restores only
 //! `Gain`: everything else is a record of what the host did, not a setting.
 
 const MAGIC: &[u8; 4] = b"SDFX";
@@ -78,8 +79,14 @@ const GUI_MAGIC: &[u8; 4] = b"SDGU";
 /// How many editor calls the record keeps, oldest first. Calls past it are
 /// dropped, which no test comes near.
 pub const GUI_CALLS_KEPT: usize = 16;
-/// The bytes the editor record appends to the chunk.
-pub(crate) const GUI_RECORD_BYTES: usize = MAGIC_BYTES + 1 + GUI_CALLS_KEPT + 3;
+/// The bytes the editor record appends to the chunk, its run-loop record
+/// included.
+pub(crate) const GUI_RECORD_BYTES: usize =
+    MAGIC_BYTES + 1 + GUI_CALLS_KEPT + 3 + RUN_LOOP_RECORD_BYTES;
+
+const RUN_LOOP_MAGIC: &[u8; 4] = b"SDRL";
+const COUNT_BYTES: usize = 4;
+const RUN_LOOP_RECORD_BYTES: usize = MAGIC_BYTES + 1 + 3 * COUNT_BYTES + 1;
 
 /// One `clap.gui` call the host made, in the order it made them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +128,25 @@ pub struct GuiRecord {
     pub hide_answer: Option<bool>,
     /// What `can_resize` answers now.
     pub can_resize: bool,
+    pub run_loop: RunLoopRecord,
+}
+
+/// What the editor class's `clap.timer-support` and `clap.posix-fd-support`
+/// registrations saw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunLoopRecord {
+    /// Whether the host offered both extensions to `plugin.init`.
+    pub offered: bool,
+    /// `on_timer` calls for the timer registered in `plugin.init`, which the
+    /// instance never unregisters.
+    pub init_timer_fires: u32,
+    /// `on_timer` calls for the timers the editors registered in `gui.create`.
+    pub editor_timer_fires: u32,
+    /// `on_fd` calls reporting an editor's pipe readable.
+    pub editor_fd_fires: u32,
+    /// Whether every editor callback ran on the thread that created that
+    /// editor.
+    pub all_on_creating_thread: bool,
 }
 
 const ANSWER_NEVER_GIVEN: u8 = 2;
@@ -148,12 +174,37 @@ pub(crate) fn append_gui_record(
     call_count: usize,
     answers: [u8; 2],
     can_resize: bool,
+    run_loop: RunLoopRecord,
 ) {
     chunk.extend_from_slice(GUI_MAGIC);
     chunk.push(call_count.min(GUI_CALLS_KEPT) as u8);
     chunk.extend_from_slice(call_codes);
     chunk.extend_from_slice(&answers);
     chunk.push(u8::from(can_resize));
+    chunk.extend_from_slice(RUN_LOOP_MAGIC);
+    chunk.push(u8::from(run_loop.offered));
+    chunk.extend_from_slice(&run_loop.init_timer_fires.to_le_bytes());
+    chunk.extend_from_slice(&run_loop.editor_timer_fires.to_le_bytes());
+    chunk.extend_from_slice(&run_loop.editor_fd_fires.to_le_bytes());
+    chunk.push(u8::from(run_loop.all_on_creating_thread));
+}
+
+fn decode_run_loop(record: &[u8]) -> Option<RunLoopRecord> {
+    let (magic, rest) = record.split_at_checked(MAGIC_BYTES)?;
+    if magic != RUN_LOOP_MAGIC {
+        return None;
+    }
+    let (offered, rest) = rest.split_at_checked(1)?;
+    let (init_timer, rest) = rest.split_at_checked(COUNT_BYTES)?;
+    let (editor_timer, rest) = rest.split_at_checked(COUNT_BYTES)?;
+    let (editor_fd, rest) = rest.split_at_checked(COUNT_BYTES)?;
+    Some(RunLoopRecord {
+        offered: offered == [1],
+        init_timer_fires: u32::from_le_bytes(init_timer.try_into().ok()?),
+        editor_timer_fires: u32::from_le_bytes(editor_timer.try_into().ok()?),
+        editor_fd_fires: u32::from_le_bytes(editor_fd.try_into().ok()?),
+        all_on_creating_thread: rest == [1],
+    })
 }
 
 /// The editor class's chunk: the common fields and the editor record, or
@@ -170,6 +221,7 @@ pub fn decode_gui(chunk: &[u8]) -> Option<(RecordedState, GuiRecord)> {
     }
     let (count, rest) = rest.split_at(1);
     let (codes, rest) = rest.split_at(GUI_CALLS_KEPT);
+    let (rest, run_loop) = rest.split_at(3);
     let calls = codes
         .iter()
         .take(usize::from(count[0]))
@@ -182,6 +234,7 @@ pub fn decode_gui(chunk: &[u8]) -> Option<(RecordedState, GuiRecord)> {
             show_answer: decode_answer(rest[0])?,
             hide_answer: decode_answer(rest[1])?,
             can_resize: rest[2] == 1,
+            run_loop: decode_run_loop(run_loop)?,
         },
     ))
 }
@@ -237,6 +290,13 @@ mod tests {
         for (slot, call) in codes.iter_mut().zip(calls) {
             *slot = call.code();
         }
+        let run_loop = RunLoopRecord {
+            offered: true,
+            init_timer_fires: 7,
+            editor_timer_fires: 3,
+            editor_fd_fires: 2,
+            all_on_creating_thread: true,
+        };
         let mut chunk = encode(state);
         append_gui_record(
             &mut chunk,
@@ -244,6 +304,7 @@ mod tests {
             calls.len(),
             [encode_answer(Some(true)), encode_answer(None)],
             true,
+            run_loop,
         );
 
         let (decoded, record) = decode_gui(&chunk).unwrap();
@@ -256,6 +317,7 @@ mod tests {
                 show_answer: Some(true),
                 hide_answer: None,
                 can_resize: true,
+                run_loop,
             }
         );
         assert_eq!(decode(&chunk), None, "an editor chunk is not a plain one");

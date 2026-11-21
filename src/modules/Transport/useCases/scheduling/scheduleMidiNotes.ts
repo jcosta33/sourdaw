@@ -6,12 +6,14 @@ import {
     builtinSynthVoice,
     type classifyNoteReceivingDevice,
     ensureTrackStrip,
+    findMidiTransformDevice,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
     isBypassedNoteReceiver,
+    isMidiTransformDevice,
     registerScheduledSource,
     resolveDrumKitBy,
     resolveDrumKitOutputGain,
@@ -168,7 +170,7 @@ function resolveStoredControllerDevice(
     track: SchedulerTrack,
     tracks: readonly SchedulerTrack[]
 ): { device: SchedulerTrack['devices'][number]; node: SchedulerTrackStrip['deviceNodes'][number] } | null {
-    if (track.devices.some((candidate) => candidate.type === 'yeast')) {
+    if (track.devices.some((candidate) => isMidiTransformDevice(candidate.type))) {
         return null;
     }
     const strip = ensureTrackStrip(track.id);
@@ -806,7 +808,7 @@ export async function scheduleMidiNotes(
         const drumKit = receivesOnDrumKit && !drumKitDef ? resolveDrumKit(track.devices) : null;
         const drumKitGain = resolveDrumKitOutputGain(track.devices);
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
-        const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+        const yeastDevice = findMidiTransformDevice(track.devices);
         let yeastNotes: PreparedYeastTrackNotes | null | undefined;
         if (preparedInitialWindow) {
             yeastNotes = preparedInitialWindow.yeastByTrack.get(track.id);
