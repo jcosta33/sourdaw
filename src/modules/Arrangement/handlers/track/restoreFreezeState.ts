@@ -1,8 +1,11 @@
 import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
+
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 /**
  * Inverse and redo of `freezeTrack` and `unfreezeTrack`, guarded on the take the forward
@@ -22,6 +25,13 @@ export const handleRestoreFreezeState = createHandler<'restoreFreezeState'>({
             return { status: 'no-write' };
         }
         const replacement = action.payload.replacement;
+        // A redo of a freeze or an undo of an unfreeze re-freezes through this action, so it owes
+        // the recording check `freezeTrack` makes. A conflict leaves the history entry where it
+        // was, so it stays redoable (or undoable) once the recording stops.
+        if (replacement.freezeState.status === 'frozen' && isFreezeRefusedWhileRecording(track.id)) {
+            notifyUser(FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, 'warning');
+            return { status: 'conflict', reason: FREEZE_REFUSED_WHILE_RECORDING_MESSAGE };
+        }
         updateTrack(track.id, (candidate) => ({
             ...candidate,
             frozen: replacement.frozen,
