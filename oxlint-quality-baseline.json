@@ -5989,11 +5989,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/models/StoredDeviceParameterMigration.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/models/TakeLane.ts": {
         "eslint/max-params": {
             "count": 1

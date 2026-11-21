@@ -35,7 +35,16 @@ const supersededReorderDelta: DeviceChainRuntimeDeltaSuperseded = {
 function seedAudioTrack(): void {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });
     track.devices = [
-        { id: 'device-1', name: 'Compressor', type: 'builtin-compressor', bypassed: false, parameterValues: {} },
+        // The track store's projection reads a stored compressor's Auto Makeup switch, so a compressor
+        // the store holds always names it; a fixture without it would gain it on the first projection
+        // and stop matching the topology its own reorder recorded.
+        {
+            id: 'device-1',
+            name: 'Compressor',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { 'comp-auto-makeup': 1 },
+        },
         { id: 'device-2', name: 'EQ', type: 'builtin-eq', bypassed: false, parameterValues: { frequency: 1000 } },
         { id: 'device-3', name: 'Limiter', type: 'builtin-limiter', bypassed: false, parameterValues: {} },
     ];
@@ -106,7 +115,7 @@ describe('handleReorderDevices Command path', () => {
                 id: 'audio-1',
                 kind: 'audio',
                 devices: [
-                    { id: 'device-1', type: 'builtin-compressor', parameterIds: [] },
+                    { id: 'device-1', type: 'builtin-compressor', parameterIds: ['comp-auto-makeup'] },
                     { id: 'device-2', type: 'builtin-eq', parameterIds: ['frequency'] },
                     { id: 'device-3', type: 'builtin-limiter', parameterIds: [] },
                 ],

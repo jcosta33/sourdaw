@@ -7,7 +7,7 @@ import {
     createMockAudioNode,
 } from '../../../../helpers/__tests__/audioContext.mock';
 import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
-import { AdjustmentBusNode } from '../AdjustmentBusNode';
+import { ADJUSTMENT_DEVICE_TYPE, AdjustmentBusNode } from '../AdjustmentBusNode';
 import { createAdjustmentLayerRuntime, type TrackRerouteDeps } from '../AdjustmentLayerRuntime';
 
 describe('AdjustmentLayerRuntime', () => {
@@ -311,6 +311,25 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
         expect(rerouteTrack).not.toHaveBeenCalled();
     });
 
+    /** The four gains every bus owns: input, output, dry and wet. */
+    const BUS_OWNED_GAINS = 4;
+
+    /** The distinct AudioNodes the effect's own factory builds, read from a fresh context. */
+    function factoryNodeCount(effectType: keyof typeof ADJUSTMENT_DEVICE_TYPE): number {
+        const deviceType = ADJUSTMENT_DEVICE_TYPE[effectType];
+        if (deviceType === null) {
+            throw new Error(`${effectType} builds no device`);
+        }
+        const device = engineDeviceCollaborators.createBuiltinDeviceNode({
+            context: asBaseAudioContext(createMockAudioContext()),
+            deviceType,
+        });
+        if (!device) {
+            throw new Error(`${deviceType} has no factory`);
+        }
+        return new Set<AudioNode>([device.inputNode, device.outputNode, ...device.nodes]).size;
+    }
+
     it('reports every live adjustment bus and the AudioNodes its effect graph owns', () => {
         const runtime = createAdjustmentLayerRuntime(deps);
         runtime.applyTick([
@@ -326,7 +345,7 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
         expect(getDiagnostics.call(runtime)).toEqual({
             buses: 2,
             busesByEffectType: { compressor: 1, eq: 1 },
-            audioNodes: 13,
+            audioNodes: 2 * BUS_OWNED_GAINS + factoryNodeCount('eq') + factoryNodeCount('compressor'),
             audioWorkletProcessors: 0,
         });
     });

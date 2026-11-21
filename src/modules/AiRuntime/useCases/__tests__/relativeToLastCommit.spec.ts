@@ -1617,7 +1617,9 @@ describe('relative to the last commit', () => {
             await sendChatMessage('do the same to the BGV');
 
             expect(proposedCard()?.actions.filter((action) => action.type === 'addDevice')).toHaveLength(2);
-            expect(proposedWrites()).toEqual(written);
+            // The recipe's compressor step states Auto Makeup on, against an added compressor's off, so the
+            // commit wrote the switch and the repeat carries that write too.
+            expect(proposedWrites()).toEqual({ ...written, 'comp-auto-makeup': 1 });
         });
 
         it('refuses to repeat a recipe whose committed write left its window, naming it', async () => {
