@@ -56,8 +56,6 @@ export type PlannedVibeRunSchedule =
       }
     | { status: 'scheduled'; schedule: VibeRunSchedule; lines: string[]; receipts: ApplicationToolReceipt[] };
 
-/** The brief is one `setProductionBrief`. */
-
 const PLAN_NO_LONGER_HOLDS = `No batches were scheduled after the brief: the project ${PLAN_NO_LONGER_PLANNED}.`;
 
 const EXCLUSION_REASONS: Readonly<Record<VibeRunExcludedTargetReason, string>> = {
