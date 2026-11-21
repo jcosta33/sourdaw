@@ -18,7 +18,7 @@ import { createFaustDevice } from '../../faustDeviceFactory';
 import { NATIVE_DSP_DEVICE_FACTORIES, isNativeDspDevice } from '../nativeDspDeviceFactories';
 import { DECLARED_NODELESS_OFFLINE_RENDERERS, isNodelessOfflineDeviceType } from '../nodelessOfflineDeviceTypes';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
-import { UNRENDERABLE_CATALOG_DEVICE_TYPES } from '../unrenderableCatalogDeviceTypes';
+import { isUnrenderableCatalogDeviceType, UNRENDERABLE_CATALOG_DEVICE_TYPES } from '../unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 
 // `createReverb` builds its impulse with the `new AudioBuffer(...)` constructor
@@ -269,6 +269,13 @@ describe('offline device coverage', () => {
 
         expect(doubleClaimed).toEqual([]);
     });
+
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+        'does not treat inherited object keys as unrenderable catalog types: %s',
+        (deviceType) => {
+            expect(isUnrenderableCatalogDeviceType(deviceType)).toBe(false);
+        }
+    );
 
     /**
      * The node-less exemption is the one gate that could otherwise assert a
