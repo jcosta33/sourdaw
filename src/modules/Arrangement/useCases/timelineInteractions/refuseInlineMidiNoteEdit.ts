@@ -21,7 +21,7 @@ function isClipLocked(clipId: string): boolean {
  * the action-route guard `getWritableMidiClipReplayGuard`. Returns true when the
  * edit must not run and has warned the user.
  */
-export function refuseInlineMidiEditOnFrozenTrack(clipId: string): boolean {
+export function refuseInlineMidiNoteEdit(clipId: string): boolean {
     if (isClipOnFrozenTrack(clipId)) {
         notifyUser(FROZEN_TRACK_NOTE_EDIT_MESSAGE, 'warning');
         return true;
