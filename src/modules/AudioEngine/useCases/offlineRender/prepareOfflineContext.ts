@@ -9,7 +9,7 @@ import { prepareOfflineBitcrusherRate } from '../../repositories/devices/toneSha
  * Every *native* DSP node registers its own module on whatever context it is
  * handed — `ensureWorkletRegistered(ctx, url)` in `workletInitShared` is
  * per-context and cached — so those devices need nothing here. These two do
- * not: `createSidechainCompressor` and `createBitcrusher` build their worklet
+ * not: `createOfflineSidechainCompressor` and `createBitcrusher` build their worklet
  * node *synchronously* inside the strip, so the module has to already be in the
  * context's name-to-descriptor map by the time `createOfflineTrackStrip` runs.
  * Registration is per-`BaseAudioContext` (the map is populated by

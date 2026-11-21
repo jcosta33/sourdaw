@@ -79,7 +79,9 @@ const SIDECHAIN_PROCESSOR_SOURCE = readFileSync(
 
 /** The AudioParam names the sidechain processor declares in its `parameterDescriptors`. */
 function declaredSidechainParameterNames(): string[] {
-    return Array.from(SIDECHAIN_PROCESSOR_SOURCE.matchAll(/\{\s*name:\s*'(\w+)'/g), (match) => match[1]);
+    return Array.from(SIDECHAIN_PROCESSOR_SOURCE.matchAll(/\{\s*name:\s*'(?<name>\w+)'/g)).flatMap((match) =>
+        match.groups?.name === undefined ? [] : [match.groups.name]
+    );
 }
 
 /**
