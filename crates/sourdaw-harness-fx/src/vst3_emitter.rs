@@ -3,7 +3,8 @@
 //!
 //! Every call it reports, in `outputParameterChanges`, a read-only meter (the
 //! block's input peak). Whenever the host hands it `Drive` it echoes the value
-//! straight back, as wrapper-generated plugins do — or, above
+//! straight back at the `f32` precision it holds it in, as wrapper-generated
+//! plugins do — or, above
 //! [`DRIVE_CEILING`], reports the ceiling it clamped the value to — and reports
 //! the dependent control `Drive` moves (half of the value it kept). For every note it is handed it emits
 //! the note an octave up, one frame later, in `outputEvents`. Audio passes
@@ -60,10 +61,12 @@ pub const EMPTY_CLAIM_PARAM_ID: ParamID = 23;
 pub const REFUSE_PARAM_ID: ParamID = 24;
 /// Writing this makes the processor emit, before anything else in the call, a
 /// note of each shape a host must refuse — a non-finite velocity, a pitch
-/// outside 0..=127, an offset outside the block — and then one well-formed
-/// note of [`WELL_FORMED_PITCH`] on the block's last frame. Not a declared
-/// parameter.
+/// outside 0..=127, an offset outside the block — and then two well-formed
+/// notes of [`WELL_FORMED_PITCH`]: one at [`QUIET_VELOCITY`] on frame 0 and
+/// one at full velocity on the block's last frame. Not a declared parameter.
 pub const MALFORMED_PARAM_ID: ParamID = 25;
+/// A note-on velocity that rounds to MIDI velocity 0.
+pub const QUIET_VELOCITY: f32 = 0.001;
 /// The pitch of the malformed notes that have a valid one, and of the
 /// well-formed note that follows them.
 pub const WELL_FORMED_PITCH: i16 = 2;
@@ -230,6 +233,11 @@ unsafe fn pass_audio(data: &ProcessData) -> f32 {
     peak
 }
 
+/// `value` as a processor that stores its parameters in `f32` gives it back.
+pub fn held_as_f32(value: ParamValue) -> ParamValue {
+    f64::from(value as f32)
+}
+
 /// Emit one note-on, exactly as given, into the current call's output list.
 ///
 /// # Safety
@@ -258,7 +266,7 @@ unsafe fn emit_drive_marker(data: &ProcessData) {
     unsafe { emit_note(data, DRIVE_MARKER_PITCH, 1.0, 0) };
 }
 
-/// Emit one note of every malformed shape, then [`WELL_FORMED_PITCH`].
+/// Emit one note of every malformed shape, then the well-formed ones.
 ///
 /// # Safety
 /// `data` must be the live `ProcessData` of the current call.
@@ -271,6 +279,7 @@ unsafe fn emit_malformed_notes(data: &ProcessData) {
         (-1, 1.0, 0),
         (WELL_FORMED_PITCH, 1.0, past_block),
         (WELL_FORMED_PITCH, 1.0, -1),
+        (WELL_FORMED_PITCH, QUIET_VELOCITY, 0),
         (WELL_FORMED_PITCH, 1.0, past_block - 1),
     ];
     for (pitch, velocity, sample_offset) in notes {
@@ -518,7 +527,7 @@ impl IAudioProcessorTrait for Emitter {
         if let Some(changes) = unsafe { ComRef::from_raw(data.outputParameterChanges) } {
             if let Some(value) = written.map(|value| value.min(DRIVE_CEILING)) {
                 // SAFETY: the current call's live output list.
-                unsafe { report(changes, DRIVE_PARAM_ID, value) };
+                unsafe { report(changes, DRIVE_PARAM_ID, held_as_f32(value)) };
                 // SAFETY: as above.
                 unsafe { report(changes, MODULATED_PARAM_ID, value * 0.5) };
                 // SAFETY: as above.

@@ -244,11 +244,15 @@ impl HostParameterChanges {
             .map(|queue| (queue.param_id.get(), queue.value.get()))
     }
 
-    /// Whether the list carries exactly `value` for `param_id`. RT-safe: a
-    /// linear scan of at most `MAX_PARAMETER_QUEUES` entries.
+    /// Whether the list carries `value` for `param_id`, at single precision.
+    /// RT-safe: a linear scan of at most `MAX_PARAMETER_QUEUES` entries.
+    ///
+    /// A processor that holds its parameters as `f32` — most do — echoes a
+    /// host write rounded to that precision, and the echo is still the host's
+    /// value, not a move of the plugin's own.
     fn carries(&self, param_id: ParamID, value: ParamValue) -> bool {
         self.staged()
-            .any(|(staged, staged_value)| staged == param_id && staged_value == value)
+            .any(|(staged, staged_value)| staged == param_id && staged_value as f32 == value as f32)
     }
 }
 
@@ -504,7 +508,7 @@ fn output_event(event: &Event, block_frames: usize) -> OutputEvent {
     }
     OutputEvent::Note(HostMidiEvent {
         note,
-        velocity: midi_velocity(velocity),
+        velocity: midi_velocity(velocity, is_note_on),
         channel,
         is_note_on,
         frame_offset,
@@ -520,8 +524,16 @@ fn offset_within(offset: int32, block_frames: usize) -> Option<u32> {
 
 /// A normalised VST3 velocity as a MIDI velocity, the inverse of
 /// [`note_event`]'s `velocity / 127`.
-fn midi_velocity(velocity: f32) -> u8 {
-    (velocity.clamp(0.0, 1.0) * 127.0).round() as u8
+///
+/// A note-on keeps a velocity of at least 1: MIDI reads a velocity-0 note-on
+/// as a release, so a quiet note-on must not round to one.
+fn midi_velocity(velocity: f32, is_note_on: bool) -> u8 {
+    let midi = (velocity.clamp(0.0, 1.0) * 127.0).round() as u8;
+    if is_note_on {
+        midi.max(1)
+    } else {
+        midi
+    }
 }
 
 fn empty_event() -> Event {

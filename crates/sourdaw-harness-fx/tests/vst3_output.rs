@@ -11,16 +11,17 @@
 
 mod support;
 
-use daw_plugin_host::output_notes::OUTPUT_NOTE_CAPACITY;
+use daw_plugin_host::output_notes::{OutputNoteQueue, OUTPUT_NOTE_CAPACITY};
 use daw_plugin_host::traits::MAX_MIDI_EVENTS_PER_BLOCK;
 use daw_plugin_host::{
     take_pending_parameter_flush_signal, AudioPlugin, HostMidiEvent, HostParameterUpdate,
     HostedPluginRuntime, PluginParameterEvent, ProcessMode, Vst3Wrapper,
 };
 use sourdaw_harness_fx::{
-    DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE,
-    EMPTY_CLAIM_PARAM_ID, FLOOD_NOTES, FLOOD_PARAM_ID, MALFORMED_PARAM_ID, METER_PARAM_ID,
-    MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID, VST3_EMITTER_CLASS_ID, WELL_FORMED_PITCH,
+    held_as_f32, DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES,
+    EMITTED_TRANSPOSE, EMPTY_CLAIM_PARAM_ID, FLOOD_NOTES, FLOOD_PARAM_ID, MALFORMED_PARAM_ID,
+    METER_PARAM_ID, MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID, VST3_EMITTER_CLASS_ID,
+    WELL_FORMED_PITCH,
 };
 use std::cell::Cell;
 use std::sync::Mutex;
@@ -268,12 +269,18 @@ fn observers_hear_the_processors_own_moves_and_neither_its_echo_nor_its_meter() 
     let plugin = InstalledPlugin::create("vst3-output-observed");
     let mut wrapper = emitter(&plugin);
     observed(&wrapper);
+    assert_ne!(
+        held_as_f32(0.8),
+        0.8,
+        "the echo differs from the write in double precision"
+    );
 
     process(&mut wrapper, &[], &[drive(0.8)]);
 
     assert_eq!(
         observed(&wrapper),
-        [PluginParameterEvent::value(MODULATED_PARAM_ID, 0.4)]
+        [PluginParameterEvent::value(MODULATED_PARAM_ID, 0.4)],
+        "the processor's f32 echo of the write is still the host's value"
     );
 
     process(&mut wrapper, &[], &[]);
@@ -294,17 +301,19 @@ fn a_processor_correction_of_a_host_written_value_reaches_the_controller_and_obs
     let mut wrapper = emitter(&plugin);
     observed(&wrapper);
 
+    let kept = held_as_f32(DRIVE_CEILING);
+
     process(&mut wrapper, &[], &[drive(0.95)]);
 
     assert_eq!(
         observed(&wrapper),
         [
-            PluginParameterEvent::value(DRIVE_PARAM_ID, DRIVE_CEILING),
+            PluginParameterEvent::value(DRIVE_PARAM_ID, kept),
             PluginParameterEvent::value(MODULATED_PARAM_ID, DRIVE_CEILING * 0.5),
         ]
     );
     assert!(wrapper.flush_parameters_off_audio_thread());
-    assert_eq!(controller_value(&wrapper, DRIVE_PARAM_ID), DRIVE_CEILING);
+    assert_eq!(controller_value(&wrapper, DRIVE_PARAM_ID), kept);
 }
 
 /// The controller learns every value the processor reports, meter included,
@@ -437,29 +446,58 @@ fn notes_the_plugin_emits_are_captured_with_their_frame_offsets() {
     assert_eq!(notes.take_dropped(), 0);
 }
 
+fn malformed() -> HostParameterUpdate {
+    HostParameterUpdate {
+        param_id: MALFORMED_PARAM_ID,
+        value: 1.0,
+    }
+}
+
+fn captured_shapes(notes: &OutputNoteQueue) -> Vec<(u8, u8, u32)> {
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    captured
+        .iter()
+        .map(|captured| (captured.note, captured.velocity, captured.frame_offset))
+        .collect()
+}
+
 /// A note the host cannot stand behind is refused, without costing the
-/// well-formed note the same call writes after it.
+/// well-formed notes the same call writes after it — a quiet note-on among
+/// them, which stays a note-on.
 #[test]
-fn malformed_notes_are_refused_and_a_well_formed_one_beside_them_is_kept() {
+fn malformed_notes_are_refused_and_well_formed_ones_beside_them_are_kept() {
     let plugin = InstalledPlugin::create("vst3-output-malformed");
     let mut wrapper = emitter(&plugin);
     let notes = wrapper.output_note_queue();
-    let malformed = HostParameterUpdate {
-        param_id: MALFORMED_PARAM_ID,
-        value: 1.0,
-    };
+    let pitch = WELL_FORMED_PITCH as u8;
 
-    process(&mut wrapper, &[], &[malformed]);
+    process(&mut wrapper, &[], &[malformed()]);
 
-    let mut captured = Vec::new();
-    notes.drain(&mut captured);
     assert_eq!(
-        captured
-            .iter()
-            .map(|captured| (captured.note, captured.velocity, captured.frame_offset))
-            .collect::<Vec<_>>(),
-        [(WELL_FORMED_PITCH as u8, 127, BLOCK_FRAMES as u32 - 1)],
-        "no non-finite velocity, out-of-range pitch or out-of-block offset is captured"
+        captured_shapes(&notes),
+        [(pitch, 1, 0), (pitch, 127, BLOCK_FRAMES as u32 - 1)],
+        "no non-finite velocity, out-of-range pitch or out-of-block offset is captured, \
+         and a quiet note-on keeps velocity 1"
+    );
+}
+
+/// An idle flush has no frames, so a note it writes anywhere but frame 0
+/// falls outside it and is refused.
+#[test]
+fn an_idle_flush_admits_notes_only_at_frame_zero() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-malformed-flush");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    let pitch = WELL_FORMED_PITCH as u8;
+
+    wrapper.set_parameter(MALFORMED_PARAM_ID, 1.0);
+
+    assert_eq!(
+        captured_shapes(&notes),
+        [(pitch, 1, 0), (pitch, 127, 0)],
+        "only the flush's frame-0 notes are captured"
     );
 }
 
