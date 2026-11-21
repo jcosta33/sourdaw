@@ -255,6 +255,13 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
         : { status: 'undone', undone, retained: [], partialConflict: false, applied };
 }
 
+function conflictOutcome(retained: readonly UndoEntry[], blocked: boolean): CandidateOutcome {
+    if (blocked) {
+        return { status: 'conflict', retained, blocked: true };
+    }
+    return { status: 'conflict', retained };
+}
+
 async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome> {
     if (!candidate.head.groupId || !isAtomicActionGroup(candidate.entries)) {
         return undoEntriesNewestFirst(candidate.entries);
@@ -267,7 +274,7 @@ async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome
         },
     });
     if (outcome.status === 'conflict') {
-        return { status: 'conflict', retained: candidate.entries };
+        return conflictOutcome(candidate.entries, outcome.blocked === true);
     }
     if (outcome.status === 'inert') {
         return { status: 'inert' };

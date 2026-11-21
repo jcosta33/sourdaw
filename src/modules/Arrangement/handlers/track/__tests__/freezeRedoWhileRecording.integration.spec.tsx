@@ -9,6 +9,8 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    commitUndoEntry,
+    createUndoEntry,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -35,6 +37,7 @@ import {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { captureFreezeStateSnapshot } from '../../../useCases/freezeBounce/freezeStateSnapshot';
 import { activeFreezeTasks } from '../../../useCases/freezeBounce/freezeTrack';
 import { type renderTrackOffline } from '../../../useCases/freezeBounce/renderOffline';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -276,6 +279,71 @@ describe('Freeze history replay while a recording starts', () => {
             expect(undoStore.value?.past).toHaveLength(0);
             expect(undoStore.value?.future).toHaveLength(3);
             expect(warnings()).toEqual([WARNING]);
+        });
+
+        describe('when the freeze entry is a one-entry action group, as an AI batch records it', () => {
+            // Freeze and unfreeze run as singleton batches, so only a lone group can hold one. The
+            // write runs without history and the grouped entry is committed by hand, in the shape
+            // `freezeTrack` and `unfreezeTrack` describe.
+            async function writeGroupedFreezeEntry(direction: 'freeze' | 'unfreeze'): Promise<void> {
+                const before = captureFreezeStateSnapshot(trackStore.value!.tracks[0]!);
+                const action = direction === 'freeze' ? FREEZE_TRACK : UNFREEZE_TRACK;
+                await executeAppAction(action, { skipUndo: true });
+                const after = captureFreezeStateSnapshot(trackStore.value!.tracks[0]!);
+                const restore = (expected: typeof before, replacement: typeof before) =>
+                    ({
+                        type: 'restoreFreezeState',
+                        payload: { trackId: 'freeze-track', expected, replacement },
+                    }) as const;
+                const entry = createUndoEntry(
+                    'Grouped freeze change',
+                    action,
+                    restore(after, before),
+                    'ai',
+                    restore(before, after)
+                );
+                entry.groupId = 'group-a';
+                commitUndoEntry(entry);
+            }
+
+            it('refuses the undo of a grouped unfreeze without reverting the gain change beneath it', async () => {
+                const original = trackGain() ?? 0;
+                await executeAppAction(FREEZE_TRACK);
+                await executeAppAction(setGain(0.3, original));
+                await writeGroupedFreezeEntry('unfreeze');
+                expect(freezeStatus()).toBe('unfrozen');
+                expect(undoStore.value?.past).toHaveLength(3);
+                recordingStartStore.set(true);
+                notices.length = 0;
+
+                await undo();
+
+                expect(trackGain()).toBeCloseTo(0.3);
+                expect(freezeStatus()).toBe('unfrozen');
+                expect(undoStore.value?.past).toHaveLength(3);
+                expect(undoStore.value?.future).toHaveLength(0);
+                expect(warnings()).toEqual([WARNING]);
+            });
+
+            it('refuses the redo of a grouped freeze without redoing the gain change behind it', async () => {
+                const original = trackGain() ?? 0;
+                await writeGroupedFreezeEntry('freeze');
+                await executeAppAction(setGain(0.3, original));
+                await undo();
+                await undo();
+                expect(freezeStatus()).toBe('unfrozen');
+                expect(undoStore.value?.future).toHaveLength(2);
+                recordingStartStore.set(true);
+                notices.length = 0;
+
+                await redo();
+
+                expect(trackGain()).toBeCloseTo(original);
+                expect(freezeStatus()).toBe('unfrozen');
+                expect(undoStore.value?.past).toHaveLength(0);
+                expect(undoStore.value?.future).toHaveLength(2);
+                expect(warnings()).toEqual([WARNING]);
+            });
         });
     });
 });

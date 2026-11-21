@@ -12290,9 +12290,6 @@
         "eslint/complexity": {
             "count": 1
         },
-        "eslint/max-depth": {
-            "count": 1
-        },
         "typescript/no-non-null-assertion": {
             "count": 4
         }
