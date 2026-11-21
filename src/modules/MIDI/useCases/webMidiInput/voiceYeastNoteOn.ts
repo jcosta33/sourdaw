@@ -1,11 +1,11 @@
 import { type Device } from '#/modules/Arrangement/stores';
-import { type audioEngine } from '#/modules/AudioEngine/useCases';
 import {
+    type audioEngine,
     isBypassedNoteReceiver,
-    type NoteReceivingInstrument,
     resolveDrumKitBy,
     resolveDrumKitOutputGain,
-} from '#/utils/deviceTypeMatching';
+    type resolveNoteReceivingInstrument,
+} from '#/modules/AudioEngine/useCases';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 
 import { type midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -50,7 +50,7 @@ type VoiceYeastNoteOnInput = Readonly<{
     /** The held lifetime a generated note carries, when it carries one. */
     durationSamples: number | undefined;
     /** The instrument track's receiving instrument (`resolveLiveInputNoteReceiver`). */
-    receiver: NoteReceivingInstrument<Device> | null;
+    receiver: ReturnType<typeof resolveNoteReceivingInstrument<Device>>;
     instrumentTrackId: string;
     trackDevices: readonly Device[];
     /** The child pad a Toaster child's key plays, or null for the instrument track's own key. */

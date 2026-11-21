@@ -1,10 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
 import { type AudioEngine } from '../models/AudioEngineState';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
+import { readDrumKitOutputGain } from '../models/DrumKitSelection';
+import { isBypassedNoteReceiver } from '../models/NoteReceivingInstrument';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';

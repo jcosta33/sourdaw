@@ -28,6 +28,7 @@ use super::graph::{
     MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
     MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES,
 };
+use super::offline_plugins::OfflineRenderError;
 
 /// A queue-ledger refusal: the batch is refused whole instead of letting the
 /// engine drop a write silently.
@@ -181,8 +182,8 @@ pub(crate) enum GraphRefusal {
     TimelineMaterial(String),
     /// Text from a levain bank build this module does not own.
     LevainBank(String),
-    /// Text from the offline plugin instances this module does not own.
-    OfflineRender(String),
+    /// A refusal from the offline render's plugin instances or its cancel.
+    OfflineRender(OfflineRenderError),
     OfflineCommand(OfflineCommandError),
     OfflineDroppedCommands {
         diagnostics: TimelineRtDiagnosticsSnapshot,
@@ -517,9 +518,8 @@ impl fmt::Display for GraphRefusal {
             }
             Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
             Self::Poisoned { cause } => f.write_str(cause),
-            Self::TimelineMaterial(text) | Self::LevainBank(text) | Self::OfflineRender(text) => {
-                f.write_str(text)
-            }
+            Self::TimelineMaterial(text) | Self::LevainBank(text) => f.write_str(text),
+            Self::OfflineRender(error) => error.fmt(f),
             Self::OfflineCommand(error) => error.fmt(f),
             Self::OfflineDroppedCommands { diagnostics } => write!(
                 f,
@@ -917,7 +917,14 @@ impl fmt::Display for GraphRefusal {
     }
 }
 
-impl std::error::Error for GraphRefusal {}
+impl std::error::Error for GraphRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::OfflineRender(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

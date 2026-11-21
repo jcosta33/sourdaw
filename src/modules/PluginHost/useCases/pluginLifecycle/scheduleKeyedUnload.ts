@@ -1,10 +1,11 @@
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
-import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { pendingKeyedUnloadGenerations, pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 function trackPendingKeyedUnload(instanceId: string, unload: Promise<void>): void {
     pendingKeyedUnloads.set(instanceId, unload);
+    pendingKeyedUnloadGenerations.set(instanceId, (pendingKeyedUnloadGenerations.get(instanceId) ?? 0) + 1);
     function forget(): void {
         if (pendingKeyedUnloads.get(instanceId) === unload) {
             pendingKeyedUnloads.delete(instanceId);

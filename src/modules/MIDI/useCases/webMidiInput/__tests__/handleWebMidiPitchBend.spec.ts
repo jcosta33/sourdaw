@@ -29,21 +29,25 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: () => synthVoices },
-    writeNativeBuiltinParameters: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    audioEngine: {
-        context: audio_clock,
-    },
-    applyNoteExpression: apply_note_expression,
-    getDefaultBendRangeSemitones: () => 48,
-    getCompensationDelay: () => 0,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        builtinSynthVoice: { read: () => synthVoices },
+        writeNativeBuiltinParameters: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        audioEngine: {
+            context: audio_clock,
+        },
+        applyNoteExpression: apply_note_expression,
+        getDefaultBendRangeSemitones: () => 48,
+        getCompensationDelay: () => 0,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+    };
+});
 
 /**
  * Frame live expression lands on with the harness clock at 2 s / 48 kHz and no
