@@ -2022,6 +2022,23 @@ describe('reading only governed protections and whole object names', () => {
         ['keep both from sounding thin', [], [unread('keep both from sounding thin', unmeasured('thin'))]],
         ['keep it all from sounding thin', [], [unread('keep it all from sounding thin', unmeasured('thin'))]],
         ['keep all of it from sounding thin', [], [unread('keep all of it from sounding thin', unmeasured('thin'))]],
+        // one clause yields one entry: a wider clause the net records past a prevented quality quotes it
+        // whole, and stands alone
+        [
+            'stop the drums from losing the punch with a brighter vocal',
+            [],
+            [unread('stop the drums from losing the punch with a brighter vocal', NET_REASON)],
+        ],
+        [
+            'keep the vocal from sounding thin with its level the same',
+            [],
+            [unread('keep the vocal from sounding thin with its level the same', NET_REASON)],
+        ],
+        [
+            'stop the bass from getting muddy or louder',
+            [],
+            [unread('stop the bass from getting muddy or louder', NET_REASON)],
+        ],
         // one clause yields one entry: an em dash ends it, spaced or not, as a comma does
         [
             'stop the drums from losing the punch—make the vocal brighter',

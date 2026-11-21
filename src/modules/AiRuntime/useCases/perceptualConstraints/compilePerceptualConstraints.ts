@@ -58,7 +58,7 @@ import {
 } from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
-import { type ConsumedSpan, readUnreadConstraintClauses } from './readUnreadConstraintClauses';
+import { type ConsumedSpan, readUnreadConstraintClauses, type UnreadClause } from './readUnreadConstraintClauses';
 import { HYPHEN_OR_SPACE, words } from './words';
 
 type ObjectResolution =
@@ -582,6 +582,29 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     pushHoldClauses(reader, holds);
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
     const keeps = readKeepConstraints(maskClauses(masked, holds), reader);
-    reading.unsupported.push(...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...keeps]));
-    return unionPerceptualConstraintReadings(reading);
+    const consumed = [...lowEnd, ...holds, ...keeps];
+    const unread = readUnreadConstraintClauses(masked, prompt, consumed);
+    const quoted = clausesQuotedWithin(prompt, consumed, unread);
+    const unsupported = [
+        ...reading.unsupported.filter((entry) => !quoted.has(entry.clause)),
+        ...unread.map((clause) => clause.unsupported),
+    ];
+    return unionPerceptualConstraintReadings({ constraints: reading.constraints, unsupported });
+}
+
+/**
+ * The clauses readers consumed that a wider clause the net recorded quotes whole. One clause yields one
+ * entry: a reader's unsupported entry for such a clause gives way to the net's, which also quotes the
+ * measured words no reader read ("stop the drums from losing the punch with a brighter vocal"). Entries
+ * are one per clause text, as the union reading them keeps them.
+ */
+function clausesQuotedWithin(
+    prompt: string,
+    consumed: readonly ConsumedSpan[],
+    unread: readonly UnreadClause[]
+): Set<string> {
+    const within = consumed.filter((span) =>
+        unread.some((clause) => clause.span.start <= span.start && span.end <= clause.span.end)
+    );
+    return new Set(within.map((span) => prompt.slice(span.start, span.end).trim()));
 }

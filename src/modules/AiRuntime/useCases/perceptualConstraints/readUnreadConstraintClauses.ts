@@ -31,6 +31,8 @@ import { DIRECTION, MEASURED_NOUN, MEASURED_WORD, MOVE_WORD, NOUN_VERB_HEAD, WOR
 
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
+/** A clause the net recorded unsupported, with the span of the request it quotes. */
+export type UnreadClause = { unsupported: UnsupportedPerceptualConstraint; span: ConsumedSpan };
 
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
 /**
@@ -206,14 +208,15 @@ function unreadClause(masked: string, prompt: string, start: number, end: number
  * The never-dropped net. A protective clause, or one an "and" or "or" joins to it ("don't make the mix
  * louder and the vocal much quieter"), that names a measured quality no reader consumed is recorded
  * unsupported with its words, so no protective clause the readers miss is silently dropped. It reads
- * the masked request, so a track name or a quotation never opens or fills one.
+ * the masked request, so a track name or a quotation never opens or fills one. Each entry carries the
+ * span it quotes.
  */
 export function readUnreadConstraintClauses(
     masked: string,
     prompt: string,
     consumed: readonly ConsumedSpan[]
-): UnsupportedPerceptualConstraint[] {
-    const unread: (UnsupportedPerceptualConstraint & { start: number })[] = [];
+): UnreadClause[] {
+    const unread: (UnsupportedPerceptualConstraint & ConsumedSpan)[] = [];
     let chain: Chain | null = null;
     for (const segment of segmentsOf(masked)) {
         const step = chainStep(segment, chain, { masked, consumed });
@@ -230,7 +233,10 @@ export function readUnreadConstraintClauses(
         if (unread.at(-1)?.start === start) {
             unread.pop();
         }
-        unread.push({ start, ...unreadClause(masked, prompt, start, segment.end) });
+        unread.push({ start, end: segment.end, ...unreadClause(masked, prompt, start, segment.end) });
     }
-    return unread.map(({ constraintId, clause, reason }) => ({ constraintId, clause, reason }));
+    return unread.map(({ constraintId, clause, reason, start, end }) => ({
+        unsupported: { constraintId, clause, reason },
+        span: { start, end },
+    }));
 }
