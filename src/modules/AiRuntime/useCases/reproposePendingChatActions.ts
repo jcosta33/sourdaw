@@ -425,9 +425,11 @@ function persistReproposalConfirmation(
         // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
         measuredPreview: card.measuredPreview,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
-        // A brief card is one action, so only the whole proposal keeps the lines and the offered readings.
+        // A brief card is one action, so only the whole proposal keeps the lines.
         plannedRunLines: selectsSubset ? undefined : confirmation.approvalSnapshot.plannedRunLines,
-        briefReadings: selectsSubset ? undefined : confirmation.approvalSnapshot.briefReadings,
+        // The offered readings stay bound to the original revision's goals, so a re-preview offers none to choose;
+        // the readings lines above still show what the brief admits.
+        briefReadings: undefined,
         keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
         workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.

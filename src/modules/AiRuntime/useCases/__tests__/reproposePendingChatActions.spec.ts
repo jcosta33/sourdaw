@@ -484,8 +484,8 @@ describe('reproposePendingChatActions', () => {
         expect(mocks.appendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content: persisted?.content }));
     });
 
-    // Red when the offered readings are not carried, leaving the re-previewed card's readings unchoosable.
-    it('carries the offered brief readings onto a whole re-preview and drops them from a subset', async () => {
+    // Red when the offered readings are carried: their goals stay bound to the original revision, so a choice would plan with superseded goals.
+    it('carries no offered brief readings onto a whole or a subset re-preview', async () => {
         const briefReadings: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['briefReadings']> = {
             catalogId: 'catalog',
             metricGoalState: 'state',
@@ -516,7 +516,9 @@ describe('reproposePendingChatActions', () => {
             plannedRunLines: ['line'],
         });
         await reproposePendingChatActions({ confirmationId: 'confirmation-readings' });
-        expect(mocks.persistConfirmation.mock.calls.at(-1)?.[0]?.briefReadings).toEqual(briefReadings);
+        const whole = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        expect(whole?.briefReadings).toBeUndefined();
+        expect(whole?.plannedRunLines).toEqual(['line']);
 
         propose('confirmation-readings-subset', undefined, undefined, undefined, undefined, {
             briefReadings,
