@@ -7,9 +7,10 @@
  * once at app init (`src/app/bootstrap.ts`) — the same seam shape
  * `setAutomationRecordingDependencies` uses to break the AudioEngine cycle.
  *
- * Reading before registration throws: production registers before any gesture
- * can arrive, and a silent fallback to the scheduler's last anchor would stamp
- * gestures without the event-time projection or the native cursor.
+ * Unregistered (a spec or tool that never ran the bootstrap), the capture
+ * degrades to the scheduler's last committed anchor beat: still a moving,
+ * tick-fresh position, just without the sub-grain event-time projection and the
+ * native cursor. Production always registers before any gesture can arrive.
  */
 export type GestureClockSource = {
     /** Live `AudioContext.currentTime`, read at the event's own instant. */
@@ -18,18 +19,13 @@ export type GestureClockSource = {
     readNativeCursorBeats: () => number | null;
 };
 
-let registeredSource: GestureClockSource | null = null;
+let source: GestureClockSource | null = null;
 
 export function setGestureClockSource(next: GestureClockSource): void {
-    registeredSource = next;
+    source = next;
 }
 
-/** The registered clock reads. */
-export function getGestureClockSource(caller: string): GestureClockSource {
-    if (registeredSource === null) {
-        throw new Error(
-            `${caller}: the gesture clock source is not registered; call setGestureClockSource() from #/app/bootstrap (bootstrap does this)`
-        );
-    }
-    return registeredSource;
+/** The registered clock reads, or null outside an initialized app. */
+export function getGestureClockSource(): GestureClockSource | null {
+    return source;
 }

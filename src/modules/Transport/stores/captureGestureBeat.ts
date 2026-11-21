@@ -129,7 +129,12 @@ export function captureGestureClock(): GestureClockCapture {
         return withoutSeam(Math.max(0, playheadClockRef.hold.beat));
     }
 
-    const source = getGestureClockSource('captureGestureClock');
+    const source = getGestureClockSource();
+    if (!source) {
+        // No bootstrap: answer the scheduler's last committed position rather
+        // than the start beat. See `gestureClockSource.ts` for the contract.
+        return withoutSeam(Math.max(0, playheadClockRef.beat));
+    }
 
     // The cursor follows the transport that produces the sound (ADR 0039): while
     // the native engine is audible its reported position — loop wraps included —
