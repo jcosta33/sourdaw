@@ -52,6 +52,15 @@ registerDeviceEnginePorts();
 // shared Web Audio/native parameter boundary; the actual RotaryKnob and Radix Slider stay real.
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 let afterEngineWrite: (() => void) | null = null;
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -331,7 +340,11 @@ describe('Inspector continuous parameter gestures through real history', () => {
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         const context = new AudioContext();
         vi.mocked(getAudioContext).mockReturnValue(context);
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        recordingContext = context;
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
         settlePendingProjectWritesAndCaptureRevision();
     });
     afterEach(() => {

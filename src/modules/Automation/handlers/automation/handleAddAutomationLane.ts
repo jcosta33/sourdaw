@@ -3,7 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { addAutomationLane } from '../../useCases/automation/addAutomationLane';
-import { getAutomationParameterRangeResolver } from '../../useCases/automation/getAutomationParameterRangeResolver';
+import { automationParameterRangePort } from '../../useCases/automation/automationParameterRangeDependencies';
 import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomationBusId';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
@@ -67,10 +67,8 @@ function isAutomatableTarget({ trackId, parameterId }: AddAutomationLaneAction['
         const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
         return track?.sends.some((send) => send.busId === busId) === true;
     }
-    const resolveParameterRange = getAutomationParameterRangeResolver();
-    return (
-        resolveParameterRange !== null && resolveParameterRange({ trackId, parameterTargetId: parameterId }) !== null
-    );
+    const resolveParameterRange = automationParameterRangePort.read();
+    return resolveParameterRange({ trackId, parameterTargetId: parameterId }) !== null;
 }
 
 function referencesLane(candidate: AppAction, laneId: string): boolean {
