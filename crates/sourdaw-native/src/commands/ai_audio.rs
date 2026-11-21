@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Frame ceiling shared with offline rendering: ten minutes at 48 kHz.
 /// An over-long clip is a command error; the PCM `Vec<f32>` is never allocated.
@@ -36,25 +37,78 @@ struct DenoisePcmResult {
     processing_time_ms: u64,
 }
 
+/// Why a denoise request was refused. `Display` is the message the renderer
+/// receives through the napi edge.
+#[derive(Debug)]
+enum DenoiseError {
+    MisalignedPcm {
+        byte_len: usize,
+    },
+    NoChannels,
+    ChannelsDoNotDivideSamples {
+        sample_count: usize,
+        channels: usize,
+    },
+    FrameCeilingExceeded {
+        frames: usize,
+    },
+    TaskFailed(tokio::task::JoinError),
+}
+
+impl fmt::Display for DenoiseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MisalignedPcm { byte_len } => write!(
+                f,
+                "Denoise PCM byte length {byte_len} is not a whole number of f32 samples"
+            ),
+            Self::NoChannels => f.write_str("Denoise channel count must be at least 1"),
+            Self::ChannelsDoNotDivideSamples {
+                sample_count,
+                channels,
+            } => write!(
+                f,
+                "Denoise sample count {sample_count} must be divisible by channel count {channels}"
+            ),
+            Self::FrameCeilingExceeded { frames } => write!(
+                f,
+                "Denoise clip length {frames} frames exceeds the {MAX_DENOISE_FRAMES}-frame ceiling"
+            ),
+            Self::TaskFailed(error) => write!(f, "Denoise task failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for DenoiseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::TaskFailed(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
 /// Sample count of a Float32 LE payload, or an alignment error.
 pub fn denoise_pcm_sample_count(byte_len: usize) -> Result<usize, String> {
+    pcm_sample_count(byte_len).map_err(|error| error.to_string())
+}
+
+fn pcm_sample_count(byte_len: usize) -> Result<usize, DenoiseError> {
     if !byte_len.is_multiple_of(BYTES_PER_SAMPLE) {
-        return Err(format!(
-            "Denoise PCM byte length {byte_len} is not a whole number of f32 samples"
-        ));
+        return Err(DenoiseError::MisalignedPcm { byte_len });
     }
     Ok(byte_len / BYTES_PER_SAMPLE)
 }
 
-fn denoise_pcm_frame_count(byte_len: usize, channels: u32) -> Result<usize, String> {
-    let sample_count = denoise_pcm_sample_count(byte_len)?;
+fn denoise_pcm_frame_count(byte_len: usize, channels: u32) -> Result<usize, DenoiseError> {
+    let sample_count = pcm_sample_count(byte_len)?;
     let channels = validate_channel_layout(sample_count, channels)?;
     validate_frame_ceiling(sample_count / channels)
 }
 
-fn decode_denoise_pcm(bytes: &[u8], channels: u32) -> Result<Vec<f32>, String> {
+fn decode_denoise_pcm(bytes: &[u8], channels: u32) -> Result<Vec<f32>, DenoiseError> {
     denoise_pcm_frame_count(bytes.len(), channels)?;
-    let count = denoise_pcm_sample_count(bytes.len())?;
+    let count = pcm_sample_count(bytes.len())?;
     let mut samples = Vec::with_capacity(count);
     for chunk in bytes.as_chunks::<BYTES_PER_SAMPLE>().0 {
         samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
@@ -87,6 +141,15 @@ pub async fn denoise_audio(
     request: DenoiseRequest,
     samples: Vec<u8>,
 ) -> Result<DenoiseResult, String> {
+    denoise_planar_pcm(request, samples)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn denoise_planar_pcm(
+    request: DenoiseRequest,
+    samples: Vec<u8>,
+) -> Result<DenoiseResult, DenoiseError> {
     let pcm = decode_denoise_pcm(&samples, request.channels)?;
     tokio::task::spawn_blocking(move || {
         let processed = denoise_audio_blocking(DenoisePcm {
@@ -102,7 +165,7 @@ pub async fn denoise_audio(
         })
     })
     .await
-    .map_err(|e| format!("Denoise task failed: {e}"))?
+    .map_err(DenoiseError::TaskFailed)?
 }
 
 /// Length of the analysis window at the head of the clip, in seconds.
@@ -120,7 +183,7 @@ const ENVELOPE_ATTACK_SECONDS: f32 = 0.002;
 /// the signal's level, not its waveform — see [`expander_gain`].
 const ENVELOPE_RELEASE_SECONDS: f32 = 0.1;
 
-fn denoise_audio_blocking(request: DenoisePcm) -> Result<DenoisePcmResult, String> {
+fn denoise_audio_blocking(request: DenoisePcm) -> Result<DenoisePcmResult, DenoiseError> {
     let start = std::time::Instant::now();
     let strength = request.strength.clamp(0.0, 1.0);
     let channels = validate_channel_layout(request.samples.len(), request.channels)?;
@@ -166,24 +229,23 @@ fn envelope_coefficient(sample_rate: u32, time_seconds: f32) -> f32 {
     (-1.0 / (time_seconds * sample_rate as f32)).exp()
 }
 
-fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, String> {
+fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, DenoiseError> {
     if channels == 0 {
-        return Err("Denoise channel count must be at least 1".to_owned());
+        return Err(DenoiseError::NoChannels);
     }
     let channels = channels as usize;
     if !sample_count.is_multiple_of(channels) {
-        return Err(format!(
-            "Denoise sample count {sample_count} must be divisible by channel count {channels}"
-        ));
+        return Err(DenoiseError::ChannelsDoNotDivideSamples {
+            sample_count,
+            channels,
+        });
     }
     Ok(channels)
 }
 
-fn validate_frame_ceiling(frames: usize) -> Result<usize, String> {
+fn validate_frame_ceiling(frames: usize) -> Result<usize, DenoiseError> {
     if frames > MAX_DENOISE_FRAMES {
-        return Err(format!(
-            "Denoise clip length {frames} frames exceeds the {MAX_DENOISE_FRAMES}-frame ceiling"
-        ));
+        return Err(DenoiseError::FrameCeilingExceeded { frames });
     }
     Ok(frames)
 }
@@ -481,7 +543,14 @@ mod tests {
             let byte_len = (MAX_DENOISE_FRAMES + 1) * channels * BYTES_PER_SAMPLE;
             let error = denoise_pcm_frame_count(byte_len, channels as u32)
                 .expect_err("frames above the ceiling must be rejected");
-            assert!(error.contains("ceiling"), "unexpected error: {error}");
+            assert!(matches!(
+                error,
+                DenoiseError::FrameCeilingExceeded { frames } if frames == MAX_DENOISE_FRAMES + 1
+            ));
+            assert_eq!(
+                error.to_string(),
+                "Denoise clip length 28800001 frames exceeds the 28800000-frame ceiling"
+            );
         }
     }
 
@@ -505,9 +574,13 @@ mod tests {
         )
         .await
         .expect_err("unaligned bytes must be a command error");
-        assert!(
-            error.contains("whole number"),
-            "expected an alignment error, got {error}"
+        assert_eq!(
+            error,
+            "Denoise PCM byte length 3 is not a whole number of f32 samples"
+        );
+        assert_eq!(
+            denoise_pcm_sample_count(3).expect_err("the napi pre-check refuses the same bytes"),
+            error
         );
     }
 
@@ -593,7 +666,10 @@ mod tests {
         .await
         .expect_err("odd stereo sample count must be a command error");
 
-        assert!(error.contains("divisible"), "unexpected error: {error}");
+        assert_eq!(
+            error,
+            "Denoise sample count 3 must be divisible by channel count 2"
+        );
     }
 
     #[tokio::test]
@@ -609,6 +685,6 @@ mod tests {
         .await
         .expect_err("zero channels must be a command error");
 
-        assert!(error.contains("at least 1"), "unexpected error: {error}");
+        assert_eq!(error, "Denoise channel count must be at least 1");
     }
 }

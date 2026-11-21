@@ -1,5 +1,5 @@
+import { resolveNoteReceivingInstrument } from '#/modules/AudioEngine/useCases';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
 
 /**
  * The instrument sequenced playback sends a track's notes to: the first
@@ -8,6 +8,6 @@ import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/
  */
 export function resolvePlaybackNoteReceiver<TDevice extends { type: string }>(
     devices: readonly TDevice[]
-): NoteReceivingInstrument<TDevice> | null {
+): ReturnType<typeof resolveNoteReceivingInstrument<TDevice>> {
     return resolveNoteReceivingInstrument(devices, isFaustInstrumentModule);
 }

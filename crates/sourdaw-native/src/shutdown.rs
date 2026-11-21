@@ -176,7 +176,7 @@ fn shutdown_with_wait(
             report.closed_editors = gui_report.closed_instance_ids;
             report.editors_that_refused = gui_report.errors;
         }
-        Err(error) => report.editor_close_error = Some(error),
+        Err(error) => report.editor_close_error = Some(error.to_string()),
     }
 
     // Deliberately after the close pass and outside the match: a close that
@@ -1330,7 +1330,10 @@ mod tests {
         let Err(refusal) = InFlightRender::begin(&state, Some("late".to_string())) else {
             panic!("a render after quit is refused");
         };
-        assert!(refusal.starts_with(OFFLINE_RENDER_CLOSED), "{refusal}");
+        assert!(
+            refusal.to_string().starts_with(OFFLINE_RENDER_CLOSED),
+            "{refusal}"
+        );
         drop(render);
     }
 

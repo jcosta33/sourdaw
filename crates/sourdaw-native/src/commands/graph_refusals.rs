@@ -11,6 +11,8 @@
 
 use std::fmt;
 
+use super::timeline_sample_lifecycle::TimelineMaterialError;
+
 use daw_dsp::grinder::nam::NamAdmissionError;
 use daw_dsp::toaster::transient::TransientShaperError;
 use daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
@@ -28,6 +30,7 @@ use super::graph::{
     MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
     MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES,
 };
+use super::offline_plugins::OfflineRenderError;
 
 /// A queue-ledger refusal: the batch is refused whole instead of letting the
 /// engine drop a write silently.
@@ -177,12 +180,12 @@ pub(crate) enum GraphRefusal {
     Poisoned {
         cause: String,
     },
-    /// Text from a timeline-material check this module does not own.
-    TimelineMaterial(String),
+    /// A refusal from the timeline-material lifecycle.
+    TimelineMaterial(TimelineMaterialError),
     /// Text from a levain bank build this module does not own.
     LevainBank(String),
-    /// Text from the offline plugin instances this module does not own.
-    OfflineRender(String),
+    /// A refusal from the offline render's plugin instances or its cancel.
+    OfflineRender(OfflineRenderError),
     OfflineCommand(OfflineCommandError),
     OfflineDroppedCommands {
         diagnostics: TimelineRtDiagnosticsSnapshot,
@@ -517,9 +520,9 @@ impl fmt::Display for GraphRefusal {
             }
             Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
             Self::Poisoned { cause } => f.write_str(cause),
-            Self::TimelineMaterial(text) | Self::LevainBank(text) | Self::OfflineRender(text) => {
-                f.write_str(text)
-            }
+            Self::TimelineMaterial(refusal) => refusal.fmt(f),
+            Self::LevainBank(text) => f.write_str(text),
+            Self::OfflineRender(error) => error.fmt(f),
             Self::OfflineCommand(error) => error.fmt(f),
             Self::OfflineDroppedCommands { diagnostics } => write!(
                 f,
@@ -917,7 +920,15 @@ impl fmt::Display for GraphRefusal {
     }
 }
 
-impl std::error::Error for GraphRefusal {}
+impl std::error::Error for GraphRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::OfflineRender(error) => Some(error),
+            Self::TimelineMaterial(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

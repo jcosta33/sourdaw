@@ -826,7 +826,7 @@ fn construct_recording_its_file(
     descriptor_id: &str,
     sample_rate: f64,
     mode: ProcessMode,
-) -> Result<HostedRuntime, String> {
+) -> Result<HostedRuntime, PluginError> {
     CONSTRUCTED_FROM
         .lock()
         .expect("constructed")
@@ -839,7 +839,7 @@ fn construct_recording_its_file(
 fn capture_then_reload_under_the_same_id(
     runtime: &SharedHostedPlugin,
     state: &AppState,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, PluginCommandError> {
     let chunk = read_live_state(runtime, state)?;
     if let Some((reloaded, load_resolution)) = RELOAD.with(|reload| reload.borrow_mut().take()) {
         attach(state, reloaded, load_resolution, DeviceKind::Effect);
@@ -1173,7 +1173,7 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| Err("the seam keeps it".to_string());
+    seams.capture_state = |_, _| Err(PluginCommandError::Host("the seam keeps it".to_string()));
 
     let refusal = render(
         batch(impulse_track(json!([fx_device()]))),
@@ -1480,7 +1480,7 @@ static CANCELLING_CAPTURES: AtomicUsize = AtomicUsize::new(0);
 fn capture_then_cancel_the_render(
     runtime: &SharedHostedPlugin,
     state: &AppState,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, PluginCommandError> {
     CANCELLING_CAPTURES.fetch_add(1, Ordering::SeqCst);
     let chunk = read_live_state(runtime, state)?;
     cancel_graph_offline(CAPTURE_CANCELLED_RENDER.to_string(), state).expect("the cancel lands");
@@ -1766,7 +1766,11 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| Err("a refused rate reads no live state".to_string());
+    seams.capture_state = |_, _| {
+        Err(PluginCommandError::Host(
+            "a refused rate reads no live state".to_string(),
+        ))
+    };
     let render_at = |devices: Value, sample_rate: f64| {
         block_on_test(render_graph_offline_with(
             batch(impulse_track(devices)),
@@ -2198,4 +2202,27 @@ fn an_offline_clap_instance_that_refuses_to_start_processing_refuses_the_render(
 #[test]
 fn an_offline_vst3_instance_that_refuses_to_start_processing_refuses_the_render() {
     an_offline_instance_that_refuses_to_start_processing_refuses_the_render(Format::Vst3);
+}
+
+/// The renderer recognises a cancel by its `offline-render-cancelled` prefix
+/// (`isNativeOfflineRenderCancelled.ts`), so the whole text is pinned, with
+/// and without the caller's render id.
+#[test]
+fn a_cancelled_render_answers_in_the_text_the_renderer_matches() {
+    assert_eq!(
+        OfflineRenderError::Cancelled {
+            render_id: Some("render-1".to_string()),
+            frames: 512,
+        }
+        .to_string(),
+        "offline-render-cancelled: render 'render-1' was cancelled after 512 frames; nothing was returned"
+    );
+    assert_eq!(
+        OfflineRenderError::Cancelled {
+            render_id: None,
+            frames: 0,
+        }
+        .to_string(),
+        "offline-render-cancelled: render was cancelled after 0 frames; nothing was returned"
+    );
 }

@@ -1161,7 +1161,8 @@ pub async fn load_sample(
     file_path: String,
     state: &CrumbsState,
 ) -> Result<SampleLoadResult, String> {
-    let file_path = filesystem::resolve_existing_file_path(&file_path)?;
+    let file_path =
+        filesystem::resolve_existing_file_path(&file_path).map_err(|e| e.to_string())?;
     let file_path = file_path.to_string_lossy().to_string();
 
     // Decode the audio file.

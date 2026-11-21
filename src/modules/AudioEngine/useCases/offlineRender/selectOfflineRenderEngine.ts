@@ -248,10 +248,6 @@ function frameCountGateReason(frameCount: number): string | null {
 /** The first gate that holds, or `null` when the native engine can take it. */
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
-    const lengthGate = frameCountGateReason(input.frameCount);
-    if (lengthGate !== null) {
-        return lengthGate;
-    }
     const keyedDeviceIds = new Set(input.sidechainRoutes.map((route) => route.targetDeviceId));
     const hostedRuntime = input.hostedPluginRuntime ?? readNativeOfflineHostedRuntime();
     for (const track of renderableTracks) {
@@ -316,7 +312,7 @@ export async function selectOfflineRenderEngine(
             degraded: availability.runtime === 'desktop',
         };
     }
-    const gate = contentGateReason(input);
+    const gate = frameCountGateReason(input.frameCount) ?? contentGateReason(input);
     if (gate !== null) {
         return { engine: 'web-audio/offline', reason: gate, degraded: true };
     }
