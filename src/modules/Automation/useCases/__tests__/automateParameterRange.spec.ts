@@ -169,7 +169,6 @@ describe('automateParameterRange', () => {
 
     afterEach(() => {
         productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
-        setAutomationParameterRangeResolver(null);
         clearUndoHistory();
         clearHandlerRegistry();
         automationStore.set({ lanes: [] });

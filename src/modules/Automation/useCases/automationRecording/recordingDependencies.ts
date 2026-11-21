@@ -11,8 +11,24 @@ export type AutomationRecordingDependencies = {
     getCompensationDelay: (trackId: string) => number;
 };
 
-export let dependencies: AutomationRecordingDependencies | null = null;
+let registeredDependencies: AutomationRecordingDependencies | null = null;
 
+/** Stores the implementation; a later fill replaces an earlier one. */
 export function setAutomationRecordingDependencies(deps: AutomationRecordingDependencies): void {
-    dependencies = deps;
+    registeredDependencies = deps;
 }
+
+/**
+ * The registered readers. Reading before registration throws rather than
+ * stamping recorded points without latency compensation.
+ */
+export const automationRecordingDependenciesPort = {
+    read(): AutomationRecordingDependencies {
+        if (registeredDependencies === null) {
+            throw new Error(
+                'automationRecordingDependenciesPort.read: automation recording dependencies are not registered; call setAutomationRecordingDependencies() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return registeredDependencies;
+    },
+};

@@ -28,8 +28,24 @@ export type PitchEditDependencies = {
     commitPitchEdit: (input: CommitPitchEditInput) => Promise<CommitPitchEditResult>;
 };
 
-export let dependencies: PitchEditDependencies | null = null;
+let registeredDependencies: PitchEditDependencies | null = null;
 
+/** Stores the implementation; a later fill replaces an earlier one. */
 export function setPitchEditDependencies(deps: PitchEditDependencies): void {
-    dependencies = deps;
+    registeredDependencies = deps;
 }
+
+/**
+ * The registered renderer. Reading before registration throws rather than
+ * committing a pitch edit that was never rendered.
+ */
+export const pitchEditDependenciesPort = {
+    read(): PitchEditDependencies {
+        if (registeredDependencies === null) {
+            throw new Error(
+                'pitchEditDependenciesPort.read: pitch edit dependencies are not registered; call setPitchEditDependencies() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return registeredDependencies;
+    },
+};

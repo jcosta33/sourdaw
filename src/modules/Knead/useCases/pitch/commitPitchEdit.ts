@@ -8,7 +8,7 @@ import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '../../
 import { clearClipPitchAnalysis } from '../clearClipPitchAnalysis';
 
 import { findPitchEditClip } from './findPitchEditClip';
-import { getPitchEditDependencies } from './getPitchEditDependencies';
+import { pitchEditDependenciesPort } from './pitchEditDependencies';
 
 export type CommitPitchEditInput = {
     clipId: string;
@@ -85,7 +85,7 @@ export async function commitPitchEdit({
     const scope = captureAutomergeStorageTransactionScope();
 
     try {
-        const { commitPitchEdit: renderPitchEdit } = getPitchEditDependencies();
+        const { commitPitchEdit: renderPitchEdit } = pitchEditDependenciesPort.read();
         const { renderedAudioBufferId } = await renderPitchEdit({
             inputAudioPath: originalFileId,
             outputAudioPath,

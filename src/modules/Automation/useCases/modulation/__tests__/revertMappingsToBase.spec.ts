@@ -128,14 +128,6 @@ describe('revertMappingsToBase', () => {
         mocks.trackStore.value = null;
     });
 
-    it('should silently no-op when modulation dependencies are not initialized', async () => {
-        const { revertMappingsToBase } = await loadSubjectModules();
-        setTrackBase(300);
-
-        expect(() => revertMappingsToBase([createMapping(0.5)])).not.toThrow();
-        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
-    });
-
     it('should write each removed destination base value once', async () => {
         const { setModulationDependencies, revertMappingsToBase } = await loadSubjectModules();
         setDependencies(setModulationDependencies);
