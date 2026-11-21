@@ -68,6 +68,19 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
     return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
 }
 
+/**
+ * Cancelling aborts and forgets the task, so nothing else would settle the track: an exit that
+ * finds its task aborted and unreplaced settles it itself. A task another freeze has superseded
+ * leaves the track to that freeze.
+ */
+function exitFreezeNoLongerCurrent(task: FreezeTaskIdentity, settle: () => void): false {
+    const cancelledAndUnreplaced = task.abortController.signal.aborted && !activeFreezeTasks.has(task.trackId);
+    if (cancelledAndUnreplaced && isEligibleActiveProjectTrack(task)) {
+        settle();
+    }
+    return false;
+}
+
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
@@ -99,9 +112,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const previousFreeze = claimPreFreezeSnapshot(
         trackId,
         captureFreezeStateSnapshot(track),
-        // A cancelled freeze leaves the track reading `freezing` until its own exit settles it,
-        // so a freeze started in that window inherits the stored snapshot too.
-        activeFreezeTasks.has(trackId) || track.freezeState.status === 'freezing'
+        activeFreezeTasks.has(trackId)
     );
     const renderedMidi = captureFreezeMidi(track.clips);
 
@@ -125,19 +136,10 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const pendingTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
     const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
 
-    // Cancelling aborts and forgets the task, so nothing else would settle the track: an exit
-    // that finds this task aborted and unreplaced restores the pre-freeze state itself. A task
-    // another freeze has superseded leaves the track to that freeze.
-    const exitAsNoLongerCurrent = (): false => {
-        if (
-            abortController.signal.aborted &&
-            activeFreezeTasks.get(trackId) === undefined &&
-            isEligibleActiveProjectTrack(taskIdentity)
-        ) {
+    const exitAsNoLongerCurrent = (): false =>
+        exitFreezeNoLongerCurrent(taskIdentity, () => {
             settleCancelledFreeze(scope, trackId, previousFreeze, pendingFreeze);
-        }
-        return false;
-    };
+        });
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
