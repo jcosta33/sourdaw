@@ -4,8 +4,6 @@ import { garbageCollectCachedAudioBuffersByAge } from '../garbageCollectCachedAu
 import { garbageCollectCachedAudioBuffersBySize } from '../garbageCollectCachedAudioBuffersBySize';
 import { garbageCollectFreezeAudioBuffers } from '../garbageCollectFreezeAudioBuffers';
 
-import type { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
-
 const mocks = vi.hoisted(() => ({
     audioBufferCacheGarbageCollectFreezeFiles: vi
         .fn<(input: { activeIds: Set<string>; projectId: number }) => Promise<void>>()
@@ -21,7 +19,8 @@ const mocks = vi.hoisted(() => ({
         }
     >(),
     openAudioBufferCacheDatabase: vi.fn<() => Promise<IDBDatabase>>(),
-    withProjectAudioStorageLock: vi.fn<typeof withProjectAudioStorageLock>(),
+    // The scope is a plain token here: only the real named lock can mint a branded one.
+    withProjectAudioStorageLock: vi.fn<<TResult>(operation: (scope: object) => Promise<TResult>) => Promise<TResult>>(),
 }));
 
 vi.mock('../../stores/audioBufferCache', () => ({

@@ -127,7 +127,7 @@ function scriptPlanningTurns(
         const phase = providerTurn % (turns.length + 1);
         providerTurn += 1;
         if (phase === 0) {
-            return { status: 'complete', toolCalls: intake(userMessage, schemas) };
+            return { status: 'complete', toolCalls: intake(userMessage, schemas), proposal: null };
         }
         const outcome = turns[phase - 1];
         if (outcome === undefined) {
@@ -145,6 +145,7 @@ function planCalls(
     scriptPlanningTurns([
         {
             status: 'complete',
+            proposal: null,
             providerTurn,
             toolCalls: [
                 { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
@@ -152,6 +153,7 @@ function planCalls(
         },
         {
             status: 'complete',
+            proposal: null,
             providerTurn,
             toolCalls: [
                 {
@@ -235,9 +237,10 @@ describe('transform.compile planner tool', () => {
             const admitted = accepted.finish(finishEnvelope(request, 1, { reason: 'stop' }));
             expect(admitted.output.toolCalls).toHaveLength(1);
             scriptPlanningTurns([
-                { status: 'complete', toolCalls: admitted.output.toolCalls },
+                { status: 'complete', toolCalls: admitted.output.toolCalls, proposal: null },
                 {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'propose-1',
@@ -336,11 +339,12 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
                 ],
             },
-            { status: 'complete', toolCalls: admitted.output.toolCalls },
+            { status: 'complete', toolCalls: admitted.output.toolCalls, proposal: null },
         ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in the selected MIDI clips to 90',
@@ -362,7 +366,7 @@ describe('transform.compile planner tool', () => {
             })
         );
         const emptyCall = emptySession.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls;
-        scriptPlanningTurns([{ status: 'complete', toolCalls: emptyCall }]);
+        scriptPlanningTurns([{ status: 'complete', toolCalls: emptyCall, proposal: null }]);
         const empty = await parsePromptToActions({
             prompt: 'set note velocities in the selected MIDI clips to 90',
             context: CONTEXT,
@@ -537,6 +541,7 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
                     {
@@ -548,6 +553,7 @@ describe('transform.compile planner tool', () => {
             },
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'proposal-1',
@@ -739,6 +745,7 @@ describe('transform.compile planner tool', () => {
                 [
                     {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'compile-1',
@@ -757,6 +764,7 @@ describe('transform.compile planner tool', () => {
                     },
                     {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'propose-1',
@@ -822,6 +830,7 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
                     {
@@ -836,6 +845,7 @@ describe('transform.compile planner tool', () => {
             },
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'proposal-1',
@@ -923,6 +933,7 @@ describe('transform.compile planner tool', () => {
                 [
                     {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'catalog-1',
@@ -936,6 +947,7 @@ describe('transform.compile planner tool', () => {
                     },
                     {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'propose-1',
@@ -1004,6 +1016,7 @@ describe('transform.compile planner tool', () => {
             [
                 {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'catalog-1',
@@ -1014,6 +1027,7 @@ describe('transform.compile planner tool', () => {
                 },
                 {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'proposal-1',
@@ -1569,6 +1583,7 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'compile-1',
@@ -1587,6 +1602,7 @@ describe('transform.compile planner tool', () => {
             },
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'proposal-1',
@@ -1662,6 +1678,7 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
                     {
@@ -1673,6 +1690,7 @@ describe('transform.compile planner tool', () => {
             },
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'proposal-1',
@@ -1758,6 +1776,7 @@ describe('transform.compile planner tool', () => {
             scriptPlanningTurns([
                 {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'compile-1',
@@ -1773,6 +1792,7 @@ describe('transform.compile planner tool', () => {
                 },
                 {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'proposal-1',
@@ -2197,12 +2217,14 @@ describe('transform.compile planner tool', () => {
         scriptPlanningTurns([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
                 ],
             },
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'decline-1',

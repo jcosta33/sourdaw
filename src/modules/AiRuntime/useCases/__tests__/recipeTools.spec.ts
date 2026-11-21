@@ -1663,6 +1663,7 @@ describe('recipe.expand through provider planning', () => {
                 }
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             ...base,
@@ -1692,6 +1693,7 @@ describe('recipe.expand through provider planning', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'discover-1',
@@ -1707,6 +1709,7 @@ describe('recipe.expand through provider planning', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'propose-1',
@@ -1746,6 +1749,7 @@ describe('recipe.expand through provider planning', () => {
                 const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'literal-intake',
@@ -1767,6 +1771,7 @@ describe('recipe.expand through provider planning', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'discover-1',
@@ -1777,6 +1782,7 @@ describe('recipe.expand through provider planning', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'propose-1',

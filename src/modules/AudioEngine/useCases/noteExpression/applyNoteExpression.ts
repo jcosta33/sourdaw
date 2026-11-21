@@ -6,7 +6,7 @@ import {
     resolveNoteExpressionControls,
     type NoteExpressionWireValues,
 } from '../../engine/noteExpression';
-import { audioEngine } from '../engineAccess/getAudioContext';
+import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 type ApplyNoteExpressionInput = {
     /** Track owning the instrument — the resolved instrument track, not the source track. */

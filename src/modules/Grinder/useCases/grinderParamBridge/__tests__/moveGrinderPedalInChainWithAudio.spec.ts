@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { moveGrinderPedalInChain } from '../../../stores/grinderStore';
 import { moveGrinderPedalInChainWithAudio } from '../moveGrinderPedalInChainWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({
     moveGrinderPedalInChain: vi.fn(),
-}));
-
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -44,6 +42,7 @@ describe('moveGrinderPedalInChainWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectDependencies(moveGrinderPedalInChainWithAudio, deps);
     });
 
     it('should push the reordered pre-chain order params to the audio engine and persist them', () => {
@@ -57,7 +56,7 @@ describe('moveGrinderPedalInChainWithAudio', () => {
             postPedals: [],
         } as any);
 
-        const action = moveGrinderPedalInChainWithAudio(deps as any);
+        const action = moveGrinderPedalInChainWithAudio;
         action(device_id, false, 'distortion', 'left');
 
         expect(moveGrinderPedalInChain).toHaveBeenCalledWith(device_id, false, 'distortion', 'left');
@@ -74,7 +73,7 @@ describe('moveGrinderPedalInChainWithAudio', () => {
             postPedals: [{ id: 'fuzz-1', type: 'fuzz', enabled: true, params: {} }],
         } as any);
 
-        const action = moveGrinderPedalInChainWithAudio(deps as any);
+        const action = moveGrinderPedalInChainWithAudio;
         action(device_id, true, 'fuzz', 'right');
 
         expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-2', device_id, 'postFuzzOrder', 0);
@@ -91,7 +90,7 @@ describe('moveGrinderPedalInChainWithAudio', () => {
         deps.getAllTracks.mockReturnValue([{ id: 'track-3', devices: [{ id: 'device-3', type: 'grinder' }] }]);
         move_pedal_mock.mockReturnValue(null);
 
-        const action = moveGrinderPedalInChainWithAudio(deps as any);
+        const action = moveGrinderPedalInChainWithAudio;
         action('device-3', false, 'overdrive', 'left');
 
         expect(deps.getAllTracks).toHaveBeenCalled();
@@ -103,7 +102,7 @@ describe('moveGrinderPedalInChainWithAudio', () => {
         deps.getAllTracks.mockReturnValue([]);
         move_pedal_mock.mockReturnValue({ prePedals: [], postPedals: [] } as any);
 
-        const action = moveGrinderPedalInChainWithAudio(deps as any);
+        const action = moveGrinderPedalInChainWithAudio;
         action('missing-device', false, 'overdrive', 'left');
 
         expect(deps.updateDeviceParam).not.toHaveBeenCalled();

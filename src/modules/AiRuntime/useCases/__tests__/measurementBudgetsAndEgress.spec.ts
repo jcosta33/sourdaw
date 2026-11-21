@@ -703,8 +703,9 @@ describe('a planner measurement draws on the run budgets', () => {
                         arguments: measureCallArguments('project', DRUMS_AND_BASS, SHORT_RANGE),
                     },
                 ],
+                proposal: null,
             })
-            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [], proposal: null });
 
         const planned = await planPromptActions({
             prompt: 'how loud are the drums and the bass',

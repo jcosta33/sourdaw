@@ -72,7 +72,7 @@ function repeatClarifications(): void {
     let turn = 0;
     vi.mocked(generateToolPlanningOutcome).mockImplementation(async () => {
         turn += 1;
-        return { status: 'complete', toolCalls: [{ ...decline, id: `decline-${String(turn)}` }] };
+        return { status: 'complete', toolCalls: [{ ...decline, id: `decline-${String(turn)}` }], proposal: null };
     });
 }
 
@@ -152,7 +152,7 @@ describe('perceptual goal admission', () => {
             const snapshotBefore = structuredClone(planningContext);
             const providerTurn = route === 'local' ? undefined : { provider: route, assistantItems: null };
             vi.mocked(generateToolPlanningOutcome)
-                .mockResolvedValueOnce({ status: 'complete', toolCalls: [decline], providerTurn })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [decline], proposal: null, providerTurn })
                 .mockImplementationOnce(async (_system, message, schemas) => {
                     const base = selectCreativeInterpretationCall({
                         catalog: readCreativeInterpretationCatalog(message, schemas),
@@ -176,6 +176,7 @@ describe('perceptual goal admission', () => {
                     }
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 ...base,
@@ -202,6 +203,7 @@ describe('perceptual goal admission', () => {
                 })
                 .mockResolvedValueOnce({
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'discover-1',
@@ -217,6 +219,7 @@ describe('perceptual goal admission', () => {
                 })
                 .mockResolvedValueOnce({
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'proposal-1',

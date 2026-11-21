@@ -172,11 +172,13 @@ describe('application-owned tool loop', () => {
                         arguments: { type: 'project-summary' },
                     },
                 ],
+                proposal: null,
             })
             .mockImplementationOnce(async (_system, userMessage, schemas) => {
                 const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'literal-intake',
@@ -204,6 +206,7 @@ describe('application-owned tool loop', () => {
                         arguments: { category: 'command', names: ['setTempo'] },
                     },
                 ],
+                proposal: null,
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -213,6 +216,7 @@ describe('application-owned tool loop', () => {
                         arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
                     },
                 ],
+                proposal: null,
             });
         mockBridgeGroundedLlmToolCalls.mockImplementation(({ calls }: { calls: Array<{ name: string }> }) => {
             expect(calls).toEqual([{ name: 'setTempo', arguments: { bpm: 128 } }]);
@@ -510,6 +514,7 @@ describe('application-owned tool loop', () => {
                     toolCalls: [
                         { id: 'completed-query', name: 'project.query', arguments: { type: 'project-summary' } },
                     ],
+                    proposal: null,
                 })
                 .mockImplementationOnce(() => Promise.reject(interrupt(controller)));
 
@@ -946,6 +951,7 @@ describe('application-owned tool loop', () => {
         vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
             status: 'complete',
             toolCalls: [{ id: 'unavailable-1', name: 'internal.getStore', arguments: {} }],
+            proposal: null,
         });
 
         const result = await parsePromptToActions({

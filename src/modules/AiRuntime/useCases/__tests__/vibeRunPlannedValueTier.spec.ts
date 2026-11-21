@@ -91,6 +91,7 @@ function scriptProvider(): void {
                         },
                     },
                 ],
+                proposal: null,
             });
         }
         const turn = BRIEF_ROUTE[briefTurn];
@@ -98,7 +99,7 @@ function scriptProvider(): void {
         if (turn === undefined) {
             return Promise.reject(new Error('Unscripted brief turn'));
         }
-        return Promise.resolve({ status: 'complete', toolCalls: turn({ userMessage, schemas }) });
+        return Promise.resolve({ status: 'complete', toolCalls: turn({ userMessage, schemas }), proposal: null });
     });
 }
 

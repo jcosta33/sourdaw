@@ -365,6 +365,7 @@ function scriptTurns(
         }
         return {
             status: 'complete',
+            proposal: null,
             toolCalls: [
                 {
                     ...call,
@@ -393,6 +394,7 @@ function scriptTurns(
         planning.mockResolvedValueOnce({
             status: 'complete',
             toolCalls,
+            proposal: null,
             providerTurn: { provider: 'openai', assistantItems: null },
         });
     }
@@ -2164,6 +2166,7 @@ describe('real caller sequential measurement opportunity', () => {
                     if (outcome === 'decline') {
                         return {
                             status: 'complete',
+                            proposal: null,
                             toolCalls: [
                                 {
                                     id: 'decline',
@@ -2181,6 +2184,7 @@ describe('real caller sequential measurement opportunity', () => {
                     return {
                         status: 'complete',
                         toolCalls: [call('improved', improvedLevel)],
+                        proposal: null,
                         providerTurn: { provider: 'openai', assistantItems: null },
                     };
                 }
@@ -2188,6 +2192,7 @@ describe('real caller sequential measurement opportunity', () => {
             vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [proposeCall({ commands: [], compiledCallIds: ['improved'] })],
+                proposal: null,
                 providerTurn: { provider: 'openai', assistantItems: null },
             });
             const planned = await parsePromptToActions({
@@ -2471,6 +2476,7 @@ describe('real caller sequential measurement opportunity', () => {
             expect(catalog.modes).toContain('literal');
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'literal-intake',
@@ -2523,7 +2529,11 @@ describe('real caller sequential measurement opportunity', () => {
                 }),
             ],
         ]) {
-            vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: calls });
+            vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: calls,
+                proposal: null,
+            });
         }
         const planned = await parsePromptToActions({
             prompt,

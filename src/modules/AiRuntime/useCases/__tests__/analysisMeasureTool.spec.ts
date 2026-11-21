@@ -648,8 +648,9 @@ describe('analysis.measure', () => {
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [measureCall(1, { scope: MASTER, range: CHORUS })],
+                proposal: null,
             })
-            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [], proposal: null });
 
         const result = await parsePromptToActions({
             prompt: 'how loud is the chorus',
@@ -667,6 +668,7 @@ describe('analysis.measure', () => {
         vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
             status: 'complete',
             toolCalls: [measureCall(1, { scope: MASTER, range: CHORUS })],
+            proposal: null,
         });
 
         const result = await parsePromptToActions({ prompt: 'how loud is the chorus', context: PROJECT_CONTEXT });

@@ -92,6 +92,7 @@ async function planLiteralRequest(input: LiteralRequest) {
                     ...call,
                     id: `${input.runId}-intake`,
                 })),
+                proposal: null,
             };
         }
         if (turns === 2) {
@@ -104,6 +105,7 @@ async function planLiteralRequest(input: LiteralRequest) {
                         arguments: { category: 'command', names: input.commands.map((command) => command.name) },
                     },
                 ],
+                proposal: null,
             };
         }
         if (turns === 3) {
@@ -116,6 +118,7 @@ async function planLiteralRequest(input: LiteralRequest) {
                         arguments: proposalArguments,
                     },
                 ],
+                proposal: null,
             };
         }
         throw new Error('The literal request exceeded its three scripted provider turns.');

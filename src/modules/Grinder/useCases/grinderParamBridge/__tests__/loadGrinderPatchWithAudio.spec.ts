@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
+import { DEFAULT_PATCH, type GrinderPatch } from '../../../models/GrinderPatch';
 import { loadGrinderPatch } from '../../../stores/grinderStore';
 import { createFlushParam } from '../createFlushParam';
 import { paramBatcher } from '../helpers';
@@ -12,10 +14,6 @@ vi.mock('../../../stores/grinderStore', () => ({
     loadGrinderPatch: vi.fn((_deviceId: string, patch: unknown) => patch),
     migrateGrinderPatch: (param: any) => param,
     grinderStore: { value: {} },
-}));
-
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -49,6 +47,7 @@ describe('loadGrinderPatchWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectDependencies(loadGrinderPatchWithAudio, deps);
     });
 
     it('should update store and notify audio engine for all sync keys', () => {
@@ -62,7 +61,7 @@ describe('loadGrinderPatchWithAudio', () => {
         ]);
 
         const patch = { ...DEFAULT_PATCH, gain: 7.5 };
-        const action = loadGrinderPatchWithAudio(deps as any);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -85,7 +84,7 @@ describe('loadGrinderPatchWithAudio', () => {
             mic1: { ...DEFAULT_PATCH.mic1, positionX: 0.8 },
             mic2: { ...DEFAULT_PATCH.mic2, enabled: true, positionY: 0.4 },
         };
-        const action = loadGrinderPatchWithAudio(deps as any);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -111,7 +110,7 @@ describe('loadGrinderPatchWithAudio', () => {
             neuralModelId: 'factory-rig-b',
             neuralModelName: 'Factory Rig B',
         };
-        const action = loadGrinderPatchWithAudio(deps as any);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -128,7 +127,7 @@ describe('loadGrinderPatchWithAudio', () => {
             },
         ]);
 
-        const patch = {
+        const patch: GrinderPatch = {
             ...DEFAULT_PATCH,
             uiSection: 'neural' as const,
             engineMode: 'capture' as const,
@@ -164,7 +163,7 @@ describe('loadGrinderPatchWithAudio', () => {
                 modelDigest: null,
             },
         };
-        const action = loadGrinderPatchWithAudio(deps as never);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -193,7 +192,7 @@ describe('loadGrinderPatchWithAudio', () => {
         ]);
 
         const patch = { ...DEFAULT_PATCH, prePedals: [] };
-        const action = loadGrinderPatchWithAudio(deps as never);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -216,7 +215,7 @@ describe('loadGrinderPatchWithAudio', () => {
         ]);
 
         const patch = { ...DEFAULT_PATCH, gain: 6.25 };
-        const action = loadGrinderPatchWithAudio(deps as never);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -243,7 +242,7 @@ describe('loadGrinderPatchWithAudio', () => {
             cabIrId: '2x12-open',
             routingMode: 'parallel' as const,
         };
-        const action = loadGrinderPatchWithAudio(deps as never);
+        const action = loadGrinderPatchWithAudio;
 
         action(deviceId, patch);
 
@@ -304,7 +303,7 @@ describe('loadGrinderPatchWithAudio', () => {
             // A knob drag scheduled its rAF frame; the load lands before it flushes.
             paramBatcher.schedule('device-1:gain', { deviceId: 'device-1', key: 'gain', value: 99 }, flushParam);
 
-            const action = loadGrinderPatchWithAudio(deps as never);
+            const action = loadGrinderPatchWithAudio;
             action('device-1', { ...DEFAULT_PATCH, gain: 6.25 });
             flushAnimationFrames();
 
@@ -320,7 +319,7 @@ describe('loadGrinderPatchWithAudio', () => {
 
             paramBatcher.schedule('other-dev:gain', { deviceId: 'other-dev', key: 'gain', value: 99 }, otherFlush);
 
-            const action = loadGrinderPatchWithAudio(deps as never);
+            const action = loadGrinderPatchWithAudio;
             action('device-1', { ...DEFAULT_PATCH, gain: 6.25 });
             flushAnimationFrames();
 

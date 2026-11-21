@@ -162,7 +162,7 @@ describe('metric goal admission at the final Command boundary', () => {
     it('executes a selected Play preset once through real submission and Command admission', async () => {
         const provider = vi
             .spyOn(inference, 'generateToolPlanningOutcome')
-            .mockResolvedValue({ status: 'complete', toolCalls: [] });
+            .mockResolvedValue({ status: 'complete', toolCalls: [], proposal: null });
         const measure = vi.spyOn(analysisMeasure, 'executeAnalysisMeasure');
         const compile = vi.spyOn(actionCompiler, 'compileAgentActionExecution');
         const claim = vi.spyOn(agentRunWorkLease, 'claim');

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const get_track_strip = vi.hoisted(() => vi.fn());
 
-vi.mock('../engineAccess/getAudioContext', () => ({
+vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: { getTrackStrip: get_track_strip },
 }));
 

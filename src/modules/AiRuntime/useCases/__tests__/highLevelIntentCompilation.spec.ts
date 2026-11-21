@@ -115,6 +115,7 @@ const bluesIntake = nonAcousticMetricIntakeTurn({
 async function literalPlanningIntake(_system: string, message: string, schemas: readonly ToolSchema[]) {
     return {
         status: 'complete' as const,
+        proposal: null,
         toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({ ...call, id: 'intake' })),
     };
 }
@@ -122,6 +123,7 @@ async function literalPlanningIntake(_system: string, message: string, schemas: 
 async function bluesPlanningIntake(_system: string, message: string, schemas: readonly ToolSchema[]) {
     return {
         status: 'complete' as const,
+        proposal: null,
         toolCalls: bluesIntake(message, schemas).map((call) => ({ ...call, id: 'intake' })),
     };
 }
@@ -148,6 +150,7 @@ const plan = {
 
 const searchTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         { id: 'search-tracks', name: 'agent.command-index.search', arguments: { intent: 'create a midi track' } },
         { id: 'search-notes', name: 'agent.command-index.search', arguments: { intent: 'write midi notes' } },
@@ -156,6 +159,7 @@ const searchTurn = {
 
 const discoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-1',
@@ -167,6 +171,7 @@ const discoverTurn = {
 
 const discoverTempoTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-1',
@@ -178,6 +183,7 @@ const discoverTempoTurn = {
 
 const namedTracksSearchTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'search-tracks',
@@ -189,6 +195,7 @@ const namedTracksSearchTurn = {
 
 const namedTracksDiscoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-tracks',
@@ -200,6 +207,7 @@ const namedTracksDiscoverTurn = {
 
 const renameSearchTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'search-rename',
@@ -211,6 +219,7 @@ const renameSearchTurn = {
 
 const renameDiscoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-rename',
@@ -222,6 +231,7 @@ const renameDiscoverTurn = {
 
 const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-1',
@@ -233,6 +243,7 @@ const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
 
 const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-commands',
@@ -254,6 +265,7 @@ const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) =
 
 const declineTurn = (args: Record<string, unknown>) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [{ id: 'decline-1', name: 'command.batch.decline', arguments: args }],
 });
 
@@ -1830,6 +1842,7 @@ describe('high-level intent compilation', () => {
         vi.mocked(generateToolPlanningOutcome)
             .mockResolvedValueOnce({
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'search-mastering',
