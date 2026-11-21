@@ -10,6 +10,7 @@ import { isDrumDevice } from '../isDrumDevice';
 import { readDrumKitOutputGain } from '../readDrumKitOutputGain';
 import { resolveDrumKitBy } from '../resolveDrumKitBy';
 import { resolveDrumKitOutputGain } from '../resolveDrumKitOutputGain';
+import { resolveLiveNoteControls } from '../resolveLiveNoteControls';
 import { resolveNoteReceivingInstrument } from '../resolveNoteReceivingInstrument';
 
 const isFaust = (deviceType: string) => deviceType === 'faust-organ';
@@ -47,6 +48,18 @@ describe('deviceCapabilities wrappers', () => {
         expect(isBypassedNoteReceiver(receiver)).toBe(true);
         expect(isBypassedNoteReceiver(null)).toBe(false);
         expect(resolveNoteReceivingInstrument([{ type: 'builtin-reverb' }], isFaust)).toBeNull();
+    });
+
+    it('answers the live note controls of a device type built at run time', () => {
+        const grandBoule = resolveLiveNoteControls(['grand', 'boule'].join('-'));
+        expect(grandBoule?.controlsKey).toBe('grandBouleControls');
+        expect(grandBoule?.scaleVelocity(127)).toBe(1);
+        expect(grandBoule?.expressionDimensions).toEqual(['pitchBend']);
+        const crumbs = resolveLiveNoteControls(`builtin-${'crumbs'}`);
+        expect(crumbs?.controlsKey).toBe('crumbsControls');
+        expect(crumbs?.scaleVelocity(100)).toBe(100);
+        expect(crumbs?.expressionDimensions).toEqual([]);
+        expect(resolveLiveNoteControls(`builtin-${'reverb'}`)).toBeNull();
     });
 
     it('selects the kit and gain of the first drum device', () => {
