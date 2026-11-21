@@ -20,6 +20,7 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
+import { assertFreezeRenderSourceCurrent } from './assertFreezeRenderSourceCurrent';
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
@@ -134,6 +135,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         }).seconds;
+
+        // The render reads the live track list, so the hash has to describe what that list holds now.
+        assertFreezeRenderSourceCurrent(track);
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         // Read synchronously before the render call: the render reads the MIDI store when it starts,
