@@ -265,7 +265,17 @@ export const TrackListView = ({
         if (next instanceof Element && (grid.contains(next) || next.closest('[role="menu"]') !== null)) {
             return;
         }
-        focusedRowIdRef.current = null;
+        // Chromium fires blur (relatedTarget null) on a focused element as it is
+        // removed from the DOM, before React's layout effect runs. Wait a
+        // microtask: a removed row is disconnected by then and the restore
+        // effect has already used the ref; a row that merely lost focus is not.
+        const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
+        queueMicrotask(() => {
+            const active = document.activeElement;
+            if (row?.isConnected && !(active && (grid.contains(active) || active.closest('[role="menu"]')))) {
+                focusedRowIdRef.current = null;
+            }
+        });
     };
 
     const handleDragStart = (trackId: string) => {

@@ -173,10 +173,24 @@ describe('TrackListView focus after a header menu removes its row', () => {
         expect(document.activeElement).toBe(getRow('c'));
     });
 
-    it('leaves focus on the body when a row is removed after focus left the list for the page', () => {
+    it('focuses the next row when the browser blurs the focused row as it is removed (Chromium)', () => {
+        const { rerender } = renderList(threeTracks());
+        const row = getRow('b');
+        row.focus();
+        act(() => {
+            // Chromium blurs the element (focus on body, relatedTarget null) as it removes it.
+            row.blur();
+            currentTracks = currentTracks.filter((track) => track.id !== 'b');
+            rerender();
+        });
+        expect(document.activeElement).toBe(getRow('c'));
+    });
+
+    it('leaves focus on the body when a row is removed after focus left the list for the page', async () => {
         const { rerender } = renderList(threeTracks());
         getRow('b').focus();
         getRow('b').blur();
+        await act(async () => {});
         expect(document.activeElement).toBe(document.body);
         finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'b'));
         expect(document.activeElement).toBe(document.body);
