@@ -57,7 +57,6 @@ import {
     updateDevicePatch,
     getAudioContext,
     getCompensationDelay,
-    commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     configureOfflineDeviceParameterLaw,
     configureOfflineMidiEventProjection,
@@ -141,7 +140,6 @@ import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fer
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
 import { initGrandBouleDocumentReconciliation } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
-import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import {
     configureLevainZoneTableBuilder,
@@ -511,10 +509,6 @@ setAutomationRecordingDependencies({
 setGestureClockSource({
     getAudioTimeSeconds: () => getAudioContext().currentTime,
     readNativeCursorBeats: () => readNativeEngineCursorBeats(),
-});
-
-setPitchEditDependencies({
-    commitPitchEdit,
 });
 
 setModulationDependencies({
