@@ -37,10 +37,15 @@ describe('removeCloudProvider', () => {
     });
 
     it('keeps the answering status showing and settles to idle when a turn answers', async () => {
-        const generating: LlmEngineStatus = { state: 'generating', backend: 'cloud', modelId: 'hosted-model' };
+        const generating: LlmEngineStatus = {
+            state: 'generating',
+            backend: 'cloud',
+            provider: 'anthropic',
+            modelId: 'hosted-model',
+        };
         mocks.llmStatusValue.value = { state: 'ready', backend: 'cloud', modelId: 'hosted-model' };
         const turn = answeringStatus.openTurn();
-        answeringStatus.publish(turn, { state: 'generating', backend: 'cloud', modelId: 'hosted-model' });
+        answeringStatus.publish(turn, generating);
 
         await removeCloudProvider();
 

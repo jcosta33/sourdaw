@@ -24,7 +24,12 @@ describe('setAiBackendPreference', () => {
     });
 
     it('keeps the answering status showing and settles to idle when a turn answers', () => {
-        const generating: LlmEngineStatus = { state: 'generating', backend: 'cloud', modelId: 'hosted-model' };
+        const generating: LlmEngineStatus = {
+            state: 'generating',
+            backend: 'cloud',
+            provider: 'anthropic',
+            modelId: 'hosted-model',
+        };
         const ready: LlmEngineStatus = { state: 'ready', backend: 'cloud', modelId: 'hosted-model' };
         llmStatusStore.set(ready);
         const turn = answeringStatus.openTurn();

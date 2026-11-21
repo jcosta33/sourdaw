@@ -402,7 +402,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
-                    "digest": "875985669d5cd94135533fb89b3416df9c8fce725e0b1177d2c2ef3751c9b3cc"
+                    "digest": "a68f4b2f8147e43115180a42fbfd2854e261a3b57a86b614d84f49f6366ad35c"
                 },
                 {
                     "path": "src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
