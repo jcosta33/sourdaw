@@ -4,7 +4,7 @@ import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDe
 import { type getAllTracks } from '../getAllTracks';
 
 export type ToasterSyncDeps = {
-    updateDeviceParam: typeof updateDeviceParam;
+    updateDeviceParam: (...args: Parameters<typeof updateDeviceParam>) => ReturnType<typeof updateDeviceParam>;
     getAllTracks: typeof getAllTracks;
     resolveEligibleDeviceWriteTarget?: typeof resolveEligibleDeviceWriteTarget;
 };

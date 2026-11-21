@@ -1,5 +1,10 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
-export function getMasterAnalyser(): AnalyserNode {
-    return audioEngine.masterAnalyser;
-}
+export const getMasterAnalyser = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function getMasterAnalyser(): AnalyserNode {
+            return audioEngine.masterAnalyser;
+        }
+);

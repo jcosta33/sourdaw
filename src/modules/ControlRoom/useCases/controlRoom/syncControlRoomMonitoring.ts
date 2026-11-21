@@ -3,7 +3,9 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { controlRoomStore } from '../../stores/controlRoom';
 
-type ApplyListeningPathMonitoring = typeof setControlRoomMonitoring;
+type ApplyListeningPathMonitoring = (
+    ...args: Parameters<typeof setControlRoomMonitoring>
+) => ReturnType<typeof setControlRoomMonitoring>;
 
 /**
  * Realise the ControlRoom store's monitoring state on the listening path.

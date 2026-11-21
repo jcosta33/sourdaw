@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
@@ -15,6 +17,9 @@ import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSid
  * It also keeps project state out of the engine repository: the resolver is
  * handed in, so the engine never reads `trackStore` itself.
  */
-export function refreshSidechainAlignment(): void {
-    audioEngine.refreshSidechainAlignment(getSidechainKeyDelay);
-}
+export const refreshSidechainAlignment = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function refreshSidechainAlignment(): void {
+            audioEngine.refreshSidechainAlignment(getSidechainKeyDelay);
+        }
+);

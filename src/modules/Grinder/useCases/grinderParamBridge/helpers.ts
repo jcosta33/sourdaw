@@ -4,7 +4,9 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type GrinderNeuralProfile, type GrinderSupportedChainPedalType } from '../../models/GrinderPatch';
 
-export type UpdateDeviceParamFn = typeof updateDeviceParam;
+export type UpdateDeviceParamFn = (
+    ...args: Parameters<typeof updateDeviceParam>
+) => ReturnType<typeof updateDeviceParam>;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
 export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWriteTarget;
 

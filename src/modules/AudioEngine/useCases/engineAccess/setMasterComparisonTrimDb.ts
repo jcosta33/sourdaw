@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { dbToGain, FADER_MAX_GAIN, gainToDb } from '#/utils/audioLevelLaw';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
@@ -21,17 +22,20 @@ export type MasterComparisonTrim = {
  * no room left for make-up gain, and a comparison told it applied +6 dB when
  * the output rose by 2 dB would report a level match it never made.
  */
-export function setMasterComparisonTrimDb(db: number): MasterComparisonTrim {
-    masterGainState.comparisonTrim = dbToGain(db);
-    const effective = effectiveMasterGain();
-    audioEngine.setMasterGain(effective);
-    forwardMasterGainToNativeLiveGraphSession();
+export const setMasterComparisonTrimDb = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function setMasterComparisonTrimDb(db: number): MasterComparisonTrim {
+            masterGainState.comparisonTrim = dbToGain(db);
+            const effective = effectiveMasterGain();
+            audioEngine.setMasterGain(effective);
+            forwardMasterGainToNativeLiveGraphSession();
 
-    const { gain, comparisonTrim } = masterGainState;
-    if (gain <= 0) {
-        // A silent fader delivers no decibels of anything, and no offset can
-        // push it past the ceiling, so there is nothing to report either way.
-        return { appliedDb: 0, limited: false };
-    }
-    return { appliedDb: gainToDb(effective / gain), limited: gain * comparisonTrim > FADER_MAX_GAIN };
-}
+            const { gain, comparisonTrim } = masterGainState;
+            if (gain <= 0) {
+                // A silent fader delivers no decibels of anything, and no offset can
+                // push it past the ceiling, so there is nothing to report either way.
+                return { appliedDb: 0, limited: false };
+            }
+            return { appliedDb: gainToDb(effective / gain), limited: gain * comparisonTrim > FADER_MAX_GAIN };
+        }
+);

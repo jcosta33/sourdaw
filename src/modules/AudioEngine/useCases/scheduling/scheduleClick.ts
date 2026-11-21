@@ -1,5 +1,10 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
-export function scheduleClick(time: number, accent: boolean, volume = 1): void {
-    audioEngine.scheduleClick(time, accent, volume);
-}
+export const scheduleClick = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function scheduleClick(time: number, accent: boolean, volume: number = 1): void {
+            audioEngine.scheduleClick(time, accent, volume);
+        }
+);

@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -8,6 +10,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * feeding their buses. Solo gating has to stop the track everywhere, so it acts
  * on the pre-fader tap instead.
  */
-export function setTrackSoloGate(trackId: string, gated: boolean): void {
-    audioEngine.setTrackSoloGate(trackId, gated);
-}
+export const setTrackSoloGate = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function setTrackSoloGate(trackId: string, gated: boolean): void {
+            audioEngine.setTrackSoloGate(trackId, gated);
+        }
+);

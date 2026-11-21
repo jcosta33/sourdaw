@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -9,6 +11,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * rang on for the rest of their programmed duration. Registering them makes
  * `stopAllScheduled` reach them.
  */
-export function registerScheduledSource(node: AudioScheduledSourceNode): void {
-    audioEngine.registerScheduledSource(node);
-}
+export const registerScheduledSource = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function registerScheduledSource(node: AudioScheduledSourceNode): void {
+            audioEngine.registerScheduledSource(node);
+        }
+);

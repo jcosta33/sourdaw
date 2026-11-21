@@ -10,7 +10,11 @@ import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
-    initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
+    initializeTrackStripFromSnapshot: vi.fn<
+        (
+            ...args: Parameters<typeof initializeTrackStripFromSnapshot>
+        ) => ReturnType<typeof initializeTrackStripFromSnapshot>
+    >(() => ({
         acceptance: 'accepted' as const,
         application: 'applied' as const,
         correlation: { appRevision: 0, projectRevision: 'project-revision-1' },

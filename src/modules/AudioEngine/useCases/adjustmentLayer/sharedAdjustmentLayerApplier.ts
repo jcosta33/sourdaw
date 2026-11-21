@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { PAN_SCALE_MAX } from '#/utils/audioLevelLaw';
 
@@ -12,7 +13,7 @@ import {
 } from './adjustmentLayerApplier';
 import { sharedAdjustmentLayerApplierState } from './sharedAdjustmentLayerApplierState';
 
-import type { AdjustmentLayerTickInput } from '../../models/AudioEngineState';
+import type { AdjustmentLayerTickInput, AudioEngine } from '../../models/AudioEngineState';
 
 /**
  * Singleton applier wired to the real audio engine + arrangement store.
@@ -31,7 +32,7 @@ import type { AdjustmentLayerTickInput } from '../../models/AudioEngineState';
 
 type ApplierSingleton = NonNullable<typeof sharedAdjustmentLayerApplierState.singleton>;
 
-function buildSingleton(): ApplierSingleton {
+function buildSingleton(engine: AudioEngine): ApplierSingleton {
     const userGainByTrack = new Map<string, number>();
     const userPanByTrack = new Map<string, number>();
     const gainOverridesByTrack = new Map<string, Map<string, number>>();
@@ -53,14 +54,14 @@ function buildSingleton(): ApplierSingleton {
             if (cachedGain !== undefined && cachedGain !== track.gain) {
                 userGainByTrack.delete(track.id);
                 if (gainOverridesByTrack.has(track.id)) {
-                    audioEngine.setTrackGain(track.id, composedGain(track.id));
+                    engine.setTrackGain(track.id, composedGain(track.id));
                 }
             }
             const cachedPan = userPanByTrack.get(track.id);
             if (cachedPan !== undefined && cachedPan !== track.pan) {
                 userPanByTrack.delete(track.id);
                 if (panOverridesByTrack.has(track.id)) {
-                    audioEngine.setTrackPan(track.id, composedPan(track.id));
+                    engine.setTrackPan(track.id, composedPan(track.id));
                 }
             }
         }
@@ -118,7 +119,7 @@ function buildSingleton(): ApplierSingleton {
                 gainOverridesByTrack.set(trackId, overrides);
             }
             overrides.set(layerId, gainLinear);
-            audioEngine.setTrackGain(trackId, composedGain(trackId));
+            engine.setTrackGain(trackId, composedGain(trackId));
         },
         clearGainOverride: (trackId, layerId) => {
             const overrides = gainOverridesByTrack.get(trackId);
@@ -130,11 +131,11 @@ function buildSingleton(): ApplierSingleton {
             }
             const base = rememberUserGain(trackId);
             if (!gainOverridesByTrack.has(trackId)) {
-                audioEngine.setTrackGain(trackId, base);
+                engine.setTrackGain(trackId, base);
                 userGainByTrack.delete(trackId);
                 return;
             }
-            audioEngine.setTrackGain(trackId, composedGain(trackId));
+            engine.setTrackGain(trackId, composedGain(trackId));
         },
         setPanOverride: (trackId, layerId, pan) => {
             let overrides = panOverridesByTrack.get(trackId);
@@ -143,7 +144,7 @@ function buildSingleton(): ApplierSingleton {
                 panOverridesByTrack.set(trackId, overrides);
             }
             overrides.set(layerId, pan);
-            audioEngine.setTrackPan(trackId, composedPan(trackId));
+            engine.setTrackPan(trackId, composedPan(trackId));
         },
         clearPanOverride: (trackId, layerId) => {
             const overrides = panOverridesByTrack.get(trackId);
@@ -155,11 +156,11 @@ function buildSingleton(): ApplierSingleton {
             }
             const base = rememberUserPan(trackId);
             if (!panOverridesByTrack.has(trackId)) {
-                audioEngine.setTrackPan(trackId, base);
+                engine.setTrackPan(trackId, base);
                 userPanByTrack.delete(trackId);
                 return;
             }
-            audioEngine.setTrackPan(trackId, composedPan(trackId));
+            engine.setTrackPan(trackId, composedPan(trackId));
         },
     };
 
@@ -182,9 +183,9 @@ function buildSingleton(): ApplierSingleton {
     };
 }
 
-function ensureSingleton(): ApplierSingleton {
+function ensureSingleton(engine: AudioEngine): ApplierSingleton {
     if (!sharedAdjustmentLayerApplierState.singleton) {
-        sharedAdjustmentLayerApplierState.singleton = buildSingleton();
+        sharedAdjustmentLayerApplierState.singleton = buildSingleton(engine);
     }
     return sharedAdjustmentLayerApplierState.singleton;
 }
@@ -206,25 +207,28 @@ function toEngineTick(records: AppliedLayerRecord[]): AdjustmentLayerTickInput[]
     return inputs;
 }
 
-export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierOutput {
-    const holder = ensureSingleton();
-    return {
-        applyLayers: (args) => {
-            holder.batchAppliedRecords.length = 0;
-            const result = holder.inner.applyLayers(args);
-            adjustmentApplicationStore.set({ applied: holder.batchAppliedRecords.slice() });
-            audioEngine.applyAdjustmentLayerTick?.(toEngineTick(result));
-            return result;
-        },
-        reset: () => {
-            holder.inner.reset();
-            holder.userGainByTrack.clear();
-            holder.userPanByTrack.clear();
-            holder.gainOverridesByTrack.clear();
-            holder.panOverridesByTrack.clear();
-            holder.batchAppliedRecords.length = 0;
-            adjustmentApplicationStore.set({ applied: [] });
-            audioEngine.resetAdjustmentLayers?.();
-        },
-    };
-}
+export const getSharedAdjustmentLayerApplier = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierOutput {
+            const holder = ensureSingleton(audioEngine);
+            return {
+                applyLayers: (args) => {
+                    holder.batchAppliedRecords.length = 0;
+                    const result = holder.inner.applyLayers(args);
+                    adjustmentApplicationStore.set({ applied: holder.batchAppliedRecords.slice() });
+                    audioEngine.applyAdjustmentLayerTick?.(toEngineTick(result));
+                    return result;
+                },
+                reset: () => {
+                    holder.inner.reset();
+                    holder.userGainByTrack.clear();
+                    holder.userPanByTrack.clear();
+                    holder.gainOverridesByTrack.clear();
+                    holder.panOverridesByTrack.clear();
+                    holder.batchAppliedRecords.length = 0;
+                    adjustmentApplicationStore.set({ applied: [] });
+                    audioEngine.resetAdjustmentLayers?.();
+                },
+            };
+        }
+);

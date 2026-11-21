@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
@@ -8,7 +9,10 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
  * (`useAppInitialization`), so this module does not import other modules'
  * use-case barrels that in turn depend on the audio engine.
  */
-export async function initializeAudioEngine(): Promise<void> {
-    await audioEngine.initialize();
-    registerBuiltinFaustDSP();
-}
+export const initializeAudioEngine = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        async function initializeAudioEngine(): Promise<void> {
+            await audioEngine.initialize();
+            registerBuiltinFaustDSP();
+        }
+);

@@ -10,7 +10,9 @@ import type { Track } from '../../../stores/trackStore';
 import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
 
 const mocks = vi.hoisted(() => ({
-    applyRuntimeGraphDelta: vi.fn<typeof applyRuntimeGraphDelta>(() => ({
+    applyRuntimeGraphDelta: vi.fn<
+        (...args: Parameters<typeof applyRuntimeGraphDelta>) => ReturnType<typeof applyRuntimeGraphDelta>
+    >(() => ({
         acceptance: 'accepted',
         application: 'applied',
         correlation: { appRevision: 7, projectRevision: 'project-1' },

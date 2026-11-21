@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { type ToasterDeviceControls } from '../../models/AudioEngineState';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
@@ -7,6 +9,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * traversal inside AudioEngine so foreign modules (Toaster) never touch strip
  * internals to hydrate a device.
  */
-export function getToasterDeviceControls(deviceId: string): ToasterDeviceControls | undefined {
-    return audioEngine.findToasterControls(deviceId);
-}
+export const getToasterDeviceControls = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function getToasterDeviceControls(deviceId: string): ToasterDeviceControls | undefined {
+            return audioEngine.findToasterControls(deviceId);
+        }
+);

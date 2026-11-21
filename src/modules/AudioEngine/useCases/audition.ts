@@ -1,7 +1,9 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
+import { type AudioEngine } from '../models/AudioEngineState';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
@@ -30,59 +32,64 @@ type AuditionTrack = {
     devices: AuditionDevice[];
 };
 
-export function playAuditionNote(
-    trackId: string,
-    pitch: number,
-    velocity: number = 100,
-    parentIntent?: AudioPreviewIntent
-): () => void {
-    const intent = parentIntent ?? audioEngine.beginAudioPreviewIntent();
-    let ended = false;
-    let stopNote: (() => void) | null = null;
-    const stop = () => {
-        if (ended) {
-            return;
-        }
-        ended = true;
-        intent.signal.removeEventListener('abort', stop);
-        try {
-            stopNote?.();
-        } finally {
-            if (parentIntent === undefined) {
-                intent.release();
-            }
-        }
-    };
-    intent.signal.addEventListener('abort', stop, { once: true });
-    const start = () => {
-        if (ended || !intent.isCurrent()) {
-            stop();
-            return;
-        }
-        stopNote = startAuditionNote(trackId, pitch, velocity);
-        if (!intent.isCurrent()) {
-            stop();
-        }
-    };
-    try {
-        if (intent.ready === undefined) {
-            start();
-        } else {
-            void intent.ready.then(start).catch((error: unknown) => {
+export const playAuditionNote = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function playAuditionNote(
+            trackId: string,
+            pitch: number,
+            velocity: number = 100,
+            parentIntent?: AudioPreviewIntent
+        ): () => void {
+            const intent = parentIntent ?? audioEngine.beginAudioPreviewIntent();
+            let ended = false;
+            let stopNote: (() => void) | null = null;
+            const stop = () => {
+                if (ended) {
+                    return;
+                }
+                ended = true;
+                intent.signal.removeEventListener('abort', stop);
+                try {
+                    stopNote?.();
+                } finally {
+                    if (parentIntent === undefined) {
+                        intent.release();
+                    }
+                }
+            };
+            intent.signal.addEventListener('abort', stop, { once: true });
+            const start = () => {
+                if (ended || !intent.isCurrent()) {
+                    stop();
+                    return;
+                }
+                stopNote = startAuditionNote(audioEngine, trackId, pitch, velocity);
+                if (!intent.isCurrent()) {
+                    stop();
+                }
+            };
+            try {
+                if (intent.ready === undefined) {
+                    start();
+                } else {
+                    void intent.ready.then(start).catch((error: unknown) => {
+                        stop();
+                        logger.warn(
+                            new Error('Note audition could not restore its listening output', { cause: error })
+                        );
+                    });
+                }
+            } catch (error) {
                 stop();
-                logger.warn(new Error('Note audition could not restore its listening output', { cause: error }));
-            });
+                throw error;
+            }
+            return stop;
         }
-    } catch (error) {
-        stop();
-        throw error;
-    }
-    return stop;
-}
+);
 
-function startAuditionNote(trackId: string, pitch: number, velocity: number): () => void {
-    const strip = audioEngine.ensureTrackStrip(trackId);
-    const now = audioEngine.context.currentTime;
+function startAuditionNote(engine: AudioEngine, trackId: string, pitch: number, velocity: number): () => void {
+    const strip = engine.ensureTrackStrip(trackId);
+    const now = engine.context.currentTime;
 
     const trackCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
     const track = trackCandidates?.find((candidate) => candidate.id === trackId);
@@ -108,7 +115,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
         const voice = builtinSynthVoice.read(AUDITION_CALLER);
         const kitDef = voice.getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
-            voice.scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity, 1, kitGain);
+            voice.scheduleDrumKitNote(engine.context, strip.gainNode, kitDef, pitch, now, velocity, 1, kitGain);
             return () => {};
         }
 
@@ -122,7 +129,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
         }
 
         const osc: (OscillatorNode & { _env?: GainNode }) | null = voice.scheduleKitNote(
-            audioEngine.context,
+            engine.context,
             strip.gainNode,
             kit,
             pitch,
@@ -138,7 +145,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
 
         const releaseTime = voice.getSynthParamsFromDevices(track?.devices ?? []).release;
         return () => {
-            const killTime = audioEngine.context.currentTime;
+            const killTime = engine.context.currentTime;
             // scheduleKitNote schedules through the builtin synth, which always
             // attaches the amplitude envelope, so apply the exponential smooth
             // release (no hard cutoff) before stopping.
@@ -167,7 +174,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
     if (receiver?.kind === 'toaster') {
         const toasterDevice = receiver.device;
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
-        const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
+        const parentStrip = engine.ensureTrackStrip(effectiveTrackId);
 
         const exactDeviceNode = parentStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id);
         const dn = exactDeviceNode ?? parentStrip.deviceNodes.find((data) => data.type === 'toaster');
@@ -241,10 +248,10 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
 
     const voice = builtinSynthVoice.read(AUDITION_CALLER);
     const synthParams = voice.getSynthParamsFromDevices(track?.devices ?? []);
-    const osc = voice.scheduleNote(audioEngine.context, strip.gainNode, pitch, now, 60, velocity, synthParams);
+    const osc = voice.scheduleNote(engine.context, strip.gainNode, pitch, now, 60, velocity, synthParams);
 
     return () => {
-        const killTime = audioEngine.context.currentTime;
+        const killTime = engine.context.currentTime;
         const releaseTime = synthParams.release;
         // scheduleNote always attaches the amplitude envelope, so apply the
         // exponential smooth release (no hard cutoff) before stopping.

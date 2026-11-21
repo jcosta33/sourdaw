@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -5,6 +7,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * caller this exists for: Web Audio keeps rendering them but stops letting them
  * out, so the two engines never sound the same track at once.
  */
-export function setNativeCarriedTracks(trackIds: ReadonlySet<string>): void {
-    audioEngine.setNativeCarriedTracks(trackIds);
-}
+export const setNativeCarriedTracks = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function setNativeCarriedTracks(trackIds: ReadonlySet<string>): void {
+            audioEngine.setNativeCarriedTracks(trackIds);
+        }
+);

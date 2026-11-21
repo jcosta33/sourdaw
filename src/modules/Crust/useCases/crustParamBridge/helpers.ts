@@ -20,7 +20,7 @@ export type CrustBatchEntry = { deviceId: string; key: string; value: number; de
 export const paramBatcher: RafBatcher<CrustBatchEntry> = createRafBatcher<CrustBatchEntry>();
 
 export type BridgeDeps = {
-    updateDeviceParam: typeof updateDeviceParam;
+    updateDeviceParam: (...args: Parameters<typeof updateDeviceParam>) => ReturnType<typeof updateDeviceParam>;
     persistDeviceParam: typeof persistDeviceParam;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };

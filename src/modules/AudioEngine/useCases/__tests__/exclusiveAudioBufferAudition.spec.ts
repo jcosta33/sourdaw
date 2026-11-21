@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { cache, testOverrides } from '#/infra/di/internal/containerState';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type AudioEngine } from '../../models/AudioEngineState';
@@ -19,24 +20,37 @@ import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPrev
 registerDeviceEnginePorts();
 
 const fixture = vi.hoisted(() => {
-    const current: { engine: AudioEngine | null; startBackend: NativeStartBackend | null } = {
+    const current: { engine: AudioEngine | null; engineKey: object; startBackend: NativeStartBackend | null } = {
         engine: null,
+        engineKey: {},
         startBackend: null,
     };
     return current;
 });
+// Injected use cases capture the export once, at import, as their DI key, so it
+// reads as the stable `engineKey` until a test installs its engine; direct
+// readers see the installed engine, and `installEngine` overrides the key.
 vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../repositories/createWebAudioEngine')>();
     return {
         ...actual,
         get audioEngine() {
-            if (fixture.engine === null) {
-                throw new Error('The real fixture engine is not installed.');
-            }
-            return fixture.engine;
+            return fixture.engine ?? fixture.engineKey;
         },
     };
 });
+
+function installEngine(engine: AudioEngine): void {
+    fixture.engine = engine;
+    testOverrides.set(fixture.engineKey, engine);
+    cache.clear();
+}
+
+function uninstallEngine(): void {
+    fixture.engine = null;
+    testOverrides.delete(fixture.engineKey);
+    cache.clear();
+}
 vi.mock('../../repositories/engineTransport/getEngineTransportPosition', () => ({
     getEngineTransportPosition: vi.fn(),
 }));
@@ -173,7 +187,7 @@ function contextFixture() {
     // Same structural context boundary as the existing listening-path model;
     // no hardware readiness is supplied by this cast or asserted by these tests.
     const engine = composeWebAudioEngine(context as unknown as AudioContext).engine;
-    fixture.engine = engine;
+    installEngine(engine);
     const gate = analysers[0]?.connections[0];
     if (gate === undefined) {
         throw new Error('The real constructor must wire its programme gate.');
@@ -248,7 +262,7 @@ describe('exclusive retained buffer listening lifetime', () => {
     afterEach(async () => {
         await driven.engine.dispose();
         await nativeLiveGraphSession.pending;
-        fixture.engine = null;
+        uninstallEngine();
     });
 
     it('closes the real programme gate before suspended-context resume and starts only after resume settles', async () => {

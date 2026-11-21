@@ -1,5 +1,10 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
-export function getCurrentTime(): number {
-    return audioEngine.context.currentTime;
-}
+export const getCurrentTime = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function getCurrentTime(): number {
+            return audioEngine.context.currentTime;
+        }
+);

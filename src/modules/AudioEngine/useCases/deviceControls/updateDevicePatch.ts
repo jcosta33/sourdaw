@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -39,36 +40,39 @@ function reportNativeGrinderRefusal(error: unknown): void {
     notifyUser('Native Grinder could not confirm the model change. Stop to hear the Web Audio version.', 'warning');
 }
 
-export function updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
-    audioEngine.updateDevicePatch(trackId, deviceId, patch);
-    const body = nativeBuiltinWriteTarget(trackId, deviceId);
-    if (!body) {
-        return;
-    }
-    const values = body.projectPatch(patch);
-    if (body.neuralPatch) {
-        try {
-            const modelJson = body.neuralPatch(patch);
-            if (modelJson !== undefined) {
-                const neuralModelMode = patch.neuralModelMode === 'imported' || modelJson !== null ? 1 : 0;
-                void sendNativeGrinderNeuralPatch({
-                    kind: 'write',
-                    trackId,
-                    deviceId,
-                    modelJson,
-                    values: { ...values, neuralModelMode },
-                }).catch(reportNativeGrinderRefusal);
+export const updateDevicePatch = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
+            audioEngine.updateDevicePatch(trackId, deviceId, patch);
+            const body = nativeBuiltinWriteTarget(trackId, deviceId);
+            if (!body) {
                 return;
             }
-        } catch (error) {
-            reportNativeGrinderRefusal(error);
-            return;
+            const values = body.projectPatch(patch);
+            if (body.neuralPatch) {
+                try {
+                    const modelJson = body.neuralPatch(patch);
+                    if (modelJson !== undefined) {
+                        const neuralModelMode = patch.neuralModelMode === 'imported' || modelJson !== null ? 1 : 0;
+                        void sendNativeGrinderNeuralPatch({
+                            kind: 'write',
+                            trackId,
+                            deviceId,
+                            modelJson,
+                            values: { ...values, neuralModelMode },
+                        }).catch(reportNativeGrinderRefusal);
+                        return;
+                    }
+                } catch (error) {
+                    reportNativeGrinderRefusal(error);
+                    return;
+                }
+            }
+            const modAssignments = extractBacteriaModAssignments(patch);
+            if (modAssignments === null) {
+                void sendNativeDeviceParameters({ trackId, deviceId, values });
+                return;
+            }
+            void sendNativeDeviceParameters({ trackId, deviceId, values, modAssignments });
         }
-    }
-    const modAssignments = extractBacteriaModAssignments(patch);
-    if (modAssignments === null) {
-        void sendNativeDeviceParameters({ trackId, deviceId, values });
-        return;
-    }
-    void sendNativeDeviceParameters({ trackId, deviceId, values, modAssignments });
-}
+);

@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -7,6 +9,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * clock as the compensated audio it shapes. The engine ramps the real
  * `GainNode.gain` AudioParam a-rate rather than stepping at the scheduler grain.
  */
-export function scheduleTrackGain(trackId: string, gain: number, time: number): void {
-    audioEngine.scheduleTrackGain(trackId, gain, time);
-}
+export const scheduleTrackGain = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function scheduleTrackGain(trackId: string, gain: number, time: number): void {
+            audioEngine.scheduleTrackGain(trackId, gain, time);
+        }
+);

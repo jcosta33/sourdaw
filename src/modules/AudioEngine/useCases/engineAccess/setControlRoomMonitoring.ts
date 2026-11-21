@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { type ControlRoomMonitoring } from '../../models/AudioEngineState';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
@@ -7,6 +9,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * The engine applies gains and reads no monitoring state, so the dim arrives
  * already folded to a linear multiplier.
  */
-export function setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void {
-    audioEngine.setControlRoomMonitoring(monitoring);
-}
+export const setControlRoomMonitoring = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void {
+            audioEngine.setControlRoomMonitoring(monitoring);
+        }
+);

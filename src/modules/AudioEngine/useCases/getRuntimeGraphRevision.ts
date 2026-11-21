@@ -1,5 +1,10 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
-export function getRuntimeGraphRevision(): number {
-    return audioEngine.getRuntimeGraphRevision();
-}
+export const getRuntimeGraphRevision = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function getRuntimeGraphRevision(): number {
+            return audioEngine.getRuntimeGraphRevision();
+        }
+);
