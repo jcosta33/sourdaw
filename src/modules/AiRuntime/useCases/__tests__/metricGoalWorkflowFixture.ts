@@ -136,8 +136,23 @@ export function readMetricPublication(schema: { function: { description?: string
     const metrics = array(view.metricMetrics).map(array);
     const expectations = array(view.metricExpectations).map(array);
     const policies = array(view.metricPolicies).map(text);
+    const recipeScopes = view.metricRecipeScopes === undefined ? [] : array(view.metricRecipeScopes).map(array);
     return array(view.metricObjectives).map((entry, ordinal) => {
         const row = array(entry);
+        if (row.length === 2) {
+            // A discovered recipe row prints its id and scopes; its title and goals are read through recipe.discover.
+            const [eligibilityRef, defaultRef, roleSetRef] = recipeScopes[index(row[1])]!;
+            return {
+                id: ids[ordinal],
+                kind: 'recipe',
+                recipeId: text(row[0]),
+                label: null,
+                eligibleScopeIds: eligibility[index(eligibilityRef)]!.map((reference) => scopes[reference]),
+                defaultScopeIds: eligibility[index(defaultRef)]!.map((reference) => scopes[reference]),
+                roles: roleSets[index(roleSetRef)]!.map((reference) => roles[reference]),
+                goals: [],
+            };
+        }
         return {
             id: ids[ordinal],
             kind: text(row[0]),

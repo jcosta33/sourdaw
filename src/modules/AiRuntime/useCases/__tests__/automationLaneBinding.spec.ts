@@ -486,7 +486,6 @@ describe('automation lane binding in one agent batch', () => {
         commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
-        setAutomationParameterRangeResolver(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

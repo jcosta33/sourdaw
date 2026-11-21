@@ -107,7 +107,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
     const metricFields: { metricGoalState?: string | null } = { metricGoalState: input.metricGoalState ?? null };
     // Recorded so revalidation recompiles with the input this compilation used: the decision alone cannot
     // say it, since metric admission escalates an allow batch to confirm without any explicit request.
-    const explicitFields: { explicitApprovalRequired?: boolean } = {
+    const explicitFields: { explicitApprovalRequired: boolean } = {
         explicitApprovalRequired: input.requireExplicitApproval !== false,
     };
     return {
