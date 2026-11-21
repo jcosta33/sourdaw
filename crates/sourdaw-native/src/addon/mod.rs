@@ -237,10 +237,12 @@ impl SourdawNative {
                 show: callbacks.show_editor_window,
             },
         )?;
+        let host = Arc::new(host);
+        crate::host::plugin_host_requests::use_ui_thread(Arc::clone(&host) as _);
         *self
             .windows
             .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Arc::new(host);
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = host;
         Ok(())
     }
 

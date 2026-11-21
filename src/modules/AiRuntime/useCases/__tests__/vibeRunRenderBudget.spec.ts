@@ -110,7 +110,7 @@ const SONG_BEATS = 64;
 const DRUM_KIT: VibeTrackSpec[] = [
     { id: 'track-kick', name: 'Kick', role: 'kick' },
     { id: 'track-snare', name: 'Snare', role: 'snare' },
-    { id: 'track-hats', name: 'Hats', role: 'hi-hat' },
+    { id: 'track-tom', name: 'Tom', role: 'tom' },
 ];
 const EIGHT_SECTIONS = vibeSections(
     ['Intro', 'Verse 1', 'Pre Chorus', 'Chorus 1', 'Verse 2', 'Chorus 2', 'Bridge', 'Outro'],
@@ -189,7 +189,7 @@ afterEach(() => {
 
 describe('the render count of a vibe run', () => {
     // Three drum targets in one batch of three steps: Kick is read at its own step and the whole
-    // batch, Snare at its own, the one before it and the whole batch, Hats at its own and the one
+    // batch, Snare at its own, the one before it and the whole batch, Tom at its own and the one
     // before. Each target renders once live and once per prefix document it is read in:
     // 3 initial + (1 + 2) + (1 + 3) + (1 + 2) = 13, whatever the section count.
     const RUN_RENDERS = 13;
@@ -612,7 +612,7 @@ describe('a run larger than its render budget', () => {
 
         const brief = requireOnlyProposedVibeCard();
         expect(vibeCardContent(brief)).toContain(
-            "No batches were scheduled after the brief: initial measurements and previewing every batch need 122 renders, more than the 64 this run's maxRenderJobs budget has left; the drums and vocal families (12 tracks) fit."
+            "No batches were scheduled after the brief: initial measurements and previewing every batch need 117 renders, more than the 64 this run's maxRenderJobs budget has left; the drums, bass and guitar families (13 tracks) fit."
         );
         expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();

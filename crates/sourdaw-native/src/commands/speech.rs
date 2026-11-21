@@ -6,12 +6,176 @@ use rubato::{
     WindowFunction,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use whisper_rs::{
+    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperError,
+};
 use zeroize::{Zeroize, Zeroizing};
 
+use super::verified_cached_model::ModelCacheError;
 use super::{filesystem, verified_cached_model};
+
+// ── Errors ──────────────────────────────────────────────────────────────
+
+/// Why a dictation command was refused. `Display` is the message the renderer
+/// receives through the napi edge.
+#[derive(Debug)]
+enum DictationError {
+    /// A dictation mutex was poisoned by a panicking holder.
+    LockPoisoned,
+    InvalidSessionId,
+    ModelNotLoaded,
+    AlreadyInProgress,
+    AlreadyResolved,
+    NotActive,
+    /// The filesystem boundary's refusal text for a picked model path, passed
+    /// through unchanged.
+    ModelPath(String),
+    ModelLoad(WhisperError),
+    VerifiedModelLoad(WhisperError),
+    ModelCache(ModelCacheError),
+}
+
+impl<T> From<PoisonError<T>> for DictationError {
+    fn from(_: PoisonError<T>) -> Self {
+        Self::LockPoisoned
+    }
+}
+
+impl From<ModelCacheError> for DictationError {
+    fn from(error: ModelCacheError) -> Self {
+        Self::ModelCache(error)
+    }
+}
+
+impl fmt::Display for DictationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // Printed through std's own `PoisonError`, so the text stays the
+            // one a formatted poisoned guard produced.
+            Self::LockPoisoned => write!(f, "Lock error: {}", PoisonError::new(())),
+            Self::InvalidSessionId => f.write_str("Dictation session id is invalid."),
+            Self::ModelNotLoaded => {
+                f.write_str("Whisper model not loaded. Call load_whisper_model first.")
+            }
+            Self::AlreadyInProgress => {
+                f.write_str("Dictation is already in progress. Stop the current session first.")
+            }
+            Self::AlreadyResolved => f.write_str("Dictation session already resolved."),
+            Self::NotActive => f.write_str("Dictation session is not active."),
+            Self::ModelPath(message) => f.write_str(message),
+            Self::ModelLoad(error) => write!(f, "Failed to load Whisper model: {error}"),
+            Self::VerifiedModelLoad(error) => {
+                write!(f, "Failed to load verified local Whisper model: {error}")
+            }
+            Self::ModelCache(error) => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+impl std::error::Error for DictationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ModelLoad(source) | Self::VerifiedModelLoad(source) => Some(source),
+            Self::ModelCache(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
+/// Why the microphone capture produced no recording.
+#[derive(Debug)]
+enum CaptureError {
+    NoMicrophone,
+    Config(cpal::Error),
+    BuildStream(cpal::Error),
+    Play(cpal::Error),
+    /// The stream's error callback fired; `None` when its kind is one
+    /// `CAPTURE_FAILURE_KINDS` does not name.
+    StreamFailed(Option<cpal::ErrorKind>),
+}
+
+impl fmt::Display for CaptureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoMicrophone => f.write_str("No microphone found"),
+            Self::Config(error) => write!(f, "Failed to get mic config: {error}"),
+            Self::BuildStream(error) => write!(f, "Failed to build mic stream: {error}"),
+            Self::Play(error) => write!(f, "Failed to start mic: {error}"),
+            Self::StreamFailed(Some(kind)) => write!(f, "Microphone stream failed: {kind}"),
+            Self::StreamFailed(None) => f.write_str("Microphone stream failed."),
+        }
+    }
+}
+
+impl std::error::Error for CaptureError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Config(source) | Self::BuildStream(source) | Self::Play(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
+/// Why resampling the recording to the model rate failed.
+#[derive(Debug)]
+enum ResampleError {
+    Buffer(audioadapter_buffers::SizeError),
+    OutputOverrun { frames: usize },
+    Create(rubato::ResamplerConstructionError),
+    Process(rubato::ResampleError),
+}
+
+impl fmt::Display for ResampleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Buffer(error) => write!(f, "Resampler buffer error: {error}"),
+            Self::OutputOverrun { frames } => write!(
+                f,
+                "Resample error: {frames} output frames exceed the output buffer"
+            ),
+            Self::Create(error) => write!(f, "Failed to create resampler: {error}"),
+            Self::Process(error) => write!(f, "Resample error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ResampleError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Buffer(source) => Some(source),
+            Self::OutputOverrun { .. } => None,
+            Self::Create(source) => Some(source),
+            Self::Process(source) => Some(source),
+        }
+    }
+}
+
+/// Why Whisper inference over the recording failed.
+#[derive(Debug)]
+enum TranscribeError {
+    State(WhisperError),
+    Inference(WhisperError),
+}
+
+impl fmt::Display for TranscribeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::State(error) => write!(f, "Whisper state error: {error}"),
+            Self::Inference(error) => write!(f, "Whisper inference error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for TranscribeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::State(source) | Self::Inference(source) => Some(source),
+        }
+    }
+}
 
 // ── Managed state ───────────────────────────────────────────────────────
 
@@ -109,16 +273,16 @@ impl EraseOwnedOutput for Vec<f64> {
 
 impl SensitiveResamplerOutput<Vec<f64>> {
     /// The owned mono output, seen as the interleaved buffer rubato writes.
-    fn buffer_mut(&mut self) -> Result<InterleavedSlice<&mut [f64]>, String> {
+    fn buffer_mut(&mut self) -> Result<InterleavedSlice<&mut [f64]>, ResampleError> {
         let frames = self.0.len();
-        InterleavedSlice::new_mut(&mut self.0, 1, frames)
-            .map_err(|error| format!("Resampler buffer error: {error}"))
+        InterleavedSlice::new_mut(&mut self.0, 1, frames).map_err(ResampleError::Buffer)
     }
 
-    fn copy_f32(&self, frames: usize) -> Result<Vec<f32>, String> {
-        let written = self.0.get(..frames).ok_or_else(|| {
-            format!("Resample error: {frames} output frames exceed the output buffer")
-        })?;
+    fn copy_f32(&self, frames: usize) -> Result<Vec<f32>, ResampleError> {
+        let written = self
+            .0
+            .get(..frames)
+            .ok_or(ResampleError::OutputOverrun { frames })?;
         Ok(written.iter().map(|&sample| sample as f32).collect())
     }
 }
@@ -203,11 +367,8 @@ impl Default for SessionTerminalControl {
 }
 
 impl SessionTerminalControl {
-    fn begin(&self) -> Result<(), String> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|error| format!("Lock error: {error}"))?;
+    fn begin(&self) -> Result<(), DictationError> {
+        let mut state = self.state.lock()?;
         *state = SessionTerminalState::Active;
         Ok(())
     }
@@ -223,25 +384,19 @@ impl SessionTerminalControl {
         true
     }
 
-    fn cancel_and_wait(&self) -> Result<(), String> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|error| format!("Lock error: {error}"))?;
+    fn cancel_and_wait(&self) -> Result<(), DictationError> {
+        let mut state = self.state.lock()?;
         if *state == SessionTerminalState::ResultPublished
             || *state == SessionTerminalState::Complete
         {
-            return Err("Dictation session already resolved.".to_string());
+            return Err(DictationError::AlreadyResolved);
         }
         if *state != SessionTerminalState::Active && *state != SessionTerminalState::Cancelling {
-            return Err("Dictation session is not active.".to_string());
+            return Err(DictationError::NotActive);
         }
         *state = SessionTerminalState::Cancelling;
         while *state != SessionTerminalState::Complete {
-            state = self
-                .complete
-                .wait(state)
-                .map_err(|error| format!("Lock error: {error}"))?;
+            state = self.complete.wait(state)?;
         }
         Ok(())
     }
@@ -433,14 +588,12 @@ fn asr_status_from_loaded_name(loaded_name: Option<&str>) -> AsrStatus {
 /// Guards a dictation session from starting while one is already recording
 /// or transcribing. Pure decision logic — no mic or model access — so it is
 /// testable without hardware.
-fn try_begin_dictation_session(session_active: &AtomicBool) -> Result<(), String> {
+fn try_begin_dictation_session(session_active: &AtomicBool) -> Result<(), DictationError> {
     if session_active
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Err(
-            "Dictation is already in progress. Stop the current session first.".to_string(),
-        );
+        return Err(DictationError::AlreadyInProgress);
     }
     Ok(())
 }
@@ -452,11 +605,19 @@ pub async fn load_whisper_model(
     model_path: String,
     state: &DictationState,
 ) -> Result<AsrStatus, String> {
-    let model_path = filesystem::resolve_existing_file_path(&model_path)?;
+    load_model_from_path(&model_path, state).map_err(|error| error.to_string())
+}
+
+fn load_model_from_path(
+    model_path: &str,
+    state: &DictationState,
+) -> Result<AsrStatus, DictationError> {
+    let model_path =
+        filesystem::resolve_existing_file_path(model_path).map_err(DictationError::ModelPath)?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
     let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
-        .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+        .map_err(DictationError::ModelLoad)?;
 
     let name = model_path
         .file_name()
@@ -464,10 +625,7 @@ pub async fn load_whisper_model(
         .unwrap_or("unknown")
         .to_string();
 
-    let mut guard = state
-        .loaded
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
+    let mut guard = state.loaded.lock()?;
     *guard = Some(LoadedModel {
         ctx: Arc::new(ctx),
         name: name.clone(),
@@ -497,6 +655,12 @@ pub(crate) const WHISPER_MODEL: verified_cached_model::VerifiedCachedModel =
 /// Verify and load the bundled Whisper artifact from the local model cache.
 /// This boundary never creates cache directories, repairs files, or downloads.
 pub async fn load_cached_whisper_model(state: &DictationState) -> Result<AsrStatus, String> {
+    load_verified_cached_model(state)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn load_verified_cached_model(state: &DictationState) -> Result<AsrStatus, DictationError> {
     let model_bytes = verified_cached_model::read_verified_cached_model(&WHISPER_MODEL).await?;
     let _exclusive = state.load_guard.lock().await;
     let loaded = LoadedModel {
@@ -505,14 +669,11 @@ pub async fn load_cached_whisper_model(state: &DictationState) -> Result<AsrStat
                 &model_bytes,
                 WhisperContextParameters::default(),
             )
-            .map_err(|e| format!("Failed to load verified local Whisper model: {e}"))?,
+            .map_err(DictationError::VerifiedModelLoad)?,
         ),
         name: WHISPER_MODEL_FILE.to_string(),
     };
-    let mut guard = state
-        .loaded
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
+    let mut guard = state.loaded.lock()?;
     *guard = Some(loaded.clone());
 
     Ok(AsrStatus {
@@ -533,17 +694,20 @@ pub async fn start_dictation(
     events: Arc<dyn EventSink>,
     state: &DictationState,
 ) -> Result<String, String> {
+    start_dictation_session(session_id, events, state).map_err(|error| error.to_string())
+}
+
+fn start_dictation_session(
+    session_id: String,
+    events: Arc<dyn EventSink>,
+    state: &DictationState,
+) -> Result<String, DictationError> {
     if session_id.is_empty() || session_id.len() > 128 {
-        return Err("Dictation session id is invalid.".to_string());
+        return Err(DictationError::InvalidSessionId);
     }
     let loaded = {
-        let guard = state
-            .loaded
-            .lock()
-            .map_err(|e| format!("Lock error: {e}"))?;
-        guard
-            .clone()
-            .ok_or("Whisper model not loaded. Call load_whisper_model first.")?
+        let guard = state.loaded.lock()?;
+        guard.clone().ok_or(DictationError::ModelNotLoaded)?
     };
 
     try_begin_dictation_session(&state.session_active)?;
@@ -556,7 +720,7 @@ pub async fn start_dictation(
             Ok(active) => active,
             Err(error) => {
                 state.session_active.store(false, Ordering::SeqCst);
-                return Err(format!("Lock error: {error}"));
+                return Err(error.into());
             }
         };
         *active = Some(session_id.clone());
@@ -666,13 +830,10 @@ fn control_active_session(
     state: &DictationState,
     session_id: &str,
     cancelled: bool,
-) -> Result<(), String> {
-    let active = state
-        .active_session_id
-        .lock()
-        .map_err(|error| format!("Lock error: {error}"))?;
+) -> Result<(), DictationError> {
+    let active = state.active_session_id.lock()?;
     if active.as_deref() != Some(session_id) {
-        return Err("Dictation session is not active.".to_string());
+        return Err(DictationError::NotActive);
     }
     drop(active);
     if cancelled {
@@ -686,12 +847,12 @@ fn control_active_session(
 
 /// Stop capture for the exact session and begin local transcription.
 pub fn stop_dictation(session_id: String, state: &DictationState) -> Result<(), String> {
-    control_active_session(state, &session_id, false)
+    control_active_session(state, &session_id, false).map_err(|error| error.to_string())
 }
 
 /// Cancel the exact session, discard capture, and suppress any transcript.
 pub fn cancel_dictation(session_id: String, state: &DictationState) -> Result<(), String> {
-    control_active_session(state, &session_id, true)
+    control_active_session(state, &session_id, true).map_err(|error| error.to_string())
 }
 
 /// Check the current ASR engine status.
@@ -699,7 +860,7 @@ pub async fn get_asr_status(state: &DictationState) -> Result<AsrStatus, String>
     let guard = state
         .loaded
         .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
+        .map_err(|error| DictationError::from(error).to_string())?;
     Ok(asr_status_from_loaded_name(
         guard.as_ref().map(|loaded| loaded.name.as_str()),
     ))
@@ -742,14 +903,10 @@ fn capture_failure_code(kind: cpal::ErrorKind) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-fn capture_failure_message(code: u8) -> String {
-    let named = code
-        .checked_sub(1)
-        .and_then(|index| CAPTURE_FAILURE_KINDS.get(usize::from(index)));
-    match named {
-        Some(kind) => format!("Microphone stream failed: {kind}"),
-        None => "Microphone stream failed.".to_string(),
-    }
+fn capture_failure_kind(code: u8) -> Option<cpal::ErrorKind> {
+    code.checked_sub(1)
+        .and_then(|index| CAPTURE_FAILURE_KINDS.get(usize::from(index)))
+        .copied()
 }
 
 fn cpal_runtime_failure_callback(
@@ -853,13 +1010,15 @@ fn drain_capture_ring(
 
 /// Record audio from the default input device until the stop flag is set
 /// or 15 seconds elapse. Returns (samples, sample_rate, channels).
-fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
+fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), CaptureError> {
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or("No microphone found")?;
+    let device = host
+        .default_input_device()
+        .ok_or(CaptureError::NoMicrophone)?;
 
     let config = device
         .default_input_config()
-        .map_err(|e| format!("Failed to get mic config: {e}"))?;
+        .map_err(CaptureError::Config)?;
 
     let sample_rate = config.sample_rate();
     let channels = config.channels();
@@ -882,11 +1041,9 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
             cpal_runtime_failure_callback(stream_failed.clone(), failure_code.clone()),
             None,
         )
-        .map_err(|e| format!("Failed to build mic stream: {e}"))?;
+        .map_err(CaptureError::BuildStream)?;
 
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start mic: {e}"))?;
+    stream.play().map_err(CaptureError::Play)?;
 
     // Poll the stop flag every 50ms, up to 15 seconds
     let max_iters = 15_000 / 50;
@@ -915,9 +1072,11 @@ fn finish_capture_after_stream_status(
     mut buffer: SensitiveCaptureBuffer,
     stream_failed: &AtomicBool,
     failure_code: &AtomicU8,
-) -> Result<Vec<f32>, String> {
+) -> Result<Vec<f32>, CaptureError> {
     if stream_failed.load(Ordering::SeqCst) {
-        return Err(capture_failure_message(failure_code.load(Ordering::SeqCst)));
+        return Err(CaptureError::StreamFailed(capture_failure_kind(
+            failure_code.load(Ordering::SeqCst),
+        )));
     }
 
     Ok(std::mem::take(&mut buffer.0))
@@ -936,14 +1095,14 @@ fn to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
 /// error return and panic unwind erase the converted microphone samples.
 fn with_sensitive_resampler_input<T>(
     input: Vec<f64>,
-    operation: impl FnOnce(&[Vec<f64>]) -> Result<T, String>,
-) -> Result<T, String> {
+    operation: impl FnOnce(&[Vec<f64>]) -> Result<T, ResampleError>,
+) -> Result<T, ResampleError> {
     let input = SensitiveF64Buffers(vec![input]);
     operation(&input.0)
 }
 
 /// Resample mono audio from `src_rate` to 16 kHz using rubato.
-fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
+fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, ResampleError> {
     if input.is_empty() {
         return Ok(vec![]);
     }
@@ -960,20 +1119,20 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
     let mut resampler = SensitiveResampler(
         Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
-            .map_err(|e| format!("Failed to create resampler: {e}"))?,
+            .map_err(ResampleError::Create)?,
     );
 
     let input_f64 = input.iter().map(|&sample| sample as f64).collect();
     let frames = input.len();
     let resampled = with_sensitive_resampler_input(input_f64, |channels| {
-        let adapter = SequentialSliceOfVecs::new(channels, 1, frames)
-            .map_err(|error| format!("Resampler buffer error: {error}"))?;
+        let adapter =
+            SequentialSliceOfVecs::new(channels, 1, frames).map_err(ResampleError::Buffer)?;
         let needed = resampler.0.process_all_needed_output_len(frames);
         let mut output = SensitiveResamplerOutput(vec![0.0; needed]);
         let (_input, output_len) = resampler
             .0
             .process_all_into_buffer(&adapter, &mut output.buffer_mut()?, frames, None)
-            .map_err(|error| format!("Resample error: {error}"))?;
+            .map_err(ResampleError::Process)?;
         output.copy_f32(output_len)
     })?;
 
@@ -981,10 +1140,8 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
-fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
-    let mut state = ctx
-        .create_state()
-        .map_err(|e| format!("Whisper state error: {e}"))?;
+fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, TranscribeError> {
+    let mut state = ctx.create_state().map_err(TranscribeError::State)?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
@@ -994,7 +1151,7 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
 
     state
         .full(params, audio)
-        .map_err(|e| format!("Whisper inference error: {e}"))?;
+        .map_err(TranscribeError::Inference)?;
 
     // Use the iterator API (whisper-rs v0.15+)
     let text: String = state
@@ -1174,7 +1331,11 @@ mod tests {
         // A second call while the first is still recording/transcribing
         // must not reset shared state or spawn a second mic stream.
         let second = try_begin_dictation_session(&session_active);
-        assert!(second.is_err());
+        assert!(matches!(second, Err(DictationError::AlreadyInProgress)));
+        assert_eq!(
+            second.map_err(|error| error.to_string()),
+            Err("Dictation is already in progress. Stop the current session first.".to_string())
+        );
         assert!(session_active.load(Ordering::SeqCst));
 
         // Once the first session ends (mirrors DictationSessionGuard::drop),
@@ -1333,8 +1494,14 @@ mod tests {
             &failure_code,
         );
 
-        assert_eq!(
+        assert!(matches!(
             result,
+            Err(CaptureError::StreamFailed(Some(
+                cpal::ErrorKind::DeviceNotAvailable
+            )))
+        ));
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
             Err(format!(
                 "Microphone stream failed: {}",
                 cpal::ErrorKind::DeviceNotAvailable
@@ -1382,7 +1549,8 @@ mod tests {
                 SensitiveCaptureBuffer(Vec::new()),
                 &stream_failed,
                 &failure_code,
-            ),
+            )
+            .map_err(|error| error.to_string()),
             Ok(Vec::new())
         );
 
@@ -1395,7 +1563,8 @@ mod tests {
                 SensitiveCaptureBuffer(Vec::new()),
                 &stream_failed,
                 &failure_code,
-            ),
+            )
+            .map_err(|error| error.to_string()),
             Err(format!(
                 "Microphone stream failed: {}",
                 cpal::ErrorKind::StreamInvalidated
@@ -1404,12 +1573,14 @@ mod tests {
 
         // A kind the table does not name still fails the capture.
         let unnamed_code = AtomicU8::new(u8::MAX);
+        let unnamed = finish_capture_after_stream_status(
+            SensitiveCaptureBuffer(Vec::new()),
+            &stream_failed,
+            &unnamed_code,
+        );
+        assert!(matches!(unnamed, Err(CaptureError::StreamFailed(None))));
         assert_eq!(
-            finish_capture_after_stream_status(
-                SensitiveCaptureBuffer(Vec::new()),
-                &stream_failed,
-                &unnamed_code,
-            ),
+            unnamed.map_err(|error| error.to_string()),
             Err("Microphone stream failed.".to_string())
         );
     }
@@ -1505,5 +1676,134 @@ mod tests {
         assert!(!session_active.load(Ordering::SeqCst));
         assert_eq!(sink.events().len(), 1);
         assert_eq!(sink.events()[0].0, "dictation-error");
+    }
+
+    #[test]
+    fn dictation_refusals_keep_their_messages() {
+        let cases = [
+            (
+                DictationError::InvalidSessionId,
+                "Dictation session id is invalid.",
+            ),
+            (
+                DictationError::ModelNotLoaded,
+                "Whisper model not loaded. Call load_whisper_model first.",
+            ),
+            (
+                DictationError::AlreadyResolved,
+                "Dictation session already resolved.",
+            ),
+            (
+                DictationError::NotActive,
+                "Dictation session is not active.",
+            ),
+            (
+                DictationError::ModelPath("File not found or not accessible".to_string()),
+                "File not found or not accessible",
+            ),
+            (
+                DictationError::ModelCache(ModelCacheError::NoDataDirectory),
+                "Could not determine data directory",
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+
+        let init = WhisperError::InitError;
+        assert_eq!(
+            DictationError::ModelLoad(init).to_string(),
+            format!("Failed to load Whisper model: {init}")
+        );
+        assert_eq!(
+            DictationError::VerifiedModelLoad(init).to_string(),
+            format!("Failed to load verified local Whisper model: {init}")
+        );
+    }
+
+    /// The poisoned-lock refusal is printed from std's `PoisonError`, so it
+    /// must equal what formatting a real poisoned guard printed before.
+    #[test]
+    fn a_poisoned_dictation_lock_reports_the_formatted_poison_error() {
+        let mutex = Arc::new(Mutex::new(()));
+        let poisoner = Arc::clone(&mutex);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("forced poison");
+        })
+        .join();
+        let poisoned = mutex.lock().expect_err("the mutex must be poisoned");
+        let legacy = format!("Lock error: {poisoned}");
+
+        assert_eq!(DictationError::from(poisoned).to_string(), legacy);
+        assert_eq!(
+            legacy,
+            "Lock error: poisoned lock: another task failed inside"
+        );
+    }
+
+    #[test]
+    fn cancelling_a_session_that_is_not_active_or_already_resolved_is_refused() {
+        let idle = SessionTerminalControl::default();
+        let error = idle
+            .cancel_and_wait()
+            .expect_err("an idle terminal has nothing to cancel");
+        assert!(matches!(error, DictationError::NotActive));
+        assert_eq!(error.to_string(), "Dictation session is not active.");
+
+        let resolved = SessionTerminalControl::default();
+        resolved.begin().unwrap();
+        assert!(resolved.claim_result());
+        let error = resolved
+            .cancel_and_wait()
+            .expect_err("a published result cannot be cancelled");
+        assert!(matches!(error, DictationError::AlreadyResolved));
+        assert_eq!(error.to_string(), "Dictation session already resolved.");
+    }
+
+    #[test]
+    fn capture_resample_and_transcribe_failures_keep_their_messages() {
+        assert_eq!(
+            CaptureError::NoMicrophone.to_string(),
+            "No microphone found"
+        );
+        let device_busy = cpal::Error::new(cpal::ErrorKind::DeviceBusy);
+        assert_eq!(
+            CaptureError::Config(cpal::Error::new(cpal::ErrorKind::DeviceBusy)).to_string(),
+            format!("Failed to get mic config: {device_busy}")
+        );
+        assert_eq!(
+            CaptureError::BuildStream(cpal::Error::new(cpal::ErrorKind::DeviceBusy)).to_string(),
+            format!("Failed to build mic stream: {device_busy}")
+        );
+        assert_eq!(
+            CaptureError::Play(cpal::Error::new(cpal::ErrorKind::DeviceBusy)).to_string(),
+            format!("Failed to start mic: {device_busy}")
+        );
+
+        let output = SensitiveResamplerOutput(vec![0.0_f64; 2]);
+        let overrun = output
+            .copy_f32(3)
+            .expect_err("frames past the buffer must be refused");
+        assert!(matches!(
+            overrun,
+            ResampleError::OutputOverrun { frames: 3 }
+        ));
+        assert_eq!(
+            overrun.to_string(),
+            "Resample error: 3 output frames exceed the output buffer"
+        );
+
+        assert_eq!(
+            TranscribeError::State(WhisperError::FailedToCreateState).to_string(),
+            format!("Whisper state error: {}", WhisperError::FailedToCreateState)
+        );
+        assert_eq!(
+            TranscribeError::Inference(WhisperError::FailedToCreateState).to_string(),
+            format!(
+                "Whisper inference error: {}",
+                WhisperError::FailedToCreateState
+            )
+        );
     }
 }
