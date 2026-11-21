@@ -14745,14 +14745,6 @@
             "count": 4
         }
     },
-    "src/modules/MIDI/useCases/grooveTemplates/projectGrooveTemplateState.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "typescript/switch-exhaustiveness-check": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts": {
         "eslint/complexity": {
             "count": 1
@@ -18796,7 +18788,7 @@
             "count": 2
         },
         "sourdaw-craft/no-silent-catch": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/WorkspaceShell/presentations/views/Transport/WindowControls.tsx": {
