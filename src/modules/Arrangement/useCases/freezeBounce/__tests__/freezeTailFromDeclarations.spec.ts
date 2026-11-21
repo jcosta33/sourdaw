@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { engineSampleRateOf } from '#/modules/AudioEngine/useCases';
 import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
@@ -8,6 +8,7 @@ import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
+import { cancelFreezeTrack } from '../cancelFreezeTrack';
 import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
@@ -215,5 +216,67 @@ describe('freeze sizes its tail from device tail declarations', () => {
             externalPluginTailStore.set(defaultExternalPluginTailState);
             vi.mocked(engineSampleRateOf).mockReturnValue(null);
         }
+    });
+
+    describe('while the hosted tail refresh is pending', () => {
+        function seedHostedReverbTrack() {
+            seedTrackWithDevice('external-plugin');
+            const track = trackStore.value!.tracks[0]!;
+            track.devices = [
+                {
+                    ...track.devices[0]!,
+                    name: 'Reverb',
+                    externalPluginId: 'reverb',
+                    externalInstanceId: 'inst-1',
+                },
+            ];
+            vi.mocked(engineSampleRateOf).mockReturnValue(48_000);
+            externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 96_000 } });
+        }
+
+        function holdRefresh(): () => void {
+            let release: () => void = () => {};
+            const pending = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(refreshExternalPluginTails).mockImplementationOnce(() => pending);
+            return release;
+        }
+
+        afterEach(() => {
+            externalPluginTailStore.set(defaultExternalPluginTailState);
+            vi.mocked(engineSampleRateOf).mockReturnValue(null);
+        });
+
+        it('starts no render until the refresh settles, then sizes the tail from the figure it wrote', async () => {
+            seedHostedReverbTrack();
+            const release = holdRefresh();
+
+            const frozen = freezeTrack('t1');
+            await vi.waitFor(() => expect(refreshExternalPluginTails).toHaveBeenCalled());
+
+            expect(renderTrackOffline).not.toHaveBeenCalled();
+
+            externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 240_000 } });
+            release();
+
+            expect(await frozen).toBe(true);
+            expect(renderTrackOffline).toHaveBeenCalledTimes(1);
+            expect(readRequestedTailSeconds()).toBeCloseTo(5, 9);
+        });
+
+        it('drops a freeze cancelled during the refresh without starting a render', async () => {
+            seedHostedReverbTrack();
+            const release = holdRefresh();
+
+            const frozen = freezeTrack('t1');
+            await vi.waitFor(() => expect(refreshExternalPluginTails).toHaveBeenCalled());
+
+            cancelFreezeTrack('t1');
+            release();
+
+            expect(await frozen).toBe(false);
+            expect(renderTrackOffline).not.toHaveBeenCalled();
+        });
     });
 });
