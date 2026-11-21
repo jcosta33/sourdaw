@@ -105,6 +105,11 @@ async function readFreezeTailSeconds(track: Track, task: FreezeTaskIdentity): Pr
     }).seconds;
 }
 
+function captureLiveFreezeState(trackId: string): ReturnType<typeof captureFreezeStateSnapshot> | null {
+    const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    return liveTrack ? captureFreezeStateSnapshot(liveTrack) : null;
+}
+
 export async function freezeTrack(trackId: string, freezeIdOverride?: string): Promise<boolean> {
     const state = trackStore.value;
     const project = projectStore.value;
@@ -145,8 +150,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         ...time,
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
-    const pendingTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
+    const pendingFreeze = captureLiveFreezeState(trackId);
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
