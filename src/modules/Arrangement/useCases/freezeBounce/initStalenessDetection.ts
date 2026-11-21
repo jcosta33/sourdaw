@@ -1,25 +1,37 @@
+import { automationStore } from '#/modules/Automation/stores';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+import { vcaGroupStore } from '../../stores/vcaGroupStore';
 
 import { computeFreezeSourceHash } from './computeFreezeSourceHash';
-import { selectFreezeSourceTracks } from './freezeSourceTracks';
-import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
+import { type FreezeSources } from './freezeSourceTracks';
+import { takeChangedFreezeSources } from './takeChangedFreezeSources';
 
 let isEvaluating = false;
 let prevState: TrackStoreState | null = null;
+const seenSources = new Map<string, FreezeSources>();
 
 /**
- * Subscribes to track changes to detect when a frozen track's content
- * is modified, transitioning its state to 'stale'.
+ * Subscribes to the stores a freeze's render reads (tracks, sidechain routes, automation lanes,
+ * VCA groups) to detect when a frozen track's sources are modified, transitioning its state to
+ * 'stale'. A write only costs a hash when the sources of some frozen track actually differ from
+ * the ones last seen.
  *
  * Conforms to R8: Staleness Detection.
  */
 export function initStalenessDetection(): () => void {
     prevState = trackStore.value; // capture initial state
+    seenSources.clear();
+    for (const track of prevState?.tracks ?? []) {
+        if (track.freezeState.status === 'frozen') {
+            takeChangedFreezeSources(seenSources, track.id);
+        }
+    }
 
-    const unsubscribe = trackStore.subscribe((state) => {
+    function evaluate(state: TrackStoreState | null): void {
         void (async () => {
             if (isEvaluating || !state || !prevState) {
                 prevState = state;
@@ -33,6 +45,7 @@ export function initStalenessDetection(): () => void {
             try {
                 for (const track of state.tracks) {
                     if (track.freezeState.status !== 'frozen') {
+                        seenSources.delete(track.id);
                         continue;
                     }
 
@@ -61,15 +74,13 @@ export function initStalenessDetection(): () => void {
                     }
 
                     const prevTrack = previous.tracks.find((time) => time.id === track.id);
-                    if (!prevTrack) {
-                        continue;
-                    }
-
+                    // Read for every frozen track, so the first sighting is recorded even when
+                    // the predecessor lookup below skips it.
+                    //
                     // The signature covers every track the freeze's render reads, so an edit to a
                     // routed source, or a routing change that adds or removes one, counts.
-                    const sources = selectFreezeSourceTracks(track.id, state.tracks);
-                    const previousSources = selectFreezeSourceTracks(prevTrack.id, previous.tracks);
-                    if (!freezeSourceTracksMatch(sources, previousSources)) {
+                    const sources = takeChangedFreezeSources(seenSources, track.id);
+                    if (prevTrack && sources) {
                         const hash = await computeFreezeSourceHash(sources);
                         if (hash !== track.freezeState.sourceContentHash) {
                             updateTrack(track.id, (time) => ({
@@ -83,7 +94,24 @@ export function initStalenessDetection(): () => void {
                 isEvaluating = false;
             }
         })();
-    });
+    }
 
-    return unsubscribe;
+    const unsubscribes = [
+        trackStore.subscribe(evaluate),
+        sidechainStore.subscribe(() => {
+            evaluate(trackStore.value);
+        }),
+        automationStore.subscribe(() => {
+            evaluate(trackStore.value);
+        }),
+        vcaGroupStore.subscribe(() => {
+            evaluate(trackStore.value);
+        }),
+    ];
+
+    return () => {
+        for (const unsubscribe of unsubscribes) {
+            unsubscribe();
+        }
+    };
 }

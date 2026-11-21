@@ -1,13 +1,11 @@
-import { type Track } from '../../stores/trackStore';
-
 import { computeFreezeSourceHash } from './computeFreezeSourceHash';
 import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
+import { type FreezeSources, readFreezeSources } from './freezeSourceTracks';
 import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
-import { selectLiveFreezeSourceTracks } from './selectLiveFreezeSourceTracks';
 
-function readLiveSources(trackId: string): Track[] {
-    const sources = selectLiveFreezeSourceTracks(trackId);
-    if (sources.length === 0) {
+function readLiveSources(trackId: string): FreezeSources {
+    const sources = readFreezeSources(trackId);
+    if (sources.tracks.length === 0) {
         throw new Error(CHANGED_DURING_FREEZE);
     }
     return sources;
@@ -25,7 +23,7 @@ function readLiveSources(trackId: string): Track[] {
  * Returns the live sources that were hashed, so a caller can tell whether they are still the live
  * ones once the returned promise settles.
  */
-export async function assertFreezeSourceUnchanged(trackId: string, renderedSourceHash: string): Promise<Track[]> {
+export async function assertFreezeSourceUnchanged(trackId: string, renderedSourceHash: string): Promise<FreezeSources> {
     let hashed = readLiveSources(trackId);
     for (;;) {
         const liveHash = await computeFreezeSourceHash(hashed);

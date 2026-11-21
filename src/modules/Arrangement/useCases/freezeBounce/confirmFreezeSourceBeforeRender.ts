@@ -1,6 +1,5 @@
-import { type Track } from '../../stores/trackStore';
-
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { type FreezeSources } from './freezeSourceTracks';
 
 /**
  * The render reads the live track list, not the track the freeze captured before its digest, so a
@@ -17,7 +16,7 @@ export async function confirmFreezeSourceBeforeRender<Task>(
     startSourceHash: string,
     isCurrentFreezeTask: (task: Task) => boolean,
     task: Task
-): Promise<Track[] | null> {
+): Promise<FreezeSources | null> {
     if (!isCurrentFreezeTask(task)) {
         return null;
     }

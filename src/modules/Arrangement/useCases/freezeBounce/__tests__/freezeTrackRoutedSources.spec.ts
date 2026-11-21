@@ -19,14 +19,17 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import {
     arrangementStore,
     defaultArrangementId,
     defaultProjectStoreState,
     projectStore,
 } from '#/modules/Project/stores';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type Track } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
@@ -86,11 +89,11 @@ function renderedBuffer(): AudioBuffer {
 }
 
 /** The frozen track, a source routed into it, and a track that reaches it by no route. */
-function resetProject(): void {
+function resetProject(sourceKind: 'audio' | 'midi' = 'audio'): void {
     trackStore.set({
         tracks: [
             createTrack({ id: TRACK_ID, name: 'Frozen', kind: 'audio' }),
-            { ...createTrack({ id: SOURCE_ID, name: 'Source', kind: 'audio' }), outputId: TRACK_ID },
+            { ...createTrack({ id: SOURCE_ID, name: 'Source', kind: sourceKind }), outputId: TRACK_ID },
             createTrack({ id: OTHER_ID, name: 'Other', kind: 'audio' }),
         ],
         selectedTrackId: null,
@@ -110,7 +113,7 @@ function resetProject(): void {
     });
     flushAutomergeStorageWrites();
     addClip({ id: 'first-clip', trackId: TRACK_ID, startBeat: 0, endBeat: 4, name: 'First', type: 'audio' });
-    addClip({ id: 'source-clip', trackId: SOURCE_ID, startBeat: 0, endBeat: 4, name: 'Source', type: 'audio' });
+    addClip({ id: 'source-clip', trackId: SOURCE_ID, startBeat: 0, endBeat: 4, name: 'Source', type: sourceKind });
 }
 
 function addLateClip(trackId: string, clipId = 'late-clip'): void {
@@ -191,6 +194,86 @@ describe('a freeze whose render reads a routed source track', () => {
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 
+    it.each([
+        ["a routed source's gain changes", (track: Track) => ({ ...track, gain: 0.3 })],
+        ["a routed source's pan changes", (track: Track) => ({ ...track, pan: -0.5 })],
+        ['a routed source is muted', (track: Track) => ({ ...track, muted: true })],
+        [
+            'a routed source gains a send',
+            (track: Track) => ({ ...track, sends: [{ busId: TRACK_ID, level: 0.5, preFader: false }] }),
+        ],
+        [
+            "a routed source's output moves to another track the render reads",
+            (track: Track) => ({ ...track, outputId: OTHER_ID }),
+        ],
+    ])('refuses the take when %s during the render', async (_name, edit) => {
+        updateTrack(OTHER_ID, (track) => ({ ...track, outputId: TRACK_ID }));
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            updateTrack(SOURCE_ID, edit);
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('refuses the take when a routed source changes a send level during the render', async () => {
+        updateTrack(SOURCE_ID, (track) => ({ ...track, sends: [{ busId: TRACK_ID, level: 0.8, preFader: false }] }));
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            updateTrack(SOURCE_ID, (track) => ({
+                ...track,
+                sends: [{ busId: TRACK_ID, level: 0.2, preFader: false }],
+            }));
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it("commits the take when the target's own fader moves during the render", async () => {
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            updateTrack(TRACK_ID, (track) => ({ ...track, gain: 0.3 }));
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(true);
+    });
+
+    it('refuses the take when a routed MIDI source has a note edited during the render', async () => {
+        resetProject('midi');
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                'source-clip': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+            },
+        });
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: {
+                    ...midiStore.value!.notesByClipId,
+                    'source-clip': [{ id: 'note-1', pitch: 62, startBeat: 0, duration: 1, velocity: 90 }],
+                },
+            });
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
     it('commits the take when only a track outside the render is edited during the render', async () => {
         vi.mocked(renderTrackOffline).mockImplementation(() => {
             addLateClip(OTHER_ID);
@@ -252,6 +335,89 @@ describe('a freeze whose render reads a routed source track', () => {
             await vi.waitFor(() => {
                 expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
             });
+        });
+    });
+    describe('once frozen over extra routing', () => {
+        let stopStaleness: () => void;
+
+        afterEach(() => {
+            stopStaleness();
+        });
+
+        async function freezeWatched(): Promise<void> {
+            await freeze();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+            stopStaleness = initStalenessDetection();
+        }
+
+        it('marks the track stale when a routed source changes its gain', async () => {
+            await freezeWatched();
+
+            updateTrack(SOURCE_ID, (track) => ({ ...track, gain: 0.3 }));
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('marks the track stale when a routed source changes a send level', async () => {
+            updateTrack(SOURCE_ID, (track) => ({
+                ...track,
+                sends: [{ busId: TRACK_ID, level: 0.8, preFader: false }],
+            }));
+            await freezeWatched();
+
+            updateTrack(SOURCE_ID, (track) => ({
+                ...track,
+                sends: [{ busId: TRACK_ID, level: 0.2, preFader: false }],
+            }));
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('marks the track stale when a sidechain route into the render is removed', async () => {
+            sidechainStore.set({
+                routes: [
+                    {
+                        id: 'route-1',
+                        sourceTrackId: OTHER_ID,
+                        targetTrackId: TRACK_ID,
+                        targetDeviceId: 'device-1',
+                        targetParameterId: 'key',
+                        gain: 1,
+                    },
+                ],
+            });
+            await freezeWatched();
+
+            sidechainStore.set({ routes: [] });
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('keeps the freeze when a sidechain route between unrelated tracks changes', async () => {
+            await freezeWatched();
+            vi.mocked(computeTrackHash).mockClear();
+
+            sidechainStore.set({
+                routes: [
+                    {
+                        id: 'route-2',
+                        sourceTrackId: OTHER_ID,
+                        targetTrackId: 'track-nowhere',
+                        targetDeviceId: 'device-1',
+                        targetParameterId: 'key',
+                        gain: 1,
+                    },
+                ],
+            });
+
+            expect(computeTrackHash).not.toHaveBeenCalled();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
         });
     });
 });

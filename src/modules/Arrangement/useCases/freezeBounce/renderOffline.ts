@@ -1,11 +1,9 @@
 import { renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
-import { sidechainStore } from '#/modules/Routing/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Track } from '../../models/Track';
 import { getTrackEligibility } from '../../stores/trackEligibility';
-import { trackStore } from '../../stores/trackStore';
-import { selectOfflineRenderSubgraph } from '../selectOfflineRenderSubgraph';
+import { readOfflineRenderSubgraph } from '../readOfflineRenderSubgraph';
 
 /** Seconds of extra render an auto-tail bounce gets before the silence trim. */
 const AUTO_TAIL_SECONDS = 10;
@@ -105,12 +103,7 @@ export async function renderTrackOffline(
         return null;
     }
 
-    const { renderTracks, printTrackIds } = selectOfflineRenderSubgraph({
-        targetTrack,
-        allTracks: trackStore.value?.tracks ?? [],
-        sidechainRoutes: sidechainStore.value?.routes ?? [],
-        includeSendReturns: options?.includeSends ?? true,
-    });
+    const { renderTracks, printTrackIds } = readOfflineRenderSubgraph(targetTrack, options?.includeSends ?? true);
 
     const buffer = await renderTrackSubgraphOffline({
         targetTrackId: targetTrack.id,
