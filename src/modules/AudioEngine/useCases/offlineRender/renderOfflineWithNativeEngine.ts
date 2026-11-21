@@ -23,18 +23,8 @@
  * instance of its own, built from the live instance's state and compensated
  * by the engine against the instance's own latency.
  *
- * ── Hosted instrument notes ───────────────────────────────────────────────
- *
- * A track whose note sink is a loaded hosted instrument
- * (`nativeOfflineInstrumentSink`) sends its MIDI as `schedule-midi` against
- * that device, projected by the live producer (`projectLiveMidiProgramme`)
- * from the render's captured MIDI snapshot and projectors, over the whole
- * export on the render's own timeline (frame 0 is beat 0; a region export is
- * rendered from the top and cropped afterwards). The command rides the
- * programme batch, after the strips exist. A lane naming a device on its
- * strip that this law will not carry — including any hosted lane when the
- * capture carries no hosted law — declines the render
- * (`nativeRefusedDeviceLane`) rather than printing a file without it.
+ * A loaded hosted instrument's notes ride `schedule-midi`; `readNativeOfflineMidiSource`
+ * documents their law.
  *
  * ── Decline versus fail ───────────────────────────────────────────────────
  *
@@ -83,7 +73,6 @@
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
@@ -100,7 +89,6 @@ import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/
 import { isNativeOfflineRenderCancelled } from '../../repositories/nativeGraph/isNativeOfflineRenderCancelled';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
-import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
@@ -124,10 +112,11 @@ import { type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
 import { nativeOfflineInstrumentSink } from './nativeOfflineInstrumentSink';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
-import { projectNativeOfflineMidiCommands, type NativeOfflineMidiSource } from './projectNativeOfflineMidiCommands';
+import { projectNativeOfflineMidiCommands } from './projectNativeOfflineMidiCommands';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectStripAutomationWrites } from './projectStripAutomationWrites';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
+import { readNativeOfflineMidiSource } from './readNativeOfflineMidiSource';
 import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -244,77 +233,6 @@ function scheduleClipCommand(
             gain: playback.clipGainValue,
             fade: projectNativeClipFade(playback),
         },
-    };
-}
-
-type NativeOfflineMidiProjection = {
-    midi: { notesByClipId: NativeOfflineMidiSource['notesByClipId']; probabilitySeed: number } | null | undefined;
-    projectMidiEvents: NativeOfflineMidiSource['projectMidiEvents'] | null | undefined;
-    selectProbability: NativeOfflineMidiSource['selectProbability'] | null | undefined;
-    projectChordPitch: NativeOfflineMidiSource['projectChordPitch'];
-    resolveArticulationId: NativeOfflineMidiSource['resolveArticulationId'];
-};
-
-function liveMidiProjection(): NativeOfflineMidiProjection {
-    return {
-        midi: midiStore.value,
-        projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
-        selectProbability: offlineMidiEventProjectorState.selectProbability,
-        projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
-        resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
-    };
-}
-
-function capturedMidiProjection(
-    context: NonNullable<NativeOfflineRenderInput['captured']>['renderContext']
-): NativeOfflineMidiProjection {
-    return {
-        midi: context.midi,
-        projectMidiEvents: context.projectMidiEvents,
-        selectProbability: context.selectMidiEventProbability,
-        projectChordPitch: context.projectChordPitch ?? null,
-        resolveArticulationId: context.resolveArticulationId ?? null,
-    };
-}
-
-function readMidiProjection(input: NativeOfflineRenderInput): NativeOfflineMidiProjection {
-    const context = input.captured?.renderContext;
-    if (context) {
-        return capturedMidiProjection(context);
-    }
-    return liveMidiProjection();
-}
-
-/**
- * The notes' source for a hosted-instrument track: the render's captured
- * snapshot and projections when it has one, the live ones otherwise (the same
- * fallback the automation lanes take), or `null` when the composition root
- * configured no projection — the Web Audio render refuses that case too.
- */
-function nativeOfflineMidiSource(
-    input: NativeOfflineRenderInput,
-    musical: Pick<NativeOfflineRenderInput, 'sampleRate' | 'defaultTempo' | 'changes' | 'projectPpqEndpoints'>,
-    tempoTimeline: NativeOfflineMidiSource['tempoTimeline']
-): NativeOfflineMidiSource | null {
-    const { midi, projectMidiEvents, selectProbability, projectChordPitch, resolveArticulationId } =
-        readMidiProjection(input);
-    if (!midi || !projectMidiEvents || !selectProbability) {
-        return null;
-    }
-    return {
-        notesByClipId: midi.notesByClipId,
-        // The captured lanes the audio path comps against; absent capture falls to the live lanes.
-        takeLanes: input.captured?.scheduling.takeLanes,
-        tempoTimeline,
-        probabilitySeed: midi.probabilitySeed,
-        defaultTempo: musical.defaultTempo,
-        sampleRate: musical.sampleRate,
-        changes: musical.changes,
-        projectPpqEndpoints: musical.projectPpqEndpoints,
-        projectMidiEvents,
-        selectProbability,
-        projectChordPitch,
-        resolveArticulationId,
     };
 }
 
@@ -464,8 +382,8 @@ export async function renderOfflineWithNativeEngine(
         if (!contributingTrackIds.has(track.id) || nativeOfflineInstrumentSink(track, hostedRuntime) === null) {
             return { outcome: 'converted', commands: [] };
         }
-        const source = nativeOfflineMidiSource(
-            input,
+        const source = readNativeOfflineMidiSource(
+            input.captured,
             { sampleRate, defaultTempo, changes, projectPpqEndpoints },
             renderTempoTimeline(projectBeatToSeconds, resolveClipTempo)
         );
