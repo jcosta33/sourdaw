@@ -6,7 +6,10 @@ import {
     externalPluginActivationStore,
     type ExternalPluginActivationStatus,
 } from '../../stores/externalPluginActivationStore';
-import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import {
+    externalPluginParameterStore,
+    writeExternalPluginParameterSnapshot,
+} from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { activationFailureMessage } from './activationFailureMessage';
@@ -23,6 +26,7 @@ import {
     externalPluginActivationTasks,
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
@@ -53,6 +57,8 @@ type ActivateExternalPluginInput = {
      */
     onLatencyMs?: (latencyMs: number) => void;
 };
+
+const NO_ENGINE_MESSAGE = 'Loaded without a running native engine — this plugin processes no audio yet.';
 
 const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
     status: 'failed',
@@ -158,24 +164,28 @@ function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnlo
     return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
 }
 
+/** What the slot of a loaded instance shows, from its restore outcome and its engine attachment now. */
+function loadedInstanceSlot(instanceId: string, pluginId: string): ExternalPluginActivationStatus {
+    const outcome = externalPluginActivationOutcomes.get(instanceId);
+    if (outcome?.status === 'failed' && outcome.stage === 'restore' && externalPluginRestoreFailures.has(instanceId)) {
+        return { status: 'error', message: activationFailureMessage(pluginId, outcome.reason) };
+    }
+    if (externalPluginParameterStore.value?.byInstanceId[instanceId]?.engineAttached === false) {
+        return { status: 'active', message: NO_ENGINE_MESSAGE };
+    }
+    return { status: 'active' };
+}
+
 /**
  * The timeout error describes an unload still pending. One that then rejects leaves the instance
  * loaded and live, and a later activation of a loaded instance answers without writing its slot,
- * so the slot gets back what it showed before the timeout unless something else rewrote it since.
+ * so the slot shows the instance as it now stands, unless another writer replaced the error since.
  */
-function restoreSlotAfterRejectedUnload(
-    instanceId: string,
-    timeoutReason: string,
-    slotBeforeTimeout: ExternalPluginActivationStatus | undefined
-): void {
-    if (
-        slotBeforeTimeout === undefined ||
-        activationSlot(instanceId)?.message !== timeoutReason ||
-        !loadedExternalInstances.has(instanceId)
-    ) {
+function reviveSlotAfterRejectedUnload(instanceId: string, pluginId: string, timeoutReason: string): void {
+    if (activationSlot(instanceId)?.message !== timeoutReason || !loadedExternalInstances.has(instanceId)) {
         return;
     }
-    writeActivationSlot(instanceId, slotBeforeTimeout);
+    writeActivationSlot(instanceId, loadedInstanceSlot(instanceId, pluginId));
 }
 
 /**
@@ -207,12 +217,8 @@ async function activateAfterPendingUnload(
         return activateExternalPlugin(input);
     }
     const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
-    const slotBeforeTimeout = activationSlot(input.instanceId);
     setActivationStatus(input.instanceId, 'error', reason);
-    // An earlier waiter on the same instance already holds the slot it showed before the timeout.
-    if (slotBeforeTimeout?.message !== reason) {
-        void pendingUnload.catch(() => restoreSlotAfterRejectedUnload(input.instanceId, reason, slotBeforeTimeout));
-    }
+    void pendingUnload.catch(() => reviveSlotAfterRejectedUnload(input.instanceId, input.pluginId, reason));
     logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
     return { status: 'failed', stage: 'load', reason };
 }
@@ -382,9 +388,8 @@ export function activateExternalPlugin({
                 // attachment, not a failed one. Reporting it as failed made
                 // every plugin loaded before the first play raise out of the
                 // committed action that loaded it.
-                const message = 'Loaded without a running native engine — this plugin processes no audio yet.';
-                setActivationStatus(instanceId, 'active', message);
-                logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
+                setActivationStatus(instanceId, 'active', NO_ENGINE_MESSAGE);
+                logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${NO_ENGINE_MESSAGE}`);
                 attachment = { status: 'active', attachment: 'pending' };
             } else {
                 setActivationStatus(instanceId, 'active');

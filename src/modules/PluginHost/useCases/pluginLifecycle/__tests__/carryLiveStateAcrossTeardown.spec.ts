@@ -10,10 +10,13 @@ import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPlugi
 import { carriedExternalPluginStateFence, carriedExternalPluginStates } from '../carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
+import { failUnresponsiveExternalPlugins } from '../failUnresponsiveExternalPlugins';
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { markExternalPluginEngineAttached } from '../markExternalPluginEngineAttached';
 import { markExternalPluginRestoreFailure } from '../markExternalPluginRestoreFailure';
 import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from '../pendingUnloadWaitTimeout';
+import { pluginUnresponsiveMessage } from '../pluginUnresponsiveMessage';
 import { projectSwitchLostPlugins } from '../projectSwitchLostPlugins';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
@@ -1247,35 +1250,99 @@ describe('live plugin state across an app-initiated teardown', () => {
             await firstActivation;
             expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
             expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
-            expect(mocks.setPluginState.mock.calls.at(-1)).toEqual([INSTANCE_ID, SAVED_BYTES]);
+            expect(mocks.setPluginState.mock.calls).toEqual([
+                [INSTANCE_ID, SAVED_BYTES],
+                [INSTANCE_ID, SAVED_BYTES],
+            ]);
+            // The second restore is the Undo's, onto the instance its own fresh load brought back.
+            expect(mocks.setPluginState.mock.invocationCallOrder[1]).toBeGreaterThan(
+                mocks.loadPlugin.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY
+            );
             expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
             expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]).toEqual({ status: 'active' });
             expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
         });
 
-        // The reactivation gave up on the unload, which then rejected and left the instance loaded.
-        it('clears the unload timeout error once the pending unload rejects and the instance is activated again', async () => {
-            await activateAndEdit(SAVED_CHUNK);
-            const heldUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
-            mocks.unloadPlugin.mockReturnValueOnce(heldUnload.promise);
-            // Settle the held unload however the case ends, so it cannot leak into later cases.
-            onTestFinished(() => heldUnload.reject(new Error('bridge down')));
+        describe('after a reactivation timed out on an unload that then rejected', () => {
+            const TIMEOUT_REASON = `${PLUGIN_ID} is still unloading and did not finish; it was not reactivated.`;
 
-            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
-            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(INSTANCE_ID));
-            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-            const timedOut = activate(SAVED_CHUNK);
-            await vi.advanceTimersByTimeAsync(PENDING_UNLOAD_WAIT_TIMEOUT_MS);
-            await expect(timedOut).resolves.toMatchObject({ status: 'failed', stage: 'load' });
-            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).toBe('error');
-            vi.useRealTimers();
-            heldUnload.reject(new Error('bridge down'));
-            await expect(removal).rejects.toThrow('bridge down');
+            function slot() {
+                return externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID];
+            }
 
-            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
-            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
-            expect(mocks.loadPlugin).toHaveBeenCalledOnce();
-            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]).toEqual({ status: 'active' });
+            /**
+             * Time a reactivation out on a held removal unload, run `duringWait` while the slot shows
+             * the timeout error, then reject the unload so the instance stays loaded.
+             */
+            async function timeOutThenRejectUnload(duringWait: () => void = () => {}): Promise<void> {
+                const heldUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+                mocks.unloadPlugin.mockReturnValueOnce(heldUnload.promise);
+                // Settle the held unload however the case ends, so it cannot leak into later cases.
+                onTestFinished(() => heldUnload.reject(new Error('bridge down')));
+
+                const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+                await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(INSTANCE_ID));
+                vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+                const timedOut = activate(SAVED_CHUNK);
+                await vi.advanceTimersByTimeAsync(PENDING_UNLOAD_WAIT_TIMEOUT_MS);
+                await expect(timedOut).resolves.toEqual({ status: 'failed', stage: 'load', reason: TIMEOUT_REASON });
+                expect(slot()).toEqual({ status: 'error', message: TIMEOUT_REASON });
+                vi.useRealTimers();
+                duringWait();
+                heldUnload.reject(new Error('bridge down'));
+                await expect(removal).rejects.toThrow('bridge down');
+                expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            }
+
+            it('shows the instance active as soon as the unload rejects, and after it is activated again', async () => {
+                await activateAndEdit(SAVED_CHUNK);
+
+                await timeOutThenRejectUnload();
+
+                expect(slot()).toEqual({ status: 'active' });
+                await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+                expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+                expect(slot()).toEqual({ status: 'active' });
+            });
+
+            it('keeps the no-engine note for an instance the engine still has not taken', async () => {
+                mocks.loadPlugin.mockResolvedValueOnce({ ...pluginInstance(), engine_plugin_id: null });
+                await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active', attachment: 'pending' });
+                const noEngineSlot = slot();
+                expect(noEngineSlot).toMatchObject({ status: 'active', message: expect.any(String) });
+
+                await timeOutThenRejectUnload();
+
+                expect(slot()).toEqual(noEngineSlot);
+            });
+
+            it('drops the no-engine note when the engine took the instance during the wait', async () => {
+                mocks.loadPlugin.mockResolvedValueOnce({ ...pluginInstance(), engine_plugin_id: null });
+                await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active', attachment: 'pending' });
+
+                await timeOutThenRejectUnload(() => markExternalPluginEngineAttached({ instanceId: INSTANCE_ID }));
+
+                expect(slot()).toEqual({ status: 'active' });
+            });
+
+            it('shows the restore failure of an instance that rejected its project chunk', async () => {
+                mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+                await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+                const restoreFailureSlot = slot();
+                expect(restoreFailureSlot).toMatchObject({ status: 'error' });
+
+                await timeOutThenRejectUnload();
+
+                expect(slot()).toEqual(restoreFailureSlot);
+            });
+
+            it('keeps the status another writer replaced the timeout error with', async () => {
+                await activateAndEdit(SAVED_CHUNK);
+
+                await timeOutThenRejectUnload(() => failUnresponsiveExternalPlugins(new Set([INSTANCE_ID]), new Map()));
+
+                expect(slot()).toEqual({ status: 'error', message: pluginUnresponsiveMessage(PLUGIN_ID) });
+            });
         });
 
         it('leaves no carry once a carried restore settles, so a later plain unload restores the project chunk', async () => {
