@@ -145,6 +145,19 @@ describe('production brief admission of an action no scope rule singles out', ()
             expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
         });
 
+        it('is refused when its type is an inherited object name and its payload names the lane that holds the locked point', () => {
+            const actions: AppAction[] = JSON.parse('[{"type":"constructor","payload":{"laneId":"lane-guitar-gain"}}]');
+
+            expect(doesProductionBriefAllowActionBatch(actions)).toBe(false);
+        });
+
+        it('is allowed when its type is an inherited object name and its payload names a lane outside the lock', () => {
+            addAutomationLane('track-guitar', 'pan', 'Pan', 'lane-guitar-pan');
+            const actions: AppAction[] = JSON.parse('[{"type":"constructor","payload":{"laneId":"lane-guitar-pan"}}]');
+
+            expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+        });
+
         it('is refused when its type is unknown and its payload names the lane that holds the locked point', () => {
             const actions: AppAction[] = JSON.parse(
                 '[{"type":"noSuchAction","payload":{"laneId":"lane-guitar-gain"}}]'

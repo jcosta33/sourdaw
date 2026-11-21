@@ -99,6 +99,25 @@ export const MIX_RECIPE_ROLES = ['vocal', 'drums', 'bass', 'guitar', 'keys', 'bu
 export type MixRecipeRole = (typeof MIX_RECIPE_ROLES)[number];
 
 /**
+ * The drum parts a `drums` recipe can serve: each canonical drum-family track role, plus `drums`
+ * for a whole-kit stem or loop. Restated here because Arrangement does not depend on Project; the
+ * AiRuntime role table holds this list equal to its own drum family.
+ */
+export const MIX_RECIPE_DRUM_PARTS = [
+    'kick',
+    'snare',
+    'hi-hat',
+    'tom',
+    'cymbal',
+    'percussion',
+    'overhead',
+    'room',
+    'drums',
+] as const;
+
+export type MixRecipeDrumPart = (typeof MIX_RECIPE_DRUM_PARTS)[number];
+
+/**
  * The objective measurements recipes in this catalog claim to move.
  *
  * Every entry is an id the planner's `analysis.measure` tool reports. The list
@@ -194,6 +213,7 @@ type MixRecipeBody = {
     contraindications: readonly string[];
     metrics: readonly MixRecipeMetricExpectation[];
     source: string;
+    drumParts?: readonly MixRecipeDrumPart[];
 };
 
 /**
@@ -201,7 +221,12 @@ type MixRecipeBody = {
  *
  * `prerequisites` are the conditions the source must already satisfy,
  * `contraindications` the conditions under which the move makes the mix worse,
- * and `source` the engineering rationale for the windows chosen. A recipe with
+ * and `source` the engineering rationale for the windows chosen. `drumParts` names the drum-family
+ * tracks a `drums` recipe serves, because one drum role spans kick through overheads and a move
+ * that fits the shells (a low shelf) is wrong on a cymbal. Every authored `drums` recipe declares
+ * it; a recipe that omits it serves every drum part, which is how a factory preset tagged `drums`
+ * is published, since its author named the kit and no part of it. A track outside the drum family
+ * never reads it. A recipe with
  * no `origin` is authored in the catalog files and always names its descriptor.
  * A recipe published from a factory preset names a descriptor only when the
  * preset's own tags do; otherwise its `descriptor` is null, it claims no

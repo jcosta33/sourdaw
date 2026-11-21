@@ -441,6 +441,7 @@ async function proposeVibeRunBatch(
     const choice = await chooseVibeBatchValues({
         runId: run.runId,
         request: built.request,
+        plannedTier: preflight.valueChoiceTier,
         onBegin: () => {
             shown.messageId = appendBatchMessage(
                 run,

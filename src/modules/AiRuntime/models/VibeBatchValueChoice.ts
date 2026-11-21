@@ -9,7 +9,8 @@ export type VibeBatchPairValues = {
 };
 
 /** Why a batch expands at its catalogue defaults rather than at values the provider chose. */
-export type VibeBatchDefaultsReason = 'local-backend' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
+export type VibeBatchDefaultsReason =
+    'local-backend' | 'planned-local' | 'tier-unrecorded' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
 
 /**
  * The values a vibe batch expands with: chosen from the targets' measurements, or kept at the

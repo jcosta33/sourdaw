@@ -407,7 +407,7 @@ describe('hosted value choice for a vibe batch', () => {
 
     // Red when two tracks of one role get the same values whatever their measured baselines.
     it('chooses differing values for two tracks of one role whose baselines differ', async () => {
-        const SECOND_ID = 'track-drums-room';
+        const SECOND_ID = 'track-snare';
         landProjectEdit(() => {
             const state = trackStore.value;
             const drums = state?.tracks.find((track) => track.id === DRUMS_ID);
@@ -415,7 +415,7 @@ describe('hosted value choice for a vibe batch', () => {
                 throw new TypeError('Expected the fixture project');
             }
             const second = {
-                ...createTrack({ id: SECOND_ID, name: 'Drums Room', kind: 'audio' }),
+                ...createTrack({ id: SECOND_ID, name: 'Snare', kind: 'audio' }),
                 clips: drums.clips.map((clip) => ({
                     ...clip,
                     id: `${SECOND_ID}-clip`,
@@ -425,7 +425,7 @@ describe('hosted value choice for a vibe batch', () => {
             };
             trackStore.set({ ...state, tracks: [...state.tracks, second] });
         });
-        // The room track carries far less low end than the close drums, eq or not.
+        // The snare carries far less low end than the whole kit, eq or not.
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
             if (input.targetTrackId !== SECOND_ID) {
                 return renderTrack(input);
@@ -465,9 +465,9 @@ describe('hosted value choice for a vibe batch', () => {
         const gains = parameterWrites(card).filter((write) => write.paramId === 'eq-low-gain');
         expect(gains.map((write) => write.trackId).sort()).toEqual([DRUMS_ID, SECOND_ID].sort());
         const closeGain = gains.find((write) => write.trackId === DRUMS_ID)?.value;
-        const roomGain = gains.find((write) => write.trackId === SECOND_ID)?.value;
+        const snareGain = gains.find((write) => write.trackId === SECOND_ID)?.value;
         expect(typeof closeGain).toBe('number');
-        expect(roomGain).toBeGreaterThan(closeGain ?? Number.POSITIVE_INFINITY);
+        expect(snareGain).toBeGreaterThan(closeGain ?? Number.POSITIVE_INFINITY);
     });
 });
 
