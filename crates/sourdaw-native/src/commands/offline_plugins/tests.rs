@@ -1801,6 +1801,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
 /// have its state restored completes before the export finishes building.
 #[test]
 fn an_unload_of_every_plugin_does_not_wait_out_an_exports_build() {
+    let _hint_guard = crate::host::hint_test_support::guard();
     let _serial = crate::commands::plugins::serialize_against_exclusive_gate_holds();
     let fx = InstalledFx::create("gate-scope");
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);

@@ -18,7 +18,7 @@ const NATIVE_GRAPH_SOURCE = 'crates/sourdaw-native/src/commands/graph.rs';
 /** The native render's own ceiling, read out of the source the addon compiles. */
 function nativeOfflineRenderCeiling(): number {
     const source = readFileSync(join(REPO_ROOT, NATIVE_GRAPH_SOURCE), 'utf8');
-    const expression = /^const MAX_OFFLINE_RENDER_FRAMES: usize = ([\d_ *]+);$/m.exec(source)?.[1];
+    const expression = /^(?:pub(?:\([a-z]+\))? )?const MAX_OFFLINE_RENDER_FRAMES: usize = ([\d_ *]+);$/m.exec(source)?.[1];
     if (expression === undefined) {
         throw new Error(`${NATIVE_GRAPH_SOURCE} no longer declares MAX_OFFLINE_RENDER_FRAMES as a product`);
     }

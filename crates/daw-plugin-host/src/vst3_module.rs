@@ -35,17 +35,143 @@ use vst3::{ComPtr, Steinberg::IPluginFactoryTrait};
 /// The universal entry point: every VST3 module on every platform exports it.
 const GET_PLUGIN_FACTORY: &[u8] = b"GetPluginFactory\0";
 
+// ── Errors ──────────────────────────────────────────────────────────────
+
+/// Why a `.vst3` bundle could not be resolved to a module, loaded, or shared.
+///
+/// Every variant is built on the control path that opens a module; none is
+/// built while a plugin processes.
+#[derive(Debug)]
+pub enum ModuleError {
+    /// The bundle's name is not UTF-8, or it has none.
+    NoUsableName { bundle: PathBuf },
+    /// No module exists for the architecture this host runs on.
+    NoModuleForArchitecture { bundle: PathBuf },
+    /// CoreFoundation cannot express the bundle path as a URL.
+    UnusableUrl { bundle: PathBuf },
+    /// CoreFoundation does not recognise the path as a bundle.
+    NotLoadableBundle { bundle: PathBuf },
+    /// CoreFoundation could not load the bundle's executable.
+    ExecutableNotLoaded { bundle: PathBuf },
+    /// The bundle exports no `bundleEntry`.
+    NoBundleEntry { bundle: PathBuf },
+    /// The bundle's `bundleEntry` returned false.
+    BundleRefusedInitialization { bundle: PathBuf },
+    /// The dynamic loader refused the module file.
+    CannotLoad {
+        module: PathBuf,
+        cause: libloading::Error,
+    },
+    /// The module exports no `ModuleEntry`.
+    NoModuleEntry { module: PathBuf },
+    /// The module's `InitDll` or `ModuleEntry` returned false.
+    ModuleRefusedInitialization { module: PathBuf },
+    /// The module exports no `GetPluginFactory`.
+    NoGetPluginFactory { bundle: PathBuf },
+    /// `GetPluginFactory` returned null.
+    NoPluginFactory { bundle: PathBuf },
+    /// The module file's metadata could not be read for its fingerprint.
+    Unreadable {
+        module: PathBuf,
+        cause: std::io::Error,
+    },
+    /// A non-discardable older build stays resident under the same key.
+    ResidentBuildOutdated { key: PathBuf },
+    /// A live instance still holds an older build under the same key.
+    SharedBuildOutdated { key: PathBuf },
+}
+
+impl std::fmt::Display for ModuleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoUsableName { bundle } => {
+                write!(f, "VST3 bundle has no usable name: {}", bundle.display())
+            }
+            Self::NoModuleForArchitecture { bundle } => write!(
+                f,
+                "VST3 bundle has no module for this architecture: {}",
+                bundle.display()
+            ),
+            Self::UnusableUrl { bundle } => write!(
+                f,
+                "VST3 bundle path is not a usable URL: {}",
+                bundle.display()
+            ),
+            Self::NotLoadableBundle { bundle } => {
+                write!(f, "Not a loadable VST3 bundle: {}", bundle.display())
+            }
+            Self::ExecutableNotLoaded { bundle } => write!(
+                f,
+                "VST3 bundle executable could not be loaded: {}",
+                bundle.display()
+            ),
+            Self::NoBundleEntry { bundle } => write!(
+                f,
+                "VST3 bundle exports no bundleEntry: {}",
+                bundle.display()
+            ),
+            Self::BundleRefusedInitialization { bundle } => write!(
+                f,
+                "VST3 bundle refused initialization: {}",
+                bundle.display()
+            ),
+            Self::CannotLoad { module, cause } => {
+                write!(f, "Cannot load {}: {cause}", module.display())
+            }
+            Self::NoModuleEntry { module } => write!(
+                f,
+                "VST3 module exports no ModuleEntry: {}",
+                module.display()
+            ),
+            Self::ModuleRefusedInitialization { module } => write!(
+                f,
+                "VST3 module refused initialization: {}",
+                module.display()
+            ),
+            Self::NoGetPluginFactory { bundle } => write!(
+                f,
+                "VST3 module exports no GetPluginFactory: {}",
+                bundle.display()
+            ),
+            Self::NoPluginFactory { bundle } => write!(
+                f,
+                "VST3 module returned no plugin factory: {}",
+                bundle.display()
+            ),
+            Self::Unreadable { module, cause } => {
+                write!(f, "Cannot read VST3 module {}: {cause}", module.display())
+            }
+            Self::ResidentBuildOutdated { key } => write!(
+                f,
+                "An older build of {} stays loaded for the rest of this session (the plugin \
+                 asks never to be unloaded); restart Sourdaw to load the updated plugin",
+                key.display()
+            ),
+            Self::SharedBuildOutdated { key } => write!(
+                f,
+                "An older build of {} is still loaded by another instance; remove those \
+                 instances or restart Sourdaw to load the updated plugin",
+                key.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ModuleError {}
+
 // ── Path rules ──────────────────────────────────────────────────────────
 
 /// The bundle's own name without the `.vst3` suffix, which is also the name of
 /// the executable inside it. A bundle whose name is not UTF-8 is refused rather
 /// than lossily decoded: the probe would then look for a file that is not the
 /// one on disk.
-fn bundle_stem(bundle: &Path) -> Result<&str, String> {
+fn bundle_stem(bundle: &Path) -> Result<&str, ModuleError> {
     bundle
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .ok_or_else(|| format!("VST3 bundle has no usable name: {}", bundle.display()))
+        .ok_or_else(|| ModuleError::NoUsableName {
+            bundle: bundle.to_path_buf(),
+        })
 }
 
 /// Where a bundle may keep its `moduleinfo.json`, newest location first.
@@ -81,7 +207,7 @@ pub fn windows_architecture_directories(target_arch: &str) -> &'static [&'static
 }
 
 /// Every `Contents/<arch>/<name>.vst3` a Windows host would try, in order.
-pub fn windows_module_paths(bundle: &Path, target_arch: &str) -> Result<Vec<PathBuf>, String> {
+pub fn windows_module_paths(bundle: &Path, target_arch: &str) -> Result<Vec<PathBuf>, ModuleError> {
     let stem = bundle_stem(bundle)?;
     let module_file = format!("{stem}.vst3");
     Ok(windows_architecture_directories(target_arch)
@@ -101,7 +227,7 @@ pub fn windows_load_candidates(
     module: &Path,
     is_single_file: bool,
     target_arch: &str,
-) -> Result<Vec<PathBuf>, String> {
+) -> Result<Vec<PathBuf>, ModuleError> {
     if is_single_file {
         return Ok(vec![module.to_path_buf()]);
     }
@@ -126,13 +252,12 @@ pub fn first_existing_module(candidates: &[PathBuf]) -> Option<&Path> {
 pub fn load_first_existing<T>(
     bundle: &Path,
     candidates: &[PathBuf],
-    load: impl FnOnce(&Path) -> Result<T, String>,
-) -> Result<T, String> {
+    load: impl FnOnce(&Path) -> Result<T, ModuleError>,
+) -> Result<T, ModuleError> {
     let Some(module) = first_existing_module(candidates) else {
-        return Err(format!(
-            "VST3 bundle has no module for this architecture: {}",
-            bundle.display()
-        ));
+        return Err(ModuleError::NoModuleForArchitecture {
+            bundle: bundle.to_path_buf(),
+        });
     };
     load(module)
 }
@@ -155,7 +280,7 @@ pub fn linux_machine_directory(target_arch: &str) -> Option<&'static str> {
 
 /// `Contents/<machine>-linux/<name>.so`, or `None` on an architecture the
 /// layout cannot name.
-pub fn linux_module_path(bundle: &Path, target_arch: &str) -> Result<Option<PathBuf>, String> {
+pub fn linux_module_path(bundle: &Path, target_arch: &str) -> Result<Option<PathBuf>, ModuleError> {
     let stem = bundle_stem(bundle)?;
     Ok(linux_machine_directory(target_arch).map(|machine| {
         bundle
@@ -171,7 +296,7 @@ pub fn linux_module_path(bundle: &Path, target_arch: &str) -> Result<Option<Path
 /// `bundleEntry` needs the `CFBundleRef`. It is still worth stating: a bundle
 /// with no executable here has nothing CoreFoundation can load, and saying so
 /// by name beats a CoreFoundation error code.
-pub fn macos_executable_path(bundle: &Path) -> Result<PathBuf, String> {
+pub fn macos_executable_path(bundle: &Path) -> Result<PathBuf, ModuleError> {
     let stem = bundle_stem(bundle)?;
     Ok(bundle.join("Contents").join("MacOS").join(stem))
 }
@@ -185,7 +310,7 @@ pub use platform::bundle_executable_path;
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use super::GET_PLUGIN_FACTORY;
+    use super::{ModuleError, GET_PLUGIN_FACTORY};
     use core_foundation_sys::base::{CFRelease, CFTypeRef};
     use core_foundation_sys::bundle::{
         CFBundleCopyExecutableURL, CFBundleCreate, CFBundleGetFunctionPointerForName,
@@ -351,14 +476,13 @@ mod platform {
         /// `bundleEntry` returning false is a hard failure: the module has told
         /// the host it is not usable, and every later call would be made into a
         /// module that said so.
-        pub fn open(bundle_path: &Path) -> Result<Self, String> {
+        pub fn open(bundle_path: &Path) -> Result<Self, ModuleError> {
             // SAFETY: `file_system_url` has no pointer precondition; the URL it
             // returns is owned here and released below.
             let Some(url) = (unsafe { file_system_url(bundle_path) }) else {
-                return Err(format!(
-                    "VST3 bundle path is not a usable URL: {}",
-                    bundle_path.display()
-                ));
+                return Err(ModuleError::UnusableUrl {
+                    bundle: bundle_path.to_path_buf(),
+                });
             };
             // SAFETY: `url` is the live URL just created; null selects the
             // default allocator.
@@ -366,10 +490,9 @@ mod platform {
             // SAFETY: `url` came from a create call, so this is its one release.
             unsafe { CFRelease(url as CFTypeRef) };
             if bundle.is_null() {
-                return Err(format!(
-                    "Not a loadable VST3 bundle: {}",
-                    bundle_path.display()
-                ));
+                return Err(ModuleError::NotLoadableBundle {
+                    bundle: bundle_path.to_path_buf(),
+                });
             }
 
             let mut error: CFErrorRef = std::ptr::null_mut();
@@ -384,10 +507,9 @@ mod platform {
                 }
                 // SAFETY: `bundle` came from a create call and is released once.
                 unsafe { CFRelease(bundle as CFTypeRef) };
-                return Err(format!(
-                    "VST3 bundle executable could not be loaded: {}",
-                    bundle_path.display()
-                ));
+                return Err(ModuleError::ExecutableNotLoaded {
+                    bundle: bundle_path.to_path_buf(),
+                });
             }
 
             // SAFETY: `bundle` is live; this fn holds its one reference.
@@ -396,10 +518,9 @@ mod platform {
                 unsafe { CFBundleUnloadExecutable(bundle) };
                 // SAFETY: `bundle` came from a create call and is released once.
                 unsafe { CFRelease(bundle as CFTypeRef) };
-                return Err(format!(
-                    "VST3 bundle exports no bundleEntry: {}",
-                    bundle_path.display()
-                ));
+                return Err(ModuleError::NoBundleEntry {
+                    bundle: bundle_path.to_path_buf(),
+                });
             };
             // SAFETY: `entry` is the non-null address of the module's exported
             // `bundleEntry`, whose VST3 signature is `bool (CFBundleRef)`.
@@ -411,10 +532,9 @@ mod platform {
                 unsafe { CFBundleUnloadExecutable(bundle) };
                 // SAFETY: `bundle` came from a create call and is released once.
                 unsafe { CFRelease(bundle as CFTypeRef) };
-                return Err(format!(
-                    "VST3 bundle refused initialization: {}",
-                    bundle_path.display()
-                ));
+                return Err(ModuleError::BundleRefusedInitialization {
+                    bundle: bundle_path.to_path_buf(),
+                });
             }
 
             Ok(Self { bundle })
@@ -422,7 +542,7 @@ mod platform {
 
         /// The executable [`LoadedModule::open`] loads for this bundle: the one
         /// CoreFoundation names, else the conventional stem-named path.
-        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, ModuleError> {
             match bundle_executable_path(bundle_path).filter(|executable| executable.is_file()) {
                 Some(executable) => Ok(executable),
                 None => super::macos_executable_path(bundle_path),
@@ -464,7 +584,8 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod platform {
     use super::{
-        first_existing_module, load_first_existing, windows_load_candidates, GET_PLUGIN_FACTORY,
+        first_existing_module, load_first_existing, windows_load_candidates, ModuleError,
+        GET_PLUGIN_FACTORY,
     };
     use libloading::os::windows::{
         Library, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
@@ -472,7 +593,7 @@ mod platform {
     use std::ffi::c_void;
     use std::path::{Path, PathBuf};
 
-    fn load_candidates(bundle_path: &Path) -> Result<Vec<PathBuf>, String> {
+    fn load_candidates(bundle_path: &Path) -> Result<Vec<PathBuf>, ModuleError> {
         windows_load_candidates(bundle_path, bundle_path.is_file(), std::env::consts::ARCH)
     }
 
@@ -518,41 +639,40 @@ mod platform {
         /// calls `ExitDll` — tearing down state the module just said it never
         /// built. The library is dropped directly on that path instead, which
         /// unloads the image and calls nothing.
-        pub fn open(bundle_path: &Path) -> Result<Self, String> {
+        pub fn open(bundle_path: &Path) -> Result<Self, ModuleError> {
             let candidates = load_candidates(bundle_path)?;
             load_first_existing(bundle_path, &candidates, Self::open_module)
         }
 
         /// The module file [`LoadedModule::open`] opens for this bundle.
-        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, ModuleError> {
             let candidates = load_candidates(bundle_path)?;
             first_existing_module(&candidates)
                 .map(Path::to_path_buf)
-                .ok_or_else(|| {
-                    format!(
-                        "VST3 bundle has no module for this architecture: {}",
-                        bundle_path.display()
-                    )
+                .ok_or_else(|| ModuleError::NoModuleForArchitecture {
+                    bundle: bundle_path.to_path_buf(),
                 })
         }
 
-        fn open_module(module: &Path) -> Result<Self, String> {
+        fn open_module(module: &Path) -> Result<Self, ModuleError> {
             // SAFETY: loading runs the module's DLL initialisers; this is
             // instantiation, which the crate runs only on the host UI thread
             // or in the scan worker child, the places plugin code may run.
             let library =
                 unsafe { Library::load_with_flags(module, SEARCH_ONLY_TRUSTED_DIRECTORIES) }
-                    .map_err(|error| format!("Cannot load {}: {error}", module.display()))?;
+                    .map_err(|cause| ModuleError::CannotLoad {
+                        module: module.to_path_buf(),
+                        cause,
+                    })?;
 
             if let Some(init) = symbol_in::<InitDll>(&library, b"InitDll\0") {
                 // SAFETY: `init` is the module's exported `InitDll`, read from
                 // `library`, which stays loaded across this call.
                 if !unsafe { init() } {
                     drop(library);
-                    return Err(format!(
-                        "VST3 module refused initialization: {}",
-                        module.display()
-                    ));
+                    return Err(ModuleError::ModuleRefusedInitialization {
+                        module: module.to_path_buf(),
+                    });
                 }
             }
             Ok(Self { library })
@@ -582,7 +702,7 @@ mod platform {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod platform {
-    use super::{linux_module_path, GET_PLUGIN_FACTORY};
+    use super::{linux_module_path, ModuleError, GET_PLUGIN_FACTORY};
     use libloading::os::unix::Library;
     use std::ffi::c_void;
     use std::path::{Path, PathBuf};
@@ -617,13 +737,16 @@ mod platform {
         /// its `Drop` calls `ModuleExit` — tearing down state a module that
         /// never entered has not built. The library is dropped directly on that
         /// path instead, which `dlclose`s the image and calls nothing.
-        pub fn open(bundle_path: &Path) -> Result<Self, String> {
+        pub fn open(bundle_path: &Path) -> Result<Self, ModuleError> {
             let candidate = Self::module_file(bundle_path)?;
             // SAFETY: loading runs the module's initialisers; this is
             // instantiation, which the crate runs only on the host UI thread or
             // in the scan worker child, the places plugin code may run.
-            let library = unsafe { Library::new(&candidate) }
-                .map_err(|error| format!("Cannot load {}: {error}", candidate.display()))?;
+            let library =
+                unsafe { Library::new(&candidate) }.map_err(|cause| ModuleError::CannotLoad {
+                    module: candidate.clone(),
+                    cause,
+                })?;
             let handle = library.into_raw();
             // SAFETY: `handle` came from `into_raw` immediately above and is
             // owned by exactly this `Library` from here on.
@@ -631,30 +754,23 @@ mod platform {
 
             let Some(entry) = symbol_in::<ModuleEntry>(&library, b"ModuleEntry\0") else {
                 drop(library);
-                return Err(format!(
-                    "VST3 module exports no ModuleEntry: {}",
-                    candidate.display()
-                ));
+                return Err(ModuleError::NoModuleEntry { module: candidate });
             };
             // SAFETY: `entry` is the exported `ModuleEntry` of `library`, still
             // loaded, and `handle` is that library's own `dlopen` handle.
             if !unsafe { entry(handle) } {
                 drop(library);
-                return Err(format!(
-                    "VST3 module refused initialization: {}",
-                    candidate.display()
-                ));
+                return Err(ModuleError::ModuleRefusedInitialization { module: candidate });
             }
             Ok(Self { library })
         }
 
         /// The module file [`LoadedModule::open`] opens for this bundle.
-        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, ModuleError> {
             linux_module_path(bundle_path, std::env::consts::ARCH)?.ok_or_else(|| {
-                format!(
-                    "VST3 bundle has no module for this architecture: {}",
-                    bundle_path.display()
-                )
+                ModuleError::NoModuleForArchitecture {
+                    bundle: bundle_path.to_path_buf(),
+                }
             })
         }
 
@@ -732,7 +848,7 @@ impl Vst3Module {
     /// because that is the only window in which a factory that needs host
     /// services has them before it is asked to create anything. A factory that is
     /// not an `IPluginFactory3` has no such call and is not an error.
-    pub fn open(bundle_path: &Path) -> Result<Arc<Self>, String> {
+    pub fn open(bundle_path: &Path) -> Result<Arc<Self>, ModuleError> {
         // The bundle is identified by the path the filesystem agrees on, so two
         // routes to the same module — a symlinked scan root, a relative path —
         // are one cache entry rather than two loads of one image. A path that
@@ -752,13 +868,12 @@ impl Vst3Module {
         )
     }
 
-    fn load(bundle_path: &Path) -> Result<Arc<Self>, String> {
+    fn load(bundle_path: &Path) -> Result<Arc<Self>, ModuleError> {
         let platform = platform::LoadedModule::open(bundle_path)?;
         let Some(entry) = platform.plugin_factory_entry() else {
-            return Err(format!(
-                "VST3 module exports no GetPluginFactory: {}",
-                bundle_path.display()
-            ));
+            return Err(ModuleError::NoGetPluginFactory {
+                bundle: bundle_path.to_path_buf(),
+            });
         };
         // SAFETY: `entry` is the non-null address of the module's exported
         // `GetPluginFactory`, whose VST3 signature is `IPluginFactory* ()`.
@@ -769,10 +884,9 @@ impl Vst3Module {
         // SAFETY: `GetPluginFactory` returns null or an owned reference to a
         // live factory, which `from_raw` adopts without an extra AddRef.
         let factory = unsafe { ComPtr::from_raw(raw_factory) }.ok_or_else(|| {
-            format!(
-                "VST3 module returned no plugin factory: {}",
-                bundle_path.display()
-            )
+            ModuleError::NoPluginFactory {
+                bundle: bundle_path.to_path_buf(),
+            }
         })?;
 
         let host = Vst3HostContext::new();
@@ -815,9 +929,11 @@ struct ModuleFileFingerprint {
 }
 
 /// The fingerprint of the module file at `path`, from one `stat` of it.
-fn module_file_fingerprint(path: &Path) -> Result<ModuleFileFingerprint, String> {
-    let unreadable =
-        |error: std::io::Error| format!("Cannot read VST3 module {}: {error}", path.display());
+fn module_file_fingerprint(path: &Path) -> Result<ModuleFileFingerprint, ModuleError> {
+    let unreadable = |cause: std::io::Error| ModuleError::Unreadable {
+        module: path.to_path_buf(),
+        cause,
+    };
     let metadata = fs::metadata(path).map_err(unreadable)?;
     Ok(ModuleFileFingerprint {
         size_bytes: metadata.len(),
@@ -900,9 +1016,9 @@ static LOADED_MODULES: LazyLock<ModuleCache<Vst3Module, ModuleFileFingerprint>> 
 fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
     cache: &ModuleCache<Module, Fingerprint>,
     key: PathBuf,
-    fingerprint: impl FnOnce() -> Result<Fingerprint, String>,
-    load: impl FnOnce() -> Result<Arc<Module>, String>,
-) -> Result<Arc<Module>, String> {
+    fingerprint: impl FnOnce() -> Result<Fingerprint, ModuleError>,
+    load: impl FnOnce() -> Result<Arc<Module>, ModuleError>,
+) -> Result<Arc<Module>, ModuleError> {
     // A poisoned cache is a map of weak pointers, which no panic can leave
     // half-written; refusing to load plugins for the rest of the session would
     // be the larger failure.
@@ -917,21 +1033,13 @@ fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
     if let Some(cached) = open.get(&key) {
         if let Some(module) = cached.resident.clone() {
             if cached.fingerprint != current {
-                return Err(format!(
-                    "An older build of {} stays loaded for the rest of this session (the plugin \
-                     asks never to be unloaded); restart Sourdaw to load the updated plugin",
-                    key.display()
-                ));
+                return Err(ModuleError::ResidentBuildOutdated { key });
             }
             return Ok(module);
         }
         if let Some(module) = cached.module.upgrade() {
             if cached.fingerprint != current {
-                return Err(format!(
-                    "An older build of {} is still loaded by another instance; remove those \
-                     instances or restart Sourdaw to load the updated plugin",
-                    key.display()
-                ));
+                return Err(ModuleError::SharedBuildOutdated { key });
             }
             return Ok(module);
         }
@@ -1180,7 +1288,7 @@ mod tests {
 
     /// A fingerprint that never changes, for the cases about `Arc` strength
     /// alone.
-    fn unchanged() -> Result<(), String> {
+    fn unchanged() -> Result<(), ModuleError> {
         Ok(())
     }
 
@@ -1327,14 +1435,21 @@ mod tests {
     fn a_bundle_that_failed_to_load_is_not_remembered_as_open() {
         let cache = fake_cache();
 
-        let refused: Result<Arc<FakeModule>, String> = shared_module(
+        let refused: Result<Arc<FakeModule>, ModuleError> = shared_module(
             &cache,
             PathBuf::from("/plugins/Broken.vst3"),
             unchanged,
-            || Err("VST3 module refused initialization".to_string()),
+            || {
+                Err(ModuleError::ModuleRefusedInitialization {
+                    module: PathBuf::from("/plugins/Broken.vst3"),
+                })
+            },
         );
 
-        assert!(refused.is_err());
+        assert!(matches!(
+            refused,
+            Err(ModuleError::ModuleRefusedInitialization { .. })
+        ));
         assert!(cache
             .lock()
             .expect("uncontended")
@@ -1481,13 +1596,21 @@ mod tests {
                 .expect("uncontended")
                 .push(module.to_path_buf());
             if module == arm64x {
-                Err(format!("Cannot load {}", module.display()))
+                Err(ModuleError::ModuleRefusedInitialization {
+                    module: module.to_path_buf(),
+                })
             } else {
                 Ok(module.to_path_buf())
             }
         });
 
-        assert_eq!(opened, Err(format!("Cannot load {}", arm64x.display())));
+        assert!(
+            matches!(
+                &opened,
+                Err(ModuleError::ModuleRefusedInitialization { module }) if *module == arm64x
+            ),
+            "{opened:?}"
+        );
         assert_eq!(
             attempted.into_inner().expect("uncontended"),
             vec![arm64x.clone()],
@@ -1551,8 +1674,17 @@ mod tests {
             .err()
             .expect("a replaced file must not be answered with the resident old image");
         assert!(
-            refusal.contains("older build") && refusal.contains("restart Sourdaw"),
-            "the refusal must say why and what to do: {refusal}"
+            matches!(&refusal, ModuleError::SharedBuildOutdated { key } if *key == fixture.0.join("Reverb.vst3")),
+            "{refusal:?}"
+        );
+        assert_eq!(
+            refusal.to_string(),
+            format!(
+                "An older build of {} is still loaded by another instance; remove those \
+                 instances or restart Sourdaw to load the updated plugin",
+                fixture.0.join("Reverb.vst3").display()
+            ),
+            "the refusal must say why and what to do"
         );
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
         assert_eq!(unloads.load(AtomicOrdering::SeqCst), 0);
@@ -1668,9 +1800,17 @@ mod tests {
             .err()
             .expect("a resident old image must not be answered as the new build");
         assert!(
-            refusal.contains("stays loaded for the rest of this session")
-                && refusal.contains("restart Sourdaw"),
-            "the refusal must say only a restart helps: {refusal}"
+            matches!(refusal, ModuleError::ResidentBuildOutdated { .. }),
+            "{refusal:?}"
+        );
+        assert_eq!(
+            refusal.to_string(),
+            format!(
+                "An older build of {} stays loaded for the rest of this session (the plugin \
+                 asks never to be unloaded); restart Sourdaw to load the updated plugin",
+                fixture.0.join("Reverb.vst3").display()
+            ),
+            "the refusal must say only a restart helps"
         );
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
     }

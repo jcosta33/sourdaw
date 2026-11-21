@@ -570,7 +570,7 @@ function inWindowGain(pair: ValueRequestPair): number {
 const VALUE_RUN_ID = 'run-value-choice-protocol';
 
 function chooseValues() {
-    return chooseVibeBatchValues({ runId: VALUE_RUN_ID, request: valueRequest() });
+    return chooseVibeBatchValues({ runId: VALUE_RUN_ID, request: valueRequest(), plannedTier: 'hosted' });
 }
 
 function userContentOf(request: Record<string, unknown>): string {
