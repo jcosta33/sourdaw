@@ -11,7 +11,10 @@ import {
 import {
     DIRECTION_LIST,
     directionConstraintIds,
+    HOLD_NOUN_WORD,
+    LOUDNESS_NOUN_WORD,
     type MeasuredConstraintId,
+    NOUN_VERB,
     QUALITY_OF,
     QUALITY_VERB,
 } from './constraintDirections';
@@ -33,10 +36,7 @@ export type HoldClause = { clause: string; start: number; end: number; parts: Ho
 const LIST_TAIL = String.raw`(?:\s+(?:of|on|in)\s+${OBJECT_LIST})?`;
 /** "sound louder" is a louder clause: the linking verb is never part of the object. */
 const DIRECTION_LEAD = String.raw`(?:(?:sound|feel|seem|get|become|be)\s+)?(?:any\s+)?`;
-const NOUN_VERB = String.raw`(?<verb>raise|raising|increase|increasing|boost|boosting|push|pushing|turn(?:ing)?\s+up|lower|lowering|reduce|reducing|decrease|decreasing|turn(?:ing)?\s+down|change|changing|alter|altering|touch|touching|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?)`;
 const HOLD_SUFFIX = String.raw`(?:\s+(?:the\s+same|unchanged|intact|as\s+(?:it\s+)?is|where\s+it\s+is))?`;
-const LOUDNESS_NOUN_WORD = String.raw`(?:level|loudness|volume)`;
-const HOLD_NOUN_WORD = String.raw`(?:level|loudness|volume|width|image|field|spread|brightness|dynamics|dynamic\s+range)`;
 /** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
 const PRE_MEMBER = String.raw`(?:□+|(?:${SCOPE_WORD})\b)(?:['’]s?)?`;
 const PRE_LIST = String.raw`${PRE_MEMBER}(?:\s+and\s+(?:the\s+)?${PRE_MEMBER})*`;
@@ -54,7 +54,10 @@ const NOUN_IN_LIST = new RegExp(
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
 /** A later object under the same negation: "don't make the mix louder and the vocal quieter". */
 const DIRECTION_CONTINUATION = new RegExp(String.raw`\s+and\s+(?!any\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`, 'dyiu');
-/** A later noun under the same verb: "keep the level of the vocal and the width of the drums". */
+/**
+ * A later noun under the same verb: "keep the level of the vocal and the width of the drums". It
+ * names no verb of its own, so it takes the verb of the clause it continues.
+ */
 const NOUN_CONTINUATION = new RegExp(
     String.raw`(?:\s*,\s*(?:and\s+)?|\s+and\s+)${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
     'dyiu'
@@ -147,7 +150,7 @@ function nounsOf(match: RegExpExecArray): RegExpExecArray[] {
 
 /** Each noun's family under the clause's verb, once each, in the order the nouns name them. */
 function nounConstraintIds(nouns: readonly RegExpExecArray[], verb: string | undefined): MeasuredConstraintId[] {
-    const ids = nouns.map((noun) => nounConstraintId(noun.groups?.noun ?? '', verb));
+    const ids = nouns.flatMap((noun) => nounConstraintId(noun.groups?.noun ?? '', verb) ?? []);
     return ids.filter((id, index) => ids.indexOf(id) === index);
 }
 
@@ -184,12 +187,17 @@ function nounObjects(match: RegExpExecArray, nouns: readonly RegExpExecArray[], 
  * Each noun's family, and the part's one object: the "of" tail or an object standing before a noun.
  * Two different objects in one part hold no single scope, so the part is unreadable.
  */
-function readNounPart(match: RegExpExecArray, prompt: string, clause: () => string): HoldPart {
+function readNounPart(
+    match: RegExpExecArray,
+    verb: string | undefined,
+    prompt: string,
+    clause: () => string
+): HoldPart {
     const nouns = nounsOf(match);
     const [object = null, ...others] = nounObjects(match, nouns, prompt);
     return {
         start: match.index,
-        constraintIds: nounConstraintIds(nouns, verbOf(match)),
+        constraintIds: nounConstraintIds(nouns, verb),
         object,
         unreadable: others.length > 0 ? `“${clause()}” names more than one scope for one hold.` : null,
     };
@@ -207,9 +215,9 @@ function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
     return direction === undefined ? ['loudness-held-v1'] : directionConstraintIds(direction);
 }
 
-function readPart(match: RegExpExecArray, prompt: string, clause: () => string): HoldPart {
+function readPart(match: RegExpExecArray, verb: string | undefined, prompt: string, clause: () => string): HoldPart {
     if (match.groups?.nouns !== undefined) {
-        return readNounPart(match, prompt, clause);
+        return readNounPart(match, verb, prompt, clause);
     }
     return {
         start: match.index,
@@ -235,16 +243,20 @@ function withContinuations(match: RegExpExecArray, continuation: RegExp | null, 
     return matches;
 }
 
-/** A continuation with no object of its own shares the object before it ("the level and, the width"). */
+/**
+ * Every part reads under the opening match's verb, which a continuation never restates. A
+ * continuation with no object of its own shares the object before it ("the level and, the width").
+ */
 function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): HoldClause {
     const [first] = matches;
     const last = matches.at(-1);
     const start = first?.index ?? 0;
     const end = last === undefined ? start : last.index + last[0].length;
     const clause = prompt.slice(start, end).trim();
+    const verb = first === undefined ? undefined : verbOf(first);
     const parts: HoldPart[] = [];
     for (const match of matches) {
-        const part = readPart(match, prompt, () => clause);
+        const part = readPart(match, verb, prompt, () => clause);
         const inherited = parts.at(-1);
         parts.push(part.object === null && inherited !== undefined ? { ...part, object: inherited.object } : part);
     }

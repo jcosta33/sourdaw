@@ -1810,6 +1810,71 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             ],
             [],
         ],
+        // a continued noun takes the verb of the clause it continues
+        [
+            "don't raise the level of the vocal and the volume of the drums",
+            [
+                measured(
+                    'loudness-not-raised-v1',
+                    "don't raise the level of the vocal and the volume of the drums",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'loudness-not-raised-v1',
+                    "don't raise the level of the vocal and the volume of the drums",
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't lower the level of the vocal and the dynamics of the drums",
+            [
+                measured(
+                    'loudness-not-lowered-v1',
+                    "don't lower the level of the vocal and the dynamics of the drums",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'dynamics-not-reduced-v1',
+                    "don't lower the level of the vocal and the dynamics of the drums",
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't raise the level of the vocal and the width of the drums",
+            [
+                measured(
+                    'loudness-not-raised-v1',
+                    "don't raise the level of the vocal and the width of the drums",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'stereo-width-not-widened-v1',
+                    "don't raise the level of the vocal and the width of the drums",
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't change the level of the vocal and the width of the drums",
+            [
+                measured(
+                    'loudness-held-v1',
+                    "don't change the level of the vocal and the width of the drums",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'stereo-width-held-v1',
+                    "don't change the level of the vocal and the width of the drums",
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
         // a second quality under the first one's keep
         [
             'keep the vocal warm and the drums bright',
@@ -1866,6 +1931,34 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             });
         }
     );
+
+    it('reads "vox" as the vocal role word', () => {
+        const context = grammarContext();
+        const template = context.tracks.find((track) => track.id === 'gtr');
+        if (template === undefined) {
+            throw new Error('The grammar fixture holds the guitar.');
+        }
+        const withLead = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                {
+                    ...template,
+                    id: 'lead',
+                    name: 'Lead 1',
+                    canonicalRole: { role: 'lead vocal', source: 'authored', evidence: 'authored-role' },
+                },
+            ],
+        } satisfies ProjectContext;
+        const prompt = "don't make the vox any brighter";
+        // the fixture's named copies of the Vocal keep its lead vocal role, so the role holds them too
+        expect(compilePerceptualConstraints(prompt, withLead)).toEqual({
+            constraints: [
+                measured('brightness-not-raised-v1', prompt, onTracks('vocal', 'drums', 'louder-pad', 'lead')),
+            ],
+            unsupported: [],
+        });
+    });
 });
 
 describe('reading only governed protections and whole object names', () => {

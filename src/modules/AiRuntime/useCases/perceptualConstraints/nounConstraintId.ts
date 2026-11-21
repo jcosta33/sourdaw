@@ -1,29 +1,25 @@
-import { FAMILY_IDS, type MeasuredConstraintId, type QualityFamily } from './constraintDirections';
+import { FAMILY_IDS, FAMILY_OF_NOUN, type MeasuredConstraintId, NOUN_MOVEMENT_OF_VERB } from './constraintDirections';
 
-/** A verb that raises a held noun's metric, or lowers it; any other verb ("change", "touch") holds it. */
-const RAISING_NOUN_VERB = /^(?:rais|increas|boost|push|turn(?:ing)?\s+up|widen|brighten)/iu;
-const LOWERING_NOUN_VERB = /^(?:lower|reduc|decreas|turn(?:ing)?\s+down|narrow|darken|squash|flatten)/iu;
-
-function familyOfNounWord(word: string): QualityFamily {
-    if (/^(?:width|image|field|spread)$/u.test(word)) {
-        return 'width';
-    }
-    if (word === 'brightness') {
-        return 'brightness';
-    }
-    if (word.startsWith('dynamic')) {
-        return 'dynamics';
-    }
-    return 'loudness';
+function normalizeWords(words: string): string {
+    return words.toLowerCase().replaceAll(/\s+/gu, ' ').trim();
 }
 
-/** A held noun's constraint: its family's bound when the verb moves it one way, its hold otherwise. */
-export function nounConstraintId(noun: string, verb: string | undefined): MeasuredConstraintId {
-    const ids = FAMILY_IDS[familyOfNounWord(noun.toLowerCase())];
-    if (verb !== undefined && RAISING_NOUN_VERB.test(verb)) {
+/**
+ * A held noun's constraint, read from the direction table: its family's bound when the verb moves it
+ * one way, its hold otherwise ("change", "touch", a keep or no verb). A noun the table does not hold
+ * states nothing.
+ */
+export function nounConstraintId(noun: string, verb: string | undefined): MeasuredConstraintId | undefined {
+    const family = FAMILY_OF_NOUN.get(normalizeWords(noun));
+    if (family === undefined) {
+        return undefined;
+    }
+    const ids = FAMILY_IDS[family];
+    const movement = verb === undefined ? undefined : NOUN_MOVEMENT_OF_VERB.get(normalizeWords(verb));
+    if (movement === 'up') {
         return ids.raised;
     }
-    if (verb !== undefined && LOWERING_NOUN_VERB.test(verb)) {
+    if (movement === 'down') {
         return ids.lowered;
     }
     return ids.held;

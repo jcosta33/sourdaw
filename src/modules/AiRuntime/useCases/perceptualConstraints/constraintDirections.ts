@@ -50,7 +50,10 @@ const COMPARATIVES: Readonly<Record<QualityFamily, Readonly<Record<Movement, rea
     },
 };
 
-/** The verbs that move a family with no held noun ("don't widen the drums"), each also read with "-ing". */
+/**
+ * The verbs that move a family with no held noun ("don't widen the drums"), each also read with
+ * "-ing". A held noun takes them too, in its own family's direction ("don't widen the stereo image").
+ */
 const QUALITY_VERBS: Readonly<Record<QualityFamily, Readonly<Record<Movement, readonly string[]>>>> = {
     loudness: { up: [], down: [] },
     width: { up: ['widen'], down: ['narrow'] },
@@ -58,7 +61,26 @@ const QUALITY_VERBS: Readonly<Record<QualityFamily, Readonly<Record<Movement, re
     dynamics: { up: [], down: ['squash', 'flatten'] },
 };
 
+/** The nouns that name each family's metric: "the level of the drums", "the stereo width". */
+const HELD_NOUNS: Readonly<Record<QualityFamily, readonly string[]>> = {
+    loudness: ['level', 'loudness', 'volume'],
+    width: ['width', 'image', 'field', 'spread'],
+    brightness: ['brightness'],
+    dynamics: ['dynamics', 'dynamic range'],
+};
+
+/**
+ * The verbs a held noun takes in any family, each also read with "-ing": those moving its metric one
+ * way ("don't raise the width") and those holding it ("don't change the level").
+ */
+const NOUN_VERBS: Readonly<Record<Movement | 'either', readonly string[]>> = {
+    up: ['raise', 'increase', 'boost', 'push', 'turn up'],
+    down: ['lower', 'reduce', 'decrease', 'turn down'],
+    either: ['change', 'alter', 'touch'],
+};
+
 const FAMILIES: readonly QualityFamily[] = ['loudness', 'width', 'brightness', 'dynamics'];
+const MOVEMENTS: readonly Movement[] = ['up', 'down'];
 
 function phrasePattern(phrase: string): string {
     return phrase.split(' ').join(String.raw`\s+`);
@@ -66,6 +88,13 @@ function phrasePattern(phrase: string): string {
 
 function normalizePhrase(phrase: string): string {
     return phrase.toLowerCase().replaceAll(/\s+/gu, ' ').trim();
+}
+
+/** A verb phrase and its "-ing" form on its first word: "raise" and "raising", "turn up" and "turning up". */
+function withIngForm(phrase: string): string[] {
+    const [verb = '', ...rest] = phrase.split(' ');
+    const stem = verb.endsWith('e') ? verb.slice(0, -1) : verb;
+    return [phrase, [`${stem}ing`, ...rest].join(' ')];
 }
 
 /** Each phrase, a family's either-way pair ("wider or narrower") among them, and the constraint it states. */
@@ -88,7 +117,7 @@ function phraseEntries(words: typeof COMPARATIVES, verbForms: (word: string) => 
 
 const DIRECTION_ENTRIES = [
     ...phraseEntries(COMPARATIVES, (word) => [word]),
-    ...phraseEntries(QUALITY_VERBS, (word) => [word, `${word}ing`]),
+    ...phraseEntries(QUALITY_VERBS, withIngForm),
 ];
 const CONSTRAINT_OF_PHRASE: ReadonlyMap<string, MeasuredConstraintId> = new Map(
     DIRECTION_ENTRIES.map((entry) => [entry.phrase, entry.id])
@@ -103,7 +132,7 @@ function alternation(phrases: readonly string[]): string {
 }
 
 const COMPARATIVE_PHRASES = phraseEntries(COMPARATIVES, (word) => [word]).map((entry) => entry.phrase);
-const VERB_PHRASES = phraseEntries(QUALITY_VERBS, (word) => [word, `${word}ing`]).map((entry) => entry.phrase);
+const VERB_PHRASES = phraseEntries(QUALITY_VERBS, withIngForm).map((entry) => entry.phrase);
 
 /** One comparative ("louder", "less dynamic") or a family's either-way pair ("wider or narrower"). */
 export const DIRECTION = String.raw`(?:${alternation(COMPARATIVE_PHRASES)})(?![\p{L}\p{N}])`;
@@ -115,6 +144,27 @@ export const QUALITY_VERB = String.raw`(?<direction>(?:${alternation(VERB_PHRASE
 export const COMPARATIVE_WORDS = COMPARATIVE_PHRASES.filter((phrase) => !phrase.includes(' '));
 
 const DIRECTION_IN_LIST = new RegExp(`${DIRECTION}|${alternation(VERB_PHRASES)}`, 'giu');
+
+/** The verbs moving a held noun's metric, by the way they move it: the shared noun verbs and every quality verb. */
+export const NOUN_MOVEMENT_OF_VERB: ReadonlyMap<string, Movement> = new Map(
+    MOVEMENTS.flatMap((movement) =>
+        [...NOUN_VERBS[movement], ...FAMILIES.flatMap((family) => QUALITY_VERBS[family][movement])]
+            .flatMap(withIngForm)
+            .map((verb) => [verb, movement] as const)
+    )
+);
+const NOUN_VERB_PHRASES = [...NOUN_MOVEMENT_OF_VERB.keys(), ...NOUN_VERBS.either.flatMap(withIngForm)];
+/** Each held noun's family. */
+export const FAMILY_OF_NOUN: ReadonlyMap<string, QualityFamily> = new Map(
+    FAMILIES.flatMap((family) => HELD_NOUNS[family].map((noun) => [noun, family] as const))
+);
+
+/** A verb a held noun takes, moving its metric or holding it: "raise", "turning up", "change". */
+export const NOUN_VERB = String.raw`(?<verb>${alternation(NOUN_VERB_PHRASES)})`;
+/** Every held noun of every family: "level", "stereo width" is "width" behind its qualifier. */
+export const HOLD_NOUN_WORD = String.raw`(?:${alternation(Array.from(FAMILY_OF_NOUN.keys()))})`;
+/** The nouns naming loudness alone: "keep the Keys at the same level". */
+export const LOUDNESS_NOUN_WORD = String.raw`(?:${alternation(HELD_NOUNS.loudness)})`;
 
 function familyOfConstraint(id: MeasuredConstraintId): QualityFamily | undefined {
     return FAMILIES.find((family) => Object.values(FAMILY_IDS[family]).includes(id));
