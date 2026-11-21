@@ -8,7 +8,6 @@ import {
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 import { unionPerceptualConstraintReadings } from '../../transformers/unionPerceptualConstraintReadings';
-import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 import { resolveRoleFamily } from '../canonicalRoleFamilies';
 import { maskTrackReferences } from '../maskTrackReferences';
 
@@ -50,6 +49,7 @@ import {
 import { normalizePhrase } from './normalizePhrase';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { type ConsumedSpan, readUnreadConstraintClauses } from './readUnreadConstraintClauses';
+import { HYPHEN_OR_SPACE, words } from './words';
 
 type ObjectResolution =
     | { kind: 'mix' }
@@ -292,17 +292,11 @@ function readQualityPattern(): QualityPattern {
         ),
         { term: DYNAMIC_TERM, descriptor: DYNAMIC_TERM },
     ];
-    const terms = entries
-        .map((entry) => entry.term)
-        .toSorted((left, right) => right.length - left.length)
-        .map((term) =>
-            term
-                .split(' ')
-                .map(escapeRegExp)
-                .join(String.raw`[\s-]+`)
-        )
-        .join('|');
-    const term = String.raw`(?:${terms})${WORD_END}`;
+    const terms = words(
+        entries.map((entry) => entry.term),
+        HYPHEN_OR_SPACE
+    );
+    const term = String.raw`${terms}${WORD_END}`;
     const more = String.raw`(?<more>(?:${TERM_FOLLOWS}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
         String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,

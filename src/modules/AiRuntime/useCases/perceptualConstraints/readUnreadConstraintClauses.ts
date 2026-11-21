@@ -72,10 +72,11 @@ const PREVENTED_MOVE = new RegExp(
     'iu'
 );
 /**
- * Where a protection's governed words end: a subordinator, or a subject opening a clause whose verb
- * the protection does not govern. Past it stand the request's own move or condition ("prevent
- * clipping when I make the vocal louder"), while a prevented move named in the protection's own
- * complement ("stop the drums from getting wider") sits before it.
+ * Where a protection's governed words end: the first subordinator or subject pronoun after it, whatever
+ * verb follows, since a subject pronoun in a protection's own complement is taken to open a clause of
+ * its own. Past it stand the request's own move or condition ("prevent clipping when I make the vocal
+ * louder"), while a prevented move named in the protection's own complement ("stop the drums from
+ * getting wider") sits before it.
  */
 const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT})${WORD_END}`, 'iu');
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');

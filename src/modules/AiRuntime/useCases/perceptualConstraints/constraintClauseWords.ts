@@ -10,7 +10,7 @@ import {
     WORD_END,
 } from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
-import { words } from './words';
+import { HYPHEN_OR_SPACE, words } from './words';
 
 /**
  * The clause words every constraint reader shares, each vocabulary stated here once: scope words,
@@ -97,7 +97,7 @@ export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|\b${CLAUSE_
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
 export const OBJECT_PREPOSITION = words(['of', 'on', 'in']);
 /** The low end, by either name, its words spaced or hyphenated: "the low end", "the bottom-end". */
-export const LOW_END = String.raw`${words(['low', 'bottom'])}[\s-]+end`;
+export const LOW_END = words(['low end', 'bottom end'], HYPHEN_OR_SPACE);
 
 export const KEEP = words(['keep', 'keeping']);
 const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintaining', 'retain', 'retaining']);
@@ -191,7 +191,7 @@ export const SUBORDINATOR = words([
     'after',
     WITHOUT,
 ]);
-/** A subject opening a clause of its own, whose verb no earlier protection governs: "I make it louder". */
+/** The subject pronouns read as opening a clause of their own, whatever verb follows: "I make it louder". */
 export const CLAUSE_SUBJECT = words(['i', 'you', 'we', 'they', 'he', 'she']);
 
 const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|${PREDICATE_WORD}|${ANY_NEGATION})`;
