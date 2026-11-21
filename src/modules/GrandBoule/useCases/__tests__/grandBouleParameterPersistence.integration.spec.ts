@@ -146,7 +146,6 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
         ensureBusStrip: vi.fn(),
         getAllSidechainRoutes: vi.fn(),
         getSidechainRoutesForTrack: vi.fn(),
-        getSidechainTargetCapability: vi.fn(),
         hydrateSidechainRoutes: actual.hydrateSidechainRoutes,
         removeSend: vi.fn(),
         removeSidechainRoute: vi.fn(),

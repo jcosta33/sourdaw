@@ -1,3 +1,4 @@
+import { acceptsSidechainInput } from '../deviceCapabilities/acceptsSidechainInput';
 import { SIDECHAIN_PROCESSOR_UNAVAILABLE_WARNING } from '../../repositories/devices/dynamics/createOfflineSidechainCompressor';
 import { prepareOfflineSidechainCompressor } from '../../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
 import { prepareOfflineBitcrusherRate } from '../../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
@@ -61,7 +62,7 @@ export async function prepareOfflineContext({
     // unconditionally, and with no key on input 1 it only applies Makeup, so an
     // unkeyed device must render the same way offline.
     const hasSidechainCompressor = tracks.some((track) =>
-        track.devices.some((device) => device.type === 'builtin-sidechain-compressor' && !device.bypassed)
+        track.devices.some((device) => acceptsSidechainInput(device.type) && !device.bypassed)
     );
     if (hasSidechainCompressor) {
         try {

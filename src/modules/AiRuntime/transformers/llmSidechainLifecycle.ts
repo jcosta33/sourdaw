@@ -1,4 +1,4 @@
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';

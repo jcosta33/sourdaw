@@ -24,12 +24,17 @@ export { rearmCommittedTrackInputMonitoring } from './audioRecorder/rearmCommitt
 export { configureInputMonitoringProjectAccess } from './configureInputMonitoringProjectAccess';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
+export { acceptsSidechainInput } from './deviceCapabilities/acceptsSidechainInput';
 export { classifyNoteReceivingDevice } from './deviceCapabilities/classifyNoteReceivingDevice';
 export { DRUM_KIT_DEFAULT_LEVEL_DB } from './deviceCapabilities/drumKitDefaultLevelDb';
 export { isBuiltinSynthDevice } from './deviceCapabilities/isBuiltinSynthDevice';
 export { isBypassedNoteReceiver } from './deviceCapabilities/isBypassedNoteReceiver';
 export { findMidiTransformDevice } from './deviceCapabilities/findMidiTransformDevice';
 export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
+export {
+    getSidechainTargetCapability,
+    type SidechainTargetCapability,
+} from './deviceCapabilities/getSidechainTargetCapability';
 export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 export { isDrumDevice } from './deviceCapabilities/isDrumDevice';

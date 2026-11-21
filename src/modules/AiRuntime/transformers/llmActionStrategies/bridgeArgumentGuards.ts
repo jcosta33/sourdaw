@@ -1,5 +1,5 @@
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 import { type LevelArgument, type LevelLaw, resolveLevelArgument } from '#/utils/audioLevelLaw';
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';

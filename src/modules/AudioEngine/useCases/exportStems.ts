@@ -14,6 +14,7 @@ import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/co
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
+import { acceptsSidechainInput } from './deviceCapabilities/acceptsSidechainInput';
 import { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
@@ -111,7 +112,7 @@ function planStemSidechain<TTrack extends StemSidechainTrack>({
             const targetDevice = targetTrack?.devices.find(
                 (device) => device.id === route.targetDeviceId && !device.bypassed
             );
-            if (targetDevice?.type !== 'builtin-sidechain-compressor') {
+            if (!targetDevice || !acceptsSidechainInput(targetDevice.type)) {
                 continue;
             }
             const sourceTrack = allTracks.find((candidate) => candidate.id === route.sourceTrackId);
