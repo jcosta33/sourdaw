@@ -447,11 +447,14 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         // Keys can arrive faster than React re-renders (held auto-repeat), so each step
         // starts from the store's current scroll, not the render-time closure value.
-        const { scrollX: currentScrollX, pixelsPerBeat: currentPixelsPerBeat } =
-            timelineViewStore.value ?? defaultTimelineView;
+        const {
+            scrollX: currentScrollX,
+            pixelsPerBeat: currentPixelsPerBeat,
+            viewportWidth: currentViewportWidth = 0,
+        } = timelineViewStore.value ?? defaultTimelineView;
         const stepPx = 4 * currentPixelsPerBeat;
-        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / currentPixelsPerBeat : 16;
-        const pagePx = pageBeats * currentPixelsPerBeat;
+        // A page is one visible timeline span; the minimap's own width is unrelated to it.
+        const pagePx = currentViewportWidth > 0 ? currentViewportWidth : 16 * currentPixelsPerBeat;
         let targetScrollX: number;
 
         switch (event.key) {

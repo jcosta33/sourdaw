@@ -5,7 +5,6 @@ import {
     audioEngine,
     resumeEngine,
     getAudioContext,
-    scheduleClick,
     startAudioRecording,
     stopAudioRecording,
     getCompensationDelay,
@@ -32,6 +31,8 @@ import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
+import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
+import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
@@ -715,7 +716,8 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
 }
 
 export function toggleRecording(): void {
-    audioEngine.beginAudioPreviewIntent().release();
+    const preview = audioEngine.beginAudioPreviewIntent();
+    preview.release();
     playheadSeekRequestRef.current++;
     const state = getTransportState();
     if (!state) {
@@ -790,7 +792,6 @@ export function toggleRecording(): void {
         // tempo rather than the one the recording starts at.
         const secondsPerCountInBeat = (60 / countInTempo) * (4 / denominator);
         const countInBeats = state.countInBars * numerator;
-        const countInDurationSec = countInBeats * secondsPerCountInBeat;
 
         // Surface a failed resume rather than swallowing it: if the context stays
         // suspended the count-in clicks are inaudible, so warn the user to re-arm.
@@ -800,21 +801,16 @@ export function toggleRecording(): void {
         });
         ensureTrackStrips();
 
-        const ctx = getAudioContext();
-        // The clicks and the boundary they count to sit on the same audio clock,
-        // so capture both from one read: the take must open when *this* clock
-        // reaches the boundary, never when the JS timer wheel gets around to it.
-        const countInStartTime = ctx.currentTime;
-        const countInEndTime = countInStartTime + countInDurationSec;
-        for (let index = 0; index < countInBeats; index++) {
-            scheduleClick(
-                countInStartTime + index * secondsPerCountInBeat,
-                index % numerator === 0,
-                state.metronomeVolume ?? 0.5
-            );
-        }
-
-        armCountInRecordingStart(countInEndTime, countInDurationSec, state.playheadPosition);
+        const countIn: CountIn = {
+            beats: countInBeats,
+            beatsPerBar: numerator,
+            secondsPerBeat: secondsPerCountInBeat,
+            volume: state.metronomeVolume ?? 0.5,
+        };
+        runAfterPreviewOutputRestored(preview.ready, () => {
+            const { endTimeSec, durationSec } = scheduleCountInClicks(countIn);
+            armCountInRecordingStart(endTimeSec, durationSec, state.playheadPosition);
+        });
         return;
     }
 
