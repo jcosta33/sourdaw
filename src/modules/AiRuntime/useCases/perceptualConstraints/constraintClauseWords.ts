@@ -322,6 +322,11 @@ const MEMBER_JOIN = String.raw`(?:${LIST_JOIN}|\s*${AMPERSAND}\s*)`;
  */
 export const OBJECT_MEMBERS = String.raw`${OBJECT_MEMBER}(?:${MEMBER_JOIN}${OBJECT_MEMBER})*`;
 export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
+/**
+ * An aside naming nothing but an object, closed or not, which a clause before it never holds as its own
+ * object: "don't touch the low end (vocal)", "don't make it louder (the vocal)".
+ */
+export const OBJECT_ONLY_ASIDE = String.raw`${OPENING_BRACKET}\s*${OBJECT_MEMBERS}\s*(?:[${CLOSING_BRACKET_MARKS}]|${CLAUSE_END})`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
 export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
 /** "than", which a comparison names its other scope after. */

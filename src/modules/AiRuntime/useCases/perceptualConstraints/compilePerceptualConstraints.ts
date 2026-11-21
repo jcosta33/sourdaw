@@ -37,6 +37,7 @@ import {
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
     OBJECT_MEMBERS,
+    OBJECT_ONLY_ASIDE,
     OBJECT_PREPOSITION,
     ROLE_WORD,
     ROLE_WORDS,
@@ -600,7 +601,7 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = readInnerAsides(maskTrackReferences(prompt, context, MASK_GLYPH));
-    const request = readMaskedRequest(masked, prompt, context);
+    const request = withObjectAsidesUnsupported(readMaskedRequest(masked, prompt, context), masked, prompt);
     return unionPerceptualConstraintReadings({
         constraints: request.constraints.map(({ entry }) => entry),
         unsupported: [
@@ -627,6 +628,47 @@ function readMaskedRequest(masked: string, prompt: string, context: ProjectConte
         ...unread.map(({ unsupported: entry, span }) => ({ entry, span })),
     ];
     return { constraints: reader.constraints, unsupported, consumed };
+}
+
+const TRAILING_OBJECT_ASIDE = new RegExp(String.raw`^\s*${OBJECT_ONLY_ASIDE}`, 'iu');
+
+/** The aside naming only an object that stands right after a span, as offsets into the masked request. */
+function readTrailingObjectAside(masked: string, span: ConsumedSpan): ConsumedSpan | null {
+    const aside = TRAILING_OBJECT_ASIDE.exec(masked.slice(span.end));
+    return aside === null ? null : { start: span.end, end: span.end + aside[0].length };
+}
+
+/**
+ * The reading with every constraint an object-only aside follows recorded unsupported once per clause,
+ * quoting the clause and its aside: the aside names an object beside the one the clause was read on
+ * ("don't touch the low end (vocal)", "don't make it louder (the vocal)"), so neither scope is measured,
+ * as "keep the vocal (lead) bright" is not. An aside opening with "of", "on" or "in" names the clause's
+ * own object and is read inside it ("keep the brightness (of the vocal)").
+ */
+function withObjectAsidesUnsupported(
+    request: MaskedRequestReading,
+    masked: string,
+    prompt: string
+): MaskedRequestReading {
+    const followed = request.constraints.flatMap((constraint) => {
+        const aside = readTrailingObjectAside(masked, constraint.span);
+        return aside === null ? [] : [{ constraint, aside, start: constraint.span.start, end: aside.end }];
+    });
+    if (followed.length === 0) {
+        return request;
+    }
+    const unsupported: ReadUnsupported[] = outermostSpans(followed).map(({ start, end, aside }) => ({
+        entry: {
+            constraintId: 'unsupported',
+            clause: prompt.slice(start, end).trim(),
+            reason: `“${prompt.slice(aside.start, aside.end).trim()}” names an object beside the one its clause holds, so no single scope can be measured.`,
+        },
+        span: { start, end },
+    }));
+    const constraints = request.constraints.filter(
+        (constraint) => !followed.some((entry) => entry.constraint === constraint)
+    );
+    return { constraints, unsupported: [...request.unsupported, ...unsupported], consumed: request.consumed };
 }
 
 const BRACKETED_REASON =
@@ -664,7 +706,7 @@ function readSpans({ constraints, unsupported }: Pick<MaskedRequestReading, 'con
 }
 
 /** One span per clause: each distinct span once, less any another one holds, so one clause yields one entry. */
-function outermostSpans(spans: readonly ConsumedSpan[]): ConsumedSpan[] {
+function outermostSpans<Span extends ConsumedSpan>(spans: readonly Span[]): Span[] {
     const distinct = spans.filter(
         (span, index) => spans.findIndex((other) => other.start === span.start && other.end === span.end) === index
     );

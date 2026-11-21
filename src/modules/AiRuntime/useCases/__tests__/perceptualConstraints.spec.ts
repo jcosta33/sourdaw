@@ -1173,6 +1173,10 @@ const COMPARATIVE_REASON =
     'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
 const NET_REASON =
     'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
+function asideObjectReason(aside: string): string {
+    return `“${aside}” names an object beside the one its clause holds, so no single scope can be measured.`;
+}
+
 const BRACKET_REASON =
     'A bracket stands inside these words, so the application reads no measured bound or hold in them.';
 
@@ -2247,6 +2251,24 @@ describe('reading only governed protections and whole object names', () => {
                 [],
                 [unread(prompt, BRACKET_REASON)],
             ]
+        ),
+        // an aside naming an object after a clause that read its own records the clause unsupported once,
+        // never a reading on the scope the clause read without it
+        ...(
+            [
+                ["don't touch the low end (vocal)", '(vocal)'],
+                ['keep the width (drums)', '(drums)'],
+                ["don't make it louder (the vocal)", '(the vocal)'],
+                ["don't make it louder (vocal", '(vocal'],
+                ['keep the width [drums]', '[drums]'],
+                ['keep the vocal bright (the drums)', '(the drums)'],
+            ] satisfies [string, string][]
+        ).map(
+            ([prompt, aside]): [
+                string,
+                PerceptualConstraintReading['constraints'],
+                PerceptualConstraintReading['unsupported'],
+            ] => [prompt, [], [unread(prompt, asideObjectReason(aside))]]
         ),
         // no clause ends in its bracket
         [
