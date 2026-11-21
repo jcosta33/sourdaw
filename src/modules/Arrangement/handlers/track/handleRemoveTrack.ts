@@ -7,6 +7,8 @@ import { getAlternativeClips } from '../../models/TrackAlternativeClips';
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from '../../useCases/device/unloadDiscardedHostedPlugins';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -95,6 +97,8 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         if (removedTrack && context?.undoEntryId !== undefined) {
             recordDiscardedPluginStates(context.undoEntryId, [removedTrack]);
         }
+        // Read before removeTrack: the instances are unreachable once the track leaves the store.
+        const hostedInstances = removedTrack ? collectHostedPluginInstances(removedTrack) : [];
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
@@ -113,6 +117,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 runAllAsyncEffects(
                     [
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
                         finalizeModulationRemoval.afterCommit,
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
@@ -140,6 +147,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 } else {
                     effects.unshift(
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
                         )

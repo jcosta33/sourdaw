@@ -13,7 +13,10 @@ mod refusals;
 use crate::host::runtime_scope::{RuntimeScope, SCOPE_NAMESPACE};
 use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
-use refusals::FileRefusal;
+#[cfg(any(feature = "napi-addon", test))]
+use refusals::ExportFileError;
+pub use refusals::FileRefusal;
+pub(crate) use refusals::{AtomicWriteError, WavWriteError};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::Write;
@@ -61,14 +64,22 @@ pub struct DirectoryEntry {
 }
 
 pub async fn read_audio_file(path: String) -> Result<Vec<u8>, String> {
-    let file_path = resolve_existing_file_path(&path)?;
-    std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))
+    read_existing_file(&path).map_err(|e| e.to_string())
+}
+
+fn read_existing_file(path: &str) -> Result<Vec<u8>, FileRefusal> {
+    let file_path = resolve_existing_file_path(path)?;
+    std::fs::read(&file_path).map_err(FileRefusal::FileUnreadable)
 }
 
 pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    let file_path = resolve_writable_file_path(&path)?;
+    write_writable_file(&path, &data).map_err(|e| e.to_string())
+}
+
+fn write_writable_file(path: &str, data: &[u8]) -> Result<(), FileRefusal> {
+    let file_path = resolve_writable_file_path(path)?;
     ensure_parent_directory(&file_path)?;
-    write_bytes_atomically(&file_path, &data)
+    write_bytes_atomically(&file_path, data)
 }
 
 /// Write raw bytes to a file.
@@ -81,25 +92,22 @@ pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String>
 /// Path resolution and directory creation match `write_audio_file` exactly, so
 /// the same bytes land at the same location.
 pub async fn write_file_bytes(path: String, data: &[u8]) -> Result<(), String> {
-    ensure_file_ipc_size(data.len() as u64, "write_file_bytes")?;
-
-    let file_path = resolve_writable_file_path(&path)?;
-    ensure_parent_directory(&file_path)?;
-    write_bytes_atomically(&file_path, data)
+    ensure_file_ipc_size(data.len() as u64, "write_file_bytes")
+        .and_then(|()| write_writable_file(&path, data))
+        .map_err(|e| e.to_string())
 }
 
-fn ensure_parent_directory(file_path: &Path) -> Result<(), String> {
+fn ensure_parent_directory(file_path: &Path) -> Result<(), FileRefusal> {
     if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(FileRefusal::DirectoryUncreatable)?;
     }
     Ok(())
 }
 
-fn write_bytes_atomically(file_path: &Path, data: &[u8]) -> Result<(), String> {
-    replace_file_atomically(file_path, |file| {
-        file.write_all(data)
-            .map_err(|e| format!("Failed to write file: {}", e))
+fn write_bytes_atomically(file_path: &Path, data: &[u8]) -> Result<(), FileRefusal> {
+    replace_file_atomically(file_path, |file| file.write_all(data)).map_err(|error| match error {
+        AtomicWriteError::File(refusal) => refusal,
+        AtomicWriteError::Write(cause) => FileRefusal::FileUnwritable(cause),
     })
 }
 
@@ -130,15 +138,15 @@ fn write_bytes_atomically(file_path: &Path, data: &[u8]) -> Result<(), String> {
 /// * On Unix the parent directory is synced after the rename, best effort, so
 ///   the rename itself — not just the file's data — survives a crash.
 /// * Any failure removes the temp file and leaves `path` exactly as it was.
-pub(crate) fn replace_file_atomically(
+pub(crate) fn replace_file_atomically<WriteError>(
     path: &Path,
-    write: impl FnOnce(&mut std::fs::File) -> Result<(), String>,
-) -> Result<(), String> {
+    write: impl FnOnce(&mut std::fs::File) -> Result<(), WriteError>,
+) -> Result<(), AtomicWriteError<WriteError>> {
     refuse_export_staging_path(path)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| "Atomic write error: path has no file name".to_string())?;
+        .ok_or(FileRefusal::NoFileName)?;
     let temp_path = path.with_file_name(format!("{file_name}.{}.tmp", uuid::Uuid::new_v4()));
 
     // The temp file is closed (by the end of this closure) before the rename
@@ -148,18 +156,18 @@ pub(crate) fn replace_file_atomically(
             .write(true)
             .create_new(true)
             .open(&temp_path)
-            .map_err(|e| format!("Failed to create temporary file: {}", e))?;
-        write(&mut temp_file)?;
+            .map_err(FileRefusal::TemporaryFileUncreatable)?;
+        write(&mut temp_file).map_err(AtomicWriteError::Write)?;
         temp_file
             .sync_all()
-            .map_err(|e| format!("Failed to sync temporary file: {}", e))
+            .map_err(|e| AtomicWriteError::File(FileRefusal::TemporaryFileUnsynced(e)))
     })();
 
     match write_result {
         Ok(()) => {
             std::fs::rename(&temp_path, path).map_err(|e| {
                 let _ = std::fs::remove_file(&temp_path);
-                format!("Failed to move finished file into place: {}", e)
+                FileRefusal::FinishedFileUnmovable(e)
             })?;
             sync_parent_directory_best_effort(path);
             Ok(())
@@ -202,20 +210,18 @@ fn sync_parent_directory_best_effort(_path: &Path) {}
 /// file `replace_file_atomically` hands it. `finalize` flushes the buffered
 /// writer, so every sample and the corrected header are inside the fsync the
 /// helper performs.
-pub(crate) fn write_wav_atomically(
+pub(crate) fn write_wav_atomically<SampleError>(
     path: &Path,
     spec: WavSpec,
     write_samples: impl FnOnce(
         &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
-    ) -> Result<(), String>,
-) -> Result<(), String> {
+    ) -> Result<(), SampleError>,
+) -> Result<(), AtomicWriteError<WavWriteError<SampleError>>> {
     replace_file_atomically(path, |file| {
-        let mut writer = WavWriter::new(std::io::BufWriter::new(file), spec)
-            .map_err(|e| format!("WAV write error: {e}"))?;
-        write_samples(&mut writer)?;
-        writer
-            .finalize()
-            .map_err(|e| format!("Finalize error: {e}"))
+        let mut writer =
+            WavWriter::new(std::io::BufWriter::new(file), spec).map_err(WavWriteError::Header)?;
+        write_samples(&mut writer).map_err(WavWriteError::Samples)?;
+        writer.finalize().map_err(WavWriteError::Finalize)
     })
 }
 
@@ -224,34 +230,31 @@ pub(crate) fn write_wav_atomically(
 /// Path resolution matches `read_audio_file` exactly; only the transport of the
 /// result differs, and the shell decides that.
 pub async fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
-    let file_path = resolve_existing_file_path(&path)?;
+    read_bounded_file(&path).map_err(|e| e.to_string())
+}
+
+fn read_bounded_file(path: &str) -> Result<Vec<u8>, FileRefusal> {
+    let file_path = resolve_existing_file_path(path)?;
     let file_size = std::fs::metadata(&file_path)
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?
+        .map_err(FileRefusal::FileMetadataUnreadable)?
         .len();
     ensure_file_ipc_size(file_size, "read_file_bytes")?;
-    std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))
+    std::fs::read(&file_path).map_err(FileRefusal::FileUnreadable)
 }
 
 pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
-    let dir_path = resolve_existing_directory_path(&path)?;
+    read_directory_entries(&path).map_err(|e| e.to_string())
+}
+
+fn read_directory_entries(path: &str) -> Result<Vec<DirectoryEntry>, FileRefusal> {
+    let dir_path = resolve_existing_directory_path(path)?;
 
     let mut entries = Vec::new();
-    let read_dir =
-        std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let read_dir = std::fs::read_dir(&dir_path).map_err(FileRefusal::DirectoryUnreadable)?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| {
-            FileRefusal::EntryUnreadable {
-                cause: e.to_string(),
-            }
-            .to_string()
-        })?;
-        let metadata = entry.metadata().map_err(|e| {
-            FileRefusal::MetadataUnreadable {
-                cause: e.to_string(),
-            }
-            .to_string()
-        })?;
+        let entry = entry.map_err(FileRefusal::EntryUnreadable)?;
+        let metadata = entry.metadata().map_err(FileRefusal::MetadataUnreadable)?;
 
         entries.push(DirectoryEntry {
             name: entry.file_name().to_string_lossy().to_string(),
@@ -279,7 +282,11 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
 /// recursively writable for a directory pick, the single file for a save, that
 /// file read-only for an open.
 pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(), String> {
-    let mode = parse_grant_mode(&mode)?;
+    grant_picked_path(&path, &mode, recursive).map_err(|e| e.to_string())
+}
+
+fn grant_picked_path(path: &str, mode: &str, recursive: bool) -> Result<(), FileRefusal> {
+    let mode = parse_grant_mode(mode)?;
     let requested = normalize_absolute_path(Path::new(path.trim()))?;
     let canonical = grant_registry::resolve_grant_target(&requested)?;
     grant_registry::refuse_write_grant_in_plugin_folder(
@@ -295,30 +302,32 @@ pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(
     Ok(())
 }
 
-fn parse_grant_mode(mode: &str) -> Result<GrantMode, String> {
+fn parse_grant_mode(mode: &str) -> Result<GrantMode, FileRefusal> {
     match mode {
         "read" => Ok(GrantMode::Read),
         "readwrite" => Ok(GrantMode::ReadWrite),
-        other => Err(format!("Unknown file grant mode: {other}")),
+        other => Err(FileRefusal::UnknownGrantMode {
+            mode: other.to_string(),
+        }),
     }
 }
 
-pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_existing_file_path(path: &str) -> Result<PathBuf, FileRefusal> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
-    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
+    let canonical = canonicalize_existing_path(&resolved)?;
+    ensure_allowed_root(&canonical, GrantMode::Read)?;
     if !canonical.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(FileRefusal::NotAFile);
     }
     Ok(canonical)
 }
 
-pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, FileRefusal> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
-    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
+    let canonical = canonicalize_existing_path(&resolved)?;
+    ensure_allowed_root(&canonical, GrantMode::Read)?;
     if !canonical.is_dir() {
-        return Err(FileRefusal::NotADirectory.to_string());
+        return Err(FileRefusal::NotADirectory);
     }
     Ok(canonical)
 }
@@ -326,7 +335,7 @@ pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
 /// Staging names belong only to the export registry, even under a recursive user grant.
 /// Ordinary writers must refuse them before creation as well as after canonicalisation;
 /// otherwise a second atomic write can replace the file that a token later commits.
-fn refuse_export_staging_path(path: &Path) -> Result<(), String> {
+fn refuse_export_staging_path(path: &Path) -> Result<(), FileRefusal> {
     for component in path.components() {
         // Match the spellings Windows and case-insensitive volumes may deliver to this name.
         let name = component.as_os_str().to_string_lossy();
@@ -338,19 +347,19 @@ fn refuse_export_staging_path(path: &Path) -> Result<(), String> {
             continue;
         };
         if target.starts_with('.') && uuid::Uuid::parse_str(token).is_ok() {
-            return Err("Export temporary paths are native-only".into());
+            return Err(FileRefusal::ExportStagingPath);
         }
     }
     Ok(())
 }
 
-pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_writable_file_path(path: &str) -> Result<PathBuf, FileRefusal> {
     let resolved = resolve_renderer_path(path)?;
     refuse_export_staging_path(&resolved)?;
     if let Ok(canonical) = canonicalize_existing_path(&resolved) {
-        ensure_allowed_root(&canonical, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
+        ensure_allowed_root(&canonical, GrantMode::ReadWrite)?;
         if canonical.is_dir() {
-            return Err("Path is a directory".to_string());
+            return Err(FileRefusal::IsADirectory);
         }
         return Ok(canonical);
     }
@@ -361,10 +370,10 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     // itself be the missing part, and an ancestor-only check answers about the
     // directory *above* the root rather than about the destination.
     if resolved.parent().is_none() {
-        return Err("Path must include a parent directory".to_string());
+        return Err(FileRefusal::NoParentDirectory);
     }
     let destination = canonicalize_through_missing_tail(&resolved)?;
-    ensure_allowed_root(&destination, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
+    ensure_allowed_root(&destination, GrantMode::ReadWrite)?;
     // The checked path is the one returned, never the caller's spelling of it.
     // Windows normalises a path on the way to the filesystem — a trailing
     // period or space on a segment is trimmed — so returning the untouched
@@ -374,26 +383,31 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     Ok(destination)
 }
 
-pub fn require_extension(path: PathBuf, extension: &str, label: &str) -> Result<PathBuf, String> {
+pub(crate) fn require_extension(
+    path: PathBuf,
+    extension: &str,
+    label: &str,
+) -> Result<PathBuf, FileRefusal> {
     let actual = path
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
     if !actual.eq_ignore_ascii_case(extension) {
-        return Err(format!("{label} path must use .{extension} extension"));
+        return Err(FileRefusal::ExtensionMismatch {
+            label: label.to_string(),
+            extension: extension.to_string(),
+        });
     }
     Ok(path)
 }
 
-fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
+fn resolve_renderer_path(path: &str) -> Result<PathBuf, FileRefusal> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("Renderer path must not be empty".to_string());
+        return Err(FileRefusal::EmptyRendererPath);
     }
     if trimmed.len() > MAX_RENDERER_PATH_BYTES {
-        return Err(format!(
-            "Native file path exceeds {MAX_RENDERER_PATH_BYTES}-byte IPC limit"
-        ));
+        return Err(FileRefusal::RendererPathTooLong);
     }
 
     let input = Path::new(trimmed);
@@ -405,32 +419,37 @@ fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
     Ok(ipc_temp_dir()?.join(input))
 }
 
-pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
+pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), FileRefusal> {
     if size > MAX_FILE_IPC_BYTES {
-        return Err(format!(
-            "{command} payload exceeds {MAX_FILE_IPC_BYTES}-byte IPC limit"
-        ));
+        return Err(FileRefusal::PayloadTooLarge {
+            command: command.to_string(),
+        });
     }
     Ok(())
 }
 
-pub(crate) fn ipc_temp_dir() -> Result<PathBuf, String> {
-    if let Some(path) = RuntimeScope::path("native/ipc")? {
+pub(crate) fn ipc_temp_dir() -> Result<PathBuf, FileRefusal> {
+    if let Some(path) = scoped_path("native/ipc")? {
         return Ok(path);
     }
     Ok(std::env::temp_dir().join(IPC_TEMP_DIR_NAME))
 }
 
-fn reject_relative_parent_segments(path: &Path) -> Result<(), String> {
+/// The runtime scope's path for `relative`, with its refusal carried as text.
+fn scoped_path(relative: &str) -> Result<Option<PathBuf>, FileRefusal> {
+    RuntimeScope::path(relative).map_err(FileRefusal::RuntimeScope)
+}
+
+fn reject_relative_parent_segments(path: &Path) -> Result<(), FileRefusal> {
     for component in path.components() {
         if matches!(component, Component::ParentDir) {
-            return Err("Renderer path must not contain parent-directory traversal".to_string());
+            return Err(FileRefusal::ParentDirectoryTraversal);
         }
     }
     Ok(())
 }
 
-fn normalize_absolute_path(path: &Path) -> Result<PathBuf, String> {
+fn normalize_absolute_path(path: &Path) -> Result<PathBuf, FileRefusal> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
@@ -440,7 +459,7 @@ fn normalize_absolute_path(path: &Path) -> Result<PathBuf, String> {
             Component::Normal(segment) => normalized.push(segment),
             Component::ParentDir => {
                 if !normalized.pop() {
-                    return Err("Renderer path must not escape the filesystem root".to_string());
+                    return Err(FileRefusal::EscapesFilesystemRoot);
                 }
             }
         }
@@ -461,7 +480,7 @@ fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, FileRefusal> {
 /// the components below it. Those components do not exist, so they cannot be
 /// symlinks; every link in the part that does exist has already been followed,
 /// which is what makes the result comparable against another resolved path.
-pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, FileRefusal> {
     if let Ok(canonical) = path.canonicalize() {
         return Ok(canonical);
     }
@@ -471,11 +490,11 @@ pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, 
     loop {
         let name = current
             .file_name()
-            .ok_or_else(|| "No existing parent directory for path".to_string())?
+            .ok_or(FileRefusal::NoExistingParentDirectory)?
             .to_os_string();
         let parent = current
             .parent()
-            .ok_or_else(|| "No existing parent directory for path".to_string())?
+            .ok_or(FileRefusal::NoExistingParentDirectory)?
             .to_path_buf();
         missing.push(name);
 
@@ -511,10 +530,10 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
         return Err(FileRefusal::OutsideAllowedRoots);
     }
     if mode == GrantMode::ReadWrite {
-        refuse_export_staging_path(resolved_path).map_err(FileRefusal::Message)?;
+        refuse_export_staging_path(resolved_path)?;
     }
 
-    for root in built_in_roots().map_err(FileRefusal::Message)? {
+    for root in built_in_roots()? {
         if let Ok(resolved_root) = canonicalize_through_missing_tail(&root) {
             if resolved_path.starts_with(resolved_root) {
                 return Ok(());
@@ -538,13 +557,13 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
 /// A plugin folder grant may not overlap any of these: the renderer writes
 /// here without a pick, so an overlapping plugin folder would let a page plant
 /// native code that the scan and the loader execute.
-pub(crate) fn built_in_roots() -> Result<Vec<PathBuf>, String> {
+pub(crate) fn built_in_roots() -> Result<Vec<PathBuf>, FileRefusal> {
     let mut roots = vec![ipc_temp_dir()?];
 
     if let Some(data_dir) = application_data_directory()? {
         roots.push(data_dir);
     }
-    if let Some(cache_dir) = RuntimeScope::path("native/cache")? {
+    if let Some(cache_dir) = scoped_path("native/cache")? {
         roots.push(cache_dir);
     } else if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
@@ -717,8 +736,8 @@ fn create_private_state_directory(directory: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(directory)
 }
 
-fn application_data_directory() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = RuntimeScope::path("native/data")? {
+fn application_data_directory() -> Result<Option<PathBuf>, FileRefusal> {
+    if let Some(path) = scoped_path("native/data")? {
         return Ok(Some(path));
     }
     Ok(dirs::data_dir().map(|root| root.join(APP_DIR_NAME)))
@@ -730,13 +749,13 @@ fn application_data_directory() -> Result<Option<PathBuf>, String> {
 /// renderer names and whatever the user has granted, so state that decides
 /// what the renderer may reach can be stored without the renderer being able
 /// to author it.
-pub(crate) fn private_state_directory() -> Result<Option<PathBuf>, String> {
+pub(crate) fn private_state_directory() -> Result<Option<PathBuf>, FileRefusal> {
     Ok(application_data_directory()?.map(|root| root.join(PRIVATE_DIR_NAME)))
 }
 
 /// Where Sourdaw keeps its own projects.
-fn project_directory() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = RuntimeScope::path("native/projects")? {
+fn project_directory() -> Result<Option<PathBuf>, FileRefusal> {
+    if let Some(path) = scoped_path("native/projects")? {
         return Ok(Some(path));
     }
     Ok(dirs::document_dir().map(|root| root.join(PROJECT_DIR_NAME)))
@@ -785,12 +804,12 @@ struct ExportFileIdentity {
 }
 
 #[cfg(any(feature = "napi-addon", test))]
-fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, String> {
+fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, ExportFileError> {
     let metadata = file
         .metadata()
-        .map_err(|e| format!("Cannot inspect export file: {e}"))?;
+        .map_err(ExportFileError::FileUninspectable)?;
     if !metadata.is_file() {
-        return Err("Export temporary file is not a regular file".into());
+        return Err(ExportFileError::NotARegularFile);
     }
     // Creation metadata is optional for a live, retained object. After restart it is
     // required alongside the object ID, which the filesystem may otherwise reuse.
@@ -813,7 +832,7 @@ fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, Stri
 fn export_file_object_id(
     _file: &std::fs::File,
     metadata: &std::fs::Metadata,
-) -> Result<ExportFileObjectId, String> {
+) -> Result<ExportFileObjectId, ExportFileError> {
     use std::os::unix::fs::MetadataExt;
     Ok(ExportFileObjectId::Unix {
         device: metadata.dev(),
@@ -826,7 +845,7 @@ fn export_file_object_id(
 fn export_file_object_id(
     file: &std::fs::File,
     metadata: &std::fs::Metadata,
-) -> Result<ExportFileObjectId, String> {
+) -> Result<ExportFileObjectId, ExportFileError> {
     use std::os::windows::fs::MetadataExt;
     use std::os::windows::io::AsRawHandle;
     #[repr(C)]
@@ -844,13 +863,14 @@ fn export_file_object_id(
         ) -> i32;
     }
     if metadata.file_attributes() & 0x400 != 0 {
-        return Err("Export temporary file is a reparse point".into());
+        return Err(ExportFileError::ReparsePoint);
     }
     let mut identity = FileIdInfo {
         volume: 0,
         file_id: [0; 16],
     };
-    let size = u32::try_from(std::mem::size_of::<FileIdInfo>()).map_err(|e| e.to_string())?;
+    let size = u32::try_from(std::mem::size_of::<FileIdInfo>())
+        .map_err(ExportFileError::IdentityBufferSize)?;
     // FILE_ID_INFO is a volume serial followed by FILE_ID_128. Class 0x12 fills
     // this exact repr(C) buffer; the borrowed File keeps its handle valid.
     let result = unsafe {
@@ -862,9 +882,8 @@ fn export_file_object_id(
         )
     };
     if result == 0 {
-        return Err(format!(
-            "Cannot identify export file: {}",
-            std::io::Error::last_os_error()
+        return Err(ExportFileError::Unidentifiable(
+            std::io::Error::last_os_error(),
         ));
     }
     Ok(ExportFileObjectId::Windows {
@@ -878,8 +897,8 @@ fn export_file_object_id(
 fn export_file_object_id(
     _file: &std::fs::File,
     _metadata: &std::fs::Metadata,
-) -> Result<ExportFileObjectId, String> {
-    Err("Created export file identity is unavailable on this platform".into())
+) -> Result<ExportFileObjectId, ExportFileError> {
+    Err(ExportFileError::IdentityUnavailable)
 }
 
 #[cfg(any(feature = "napi-addon", test))]
@@ -906,9 +925,9 @@ struct ExportFileLock {
 
 #[cfg(any(feature = "napi-addon", test))]
 impl ExportFileLock {
-    fn acquire(file: std::fs::File) -> Result<Self, String> {
+    fn acquire(file: std::fs::File) -> Result<Self, ExportFileError> {
         file.try_lock()
-            .map_err(|_| "Streaming export is owned by another live native host".to_string())?;
+            .map_err(|_| ExportFileError::OwnedByAnotherHost)?;
         Ok(Self { file })
     }
 }
@@ -937,9 +956,10 @@ fn export_manifest_mac(
     key: &[u8; 32],
     version: u32,
     records: &[ExportTempRecord],
-) -> Result<String, String> {
+) -> Result<String, ExportFileError> {
     use sha2::{Digest, Sha256};
-    let bytes = serde_json::to_vec(&(version, records)).map_err(|e| e.to_string())?;
+    let bytes =
+        serde_json::to_vec(&(version, records)).map_err(ExportFileError::RecordsUnserializable)?;
     let mut inner_pad = [0x36_u8; 64];
     let mut outer_pad = [0x5c_u8; 64];
     for (index, byte) in key.iter().enumerate() {
@@ -960,46 +980,47 @@ fn export_manifest_mac(
 }
 
 #[cfg(any(feature = "napi-addon", test))]
-fn refuse_export_symlink(path: &Path) -> Result<(), String> {
+fn refuse_export_symlink(path: &Path) -> Result<(), ExportFileError> {
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            Err("Export state or temporary path is a symlink".into())
-        }
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(ExportFileError::StateIsSymlink),
         Ok(_) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Cannot inspect export state: {error}")),
+        Err(error) => Err(ExportFileError::StateUninspectable(error)),
     }
 }
 
 #[cfg(any(feature = "napi-addon", test))]
-fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
+fn validate_export_temp(record: &ExportTempRecord) -> Result<(), ExportFileError> {
     if uuid::Uuid::parse_str(&record.token)
-        .map_err(|_| "Invalid export recovery token")?
+        .map_err(|_| ExportFileError::InvalidRecoveryToken)?
         .to_string()
         != record.token
     {
-        return Err("Invalid export recovery token".into());
+        return Err(ExportFileError::InvalidRecoveryToken);
     }
     let parent = record
         .target
         .parent()
-        .ok_or("Export target has no parent")?;
+        .ok_or(ExportFileError::TargetHasNoParent)?;
     let name = record
         .target
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or("Invalid export target name")?;
+        .ok_or(ExportFileError::InvalidTargetName)?;
     let expected = parent.join(format!(".{name}.sourdaw-export-{}.tmp", record.token));
     if !record.target.is_absolute()
         || record.temp != expected
-        || parent.canonicalize().map_err(|e| e.to_string())? != parent
+        || parent
+            .canonicalize()
+            .map_err(ExportFileError::TargetParentUnresolvable)?
+            != parent
     {
-        return Err("Invalid export recovery record".into());
+        return Err(ExportFileError::InvalidRecoveryRecord);
     }
     refuse_export_symlink(&record.temp)?;
     if let Ok(metadata) = std::fs::symlink_metadata(&record.temp) {
         if !metadata.is_file() {
-            return Err("Export recovery record does not name a regular temporary file".into());
+            return Err(ExportFileError::RecordNotARegularFile);
         }
     }
     Ok(())
@@ -1011,7 +1032,7 @@ fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
 fn verified_export_temp(
     record: &ExportTempRecord,
     retained: Option<&std::fs::File>,
-) -> Result<Option<std::fs::File>, String> {
+) -> Result<Option<std::fs::File>, ExportFileError> {
     validate_export_temp(record)?;
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -1028,39 +1049,40 @@ fn verified_export_temp(
     let file = match options.open(&record.temp) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("Cannot inspect export temporary file: {error}")),
+        Err(error) => return Err(ExportFileError::TemporaryFileUninspectable(error)),
     };
     let expected = record
         .identity
         .as_ref()
-        .ok_or("Export temporary file has no recorded identity")?;
+        .ok_or(ExportFileError::NoRecordedIdentity)?;
     let actual = export_file_identity(&file)?;
     if actual.object != expected.object {
-        return Err("Export temporary file identity changed".into());
+        return Err(ExportFileError::TemporaryIdentityChanged);
     }
     if let Some(retained) = retained {
         if export_file_identity(retained)?.object != expected.object {
-            return Err("Retained export file identity changed".into());
+            return Err(ExportFileError::RetainedIdentityChanged);
         }
     } else if expected.created.is_none() || actual.created != expected.created {
-        return Err("Cannot prove export temporary file identity after restart".into());
+        return Err(ExportFileError::IdentityUnprovenAfterRestart);
     }
     Ok(Some(file))
 }
 
 #[cfg(any(feature = "napi-addon", test))]
 impl ExportFileRegistry {
-    pub(crate) fn open(directory: &Path) -> Result<Self, String> {
+    pub(crate) fn open(directory: &Path) -> Result<Self, ExportFileError> {
         use std::io::Read;
         refuse_export_symlink(directory)?;
-        create_private_state_directory(directory)
-            .map_err(|e| format!("Cannot create export state: {e}"))?;
-        let directory = directory.canonicalize().map_err(|e| e.to_string())?;
+        create_private_state_directory(directory).map_err(ExportFileError::StateUncreatable)?;
+        let directory = directory
+            .canonicalize()
+            .map_err(ExportFileError::StateDirectoryUnresolvable)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
-                .map_err(|e| e.to_string())?;
+                .map_err(ExportFileError::StatePermissionsUnset)?;
         }
         let lock_path = directory.join("export-files.lock");
         refuse_export_symlink(&lock_path)?;
@@ -1070,7 +1092,7 @@ impl ExportFileRegistry {
             .create(true)
             .truncate(false)
             .open(&lock_path)
-            .map_err(|e| format!("Cannot open export state lock: {e}"))?;
+            .map_err(ExportFileError::LockUnopenable)?;
         let lock = ExportFileLock::acquire(lock)?;
         let key_path = directory.join("export-files.key");
         refuse_export_symlink(&key_path)?;
@@ -1085,17 +1107,24 @@ impl ExportFileRegistry {
                 key[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
                 file.write_all(&key)
                     .and_then(|_| file.sync_all())
-                    .map_err(|e| e.to_string())?;
+                    .map_err(ExportFileError::KeyUnwritable)?;
                 sync_parent_directory_best_effort(&key_path);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                let mut file = std::fs::File::open(&key_path).map_err(|e| e.to_string())?;
-                if file.metadata().map_err(|e| e.to_string())?.len() != 32 {
-                    return Err("Invalid export authentication key".into());
+                let mut file =
+                    std::fs::File::open(&key_path).map_err(ExportFileError::KeyUnreadable)?;
+                if file
+                    .metadata()
+                    .map_err(ExportFileError::KeyUnreadable)?
+                    .len()
+                    != 32
+                {
+                    return Err(ExportFileError::InvalidKey);
                 }
-                file.read_exact(&mut key).map_err(|e| e.to_string())?;
+                file.read_exact(&mut key)
+                    .map_err(ExportFileError::KeyUnreadable)?;
             }
-            Err(error) => return Err(format!("Cannot create export authentication key: {error}")),
+            Err(error) => return Err(ExportFileError::KeyUncreatable(error)),
         }
         let manifest_path = directory.join("export-files.json");
         refuse_export_symlink(&manifest_path)?;
@@ -1107,12 +1136,18 @@ impl ExportFileRegistry {
             transactions: std::collections::BTreeMap::new(),
         };
         if registry.manifest_path.exists() {
-            let file = std::fs::File::open(&registry.manifest_path).map_err(|e| e.to_string())?;
-            if file.metadata().map_err(|e| e.to_string())?.len() > MAX_EXPORT_MANIFEST_BYTES {
-                return Err("Export recovery manifest is too large".into());
+            let file = std::fs::File::open(&registry.manifest_path)
+                .map_err(ExportFileError::ManifestUnreadable)?;
+            if file
+                .metadata()
+                .map_err(ExportFileError::ManifestUnreadable)?
+                .len()
+                > MAX_EXPORT_MANIFEST_BYTES
+            {
+                return Err(ExportFileError::ManifestTooLarge);
             }
-            let manifest: ExportManifest = serde_json::from_reader(file)
-                .map_err(|e| format!("Invalid export recovery manifest: {e}"))?;
+            let manifest: ExportManifest =
+                serde_json::from_reader(file).map_err(ExportFileError::InvalidManifest)?;
             let expected = export_manifest_mac(&registry.key, manifest.version, &manifest.records)?;
             if ![1, EXPORT_MANIFEST_VERSION].contains(&manifest.version)
                 || manifest.authentication.len() != expected.len()
@@ -1123,13 +1158,10 @@ impl ExportFileRegistry {
                     .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
                     != 0
             {
-                return Err("Unauthenticated export recovery manifest".into());
+                return Err(ExportFileError::UnauthenticatedManifest);
             }
             if manifest.version == 1 && !manifest.records.is_empty() {
-                return Err(
-                    "Legacy export recovery has no created-file identity; entries were preserved"
-                        .into(),
-                );
+                return Err(ExportFileError::LegacyManifest);
             }
             // Prove the entire document before deleting anything, retaining each proven object.
             let verified: Vec<_> = manifest
@@ -1142,9 +1174,7 @@ impl ExportFileRegistry {
                 match std::fs::remove_file(&record.temp) {
                     Ok(()) => sync_parent_directory_best_effort(&record.temp),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        return Err(format!("Cannot recover export temporary file: {error}"))
-                    }
+                    Err(error) => return Err(ExportFileError::RecoveryUnremovable(error)),
                 }
             }
         }
@@ -1153,7 +1183,7 @@ impl ExportFileRegistry {
         Ok(registry)
     }
 
-    fn persist(&self) -> Result<(), String> {
+    fn persist(&self) -> Result<(), ExportFileError> {
         let records: Vec<_> = self
             .transactions
             .values()
@@ -1164,14 +1194,19 @@ impl ExportFileRegistry {
             authentication: export_manifest_mac(&self.key, EXPORT_MANIFEST_VERSION, &records)?,
             records,
         };
-        let bytes = serde_json::to_vec(&manifest).map_err(|e| e.to_string())?;
+        let bytes =
+            serde_json::to_vec(&manifest).map_err(ExportFileError::ManifestUnserializable)?;
         if bytes.len() as u64 > MAX_EXPORT_MANIFEST_BYTES {
-            return Err("Export recovery manifest is too large".into());
+            return Err(ExportFileError::ManifestTooLarge);
         }
-        write_bytes_atomically(&self.manifest_path, &bytes)
+        Ok(write_bytes_atomically(&self.manifest_path, &bytes)?)
     }
 
-    pub(crate) fn begin(&mut self, path: String, generation: u64) -> Result<String, String> {
+    pub(crate) fn begin(
+        &mut self,
+        path: String,
+        generation: u64,
+    ) -> Result<String, ExportFileError> {
         let target = resolve_writable_file_path(&path)?;
         ensure_parent_directory(&target)?;
         // Resolve again after directory creation; every stored parent is canonical and already exists.
@@ -1181,12 +1216,12 @@ impl ExportFileRegistry {
             .values()
             .any(|entry| entry.record.target == target)
         {
-            return Err("Export target is already staged".into());
+            return Err(ExportFileError::AlreadyStaged);
         }
         let name = target
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or("Invalid export target name")?;
+            .ok_or(ExportFileError::InvalidTargetName)?;
         let token = uuid::Uuid::new_v4().to_string();
         let temp = target.with_file_name(format!(".{name}.sourdaw-export-{token}.tmp"));
         let record = ExportTempRecord {
@@ -1221,7 +1256,7 @@ impl ExportFileRegistry {
                 let transaction = self
                     .transactions
                     .get_mut(&key)
-                    .ok_or("Unknown export transaction")?;
+                    .ok_or(ExportFileError::UnknownTransaction)?;
                 transaction.record.identity = Some(identity);
                 transaction.file = Some(file);
                 self.persist()?;
@@ -1230,7 +1265,7 @@ impl ExportFileRegistry {
             Err(error) => {
                 self.transactions.remove(&key);
                 self.persist()?;
-                Err(format!("Cannot create export temporary file: {error}"))
+                Err(ExportFileError::TemporaryFileUncreatable(error))
             }
         }
     }
@@ -1239,13 +1274,13 @@ impl ExportFileRegistry {
         &mut self,
         token: &str,
         generation: u64,
-    ) -> Result<&mut ExportFileTransaction, String> {
+    ) -> Result<&mut ExportFileTransaction, ExportFileError> {
         let transaction = self
             .transactions
             .get_mut(token)
-            .ok_or("Unknown export transaction")?;
+            .ok_or(ExportFileError::UnknownTransaction)?;
         if transaction.generation != generation {
-            return Err("Stale export transaction".into());
+            return Err(ExportFileError::StaleTransaction);
         }
         Ok(transaction)
     }
@@ -1255,73 +1290,77 @@ impl ExportFileRegistry {
         token: &str,
         data: &[u8],
         generation: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), ExportFileError> {
         if data.len() > MAX_EXPORT_CHUNK_BYTES {
-            return Err("Export chunk exceeds 1 MiB".into());
+            return Err(ExportFileError::ChunkTooLarge);
         }
         let transaction = self.transaction(token, generation)?;
         if transaction.sealed {
-            return Err("Export transaction is already sealed".into());
+            return Err(ExportFileError::AlreadySealed);
         }
         transaction
             .file
             .as_mut()
-            .ok_or("Export transaction has no writable file")?
+            .ok_or(ExportFileError::NoWritableFile)?
             .write_all(data)
-            .map_err(|e| format!("Cannot append export file: {e}"))
+            .map_err(ExportFileError::AppendFailed)
     }
 
-    pub(crate) fn seal(&mut self, token: &str, generation: u64) -> Result<(), String> {
+    pub(crate) fn seal(&mut self, token: &str, generation: u64) -> Result<(), ExportFileError> {
         let transaction = self.transaction(token, generation)?;
         if transaction.sealed {
-            return Err("Export transaction is already sealed".into());
+            return Err(ExportFileError::AlreadySealed);
         }
         let file = transaction
             .file
             .as_ref()
-            .ok_or("Export transaction has no writable file")?;
+            .ok_or(ExportFileError::NoWritableFile)?;
         let _verified = verified_export_temp(&transaction.record, Some(file))?
-            .ok_or("Export temporary file is missing")?;
-        file.sync_all()
-            .map_err(|e| format!("Cannot seal export file: {e}"))?;
+            .ok_or(ExportFileError::TemporaryFileMissing)?;
+        file.sync_all().map_err(ExportFileError::SealFailed)?;
         // Keep the created object alive through commit/abort, including after unlink on Unix.
         // Rust's default Windows sharing permits delete/rename while this handle remains open.
         transaction.sealed = true;
         Ok(())
     }
 
-    pub(crate) fn commit(&mut self, tokens: &[String], generation: u64) -> Result<(), String> {
+    pub(crate) fn commit(
+        &mut self,
+        tokens: &[String],
+        generation: u64,
+    ) -> Result<(), ExportFileError> {
         let unique: std::collections::BTreeSet<_> = tokens.iter().collect();
         if tokens.is_empty() || unique.len() != tokens.len() {
-            return Err("Invalid export commit batch".into());
+            return Err(ExportFileError::InvalidCommitBatch);
         }
         for token in tokens {
             let transaction = self.transaction(token, generation)?;
             if !transaction.sealed {
-                return Err("Export transaction is not sealed".into());
+                return Err(ExportFileError::NotSealed);
             }
             let _verified = verified_export_temp(&transaction.record, transaction.file.as_ref())?
-                .ok_or("Export temporary file is missing")?;
+                .ok_or(ExportFileError::TemporaryFileMissing)?;
             let target = &transaction.record.target;
-            if resolve_writable_file_path(target.to_str().ok_or("Invalid export path")?)? != *target
+            if resolve_writable_file_path(target.to_str().ok_or(ExportFileError::InvalidPath)?)?
+                != *target
             {
-                return Err("Export target identity changed".into());
+                return Err(ExportFileError::TargetIdentityChanged);
             }
         }
         // Each rename is atomic. Several destinations cannot be one filesystem transaction.
         for token in tokens {
             let record = self.transaction(token, generation)?.record.clone();
             // Recheck authority immediately before this particular irreversible rename.
-            if resolve_writable_file_path(record.target.to_str().ok_or("Invalid export path")?)?
-                != record.target
+            if resolve_writable_file_path(
+                record.target.to_str().ok_or(ExportFileError::InvalidPath)?,
+            )? != record.target
             {
-                return Err("Export target identity changed".into());
+                return Err(ExportFileError::TargetIdentityChanged);
             }
             let transaction = self.transaction(token, generation)?;
             let _verified = verified_export_temp(&record, transaction.file.as_ref())?
-                .ok_or("Export temporary file is missing")?;
-            std::fs::rename(&record.temp, &record.target)
-                .map_err(|e| format!("Cannot commit export file: {e}"))?;
+                .ok_or(ExportFileError::TemporaryFileMissing)?;
+            std::fs::rename(&record.temp, &record.target).map_err(ExportFileError::CommitFailed)?;
             sync_parent_directory_best_effort(&record.target);
             self.transactions.remove(token);
             self.persist()?;
@@ -1329,7 +1368,7 @@ impl ExportFileRegistry {
         Ok(())
     }
 
-    pub(crate) fn abort(&mut self, tokens: &[String]) -> Result<(), String> {
+    pub(crate) fn abort(&mut self, tokens: &[String]) -> Result<(), ExportFileError> {
         let mut errors = Vec::new();
         for token in tokens {
             let Some(transaction) = self.transactions.get(token) else {
@@ -1351,18 +1390,18 @@ impl ExportFileRegistry {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     self.transactions.remove(token);
                 }
-                Err(error) => errors.push(format!("Cannot abort export temporary file: {error}")),
+                Err(error) => errors.push(ExportFileError::AbortUnremovable(error)),
             }
         }
         self.persist()?;
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("; "))
+            Err(ExportFileError::Aborted(errors))
         }
     }
 
-    pub(crate) fn abort_all(&mut self) -> Result<(), String> {
+    pub(crate) fn abort_all(&mut self) -> Result<(), ExportFileError> {
         let tokens: Vec<_> = self.transactions.keys().cloned().collect();
         self.abort(&tokens)
     }
@@ -1616,7 +1655,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.unwrap_err().to_string(),
             "Renderer path must not contain parent-directory traversal"
         );
     }
@@ -1628,7 +1667,7 @@ mod tests {
         let result = resolve_renderer_path(&path);
 
         assert_eq!(
-            result.unwrap_err(),
+            result.unwrap_err().to_string(),
             "Native file path exceeds 4096-byte IPC limit"
         );
     }
@@ -1638,7 +1677,7 @@ mod tests {
         let result = ensure_file_ipc_size(1_073_741_825, "read_file_bytes");
 
         assert_eq!(
-            result.unwrap_err(),
+            result.unwrap_err().to_string(),
             "read_file_bytes payload exceeds 1073741824-byte IPC limit"
         );
     }
@@ -1650,7 +1689,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.unwrap_err().to_string(),
             "Path is outside allowed native file roots"
         );
     }
@@ -1674,7 +1713,7 @@ mod tests {
     }
 
     fn writable(path: &Path) -> Result<PathBuf, String> {
-        resolve_writable_file_path(&path.to_string_lossy())
+        resolve_writable_file_path(&path.to_string_lossy()).map_err(|e| e.to_string())
     }
 
     /// The reproduction on #3313: a renderer that named a path in the user's
@@ -2207,7 +2246,9 @@ mod tests {
             "a save target that does not exist yet still resolves through its parent"
         );
         assert_eq!(
-            grant_registry::resolve_grant_target(Path::new("relative/pick.wav")).unwrap_err(),
+            grant_registry::resolve_grant_target(Path::new("relative/pick.wav"))
+                .unwrap_err()
+                .to_string(),
             "Granted path must be absolute"
         );
     }
@@ -2269,7 +2310,8 @@ mod tests {
         })
         .unwrap_err();
 
-        assert_eq!(error, "injected write failure");
+        assert!(matches!(error, AtomicWriteError::Write(_)));
+        assert_eq!(error.to_string(), "injected write failure");
         assert_eq!(
             std::fs::read(&destination).unwrap(),
             b"previous complete render",
@@ -2296,7 +2338,8 @@ mod tests {
         })
         .unwrap_err();
 
-        assert_eq!(error, "injected write failure");
+        assert!(matches!(error, AtomicWriteError::Write(_)));
+        assert_eq!(error.to_string(), "injected write failure");
         assert!(
             !destination.exists(),
             "a failed replace must not leave a file at the destination"
@@ -2401,20 +2444,24 @@ mod tests {
         assert!(registry
             .append(&token, b"bad generation", 8)
             .unwrap_err()
+            .to_string()
             .contains("Stale"));
         assert!(registry
             .append("unknown", b"bytes", 7)
             .unwrap_err()
+            .to_string()
             .contains("Unknown"));
         assert!(registry
             .append(&token, &vec![0; MAX_EXPORT_CHUNK_BYTES + 1], 7)
             .unwrap_err()
+            .to_string()
             .contains("1 MiB"));
         registry.append(&token, b"new ", 7).unwrap();
         registry.append(&token, b"audio", 7).unwrap();
         assert!(registry
             .commit(std::slice::from_ref(&token), 7)
             .unwrap_err()
+            .to_string()
             .contains("not sealed"));
         registry.seal(&token, 7).unwrap();
         assert!(registry.append(&token, b"late", 7).is_err());
@@ -2463,7 +2510,9 @@ mod tests {
                                 temp.to_string_lossy().into_owned(),
                                 unrelated.to_vec(),
                             )),
-                            "atomic" => write_bytes_atomically(&temp, unrelated),
+                            "atomic" => {
+                                write_bytes_atomically(&temp, unrelated).map_err(|e| e.to_string())
+                            }
                             "wav" => write_wav_atomically(
                                 &temp,
                                 WavSpec {
@@ -2473,7 +2522,8 @@ mod tests {
                                     sample_format: hound::SampleFormat::Int,
                                 },
                                 |writer| writer.write_sample(123_i16).map_err(|e| e.to_string()),
-                            ),
+                            )
+                            .map_err(|e| e.to_string()),
                             "transaction" => {
                                 let mut other =
                                     ExportFileRegistry::open(&dir.path("other-private")).unwrap();
@@ -2484,6 +2534,7 @@ mod tests {
                                         other.seal(&other_token, 1)?;
                                         other.commit(&[other_token], 1)
                                     })
+                                    .map_err(|e| e.to_string())
                             }
                             _ => unreachable!(),
                         };
@@ -2604,12 +2655,14 @@ mod tests {
                 assert!(registry
                     .seal(&token, 1)
                     .unwrap_err()
+                    .to_string()
                     .contains("identity changed"));
             }
             assert!(registry.commit(std::slice::from_ref(&token), 1).is_err());
             assert!(registry
                 .abort(std::slice::from_ref(&token))
                 .unwrap_err()
+                .to_string()
                 .contains("identity changed"));
             assert_eq!(std::fs::read(&target).unwrap(), b"original export");
             assert_eq!(std::fs::read(&temp).unwrap(), b"unrelated replacement");
@@ -2641,7 +2694,11 @@ mod tests {
             }
             std::fs::remove_file(&registry.transactions[&token].record.temp).unwrap();
             if !sealed {
-                assert!(registry.seal(&token, 1).unwrap_err().contains("missing"));
+                assert!(registry
+                    .seal(&token, 1)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("missing"));
             }
             assert!(registry.commit(std::slice::from_ref(&token), 1).is_err());
             registry.abort(std::slice::from_ref(&token)).unwrap();
@@ -2711,10 +2768,12 @@ mod tests {
         assert!(registry
             .commit(std::slice::from_ref(&token), 1)
             .unwrap_err()
+            .to_string()
             .contains("symlink"));
         assert!(registry
             .abort(std::slice::from_ref(&token))
             .unwrap_err()
+            .to_string()
             .contains("symlink"));
         drop(registry);
         assert!(std::fs::symlink_metadata(temp)
@@ -2764,7 +2823,7 @@ mod tests {
                 assert_eq!(migrated.version, EXPORT_MANIFEST_VERSION);
                 assert!(ExportFileRegistry::open(&private).is_ok());
             } else {
-                assert!(result.err().unwrap().contains("Legacy"));
+                assert!(result.err().unwrap().to_string().contains("Legacy"));
                 assert_eq!(std::fs::read(path).unwrap(), bytes);
             }
             assert_eq!(std::fs::read(target).unwrap(), b"original export");
@@ -2858,6 +2917,7 @@ mod tests {
             assert!(registry
                 .commit(std::slice::from_ref(&token), 3)
                 .unwrap_err()
+                .to_string()
                 .contains("outside allowed"));
             assert!(registry
                 .begin(
@@ -2881,7 +2941,7 @@ mod tests {
         first.append(&token, b"live instance", 1).unwrap();
         let temp = first.transactions[&token].record.temp.clone();
         let error = ExportFileRegistry::open(&private).err().unwrap();
-        assert!(error.contains("another live native host"));
+        assert!(error.to_string().contains("another live native host"));
         assert_eq!(std::fs::read(temp).unwrap(), b"live instance");
         first.abort_all().unwrap();
     }
@@ -2908,7 +2968,7 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"original export");
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert_eq!(
-            error,
+            error.to_string(),
             "Streaming export is owned by another live native host"
         );
 
@@ -2935,7 +2995,7 @@ mod tests {
         assert!(!temp.exists());
         assert_eq!(std::fs::read(&path).unwrap(), disposed_bytes);
         assert_eq!(
-            error,
+            error.to_string(),
             "Streaming export is owned by another live native host"
         );
         drop(successor);
@@ -2965,7 +3025,7 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"original export");
         assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
         assert_eq!(
-            error,
+            error.to_string(),
             "Streaming export is owned by another live native host"
         );
 
@@ -2991,7 +3051,7 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"original export");
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert_eq!(
-            error,
+            error.to_string(),
             "Cannot prove export temporary file identity after restart"
         );
         drop(carrier);
@@ -3023,7 +3083,8 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"original export");
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert_eq!(std::fs::read(&key_path).unwrap(), key[..31]);
-        assert_eq!(error, "Invalid export authentication key");
+        assert!(matches!(error, ExportFileError::InvalidKey));
+        assert_eq!(error.to_string(), "Invalid export authentication key");
 
         std::fs::write(&key_path, &key).unwrap();
         let recovered = ExportFileRegistry::open(&private).unwrap();
@@ -3065,7 +3126,7 @@ mod tests {
         let manifest = private.join("export-files.json");
         std::fs::write(&manifest, &forged).unwrap();
         let error = ExportFileRegistry::open(&private).err().unwrap();
-        assert!(error.contains("Unauthenticated"), "{error}");
+        assert!(error.to_string().contains("Unauthenticated"), "{error}");
         assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
         assert_eq!(std::fs::read(&manifest).unwrap(), forged);
     }
@@ -3194,7 +3255,7 @@ mod tests {
             let error = ExportFileRegistry::open(&dir.path("private"))
                 .err()
                 .unwrap();
-            assert!(error.contains("identity"), "{stage}: {error}");
+            assert!(error.to_string().contains("identity"), "{stage}: {error}");
             assert_eq!(std::fs::read(&target).unwrap(), b"original export");
             assert_eq!(std::fs::read(temp).unwrap(), staged);
             assert_eq!(std::fs::read(path).unwrap(), bytes);
@@ -3233,7 +3294,7 @@ mod tests {
         let path = private.join("export-files.json");
         std::fs::write(&path, &bytes).unwrap();
         let error = ExportFileRegistry::open(&private).err().unwrap();
-        assert!(error.contains("after restart"), "{error}");
+        assert!(error.to_string().contains("after restart"), "{error}");
         assert_eq!(std::fs::read(temp).unwrap(), b"intended export");
         assert_eq!(std::fs::read(target).unwrap(), b"original export");
         assert_eq!(std::fs::read(path).unwrap(), bytes);
@@ -3255,6 +3316,7 @@ mod tests {
         assert!(registry
             .append(&token, b"old renderer", state.session_generation())
             .unwrap_err()
+            .to_string()
             .contains("Stale"));
         registry.abort_all().unwrap();
         assert!(registry.transactions.is_empty());

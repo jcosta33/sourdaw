@@ -77,6 +77,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isDeviceCarriedByNativeSession: () => false,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         sendNativeLiveMidiControl: async () => true,
         sendNativeLiveMidiNote: async () => true,

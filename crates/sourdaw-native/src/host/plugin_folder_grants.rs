@@ -189,11 +189,13 @@ impl ForbiddenRoots {
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            app_storage_roots: built_in_roots()?
+            app_storage_roots: built_in_roots()
+                .map_err(|e| e.to_string())?
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            renderer_writable_grants: grant_registry::persisted_read_write_paths()?,
+            renderer_writable_grants: grant_registry::persisted_read_write_paths()
+                .map_err(|e| e.to_string())?,
         })
     }
 }
@@ -230,7 +232,9 @@ static WRITE_LOCK: Mutex<()> = Mutex::new(());
 /// grant or revoke is refused.
 #[cfg(not(test))]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    store_location_in(crate::commands::filesystem::private_state_directory())
+    store_location_in(
+        crate::commands::filesystem::private_state_directory().map_err(|e| e.to_string()),
+    )
 }
 
 /// The grant document inside the private state directory `private_state` names.
@@ -521,7 +525,7 @@ fn save_grants(location: &Path, grants: &[PathBuf]) -> Result<(), PluginFolderRe
         file.write_all(&bytes)
             .map_err(|error| format!("Failed to write the plugin folder grants: {error}"))
     })
-    .map_err(PluginFolderRefusal::StoreUnavailable)
+    .map_err(|error| PluginFolderRefusal::StoreUnavailable(error.to_string()))
 }
 
 #[cfg(test)]

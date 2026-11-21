@@ -20,13 +20,18 @@ import {
     isArrayLiteralExpression,
     isArrowFunction,
     isAsExpression,
+    isBinaryExpression,
     isBlock,
     isCallExpression,
     isComputedPropertyName,
     isConditionalExpression,
+    isElementAccessExpression,
+    isForInStatement,
+    isForOfStatement,
     isFunctionDeclaration,
     isFunctionExpression,
     isIdentifier,
+    isNoSubstitutionTemplateLiteral,
     isNonNullExpression,
     isObjectLiteralExpression,
     isParenthesizedExpression,
@@ -35,6 +40,8 @@ import {
     isReturnStatement,
     isSatisfiesExpression,
     isShorthandPropertyAssignment,
+    isSpreadAssignment,
+    isSpreadElement,
     isStringLiteral,
     isVariableDeclaration,
     isVariableDeclarationList,
@@ -1117,6 +1124,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: member assignment, measured 1 — `projected.devices = devices`
+        // in the prior-batch track projection (#7166 counts member writes).
+        'src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts': 1,
         // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
         'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
         // Count provenance: measured 3 — the restore and write projectors and the
@@ -1128,13 +1138,15 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/models/DeviceChainProjectors.ts': 6,
         // Count provenance: measured 3 — the empty working-owner parameter map,
         // plus the two snapshot projections of owner and source devices. These
-        // return values and never publish project state.
-        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 3,
+        // return values and never publish project state. Plus 1 member
+        // assignment (#7166): `target.owner.devices = …map(…)`.
+        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 4,
         'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
         // Count provenance: measured 2 — the `Owner` type's `devices` field and
         // the owner pushed from a track's devices, both moved unchanged out of
-        // DevicePatchWritePlan. Pure owner projection; nothing is published.
-        'src/modules/Arrangement/models/PlannedOwnerProjection.ts': 2,
+        // DevicePatchWritePlan, plus 1 member assignment (#7166):
+        // `owner.devices = devices`. Pure owner projection; nothing is published.
+        'src/modules/Arrangement/models/PlannedOwnerProjection.ts': 3,
         'src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts': 2,
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
@@ -1195,7 +1207,9 @@ const DEVICE_DATA_COUNTS = {
         // part of the owning store write.
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 2,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
-        'src/modules/Arrangement/stores/trackStore.ts': 2,
+        // Count provenance: 2 lexical device keys plus 1 member assignment (#7166),
+        // `target.devices = devices`.
+        'src/modules/Arrangement/stores/trackStore.ts': 3,
         // Snapshot capture reads serializable device topology for a later command.
         'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         // Count provenance: was 2, measured 1 — the second hit was the
@@ -1274,19 +1288,32 @@ const DEVICE_DATA_COUNTS = {
         // project identity, and read-only synth/drum-filtered Web Audio projection.
         'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 3,
         'src/modules/Project/stores/arrangementStore.ts': 3,
-        'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
+        // Count provenance: 4 lexical device keys plus 1 member assignment (#7166),
+        // `track.devices = preset.devices.map(…)`.
+        'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 5,
         // Count provenance: measured 7 in code — the `parameterValues:` patch
         // literals. A header-comment mention of `devices: []` on the child MIDI
-        // tracks no longer counts.
-        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 7,
+        // tracks no longer counts. Plus 12 member assignments (#7166): `.devices = …`
+        // on time, toasterFolder, child MIDI tracks, the five levain tracks,
+        // tGrandCrystal, tCrumbsHaze, tSpaceBus and tDelayBus.
+        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 19,
         // Immutable agent-facing project projection; it performs no write.
         'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
-        'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 1,
-        'src/modules/Project/useCases/projectTemplates/templateHelpers/attachSidechainCompressor.ts': 1,
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `track.devices = […]`.
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 2,
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `input.track.devices = …`.
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/attachSidechainCompressor.ts': 2,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts': 1,
-        'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
+        // Count provenance: member assignment, measured 1 — `track.devices = …map(buildDevice)` (#7166).
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/createAudioTrack.ts': 1,
+        // Count provenance: 1 lexical device key plus 1 member assignment (#7166), `bus.devices = …`.
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 2,
+        // Count provenance: member assignment, measured 1 — `track.devices = [instrument, …extras]` (#7166).
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/createInstrumentTrack.ts': 1,
+        // Count provenance: member assignment, measured 1 — `masterTrack.devices = …` (#7166).
+        'src/modules/Project/useCases/projectTemplates/templateHelpers/setMasterChain.ts': 1,
     },
     static: {
         // Count provenance: measured 1 — the `expectedBefore.devices` guard type on
@@ -1949,6 +1976,73 @@ function codeMayContainDeviceDataAstWrites(code: string): boolean {
     return code.includes('updateTrack') || code.includes('trackStore');
 }
 
+function isAssignmentOperator(kind: SyntaxKind): boolean {
+    return kind >= SyntaxKind.FirstAssignment && kind <= SyntaxKind.LastAssignment;
+}
+
+// A member target writes a device-data property when it is `x.devices`,
+// `x['devices']`, or a destructuring pattern whose targets include one. A
+// nested `a = b` default is its own assignment, counted when the walk reaches it.
+function collectDeviceDataTargets(target: Expression, writes: Set<Node>): void {
+    const expression = unwrapStateExpression(target);
+    if (isPropertyAccessExpression(expression)) {
+        if (DEVICE_DATA_PROPERTIES.has(expression.name.text)) {
+            writes.add(expression);
+        }
+        return;
+    }
+    if (isElementAccessExpression(expression)) {
+        const argument = expression.argumentExpression;
+        if (
+            (isStringLiteral(argument) || isNoSubstitutionTemplateLiteral(argument)) &&
+            DEVICE_DATA_PROPERTIES.has(argument.text)
+        ) {
+            writes.add(expression);
+        }
+        return;
+    }
+    if (isArrayLiteralExpression(expression)) {
+        for (const element of expression.elements) {
+            collectDeviceDataTargets(isSpreadElement(element) ? element.expression : element, writes);
+        }
+        return;
+    }
+    if (isObjectLiteralExpression(expression)) {
+        for (const property of expression.properties) {
+            if (isPropertyAssignment(property)) {
+                collectDeviceDataTargets(property.initializer, writes);
+            } else if (isSpreadAssignment(property)) {
+                collectDeviceDataTargets(property.expression, writes);
+            }
+        }
+    }
+}
+
+function countDeviceDataMemberAssignments(file: SourceText): number {
+    const sourceFile = createSourceFile(
+        file.path,
+        file.source,
+        ScriptTarget.Latest,
+        true,
+        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    const writes = new Set<Node>();
+    const visit = (node: Node): void => {
+        if (isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
+            collectDeviceDataTargets(node.left, writes);
+        } else if ((isForOfStatement(node) || isForInStatement(node)) && !isVariableDeclarationList(node.initializer)) {
+            collectDeviceDataTargets(node.initializer, writes);
+        }
+        forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return writes.size;
+}
+
+function codeMayContainDeviceDataMemberAssignments(code: string): boolean {
+    return code.includes('devices') || code.includes('parameterValues');
+}
+
 const DEVICE_DATA_COLON_PATTERN = /\b(?:parameterValues|devices)\s*:/g;
 
 function conditionalColonOffsets(file: ProductionSource): ReadonlySet<number> {
@@ -1991,6 +2085,12 @@ function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByP
                 delete result[file.path];
             } else {
                 result[file.path] = remaining;
+            }
+        }
+        if (codeMayContainDeviceDataMemberAssignments(file.code)) {
+            const memberWrites = countDeviceDataMemberAssignments({ path: file.path, source: file.code });
+            if (memberWrites > 0) {
+                result[file.path] = (result[file.path] ?? 0) + memberWrites;
             }
         }
         if (!codeMayContainDeviceDataAstWrites(file.code)) {
@@ -2295,6 +2395,60 @@ describe('device write boundary closure', () => {
     ])('keeps real device-data colons in the lexical census: %s', (source, expected) => {
         const path = 'src/modules/Arrangement/propertyDeviceData.ts';
         expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBe(expected);
+    });
+
+    it.each([
+        ['track.devices = [];', 1],
+        ['device.parameterValues = {};', 1],
+        ['track.devices ??= [];', 1],
+        ['track.devices ||= [];', 1],
+        ['track.parameterValues &&= {};', 1],
+        ['track.devices += [];', 1],
+        ['track.parameterValues ^= 1;', 1],
+        ['device.parameterValues -= 1;', 1],
+        ["track['devices'] = [];", 1],
+        ['track[`parameterValues`] = {};', 1],
+        ['(track as Track).devices = [];', 1],
+        ['(track.devices) = [];', 1],
+        ['(track.devices as Device[]) = [];', 1],
+        ['track.devices! = [];', 1],
+        ['(track.parameterValues satisfies object) = {};', 1],
+        ['[track.devices] = [[]];', 1],
+        ['[...track.devices] = [];', 1],
+        ['({ chain: track.devices } = source);', 1],
+        ['({ chain: track.parameterValues = {} } = source);', 1],
+        ['({ ...track.devices } = source);', 1],
+        ['for (track.devices of chains) { void 0; }', 1],
+        ['for (track.devices in chains) { void 0; }', 1],
+        ['track.devices = []; device.parameterValues = {};', 2],
+    ])('counts a device-data member assignment: %s', (source, expected) => {
+        const file = { path: 'src/modules/Arrangement/memberWrite.ts', source };
+        expect(countDeviceDataMemberAssignments(file)).toBe(expected);
+        const counts = countDeviceDataByPath([productionSource(file.path, source)]);
+        expect(counts[file.path]).toBe(expected);
+    });
+
+    it('adds member assignments to the lexical device-data count of the same file', () => {
+        const path = 'src/modules/Arrangement/memberAndLexical.ts';
+        const source = 'const seed = { devices: [] }; track.devices = [];';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBe(2);
+    });
+
+    it.each([
+        'const chain = track.devices;',
+        'const { devices, parameterValues } = track;',
+        'track.name = "x";',
+        'track.devices.push(device);',
+        'track.devices[0] = device;',
+        'track.devices.length += 1;',
+        "track['name'] = 'devices';",
+        'const same = track.devices === other.devices;',
+        '({ chain: track.name } = source);',
+        '({ chain: track.devices || [] } = source);',
+        'for (const devices of chains) { void devices; }',
+        'for (const parameterValues in chains) { void parameterValues; }',
+    ])('does not count a read or unrelated assignment as a member write: %s', (source) => {
+        expect(countDeviceDataMemberAssignments({ path: 'src/modules/Arrangement/readOnly.ts', source })).toBe(0);
     });
 
     it('does not classify read-only destructuring or projection as a shorthand write', () => {

@@ -184,14 +184,12 @@ describe('offline context preparation census', () => {
                 },
             },
         } as unknown as OfflineAudioContext;
-        const compressor = { id: 'sc-1', type: 'builtin-sidechain-compressor' };
 
         await prepareOfflineContext({
             offlineCtx,
             tracks: OUT_OF_BAND_OFFLINE_MODULE_DEVICE_TYPES.map((type) => ({
                 devices: [{ type, bypassed: false }],
             })),
-            sidechainTargetDevices: new Set([compressor]),
         });
 
         // One module per declared type. Deleting a prepare from
@@ -210,14 +208,18 @@ describe('offline context preparation census', () => {
 
         await prepareOfflineContext({
             offlineCtx,
-            tracks: [{ devices: [{ type: 'builtin-bitcrusher', bypassed: false }] }],
-            sidechainTargetDevices: new Set([{ id: 'sc-1' }]),
+            tracks: [
+                {
+                    devices: [
+                        { type: 'builtin-sidechain-compressor', bypassed: false },
+                        { type: 'builtin-bitcrusher', bypassed: false },
+                    ],
+                },
+            ],
             onWarning,
         });
 
-        // Both degrade paths report. Before AC-1 the freeze path had no
-        // `prepared` record at all, so `createSidechainCompressorFallback` had
-        // no `onWarning` to reach and the substitution was invisible.
+        // Both degrade paths report, so the substitution is never invisible.
         expect(onWarning.mock.calls.map((call) => String(call[0]))).toEqual([
             expect.stringContaining('Sidechain processor unavailable'),
             expect.stringContaining('Bitcrusher rate reduction unavailable'),
@@ -238,7 +240,6 @@ describe('offline context preparation census', () => {
         await prepareOfflineContext({
             offlineCtx,
             tracks: [{ devices: [{ type: 'builtin-gain', bypassed: false }] }],
-            sidechainTargetDevices: new Set(),
         });
 
         expect(registered).toEqual([]);
@@ -258,9 +259,32 @@ describe('offline context preparation census', () => {
         await prepareOfflineContext({
             offlineCtx,
             tracks: [{ devices: [{ type: 'builtin-bitcrusher', bypassed: true }] }],
-            sidechainTargetDevices: new Set(),
         });
 
         expect(registered).toEqual([]);
+    });
+
+    it('registers the sidechain module for an unkeyed compressor and skips a bypassed one', async () => {
+        const registered: string[] = [];
+        const offlineCtx = {
+            audioWorklet: {
+                addModule: (specifier: string) => {
+                    registered.push(specifier);
+                    return Promise.resolve();
+                },
+            },
+        } as unknown as OfflineAudioContext;
+
+        await prepareOfflineContext({
+            offlineCtx,
+            tracks: [{ devices: [{ type: 'builtin-sidechain-compressor', bypassed: true }] }],
+        });
+        expect(registered).toEqual([]);
+
+        await prepareOfflineContext({
+            offlineCtx,
+            tracks: [{ devices: [{ type: 'builtin-sidechain-compressor', bypassed: false }] }],
+        });
+        expect(registered).toEqual(['/audio/worklets/sidechain-compressor-processor.js']);
     });
 });

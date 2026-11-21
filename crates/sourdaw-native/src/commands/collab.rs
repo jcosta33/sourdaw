@@ -58,10 +58,11 @@ pub fn collab_save_bundle(state: &CollabState, path: String) -> Result<bool, Str
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
     let bundle = store.save_all();
     let bundle_path = filesystem::require_extension(
-        filesystem::resolve_writable_file_path(&path)?,
+        filesystem::resolve_writable_file_path(&path).map_err(|e| e.to_string())?,
         "sdaw",
         "Collaboration bundle",
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     daw_collab::save_sdaw_bundle(&bundle, &bundle_path).map_err(|error| error.to_string())?;
     Ok(true)
 }
@@ -71,10 +72,11 @@ pub fn collab_load_bundle(
     path: String,
 ) -> Result<HashMap<String, Vec<u8>>, String> {
     let bundle_path = filesystem::require_extension(
-        filesystem::resolve_existing_file_path(&path)?,
+        filesystem::resolve_existing_file_path(&path).map_err(|e| e.to_string())?,
         "sdaw",
         "Collaboration bundle",
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     let bundle = daw_collab::load_sdaw_bundle(&bundle_path).map_err(|error| error.to_string())?;
     let store = DocumentStore::load_all(bundle.clone()).map_err(|error| error.to_string())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
@@ -98,10 +100,11 @@ pub fn collab_merge_bundle(
     path: String,
 ) -> Result<MergeResultResponse, String> {
     let bundle_path = filesystem::require_extension(
-        filesystem::resolve_existing_file_path(&path)?,
+        filesystem::resolve_existing_file_path(&path).map_err(|e| e.to_string())?,
         "sdaw",
         "Collaboration bundle",
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     let bundle = daw_collab::load_sdaw_bundle(&bundle_path).map_err(|error| error.to_string())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
