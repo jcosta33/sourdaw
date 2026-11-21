@@ -122,8 +122,11 @@ function joinedBy(joiningWords: string): string {
 export const AND_JOIN = joinedBy(words([AND]));
 /** The words joining list members: "the vocal and the drums", "louder or brighter". */
 export const LIST_JOINER = words([AND, OR]);
-/** A comma, "and" or "or" joining a later direction to the one before it: "brighter, wider, or louder". */
-const LIST_JOIN = joinedBy(LIST_JOINER);
+/**
+ * A comma, "and" or "or" joining a later direction or object to the one before it: "brighter, wider, or
+ * louder", "don't make the mix wider, or the vocal brighter".
+ */
+export const LIST_JOIN = joinedBy(LIST_JOINER);
 /** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
 export const TERM_JOIN = joinedBy(words([AND, BUT]));
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
@@ -167,8 +170,13 @@ const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintainin
 export const KEEP_VERBS = String.raw`(?:${KEEP}|${PRESERVING_VERB})`;
 export const LEAVE_VERB = words(['leave', 'leaving']);
 const STOPPING_WORD = words(['stop', 'stopping', 'prevent', 'preventing']);
+/**
+ * The intents a release may give a keep, stop or prevent up through: "stop caring about keeping …", "stop
+ * trying to keep …", "quit worrying about keeping …".
+ */
+const RELEASED_INTENT = words(['caring about', 'trying to', 'trying', 'bothering to', 'bothering', 'worrying about']);
 /** The verbs a "stop" gives up rather than prevents through: "stop keeping …", "stop worrying about …". */
-const RELEASED_VERB = String.raw`(?:${KEEP_VERBS}|${STOPPING_WORD}|${LEAVE_VERB}|${words(['worrying about', 'caring about', 'trying'])})`;
+const RELEASED_VERB = String.raw`(?:${KEEP_VERBS}|${STOPPING_WORD}|${LEAVE_VERB}|${RELEASED_INTENT})`;
 /**
  * A stop or prevent, never one releasing another keep or stop ("stop keeping the mix from getting
  * wider", "stop preventing …"), which the release reads instead.
@@ -340,9 +348,8 @@ const RELEASE_LEAD = words([
     'give up on',
     'no more',
     'done',
+    'done with',
     'finished',
-    'stop worrying about',
-    'quit worrying about',
     'no point',
     'no point in',
     'no need for',
@@ -366,7 +373,7 @@ const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER
  * ("don't stop keeping …", "you don't have to stop keeping …"). A negation governing an earlier verb
  * ("without changing the tempo keep the vocal bright") permits nothing.
  */
-export const NOT_PERMITTED = String.raw`(?<!${GOVERNING_NEGATION})(?<!(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}\s+)`;
+export const NOT_PERMITTED = String.raw`(?<!${GOVERNING_NEGATION})(?<!(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}(?:\s+${RELEASED_INTENT})?\s+)`;
 /**
  * The one leading words a move clause names its move through: "sound louder", "getting any wider",
  * "going brighter". The verb is never part of the object, so "sound louder" is a louder clause.

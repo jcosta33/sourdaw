@@ -1942,6 +1942,95 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             ],
             [],
         ],
+        // "or" joins a later object under the negation as "and" does, after a comma or alone
+        [
+            "don't make the mix wider, or the vocal brighter",
+            [
+                measured('stereo-width-not-widened-v1', "don't make the mix wider, or the vocal brighter", MIX),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the mix wider, or the vocal brighter",
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the mix wider or the vocal brighter",
+            [
+                measured('stereo-width-not-widened-v1', "don't make the mix wider or the vocal brighter", MIX),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the mix wider or the vocal brighter",
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
+        // every member of a longer list joins the same way, whichever joiner its comma carries
+        [
+            "don't make the vocal brighter, the drums brighter, or the mix wider",
+            [
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the vocal brighter, the drums brighter, or the mix wider",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the vocal brighter, the drums brighter, or the mix wider",
+                    onTracks('drums')
+                ),
+                measured(
+                    'stereo-width-not-widened-v1',
+                    "don't make the vocal brighter, the drums brighter, or the mix wider",
+                    MIX
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the vocal brighter, the drums brighter or the mix wider",
+            [
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the vocal brighter, the drums brighter or the mix wider",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the vocal brighter, the drums brighter or the mix wider",
+                    onTracks('drums')
+                ),
+                measured(
+                    'stereo-width-not-widened-v1',
+                    "don't make the vocal brighter, the drums brighter or the mix wider",
+                    MIX
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the mix wider, the vocal brighter, and the drums darker",
+            [
+                measured(
+                    'stereo-width-not-widened-v1',
+                    "don't make the mix wider, the vocal brighter, and the drums darker",
+                    MIX
+                ),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the mix wider, the vocal brighter, and the drums darker",
+                    onTracks('vocal')
+                ),
+                measured(
+                    'brightness-not-lowered-v1',
+                    "don't make the mix wider, the vocal brighter, and the drums darker",
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
         [
             "don't make the vocal louder and quieter",
             [measured('loudness-held-v1', "don't make the vocal louder and quieter", onTracks('vocal'))],
@@ -2443,6 +2532,22 @@ describe('reading only governed protections and whole object names', () => {
             [measured('loudness-held-v1', 'keeping the level of the mix', MIX)],
             [],
         ],
+        // a refused release through an intent restores the keep it names
+        [
+            "don't stop caring about keeping the mix from getting wider",
+            [measured('stereo-width-not-widened-v1', 'keeping the mix from getting wider', MIX)],
+            [],
+        ],
+        [
+            'never stop trying to keep the mix from getting wider',
+            [measured('stereo-width-not-widened-v1', 'keep the mix from getting wider', MIX)],
+            [],
+        ],
+        [
+            "don't stop caring about keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
         [
             'never stop preserving the bass dynamics',
             [measured('dynamics-held-v1', 'preserving the bass dynamics', onTracks('bass'))],
@@ -2677,6 +2782,14 @@ describe('reading only governed protections and whole object names', () => {
         'no more keeping the mix from getting wider',
         'I no longer care about keeping the mix from getting wider',
         'stop worrying about keeping the mix from getting wider',
+        // a release may give the keep up through the intent it was held with
+        'stop caring about keeping the mix from getting wider',
+        'stop trying to keep the mix from getting wider',
+        'give up trying to keep the vocal from getting brighter',
+        'I am done with keeping the mix from getting wider',
+        'stop bothering to keep the drums from getting louder',
+        'quit worrying about keeping the mix from getting wider',
+        'stop trying keeping the mix from getting wider',
         "don't worry about keeping the vocal from getting brighter",
         'no point in keeping the mix from getting wider',
         'no need for keeping the mix from getting wider',

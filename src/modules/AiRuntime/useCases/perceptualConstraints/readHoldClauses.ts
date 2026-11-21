@@ -12,6 +12,7 @@ import {
     IN_CLAUSE_CHARACTER,
     KEEP,
     KEEP_VERBS,
+    LIST_JOIN,
     LIST_JOINER,
     MASK_GLYPH,
     MODAL_NEGATION,
@@ -19,6 +20,7 @@ import {
     normalizeObjectName,
     NOT_PERMITTED,
     OBJECT_LIST,
+    OBJECT_MEMBERS,
     OBJECT_PREPOSITION,
     PURPOSE_HEAD,
     SCOPE_WORD,
@@ -27,6 +29,7 @@ import {
 } from './constraintClauseWords';
 import {
     APOSTROPHE,
+    DIRECTION,
     directionConstraintIds,
     FAMILY_IDS,
     HELD_NOUN_QUALIFIER,
@@ -75,10 +78,19 @@ const NOUN_IN_LIST = new RegExp(
     String.raw`(?:(?<pre>${PRE_LIST})\s+)?${QUALIFIED}(?<noun>${HOLD_NOUN_WORD})\b`,
     'dgiu'
 );
-const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
-/** A later object under the same negation, joined as every list is: "don't make the mix louder, and the vocal quieter". */
+/**
+ * Where a direction clause ends: at a clause end, or where a later object with its own direction joins
+ * it, so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
+ * running on inside the clause.
+ */
+const DIRECTION_CLAUSE_END = String.raw`(?:${CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION}))`;
+const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${DIRECTION_CLAUSE_END}`;
+/**
+ * A later object under the same negation, joined as every list is: "don't make the mix louder, and the
+ * vocal quieter", "don't make the mix wider, or the vocal brighter".
+ */
 const DIRECTION_CONTINUATION = new RegExp(
-    String.raw`${AND_JOIN}(?!${ANY}\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
+    String.raw`${LIST_JOIN}(?!${ANY}\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
     'dyiu'
 );
 /**
