@@ -3431,7 +3431,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Transient passes, body compresses” describes “punchy” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The source still has its transients; a pre-limited loop has nothing left to let through.”. Contraindications: “Skip when a fast peak limiter already sits ahead of this point.”; “Skip on brushed or very soft playing, where the body is all there is.”. Authored parameter windows: “Threshold” -20–-12 “dB”; “Ratio” 3–5 “:1”; “Attack” 20–30 “ms”; “Release” 60–120 “ms”; “Makeup” 3–6 “dB”. Choose Propose this to prepare it for “Snare” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Transient passes, body compresses” describes “punchy” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The source still has its transients; a pre-limited loop has nothing left to let through.”. Contraindications: “Skip when a fast peak limiter already sits ahead of this point.”; “Skip on brushed or very soft playing, where the body is all there is.”. Authored parameter windows: “Auto Makeup” on; “Threshold” -20–-12 “dB”; “Ratio” 3–5 “:1”; “Attack” 20–30 “ms”; “Release” 60–120 “ms”; “Makeup” 3–6 “dB”. Choose Propose this to prepare it for “Snare” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "drums-punchy",
                     "targetName": "Snare"

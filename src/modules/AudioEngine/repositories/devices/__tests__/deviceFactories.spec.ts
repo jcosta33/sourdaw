@@ -34,7 +34,9 @@ describe('deviceFactories', () => {
 
         expect(ctx.createDynamicsCompressor).toHaveBeenCalled();
         expect(ctx.createGain).toHaveBeenCalled();
-        expect(device.nodes).toHaveLength(2);
+        // Compressor, user makeup, then the Auto Makeup trim that sits between them.
+        expect(device.nodes).toHaveLength(3);
+        expect(device.namedNodes?.autoMakeupTrim).toBe(device.nodes[2]);
 
         const comp = device.nodes[0] as DynamicsCompressorNode;
         expect(comp.threshold.value).toBe(-20);

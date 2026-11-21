@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "a2b61fcc2b1894dc8f3d7f37564f5fe5b8615c2c195ea98bcb163a1f5b3f4ec0"
+        "digest": "191b8d4fadbad774d7f82f590df48a27b52809b2a56b9fb8b67e31da0e240df3"
     },
     "census": {
         "digest": "be42bfd50d8d77c85fc4b770ac13bcb76feb360fb90f277d74b314a4a81b8d14"
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "48b09ebfd14be879a851ff2110b25f7cd5273449577af77390428770f65bf19c"
+                    "digest": "98db0f84d9f6d0e849d2920520f58d072f1196f9bbff94646a8600d251b03864"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "b8cba0f2af6886b084a68393d0d0ffe994acfd789949e554b7cc56f7fab5de17"
+                    "digest": "21788fea99ed48fa4c017eafdd4b961f99f9afa4661f8e3d55f58c3ca4f311f2"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
