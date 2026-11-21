@@ -2548,6 +2548,94 @@ describe('reading only governed protections and whole object names', () => {
             [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
             [],
         ],
+        // a release governs only a verb it leads to as a gerund or through an intent, so a release word
+        // before a bare keep is a clause of its own and the keep holds
+        [
+            'Mix is done keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "I'm done keep the vocal bright",
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "I'm finished keep the vocal bright",
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'forget keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'quit keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'give up keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'no point keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'done keep the vocal bright and keep the mix narrow',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        // a should states a demand, never a permission, so the clause after it excepts nothing
+        [
+            "don't make the mix quieter, but it should stay dynamic",
+            [measured('loudness-not-lowered-v1', "don't make the mix quieter", MIX)],
+            [],
+        ],
+        [
+            "don't make the mix louder, the drums should hit harder",
+            [measured('loudness-not-raised-v1', "don't make the mix louder", MIX)],
+            [],
+        ],
+        [
+            "don't make the mix louder, but it should not clip",
+            [measured('loudness-not-raised-v1', "don't make the mix louder", MIX)],
+            [],
+        ],
+        [
+            "don't make the mix louder, but the vocal should be brighter",
+            [measured('loudness-not-raised-v1', "don't make the mix louder", MIX)],
+            [],
+        ],
+        [
+            "don't make the vocal louder, but the vocal should stay bright",
+            [measured('loudness-not-raised-v1', "don't make the vocal louder", onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't make the mix quieter; the mix should stay dynamic",
+            [measured('loudness-not-lowered-v1', "don't make the mix quieter", MIX)],
+            [],
+        ],
+        [
+            'keep the mix wide, but it should stay dynamic',
+            [measured('stereo-width-held-v1', 'keep the mix wide', MIX)],
+            [],
+        ],
+        [
+            'keep the mix wide, but the drums should hit harder',
+            [measured('stereo-width-held-v1', 'keep the mix wide', MIX)],
+            [],
+        ],
+        [
+            'keep the mix level, but the vocal should rise',
+            [measured('loudness-held-v1', 'keep the mix level', MIX)],
+            [],
+        ],
         [
             'never stop preserving the bass dynamics',
             [measured('dynamics-held-v1', 'preserving the bass dynamics', onTracks('bass'))],
