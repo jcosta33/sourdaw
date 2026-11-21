@@ -46,12 +46,16 @@ export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
 export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
+/** The marks separating clauses only as a token of their own, since each may join words: "lo-fi", "3–4 dB". */
+const TOKEN_SEPARATOR_MARKS = String.raw`\-–&/`;
+/** An em dash, which joins no word, so it separates clauses spaced or not: "the punch—make the vocal brighter". */
+const EM_DASH = '—';
 /**
  * What separates two clauses without a clause mark: a dash, ampersand or slash standing as a token of its
- * own ("keep the vocal bright - make the drums wider"), or a line break. It is never a word of either.
+ * own ("keep the vocal bright - make the drums wider"), an em dash wherever it stands, or a line break.
+ * It is never a word of either.
  */
-const SEPARATOR_MARKS = String.raw`\-–—&/`;
-export const CLAUSE_SEPARATOR = String.raw`(?:(?<!\S)[${SEPARATOR_MARKS}]+(?!\S)|[\n\r])`;
+export const CLAUSE_SEPARATOR = String.raw`(?:(?<!\S)[${TOKEN_SEPARATOR_MARKS}${EM_DASH}]+(?!\S)|${EM_DASH}|[\n\r])`;
 /** A character of the same clause: no clause mark and no separator. */
 export const SAME_CLAUSE_CHARACTER = String.raw`(?:(?!${CLAUSE_SEPARATOR})${NOT_CLAUSE_PUNCTUATION})`;
 /** Whitespace within one line. */
@@ -89,12 +93,21 @@ const WHILE = 'while';
 const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
 /** The one word joining nouns and continued objects under one verb: "the level and the width". */
 export const AND_WORD = AND;
+/**
+ * The one way a later member joins the one before it, for every list a clause reads: a comma, with or
+ * without one of the joining words after it, or one of those words alone: "the level, and the width".
+ */
+function joinedBy(joiningWords: string): string {
+    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s+${joiningWords}\s+)`;
+}
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
-export const AND_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${AND}\s+)`;
+export const AND_JOIN = joinedBy(words([AND]));
 /** The words joining list members: "the vocal and the drums", "louder or brighter". */
 export const LIST_JOINER = words([AND, OR]);
-/** The words joining kept terms of one object: "keep the vocal bright but dynamic". */
-export const TERM_JOINER = words([AND, BUT]);
+/** A comma, "and" or "or" joining a later direction to the one before it: "brighter, wider, or louder". */
+const LIST_JOIN = joinedBy(LIST_JOINER);
+/** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
+export const TERM_JOIN = joinedBy(words([AND, BUT]));
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
 export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
@@ -136,16 +149,22 @@ export const LEFT_STATE = String.raw`(?:${LEFT_ONLY_STATE}|${UNCHANGED_STATE})`;
 /** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
 export const THE_SAME = String.raw`${THE}\s+same`;
 /** The states a kept measured noun stays in: "keep the level the same", "where it is". */
-export const HELD_STATE = String.raw`(?:${THE_SAME}|where\s+it\s+is|${UNCHANGED_STATE})`;
+export const HELD_STATE = String.raw`(?:${THE_SAME}|${words(['where it is'])}|${UNCHANGED_STATE})`;
 
+/**
+ * What joins a contraction's two halves, each contraction written to the builder as two words ("don t"):
+ * an apostrophe, typed, typeset or left out, so "don't", "don’t" and "dont" are one word.
+ */
+const CONTRACTION = `${APOSTROPHE}?`;
 const WITHOUT = 'without';
-export const NEGATION = String.raw`(?:${words(['do not', 'never', WITHOUT])}|don${APOSTROPHE}?t)`;
+export const NEGATION = String.raw`(?:${words(['do not', 'never', WITHOUT])}|${words(['don t'], CONTRACTION)})`;
 const CAN = 'can';
-const MODAL = words(['must', 'should', 'may', CAN, 'will']);
-/** The contractions' stems that drop a letter of their modal: "can't", "won't". */
-const SHORTENED_MODAL = words([CAN, 'won']);
+const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
+const MODAL = words(MODAL_WORDS);
+/** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
+const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
-export const DOES_NOT = String.raw`(?:${words(['does not'])}|doesn${APOSTROPHE}?t)`;
+export const DOES_NOT = String.raw`(?:${words(['does not'])}|${words(['doesn t'], CONTRACTION)})`;
 const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
 /**
  * The head of a purpose clause, after "so" or "so that": there "doesn't sound louder" asks for a bound
@@ -153,7 +172,7 @@ const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
  */
 export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
 /** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get". */
-export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n${APOSTROPHE}?t|${SHORTENED_MODAL}${APOSTROPHE}?t)`;
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL_CONTRACTION})`;
 /**
  * A modal negation states a clause, and so does "doesn't get"; a plain copula negation ("isn't",
  * "aren't", "wasn't") describes the sound as it is, so it is none.
@@ -243,7 +262,8 @@ const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|
 const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
 export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
-const MEMBER_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${LIST_JOINER}\s+|\s*&\s*)`;
+/** An object list's members join as nouns do, by "or" as by "and", or by an ampersand. */
+const MEMBER_JOIN = String.raw`(?:${AND_JOIN}|\s+${words([OR])}\s+|\s*&\s*)`;
 /**
  * A list of objects. A conjunction continues it only before another member, so "the vocal and the
  * drums" is one list while "the vocal and brighten the drums" ends at "and"; "or" lists as "and" does,
@@ -252,9 +272,9 @@ const MEMBER_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${LIST_JOINER}\s+|\s*
 export const OBJECT_MEMBERS = String.raw`${OBJECT_MEMBER}(?:${MEMBER_JOIN}${OBJECT_MEMBER})*`;
 export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
-export const OBJECT_MEMBER_SEPARATOR = new RegExp(String.raw`\s*(?:,|&|\b${LIST_JOINER}\b)\s*`, 'u');
-/** Comparatives one clause applies to one object: "brighter and louder", "louder or brighter". */
-export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_JOINER}\s+(?:${ANY}\s+)?${DIRECTION})*)`;
+export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
+/** Comparatives one clause applies to one object: "brighter and louder", "brighter, wider, or louder". */
+export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN}(?:${ANY}\s+)?${DIRECTION})*)`;
 
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep

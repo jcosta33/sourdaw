@@ -19,6 +19,7 @@ import {
     DIRECTION_LIST,
     FROM,
     HOLDING_KEEP,
+    IN_CLAUSE_CHARACTER,
     KEEP,
     KEEP_VERBS,
     LEAVE_VERB,
@@ -35,12 +36,13 @@ import {
     OBJECT_LIST,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
+    OBJECT_MEMBERS,
     OBJECT_PREPOSITION,
     ROLE_WORD,
     ROLE_WORDS,
     SAME_CLAUSE_CHARACTER,
     STOP_VERB,
-    TERM_JOINER,
+    TERM_JOIN,
     THE,
     WORD_CHARACTER,
 } from './constraintClauseWords';
@@ -83,12 +85,13 @@ const QUALITY_OBJECT_WORD = String.raw`(?!${FROM}\b)${WORD_CHARACTER}+`;
 const QUALITY_OBJECT = String.raw`(?<object>(?:${QUALITY_OBJECT_WORD}\s+){0,3}?${QUALITY_OBJECT_WORD})`;
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
-/** A quality no recipe produces but a crest factor measures, read beside the catalog's terms. */
+/** A quality no recipe produces but a crest factor measures: the one quality read beside the catalog's terms. */
 const DYNAMIC_TERM = 'dynamic';
 /**
- * The catalog descriptors whose preservation a measured hold verifies; `dynamic` is read beside them.
- * Keys are the catalog's descriptor ids, never words read from the request: the request's words for each
- * are the catalog's own `descriptorTerms`, so this is a mapping onto the direction table, not a word list.
+ * The qualities whose preservation a measured hold verifies. Keys are the catalog's descriptor ids and
+ * `dynamic`, the one quality read beside the catalog, never words read from the request: the request's
+ * words for each catalog descriptor are the catalog's own `descriptorTerms`, and for `dynamic` its own
+ * term, so this is a mapping onto the direction table, not a word list.
  */
 const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
     ['wide', FAMILY_IDS.width.held],
@@ -97,9 +100,14 @@ const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
 ]);
 /** A kept term may stand behind a linking verb or "as": "keep the vocal sounding bright", "as dynamic". */
 const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|${AS})\s+)?`;
-const TERM_FOLLOWS = String.raw`(?:\s*,\s*(?:${TERM_JOINER}\s+)?|\s+${TERM_JOINER}\s+)`;
 /** A keep, stop or prevent, which names after "from" the move it prevents: "keep the mix from …". */
 const PREVENTING_VERB = String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})`;
+/**
+ * What a keep, stop or prevent names before "from" when the quality it prevents is no measured one: an
+ * object list, or any other words of its own clause ("them", "every track", "all of it"). Such a quality
+ * is quoted unsupported and never measured, so its object is never resolved.
+ */
+const PREVENTED_QUALITY_OBJECT = String.raw`(?<object>${OBJECT_MEMBERS}|${IN_CLAUSE_CHARACTER}+?)`;
 
 function nameVariants(name: string): string[] {
     const normalized = normalizeObjectText(name);
@@ -320,14 +328,14 @@ function readQualityPattern(): QualityPattern {
         HYPHEN_OR_SPACE
     );
     const term = String.raw`${terms}${WORD_END}`;
-    const more = String.raw`(?<more>(?:${TERM_FOLLOWS}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
+    const more = String.raw`(?<more>(?:${TERM_JOIN}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
         String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
         'dgiu'
     );
     // The words of the move stand between "from" and the quality: "from getting muddy", "from losing the punch".
     const prevented = new RegExp(
-        String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}(?:\s+${QUALITY_OBJECT_WORD}){1,2}?\s+${TERM_LEAD}(?!${DIRECTION})(?<term>${term})${more}`,
+        String.raw`${PREVENTING_VERB}\s+${PREVENTED_QUALITY_OBJECT}\s+${FROM}(?:\s+${QUALITY_OBJECT_WORD}){1,2}?\s+${TERM_LEAD}(?!${DIRECTION})(?<term>${term})${more}`,
         'dgiu'
     );
     const continuation = new RegExp(
@@ -558,10 +566,10 @@ function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpa
  * dynamics clause, one-way ("don't make it louder", "don't make the mix any wider", a bound that lets
  * it move the other way) or two-way ("don't change the level", "keep the stereo width", a hold); and a
  * preserved quality ("keep the vocal intimate", "keep the mix wide"). A quality is any term of the mix
- * recipe catalog's descriptor vocabulary; one with no measured invariant, a comparison with another
- * scope, an object that resolves to nothing it can be measured on, and any protective clause naming a
- * measured quality that no reader consumed are reported unsupported rather than dropped, so the batch
- * it rides can never be approved as verified.
+ * recipe catalog's descriptor vocabulary, or "dynamic", the one quality read beside it; one with no
+ * measured invariant, a comparison with another scope, an object that resolves to nothing it can be
+ * measured on, and any protective clause naming a measured quality that no reader consumed are reported
+ * unsupported rather than dropped, so the batch it rides can never be approved as verified.
  */
 export function compilePerceptualConstraints(prompt: string, context: ProjectContext): PerceptualConstraintReading {
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is

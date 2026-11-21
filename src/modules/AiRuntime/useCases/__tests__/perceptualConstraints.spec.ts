@@ -2007,6 +2007,65 @@ describe('reading only governed protections and whole object names', () => {
             [],
             [unread('keep it from losing the lo-fi', unmeasured('lo-fi'))],
         ],
+        // whatever words of its clause name the object: a pronoun, a plural or a quantifier
+        ['keep them from losing the punch', [], [unread('keep them from losing the punch', unmeasured('punch'))]],
+        [
+            'compress the drums to keep them from sounding thin',
+            [],
+            [unread('keep them from sounding thin', unmeasured('thin'))],
+        ],
+        [
+            'keep every track from sounding thin',
+            [],
+            [unread('keep every track from sounding thin', unmeasured('thin'))],
+        ],
+        ['keep both from sounding thin', [], [unread('keep both from sounding thin', unmeasured('thin'))]],
+        ['keep it all from sounding thin', [], [unread('keep it all from sounding thin', unmeasured('thin'))]],
+        ['keep all of it from sounding thin', [], [unread('keep all of it from sounding thin', unmeasured('thin'))]],
+        // one clause yields one entry: an em dash ends it, spaced or not, as a comma does
+        [
+            'stop the drums from losing the punch—make the vocal brighter',
+            [],
+            [unread('stop the drums from losing the punch', unmeasured('punch'))],
+        ],
+        [
+            'stop the drums from losing the punch — make the vocal brighter',
+            [],
+            [unread('stop the drums from losing the punch', unmeasured('punch'))],
+        ],
+        [
+            'stop the drums from losing the punch, make the vocal brighter',
+            [],
+            [unread('stop the drums from losing the punch', unmeasured('punch'))],
+        ],
+        // a comma list of directions bounds every direction it lists, a plain request none
+        [
+            'keep the mix from getting brighter, wider, or louder',
+            [
+                measured('brightness-not-raised-v1', 'keep the mix from getting brighter, wider, or louder', MIX),
+                measured('stereo-width-not-widened-v1', 'keep the mix from getting brighter, wider, or louder', MIX),
+                measured('loudness-not-raised-v1', 'keep the mix from getting brighter, wider, or louder', MIX),
+            ],
+            [],
+        ],
+        [
+            'keep it from getting wider, brighter',
+            [
+                measured('stereo-width-not-widened-v1', 'keep it from getting wider, brighter', MIX),
+                measured('brightness-not-raised-v1', 'keep it from getting wider, brighter', MIX),
+            ],
+            [],
+        ],
+        [
+            "don't make it brighter, wider or louder",
+            [
+                measured('brightness-not-raised-v1', "don't make it brighter, wider or louder", MIX),
+                measured('stereo-width-not-widened-v1', "don't make it brighter, wider or louder", MIX),
+                measured('loudness-not-raised-v1', "don't make it brighter, wider or louder", MIX),
+            ],
+            [],
+        ],
+        ['make it brighter, wider and louder', [], []],
         ['stop the bass from getting muddy', [], [unread('stop the bass from getting muddy', unmeasured('muddy'))]],
         [
             'prevent the vocal from sounding thin',
