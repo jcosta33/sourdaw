@@ -272,6 +272,27 @@ describe('WebLLM engineLifecycle injectables', () => {
         expect(engineState.activeArtifactSetDigest).toBe('digest:test-model');
     });
 
+    it('publishes the engine load progress as the loading status', async () => {
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+        llmStatusStore.set({ state: 'idle' });
+        const seenAfterReport: unknown[] = [];
+        createWebWorkerEngineMock.mockImplementation(
+            async (
+                _worker: unknown,
+                _modelId: string,
+                options: { initProgressCallback: (report: unknown) => void }
+            ) => {
+                options.initProgressCallback({ progress: 0.5, text: 'Fetching' });
+                seenAfterReport.push(llmStatusStore.value);
+                return { interruptGenerate: vi.fn(), chat: { completions: { create: vi.fn() } } };
+            }
+        );
+
+        await initWebLlmEngine('test-model');
+
+        expect(seenAfterReport).toEqual([{ state: 'loading', progress: 0.5, text: 'Fetching' }]);
+    });
+
     it('terminates the attempt-owned worker when initialization fails', async () => {
         Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
         createWebWorkerEngineMock.mockRejectedValue(new Error('engine failed'));
