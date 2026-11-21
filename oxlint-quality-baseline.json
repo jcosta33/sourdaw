@@ -4591,7 +4591,7 @@
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/readNamedTracks.ts": {
         "typescript/no-non-null-assertion": {
-            "count": 3
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/retargetCommittedRecipe.ts": {
@@ -5887,11 +5887,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/models/DeviceChainActionProjection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/models/DeviceParameter.ts": {
         "typescript/no-non-null-assertion": {
             "count": 1
@@ -5899,7 +5894,7 @@
     },
     "src/modules/Arrangement/models/DevicePatchWritePlan.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/Arrangement/models/InlineMidiGeometry.ts": {
@@ -14743,14 +14738,6 @@
             "count": 4
         }
     },
-    "src/modules/MIDI/useCases/grooveTemplates/projectGrooveTemplateState.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "typescript/switch-exhaustiveness-check": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts": {
         "eslint/complexity": {
             "count": 1
@@ -18794,7 +18781,7 @@
             "count": 2
         },
         "sourdaw-craft/no-silent-catch": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/WorkspaceShell/presentations/views/Transport/WindowControls.tsx": {
