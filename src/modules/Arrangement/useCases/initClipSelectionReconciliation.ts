@@ -1,9 +1,11 @@
 import { showsVariationLanes } from '../models/TimelineTrackExtent';
 import { type Track } from '../models/Track';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
+import { timelineEditingStore } from '../stores/timelineEditingStore';
 import { trackStore, type TrackStoreState } from '../stores/trackStore';
 
 import { resolvePrimaryClip } from './clipSelection/resolvePrimaryClip';
+import { getTracksShownInViews } from './getTracksShownInViews';
 
 // Inactive alternatives' clips are drawn and clickable only while the track shows its variation
 // lanes. The active alternative's stored copy is refreshed only on a switch, so its clips are read
@@ -19,7 +21,8 @@ function collectLaneClipIds(track: Track): string[] {
 
 function collectExistingClipIds(state: TrackStoreState | null): Set<string> {
     const ids = new Set<string>();
-    for (const track of state?.tracks ?? []) {
+    const showHiddenTracks = timelineEditingStore.value?.showHiddenTracks ?? false;
+    for (const track of getTracksShownInViews(state?.tracks ?? [], showHiddenTracks)) {
         for (const clip of track.clips) {
             ids.add(clip.id);
         }
@@ -57,13 +60,24 @@ function reconcileClipSelection(): void {
 }
 
 /**
- * Keeps the clip selection to clips that still exist. A clip leaves the project
+ * Keeps the clip selection to existing clips on tracks the views show. A clip leaves the project
  * by many routes that never touch the selection (undoing a paste, a
  * collaborator's delete, deleting a track, loading another project, an AI action),
  * so reconciling here, on the one store every route writes, covers them all and
  * any route added later. The marquee is a time range, not a clip list, and is
- * left alone.
+ * left alone. A hidden track's clips (or those under a hidden folder) leave the
+ * selection too, on a hide and when the show-hidden flag turns off, so copy, cut
+ * and delete never act on clips the user cannot see. It also runs on every
+ * selection write, so no selection route can hold a clip the views do not show.
  */
 export function initClipSelectionReconciliation(): () => void {
-    return trackStore.subscribe(reconcileClipSelection);
+    const stopTracks = trackStore.subscribe(reconcileClipSelection);
+    const stopEditing = timelineEditingStore.subscribe(reconcileClipSelection);
+    // Its own write re-enters here, finds every id kept and returns without writing.
+    const stopSelection = clipSelectionStore.subscribe(reconcileClipSelection);
+    return () => {
+        stopTracks();
+        stopEditing();
+        stopSelection();
+    };
 }

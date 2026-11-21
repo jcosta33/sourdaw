@@ -51,6 +51,16 @@ import { stopAutomationRecording } from '../stopAutomationRecording';
 type Root = { automation: AutomationStoreState; tracks: Pick<TrackStoreState, 'tracks'> };
 type Notifications = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
 
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
+
 const gainBefore: AutomationPoint[] = [
     { id: 'gain-origin', beat: 0, value: 0.11, curve: 'linear', tension: 0 },
     { id: 'gain-before-ride', beat: 1.25, value: 0.22, curve: 'step', tension: 0 },
@@ -229,7 +239,11 @@ describe('recorded ride replay against actual peer lane changes', () => {
         transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120, playheadPosition: 1 });
         const context = new AudioContext({ sampleRate: 48_000 });
         Object.defineProperties(context, { baseLatency: { value: 0 }, outputLatency: { value: 0 } });
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        recordingContext = context;
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
         flushAutomergeStorageWrites();
         await executeAppAction({
             type: 'renameTrack',

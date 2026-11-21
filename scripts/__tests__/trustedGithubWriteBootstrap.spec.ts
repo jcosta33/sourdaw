@@ -588,7 +588,9 @@ function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'
             if (args[0] !== 'api') return REQUIRED_REPOSITORY;
             const state = JSON.parse(readFileSync(join(process.cwd(), 'reviews.json'), 'utf8'));
             if (existsSync(join(process.cwd(), 'marker-posted'))) state.reviews.nodes[0].body += ' A later blocker.';
-            return JSON.stringify({ data: { repository: { nameWithOwner: REQUIRED_REPOSITORY, pullRequest: { number: 2244, ...state } } } });
+            return JSON.stringify({ data: { repository: { nameWithOwner: REQUIRED_REPOSITORY, openChildren: { totalCount: 0 },
+                pullRequest: { number: 2244, headRefName: 'fix/fixture', author: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID },
+                    allReviews: { totalCount: 1 }, ...state } } } });
         };
         export async function authenticateRole() {
             return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { env: process.env, dispose() {} } };

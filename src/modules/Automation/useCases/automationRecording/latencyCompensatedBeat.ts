@@ -1,4 +1,4 @@
-import { getAutomationRecordingDependencies } from './getAutomationRecordingDependencies';
+import { automationRecordingDependenciesPort } from './recordingDependencies';
 
 /**
  * Convert a raw transport beat into the lane's beat space.
@@ -12,7 +12,7 @@ import { getAutomationRecordingDependencies } from './getAutomationRecordingDepe
  * seam.
  */
 export function latencyCompensatedBeat(rawBeat: number, trackId: string, tempo: number): number {
-    const deps = getAutomationRecordingDependencies();
+    const deps = automationRecordingDependenciesPort.read();
     const ctx = deps.getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const trackLatencySec = deps.getCompensationDelay(trackId);

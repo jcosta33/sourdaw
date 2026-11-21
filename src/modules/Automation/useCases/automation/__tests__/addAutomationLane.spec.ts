@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
@@ -10,14 +10,21 @@ import { paintDrawPoint } from '../../paintDrawPoint';
 import { addAutomationLane } from '../addAutomationLane';
 import { setAutomationParameterRangeResolver } from '../automationParameterRangeDependencies';
 
+type ParameterRange = { minValue: number; maxValue: number } | null;
+type ParameterRangeInput = { trackId: string; parameterTargetId: string };
+
+let currentResolveRange: (input: ParameterRangeInput) => ParameterRange = () => null;
+
+function resolveParameterRange(input: ParameterRangeInput): ParameterRange {
+    return currentResolveRange(input);
+}
+
+setAutomationParameterRangeResolver(resolveParameterRange);
+
 describe('addAutomationLane', () => {
     beforeEach(() => {
-        setAutomationParameterRangeResolver(null);
+        currentResolveRange = () => null;
         automationStore.set({ lanes: [] });
-    });
-
-    afterEach(() => {
-        setAutomationParameterRangeResolver(null);
     });
 
     it.each([
@@ -70,7 +77,7 @@ describe('addAutomationLane', () => {
 
     it('uses the owning device descriptor range for a device parameter lane', () => {
         const resolveRange = vi.fn(() => ({ minValue: 20, maxValue: 20_000 }));
-        setAutomationParameterRangeResolver(resolveRange);
+        currentResolveRange = resolveRange;
 
         addAutomationLane('track-1', 'device-1:high_cut', 'High Cut');
 
@@ -95,7 +102,7 @@ describe('addAutomationLane', () => {
         };
         automationStore.set({ lanes: [existing] });
         const resolveRange = vi.fn(() => ({ minValue: 20, maxValue: 20_000 }));
-        setAutomationParameterRangeResolver(resolveRange);
+        currentResolveRange = resolveRange;
 
         addAutomationLane('track-1', 'device-1:high_cut', 'High Cut', 'lane-replay');
 
