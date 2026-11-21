@@ -13,7 +13,8 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
     canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
         const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
-        return currentPan === action.payload.expectedPan;
+        // A NaN pan would be stored, and its inverse's `expectedPan` could never match it.
+        return Number.isFinite(action.payload.pan) && currentPan === action.payload.expectedPan;
     },
     // A suppressed edit cannot reach the recording maps, so snapshotting and
     // restoring them on abort would only be able to discard a pass some other
