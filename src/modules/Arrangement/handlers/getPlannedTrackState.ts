@@ -7,7 +7,6 @@ import { getTrackStoreState } from '../useCases/getTrackStoreState';
 import { planDefaultTrackName } from './planDefaultTrackName';
 import { createPlannedDuplicate, createPlannedTrack } from './plannedTrackConstruction';
 import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPriorBatchActions';
-import { readFolderCreationIdentity } from './track/folderCreationIdentity';
 import { ensureStableCreationInputs, pinCreationIdentity } from './track/pinTrackCreationInputs';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
@@ -84,7 +83,7 @@ function planCreatedFolder(
             name: action.payload.name,
             kind: 'folder',
             gain: 0.8,
-            ...readFolderCreationIdentity(action),
+            ...pinCreationIdentity(action.payload),
         }),
         context,
         actionIndex + 1

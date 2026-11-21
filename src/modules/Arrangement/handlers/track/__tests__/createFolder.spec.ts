@@ -30,6 +30,36 @@ describe('handleCreateFolder', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('writes the identity pinned on the payload, and pins one when describe runs first', async () => {
+        mocks.createFolder.mockReturnValue(true);
+        const pinned = {
+            type: 'createFolder' as const,
+            payload: { name: 'Drums', folderTrackId: 'folder-1', color: '#abcdef', initialAlternativeId: 'alt-pinned' },
+        };
+        const described = {
+            type: 'createFolder' as const,
+            payload: { name: 'Drums', folderTrackId: 'folder-2' } as { name: string; folderTrackId: string } & {
+                color?: string;
+                initialAlternativeId?: string;
+            },
+        };
+
+        await handleCreateFolder.execute(pinned);
+        handleCreateFolder.describe(described);
+        const pinnedByDescribe = {
+            color: described.payload.color,
+            initialAlternativeId: described.payload.initialAlternativeId,
+        };
+        await handleCreateFolder.execute(described);
+
+        expect(mocks.createFolder).toHaveBeenNthCalledWith(1, 'Drums', 'folder-1', {
+            color: '#abcdef',
+            initialAlternativeId: 'alt-pinned',
+        });
+        expect(pinnedByDescribe).toEqual({ color: expect.any(String), initialAlternativeId: expect.any(String) });
+        expect(mocks.createFolder).toHaveBeenNthCalledWith(2, 'Drums', 'folder-2', pinnedByDescribe);
+    });
+
     it('reports no-write when the track store was unavailable and no folder was created', () => {
         // Reporting `written` here files an undo entry for a write that never happened.
         // Its inverse can only ever conflict, and a conflicted entry stays at the top of

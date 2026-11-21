@@ -5,7 +5,7 @@ import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalS
 import { createFolder } from '../../useCases/folder/createFolder';
 
 import { captureCreatedTrackGuards } from './captureCreatedTrackGuards';
-import { readFolderCreationIdentity } from './folderCreationIdentity';
+import { pinCreationIdentity } from './pinTrackCreationInputs';
 
 type MutableDescribeResult = {
     label: string;
@@ -44,7 +44,7 @@ export const handleCreateFolder = createHandler<'createFolder'>({
         const created = createFolder(
             action.payload.name,
             action.payload.folderTrackId,
-            readFolderCreationIdentity(action)
+            pinCreationIdentity(action.payload)
         );
         const pending = pendingDescribeResults.get(action);
         const folderTrackId = action.payload.folderTrackId;
@@ -54,6 +54,7 @@ export const handleCreateFolder = createHandler<'createFolder'>({
         return { status: created ? 'written' : 'no-write' };
     },
     describe: (alpha) => {
+        pinCreationIdentity(alpha.payload);
         const label = `Create folder "${alpha.payload.name}"`;
         // `folderTrackId` is materialized before `describe` runs (see
         // `materializeCommandApplicationIds`). Its absence means the command layer never
