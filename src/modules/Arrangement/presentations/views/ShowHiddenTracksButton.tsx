@@ -26,7 +26,7 @@ export const ShowHiddenTracksButton = ({
                     size="icon-xs"
                     aria-label={label}
                     aria-pressed={pressed}
-                    disabled={hiddenCount === 0}
+                    disabled={hiddenCount === 0 && !pressed}
                     data-testid="show-hidden-tracks-toggle"
                     className="aria-pressed:bg-surface-well aria-pressed:text-[var(--color-accent-lavender)]"
                     onClick={onToggle}

@@ -34,6 +34,12 @@ describe('ShowHiddenTracksButton', () => {
         expect(screen.getByRole('button', { name: 'Show hidden tracks (0)' })).toBeDisabled();
     });
 
+    it('stays enabled while pressed after the last hidden track is shown again', () => {
+        renderButton({ hiddenCount: 0, pressed: true });
+
+        expect(screen.getByRole('button', { name: 'Show hidden tracks (0)' })).toBeEnabled();
+    });
+
     it('calls onToggle on click', () => {
         const onToggle = vi.fn();
         renderButton({ hiddenCount: 1, pressed: false, onToggle });
