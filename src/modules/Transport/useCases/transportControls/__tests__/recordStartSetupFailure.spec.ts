@@ -41,6 +41,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: fixture.logError, 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: fixture.activeRecordingRef,
     getTrackEligibility: () => ({ acceptsRecording: true }),
+    isFrozenTrackRefusingRecording: () => false,
     trackStore: { getState: () => ({}) },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
