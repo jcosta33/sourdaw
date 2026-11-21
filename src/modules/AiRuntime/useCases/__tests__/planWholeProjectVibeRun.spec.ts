@@ -869,12 +869,7 @@ describe('planWholeProjectVibeRun recipe admission', () => {
             Object.keys(
                 batch.baselines.find((baseline) => baseline.targetId === targetId)?.measurements ?? {}
             ).toSorted();
-        expect(metricsOf('t-bus-ready')).toEqual([
-            'crestFactor',
-            'frequencyBandEnergy',
-            'spectralCentroid',
-            'transientDensity',
-        ]);
+        expect(metricsOf('t-bus-ready')).toEqual(['frequencyBandEnergy', 'spectralCentroid', 'transientDensity']);
         expect(metricsOf('t-bus-bare')).toEqual(['frequencyBandEnergy', 'spectralCentroid']);
     });
 });
