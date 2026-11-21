@@ -1026,6 +1026,24 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
         }
     });
 
+    it('leaves a hidden track out of the rows and brings it back when hidden tracks are shown', () => {
+        seedStores({
+            tracks: [laneTrack('shown', 'audio', false), { ...laneTrack('hidden', 'audio', false), hidden: true }],
+        });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown']);
+
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown', 'hidden']);
+
+            timelineEditingStore.set(defaultTimelineEditingState);
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown']);
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
     it('gives a folder row no lanes even when its toggle is on', () => {
         seedStores({ tracks: [laneTrack('f', 'folder', true), laneTrack('after', 'audio', false)] });
 

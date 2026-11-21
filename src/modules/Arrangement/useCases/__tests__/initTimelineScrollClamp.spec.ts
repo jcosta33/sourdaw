@@ -9,6 +9,7 @@ import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/
 import { setScrollY, setTimelineViewportHeight, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { initTimelineScrollClamp } from '../initTimelineScrollClamp';
+import { setShowHiddenTracks } from '../timelineEditing/setShowHiddenTracks';
 import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
 
 function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'kind'>): Track {
@@ -109,6 +110,27 @@ describe('initTimelineScrollClamp', () => {
 
         toggleInlineAutomation();
         expect(timelineViewStore.value?.scrollY).toBe(20);
+    });
+
+    it('re-clamps when a track is hidden and when hidden tracks are shown again', () => {
+        const tracks = ['a', 'b', 'c'].map((id) => makeTrack({ id, kind: 'audio', height: 100 }));
+        trackStore.set({ tracks, selectedTrackId: null });
+        setTimelineViewportHeight(100);
+        setScrollY(1000);
+        expect(timelineViewStore.value?.scrollY).toBe(200);
+
+        trackStore.set({
+            tracks: tracks.map((track) => (track.id === 'c' ? { ...track, hidden: true } : track)),
+            selectedTrackId: null,
+        });
+        expect(timelineViewStore.value?.scrollY).toBe(100);
+
+        setShowHiddenTracks(true);
+        setScrollY(1000);
+        expect(timelineViewStore.value?.scrollY).toBe(200);
+
+        setShowHiddenTracks(false);
+        expect(timelineViewStore.value?.scrollY).toBe(100);
     });
 
     it('leaves an in-range scrollY alone when tracks change', () => {

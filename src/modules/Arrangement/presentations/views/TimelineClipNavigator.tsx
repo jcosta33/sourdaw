@@ -13,6 +13,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { trackStore } from '../../stores/trackStore';
 import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWithFocus';
 import { getTimelineClipNavigationSnapshot } from '../../useCases/getTimelineClipNavigationSnapshot';
@@ -21,6 +22,16 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
 import { getTimelineClipNavigatorKeyboardHandlers } from './timelineClipNavigatorKeyboard';
 import { type ClipTypeFilter, filterTimelineClips, type TimelineClip } from './timelineClipNavigatorModel';
+
+// The listed clips depend on the tracks and on whether hidden tracks are shown.
+function subscribeToNavigableClips(listener: () => void): () => void {
+    const stopTracks = trackStore.subscribeReact(listener);
+    const stopEditing = timelineEditingStore.subscribeReact(listener);
+    return () => {
+        stopTracks();
+        stopEditing();
+    };
+}
 
 function describeClip(item: TimelineClip): string {
     const { clip, track } = item;
@@ -46,7 +57,7 @@ function selectionStatus(ids: string[], focused: TimelineClip | undefined): stri
 }
 
 export function TimelineClipNavigator({ onClose }: { onClose: () => void }): ReactElement {
-    const clips = useSyncExternalStore(trackStore.subscribeReact, getTimelineClipNavigationSnapshot);
+    const clips = useSyncExternalStore(subscribeToNavigableClips, getTimelineClipNavigationSnapshot);
     const selectedTrackId = useSyncExternalStore(
         trackStore.subscribeReact,
         () => trackStore.getSnapshot()?.selectedTrackId ?? null

@@ -582,6 +582,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isDrumDevice: actual.isDrumDevice,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         openCachedAudioBufferHold: actual.openCachedAudioBufferHold,
         captureOfflineRenderProjectSource: vi.fn(() => {

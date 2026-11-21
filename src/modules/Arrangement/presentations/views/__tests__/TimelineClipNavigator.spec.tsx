@@ -17,11 +17,13 @@ import { type ActionHandler } from '#/utils/handlerContract';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { getWarpState } from '../../../stores/warpStates';
 import { moveClip } from '../../../useCases/clip/moveClip';
 import { selectClipWithFocus } from '../../../useCases/clipSelection/selectClipWithFocus';
+import { setShowHiddenTracks } from '../../../useCases/timelineEditing/setShowHiddenTracks';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TimelineClipNavigator } from '../TimelineClipNavigator';
 
@@ -131,6 +133,7 @@ describe('TimelineClipNavigator', () => {
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
+            timelineEditingStore.set(defaultTimelineEditingState);
             timelineViewStore.set(null);
         });
     });
@@ -272,6 +275,23 @@ describe('TimelineClipNavigator', () => {
         act(() => trackStore.set({ ...defaultTrackState, tracks: [] }));
         expect(screen.getByText('No clips')).toBeInTheDocument();
         expect(listbox).not.toHaveAttribute('aria-activedescendant');
+    });
+
+    it('lists a hidden track clip only while hidden tracks are shown, as the flag changes', () => {
+        const hidden = track('hidden', 'Hidden', [clip('hidden-clip', 'hidden', 0)], { hidden: true });
+        const voice = track('voice', 'Voice', [clip('voice-clip', 'voice', 0)]);
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [voice, hidden] }));
+        const listbox = openNavigator();
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(within(listbox).queryByRole('option', { name: /hidden-clip/ })).toBeNull();
+
+        act(() => setShowHiddenTracks(true));
+        expect(within(listbox).getAllByRole('option')).toHaveLength(2);
+        expect(within(listbox).getByRole('option', { name: /hidden-clip/ })).toBeInTheDocument();
+
+        act(() => setShowHiddenTracks(false));
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(within(listbox).queryByRole('option', { name: /hidden-clip/ })).toBeNull();
     });
 
     it('orders by visible track, then start beat and clip identity', () => {

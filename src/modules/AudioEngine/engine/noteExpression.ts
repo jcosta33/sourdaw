@@ -5,10 +5,10 @@
  * Web MIDI input (`handleWebMidi*`) and scheduled playback (`scheduleMidiNotes`).
  * Both normalise through this module and dispatch through
  * `applyNoteExpression`, so there is exactly one wire-unit conversion, one
- * device registry and one control-surface shape. Adding an expression-capable
- * instrument means adding it to {@link NOTE_EXPRESSION_DEVICES} — the live
- * path, the scheduled path and the editor's availability surface all read that
- * same table.
+ * device registry and one control-surface shape. Which instrument sounds which
+ * dimensions is its row in `LIVE_NOTE_CONTROLS_BY_DEVICE_TYPE`
+ * (`models/LiveNoteControlsByDeviceType.ts`) — the live path, the scheduled
+ * path and the editor's availability surface all read that same table.
  *
  * Wire units are the ones already stored on project truth and on live note
  * state; they are consumed, never renamed:
@@ -26,6 +26,7 @@
 import { PITCH_BEND_CENTER, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
+import { type NoteExpressionDimension, resolveLiveNoteControls } from '../models/LiveNoteControlsByDeviceType';
 
 /** Per-note expression exactly as stored on a MIDI note or a live note record. */
 export type NoteExpressionWireValues = {
@@ -41,43 +42,8 @@ export type NoteExpressionEngineValues = {
     slide: number;
 };
 
-/** The three MPE dimensions, named as they appear on note data. */
-export type NoteExpressionDimension = 'pitchBend' | 'pressure' | 'slide';
-
 /** MPE member-channel default pitch-bend range (MPE spec v1.0 §2.2). */
 export const MPE_MEMBER_BEND_RANGE_SEMITONES = 48;
-
-type NoteExpressionDeviceEntry = {
-    controlsKey: keyof BuiltinDeviceNode;
-    /** The dimensions this engine actually sounds — not the ones it accepts. */
-    dimensions: readonly NoteExpressionDimension[];
-};
-
-/**
- * Device types whose engine sounds per-note expression, and which dimensions
- * each one genuinely voices. This table is the single source of truth for
- * expression capability — do not maintain a parallel list.
- *
- * Grand Boule is bend-only on purpose: its ringing modal strings are retuned in
- * place, but a struck string has no continuous pressure or timbre response to
- * model, so those two are dropped at the engine rather than faked.
- */
-export const NOTE_EXPRESSION_DEVICES = {
-    fermenter: {
-        controlsKey: 'fermenterControls',
-        dimensions: ['pitchBend', 'pressure', 'slide'],
-    },
-    levain: {
-        controlsKey: 'levainControls',
-        dimensions: ['pitchBend', 'pressure', 'slide'],
-    },
-    'grand-boule': {
-        controlsKey: 'grandBouleControls',
-        dimensions: ['pitchBend'],
-    },
-} as const satisfies Record<string, NoteExpressionDeviceEntry>;
-
-export type NoteExpressionDeviceType = keyof typeof NOTE_EXPRESSION_DEVICES;
 
 /** The method an expression-capable instrument node exposes. */
 export type NoteExpressionControls = {
@@ -91,16 +57,9 @@ export type NoteExpressionControls = {
     ) => void;
 };
 
-function isNoteExpressionDeviceType(deviceType: string): deviceType is NoteExpressionDeviceType {
-    return Object.hasOwn(NOTE_EXPRESSION_DEVICES, deviceType);
-}
-
 /** Dimensions the given device type sounds; empty when it has no expression path. */
 export function getNoteExpressionDimensions(deviceType: string): readonly NoteExpressionDimension[] {
-    if (!isNoteExpressionDeviceType(deviceType)) {
-        return [];
-    }
-    return NOTE_EXPRESSION_DEVICES[deviceType].dimensions;
+    return resolveLiveNoteControls(deviceType)?.expressionDimensions ?? [];
 }
 
 /** True when any of the three MPE dimensions carries a value. */
@@ -140,10 +99,11 @@ export function resolveNoteExpressionControls(
     deviceNodes: readonly BuiltinDeviceNode[]
 ): NoteExpressionControls | null {
     for (const deviceNode of deviceNodes) {
-        if (!isNoteExpressionDeviceType(deviceNode.type)) {
+        const liveNoteControls = resolveLiveNoteControls(deviceNode.type);
+        if (liveNoteControls === null || liveNoteControls.expressionDimensions.length === 0) {
             continue;
         }
-        const controls: unknown = deviceNode[NOTE_EXPRESSION_DEVICES[deviceNode.type].controlsKey];
+        const controls: unknown = deviceNode[liveNoteControls.controlsKey];
         if (
             typeof controls === 'object' &&
             controls !== null &&

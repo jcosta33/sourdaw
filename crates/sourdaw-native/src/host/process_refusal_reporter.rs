@@ -48,7 +48,7 @@ pub fn report_pending_process_refusals(engine_plugins: &EnginePlugins) {
 
         let reached = runtime.try_with_control(CONTROL_TIMEOUT, |plugin| {
             plugin.report_plugin_observations();
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         });
 
         if let Err(error) = reached {
