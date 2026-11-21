@@ -67,13 +67,17 @@ function reconcileClipSelection(): void {
  * any route added later. The marquee is a time range, not a clip list, and is
  * left alone. A hidden track's clips (or those under a hidden folder) leave the
  * selection too, on a hide and when the show-hidden flag turns off, so copy, cut
- * and delete never act on clips the user cannot see.
+ * and delete never act on clips the user cannot see. It also runs on every
+ * selection write, so no selection route can hold a clip the views do not show.
  */
 export function initClipSelectionReconciliation(): () => void {
     const stopTracks = trackStore.subscribe(reconcileClipSelection);
     const stopEditing = timelineEditingStore.subscribe(reconcileClipSelection);
+    // Its own write re-enters here, finds every id kept and returns without writing.
+    const stopSelection = clipSelectionStore.subscribe(reconcileClipSelection);
     return () => {
         stopTracks();
         stopEditing();
+        stopSelection();
     };
 }

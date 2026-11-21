@@ -165,6 +165,33 @@ describe('initClipSelectionReconciliation', () => {
             expect(clipSelectionStore.value?.selectedClipId).toBe('b');
         });
 
+        it('keeps only the shown clips of a selection written over a hidden track', () => {
+            setProject({ tracks: [makeTrack('t1', ['a']), { ...makeTrack('t2', ['b']), hidden: true }] });
+
+            clipSelectionStore.set({ selectedClipId: 'b', selectedClipIds: ['a', 'b'], marqueeSelection: null });
+
+            expect(clipSelectionStore.value).toEqual({
+                selectedClipId: 'a',
+                selectedClipIds: ['a'],
+                marqueeSelection: null,
+            });
+        });
+
+        it('leaves a selection of shown clips unchanged and writes the store once', () => {
+            setProject({ tracks: [makeTrack('t1', ['a', 'b']), { ...makeTrack('t2', ['c']), hidden: true }] });
+            let writes = 0;
+            const unsubscribe = clipSelectionStore.subscribe(() => {
+                writes += 1;
+            });
+            const selection = { selectedClipId: 'a', selectedClipIds: ['a', 'b'], marqueeSelection: null };
+
+            clipSelectionStore.set(selection);
+            unsubscribe();
+
+            expect(writes).toBe(1);
+            expect(clipSelectionStore.value).toBe(selection);
+        });
+
         it('keeps a hidden track clip while hidden tracks are shown', () => {
             timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
             setProject({ tracks: [makeTrack('t1', ['a'])] });
