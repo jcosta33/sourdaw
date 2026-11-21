@@ -223,6 +223,60 @@ describe('stored built-in compressor reads Auto Makeup as on when the record pre
     });
 });
 
+const LEGACY_LIMITER_VALUES = { 'lim-threshold': -24, 'lim-release': 100, 'lim-ceiling': -0.3 };
+
+describe('stored built-in limiter reads Auto Makeup as on when the record predates it (ADR 0066)', () => {
+    it('loads a limiter stored without the key with the switch on and every other value as stored', () => {
+        const [values] = loadedDevices(
+            storedProjectWithDevices([{ type: 'builtin-limiter', parameterValues: LEGACY_LIMITER_VALUES }])
+        );
+        expect(values).toEqual({ ...LEGACY_LIMITER_VALUES, 'lim-auto-makeup': 1 });
+    });
+
+    it.each([0, 1])('keeps a stored switch value of %d', (stored) => {
+        const [values] = loadedDevices(
+            storedProjectWithDevices([
+                { type: 'builtin-limiter', parameterValues: { ...LEGACY_LIMITER_VALUES, 'lim-auto-makeup': stored } },
+            ])
+        );
+        expect(values?.['lim-auto-makeup']).toBe(stored);
+    });
+
+    it('fills neither switch on the other device, nor on the Faust brick-wall limiter', () => {
+        const [limiterValues, compressorValues, faust] = loadedDevices(
+            storedProjectWithDevices([
+                { type: 'builtin-limiter', parameterValues: LEGACY_LIMITER_VALUES },
+                { type: 'builtin-compressor', parameterValues: LEGACY_COMPRESSOR_VALUES },
+                { type: 'faust-brick-wall-limiter', parameterValues: { ceiling: -1, release: 100 } },
+            ])
+        );
+        expect(limiterValues?.['comp-auto-makeup']).toBeUndefined();
+        expect(compressorValues?.['lim-auto-makeup']).toBeUndefined();
+        expect(faust).toEqual({ ceiling: -1, release: 100 });
+    });
+
+    it('places a newly added limiter with the switch off, and loading it keeps it off', () => {
+        const plugin = getPluginById('builtin-limiter');
+        expect(plugin?.parameters.find((candidate) => candidate.id === 'lim-auto-makeup')).toMatchObject({
+            type: 'bool',
+            defaultValue: 0,
+            automatable: false,
+        });
+        const added = composeAddedDeviceParameterValues(plugin);
+        expect(added['lim-auto-makeup']).toBe(0);
+        const [values] = loadedDevices(storedProjectWithDevices([{ type: 'builtin-limiter', parameterValues: added }]));
+        expect(values?.['lim-auto-makeup']).toBe(0);
+    });
+
+    it('encodes the limiter switch on as absence and off as 0', () => {
+        expect(
+            encodeStoredDeviceParameterValues('builtin-limiter', { ...LEGACY_LIMITER_VALUES, 'lim-auto-makeup': 1 })
+        ).toEqual(LEGACY_LIMITER_VALUES);
+        const off = { ...LEGACY_LIMITER_VALUES, 'lim-auto-makeup': 0 };
+        expect(encodeStoredDeviceParameterValues('builtin-limiter', off)).toBe(off);
+    });
+});
+
 /**
  * The fill runs on the CRDT projection, and the store writes its projected
  * value back through the reconciler. Without a stored encoding symmetric with

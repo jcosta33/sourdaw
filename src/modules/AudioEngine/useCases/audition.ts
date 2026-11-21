@@ -8,6 +8,8 @@ import { isBypassedNoteReceiver } from '../models/NoteReceivingInstrument';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
+import { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
+import { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 import { startFaustNote } from './faustScheduler/startFaustNote';
 import { resolveAuditionNoteReceiver } from './resolveAuditionNoteReceiver';
 import { builtinSynthVoice } from './scheduling/builtinSynthVoice';
@@ -119,7 +121,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
     const track = trackCandidates?.find((candidate) => candidate.id === trackId);
     const parentId = track?.parentId;
     const parentTrack = trackCandidates?.find((candidate) => Boolean(parentId) && candidate.id === parentId);
-    const toasterParentTrack = parentTrack?.devices.some((data) => data.type === 'toaster') ? parentTrack : undefined;
+    const toasterParentTrack = parentTrack && hasPadOutputHost(parentTrack.devices) ? parentTrack : undefined;
     // The note reaches the receiving instrument playback, export and live input
     // voice; each branch below only delivers to it.
     const receiver = resolveAuditionNoteReceiver(
@@ -206,7 +208,7 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
         const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
 
         const exactDeviceNode = parentStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id);
-        const dn = exactDeviceNode ?? parentStrip.deviceNodes.find((data) => data.type === 'toaster');
+        const dn = exactDeviceNode ?? parentStrip.deviceNodes.find((data) => hostsPadOutputs(data.type));
 
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;

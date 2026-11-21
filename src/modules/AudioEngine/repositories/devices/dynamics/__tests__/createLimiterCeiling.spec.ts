@@ -50,7 +50,9 @@ function sweepSineSamples(amplitude: number, cycles: number): number[] {
 describe('createLimiter ceiling cap (#3736)', () => {
     it('builds the clipper after the ceiling gain, with a curve and no oversampling', () => {
         const device = createLimiter(asBaseAudioContext(createMockAudioContext()));
-        expect(device.nodes).toHaveLength(3);
+        // Compressor, ceiling, clipper, then the Auto Makeup trim between the compressor and the ceiling.
+        expect(device.nodes).toHaveLength(4);
+        expect(device.namedNodes?.autoMakeupTrim).toBe(device.nodes[3]);
         const ceiling = device.nodes[1] as GainNode;
         const clipper = device.nodes[2] as unknown as { oversample: string };
         expect(ceiling.gain.value).toBeCloseTo(dbToGain(DEFAULT_LIMITER_CEILING_DB), 12);
