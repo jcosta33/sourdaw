@@ -99,19 +99,45 @@ describe('handleHideTrack', () => {
             );
         });
 
-        it.each([true, false])('refuses to hide or show the master track (hidden %s), writing nothing', (hidden) => {
+        function masterHideAction(
+            hidden: boolean,
+            expectedHidden?: boolean
+        ): Extract<AppAction, { type: 'hideTrack' }> {
+            return { type: 'hideTrack', payload: { trackId: 'master', hidden, expectedHidden } };
+        }
+
+        it('refuses to hide the master track, writing nothing', () => {
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [{ id: 'master', kind: 'master', hidden: false }],
             });
-            const action: Extract<AppAction, { type: 'hideTrack' }> = {
-                type: 'hideTrack',
-                payload: { trackId: 'master', hidden },
-            };
+            const action = masterHideAction(true);
             const batch = { actions: [action], actionIndex: 0 };
 
             expect(handleHideTrack.validate?.(action, batch)).toBe(false);
             expect(handleHideTrack.validationRefusalReason?.(action, batch)).toBe('The master track cannot be hidden');
             expect(mocks.hideTrack).not.toHaveBeenCalled();
+        });
+
+        it('shows a master track a saved project holds hidden', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: true }],
+            });
+            const action = masterHideAction(false);
+
+            expect(handleHideTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(action)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenCalledWith('master', false);
+        });
+
+        it('replays the stored inverse of a hidden master, which shows it again', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: true }],
+            });
+            const stored = masterHideAction(false, true);
+
+            expect(handleHideTrack.validate?.(stored, { actions: [stored], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(stored)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenCalledWith('master', false);
         });
 
         it('validates a restore only against the state it expects', () => {

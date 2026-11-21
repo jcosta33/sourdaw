@@ -9,12 +9,13 @@ import { describeMissingTrack, readPlannedDisplayTrack } from './readPlannedDisp
 type HideTrackAction = Extract<AppAction, { type: 'hideTrack' }>;
 
 function findRefusal(action: HideTrackAction, context: HandlerValidationContext): string | null {
-    const { trackId, expectedHidden } = action.payload;
+    const { trackId, hidden, expectedHidden } = action.payload;
     const track = readPlannedDisplayTrack(trackId, context);
     if (track === null) {
         return describeMissingTrack(trackId);
     }
-    if (track.kind === 'master') {
+    // A project saved with a hidden master must still be able to show it.
+    if (track.kind === 'master' && hidden) {
         return 'The master track cannot be hidden';
     }
     return expectedHidden === undefined || track.hidden === expectedHidden
