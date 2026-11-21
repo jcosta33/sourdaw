@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { captureFreezeStateSnapshot, UNFROZEN_SNAPSHOT } from '../../useCases/freezeBounce/freezeStateSnapshot';
+import { UNFROZEN_SNAPSHOT } from '../../useCases/freezeBounce/freezeStateSnapshot';
+import { readSettledFreezeState } from '../../useCases/freezeBounce/readSettledFreezeState';
 import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
@@ -17,7 +18,9 @@ export const handleUnfreezeTrack = createHandler<'unfreezeTrack'>({
         if (!track) {
             return { label: 'Unfreeze track', inverseAction: null };
         }
-        const previous = captureFreezeStateSnapshot(track);
+        // An unfreeze issued while a freeze renders sees `freezing` live; undoing to that would leave the
+        // track freezing with nothing rendering, so the state the running freeze will exit to stands in.
+        const previous = readSettledFreezeState(track);
         return {
             label: 'Unfreeze track',
             inverseAction: {

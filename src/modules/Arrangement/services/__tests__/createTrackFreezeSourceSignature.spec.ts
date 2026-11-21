@@ -434,4 +434,25 @@ describe('createTrackFreezeSourceSignature', () => {
             expect(signatureFor({ 'comp-auto-makeup': 1 })).not.toBe(signatureFor({}));
         });
     });
+
+    describe('limiter Auto Makeup legacy reading', () => {
+        function limiterSignature(parameterValues: Record<string, number>): string {
+            return createTrackFreezeSourceSignature({
+                clips: [],
+                devices: [{ id: 'd1', type: 'builtin-limiter', parameterValues, bypassed: false }],
+            });
+        }
+
+        it('signs a filled on switch as the absence a track frozen before the key existed was hashed from', () => {
+            expect(limiterSignature({ 'lim-threshold': -24, 'lim-auto-makeup': 1 })).toBe(
+                limiterSignature({ 'lim-threshold': -24 })
+            );
+        });
+
+        it('changes the signature when the switch is turned off', () => {
+            expect(limiterSignature({ 'lim-threshold': -24, 'lim-auto-makeup': 0 })).not.toBe(
+                limiterSignature({ 'lim-threshold': -24, 'lim-auto-makeup': 1 })
+            );
+        });
+    });
 });

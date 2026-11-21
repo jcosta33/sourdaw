@@ -5,7 +5,7 @@ import { type AgentRun } from '../../models/AgentRun';
 import { type BriefReading, type BriefReadings } from '../../models/BriefReading';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
-import { readBriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent, readBriefMixIntent } from '../readBriefMixIntent';
 
 import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './briefReadingRefusals';
 import { readRetainedPlanDigestDrift } from './readRetainedPlanDigestDrift';
@@ -27,8 +27,7 @@ function readCardStaleness(confirmation: PendingAppActionConfirmation, briefActi
 }
 
 type ChosenReadingDrift =
-    | { status: 'drifted'; reason: string }
-    | { status: 'unchanged'; mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>> };
+    { status: 'drifted'; reason: string } | { status: 'unchanged'; mixIntent: CatalogBriefMixIntent };
 
 function drifted(reason: string): ChosenReadingDrift {
     return { status: 'drifted', reason };

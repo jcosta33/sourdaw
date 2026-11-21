@@ -114,7 +114,7 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'builtin-limiter',
             name: 'Brickwall',
-            params: { threshold: -0.3, release: 100, ceiling: -0.3 },
+            params: { threshold: -0.3, release: 100, ceiling: -0.3, 'lim-auto-makeup': 1 },
         },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -0.3 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -6 } },
@@ -153,7 +153,11 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
                 autoRelease: 1,
             },
         },
-        { type: 'builtin-limiter', name: 'Brickwall', params: { threshold: -0.5, release: 100, ceiling: -0.5 } },
+        {
+            type: 'builtin-limiter',
+            name: 'Brickwall',
+            params: { threshold: -0.5, release: 100, ceiling: -0.5, 'lim-auto-makeup': 1 },
+        },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -0.5 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -9 } },
     ],
@@ -267,7 +271,11 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
                 autoRelease: 1,
             },
         },
-        { type: 'builtin-limiter', name: 'Broadcast Limit', params: { 'lim-threshold': -2, 'lim-release': 100 } },
+        {
+            type: 'builtin-limiter',
+            name: 'Broadcast Limit',
+            params: { 'lim-auto-makeup': 1, 'lim-threshold': -2, 'lim-release': 100 },
+        },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -16 } },
     ],
     songwriter: [

@@ -8,7 +8,7 @@ import { type IntentResult } from '../../models/IntentResult';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
-import { BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
+import { BRIEF_COMMAND_COUNT, BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import {
     type ScheduledVibeRunBatch,
     type MeasuredScheduledVibeRunPlan,
@@ -29,7 +29,7 @@ import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
-import { type readBriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent } from '../readBriefMixIntent';
 
 import { PLAN_NO_LONGER_PLANNED } from './briefReadingRefusals';
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
@@ -55,9 +55,6 @@ export type PlannedVibeRunSchedule =
           refusal?: VibeRunInitialBaselineRefusal;
       }
     | { status: 'scheduled'; schedule: VibeRunSchedule; lines: string[]; receipts: ApplicationToolReceipt[] };
-
-/** The brief is one `setProductionBrief`. */
-const BRIEF_COMMAND_COUNT = 1;
 
 const PLAN_NO_LONGER_HOLDS = `No batches were scheduled after the brief: the project ${PLAN_NO_LONGER_PLANNED}.`;
 
@@ -120,7 +117,7 @@ type ScheduleInput = {
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
     budgets: AgentRunBudgets;
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    mixIntent: CatalogBriefMixIntent;
     runId: string;
     sourceRevision: string;
     signal: AbortSignal;
@@ -437,10 +434,8 @@ function completeMeasuredSchedule(input: {
 }
 
 /** Preparation, sequential collection, then complete measured decomposition. */
-async function planSchedule(
-    input: ScheduleInput,
-    expectedPlanDigest: string | undefined
-): Promise<PlannedVibeRunSchedule> {
+async function planSchedule(input: ScheduleInput & { expectedPlanDigest?: string }): Promise<PlannedVibeRunSchedule> {
+    const { expectedPlanDigest } = input;
     const reading = compilePerceptualConstraints(input.prompt, input.context);
     const prepared = prepareVibeRunSchedule({ ...input, reading });
     if (prepared.status === 'none' && expectedPlanDigest !== undefined) {
@@ -499,7 +494,7 @@ export async function planVibeRunSchedule(
         expectedPlanDigest?: string;
     }
 ): Promise<PlannedVibeRunSchedule> {
-    const planned = await planSchedule(input, input.expectedPlanDigest);
+    const planned = await planSchedule(input);
     if (planned.status !== 'unscheduled') {
         return planned;
     }

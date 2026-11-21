@@ -6,27 +6,14 @@ import { join } from 'node:path';
 import { type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 
 import { expect, test } from './e2eTest';
+import { KOKORO_ARTIFACTS, KOKORO_BASE, type KokoroArtifact } from './kokoroFixtureArtifacts';
 
-const BASE =
-    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231';
+const BASE = KOKORO_BASE;
 const MODEL_ID = 'kokoro-82m-q8-1939ad2a';
 const PHRASE_ID = 'kokoro-real-owner';
-const artifacts = [
-    {
-        name: 'model_q8f16.onnx',
-        url: `${BASE}/onnx/model_q8f16.onnx`,
-        size: 86_033_585,
-        sha256: '04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0',
-    },
-    {
-        name: 'af_heart.bin',
-        url: `${BASE}/voices/af_heart.bin`,
-        size: 522_240,
-        sha256: 'd583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b',
-    },
-] as const;
+const artifacts = KOKORO_ARTIFACTS;
 
-type Artifact = (typeof artifacts)[number];
+type Artifact = KokoroArtifact;
 type Snapshot = {
     queue: {
         entries: { phraseId: string; requestId: string; pipeline: string; status: string; queuedAt: number }[];

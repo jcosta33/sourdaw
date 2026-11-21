@@ -7521,11 +7521,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/folder/createFolder.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 7
@@ -7583,11 +7578,6 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
-    "src/modules/Arrangement/useCases/freezeBounce/cancelFreezeTrack.ts": {
-        "typescript/no-non-null-assertion": {
             "count": 1
         }
     },

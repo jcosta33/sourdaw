@@ -67,7 +67,7 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-eq:eq-high-freq': [{ nodeIndex: 2, property: 'frequency' }],
     'builtin-eq:eq-high-q': [{ nodeIndex: 2, property: 'Q' }],
     // With Auto Makeup off, the twin that measures Chromium's hidden makeup
-    // (`applyCompressorAutoMakeup`) takes the same schedule, so its
+    // (`applyAutoMakeupSwitch`) takes the same schedule, so its
     // cancellation follows the automated curve quantum by quantum. With it on
     // there is no twin and only the compressor resolves.
     'builtin-compressor:comp-threshold': [
@@ -124,8 +124,16 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
         { nodeIndex: 1, property: 'gain', scale: -1, offset: 1 },
     ],
     'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain', convert: dbToGain }],
-    'builtin-limiter:lim-threshold': [{ nodeName: 'comp', property: 'threshold' }],
-    'builtin-limiter:lim-release': [{ nodeName: 'comp', property: 'release', scale: 1 / 1000 }],
+    // The limiter's Auto Makeup twin follows the same schedule as the
+    // compressor's does, for the two parameters that reach its node.
+    'builtin-limiter:lim-threshold': [
+        { nodeName: 'comp', property: 'threshold' },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'threshold' },
+    ],
+    'builtin-limiter:lim-release': [
+        { nodeName: 'comp', property: 'release', scale: 1 / 1000 },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'release', scale: 1 / 1000 },
+    ],
     // lim-ceiling is deliberately absent: the advertised cap lives in the
     // clipper's WaveShaper curve, so it has no AudioParam. It resolves through
     // `resolveDeviceCurveWriteTargets` below instead, which rebuilds that curve

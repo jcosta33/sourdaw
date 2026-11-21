@@ -1,3 +1,5 @@
+import { resolveStoredControllerHosting } from '#/modules/AudioEngine/useCases';
+
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
 
 /**
@@ -13,9 +15,10 @@ import { type StoredControllerNode } from '../../models/StoredControllerNode';
  * its value.
  */
 export function discardStoredMoves(deviceType: string, node: StoredControllerNode): void {
-    if (deviceType === 'grand-boule') {
+    const moves = resolveStoredControllerHosting(deviceType)?.moves;
+    if (moves === 'pedal-positions') {
         node.grandBouleControls?.discardStoredPedals?.();
-    } else if (deviceType === 'levain') {
+    } else if (moves === 'raw-controllers') {
         node.levainControls?.discardStoredCc?.();
     }
 }

@@ -25,6 +25,7 @@ export { configureInputMonitoringProjectAccess } from './configureInputMonitorin
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { acceptsSidechainInput } from './deviceCapabilities/acceptsSidechainInput';
+export { capturesNativeCalibration } from './deviceCapabilities/capturesNativeCalibration';
 export { classifyNoteReceivingDevice } from './deviceCapabilities/classifyNoteReceivingDevice';
 export { DRUM_KIT_DEFAULT_LEVEL_DB } from './deviceCapabilities/drumKitDefaultLevelDb';
 export { isBuiltinSynthDevice } from './deviceCapabilities/isBuiltinSynthDevice';
@@ -34,12 +35,15 @@ export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
 export { getSidechainTargetCapability } from './deviceCapabilities/getSidechainTargetCapability';
 export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
+export { hostsStoredControllers } from './deviceCapabilities/hostsStoredControllers';
 export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
 export { isMidiTransformDevice } from './deviceCapabilities/isMidiTransformDevice';
 export { readDrumKitOutputGain } from './deviceCapabilities/readDrumKitOutputGain';
+export { readStoredControllerDefault } from './deviceCapabilities/readStoredControllerDefault';
 export { resolveDrumKitBy } from './deviceCapabilities/resolveDrumKitBy';
 export { resolveDrumKitOutputGain } from './deviceCapabilities/resolveDrumKitOutputGain';
 export { resolveLiveNoteControls } from './deviceCapabilities/resolveLiveNoteControls';
+export { resolveStoredControllerHosting } from './deviceCapabilities/resolveStoredControllerHosting';
 export { resolveNoteReceivingInstrument } from './deviceCapabilities/resolveNoteReceivingInstrument';
 
 export { playAuditionNote } from './audition';

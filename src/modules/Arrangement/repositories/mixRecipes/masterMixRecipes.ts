@@ -71,6 +71,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'edit',
                 deviceType: 'builtin-limiter',
                 parameters: [
+                    { paramId: 'lim-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'lim-release', minimum: 30, maximum: 80 },
                     { paramId: 'lim-threshold', minimum: -6, maximum: -2 },
                     { paramId: 'lim-ceiling', minimum: -1, maximum: -0.3 },
