@@ -32,6 +32,9 @@ pub enum GuiCommand {
     CloseDestroyed,
     /// Flip what `can_resize` answers, then call `resize_hints_changed`.
     ToggleResizable,
+    /// Flip whether `get_resize_hints` refuses both axes, then call
+    /// `resize_hints_changed`. `can_resize` keeps its answer.
+    ToggleAxesRefused,
     /// Call `request_hide` and record the answer.
     RequestHide,
     /// Call `request_show` and record the answer.
@@ -44,6 +47,7 @@ impl GuiCommand {
         match self {
             Self::CloseDestroyed => 1.0,
             Self::ToggleResizable => 2.0,
+            Self::ToggleAxesRefused => 5.0,
             Self::RequestHide => 3.0,
             Self::RequestShow => 4.0,
         }
@@ -53,6 +57,7 @@ impl GuiCommand {
         match value.round() as i64 {
             1 => Some(Self::CloseDestroyed),
             2 => Some(Self::ToggleResizable),
+            5 => Some(Self::ToggleAxesRefused),
             3 => Some(Self::RequestHide),
             4 => Some(Self::RequestShow),
             _ => None,
@@ -83,6 +88,7 @@ pub(crate) struct GuiFixture {
     host: HostHandle,
     host_gui: AtomicPtr<clap_host_gui>,
     can_resize: AtomicBool,
+    axes_refused: AtomicBool,
     calls: [AtomicU8; GUI_CALLS_KEPT],
     call_count: AtomicUsize,
     show_answer: AtomicU8,
@@ -95,6 +101,7 @@ impl GuiFixture {
             host: HostHandle(host),
             host_gui: AtomicPtr::new(std::ptr::null_mut()),
             can_resize: AtomicBool::new(false),
+            axes_refused: AtomicBool::new(false),
             calls: std::array::from_fn(|_| AtomicU8::new(0)),
             call_count: AtomicUsize::new(0),
             show_answer: AtomicU8::new(state::encode_answer(None)),
@@ -163,11 +170,11 @@ impl GuiFixture {
             GuiCommand::CloseDestroyed => self.report_closed_from_own_thread(gui),
             GuiCommand::ToggleResizable => {
                 self.can_resize.fetch_xor(true, Ordering::Relaxed);
-                if let Some(resize_hints_changed) = gui.resize_hints_changed {
-                    // SAFETY: the host's `[thread-safe & !floating]` callback, on
-                    // its own pointer, for this embedded editor.
-                    unsafe { resize_hints_changed(host) };
-                }
+                Self::announce_resize_hints_changed(gui, host);
+            }
+            GuiCommand::ToggleAxesRefused => {
+                self.axes_refused.fetch_xor(true, Ordering::Relaxed);
+                Self::announce_resize_hints_changed(gui, host);
             }
             GuiCommand::RequestHide => {
                 if let Some(request_hide) = gui.request_hide {
@@ -186,6 +193,15 @@ impl GuiFixture {
                 }
             }
         }
+    }
+
+    fn announce_resize_hints_changed(gui: &clap_host_gui, host: *const clap_host) {
+        let Some(resize_hints_changed) = gui.resize_hints_changed else {
+            return;
+        };
+        // SAFETY: the host's `[thread-safe & !floating]` callback, on its own
+        // pointer, for this embedded editor.
+        unsafe { resize_hints_changed(host) };
     }
 
     /// Report the editor destroyed from a thread this plugin started, joined
@@ -288,19 +304,23 @@ unsafe extern "C" fn gui_can_resize(plugin: *const clap_plugin) -> bool {
     unsafe { gui_of(plugin) }.is_some_and(|gui| gui.can_resize.load(Ordering::Relaxed))
 }
 
-/// Both axes free: whether the editor resizes is `can_resize`'s answer alone.
+/// Both axes free unless `ToggleAxesRefused` refused them: whether the editor
+/// resizes is then `can_resize`'s answer alone, or refused outright.
 unsafe extern "C" fn gui_get_resize_hints(
-    _plugin: *const clap_plugin,
+    plugin: *const clap_plugin,
     hints: *mut clap_gui_resize_hints,
 ) -> bool {
     if hints.is_null() {
         return false;
     }
+    // SAFETY: the host passes the plugin it created.
+    let axes_free =
+        unsafe { gui_of(plugin) }.is_none_or(|gui| !gui.axes_refused.load(Ordering::Relaxed));
     // SAFETY: `hints` is a valid out parameter.
     unsafe {
         *hints = clap_gui_resize_hints {
-            can_resize_horizontally: true,
-            can_resize_vertically: true,
+            can_resize_horizontally: axes_free,
+            can_resize_vertically: axes_free,
             preserve_aspect_ratio: false,
             aspect_ratio_width: 0,
             aspect_ratio_height: 0,

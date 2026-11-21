@@ -201,6 +201,33 @@ fn the_window_follows_the_plugins_resizability_each_time_its_hints_change() {
 }
 
 #[test]
+fn hints_refusing_both_axes_make_the_window_not_resizable_though_the_plugin_can_resize() {
+    let plugin = InstalledPlugin::create("editor-axes-refused");
+    let mut wrapper = editor_instance(&plugin);
+    let window = Arc::new(RecordingWindow::default());
+    open_into(&mut wrapper, &window);
+
+    command(&mut wrapper, GuiCommand::ToggleResizable);
+    answer_asks(&mut wrapper);
+    assert!(gui_record(&wrapper).can_resize);
+    assert_eq!(window.calls(), [WindowCall::SetResizable(true)]);
+
+    command(&mut wrapper, GuiCommand::ToggleAxesRefused);
+    answer_asks(&mut wrapper);
+    assert!(
+        gui_record(&wrapper).can_resize,
+        "the plugin still answers can_resize true"
+    );
+    assert_eq!(
+        window.calls(),
+        [
+            WindowCall::SetResizable(true),
+            WindowCall::SetResizable(false)
+        ]
+    );
+}
+
+#[test]
 fn a_hide_then_a_show_reach_the_editor_and_then_its_window() {
     let plugin = InstalledPlugin::create("editor-visibility");
     let mut wrapper = editor_instance(&plugin);
