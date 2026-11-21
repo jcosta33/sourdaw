@@ -24,13 +24,13 @@ import { claimPreFreezeSnapshot } from './claimPreFreezeSnapshot';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
-import { captureFreezeMidiNotes } from './freezeMidiNoteSnapshot';
+import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
 import { preFreezeSnapshots } from './preFreezeSnapshots';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
-import { restoreFreezeSnapshot } from './restoreFreezeSnapshot';
+import { settleCancelledFreeze } from './settleCancelledFreeze';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -99,9 +99,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const previousFreeze = claimPreFreezeSnapshot(
         trackId,
         captureFreezeStateSnapshot(track),
-        activeFreezeTasks.has(trackId)
+        // A cancelled freeze leaves the track reading `freezing` until its own exit settles it,
+        // so a freeze started in that window inherits the stored snapshot too.
+        activeFreezeTasks.has(trackId) || track.freezeState.status === 'freezing'
     );
-    const renderedMidiNotes = captureFreezeMidiNotes(track.clips);
+    const renderedMidi = captureFreezeMidi(track.clips);
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -132,8 +134,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             activeFreezeTasks.get(trackId) === undefined &&
             isEligibleActiveProjectTrack(taskIdentity)
         ) {
-            restoreFreezeSnapshot(scope, trackId, previousFreeze);
-            preFreezeSnapshots.delete(trackId);
+            settleCancelledFreeze(scope, trackId, previousFreeze, pendingFreeze);
         }
         return false;
     };
@@ -216,7 +217,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        await assertFreezeSourceUnchanged(trackId, hash, renderedMidiNotes);
+        await assertFreezeSourceUnchanged(trackId, hash, renderedMidi);
         if (!isCurrentFreezeTask(taskIdentity)) {
             return exitAsNoLongerCurrent();
         }
@@ -277,8 +278,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         if (abortController.signal.aborted) {
-            restoreFreezeSnapshot(scope, trackId, previousFreeze);
-            preFreezeSnapshots.delete(trackId);
+            settleCancelledFreeze(scope, trackId, previousFreeze, pendingFreeze);
             return true;
         }
 

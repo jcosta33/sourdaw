@@ -29,6 +29,7 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { updateTrack } from '../../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
@@ -37,6 +38,7 @@ import { runtimeGraphTopology } from '../../runtimeGraphTopology';
 import { cancelFreezeTrack } from '../cancelFreezeTrack';
 import { freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
+import { unfreezeTrack } from '../unfreezeTrack';
 
 registerSupportingServicePorts();
 
@@ -95,6 +97,20 @@ function holdNextRender(): HeldRender {
         return renderedBuffer();
     });
     return { entered: entered.promise, release: () => resume.resolve() };
+}
+
+type RejectableRender = { entered: Promise<void>; fail: () => void };
+
+/** The next render stays pending until `fail` rejects it. */
+function holdNextRenderThenReject(): RejectableRender {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    vi.mocked(renderTrackOffline).mockImplementationOnce(async () => {
+        entered.resolve();
+        await resume.promise;
+        throw new Error('Render exploded');
+    });
+    return { entered: entered.promise, fail: () => resume.resolve() };
 }
 
 /** Freezes the track, runs `duringRender` while the render is awaiting, then lets the render succeed. */
@@ -317,5 +333,147 @@ describe('a cancelled freeze', () => {
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
         await executeAppAction(addNotesAction());
         expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
+    });
+});
+
+describe('a cancelled freeze that settles after a later freeze moved the track on', () => {
+    it('keeps the error state of a later freeze that failed', async () => {
+        const first = holdNextRender();
+        // Called directly: as an action its restore would land in a transaction that is rolled back.
+        const firstFreeze = freezeTrack(TRACK_ID);
+        await first.entered;
+        cancelFreezeTrack(TRACK_ID);
+        flushAutomergeStorageWrites();
+
+        const second = holdNextRenderThenReject();
+        // As the action: the failure diagnostic is only admitted for a freeze that ran inside one.
+        const secondFreeze = executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+        await second.entered;
+        second.fail();
+        await secondFreeze;
+        expect(findTrack().freezeState.status).toBe('error');
+
+        first.release();
+        await firstFreeze;
+
+        expect(findTrack().freezeState.status).toBe('error');
+        expect(findTrack().frozen).toBe(false);
+    });
+
+    it('stays unfrozen after a later freeze committed and was unfrozen', async () => {
+        // The cancelled freeze's own earlier state is a stale take, which a late restore would bring back.
+        updateTrack(TRACK_ID, (time) => ({
+            ...time,
+            frozen: true,
+            frozenBufferId: 'old-take',
+            freezeState: { status: 'stale', freezeId: 'old-freeze', frozenBufferId: 'old-take' },
+        }));
+        flushAutomergeStorageWrites();
+        const first = holdNextRender();
+        const firstFreeze = freezeTrack(TRACK_ID);
+        await first.entered;
+        cancelFreezeTrack(TRACK_ID);
+        flushAutomergeStorageWrites();
+
+        const second = holdNextRender();
+        const secondFreeze = freezeTrack(TRACK_ID);
+        await second.entered;
+        second.release();
+        await secondFreeze;
+        expect(findTrack().frozen).toBe(true);
+        unfreezeTrack(TRACK_ID);
+        expectSettledUnfrozen();
+
+        first.release();
+        await firstFreeze;
+
+        expectSettledUnfrozen();
+    });
+
+    it.each([
+        ['the superseded freeze first', true],
+        ['the cancelled later freeze first', false],
+    ])('ends unfrozen when both are cancelled and %s settles', async (_name, firstSettlesFirst) => {
+        const first = holdNextRender();
+        const firstFreeze = freezeTrack(TRACK_ID);
+        await first.entered;
+        cancelFreezeTrack(TRACK_ID);
+
+        const second = holdNextRender();
+        const secondFreeze = freezeTrack(TRACK_ID);
+        await second.entered;
+        cancelFreezeTrack(TRACK_ID);
+
+        if (firstSettlesFirst) {
+            first.release();
+            await firstFreeze;
+            second.release();
+            await secondFreeze;
+        } else {
+            second.release();
+            await secondFreeze;
+            first.release();
+            await firstFreeze;
+        }
+
+        expectSettledUnfrozen();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('settles unfrozen when the render rejects after the cancel', async () => {
+        const render = holdNextRenderThenReject();
+        const freezing = freezeTrack(TRACK_ID);
+        await render.entered;
+        cancelFreezeTrack(TRACK_ID);
+        render.fail();
+        await freezing;
+
+        expectSettledUnfrozen();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+});
+
+describe('a freeze whose controller rows change during the render', () => {
+    const CC_ROW = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
+    const BEND_ROW = { id: 'bend-1', value: 0, beat: 0, channel: 0 };
+
+    beforeEach(() => {
+        midiStore.set({
+            ...midiStore.value!,
+            ccByClipId: { [CLIP_ID]: [CC_ROW] },
+            pitchBendByClipId: { [CLIP_ID]: [BEND_ROW] },
+        });
+    });
+
+    it('commits the take when the controller rows are rewritten unchanged', async () => {
+        await freezeWhile(() => {
+            const state = midiStore.value!;
+            midiStore.set({ ...state, ccByClipId: structuredClone(state.ccByClipId) });
+        });
+
+        expect(findTrack().frozen).toBe(true);
+    });
+
+    it('refuses the take when a CC row changes while the render is pending', async () => {
+        await freezeWhile(() => {
+            midiStore.set({ ...midiStore.value!, ccByClipId: { [CLIP_ID]: [{ ...CC_ROW, value: 99 }] } });
+        });
+
+        expect(findTrack().frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('refuses the take when a pitch-bend row changes while the render is pending', async () => {
+        await freezeWhile(() => {
+            midiStore.set({
+                ...midiStore.value!,
+                pitchBendByClipId: { [CLIP_ID]: [{ ...BEND_ROW, value: 4000 }] },
+            });
+        });
+
+        expect(findTrack().frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 });

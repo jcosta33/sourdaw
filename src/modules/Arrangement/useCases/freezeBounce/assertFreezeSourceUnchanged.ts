@@ -1,8 +1,8 @@
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { type Track, trackStore } from '../../stores/trackStore';
 
-import { type FreezeMidiNoteSnapshot } from './freezeMidiNoteSnapshot';
-import { freezeMidiNotesUnchanged } from './freezeMidiNotesUnchanged';
+import { type FreezeMidiSnapshot } from './freezeMidiSnapshot';
+import { freezeMidiUnchanged } from './freezeMidiUnchanged';
 
 // Carries no "Freeze failed" prefix: the failure paths in freezeTrack add it where they need it.
 const CHANGED_DURING_FREEZE = 'The track changed while it was freezing. Freeze it again.';
@@ -27,7 +27,7 @@ function findLiveTrack(trackId: string): Track {
 export async function assertFreezeSourceUnchanged(
     trackId: string,
     renderedSourceHash: string,
-    renderedMidiNotes: FreezeMidiNoteSnapshot
+    renderedMidi: FreezeMidiSnapshot
 ): Promise<void> {
     let hashed = findLiveTrack(trackId);
     for (;;) {
@@ -37,9 +37,9 @@ export async function assertFreezeSourceUnchanged(
             hashed = current;
             continue;
         }
-        // MIDI note content is not part of the digest, and notes are written from routes the action
+        // MIDI note and controller content is not part of the digest, and notes are written from routes the action
         // guards do not cover, so the commit is the one place every route has to pass.
-        if (liveHash !== renderedSourceHash || !freezeMidiNotesUnchanged(renderedMidiNotes)) {
+        if (liveHash !== renderedSourceHash || !freezeMidiUnchanged(renderedMidi)) {
             throw new Error(CHANGED_DURING_FREEZE);
         }
         return;
