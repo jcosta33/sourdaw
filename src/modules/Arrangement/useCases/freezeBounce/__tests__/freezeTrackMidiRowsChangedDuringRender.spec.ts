@@ -337,8 +337,9 @@ describe('a row written after the source check resolves', () => {
         vi.mocked(computeTrackHash).mockImplementation(async (clips, devices) => {
             hashCalls += 1;
             const hash = await realHash(clips, devices);
-            // The first digest is the freeze's own, the second is the source check's last call.
-            sourceCheckResolved = hashCalls === 2;
+            // The first digest is the freeze's own, the second is the check before the render, the
+            // third is the commit-time source check's last call.
+            sourceCheckResolved = hashCalls === 3;
             return hash;
         });
         // The first project read after the source check resolves is the current-task check that
