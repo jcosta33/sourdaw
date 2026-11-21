@@ -8,7 +8,7 @@ import { type ScheduledVibeRunBatch, type VibeRunVerificationRange } from '../..
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { readArrangementRange } from '../readArrangementRange';
-import { type BriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent } from '../readBriefMixIntent';
 
 import { readVibeRunCandidates } from './readVibeRunCandidates';
 import { readVibeRunInitialGoals } from './readVibeRunInitialGoals';
@@ -23,7 +23,7 @@ export type PrepareVibeRunInput = {
     prompt: string;
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
-    mixIntent: BriefMixIntent;
+    mixIntent: CatalogBriefMixIntent;
     runId: string;
     priorReceipts: readonly ApplicationToolReceipt[];
 };

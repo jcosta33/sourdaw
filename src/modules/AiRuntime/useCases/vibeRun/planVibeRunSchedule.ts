@@ -29,7 +29,7 @@ import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
-import { type BriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent } from '../readBriefMixIntent';
 
 import { PLAN_NO_LONGER_PLANNED } from './briefReadingRefusals';
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
@@ -117,7 +117,7 @@ type ScheduleInput = {
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
     budgets: AgentRunBudgets;
-    mixIntent: BriefMixIntent;
+    mixIntent: CatalogBriefMixIntent;
     runId: string;
     sourceRevision: string;
     signal: AbortSignal;

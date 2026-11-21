@@ -1,12 +1,12 @@
 import { type RequestedBriefMixAlternative } from '../models/BriefReading';
 
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
-import { type BriefMixIntent, readBriefMixIntent } from './readBriefMixIntent';
+import { type CatalogBriefMixIntent, readBriefMixIntent } from './readBriefMixIntent';
 
 export const BRIEF_ALTERNATIVES_MAX = 3;
 export const BRIEF_ALTERNATIVE_NAME_MAX_LENGTH = 40;
 
-type MixDescriptor = BriefMixIntent['requestedDescriptors'][number];
+type MixDescriptor = CatalogBriefMixIntent['requestedDescriptors'][number];
 
 /** A reading whose characters are the recipe catalogue's own descriptors, not any string. */
 export type CatalogBriefMixAlternative = RequestedBriefMixAlternative & {
@@ -14,7 +14,7 @@ export type CatalogBriefMixAlternative = RequestedBriefMixAlternative & {
 };
 
 type ReadMixIntentWithAlternatives =
-    | { status: 'read'; mixIntent: BriefMixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
+    | { status: 'read'; mixIntent: CatalogBriefMixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
     | { status: 'invalid'; reason: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
