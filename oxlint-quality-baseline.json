@@ -6304,7 +6304,7 @@
             "count": 1
         },
         "typescript/no-non-null-assertion": {
-            "count": 5
+            "count": 3
         }
     },
     "src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.meterMap.integration.spec.tsx": {

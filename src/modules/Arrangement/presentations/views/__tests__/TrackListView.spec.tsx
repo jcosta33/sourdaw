@@ -628,9 +628,8 @@ describe('TrackListView', () => {
         });
     });
 
-    it('selects the first track on ArrowDown when nothing is selected', () => {
-        const mockedUseTracks = vi.mocked(useTracks);
-        mockedUseTracks.mockReturnValue({
+    it('moves from the tab-stop row on ArrowDown when nothing is selected', () => {
+        vi.mocked(useTracks).mockReturnValue({
             tracks: [
                 normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
                 normalizeTrack({ id: 't2', name: 'B', kind: 'midi', parentId: null, collapsed: false, height: 64 }),
@@ -639,12 +638,12 @@ describe('TrackListView', () => {
         });
         renderWithTooltip(<TrackListView />);
         fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
-        expect(selectTrack).toHaveBeenCalledWith('t1');
+        expect(selectTrack).toHaveBeenCalledTimes(1);
+        expect(selectTrack).toHaveBeenCalledWith('t2');
     });
 
-    it('selects the last track on ArrowUp when nothing is selected', () => {
-        const mockedUseTracks = vi.mocked(useTracks);
-        mockedUseTracks.mockReturnValue({
+    it('does nothing on ArrowUp at the tab-stop row when nothing is selected', () => {
+        vi.mocked(useTracks).mockReturnValue({
             tracks: [
                 normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
                 normalizeTrack({ id: 't2', name: 'B', kind: 'midi', parentId: null, collapsed: false, height: 64 }),
@@ -653,7 +652,68 @@ describe('TrackListView', () => {
         });
         renderWithTooltip(<TrackListView />);
         fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
-        expect(selectTrack).toHaveBeenCalledWith('t2');
+        expect(selectTrack).not.toHaveBeenCalled();
+    });
+
+    describe('roving tab stop', () => {
+        const row = (
+            id: string,
+            parentId: string | null = null,
+            extra: Partial<Parameters<typeof normalizeTrack>[0]> = {}
+        ) => normalizeTrack({ id, name: id, kind: 'audio', parentId, collapsed: false, height: 64, ...extra });
+        const tabStopIds = (): string[] =>
+            screen
+                .getAllByRole('row')
+                .filter((element) => element.getAttribute('tabindex') === '0')
+                .map((element) => element.getAttribute('data-track-id') ?? '');
+
+        it('makes the first drawn row the tab stop when nothing is selected', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b'), row('c')], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('makes the first drawn row the tab stop when the selection is inside a collapsed folder', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    row('a'),
+                    row('folder', null, { kind: 'folder', collapsed: true }),
+                    row('child', 'folder'),
+                    row('b'),
+                ],
+                selectedTrackId: 'child',
+            });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-child')).not.toBeInTheDocument();
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('makes the first drawn row the tab stop when the selection is hidden and hidden tracks are off', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [row('a'), row('b', null, { hidden: true }), row('c')],
+                selectedTrackId: 'b',
+            });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-b')).not.toBeInTheDocument();
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('keeps the selected row as the only tab stop while it is drawn', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b'), row('c')], selectedTrackId: 'b' });
+            renderWithTooltip(<TrackListView />);
+            expect(tabStopIds()).toEqual(['b']);
+        });
+
+        it('starts an arrow key from the tab-stop row when the selection is not drawn', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [row('a'), row('b', null, { hidden: true }), row('c')],
+                selectedTrackId: 'b',
+            });
+            renderWithTooltip(<TrackListView />);
+            fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+            expect(selectTrack).toHaveBeenCalledTimes(1);
+            expect(selectTrack).toHaveBeenCalledWith('c');
+        });
     });
 
     it('does nothing on ArrowDown at the last track', () => {

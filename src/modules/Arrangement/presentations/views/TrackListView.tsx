@@ -2,6 +2,7 @@ import {
     type ReactElement,
     type CSSProperties,
     type DragEvent,
+    type FocusEvent,
     type KeyboardEvent,
     type MouseEvent,
     useRef,
@@ -67,6 +68,42 @@ function getHeaderSpacerHeight(scrollerHeight: number, canvasViewportHeight: num
     return Math.max(0, scrollerHeight - canvasViewportHeight);
 }
 
+/**
+ * The one row that takes Tab: the selected track's row while the list draws it,
+ * else the first drawn row, so the list stays reachable when nothing is
+ * selected or the selection sits in a collapsed folder or a hidden track.
+ */
+function getTabStopTrackId(rows: readonly { id: string }[], selectedTrackId: string | null): string | null {
+    if (selectedTrackId !== null && rows.some((row) => row.id === selectedTrackId)) {
+        return selectedTrackId;
+    }
+    return rows[0]?.id ?? null;
+}
+
+/**
+ * Where focus goes once the focused row is gone: the row that took its place
+ * (its next neighbour), else the one before it.
+ */
+function getNeighbourRowId(
+    previousIds: readonly string[],
+    removedId: string,
+    currentIds: readonly string[]
+): string | null {
+    const removedIndex = previousIds.indexOf(removedId);
+    if (removedIndex < 0) {
+        return currentIds[0] ?? null;
+    }
+    return currentIds[removedIndex] ?? currentIds[removedIndex - 1] ?? null;
+}
+
+/**
+ * Focus is adrift on the body, or still on the row's own context menu, which
+ * closes with its row and could only hand focus back to an element that is gone.
+ */
+function isFocusAdrift(active: Element | null): boolean {
+    return active === null || active === document.body || active.closest('[role="menu"]') !== null;
+}
+
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
     compact: 'Compact',
@@ -85,6 +122,9 @@ export const TrackListView = ({
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const dragTrackIdRef = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
+    const focusedRowIdRef = useRef<string | null>(null);
+    const previousRowIdsRef = useRef<string[]>([]);
     const isSyncingRef = useRef(false);
     const scrollRafRef = useRef<number | null>(null);
     const prefs = useStore(preferencesStore, defaultPreferences);
@@ -167,6 +207,45 @@ export const TrackListView = ({
     const visibleTracks = getTimelineRowTracks(tracks, showHiddenTracks);
     const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
 
+    const tabStopTrackId = getTabStopTrackId(visibleTracks, selectedTrackId);
+
+    // A row that removes itself (Delete Track, Hide Track) takes focus with it
+    // and leaves it on the body, so focus moves to the neighbour that took its
+    // place, else to the grid itself when no row is left.
+    useLayoutEffect(() => {
+        const rowIds = visibleTracks.map((track) => track.id);
+        const previousIds = previousRowIdsRef.current;
+        previousRowIdsRef.current = rowIds;
+        const focusedId = focusedRowIdRef.current;
+        if (focusedId === null || rowIds.includes(focusedId)) {
+            return;
+        }
+        focusedRowIdRef.current = null;
+        const grid = gridRef.current;
+        if (!grid || !isFocusAdrift(document.activeElement)) {
+            return;
+        }
+        const neighbourId = getNeighbourRowId(previousIds, focusedId, rowIds);
+        if (neighbourId === null) {
+            grid.focus();
+            return;
+        }
+        const neighbourRow = Array.from(grid.children).find(
+            (child): child is HTMLElement =>
+                child instanceof HTMLElement && child.getAttribute('data-track-id') === neighbourId
+        );
+        (neighbourRow ?? grid).focus();
+    });
+
+    const handleRowFocus = (event: FocusEvent<HTMLDivElement>): void => {
+        // A portaled menu's focus bubbles through React to here; it is not a row.
+        if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) {
+            return;
+        }
+        const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
+        focusedRowIdRef.current = row?.getAttribute('data-track-id') ?? null;
+    };
+
     const handleDragStart = (trackId: string) => {
         dragTrackIdRef.current = trackId;
     };
@@ -215,21 +294,18 @@ export const TrackListView = ({
             return;
         }
 
-        const currentIndex = visibleTracks.findIndex((time) => time.id === selectedTrackId);
+        // Start from the tab-stop row, so an undrawn selection never reads as -1.
+        const currentIndex = visibleTracks.findIndex((time) => time.id === tabStopTrackId);
 
         if (event.key === 'ArrowDown') {
             event.preventDefault();
-            if (currentIndex < visibleTracks.length - 1) {
+            if (currentIndex >= 0 && currentIndex < visibleTracks.length - 1) {
                 selectTrack(visibleTracks[currentIndex + 1]!.id);
-            } else if (currentIndex === -1 && visibleTracks.length > 0) {
-                selectTrack(visibleTracks[0]!.id);
             }
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             if (currentIndex > 0) {
                 selectTrack(visibleTracks[currentIndex - 1]!.id);
-            } else if (currentIndex === -1 && visibleTracks.length > 0) {
-                selectTrack(visibleTracks[visibleTracks.length - 1]!.id);
             }
         } else if (event.key === 'Enter' && selectedTrackId) {
             event.preventDefault();
@@ -395,13 +471,19 @@ export const TrackListView = ({
                 onKeyDown={handleKeyDown}
                 onClick={handleRowClick}
             >
-                <div role="grid" aria-label="Track list">
+                <div
+                    ref={gridRef}
+                    role="grid"
+                    aria-label="Track list"
+                    tabIndex={visibleTracks.length === 0 ? -1 : undefined}
+                    onFocus={handleRowFocus}
+                >
                     {visibleTracks.map((track, index) => {
                         return (
                             <div
                                 key={track.id}
                                 role="row"
-                                tabIndex={track.id === selectedTrackId ? 0 : -1}
+                                tabIndex={track.id === tabStopTrackId ? 0 : -1}
                                 aria-selected={track.id === selectedTrackId}
                                 draggable
                                 onDragStart={(event) => {
