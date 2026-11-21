@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
-import { changesCompSource, changesCompSourceByActionType, compSourceChange } from '../ChangesCompSourceByActionType';
+import { changesCompSourceByActionType, compSourceChange } from '../ChangesCompSourceByActionType';
 
 describe('changesCompSourceByActionType', () => {
     it('marks exactly the actions that can change a comp take source', () => {
@@ -74,6 +74,6 @@ describe('changesCompSourceByActionType', () => {
     it('answers false for an inherited name read from untrusted JSON', () => {
         const parsed: Pick<AppAction, 'type'> = JSON.parse('{"type":"constructor"}');
 
-        expect(changesCompSource(parsed.type)).toBe(false);
+        expect(compSourceChange(parsed.type)).toBe(false);
     });
 });

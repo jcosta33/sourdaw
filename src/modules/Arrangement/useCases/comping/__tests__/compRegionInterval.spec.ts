@@ -594,6 +594,57 @@ describe('compRegionInterval', () => {
             }
         );
 
+        it('still captures after a prefix removes and restores the source track', () => {
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                clips: takes.map((take) =>
+                    ClipDummy.create({
+                        id: take.clipId,
+                        trackId: 'track-1',
+                        type: 'audio',
+                        startBeat: 0,
+                        endBeat: 12,
+                    })
+                ),
+            });
+            const restoredLane = {
+                id: 'lane-1',
+                trackId: 'track-1',
+                takes,
+                activeCompRegions: [{ startBeat: 0, endBeat: 12, takeId: 'a' }],
+            };
+            const removeTrack: AppAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
+            const restoreTrack: AppAction = {
+                type: 'restoreTrack',
+                payload: {
+                    trackId: track.id,
+                    trackSnapshot: track,
+                    trackName: track.name,
+                    trackKind: 'audio',
+                    trackGain: track.gain,
+                    trackParentId: track.parentId,
+                    trackIndex: 0,
+                    wasSelected: false,
+                    routingPatches: [],
+                    automationLaneSnapshots: [],
+                    clipSatellites: [],
+                    midiNotesByClipId: {},
+                    midiCcByClipId: {},
+                    midiPitchBendByClipId: {},
+                    takeLaneSnapshots: [restoredLane],
+                    sidechainRouteSnapshots: [],
+                    ownedModulatorSnapshots: [],
+                    incomingModulationMappingSnapshots: [],
+                },
+            };
+            const actions = [removeTrack, restoreTrack, setCompRegion];
+
+            const captured = compRegionInterval.capturePatchAfterPrefix(input, { actions, actionIndex: 2 });
+
+            expect(captured).toMatchObject({ trackId: 'track-1' });
+        });
+
         it('still captures after detectTempo, which only reads audio and writes no tempo', () => {
             const detectTempo: AppAction = { type: 'detectTempo', payload: { clipId: 'not-a-track-clip' } };
             const actions = [detectTempo, setCompRegion];

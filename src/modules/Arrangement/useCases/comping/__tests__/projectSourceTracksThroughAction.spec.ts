@@ -69,6 +69,17 @@ describe('projectSourceTracksThroughAction', () => {
         expect(projectSourceTracksThroughAction(action, [kept])).toBeNull();
     });
 
+    it('refuses a restore whose snapshot holds a clip the track sanitizer drops', () => {
+        const action = restoreTrack('restored');
+        if (action.type !== 'restoreTrack') {
+            throw new Error('Expected a restoreTrack fixture');
+        }
+        const withMalformedClip = { ...restored, clips: [...restored.clips, JSON.parse('null')] };
+        action.payload.trackSnapshot = withMalformedClip;
+
+        expect(projectSourceTracksThroughAction(action, [kept])).toBeNull();
+    });
+
     it('keeps the tracks for an action name that is only inherited, read from untrusted JSON', () => {
         const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{}}');
 

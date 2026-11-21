@@ -406,7 +406,3 @@ function isActionType(type: string): type is AppActionType {
 export function compSourceChange(type: string): CompSourceChange {
     return isActionType(type) && changesCompSourceByActionType[type];
 }
-
-export function changesCompSource(type: string): boolean {
-    return compSourceChange(type) !== false;
-}
