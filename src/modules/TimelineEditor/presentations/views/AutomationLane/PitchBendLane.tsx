@@ -12,6 +12,7 @@ import { cn } from '#/utils/Styles/cn';
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { handleClipLaneInsertKeyDown, readLaneValueAtBeat } from '../../helpers/clipLaneKeyboardInsert';
 import { readClipPlayheadBeat } from '../../helpers/clipPlayheadBeat';
+import { refuseNoteEditOnFrozenTrack } from '../../helpers/refuseNoteEditOnFrozenTrack';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type PitchBendLaneProps = {
@@ -69,7 +70,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             return;
         }
 
-        if ((event.target as HTMLElement).dataset.pbPoint) {
+        if ((event.target as HTMLElement).dataset.pbPoint || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
 
@@ -84,7 +85,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     };
 
     const insertPointAtPlayhead = (): void => {
-        if (!clipId) {
+        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const beat = readClipPlayheadBeat(clipId);
@@ -99,7 +100,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     const handlePointPointerDown = (pbId: string, event: PointerEvent<HTMLDivElement>) => {
         event.stopPropagation();
         // Primary contact only — a right-button press belongs to the context menu, not to an edit.
-        if (!clipId || hasActiveDrag() || event.button !== 0) {
+        if (!clipId || hasActiveDrag() || event.button !== 0 || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const container = containerRef.current;
@@ -159,7 +160,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
 
     const handlePointDoubleClick = (pbId: string, event: MouseEvent<HTMLDivElement>) => {
         event.stopPropagation();
-        if (!clipId) {
+        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const point = points.find((param) => param.id === pbId);

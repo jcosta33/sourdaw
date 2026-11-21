@@ -69,6 +69,7 @@ import {
     getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
 import { movePianoRollTakeRows } from '../helpers/pianoRollTakeRowActions';
+import { isNoteEditKey, refuseNoteEditOnFrozenTrack, willWriteNotes } from '../helpers/refuseNoteEditOnFrozenTrack';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
@@ -422,6 +423,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // paint undo snapshot) must read the target's own list: the primary's
     // `notes` prop describes only the primary clip.
     const targetClipNotes = targetClipId === clipId ? notes : (openedClipNotes?.[targetClipId] ?? []);
+    const viewClipIds = [clipId, targetClipId, ...Object.keys(openedClipNotes ?? {})];
+    const refuseFrozenEdit = (): boolean => refuseNoteEditOnFrozenTrack(viewClipIds);
 
     const projectionForViewId = (id: string): PianoRollTakeNotes | undefined => {
         for (const projection of takeProjections?.values() ?? []) {
@@ -814,6 +817,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 // R-A12: snap to nearest scale degree when constrainToScale is active
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
+                    if ((stepInput || (paintMode && !chordMode)) && refuseFrozenEdit()) {
+                        return;
+                    }
                     if (stepInput) {
                         if (!insertFrozen(targetClipId, stepBeat, pitch, gridSnap, getDefaultNoteVelocity())) {
                             const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, getDefaultNoteVelocity());
@@ -1111,6 +1117,15 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (auditionRef.current) {
             auditionRef.current();
             auditionRef.current = null;
+        }
+
+        if (willWriteNotes(drag.mode, { dragPreviewRef, pendingStampRef, rubberBandRef }) && refuseFrozenEdit()) {
+            dragPreviewRef.current = null;
+            pendingStampRef.current = null;
+            rubberBandRef.current = null;
+            dragRef.current = { ...INITIAL_DRAG_STATE, mode: 'none' };
+            draw();
+            return;
         }
 
         if (drag.mode === 'rubber-band') {
@@ -1540,7 +1555,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (hit) {
             const stamped = stampedByClickRef.current;
             stampedByClickRef.current = null;
-            if (stamped && isStampedCell(hit.note, stamped)) {
+            if ((stamped && isStampedCell(hit.note, stamped)) || refuseFrozenEdit()) {
                 return;
             }
             if (editFrozen(hit.note.id, null)) {
@@ -1558,6 +1573,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
         if (event.key === 'Escape' && cancelLasso()) {
             event.preventDefault();
+            return;
+        }
+        if (isNoteEditKey(event, { selectedCount: selectedNoteIds.size, stepInput }) && refuseFrozenEdit()) {
+            event.preventDefault();
+            event.nativeEvent.stopImmediatePropagation();
             return;
         }
         // The focused piano roll owns Delete / Backspace even with nothing

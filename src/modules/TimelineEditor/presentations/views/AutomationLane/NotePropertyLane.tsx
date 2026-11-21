@@ -42,6 +42,7 @@ import { type projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
+import { refuseNoteEditOnFrozenTrack } from '../../helpers/refuseNoteEditOnFrozenTrack';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
@@ -562,7 +563,7 @@ export const NotePropertyLane = ({
         const h = container.getBoundingClientRect().height;
         const hitNote = hitNoteAtX(toLanePoint(event.clientX, event.clientY).x);
 
-        if (!hitNote) {
+        if (!hitNote || refuseNoteEditOnFrozenTrack([clipId, hitNote.clipId])) {
             return;
         }
 
@@ -676,7 +677,7 @@ export const NotePropertyLane = ({
             return;
         }
         const container = containerRef.current;
-        if (!container || sortedSelected.length < 2) {
+        if (!container || sortedSelected.length < 2 || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
 

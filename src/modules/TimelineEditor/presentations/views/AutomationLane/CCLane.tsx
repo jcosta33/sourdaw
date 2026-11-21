@@ -17,6 +17,7 @@ import { cn } from '#/utils/Styles/cn';
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
 import { handleClipLaneInsertKeyDown, readLaneValueAtBeat } from '../../helpers/clipLaneKeyboardInsert';
 import { readClipPlayheadBeat } from '../../helpers/clipPlayheadBeat';
+import { refuseNoteEditOnFrozenTrack } from '../../helpers/refuseNoteEditOnFrozenTrack';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type CCLaneProps = {
@@ -127,7 +128,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         if (!container) {
             return;
         }
-        if ((event.target as HTMLElement).dataset.ccPoint) {
+        if ((event.target as HTMLElement).dataset.ccPoint || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const rect = container.getBoundingClientRect();
@@ -141,7 +142,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     };
 
     const insertPointAtPlayhead = (): void => {
-        if (!clipId) {
+        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const beat = readClipPlayheadBeat(clipId);
@@ -155,7 +156,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
         event.stopPropagation();
         // Primary contact only — a right-button press belongs to the context menu, not to an edit.
-        if (!clipId || hasActiveDrag() || event.button !== 0) {
+        if (!clipId || hasActiveDrag() || event.button !== 0 || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const container = containerRef.current;
@@ -237,7 +238,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
 
     const handlePointDoubleClick = (ccId: string, event: MouseEvent<HTMLDivElement>) => {
         event.stopPropagation();
-        if (!clipId) {
+        if (!clipId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         const point = points.find((param) => param.id === ccId);
