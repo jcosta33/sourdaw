@@ -29,7 +29,6 @@ import {
     parseVersionedCommandEnvelope,
     redo,
     resetActionReplayAuthority,
-    resetCommandBatchIdempotency,
     serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
     undo,
@@ -271,9 +270,7 @@ describe('setCompRegion command integration', () => {
     });
 
     afterEach(() => {
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        resetCommandBatchIdempotency();
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
         clearUndoHistory();

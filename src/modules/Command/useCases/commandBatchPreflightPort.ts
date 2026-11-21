@@ -34,13 +34,27 @@ type CommandBatchPreflightState = {
 
 type CommandBatchPreflightProvider = (input: CommandBatchPreflightCaptureInput) => CommandBatchPreflightState;
 
-let provider: CommandBatchPreflightProvider | null = null;
+let registeredProvider: CommandBatchPreflightProvider | null = null;
 
+/**
+ * Command may not import the module that reads the project document, so the
+ * composition root (`#/app/bootstrap`) fills this once at boot.
+ */
 export const commandBatchPreflightPort = {
-    capture(input: CommandBatchPreflightCaptureInput): CommandBatchPreflightState | null {
-        return provider?.(input) ?? null;
+    /**
+     * Reading before registration throws rather than answering `null`: a
+     * batch checked against no state would be rejected as "unavailable" and
+     * hide the wiring fault.
+     */
+    capture(input: CommandBatchPreflightCaptureInput): CommandBatchPreflightState {
+        if (registeredProvider === null) {
+            throw new Error(
+                'commandBatchPreflightPort.capture: the preflight provider is not registered; call commandBatchPreflightPort.setProvider() from #/app/bootstrap'
+            );
+        }
+        return registeredProvider(input);
     },
-    setProvider(nextProvider: CommandBatchPreflightProvider | null): void {
-        provider = nextProvider;
+    setProvider(nextProvider: CommandBatchPreflightProvider): void {
+        registeredProvider = nextProvider;
     },
 };

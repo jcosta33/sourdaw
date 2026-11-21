@@ -4,7 +4,6 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
-import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -63,7 +62,6 @@ describe('agent creation bindings', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 

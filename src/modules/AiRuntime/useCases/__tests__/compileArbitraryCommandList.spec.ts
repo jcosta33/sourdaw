@@ -232,8 +232,6 @@ describe('compileArbitraryCommandList', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
