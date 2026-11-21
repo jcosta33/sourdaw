@@ -43,6 +43,12 @@ describe('retiredClipIds', () => {
         expect(retiredClipIds(restoreSplitState(true))).toEqual([]);
     });
 
+    it('retires nothing for an action name that is only inherited, read from untrusted JSON', () => {
+        const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{"clipId":"kept"}}');
+
+        expect(retiredClipIds(parsed)).toEqual([]);
+    });
+
     it('retires nothing for an action that leaves clips in place', () => {
         const action = { type: 'renameClip', payload: { clipId: 'kept', name: 'Other' } } satisfies AppAction;
 

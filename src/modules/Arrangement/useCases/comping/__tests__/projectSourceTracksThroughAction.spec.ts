@@ -57,6 +57,24 @@ describe('projectSourceTracksThroughAction', () => {
         expect(projectSourceTracksThroughAction(restoreTrack('other'), [kept])).toBeNull();
     });
 
+    it('refuses a restore whose snapshot is not an object with clips', () => {
+        const action = restoreTrack('restored');
+        if (action.type !== 'restoreTrack') {
+            throw new Error('Expected a restoreTrack fixture');
+        }
+        action.payload.trackSnapshot = JSON.parse('null');
+        expect(projectSourceTracksThroughAction(action, [kept])).toBeNull();
+
+        action.payload.trackSnapshot = JSON.parse('{"id":"restored"}');
+        expect(projectSourceTracksThroughAction(action, [kept])).toBeNull();
+    });
+
+    it('keeps the tracks for an action name that is only inherited, read from untrusted JSON', () => {
+        const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{}}');
+
+        expect(projectSourceTracksThroughAction(parsed, [kept, restored])).toEqual([kept, restored]);
+    });
+
     it('refuses a restore over a live track with the same id', () => {
         expect(projectSourceTracksThroughAction(restoreTrack('restored'), [restored])).toBeNull();
     });

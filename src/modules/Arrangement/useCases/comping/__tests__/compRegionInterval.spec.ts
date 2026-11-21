@@ -417,6 +417,134 @@ describe('compRegionInterval', () => {
         expect(project([restore], lane)).toBeNull();
     });
 
+    describe('refusals and fallbacks of the take-lane prefix', () => {
+        const regionB = { startBeat: 0, endBeat: 4, takeId: 'b' };
+        const regionC = { startBeat: 4, endBeat: 8, takeId: 'c' };
+        const lane = { id: 'lane-1', trackId: 'track-1', takes, activeCompRegions: [regionB, regionC] };
+        const patch = { laneId: lane.id, trackId: 'track-1', startBeat: 0, endBeat: 4 };
+        const restore = {
+            type: 'restoreCompRegionInterval',
+            payload: { ...patch, expected: [regionB], replacement: [] },
+        } satisfies AppAction;
+        const note = { id: 'note-1', pitch: 60, startBeat: 0.5, duration: 1, velocity: 90 };
+        const midiTake = {
+            ...takes[0]!,
+            midiSource: {
+                sourceClipId: 'original-clip',
+                sourceEntryBeat: 0,
+                sourceEndBeat: 4,
+                phaseHeadBeat: 0,
+                passLengthBeats: 4,
+                rows: {
+                    notes: { present: true as const, value: [note] },
+                    controlChanges: { present: true as const, value: [] },
+                    pitchBends: { present: true as const, value: [] },
+                },
+            },
+        };
+        const replaceRow = (laneId: string) =>
+            ({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: {
+                    copyScope: 'capture',
+                    laneId,
+                    takeId: 'a',
+                    sourceClipId: 'original-clip',
+                    rowId: note.id,
+                    expectedSlotPresent: true,
+                    replacementSlotPresent: true,
+                    rowKind: 'note',
+                    expected: note,
+                    replacement: { ...note, velocity: 40 },
+                },
+            }) satisfies AppAction;
+        const project = (initial: typeof lane, actions: AppAction[]) =>
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+                { lanes: [initial] },
+                { actions, actionIndex: actions.length }
+            );
+
+        it('leaves the lanes alone for an action name that is only inherited, read from untrusted JSON', () => {
+            const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{}}');
+
+            expect(project(lane, [parsed])).toEqual({ lanes: [lane] });
+        });
+
+        it('captures the frozen row copies of a replaced original MIDI row and refuses a missing owner', () => {
+            const owner = { ...lane, takes: [midiTake, ...takes.slice(1)] };
+            const replaced = project(owner, [replaceRow(lane.id)]);
+
+            expect(replaced).not.toBeNull();
+            expect(project(owner, [replaceRow('missing-lane')])).toBeNull();
+        });
+
+        it('refuses a comp action whose payload is incomplete', () => {
+            const incomplete = {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 0, endBeat: 4, takeId: 'b' },
+            } satisfies AppAction;
+
+            expect(project(lane, [restore])?.lanes[0]?.activeCompRegions).toEqual([regionC]);
+            expect(project(lane, [incomplete])).toBeNull();
+        });
+
+        it('refuses a comp action for a lane the state does not hold', () => {
+            const foreign = { ...restore, payload: { ...restore.payload, laneId: 'foreign-lane' } };
+
+            expect(project(lane, [foreign])).toBeNull();
+        });
+
+        it('refuses a comp action after a restored track whose snapshot is unusable', () => {
+            const validRestore = restoreTrackAction([]);
+            if (validRestore.type !== 'restoreTrack') {
+                throw new Error('Expected a restoreTrack fixture');
+            }
+            const spare = TrackDummy.create({ id: 'spare', kind: 'midi' });
+            validRestore.payload = { ...validRestore.payload, trackId: spare.id, trackSnapshot: spare };
+            const unusable = structuredClone(validRestore);
+            unusable.payload.trackSnapshot = JSON.parse('null');
+
+            expect(project(lane, [validRestore, restore])?.lanes[0]?.activeCompRegions).toEqual([regionC]);
+            expect(project(lane, [unusable, restore])).toBeNull();
+        });
+
+        it('captures a removal against the lanes an earlier prefix removal left', () => {
+            seed([regionB, regionC]);
+            const earlierRemoval = {
+                type: 'removeCompRegion',
+                payload: { trackId: 'track-1', startBeat: 0 },
+            } satisfies AppAction;
+            const context = { actions: [earlierRemoval], actionIndex: 1 };
+
+            expect(
+                compRegionInterval.captureRemovePatchAfterPrefix({ trackId: 'track-1', startBeat: 4 }, context)
+            ).toMatchObject({ laneId: 'lane-1', startBeat: 4, endBeat: 8, expected: [regionC], replacement: [] });
+            expect(
+                compRegionInterval.captureRemovePatchAfterPrefix({ trackId: 'track-1', startBeat: 0 }, context)
+            ).toBeNull();
+        });
+
+        it('refuses to capture a removal at a negative or non-finite start beat', () => {
+            seed([regionB, regionC]);
+
+            expect(compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: 0 })).not.toBeNull();
+            expect(compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: -1 })).toBeNull();
+            expect(compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: Number.NaN })).toBeNull();
+        });
+
+        it('judges a patch by no source clips when the track store holds no tracks', () => {
+            seed([regionB, regionC]);
+            const captured = compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: 0 });
+            if (!captured) {
+                throw new Error('expected a comp removal patch');
+            }
+
+            expect(compRegionInterval.patchApplies(captured)).toBe(true);
+            trackStore.set(null);
+            expect(compRegionInterval.patchApplies(captured)).toBe(false);
+        });
+    });
+
     describe('capturing an audio comp interval after a prefix', () => {
         const input = { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'b' };
         const setCompRegion: AppAction = { type: 'setCompRegion', payload: input };

@@ -151,6 +151,11 @@ describe('relink source and owner prefix projection', () => {
         expect(projectRelinkAudioSourceTracks([{ ...track, clips: [] }], [action])).toBeNull();
     });
 
+    it('keeps the tracks for an action name that is only inherited, read from untrusted JSON', () => {
+        const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{}}');
+        expect(projectRelinkAudioSourceTracks([track], [parsed])).toEqual([track]);
+    });
+
     it('keeps the tracks for an action that carries no source or owner change', () => {
         const rename = { type: 'renameClip', payload: { clipId: clip.id, name: 'Other' } } satisfies AppAction;
         expect(projectRelinkAudioSourceTracks([track], [rename])).toEqual([track]);

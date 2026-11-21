@@ -192,6 +192,13 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
             expect(projectedTakeLaneOwners([action], []).map((lane) => lane.id)).toEqual(['gone-lane']);
         });
 
+        it('leaves owners alone for an action name that is only inherited, read from untrusted JSON', () => {
+            const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{"clipId":"split-right"}}');
+            const lanes = [liveOriginalLane()];
+
+            expect(projectedTakeLaneOwners([parsed], lanes)).toEqual(lanes);
+        });
+
         it('leaves owners alone for an action outside the clip lifecycle', () => {
             const action = { type: 'renameClip', payload: { clipId: source.id, name: 'Other' } } satisfies AppAction;
             const lanes = [liveOriginalLane()];
