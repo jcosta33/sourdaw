@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, describe, expect, it, type TestContext } from 'vitest';
+import { afterAll, describe, expect, it, type TestContext, vi } from 'vitest';
 
 import {
     SOURDAW_E2E_PORT_ENV,
@@ -266,7 +266,7 @@ describe('resource admission', () => {
         }
     });
 
-    it('stops admission when a still-registered reservation cannot be sampled', async () => {
+    it('waits on the full reservation while a registered reservation cannot be sampled', async () => {
         const root = fixtureRoot('unsampled-registered');
         try {
             const first = await enterResourceSession({
@@ -274,15 +274,66 @@ describe('resource admission', () => {
                 requiredRssBytes: 1024 ** 3,
                 availableMemoryBytes: 8 * 1024 ** 3,
             });
-            await expect(
-                enterResourceSession({
-                    root,
-                    requiredRssBytes: 1024 ** 3,
-                    availableMemoryBytes: 8 * 1024 ** 3,
-                    activeRssSampler: () => undefined,
-                })
-            ).rejects.toThrow('active validation memory could not be measured');
+            let availableBytes = 2 * 1024 ** 3 + 1024 ** 3 + 512 * 1024 ** 2;
+            let samples = 0;
+            const waits: string[] = [];
+            let admitted = false;
+            const secondPromise = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memorySampler: () => {
+                    samples += 1;
+                    return availableBytes;
+                },
+                activeRssSampler: () => undefined,
+                waitIntervalMs: 10,
+                onWait: (message) => waits.push(message),
+            }).then((session) => {
+                admitted = true;
+                return session;
+            });
+
+            await vi.waitFor(() => expect(samples).toBeGreaterThanOrEqual(3));
+            expect(admitted).toBe(false);
+            expect(waits).toEqual(['waiting for validation capacity: need 4096 MiB, 3584 MiB available']);
+
+            availableBytes = 4 * 1024 ** 3;
+            const second = await secondPromise;
+            expect(admitted).toBe(true);
+            second.release();
             first.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reaps a dead owner reservation instead of sampling it, so an unreadable sampler cannot block admission', async () => {
+        const root = fixtureRoot('dead-owner-unsampled');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const deadPath = join(reservationsRoot, 'dead.json');
+            writeFileSync(
+                deadPath,
+                JSON.stringify({
+                    token: 'dead',
+                    pid: 2 ** 22 + 12_345,
+                    cwd: 'fixture',
+                    command: 'fixture',
+                    startedAt: 'Mon Nov  9 10:00:00 2026',
+                    processStartedAt: 'Mon Nov  9 10:00:00 2026',
+                    reservedRssBytes: 64 * 1024 ** 3,
+                })
+            );
+            const session = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 4 * 1024 ** 3,
+                activeRssSampler: () => undefined,
+            });
+
+            expect(existsSync(deadPath)).toBe(false);
+            session.release();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

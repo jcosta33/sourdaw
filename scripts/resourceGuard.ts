@@ -806,7 +806,10 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
                     if (!existsSync(reservation.path)) {
                         continue;
                     }
-                    throw new Error('active validation memory could not be measured');
+                    // reservationIsLive keeps an unreadable reservation alive, so an unreadable
+                    // sample is unknown usage: hold its full reservation and keep waiting.
+                    activeHeadroomBytes += reservation.owner.reservedRssBytes;
+                    continue;
                 }
                 activeHeadroomBytes += Math.max(0, reservation.owner.reservedRssBytes - rssBytes);
             }
