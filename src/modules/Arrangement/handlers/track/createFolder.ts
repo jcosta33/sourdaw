@@ -5,6 +5,7 @@ import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalS
 import { createFolder } from '../../useCases/folder/createFolder';
 
 import { captureCreatedTrackGuards } from './captureCreatedTrackGuards';
+import { readFolderCreationIdentity } from './folderCreationIdentity';
 
 type MutableDescribeResult = {
     label: string;
@@ -40,7 +41,11 @@ function describeCreatedFolder(pending: MutableDescribeResult, folderTrackId: st
 
 export const handleCreateFolder = createHandler<'createFolder'>({
     execute: (action) => {
-        const created = createFolder(action.payload.name, action.payload.folderTrackId);
+        const created = createFolder(
+            action.payload.name,
+            action.payload.folderTrackId,
+            readFolderCreationIdentity(action)
+        );
         const pending = pendingDescribeResults.get(action);
         const folderTrackId = action.payload.folderTrackId;
         if (pending && folderTrackId) {

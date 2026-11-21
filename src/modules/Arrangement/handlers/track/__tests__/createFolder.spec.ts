@@ -23,7 +23,10 @@ describe('handleCreateFolder', () => {
             payload: { name: 'Drums', folderTrackId: 'folder-1' },
         });
 
-        expect(mocks.createFolder).toHaveBeenCalledWith('Drums', 'folder-1');
+        expect(mocks.createFolder).toHaveBeenCalledWith('Drums', 'folder-1', {
+            color: expect.any(String),
+            initialAlternativeId: expect.any(String),
+        });
         expect(result).toEqual({ status: 'written' });
     });
 

@@ -1,39 +1,16 @@
 import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { applyDuplicatedTrackFields } from '../models/DuplicatedTrackFields';
-import { createTrack, type Track } from '../models/Track';
+import { type Track } from '../models/Track';
 import { decodeTrackSnapshot } from '../stores/trackStore';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 import { planDefaultTrackName } from './planDefaultTrackName';
+import { createPlannedDuplicate, createPlannedTrack } from './plannedTrackConstruction';
 import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPriorBatchActions';
+import { readFolderCreationIdentity } from './track/folderCreationIdentity';
+import { ensureStableCreationInputs, pinCreationIdentity } from './track/pinTrackCreationInputs';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
-
-function createPlannedTrack(input: {
-    id: string;
-    name: string;
-    kind: 'audio' | 'midi' | 'bus' | 'folder';
-    gain: number;
-    initialDeviceId?: string;
-    parentId?: string;
-    outputId?: string;
-    withoutDefaultDevice?: boolean;
-}): Track {
-    const alternativeId = `planned-alternative-${input.id}`;
-    return createTrack({
-        id: input.id,
-        name: input.name,
-        kind: input.kind,
-        gain: input.gain,
-        color: '#000000',
-        initialAlternativeId: alternativeId,
-        initialDeviceId: input.initialDeviceId,
-        parentId: input.parentId,
-        outputId: input.outputId,
-        withoutDefaultDevice: input.withoutDefaultDevice,
-    });
-}
 
 function noPlannedTrack(): null {
     return null;
@@ -48,6 +25,8 @@ function planAddedTrack(
     if (action.payload.id !== trackId || action.payload.kind === 'master') {
         return null;
     }
+    ensureStableCreationInputs(action);
+    const identity = pinCreationIdentity(action.payload);
     return projectTrackThroughPriorBatchActions(
         createPlannedTrack({
             id: trackId,
@@ -56,6 +35,7 @@ function planAddedTrack(
                 planDefaultTrackName(action.payload.kind, { actions: context.actions, actionIndex }),
             kind: action.payload.kind,
             gain: 0.8,
+            ...identity,
             initialDeviceId: action.payload.initialDeviceId,
             parentId: action.payload.parentId,
             outputId: action.payload.outputId,
@@ -75,12 +55,14 @@ function planCreatedBus(
     if (action.payload.busId !== trackId) {
         return null;
     }
+    const identity = pinCreationIdentity(action.payload);
     return projectTrackThroughPriorBatchActions(
         createPlannedTrack({
             id: trackId,
             name: action.payload.name,
             kind: 'bus',
             gain: action.payload.initialGain ?? 0.8,
+            ...identity,
         }),
         context,
         actionIndex + 1
@@ -97,7 +79,13 @@ function planCreatedFolder(
         return null;
     }
     return projectTrackThroughPriorBatchActions(
-        createPlannedTrack({ id: trackId, name: action.payload.name, kind: 'folder', gain: 0.8 }),
+        createPlannedTrack({
+            id: trackId,
+            name: action.payload.name,
+            kind: 'folder',
+            gain: 0.8,
+            ...readFolderCreationIdentity(action),
+        }),
         context,
         actionIndex + 1
     );
@@ -117,21 +105,7 @@ function planDuplicatedTrack(
     if (source === null || source.kind === 'master') {
         return null;
     }
-    // The executed copy is a new track of the source's kind that takes only the fields duplicateTrack copies.
-    const copy = applyDuplicatedTrackFields(
-        createPlannedTrack({
-            id: trackId,
-            name: `${source.name} (copy)`,
-            kind: source.kind,
-            gain: 0.8,
-        }),
-        source,
-        {
-            devices: structuredClone(source.devices),
-            alternatives: structuredClone(source.alternatives),
-            activeAlternativeId: source.activeAlternativeId,
-        }
-    );
+    const copy = createPlannedDuplicate(source, trackId);
     return projectTrackThroughPriorBatchActions(copy, context, actionIndex + 1);
 }
 
