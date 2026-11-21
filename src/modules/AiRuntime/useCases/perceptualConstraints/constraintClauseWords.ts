@@ -46,6 +46,16 @@ export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 export const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
 export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
+/**
+ * What separates two clauses without a clause mark: a dash, ampersand or slash standing as a token of its
+ * own ("keep the vocal bright - make the drums wider"), or a line break. It is never a word of either.
+ */
+const SEPARATOR_MARKS = String.raw`\-–—&/`;
+const CLAUSE_SEPARATOR = String.raw`(?:(?<!\S)[${SEPARATOR_MARKS}]+(?!\S)|[\n\r])`;
+/** A character of the same clause: no clause mark and no separator. */
+const SAME_CLAUSE_CHARACTER = String.raw`(?:(?!${CLAUSE_SEPARATOR})${NOT_CLAUSE_PUNCTUATION})`;
+/** Whitespace within one line. */
+const SAME_CLAUSE_SPACE = String.raw`(?:(?!${CLAUSE_SEPARATOR})\s)+`;
 
 /** The glyph a masked track name or quotation is read as, one per character. */
 export const MASK_GLYPH = PROJECT_REFERENCE_MASK_GLYPH;
@@ -199,7 +209,7 @@ const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|
  * A word an object member may hold: never a boundary, a direction, a negation or a predicate word, so a
  * member never runs into the next clause ("The vocal is louder and the drums must not …").
  */
-const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END})${WORD_CHARACTER}+`;
+const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
 export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
 const MEMBER_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${LIST_JOINER}\s+|\s*&\s*)`;
@@ -217,8 +227,9 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_J
 
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
- * making the drums wider", "keep the vocal getting brighter". It asks for more of the move.
+ * making the drums wider", "keep the vocal getting brighter". It asks for more of the move, and never
+ * reaches past a separator into the next clause's move.
  */
-const CONTINUED_MOVE = String.raw`\s+(?:on\s+)?(?:${OBJECT_MEMBERS}\s+)?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${NOT_CLAUSE_PUNCTUATION}*?${DIRECTION})`;
+const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:on${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move. */
 export const HOLDING_KEEP = String.raw`${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;

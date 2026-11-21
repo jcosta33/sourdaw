@@ -2191,6 +2191,29 @@ describe('reading a protection only over the words it governs', () => {
         ['Keep the vocal bright and the drums much louder', [VOCAL_BRIGHT_HELD], []],
         ['Keep the vocal bright and the drums 3 dB louder', [VOCAL_BRIGHT_HELD], []],
         ['Keep the vocal bright and the drums louder in the chorus', [VOCAL_BRIGHT_HELD], []],
+        // a dash, ampersand or slash standing alone, or a line break, separates the keep from the move after
+        // it, so the keep still holds what it names and the move is the request
+        ['Keep the vocal bright - make the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright – make the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright — make the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright & make the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright / make the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright\nmake the drums wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright letting the drums breathe - the bass louder', [VOCAL_BRIGHT_HELD], []],
+        // a compound catalog word and the low end read hyphenated as they read spaced
+        ["don't touch the low-end", [lowEndUntouched("don't touch the low-end")], []],
+        [
+            'keep the vocal up-close',
+            [
+                {
+                    constraintId: 'vocal-intimacy-v1',
+                    clause: 'keep the vocal up-close',
+                    scope: onTracks('vocal'),
+                    protection: { kind: 'exclude-dimension', dimension: 'ambience' },
+                },
+            ],
+            [],
+        ],
         ['Leave the vocal alone and the drums louder', [], []],
         ['Leave the vocal alone and the drums a little louder', [], []],
         ['Keep the mix balanced when you make the vocal louder', [], []],
