@@ -11698,9 +11698,11 @@ mod tests {
             &mut parameters,
             7,
             0.75,
-            Err(PluginCommandError::Control(PluginControlRefusal::Retired {
-                plugin: "test".to_string(),
-            })),
+            Err(PluginCommandError::ParameterWrite(
+                ParameterWriteError::Refused(PluginControlRefusal::Retired {
+                    plugin: "test".to_string(),
+                }),
+            )),
         );
 
         assert_eq!(

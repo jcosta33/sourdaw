@@ -352,3 +352,4 @@ export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
 
 export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';
+export { changesTrackOutsideDevicePlan } from './device/changesTrackOutsideDevicePlan';

@@ -52,7 +52,6 @@ export function resolveOfflineMixPlan(
         tracks: allRenderableTracks,
         routes: sidechainRoutes,
     });
-    const routableSidechainTargets = new Set<object>(wiredDetectorRoutes.map((route) => route.targetDevice));
     // Which strips this render's print can actually carry (#4376), resolved
     // before the strips are built because each strip has to be told: an
     // unrenderable device on a strip whose output cannot reach the print
@@ -100,7 +99,6 @@ export function resolveOfflineMixPlan(
         allRenderableTracks,
         sourceTracks,
         scheduledTracks,
-        routableSidechainTargets,
         contributingTrackIds,
         soloGatedByTrackId,
         vcaMultiplierByTrackId,

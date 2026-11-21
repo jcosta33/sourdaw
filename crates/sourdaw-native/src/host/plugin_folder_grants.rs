@@ -29,9 +29,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::filesystem::{
     built_in_roots, canonicalize_through_missing_tail, grant_registry, replace_file_atomically,
+    FileRefusal,
 };
 use crate::host::plugin_scan_policy::{
     default_plugin_scan_roots, normalize_path_lexically, path_has_symlink_component,
+    ScanPathRefusal,
 };
 
 const GRANT_FILE_NAME: &str = "plugin-folder-grants.json";
@@ -58,17 +60,40 @@ pub enum PluginFolderRefusal {
     Empty,
     Relative(PathBuf),
     Missing(PathBuf),
-    Unreadable { path: PathBuf, cause: String },
+    Unreadable {
+        path: PathBuf,
+        cause: String,
+    },
+    /// The scan policy could not inspect the path for a symbolic link.
+    Uninspectable {
+        path: PathBuf,
+        refusal: ScanPathRefusal,
+    },
     NotADirectory(PathBuf),
     SymbolicLink(PathBuf),
     FilesystemRoot(PathBuf),
     HomeOrAncestor(PathBuf),
-    OverlapsDefaultFolder { path: PathBuf, default: PathBuf },
-    OverlapsAppStorage { path: PathBuf, storage: PathBuf },
-    OverlapsWritableFileGrant { path: PathBuf, grant: PathBuf },
-    InsideGrant { path: PathBuf, grant: PathBuf },
+    OverlapsDefaultFolder {
+        path: PathBuf,
+        default: PathBuf,
+    },
+    OverlapsAppStorage {
+        path: PathBuf,
+        storage: PathBuf,
+    },
+    OverlapsWritableFileGrant {
+        path: PathBuf,
+        grant: PathBuf,
+    },
+    InsideGrant {
+        path: PathBuf,
+        grant: PathBuf,
+    },
     TooMany,
-    ResolvesElsewhere { granted: PathBuf, now: PathBuf },
+    ResolvesElsewhere {
+        granted: PathBuf,
+        now: PathBuf,
+    },
     StoreUnavailable(String),
 }
 
@@ -89,6 +114,11 @@ impl fmt::Display for PluginFolderRefusal {
             Self::Unreadable { path, cause } => write!(
                 formatter,
                 "The folder {} could not be read: {cause}.",
+                path.display()
+            ),
+            Self::Uninspectable { path, refusal } => write!(
+                formatter,
+                "The folder {} could not be read: {refusal}.",
                 path.display()
             ),
             Self::NotADirectory(path) => {
@@ -150,7 +180,14 @@ impl fmt::Display for PluginFolderRefusal {
     }
 }
 
-impl std::error::Error for PluginFolderRefusal {}
+impl std::error::Error for PluginFolderRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Uninspectable { refusal, .. } => Some(refusal),
+            _ => None,
+        }
+    }
+}
 
 /// The places a plugin folder may not overlap, as data.
 ///
@@ -176,25 +213,31 @@ pub(crate) struct ForbiddenRoots {
     pub(crate) renderer_writable_grants: Vec<PathBuf>,
 }
 
-/// Why the forbidden set could not be resolved. Each variant carries the text
-/// of the resolver that refused, which owns its wording.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Why the forbidden set could not be resolved. Each variant carries the
+/// refusal of the resolver that failed, which owns its wording.
+#[derive(Debug)]
 pub(crate) enum ForbiddenRootsError {
     /// The app's own storage roots could not be located.
-    AppStorage(String),
+    AppStorage(FileRefusal),
     /// The renderer's read-write file grants could not be read.
-    RendererGrants(String),
+    RendererGrants(FileRefusal),
 }
 
 impl fmt::Display for ForbiddenRootsError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AppStorage(reason) | Self::RendererGrants(reason) => formatter.write_str(reason),
+            Self::AppStorage(refusal) | Self::RendererGrants(refusal) => refusal.fmt(formatter),
         }
     }
 }
 
-impl std::error::Error for ForbiddenRootsError {}
+impl std::error::Error for ForbiddenRootsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::AppStorage(refusal) | Self::RendererGrants(refusal) => Some(refusal),
+        }
+    }
+}
 
 impl ForbiddenRoots {
     /// The real forbidden set, resolved the way picks are: canonical where the
@@ -210,12 +253,12 @@ impl ForbiddenRoots {
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
             app_storage_roots: built_in_roots()
-                .map_err(|error| ForbiddenRootsError::AppStorage(error.to_string()))?
+                .map_err(ForbiddenRootsError::AppStorage)?
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
             renderer_writable_grants: grant_registry::persisted_read_write_paths()
-                .map_err(|error| ForbiddenRootsError::RendererGrants(error.to_string()))?,
+                .map_err(ForbiddenRootsError::RendererGrants)?,
         })
     }
 }
@@ -252,7 +295,9 @@ static WRITE_LOCK: Mutex<()> = Mutex::new(());
 /// grant or revoke is refused.
 #[cfg(not(test))]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    store_location_in(crate::commands::filesystem::private_state_directory())
+    store_location_in(
+        crate::commands::filesystem::private_state_directory().map_err(|e| e.to_string()),
+    )
 }
 
 /// The grant document inside the private state directory `private_state` names.
@@ -337,9 +382,9 @@ pub(crate) fn validate_folder(
         Ok(true) => return Err(PluginFolderRefusal::SymbolicLink(requested.to_path_buf())),
         Ok(false) => {}
         Err(refusal) => {
-            return Err(PluginFolderRefusal::Unreadable {
+            return Err(PluginFolderRefusal::Uninspectable {
                 path: requested.to_path_buf(),
-                cause: refusal.to_string(),
+                refusal,
             })
         }
     }
@@ -543,7 +588,7 @@ fn save_grants(location: &Path, grants: &[PathBuf]) -> Result<(), PluginFolderRe
         file.write_all(&bytes)
             .map_err(|error| format!("Failed to write the plugin folder grants: {error}"))
     })
-    .map_err(PluginFolderRefusal::StoreUnavailable)
+    .map_err(|error| PluginFolderRefusal::StoreUnavailable(error.to_string()))
 }
 
 #[cfg(test)]
