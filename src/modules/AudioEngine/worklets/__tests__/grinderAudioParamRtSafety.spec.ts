@@ -40,11 +40,16 @@ describe('grinderAudioParamRtSafety', () => {
         expect(grinderProcessSizes).toEqual([]);
         expect(grinderAutomatedProcessSizes).toEqual([frames]);
         expect(grinderCallCounts.rightPtr).toBe(0);
+        expect(grinderCallCounts.reset).toBe(0);
         expect(getGrinderAutomationHeader(0)).toBe(frames);
         expect([0, 1, 2, 3].map((frame) => getGrinderAutomationValue(0, frame))).toEqual([1, 2, 3, 4]);
         expect(getGrinderAutomationHeader(6)).toBe(1);
         expect(getGrinderAutomationValue(6, 0)).toBe(5);
         expect(getGrinderAutomationHeader(10)).toBe(1);
         expect(getGrinderAutomationValue(10, 0)).toBe(0.5);
+
+        // Positive control: the reset counter does count, so the zero above is observed.
+        processor.port.onmessage?.({ data: { type: 'reset' } });
+        expect(grinderCallCounts.reset).toBe(1);
     });
 });
