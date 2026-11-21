@@ -7,6 +7,7 @@ import { type getProjectContext } from '../getProjectContext';
 import { type MetricGoalState } from '../metricGoalContractTypes';
 import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
 
+import { readRePreviewedPlannedLines } from './readRePreviewedPlannedLines';
 import { readStoredVibeRunBatch } from './readStoredVibeRunBatch';
 
 export const RE_PREVIEWED_SENTENCE = 'Re-previewed against the current project.';
@@ -82,7 +83,7 @@ export function composeRePreviewedCard(input: ComposeRePreviewedCardInput): {
     const vibe = readVibeCardSource(input);
     if (vibe === null) {
         // A brief card shows its readings or planned batches after its description, as its first proposal did.
-        const plannedLines = input.selectsSubset ? [] : (confirmation.approvalSnapshot.plannedRunLines ?? []);
+        const plannedLines = readRePreviewedPlannedLines(confirmation, input.selectsSubset) ?? [];
         const body =
             plannedLines.length === 0 ? description.content : [description.content, '', ...plannedLines].join('\n');
         return {

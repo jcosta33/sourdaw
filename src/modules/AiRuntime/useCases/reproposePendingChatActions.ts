@@ -16,6 +16,7 @@ import {
 
 import { composeRePreviewedCard } from './agentRequestOrchestration/composeRePreviewedCard';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { readRePreviewedPlannedLines } from './agentRequestOrchestration/readRePreviewedPlannedLines';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
@@ -426,9 +427,9 @@ function persistReproposalConfirmation(
         measuredPreview: card.measuredPreview,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
         // A brief card is one action, so only the whole proposal keeps the lines.
-        plannedRunLines: selectsSubset ? undefined : confirmation.approvalSnapshot.plannedRunLines,
+        plannedRunLines: readRePreviewedPlannedLines(confirmation, selectsSubset),
         // The offered readings stay bound to the original revision's goals, so a re-preview offers none to choose;
-        // the readings lines above still show what the brief admits.
+        // the lines above list them without promising a choice.
         briefReadings: undefined,
         keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
         workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,

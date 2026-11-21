@@ -12,6 +12,8 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { type persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+import { describeBriefReadings } from '../vibeRun/describeBriefReadings';
+import { describeRePreviewedBriefReadings } from '../vibeRun/describeRePreviewedBriefReadings';
 
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
@@ -490,7 +492,10 @@ describe('reproposePendingChatActions', () => {
         const briefReadings: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['briefReadings']> = {
             catalogId: 'catalog',
             metricGoalState: 'state',
-            readings: [{ id: 'r1', name: 'Warm', descriptors: ['warm'] }],
+            readings: [
+                { id: 'r1', name: 'Warm', descriptors: ['warm'] },
+                { id: 'r2', name: 'Bright', descriptors: ['bright', 'airy'] },
+            ],
             brief: {
                 schemaVersion: 1,
                 id: 'brief-1',
@@ -514,16 +519,21 @@ describe('reproposePendingChatActions', () => {
         };
         propose('confirmation-readings', undefined, undefined, undefined, undefined, {
             briefReadings,
-            plannedRunLines: ['line'],
+            plannedRunLines: describeBriefReadings(briefReadings.readings),
         });
         await reproposePendingChatActions({ confirmationId: 'confirmation-readings' });
         const whole = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
         expect(whole?.briefReadings).toBeUndefined();
-        expect(whole?.plannedRunLines).toEqual(['line']);
+        // The card must not promise a choice it can no longer honour: no reading control survives the re-preview.
+        expect(whole?.content).not.toContain('Choosing a reading plans');
+        expect(whole?.plannedRunLines).not.toContain(describeBriefReadings(briefReadings.readings).at(-1));
+        const rePreviewedLines = describeRePreviewedBriefReadings(briefReadings.readings);
+        expect(whole?.plannedRunLines).toEqual(rePreviewedLines);
+        expect(whole?.content).toContain(rePreviewedLines.join('\n'));
 
         propose('confirmation-readings-subset', undefined, undefined, undefined, undefined, {
             briefReadings,
-            plannedRunLines: ['line'],
+            plannedRunLines: describeBriefReadings(briefReadings.readings),
         });
         mocks.preview.mockReturnValue(previewedSelection());
         mocks.compilePartial.mockReturnValue({
@@ -540,7 +550,7 @@ describe('reproposePendingChatActions', () => {
         const subset = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
         expect(subset?.briefReadings).toBeUndefined();
         expect(subset?.plannedRunLines).toBeUndefined();
-        expect(subset?.content).not.toContain('line');
+        expect(subset?.content).not.toContain('reads more than one way');
     });
 
     // Red when the re-previewed refinement card omits the note its kept actions carried at first proposal (#7142).
