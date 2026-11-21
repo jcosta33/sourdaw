@@ -364,6 +364,9 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     }
     return {
         status: 'prepared' as const,
+        keptDirectionActionIndexes: includedActionIndexes.flatMap((originalIndex, index) =>
+            confirmation.approvalSnapshot.keptDirectionActionIndexes?.includes(originalIndex) ? [index] : []
+        ),
         confirmation,
         parsedOriginal,
         originalCommandIds,
@@ -422,6 +425,11 @@ function persistReproposalConfirmation(
         // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
         measuredPreview: card.measuredPreview,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
+        // A brief card is one action, so only the whole proposal keeps the lines and the offered readings.
+        plannedRunLines: selectsSubset ? undefined : confirmation.approvalSnapshot.plannedRunLines,
+        briefReadings: selectsSubset ? undefined : confirmation.approvalSnapshot.briefReadings,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
+        workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
@@ -523,6 +531,7 @@ export async function reproposePendingChatActions(
     const card = composeRePreviewedCard({
         confirmation,
         actions: prepared.actions,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
         context,
         commandBatch: refreshed.commandBatch,
         envelope: parsedRefreshed.envelope,

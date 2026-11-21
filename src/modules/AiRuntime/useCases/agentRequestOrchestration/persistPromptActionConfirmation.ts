@@ -52,6 +52,10 @@ type PersistPromptActionConfirmationInput = {
     briefReadings?: ConfirmationProposal['briefReadings'];
     /** The values a vibe-run batch card expands with; present only on such a card. */
     vibeValueChoice?: ConfirmationProposal['vibeValueChoice'];
+    /** What a re-preview composes this card from again: its brief lines, kept-direction positions and workflow. */
+    plannedRunLines?: ConfirmationProposal['plannedRunLines'];
+    keptDirectionActionIndexes?: ConfirmationProposal['keptDirectionActionIndexes'];
+    workflowCapabilityId?: ConfirmationProposal['workflowCapabilityId'];
     /** A id reserved earlier so a card it replaces can already name it; minted here when absent. */
     confirmationId?: string;
     executionMode: ConfirmationProposal['executionMode'];
@@ -205,6 +209,9 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             protectionFacts: input.protectionFacts,
             briefReadings: input.briefReadings,
             vibeValueChoice: input.vibeValueChoice,
+            plannedRunLines: input.plannedRunLines,
+            keptDirectionActionIndexes: input.keptDirectionActionIndexes,
+            workflowCapabilityId: input.workflowCapabilityId,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,
