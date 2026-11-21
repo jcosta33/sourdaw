@@ -90,7 +90,7 @@ describe('freezeTrack', () => {
 
     it('does nothing if track is already frozen', async () => {
         trackStore.set({
-            tracks: [{ id: 't1', freezeState: { status: 'frozen' } } as any],
+            tracks: [{ id: 't1', sends: [], freezeState: { status: 'frozen' } } as any],
             selectedTrackId: null,
         });
         const didWrite = await freezeTrack('t1');
@@ -103,6 +103,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 2, endBeat: 6 }],
                     devices: [],
@@ -198,6 +199,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 'shared-track',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -244,6 +246,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -286,6 +289,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [
@@ -342,6 +346,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [
@@ -389,6 +394,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [
@@ -433,6 +439,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [],
                     devices: [],
@@ -526,6 +533,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [],
                     devices: [],
@@ -568,6 +576,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     // first clip spans 2..6, second clip 3..5 (fully inside →
                     // neither min nor max updates on the second iteration)
@@ -598,6 +607,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [{ type: 'Reverb', parameterValues: {}, bypassed: false }],
@@ -631,6 +641,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -663,6 +674,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -710,6 +722,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -739,6 +752,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -773,6 +787,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -801,6 +816,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
@@ -836,6 +852,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],

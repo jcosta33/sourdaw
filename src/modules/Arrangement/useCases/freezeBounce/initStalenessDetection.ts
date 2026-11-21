@@ -1,8 +1,11 @@
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../services/computeTrackHash';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+
+import { computeFreezeSourceHash } from './computeFreezeSourceHash';
+import { selectFreezeSourceTracks } from './freezeSourceTracks';
+import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
 
 let isEvaluating = false;
 let prevState: TrackStoreState | null = null;
@@ -62,8 +65,12 @@ export function initStalenessDetection(): () => void {
                         continue;
                     }
 
-                    if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
-                        const hash = await computeTrackHash(track.clips, track.devices);
+                    // The signature covers every track the freeze's render reads, so an edit to a
+                    // routed source, or a routing change that adds or removes one, counts.
+                    const sources = selectFreezeSourceTracks(track.id, state.tracks);
+                    const previousSources = selectFreezeSourceTracks(prevTrack.id, previous.tracks);
+                    if (!freezeSourceTracksMatch(sources, previousSources)) {
+                        const hash = await computeFreezeSourceHash(sources);
                         if (hash !== track.freezeState.sourceContentHash) {
                             updateTrack(track.id, (time) => ({
                                 ...time,

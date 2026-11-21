@@ -45,7 +45,7 @@ describe('initStalenessDetection', () => {
     it('does nothing if no tracks are frozen', async () => {
         const unsub = initStalenessDetection();
         trackStore.set({
-            tracks: [{ id: 't1', freezeState: { status: 'unfrozen' }, clips: [] } as any],
+            tracks: [{ id: 't1', sends: [], freezeState: { status: 'unfrozen' }, clips: [] } as any],
             selectedTrackId: null,
         });
 
@@ -64,6 +64,7 @@ describe('initStalenessDetection', () => {
         // later fix, only by rendering again.
         const legacyFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -91,6 +92,7 @@ describe('initStalenessDetection', () => {
     it('leaves a buffer baked under the current freeze rules alone', async () => {
         const currentFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -120,6 +122,7 @@ describe('initStalenessDetection', () => {
 
         const legacyFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -146,6 +149,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -167,6 +171,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -204,6 +209,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'same-hash',
@@ -225,6 +231,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'same-hash',
@@ -253,6 +260,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -277,6 +285,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -297,6 +306,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -321,6 +331,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -354,6 +365,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -378,6 +390,7 @@ describe('initStalenessDetection', () => {
         // frozen-status guard short-circuits before any hashing.
         const unfrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: { status: 'unfrozen' },
             clips: [{}] as never[],
             devices: [] as never[],
@@ -405,6 +418,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -423,6 +437,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
