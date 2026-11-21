@@ -32,6 +32,7 @@ import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { getArrangementHandlers, setArrangementEventBus } from '../../index';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
+import { cancelFreezeTrack } from '../cancelFreezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 registerSupportingServicePorts();
@@ -220,5 +221,44 @@ describe('a freeze whose device chain changes during the render', () => {
         expect(track.freezeState.sourceContentHash).toBeUndefined();
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('does not commit when the freeze is cancelled while the post-render digest is pending', async () => {
+        const realHash = (
+            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                '../../../services/computeTrackHash'
+            )
+        ).computeTrackHash;
+        await freezeWhile(async () => {
+            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+                const hash = await realHash(clips, devices);
+                cancelFreezeTrack(TRACK_ID);
+                return hash;
+            });
+        });
+
+        const track = findTrack();
+        expect(track.frozen).toBe(false);
+        expect(track.frozenBufferId).toBeUndefined();
+        expect(track.freezeState.sourceContentHash).toBeUndefined();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('does not commit when the track is removed while the post-render digest is pending', async () => {
+        const realHash = (
+            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                '../../../services/computeTrackHash'
+            )
+        ).computeTrackHash;
+        await freezeWhile(async () => {
+            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+                const hash = await realHash(clips, devices);
+                trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+                return hash;
+            });
+        });
+
+        expect(trackStore.value?.tracks.some((candidate) => candidate.id === TRACK_ID)).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 });
