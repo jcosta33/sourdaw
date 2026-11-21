@@ -664,10 +664,14 @@ mod tests {
         );
     }
 
+    /// The refused wake runs nothing, so the plugin's ask is still standing for
+    /// the next one; a restart run on the calling thread would have consumed it.
     #[test]
     fn a_component_restart_wake_with_no_ui_thread_registered_is_refused_not_parked() {
         let _registered = registered_ui_thread_guard(None);
-        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let bundle = InstalledVst3::create("component-restart-no-ui");
+        let runtime = restart_asking_vst3(&bundle);
+        let engine_plugins: EnginePlugins = Arc::new(Mutex::new(HashMap::new()));
         let events = RecordingEventSink::default();
 
         let again = serve_queued_request(
@@ -681,7 +685,117 @@ mod tests {
             again, None,
             "an ask no thread can carry is reported once, not queued to spin"
         );
+        assert_eq!(
+            runtime.with_control(CONTROL_TIMEOUT, |plugin| plugin
+                .apply_component_restart()
+                .map_err(|error| error.to_string())),
+            Ok(true),
+            "the refused wake ran nothing, so the plugin's ask is still standing"
+        );
     }
+
+    /// The harness's reconfiguring VST3 class, which has widened its output and
+    /// asked for a `kIoChanged` restart the host has not yet carried out.
+    fn restart_asking_vst3(bundle: &InstalledVst3) -> SharedHostedPlugin {
+        let descriptor_id = daw_plugin_host::vst3_class_id::format_class_id(
+            &sourdaw_harness_fx::VST3_RECONFIGURING_CLASS_ID,
+        );
+        let mut wrapper = daw_plugin_host::Vst3Wrapper::new(&bundle.path, &descriptor_id, 48_000.0)
+            .expect("the reconfiguring VST3 class loads");
+        wrapper.set_parameter(sourdaw_harness_fx::WIDEN_OUTPUT_PARAM_ID, 1.0);
+        SharedHostedPlugin::new(wrapper.into())
+    }
+
+    /// The harness cdylib this test binary's build produced, installed as a
+    /// `.vst3` bundle in a fresh temp directory torn down on drop.
+    struct InstalledVst3 {
+        root: std::path::PathBuf,
+        path: std::path::PathBuf,
+    }
+
+    impl InstalledVst3 {
+        fn create(test_name: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default();
+            let root = std::env::temp_dir().join(format!(
+                "sourdaw-requests-{test_name}-{}-{unique}",
+                std::process::id()
+            ));
+            let path = root.join("HarnessFx.vst3");
+            let module = vst3_module_path(&path);
+            std::fs::create_dir_all(module.parent().expect("the module path has a parent"))
+                .expect("the bundle directories are created");
+            std::fs::copy(built_harness_cdylib(), &module)
+                .expect("the harness cdylib copies into the bundle");
+            if cfg!(target_os = "macos") {
+                std::fs::write(path.join("Contents").join("Info.plist"), HARNESS_INFO_PLIST)
+                    .expect("the bundle's Info.plist is written");
+            }
+            Self { root, path }
+        }
+    }
+
+    impl Drop for InstalledVst3 {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn built_harness_cdylib() -> std::path::PathBuf {
+        let file_name = if cfg!(target_os = "macos") {
+            "libsourdaw_harness_fx.dylib"
+        } else if cfg!(target_os = "windows") {
+            "sourdaw_harness_fx.dll"
+        } else {
+            "libsourdaw_harness_fx.so"
+        };
+        let test_binary = std::env::current_exe().expect("the test binary path resolves");
+        let deps_dir = test_binary
+            .parent()
+            .expect("the test binary lives in a deps directory");
+        let in_deps = deps_dir.join(file_name);
+        if in_deps.exists() {
+            return in_deps;
+        }
+        deps_dir
+            .parent()
+            .expect("the deps directory lives in a profile directory")
+            .join(file_name)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::macos_executable_path(bundle).expect("a macOS bundle layout")
+    }
+
+    #[cfg(target_os = "windows")]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::windows_module_paths(bundle, std::env::consts::ARCH)
+            .expect("a Windows bundle layout")
+            .remove(0)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::linux_module_path(bundle, std::env::consts::ARCH)
+            .expect("a Linux bundle layout")
+            .expect("the VST3 layout names this architecture")
+    }
+
+    const HARNESS_INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>HarnessFx</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.sourdaw.harness-fx</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+</dict>
+</plist>
+"#;
 
     #[test]
     fn a_recorded_state_change_becomes_an_event_naming_the_instance() {

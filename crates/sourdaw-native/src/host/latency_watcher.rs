@@ -849,5 +849,14 @@ mod tests {
             !take_pending_latency_requery_signal(),
             "an ask no thread can carry must not keep the watcher spinning"
         );
+
+        let ui = InlineUiThread::default();
+        service_pending_restarts(Some(&ui), &engine_plugins, &engine, &sink);
+        assert_eq!(ui.lent(), 1, "a later sweep lends the restart");
+        assert_eq!(
+            latency_events(&sink),
+            1,
+            "the refused sweep ran nothing and left the flag for the next one"
+        );
     }
 }
