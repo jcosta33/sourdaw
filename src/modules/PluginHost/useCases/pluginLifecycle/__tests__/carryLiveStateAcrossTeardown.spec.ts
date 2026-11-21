@@ -13,6 +13,7 @@ import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures'
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { markExternalPluginRestoreFailure } from '../markExternalPluginRestoreFailure';
+import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from '../pendingUnloadWaitTimeout';
 import { projectSwitchLostPlugins } from '../projectSwitchLostPlugins';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
@@ -1219,6 +1220,62 @@ describe('live plugin state across an app-initiated teardown', () => {
             vi.useRealTimers();
             heldUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
             await removal;
+        });
+
+        // Remove lands while the first activation is still loading, so the removal's unload takes the
+        // lifecycle turn ahead of that activation's restore; Undo is issued while the unload is pending.
+        it('restores the project chunk on a fresh load when Undo follows a removal that overtook the restore', async () => {
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            const heldUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(heldUnload.promise);
+            // Settle both held calls however the case ends, so they cannot leak into later cases.
+            onTestFinished(() => {
+                heldUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+                heldRestore.resolve();
+            });
+
+            const firstActivation = activate(SAVED_CHUNK);
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            const undo = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(INSTANCE_ID));
+            heldUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await removal;
+            heldRestore.resolve();
+
+            await expect(undo).resolves.toEqual({ status: 'active' });
+            await firstActivation;
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
+            expect(mocks.setPluginState.mock.calls.at(-1)).toEqual([INSTANCE_ID, SAVED_BYTES]);
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]).toEqual({ status: 'active' });
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+        });
+
+        // The reactivation gave up on the unload, which then rejected and left the instance loaded.
+        it('clears the unload timeout error once the pending unload rejects and the instance is activated again', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const heldUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(heldUnload.promise);
+            // Settle the held unload however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldUnload.reject(new Error('bridge down')));
+
+            const removal = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(INSTANCE_ID));
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            const timedOut = activate(SAVED_CHUNK);
+            await vi.advanceTimersByTimeAsync(PENDING_UNLOAD_WAIT_TIMEOUT_MS);
+            await expect(timedOut).resolves.toMatchObject({ status: 'failed', stage: 'load' });
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).toBe('error');
+            vi.useRealTimers();
+            heldUnload.reject(new Error('bridge down'));
+            await expect(removal).rejects.toThrow('bridge down');
+
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+            expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]).toEqual({ status: 'active' });
         });
 
         it('leaves no carry once a carried restore settles, so a later plain unload restores the project chunk', async () => {

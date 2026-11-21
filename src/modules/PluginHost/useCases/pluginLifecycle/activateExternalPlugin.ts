@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
+    type ExternalPluginActivationStatus,
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
@@ -59,17 +60,19 @@ const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
     reason: 'External plugin activation was superseded by a runtime teardown',
 };
 
-function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+function activationSlot(instanceId: string): ExternalPluginActivationStatus | undefined {
+    return externalPluginActivationStore.value?.byInstanceId[instanceId];
+}
+
+function writeActivationSlot(instanceId: string, slot: ExternalPluginActivationStatus): void {
     externalPluginActivationStore.update((state) => {
         const current = state ?? defaultExternalPluginActivationState;
-        return {
-            ...current,
-            byInstanceId: {
-                ...current.byInstanceId,
-                [instanceId]: message ? { status, message } : { status },
-            },
-        };
+        return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: slot } };
     });
+}
+
+function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+    writeActivationSlot(instanceId, message ? { status, message } : { status });
 }
 
 /**
@@ -156,6 +159,26 @@ function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnlo
 }
 
 /**
+ * The timeout error describes an unload still pending. One that then rejects leaves the instance
+ * loaded and live, and a later activation of a loaded instance answers without writing its slot,
+ * so the slot gets back what it showed before the timeout unless something else rewrote it since.
+ */
+function restoreSlotAfterRejectedUnload(
+    instanceId: string,
+    timeoutReason: string,
+    slotBeforeTimeout: ExternalPluginActivationStatus | undefined
+): void {
+    if (
+        slotBeforeTimeout === undefined ||
+        activationSlot(instanceId)?.message !== timeoutReason ||
+        !loadedExternalInstances.has(instanceId)
+    ) {
+        return;
+    }
+    writeActivationSlot(instanceId, slotBeforeTimeout);
+}
+
+/**
  * Activate once the queued unload of the same instance settles, so the
  * activation reflects the instance the unload leaves. An unload still pending
  * at the deadline keeps the instance and its pending entry; a later activation
@@ -184,7 +207,12 @@ async function activateAfterPendingUnload(
         return activateExternalPlugin(input);
     }
     const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
+    const slotBeforeTimeout = activationSlot(input.instanceId);
     setActivationStatus(input.instanceId, 'error', reason);
+    // An earlier waiter on the same instance already holds the slot it showed before the timeout.
+    if (slotBeforeTimeout?.message !== reason) {
+        void pendingUnload.catch(() => restoreSlotAfterRejectedUnload(input.instanceId, reason, slotBeforeTimeout));
+    }
     logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
     return { status: 'failed', stage: 'load', reason };
 }
