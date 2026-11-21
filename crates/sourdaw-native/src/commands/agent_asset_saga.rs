@@ -67,6 +67,89 @@ const OPERATION_CLEANUP: &str = "cleanup";
 /// heap a second time.
 const COPY_CHUNK_BYTES: usize = 64 * 1024;
 
+/// Why an asset command could not form a request, or why a staged write did
+/// not land. Domain outcomes are receipts; this is what the module reports
+/// when it never reached one, plus the write failures a receipt carries as
+/// its message.
+#[derive(Debug)]
+pub enum AgentAssetSagaError {
+    UnknownHandleMode(String),
+    MalformedOwner(serde_json::Error),
+    MalformedHandleId,
+    MalformedSha256,
+    MalformedDeclaredMetadata(serde_json::Error),
+    MalformedAuthorization(serde_json::Error),
+    ReadAssetMetadata(std::io::Error),
+    CreateStagingDirectory(std::io::Error),
+    CreateStagedAsset(std::io::Error),
+    WriteStagedAsset(std::io::Error),
+    SyncStagedAsset(std::io::Error),
+    OpenStagedAsset(std::io::Error),
+    ReadStagedAsset(std::io::Error),
+    WriteDestination(std::io::Error),
+    StagedDigestMismatch,
+    /// A refusal from the shared filesystem helpers, which still report text.
+    Filesystem(String),
+}
+
+impl std::fmt::Display for AgentAssetSagaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownHandleMode(mode) => write!(f, "Unknown asset handle mode: {mode}"),
+            Self::MalformedOwner(error) => write!(f, "Agent work owner is malformed: {error}"),
+            Self::MalformedHandleId => f.write_str("Asset handle id is malformed"),
+            Self::MalformedSha256 => {
+                f.write_str("Expected SHA-256 must be a 64-character lowercase hex digest")
+            }
+            Self::MalformedDeclaredMetadata(error) => {
+                write!(f, "Declared asset metadata is malformed: {error}")
+            }
+            Self::MalformedAuthorization(error) => {
+                write!(f, "Export authorization is malformed: {error}")
+            }
+            Self::ReadAssetMetadata(error) => write!(f, "Failed to read asset metadata: {error}"),
+            Self::CreateStagingDirectory(error) => {
+                write!(f, "Failed to create the staging directory: {error}")
+            }
+            Self::CreateStagedAsset(error) => {
+                write!(f, "Failed to create the staged asset: {error}")
+            }
+            Self::WriteStagedAsset(error) => write!(f, "Failed to write the staged asset: {error}"),
+            Self::SyncStagedAsset(error) => write!(f, "Failed to sync the staged asset: {error}"),
+            Self::OpenStagedAsset(error) => write!(f, "Failed to open the staged asset: {error}"),
+            Self::ReadStagedAsset(error) => write!(f, "Failed to read the staged asset: {error}"),
+            Self::WriteDestination(error) => write!(f, "Failed to write the destination: {error}"),
+            Self::StagedDigestMismatch => {
+                f.write_str("Staged bytes did not match the expected digest")
+            }
+            Self::Filesystem(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for AgentAssetSagaError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MalformedOwner(error)
+            | Self::MalformedDeclaredMetadata(error)
+            | Self::MalformedAuthorization(error) => Some(error),
+            Self::ReadAssetMetadata(error)
+            | Self::CreateStagingDirectory(error)
+            | Self::CreateStagedAsset(error)
+            | Self::WriteStagedAsset(error)
+            | Self::SyncStagedAsset(error)
+            | Self::OpenStagedAsset(error)
+            | Self::ReadStagedAsset(error)
+            | Self::WriteDestination(error) => Some(error),
+            Self::UnknownHandleMode(_)
+            | Self::MalformedHandleId
+            | Self::MalformedSha256
+            | Self::StagedDigestMismatch
+            | Self::Filesystem(_) => None,
+        }
+    }
+}
+
 /// The caller's work identity, echoed back verbatim in every receipt.
 ///
 /// Copied rather than interpreted: this module never asks whether a run is
@@ -101,11 +184,11 @@ impl AssetHandleMode {
         }
     }
 
-    fn parse(mode: &str) -> Result<Self, String> {
+    fn parse(mode: &str) -> Result<Self, AgentAssetSagaError> {
         match mode {
             "read" => Ok(Self::Read),
             "read-write" => Ok(Self::ReadWrite),
-            other => Err(format!("Unknown asset handle mode: {other}")),
+            other => Err(AgentAssetSagaError::UnknownHandleMode(other.to_string())),
         }
     }
 }
@@ -416,11 +499,13 @@ pub(crate) fn with_handles_for_test<T>(
 
 /// Where staged export bytes live: inside the IPC scratch root, which is the
 /// app's own storage rather than anywhere the user keeps work.
-fn staging_root() -> Result<PathBuf, String> {
-    Ok(ipc_temp_dir()?.join(STAGING_DIR_NAME))
+fn staging_root() -> Result<PathBuf, AgentAssetSagaError> {
+    Ok(ipc_temp_dir()
+        .map_err(AgentAssetSagaError::Filesystem)?
+        .join(STAGING_DIR_NAME))
 }
 
-fn staged_path_for(saga_id: &str) -> Result<PathBuf, String> {
+fn staged_path_for(saga_id: &str) -> Result<PathBuf, AgentAssetSagaError> {
     Ok(staging_root()?.join(format!("{saga_id}.tmp")))
 }
 
@@ -439,17 +524,16 @@ fn new_saga_id() -> String {
 /// remainder as a UUID is what makes the id a name this process minted rather
 /// than a string a caller composed. Nothing downstream builds a path from a
 /// caller-supplied id, and this keeps it that way by construction.
-fn validate_handle_id(handle_id: &str) -> Result<(), String> {
-    let malformed = || "Asset handle id is malformed".to_string();
+fn validate_handle_id(handle_id: &str) -> Result<(), AgentAssetSagaError> {
     let suffix = handle_id
         .strip_prefix(HANDLE_ID_PREFIX)
-        .ok_or_else(malformed)?;
-    uuid::Uuid::parse_str(suffix).map_err(|_| malformed())?;
+        .ok_or(AgentAssetSagaError::MalformedHandleId)?;
+    uuid::Uuid::parse_str(suffix).map_err(|_| AgentAssetSagaError::MalformedHandleId)?;
     Ok(())
 }
 
-fn parse_owner(owner: Value) -> Result<AgentWorkOwner, String> {
-    serde_json::from_value(owner).map_err(|error| format!("Agent work owner is malformed: {error}"))
+fn parse_owner(owner: Value) -> Result<AgentWorkOwner, AgentAssetSagaError> {
+    serde_json::from_value(owner).map_err(AgentAssetSagaError::MalformedOwner)
 }
 
 /// A 64-character lowercase hex digest and nothing else.
@@ -457,12 +541,12 @@ fn parse_owner(owner: Value) -> Result<AgentWorkOwner, String> {
 /// Lowercase specifically: the digests this module produces are lowercase, and
 /// admitting an uppercase spelling would make two strings for one digest that
 /// compare unequal everywhere the comparison is a string comparison.
-fn validate_sha256(expected: &str) -> Result<(), String> {
+fn validate_sha256(expected: &str) -> Result<(), AgentAssetSagaError> {
     let is_lower_hex = expected
         .bytes()
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
     if expected.len() != 64 || !is_lower_hex {
-        return Err("Expected SHA-256 must be a 64-character lowercase hex digest".to_string());
+        return Err(AgentAssetSagaError::MalformedSha256);
     }
     Ok(())
 }
@@ -578,6 +662,14 @@ pub async fn agent_asset_register_handle(
     mode: String,
     owner: Value,
 ) -> Result<AgentAssetSagaReceipt, String> {
+    register_handle(path, mode, owner).map_err(|error| error.to_string())
+}
+
+fn register_handle(
+    path: String,
+    mode: String,
+    owner: Value,
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let owner = parse_owner(owner)?;
     let mode = AssetHandleMode::parse(&mode)?;
     let saga_id = new_saga_id();
@@ -634,10 +726,18 @@ pub async fn agent_asset_import(
     owner: Value,
     declared: Value,
 ) -> Result<AgentAssetSagaReceipt, String> {
+    import_asset(handle_id, owner, declared).map_err(|error| error.to_string())
+}
+
+fn import_asset(
+    handle_id: String,
+    owner: Value,
+    declared: Value,
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let owner = parse_owner(owner)?;
     validate_handle_id(&handle_id)?;
-    let declared: AgentAssetDeclaredMetadata = serde_json::from_value(declared)
-        .map_err(|error| format!("Declared asset metadata is malformed: {error}"))?;
+    let declared: AgentAssetDeclaredMetadata =
+        serde_json::from_value(declared).map_err(AgentAssetSagaError::MalformedDeclaredMetadata)?;
     let saga_id = new_saga_id();
 
     let path = match resolve_handle(&handle_id, AssetHandleMode::Read) {
@@ -658,9 +758,9 @@ pub async fn agent_asset_import(
     };
 
     let size = fs::metadata(&path)
-        .map_err(|error| format!("Failed to read asset metadata: {error}"))?
+        .map_err(AgentAssetSagaError::ReadAssetMetadata)?
         .len();
-    ensure_file_ipc_size(size, "agent_asset_import")?;
+    ensure_file_ipc_size(size, "agent_asset_import").map_err(AgentAssetSagaError::Filesystem)?;
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -730,10 +830,21 @@ pub async fn agent_asset_stage_export(
     expected_sha256: String,
     data: &[u8],
 ) -> Result<AgentAssetSagaReceipt, String> {
+    stage_export(destination_handle_id, owner, expected_sha256, data)
+        .map_err(|error| error.to_string())
+}
+
+fn stage_export(
+    destination_handle_id: String,
+    owner: Value,
+    expected_sha256: String,
+    data: &[u8],
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let owner = parse_owner(owner)?;
     validate_handle_id(&destination_handle_id)?;
     validate_sha256(&expected_sha256)?;
-    ensure_file_ipc_size(data.len() as u64, "agent_asset_stage_export")?;
+    ensure_file_ipc_size(data.len() as u64, "agent_asset_stage_export")
+        .map_err(AgentAssetSagaError::Filesystem)?;
     let saga_id = new_saga_id();
 
     if let Err(refusal) = resolve_handle(&destination_handle_id, AssetHandleMode::ReadWrite) {
@@ -763,7 +874,7 @@ pub async fn agent_asset_stage_export(
         },
     );
 
-    if let Err(message) = write_staged_file(&staged_path, data) {
+    if let Err(error) = write_staged_file(&staged_path, data) {
         forget_staged_bytes(&saga_id);
         let mut receipt = AgentAssetSagaReceipt::failed(
             saga_id,
@@ -771,7 +882,7 @@ pub async fn agent_asset_stage_export(
             OPERATION_STAGE_EXPORT,
             AgentAssetFailureKind::IoError,
             AgentAssetCompensation::Completed,
-            message,
+            error.to_string(),
         );
         receipt.handle_id = Some(destination_handle_id);
         return Ok(receipt);
@@ -824,20 +935,19 @@ pub async fn agent_asset_stage_export(
 }
 
 /// Write the staged file, refusing to reuse a name that already exists.
-fn write_staged_file(staged_path: &Path, data: &[u8]) -> Result<(), String> {
+fn write_staged_file(staged_path: &Path, data: &[u8]) -> Result<(), AgentAssetSagaError> {
     if let Some(parent) = staged_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create the staging directory: {error}"))?;
+        fs::create_dir_all(parent).map_err(AgentAssetSagaError::CreateStagingDirectory)?;
     }
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(staged_path)
-        .map_err(|error| format!("Failed to create the staged asset: {error}"))?;
+        .map_err(AgentAssetSagaError::CreateStagedAsset)?;
     file.write_all(data)
-        .map_err(|error| format!("Failed to write the staged asset: {error}"))?;
+        .map_err(AgentAssetSagaError::WriteStagedAsset)?;
     file.sync_all()
-        .map_err(|error| format!("Failed to sync the staged asset: {error}"))
+        .map_err(AgentAssetSagaError::SyncStagedAsset)
 }
 
 /// Record that a saga no longer has staged bytes, keeping the row so a later
@@ -934,9 +1044,17 @@ pub async fn agent_asset_finalize_export(
     owner: Value,
     authorization: Value,
 ) -> Result<AgentAssetSagaReceipt, String> {
+    finalize_export(saga_id, owner, authorization).map_err(|error| error.to_string())
+}
+
+fn finalize_export(
+    saga_id: String,
+    owner: Value,
+    authorization: Value,
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let owner = parse_owner(owner)?;
     let authorization: AgentAssetExportAuthorization = serde_json::from_value(authorization)
-        .map_err(|error| format!("Export authorization is malformed: {error}"))?;
+        .map_err(AgentAssetSagaError::MalformedAuthorization)?;
 
     let row = match claim_finalize(&saga_id, &owner) {
         FinalizeClaim::Claimed(row) => row,
@@ -1020,6 +1138,7 @@ fn finalize_claimed_saga(
     let mismatch = std::cell::Cell::new(false);
     let written = replace_file_atomically(&destination, |file| {
         copy_verified(&staged_path, file, &row.expected_sha256, &mismatch)
+            .map_err(|error| error.to_string())
     });
     if let Err(message) = written {
         let failure = if mismatch.get() {
@@ -1062,27 +1181,26 @@ fn copy_verified(
     file: &mut fs::File,
     expected_sha256: &str,
     mismatch: &std::cell::Cell<bool>,
-) -> Result<(), String> {
-    let mut source = fs::File::open(staged_path)
-        .map_err(|error| format!("Failed to open the staged asset: {error}"))?;
+) -> Result<(), AgentAssetSagaError> {
+    let mut source = fs::File::open(staged_path).map_err(AgentAssetSagaError::OpenStagedAsset)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; COPY_CHUNK_BYTES];
 
     loop {
         let read = source
             .read(&mut buffer)
-            .map_err(|error| format!("Failed to read the staged asset: {error}"))?;
+            .map_err(AgentAssetSagaError::ReadStagedAsset)?;
         if read == 0 {
             break;
         }
         hasher.update(&buffer[..read]);
         file.write_all(&buffer[..read])
-            .map_err(|error| format!("Failed to write the destination: {error}"))?;
+            .map_err(AgentAssetSagaError::WriteDestination)?;
     }
 
     if hex_digest(hasher.finalize()) != expected_sha256 {
         mismatch.set(true);
-        return Err("Staged bytes did not match the expected digest".to_string());
+        return Err(AgentAssetSagaError::StagedDigestMismatch);
     }
     Ok(())
 }
@@ -1097,6 +1215,13 @@ pub async fn agent_asset_cleanup(
     saga_id: Option<String>,
     owner: Value,
 ) -> Result<AgentAssetSagaReceipt, String> {
+    cleanup(saga_id, owner).map_err(|error| error.to_string())
+}
+
+fn cleanup(
+    saga_id: Option<String>,
+    owner: Value,
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let owner = parse_owner(owner)?;
     match saga_id {
         Some(saga_id) => Ok(cleanup_one_saga(saga_id, owner)),
@@ -1172,7 +1297,9 @@ fn cleanup_one_saga(saga_id: String, owner: AgentWorkOwner) -> AgentAssetSagaRec
     }
 }
 
-fn sweep_orphaned_stages(owner: AgentWorkOwner) -> Result<AgentAssetSagaReceipt, String> {
+fn sweep_orphaned_stages(
+    owner: AgentWorkOwner,
+) -> Result<AgentAssetSagaReceipt, AgentAssetSagaError> {
     let staging_root = staging_root()?;
     // A row with no staged path left has no compensation left either — a
     // committed finalize and a claimed cleanup both clear it already — so it
@@ -1442,6 +1569,77 @@ mod tests {
             .handle_id
             .expect("a granted path should mint a handle")
             .starts_with(HANDLE_ID_PREFIX));
+    }
+
+    #[test]
+    fn agent_asset_saga_errors_print_the_text_the_renderer_receives() {
+        let io = || std::io::Error::other("disk gone");
+        for (error, text) in [
+            (
+                AgentAssetSagaError::UnknownHandleMode("write".to_string()),
+                "Unknown asset handle mode: write",
+            ),
+            (
+                AgentAssetSagaError::MalformedHandleId,
+                "Asset handle id is malformed",
+            ),
+            (
+                AgentAssetSagaError::MalformedSha256,
+                "Expected SHA-256 must be a 64-character lowercase hex digest",
+            ),
+            (
+                AgentAssetSagaError::ReadAssetMetadata(io()),
+                "Failed to read asset metadata: disk gone",
+            ),
+            (
+                AgentAssetSagaError::CreateStagingDirectory(io()),
+                "Failed to create the staging directory: disk gone",
+            ),
+            (
+                AgentAssetSagaError::CreateStagedAsset(io()),
+                "Failed to create the staged asset: disk gone",
+            ),
+            (
+                AgentAssetSagaError::WriteStagedAsset(io()),
+                "Failed to write the staged asset: disk gone",
+            ),
+            (
+                AgentAssetSagaError::SyncStagedAsset(io()),
+                "Failed to sync the staged asset: disk gone",
+            ),
+            (
+                AgentAssetSagaError::OpenStagedAsset(io()),
+                "Failed to open the staged asset: disk gone",
+            ),
+            (
+                AgentAssetSagaError::ReadStagedAsset(io()),
+                "Failed to read the staged asset: disk gone",
+            ),
+            (
+                AgentAssetSagaError::WriteDestination(io()),
+                "Failed to write the destination: disk gone",
+            ),
+            (
+                AgentAssetSagaError::StagedDigestMismatch,
+                "Staged bytes did not match the expected digest",
+            ),
+            (
+                AgentAssetSagaError::Filesystem("File exceeds the IPC limit".to_string()),
+                "File exceeds the IPC limit",
+            ),
+        ] {
+            assert_eq!(error.to_string(), text);
+        }
+
+        let malformed = serde_json::from_value::<AgentWorkOwner>(Value::Null)
+            .expect_err("null is not an owner");
+        let expected = format!("Agent work owner is malformed: {malformed}");
+        assert_eq!(
+            parse_owner(Value::Null)
+                .expect_err("null is not an owner")
+                .to_string(),
+            expected
+        );
     }
 
     #[test]

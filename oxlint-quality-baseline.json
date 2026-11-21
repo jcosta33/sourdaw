@@ -4681,10 +4681,10 @@
             "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 9
+            "count": 8
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 14
+            "count": 12
         }
     },
     "src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts": {
@@ -8642,16 +8642,16 @@
     },
     "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": {
         "eslint/complexity": {
-            "count": 4
+            "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 5
+            "count": 3
         },
         "eslint/max-params": {
             "count": 5
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-positional-boolean-flags": {
             "count": 1
@@ -14748,14 +14748,6 @@
             "count": 4
         }
     },
-    "src/modules/MIDI/useCases/grooveTemplates/projectGrooveTemplateState.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "typescript/switch-exhaustiveness-check": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts": {
         "eslint/complexity": {
             "count": 1
@@ -18799,7 +18791,7 @@
             "count": 2
         },
         "sourdaw-craft/no-silent-catch": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/WorkspaceShell/presentations/views/Transport/WindowControls.tsx": {

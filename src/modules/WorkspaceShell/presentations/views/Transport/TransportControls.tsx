@@ -19,7 +19,6 @@ import {
     setMetronomeVolume,
     toggleRecording,
     toggleCountIn,
-    setCountInBars,
 } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -183,14 +182,14 @@ export const TransportControls = ({
     countInBars,
     compact = false,
 }: TransportControlsProps): ReactElement => {
+    const dispatchTransportAction = (action: Parameters<typeof executeUserAppAction>[0]): void => {
+        void executeUserAppAction(action).catch(() => undefined);
+    };
     const toggleLoop = (): void => {
-        void executeUserAppAction({ type: 'toggleLoop' }).catch(() => undefined);
+        dispatchTransportAction({ type: 'toggleLoop' });
     };
     const setPunchEnabled = (): void => {
-        void executeUserAppAction({
-            type: 'setPunchEnabled',
-            payload: { enabled: !punchInEnabled },
-        }).catch(() => undefined);
+        dispatchTransportAction({ type: 'setPunchEnabled', payload: { enabled: !punchInEnabled } });
     };
     const cycleCountInBars = (): void => {
         let next: number;
@@ -203,7 +202,7 @@ export const TransportControls = ({
         } else {
             next = 1;
         }
-        setCountInBars(next);
+        dispatchTransportAction({ type: 'setCountInBars', payload: { bars: next } });
     };
     const statusAnnouncement = (): string => {
         if (isRecording) {

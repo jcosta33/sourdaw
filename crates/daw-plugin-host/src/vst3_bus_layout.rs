@@ -116,6 +116,53 @@ pub fn silent_channel_flags(channels: usize) -> u64 {
     (1u64 << channels) - 1
 }
 
+/// Which way an audio bus carries signal, as a refusal names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BusDirection {
+    Input,
+    Output,
+}
+
+impl BusDirection {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::Output => "output",
+        }
+    }
+}
+
+/// Why no bus layout the host can feed was agreed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BusLayoutError {
+    /// A main bus still runs more channels than the host carries after every
+    /// offer.
+    UnfeedableMainBus {
+        name: String,
+        direction: BusDirection,
+        channels: usize,
+    },
+}
+
+impl std::fmt::Display for BusLayoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnfeedableMainBus {
+                name,
+                direction,
+                channels,
+            } => write!(
+                f,
+                "[VST3] '{name}' refused every main audio bus arrangement this host can feed: \
+                 its main {} bus runs {channels} channels, and the host carries mono or stereo",
+                direction.label()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BusLayoutError {}
+
 /// What the component says about one audio bus before anything is negotiated.
 struct DeclaredBus {
     channels: usize,
@@ -133,7 +180,7 @@ pub unsafe fn negotiate_bus_layout(
     component: &ComPtr<IComponent>,
     processor: &ComPtr<IAudioProcessor>,
     name: &str,
-) -> Result<BusLayout, String> {
+) -> Result<BusLayout, BusLayoutError> {
     // SAFETY: this fn's own contract makes `component` initialised, which is
     // all `declared_buses` requires.
     let inputs = unsafe { declared_buses(component, BusDirections_::kInput as int32) };
@@ -355,18 +402,19 @@ unsafe fn accepted_geometry(
         .collect()
 }
 
-fn refuse_unfeedable_main_bus(layout: &BusLayout, name: &str) -> Result<(), String> {
+fn refuse_unfeedable_main_bus(layout: &BusLayout, name: &str) -> Result<(), BusLayoutError> {
     for (direction, channels) in [
-        ("input", layout.main_input_channels()),
-        ("output", layout.main_output_channels()),
+        (BusDirection::Input, layout.main_input_channels()),
+        (BusDirection::Output, layout.main_output_channels()),
     ] {
         if channels <= HOST_CHANNELS {
             continue;
         }
-        return Err(format!(
-            "[VST3] '{name}' refused every main audio bus arrangement this host can feed: \
-             its main {direction} bus runs {channels} channels, and the host carries mono or stereo"
-        ));
+        return Err(BusLayoutError::UnfeedableMainBus {
+            name: name.to_string(),
+            direction,
+            channels,
+        });
     }
     Ok(())
 }
@@ -440,8 +488,19 @@ mod tests {
         let error = refuse_unfeedable_main_bus(&layout(2, 6), "Wide Reverb")
             .expect_err("six output channels cannot be fed");
 
-        assert!(error.contains("Wide Reverb"), "{error}");
-        assert!(error.contains("main output bus runs 6 channels"), "{error}");
+        assert_eq!(
+            error,
+            BusLayoutError::UnfeedableMainBus {
+                name: "Wide Reverb".to_string(),
+                direction: BusDirection::Output,
+                channels: 6,
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "[VST3] 'Wide Reverb' refused every main audio bus arrangement this host can feed: \
+             its main output bus runs 6 channels, and the host carries mono or stereo"
+        );
     }
 
     #[test]
