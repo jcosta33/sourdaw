@@ -1,6 +1,7 @@
 import { applyDuplicatedTrackFields } from '../models/DuplicatedTrackFields';
 import { createTrack, type Track } from '../models/Track';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
+import { isHostedPluginDevice } from '../useCases/device/isHostedPluginDevice';
 
 export function createPlannedTrack(input: {
     id: string;
@@ -20,9 +21,15 @@ export function createPlannedTrack(input: {
 /**
  * The copy `duplicateTrack` executes: a new track of the source's kind that takes only the fields
  * duplicateTrack copies. Execution mints fresh device, alternative and clip ids; the plan derives
- * distinct ids from the copy's id so no row is planned on two tracks.
+ * distinct ids from the copy's id so no row is planned on two tracks. A hosted plugin device gets a
+ * planned instance id distinct from the source's and any other device none, as execution does; a
+ * master has no copy.
  */
-export function createPlannedDuplicate(source: Track, trackId: string): Track {
+export function createPlannedDuplicate(source: Track, trackId: string): Track | null {
+    const kind = source.kind;
+    if (kind === 'master') {
+        return null;
+    }
     const alternatives = source.alternatives.map((alternative, alternativeIndex) => ({
         ...structuredClone(alternative),
         id: `planned-dup-alt-${trackId}-${alternativeIndex}`,
@@ -37,7 +44,7 @@ export function createPlannedDuplicate(source: Track, trackId: string): Track {
         createPlannedTrack({
             id: trackId,
             name: `${source.name} (copy)`,
-            kind: source.kind === 'master' ? 'audio' : source.kind,
+            kind,
             gain: 0.8,
             color: source.color,
             initialAlternativeId: alternatives[0]?.id ?? `planned-dup-alt-${trackId}-0`,
@@ -47,6 +54,9 @@ export function createPlannedDuplicate(source: Track, trackId: string): Track {
             devices: structuredClone(source.devices).map((device, deviceIndex) => ({
                 ...device,
                 id: `planned-dup-dev-${trackId}-${deviceIndex}`,
+                externalInstanceId: isHostedPluginDevice(device)
+                    ? `planned-dup-inst-${trackId}-${deviceIndex}`
+                    : undefined,
             })),
             alternatives,
             activeAlternativeId: alternatives[activeIndex]?.id ?? alternatives[0]?.id ?? '',

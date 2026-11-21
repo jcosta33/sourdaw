@@ -101,11 +101,11 @@ function planDuplicatedTrack(
     }
     // The copy starts as the source stands when the duplicate runs, so the source is read through the actions before it.
     const source = getPlannedTrackState({ ...context, actionIndex }, action.payload.trackId);
-    if (source === null || source.kind === 'master') {
+    if (source === null) {
         return null;
     }
     const copy = createPlannedDuplicate(source, trackId);
-    return projectTrackThroughPriorBatchActions(copy, context, actionIndex + 1);
+    return copy === null ? null : projectTrackThroughPriorBatchActions(copy, context, actionIndex + 1);
 }
 
 function planRestoredTrack(

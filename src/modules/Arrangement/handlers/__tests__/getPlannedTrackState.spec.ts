@@ -89,6 +89,46 @@ describe('getPlannedTrackState', () => {
         expect(planned?.height).toBe(80);
     });
 
+    it('gives a duplicated hosted plugin a planned instance id of its own and any other device none', () => {
+        const base = createTrack({ id: 'source', name: 'Source', kind: 'audio', gain: 0.5 });
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...base,
+                    devices: [
+                        {
+                            id: 'd-plugin',
+                            name: 'Plugin',
+                            type: 'external-plugin',
+                            bypassed: false,
+                            parameterValues: {},
+                            externalPluginId: 'plug',
+                            externalInstanceId: 'inst-src',
+                        },
+                        {
+                            id: 'd-builtin',
+                            name: 'Builtin',
+                            type: 'eq',
+                            bypassed: false,
+                            parameterValues: {},
+                            externalInstanceId: 'stale',
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const planned = plan(
+            [{ type: 'duplicateTrack', payload: { trackId: 'source', targetTrackId: 'copy' } }],
+            'copy'
+        );
+
+        expect(planned?.devices[0]?.externalInstanceId).toBeDefined();
+        expect(planned?.devices[0]?.externalInstanceId).not.toBe('inst-src');
+        expect(planned?.devices[1]?.externalInstanceId).toBeUndefined();
+    });
+
     it('plans no copy of a source that does not exist', () => {
         expect(
             plan([{ type: 'duplicateTrack', payload: { trackId: 'nope', targetTrackId: 'copy' } }], 'copy')
@@ -215,6 +255,14 @@ describe('getPlannedTrackState', () => {
                 ?.height
         ).toBe(100);
         expect(plan([zoom, { type: 'restoreTrack', payload: snapshot }, zoom], 'gone')?.height).toBe(140);
+    });
+
+    it('plans a created bus only through the actions after its creator', () => {
+        const zoom = { type: 'zoomTracksVertical', payload: { delta: 20 } } as const;
+        const bus = { type: 'createBus', payload: { busId: 'bus', name: 'Verb' } } as const;
+
+        expect(plan([zoom, bus], 'bus')?.height).toBe(80);
+        expect(plan([zoom, bus, zoom], 'bus')?.height).toBe(100);
     });
 
     it('plans a track an earlier addTrack creates, under its name and gain', () => {

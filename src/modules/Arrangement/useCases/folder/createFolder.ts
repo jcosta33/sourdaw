@@ -19,9 +19,7 @@ export function createFolder(
     }
 
     // `trackIdOverride` carries the id `materializeCommandApplicationIds` minted before
-    // `describe()` ran, so the undo inverse can name this exact track. Omitting the key
-    // entirely when absent keeps the created track's id generation untouched for callers
-    // that pass nothing.
+    // `describe()` ran, so the undo inverse can name this exact track.
     const folder = createTrack({
         name,
         kind: 'folder',
