@@ -65,10 +65,44 @@ function freezeStatus(): string | undefined {
     return trackStore.value?.tracks[0]?.freezeState.status;
 }
 
+const FREEZE_TRACK = { type: 'freezeTrack', payload: { trackId: 'freeze-track' } } as const;
+const UNFREEZE_TRACK = { type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } } as const;
+
+function staleTake() {
+    return {
+        frozen: true,
+        frozenBufferId: 'old-take',
+        freezeState: {
+            status: 'stale' as const,
+            freezeId: 'old-freeze',
+            frozenBufferId: 'old-take',
+            sourceContentHash: 'old-hash',
+            compensationSeconds: 0.02,
+        },
+    };
+}
+
+function trackGain(): number | undefined {
+    return trackStore.value?.tracks[0]?.gain;
+}
+
 describe('Freeze history replay while a recording starts', () => {
     let notices: NotifyPayload[];
 
-    beforeEach(async () => {
+    function seedArmedTrack(overrides: Parameters<typeof TrackDummy.create>[0] = {}): void {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'freeze-track', armed: true, ...overrides })],
+            selectedTrackId: 'freeze-track',
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+    }
+
+    function warnings(): string[] {
+        return notices.filter((notice) => notice.level === 'warning').map((notice) => notice.message);
+    }
+
+    beforeEach(() => {
         notices = [];
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
@@ -97,16 +131,10 @@ describe('Freeze history replay while a recording starts', () => {
         actionHistoryStore.set({ entries: [] });
         macroStore.set({ macros: [], recording: true, currentRecording: [] });
         projectStore.set({ ...defaultProjectStoreState, createdAt: 100, updatedAt: 100, loading: false });
-        trackStore.set({
-            tracks: [TrackDummy.create({ id: 'freeze-track', armed: true })],
-            selectedTrackId: 'freeze-track',
-            ghostClips: [],
-        });
-        flushAutomergeStorageWrites();
+        seedArmedTrack();
         render.mockReset();
         render.mockResolvedValue(buffer());
         recordingStartStore.set(false);
-        await executeAppAction({ type: 'freezeTrack', payload: { trackId: 'freeze-track' } });
     });
 
     afterEach(() => {
@@ -124,6 +152,7 @@ describe('Freeze history replay while a recording starts', () => {
     });
 
     it('refuses the redo of a freeze during count-in, keeps the entry redoable, and redoes it once recording stops', async () => {
+        await executeAppAction(FREEZE_TRACK);
         await undo();
         expect(freezeStatus()).toBe('unfrozen');
         recordingStartStore.set(true);
@@ -131,7 +160,7 @@ describe('Freeze history replay while a recording starts', () => {
         await redo();
 
         expect(freezeStatus()).toBe('unfrozen');
-        expect(notices).toContainEqual({ message: WARNING, level: 'warning' });
+        expect(warnings()).toEqual([WARNING]);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
 
@@ -145,7 +174,8 @@ describe('Freeze history replay while a recording starts', () => {
     });
 
     it('refuses the undo of an unfreeze during count-in, keeps the entry undoable, and undoes it once recording stops', async () => {
-        await executeAppAction({ type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } });
+        await executeAppAction(FREEZE_TRACK);
+        await executeAppAction(UNFREEZE_TRACK);
         expect(freezeStatus()).toBe('unfrozen');
         expect(undoStore.value?.past).toHaveLength(2);
         recordingStartStore.set(true);
@@ -153,7 +183,7 @@ describe('Freeze history replay while a recording starts', () => {
         await undo();
 
         expect(freezeStatus()).toBe('unfrozen');
-        expect(notices).toContainEqual({ message: WARNING, level: 'warning' });
+        expect(warnings()).toEqual([WARNING]);
         expect(undoStore.value?.past).toHaveLength(2);
         expect(undoStore.value?.future).toHaveLength(0);
 
@@ -166,11 +196,86 @@ describe('Freeze history replay while a recording starts', () => {
     });
 
     it('still undoes a freeze during count-in, since unfreezing is always allowed', async () => {
+        await executeAppAction(FREEZE_TRACK);
         recordingStartStore.set(true);
 
         await undo();
 
         expect(freezeStatus()).toBe('unfrozen');
-        expect(notices).not.toContainEqual({ message: WARNING, level: 'warning' });
+        expect(warnings()).toEqual([]);
+    });
+
+    it('refuses the undo of a freeze of a stale take during count-in, since the restored take is frozen', async () => {
+        seedArmedTrack(staleTake());
+        await executeAppAction(FREEZE_TRACK);
+        expect(freezeStatus()).toBe('frozen');
+        recordingStartStore.set(true);
+
+        await undo();
+
+        expect(freezeStatus()).toBe('frozen');
+        expect(warnings()).toEqual([WARNING]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('refuses the undo of an unfreeze of a stale take during count-in', async () => {
+        seedArmedTrack(staleTake());
+        await executeAppAction(UNFREEZE_TRACK);
+        expect(freezeStatus()).toBe('unfrozen');
+        recordingStartStore.set(true);
+
+        await undo();
+
+        expect(freezeStatus()).toBe('unfrozen');
+        expect(trackStore.value?.tracks[0]?.frozen).toBe(false);
+        expect(warnings()).toEqual([WARNING]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    describe('with a conflict-reporting entry beneath', () => {
+        const setGain = (gain: number, expectedGain: number) =>
+            ({ type: 'setTrackGain', payload: { trackId: 'freeze-track', gain, expectedGain } }) as const;
+
+        it('refuses the undo of an unfreeze without reverting the gain change beneath it', async () => {
+            const original = trackGain() ?? 0;
+            await executeAppAction(FREEZE_TRACK);
+            await executeAppAction(setGain(0.3, original));
+            await executeAppAction(UNFREEZE_TRACK);
+            expect(undoStore.value?.past).toHaveLength(3);
+            recordingStartStore.set(true);
+            notices.length = 0;
+
+            await undo();
+
+            expect(trackGain()).toBeCloseTo(0.3);
+            expect(freezeStatus()).toBe('unfrozen');
+            expect(undoStore.value?.past).toHaveLength(3);
+            expect(undoStore.value?.future).toHaveLength(0);
+            expect(warnings()).toEqual([WARNING]);
+        });
+
+        it('refuses the redo of a freeze without redoing the gain change behind it', async () => {
+            const original = trackGain() ?? 0;
+            await executeAppAction(FREEZE_TRACK);
+            await executeAppAction(setGain(0.3, original));
+            await executeAppAction(UNFREEZE_TRACK);
+            await undo();
+            await undo();
+            await undo();
+            expect(trackGain()).toBeCloseTo(original);
+            expect(undoStore.value?.future).toHaveLength(3);
+            recordingStartStore.set(true);
+            notices.length = 0;
+
+            await redo();
+
+            expect(trackGain()).toBeCloseTo(original);
+            expect(freezeStatus()).toBe('unfrozen');
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(3);
+            expect(warnings()).toEqual([WARNING]);
+        });
     });
 });

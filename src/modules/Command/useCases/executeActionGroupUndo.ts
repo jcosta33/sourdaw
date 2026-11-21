@@ -20,7 +20,7 @@ export type UndoOutcome =
     /** No `inverseAction`: undoing is a no-op, so the entry is dropped. */
     | { readonly status: 'inert' }
     /** The transaction aborted; nothing was written and the entry stands. */
-    | { readonly status: 'conflict'; readonly reason?: string }
+    | { readonly status: 'conflict'; readonly reason?: string; readonly blocked?: true }
     /** The write landed but its bookkeeping failed; the stack must advance. */
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 

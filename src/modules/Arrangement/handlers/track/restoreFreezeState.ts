@@ -26,11 +26,12 @@ export const handleRestoreFreezeState = createHandler<'restoreFreezeState'>({
         }
         const replacement = action.payload.replacement;
         // A redo of a freeze or an undo of an unfreeze re-freezes through this action, so it owes
-        // the recording check `freezeTrack` makes. A conflict leaves the history entry where it
-        // was, so it stays redoable (or undoable) once the recording stops.
-        if (replacement.freezeState.status === 'frozen' && isFreezeRefusedWhileRecording(track.id)) {
+        // the recording check `freezeTrack` makes, keyed on what the write sets (`frozen`, which a
+        // stale or error take also carries). A blocked conflict leaves the history entry in place and
+        // makes undo and redo step over nothing, so it stays replayable once the recording stops.
+        if (replacement.frozen && isFreezeRefusedWhileRecording(track.id)) {
             notifyUser(FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, 'warning');
-            return { status: 'conflict', reason: FREEZE_REFUSED_WHILE_RECORDING_MESSAGE };
+            return { status: 'conflict', reason: FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, blocked: true };
         }
         updateTrack(track.id, (candidate) => ({
             ...candidate,

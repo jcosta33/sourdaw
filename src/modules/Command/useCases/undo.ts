@@ -1,6 +1,10 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
+import {
+    AppActionBlockedError,
+    AppActionCommittedError,
+    AppActionConflictError,
+} from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { isInertUndoUnit, newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
@@ -106,6 +110,9 @@ async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Prom
         await runExecuteAppAction(inverseAction, options);
         return { status: 'undone', applied };
     } catch (error) {
+        if (error instanceof AppActionBlockedError) {
+            return { status: 'conflict', blocked: true };
+        }
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
@@ -200,8 +207,8 @@ type CandidateOutcome =
       }
     /** Nothing to undo and nothing written: the unit is dropped. */
     | { readonly status: 'inert' }
-    /** Nothing was written. `retained` stays on `past` and stays retryable. */
-    | { readonly status: 'conflict'; readonly retained: readonly UndoEntry[] };
+    /** Nothing was written. `retained` stays on `past` and stays retryable. `blocked`: a transient refusal the handler already reported, never stepped over. */
+    | { readonly status: 'conflict'; readonly retained: readonly UndoEntry[]; readonly blocked?: true };
 
 /** Undoes a unit member by member, newest first. Used for every unit that is not
  *  an atomic action group: a single entry, or a group mixing callbacks, inert
@@ -221,9 +228,12 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
             // Nothing was written for this entry, so it and every older member of
             // its unit stay on `past` and stay retryable.
             const retained = entries.slice(0, index + 1);
-            return undone.length === 0
-                ? { status: 'conflict', retained }
-                : { status: 'undone', undone, retained, partialConflict: true, applied };
+            if (undone.length === 0) {
+                return outcome.blocked === true
+                    ? { status: 'conflict', retained, blocked: true }
+                    : { status: 'conflict', retained };
+            }
+            return { status: 'undone', undone, retained, partialConflict: true, applied };
         }
 
         applied ||= outcome.status === 'committed' || outcome.applied === true;
@@ -440,6 +450,10 @@ async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
         const outcome = await undoCandidate(candidate);
         if (outcome.status === 'inert') {
             continue;
+        }
+        if (outcome.status === 'conflict' && outcome.blocked === true) {
+            // The handler told the user why; the history is untouched and nothing beneath is stepped onto.
+            return settleWithoutUndo({ initialPast, headId, retainedPast: [...past, ...outcome.retained] });
         }
         if (outcome.status === 'conflict') {
             notifyUndoConflict(undoEntryLabel(candidate.head));

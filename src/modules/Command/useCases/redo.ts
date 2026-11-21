@@ -1,6 +1,10 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
+import {
+    AppActionBlockedError,
+    AppActionCommittedError,
+    AppActionConflictError,
+} from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { isActionEntry } from '../models/UndoEntry';
 import { nextUndoUnit, undoEntryLabel } from '../models/UndoUnit';
@@ -50,7 +54,7 @@ function commitRedoTransition(
 type RedoOutcome =
     | { readonly status: 'applied'; readonly committed: boolean }
     | { readonly status: 'not-applied' }
-    | { readonly status: 'conflict' }
+    | { readonly status: 'conflict'; readonly blocked?: true }
     | { readonly status: 'committed'; readonly committed: boolean; readonly error: AppActionCommittedError };
 
 /**
@@ -189,6 +193,9 @@ async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
     try {
         await executeAppAction(entry.redoAction ?? entry.action, options);
     } catch (error) {
+        if (error instanceof AppActionBlockedError) {
+            return { status: 'conflict', blocked: true };
+        }
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
@@ -404,6 +411,11 @@ async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
 
         const outcome = await executeRedo(entry);
 
+        if (outcome.status === 'conflict' && outcome.blocked === true) {
+            // The handler told the user why; the entry stays redoable and nothing behind it is stepped onto.
+            settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
+            return { headConsumed: false };
+        }
         if (outcome.status === 'conflict') {
             const label = undoEntryLabel(entry);
             notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
