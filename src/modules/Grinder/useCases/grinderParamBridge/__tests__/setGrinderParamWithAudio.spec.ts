@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { setGrinderParam } from '../../../stores/grinderStore';
 import { paramBatcher } from '../helpers';
 import { setGrinderParamWithAudio } from '../setGrinderParamWithAudio';
@@ -18,10 +20,6 @@ vi.mock('../helpers', async (importOriginal) => {
         },
     };
 });
-
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
-}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: vi.fn(),
@@ -54,6 +52,7 @@ describe('setGrinderParamWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectDependencies(setGrinderParamWithAudio, deps);
     });
 
     it('should update store and schedule audio engine update', () => {
@@ -66,7 +65,7 @@ describe('setGrinderParamWithAudio', () => {
             },
         ]);
 
-        const action = setGrinderParamWithAudio(deps as any);
+        const action = setGrinderParamWithAudio;
         action(deviceId, 'gain', 8.2);
 
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'gain', 8.2);
@@ -84,7 +83,7 @@ describe('setGrinderParamWithAudio', () => {
             },
         ]);
 
-        const action = setGrinderParamWithAudio(deps as any);
+        const action = setGrinderParamWithAudio;
         action(deviceId, 'bright', 1);
 
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'bright', true);
@@ -103,7 +102,7 @@ describe('setGrinderParamWithAudio', () => {
             },
         ]);
 
-        const action = setGrinderParamWithAudio(deps as any);
+        const action = setGrinderParamWithAudio;
         // engineMode index 1 = 'capture' (non-circuit) → neuralEnabled true → 1.
         action(deviceId, 'engineMode', 1);
 
@@ -131,7 +130,7 @@ describe('setGrinderParamWithAudio', () => {
             },
         ]);
 
-        const action = setGrinderParamWithAudio(deps as any);
+        const action = setGrinderParamWithAudio;
         // neuralEnabled true → engineMode 'hybrid' (index 2).
         action(deviceId, 'neuralEnabled', 1);
 

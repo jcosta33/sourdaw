@@ -1,6 +1,6 @@
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
-import { resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
+import { type DdspInstrumentId, resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
 import { checkDdspInstrumentReady } from '../../repositories/checkDdspInstrumentReady';
 import { cleanupUnpublishedDdspGeneration } from '../../repositories/cleanupUnpublishedDdspGeneration';
 import { inferenceWorkerBridge } from '../../repositories/inferenceWorkerBridge';
@@ -11,7 +11,8 @@ import { stageDdspInstrumentGeneration } from '../../repositories/stageDdspInstr
 import { withDdspInstrumentLock } from '../../repositories/withDdspInstrumentLock';
 import { renderDdspInstrument } from '../renderDdspInstrument';
 
-const instrument = resolveDdspInstrument('ddsp-violin');
+const INSTRUMENT_ID: DdspInstrumentId = 'ddsp-violin';
+const instrument = resolveDdspInstrument(INSTRUMENT_ID);
 const generation = {
     id: instrument.id,
     version: instrument.artifactVersion,
@@ -68,7 +69,7 @@ async function renderOffline(): Promise<DdspRenderProof> {
     inferenceWorkerBridge.terminateAll();
     const result = await renderDdspInstrument({
         phraseId: 'ddsp-hardware-proof',
-        instrumentId: instrument.id,
+        instrumentId: INSTRUMENT_ID,
         notes: [{ pitch: 50, velocity: 100, startSec: 0, durationSec: 0.45 }],
         durationSec: DURATION_SECONDS,
     });

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { setGrinderPedalParam } from '../../../stores/grinderStore';
 import { setGrinderPedalParamWithAudio } from '../setGrinderPedalParamWithAudio';
 
@@ -17,10 +19,6 @@ vi.mock('../helpers', async (importOriginal) => {
         },
     };
 });
-
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
-}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: vi.fn(),
@@ -53,6 +51,7 @@ describe('setGrinderPedalParamWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectDependencies(setGrinderPedalParamWithAudio, deps);
     });
 
     it('should update store and schedule audio engine update for pedals', () => {
@@ -64,7 +63,7 @@ describe('setGrinderPedalParamWithAudio', () => {
             },
         ]);
 
-        const action = setGrinderPedalParamWithAudio(deps as any);
+        const action = setGrinderPedalParamWithAudio;
         const defaults = { id: 'od1', type: 'overdrive', enabled: true, params: {} } as any;
 
         action(deviceId, false, 'overdrive', 'drive', 4.5, defaults);

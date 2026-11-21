@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { type BacteriaModAssignment } from '../../../models/BacteriaPatch';
 import { setBacteriaModAssignments } from '../../../stores/bacteriaStore';
 import { pushBacteriaModAssignmentsToEngine } from '../pushBacteriaModAssignmentsToEngine';
@@ -9,12 +11,10 @@ vi.mock('../../../stores/bacteriaStore', () => ({
     setBacteriaModAssignments: vi.fn(),
 }));
 
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
-}));
-
 vi.mock('../bacteriaParamBridgeDependencies', () => ({
-    bacteriaParamBridgeDependencies: {},
+    bacteriaParamBridgeDependencies: {
+        resolveEligibleDeviceWriteTarget: vi.fn(),
+    },
 }));
 
 // The engine half — mapping and the `updateDevicePatch` push — moved to
@@ -55,7 +55,8 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
             assignment({ sourceId: 'macro1', targetParam: 'band1_filterCutoff', amount: 0.2, bipolar: false }),
         ];
 
-        setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, table);
+        injectDependencies(setBacteriaModAssignmentsWithAudio, deps);
+        setBacteriaModAssignmentsWithAudio(DEVICE_ID, table);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, table);
         expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, table);
@@ -64,7 +65,8 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
     it('hands an empty table to the engine push use case so a remove that empties the list also silences the engine', () => {
         const deps = makeDeps();
 
-        setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, []);
+        injectDependencies(setBacteriaModAssignmentsWithAudio, deps);
+        setBacteriaModAssignmentsWithAudio(DEVICE_ID, []);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, []);
         expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, []);
@@ -74,7 +76,8 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
         const deps = makeDeps();
         const table = [assignment({ targetParam: 'drive' })];
 
-        setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, table);
+        injectDependencies(setBacteriaModAssignmentsWithAudio, deps);
+        setBacteriaModAssignmentsWithAudio(DEVICE_ID, table);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, table);
         expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, table);
@@ -84,7 +87,8 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
         const deps = makeDeps();
         deps.resolveEligibleDeviceWriteTarget.mockReturnValue({ status: 'ineligible', reason: 'no-device' });
 
-        setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, [assignment()]);
+        injectDependencies(setBacteriaModAssignmentsWithAudio, deps);
+        setBacteriaModAssignmentsWithAudio(DEVICE_ID, [assignment()]);
 
         expect(setBacteriaModAssignments).not.toHaveBeenCalled();
         expect(pushBacteriaModAssignmentsToEngine).not.toHaveBeenCalled();

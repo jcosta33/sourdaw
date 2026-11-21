@@ -158,6 +158,7 @@ function providerClarification() {
                 },
             },
         ],
+        proposal: null,
     };
 }
 

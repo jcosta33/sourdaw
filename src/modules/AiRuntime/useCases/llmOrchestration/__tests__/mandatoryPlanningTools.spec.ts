@@ -166,7 +166,10 @@ function productionToolSchemas(
     );
 }
 
-function namesOf(tools: readonly ToolSchema[]): string[] {
+// Both backends advertise this shape: the hosted `ToolSchema` and WebLLM's `ChatCompletionTool`.
+type AdvertisedTool = { function: { name: string; parameters?: unknown } };
+
+function namesOf(tools: readonly AdvertisedTool[]): string[] {
     return tools.map((tool) => tool.function.name);
 }
 
@@ -1397,7 +1400,7 @@ describe('mandatory planning tools', () => {
                             metricIntent: { kind: 'literal', objectives: [], uncertainty: 'none' },
                         },
                     };
-                    const advertised: Array<readonly ToolSchema[]> = [];
+                    const advertised: Array<readonly AdvertisedTool[]> = [];
                     const firstAssistantItems = [{ type: 'function_call', call_id: intake.id }];
                     let replies = 0;
                     mocks.backendChain.value = [backend];

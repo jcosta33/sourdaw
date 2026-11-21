@@ -277,6 +277,7 @@ describe('planner routes that reach the chokepoint', () => {
         mocked.mockImplementationOnce(async (_system, userMessage, schemas) => ({
             status: 'complete',
             toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            proposal: null,
         }));
         mocked.mockResolvedValueOnce({
             status: 'complete',
@@ -287,6 +288,7 @@ describe('planner routes that reach the chokepoint', () => {
                     arguments: { category: 'command', names: ['setDeviceParameter'] },
                 },
             ],
+            proposal: null,
         });
         mocked.mockResolvedValueOnce({
             status: 'complete',
@@ -315,6 +317,7 @@ describe('planner routes that reach the chokepoint', () => {
                     },
                 },
             ],
+            proposal: null,
         });
 
         const result = await parsePromptToActions({

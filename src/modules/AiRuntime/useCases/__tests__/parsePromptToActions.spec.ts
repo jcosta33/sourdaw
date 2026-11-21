@@ -279,14 +279,16 @@ function createDrumRoutingContext(): ProjectContext {
     };
 }
 
-type CompletePlanOutcome = {
+type PlanTurn = {
     status: 'complete';
     toolCalls: Array<{ id?: string; name: string; arguments: Record<string, unknown> }>;
 };
 
+type CompletePlanOutcome = PlanTurn & { proposal: null };
+
 function scriptedPlan(
     intake: ScriptedTurn,
-    planningTurns: readonly CompletePlanOutcome[],
+    planningTurns: readonly PlanTurn[],
     afterIntake = false
 ): CompletePlanOutcome {
     let providerTurn = afterIntake ? 1 : 0;
@@ -301,13 +303,15 @@ function scriptedPlan(
             const phase = providerTurn % phaseCount;
             providerTurn += 1;
             if (phase === 0) {
-                return Promise.resolve(resolve({ status: 'complete', toolCalls: intake(userMessage, schemas) }));
+                return Promise.resolve(
+                    resolve({ status: 'complete', toolCalls: intake(userMessage, schemas), proposal: null })
+                );
             }
             const outcome = planningTurns[phase - 1];
             if (outcome === undefined) {
                 throw new Error('Expected a configured provider planning turn.');
             }
-            return Promise.resolve(resolve(outcome));
+            return Promise.resolve(resolve({ ...outcome, proposal: null }));
         },
     } as unknown as CompletePlanOutcome;
 }
@@ -363,7 +367,7 @@ function completePlan<TToolCall extends { name: string; arguments: Record<string
     const workflowCalls = toolCalls.filter((call) => call.name === 'selectWorkflowCapability');
     const commandCalls = toolCalls.filter((call) => call.name !== 'selectWorkflowCapability');
     const commandNames = [...new Set(commandCalls.map((call) => call.name))];
-    const catalogPlan: CompletePlanOutcome = {
+    const catalogPlan: PlanTurn = {
         status: 'complete',
         toolCalls: [
             {
@@ -372,7 +376,7 @@ function completePlan<TToolCall extends { name: string; arguments: Record<string
             },
         ],
     };
-    const proposalPlan: CompletePlanOutcome = {
+    const proposalPlan: PlanTurn = {
         status: 'complete',
         toolCalls: [
             ...workflowCalls,
@@ -395,7 +399,7 @@ function completePlan<TToolCall extends { name: string; arguments: Record<string
             },
         ],
     };
-    const noActionPlan: CompletePlanOutcome = { status: 'complete', toolCalls: [] };
+    const noActionPlan: PlanTurn = { status: 'complete', toolCalls: [] };
     if (intake === undefined) {
         return {
             then() {
@@ -2082,7 +2086,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockImplementation(async (_system, userMessage, schemas) => {
             turn += 1;
             if (turn === 1) {
-                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
+                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas), proposal: null };
             }
             return proposal;
         });
@@ -2157,6 +2161,9 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockImplementation(async () => {
             const plan = plans[Math.floor(planIndex / 3)];
             planIndex += 1;
+            if (plan === undefined) {
+                throw new Error('Expected a configured provider plan for this turn.');
+            }
             return plan;
         });
         const providerContext: ProjectContext = {

@@ -8,6 +8,7 @@ import { querySemanticProject } from '#/modules/Project/useCases';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { type ToolPlanningOutcome } from '../../transformers/strictToolPlanningParser';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
@@ -93,16 +94,19 @@ const catalog = prepareCreativeInterpretationCatalog({ prompt: PROMPT, context, 
 
 const queryTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [{ id: 'query-1', name: 'project.query', arguments: { type: 'project-summary' } }],
 };
 
 const searchTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [{ id: 'search-1', name: 'agent.command-index.search', arguments: { intent: 'set a track gain' } }],
 };
 
 const discoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-1',
@@ -114,6 +118,7 @@ const discoverTurn = {
 
 const interpretationTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'interpretation-1',
@@ -133,6 +138,7 @@ const interpretationTurn = {
 
 const differentInterpretationTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'interpretation-2',
@@ -166,6 +172,7 @@ const batchPlan = {
 
 const proposeTurn = (extraArguments: Record<string, unknown> = {}) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-1',
@@ -185,6 +192,7 @@ const listProposeTurn = (input: {
     objective?: string;
 }) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-list-1',
@@ -251,6 +259,7 @@ const radioCatalog = prepareCreativeInterpretationCatalog({
 
 const radioDiscoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-radio-1',
@@ -262,6 +271,7 @@ const radioDiscoverTurn = {
 
 const radioInterpretationTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'interpretation-radio-1',
@@ -283,6 +293,7 @@ const radioInterpretationTurn = {
 
 const radioProposeTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-radio-1',
@@ -346,6 +357,7 @@ const shaperCatalog = prepareCreativeInterpretationCatalog({
 
 const shaperDiscoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-shaper-1',
@@ -357,6 +369,7 @@ const shaperDiscoverTurn = {
 
 const shaperInterpretationTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'interpretation-shaper-1',
@@ -383,6 +396,7 @@ const shaperInterpretationTurn = {
  */
 const shaperProposeTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-shaper-1',
@@ -411,6 +425,7 @@ const shaperProposeTurn = {
  */
 const shaperUnpublishedParameterProposeTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-shaper-unpublished-1',
@@ -439,6 +454,7 @@ const shaperUnpublishedParameterProposeTurn = {
 /** Two proposals in one turn is a loop-level refusal, reached after the interpretation was admitted. */
 const doubleProposeTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         { id: 'propose-a', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
         { id: 'propose-b', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
@@ -452,7 +468,7 @@ function readCompilation() {
     return compilation?.type === 'return' ? compilation.value : undefined;
 }
 
-function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unknown[] }>) {
+function scriptTurns(turns: ReadonlyArray<Extract<ToolPlanningOutcome, { status: 'complete' }>>) {
     const mocked = vi.mocked(generateToolPlanningOutcome);
     const interpretation = turns.find((turn) =>
         turn.toolCalls.some(
@@ -487,6 +503,7 @@ function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unkno
             }
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         ...base,
@@ -514,6 +531,7 @@ function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unkno
     } else if (!turns.includes(radioDiscoverTurn)) {
         mocked.mockImplementationOnce(async (_system, message, schemas) => ({
             status: 'complete',
+            proposal: null,
             toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({ ...call, id: 'literal-intake' })),
         }));
     }

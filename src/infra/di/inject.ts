@@ -20,12 +20,16 @@ export type InjectOptions = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI metadata; loose by design
 type InjectableCallable = (...args: any[]) => any;
 
-export type InjectableFunction = InjectableCallable & {
+// The metadata carries no call signature, so `TFactoryReturn & InjectableMetadata` keeps the
+// factory's single signature and `Parameters`/`ReturnType` resolve to it rather than to `any`.
+export type InjectableMetadata = {
     _isInjectable: boolean;
     _deps: Record<string, unknown>;
     _factory: (deps: Record<string, unknown>) => InjectableCallable;
     _options?: InjectOptions;
 };
+
+export type InjectableFunction = InjectableCallable & InjectableMetadata;
 
 const resolutionStack = new Set<InjectableFunction>();
 
@@ -83,7 +87,7 @@ export function inject<TDeps extends Record<string, unknown>>(
     TFactoryReturn extends (...args: any[]) => any,
 >(
     factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
-) => TFactoryReturn & InjectableFunction;
+) => TFactoryReturn & InjectableMetadata;
 export function inject<TDeps extends Record<string, unknown>>(
     deps: TDeps,
     options: InjectOptions
@@ -92,14 +96,14 @@ export function inject<TDeps extends Record<string, unknown>>(
     TFactoryReturn extends (...args: any[]) => any,
 >(
     factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
-) => TFactoryReturn & InjectableFunction;
+) => TFactoryReturn & InjectableMetadata;
 export function inject<TDeps extends Record<string, unknown>>(deps: TDeps, options?: InjectOptions) {
     return <
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
         TFactoryReturn extends (...args: any[]) => any,
     >(
         factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
-    ): TFactoryReturn & InjectableFunction => {
+    ): TFactoryReturn & InjectableMetadata => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI invoker args are heterogeneous by design
         const invoker = (...args: any[]) => {
             let cachedInvoker: InjectableCallable | undefined = cache.get(invoker) as InjectableCallable | undefined;
@@ -142,6 +146,6 @@ export function inject<TDeps extends Record<string, unknown>>(deps: TDeps, optio
         invoker._options = options;
 
         // eslint-disable-next-line sourdaw/no-type-assertion-escape -- DI invoker function carries extra properties; cast through unknown is required because the intersection type cannot be structurally proven
-        return invoker as unknown as TFactoryReturn & InjectableFunction;
+        return invoker as unknown as TFactoryReturn & InjectableMetadata;
     };
 }

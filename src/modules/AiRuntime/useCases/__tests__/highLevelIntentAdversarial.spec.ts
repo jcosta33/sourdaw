@@ -9,6 +9,7 @@ import {
     SEMANTIC_CLIP_MAX_END_BEAT,
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
 } from '../../models/SemanticCommandList';
+import { type ToolPlanningOutcome } from '../../transformers/strictToolPlanningParser';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -64,6 +65,7 @@ const plan = {
 
 const discoverTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'discover-1',
@@ -75,6 +77,7 @@ const discoverTurn = {
 
 const searchTurn = {
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [{ id: 'search-1', name: 'agent.command-index.search', arguments: { intent: 'create a midi track' } }],
 };
 
@@ -105,7 +108,7 @@ const makeClip = {
 const note = (index: number) => ({ pitch: 60, startBeat: index, duration: 1, velocity: 96 });
 
 async function planWith(
-    turns: ReadonlyArray<{ status: 'complete'; toolCalls: unknown[] }>,
+    turns: ReadonlyArray<Extract<ToolPlanningOutcome, { status: 'complete' }>>,
     prompt = LITERAL_PROMPT,
     context: ProjectContext = emptyProject
 ) {
@@ -121,6 +124,7 @@ async function planWith(
     }
     mocked.mockImplementationOnce(async (_system, message, schemas) => ({
         status: 'complete',
+        proposal: null,
         toolCalls: intake(message, schemas).map((call) => ({ ...call, id: 'intake' })),
     }));
     for (const turn of turns) {
@@ -158,15 +162,16 @@ const makeNotes = {
 
 const proposalRun = (items: ReadonlyArray<Record<string, unknown>>) => [
     discoverTurn,
-    { status: 'complete' as const, toolCalls: [proposeCall(items)] },
+    { status: 'complete' as const, proposal: null, toolCalls: [proposeCall(items)] },
 ];
 
 const proposalRunFor = (names: readonly string[], items: ReadonlyArray<Record<string, unknown>>) => [
     {
         status: 'complete' as const,
+        proposal: null,
         toolCalls: [{ id: 'discover-1', name: 'agent.catalog.discover', arguments: { category: 'command', names } }],
     },
-    { status: 'complete' as const, toolCalls: [proposeCall(items)] },
+    { status: 'complete' as const, proposal: null, toolCalls: [proposeCall(items)] },
 ];
 
 describe('high-level intent adversarial planning', () => {
@@ -272,6 +277,7 @@ describe('high-level intent adversarial planning', () => {
         const result = await planWith([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     declineCall({ kind: 'unsupported', reason: 'Sourdaw cannot master for vinyl.', questions: [] }),
                 ],
@@ -290,6 +296,7 @@ describe('high-level intent adversarial planning', () => {
         const result = await planWith([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [declineCall({ kind: 'clarify', reason: 'The request is ambiguous.', questions: [] })],
             },
         ]);
@@ -322,6 +329,7 @@ describe('high-level intent adversarial planning', () => {
             discoverTurn,
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     declineCall({ kind: 'clarify', reason: 'Which key?', questions: ['Which key?'] }),
                     proposeCall([makeTrack]),
@@ -339,6 +347,7 @@ describe('high-level intent adversarial planning', () => {
         const result = await planWith([
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     declineCall({
                         kind: 'clarify',
@@ -671,6 +680,7 @@ describe('high-level intent adversarial planning', () => {
             searchTurn,
             {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     declineCall({ kind: 'unsupported', reason: 'Sourdaw cannot master for vinyl.', questions: [] }),
                 ],

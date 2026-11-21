@@ -92,11 +92,13 @@ const plan = {
 
 const discoverTurn = (names: readonly string[]) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [{ id: 'discover-1', name: 'agent.catalog.discover', arguments: { category: 'command', names } }],
 });
 
 const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-1',
@@ -108,6 +110,7 @@ const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) =
 
 const proposeListTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'propose-1',
@@ -119,6 +122,7 @@ const proposeListTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
 
 const declineTurn = () => ({
     status: 'complete' as const,
+    proposal: null,
     toolCalls: [
         {
             id: 'decline-1',
@@ -150,6 +154,7 @@ function bluesIntake(userMessage: string, schemas: readonly ToolSchema[]) {
     }
     return {
         status: 'complete' as const,
+        proposal: null,
         toolCalls: [
             {
                 ...base,
@@ -253,6 +258,7 @@ describe('planPromptActions bounded correction evidence', () => {
             if (turn === 4 || turn === 8) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: `measurement-${turn}`,
@@ -327,7 +333,11 @@ describe('planPromptActions bounded correction evidence', () => {
         vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
             if (turn === 1 || turn === 4) {
-                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
+                return {
+                    status: 'complete',
+                    toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                    proposal: null,
+                };
             }
             if (turn === 2 || turn === 5) {
                 return discoverTurn(['renameClip']);
@@ -387,7 +397,11 @@ describe('planPromptActions bounded correction evidence', () => {
         vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
             if (turn === 1 || turn === 4) {
-                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
+                return {
+                    status: 'complete',
+                    toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                    proposal: null,
+                };
             }
             if (turn === 2 || turn === 5) {
                 return discoverTurn(['renameClip']);

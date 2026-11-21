@@ -57,8 +57,8 @@ type StartAudioRecording = (
     ) => void
 ) => Promise<boolean>;
 
-export const startAudioRecording: StartAudioRecording = inject({ logger })(
-    ({ logger }) =>
+export const startAudioRecording: StartAudioRecording = inject({ audioEngine, logger })(
+    ({ audioEngine, logger }) =>
         async function startAudioRecording(
             trackId: string,
             onTerminal: RecordingTerminalCallback,

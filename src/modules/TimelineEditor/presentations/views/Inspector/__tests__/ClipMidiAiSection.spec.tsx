@@ -687,6 +687,7 @@ describe('ClipMidiAiSection — DDSP instrument preview', () => {
     };
     const renderOutput = () => ({
         audio: new Float32Array([0.25, -0.25]),
+        backend: 'webgpu' as const,
         sampleRate: 44_100,
         provenance: {
             modelId: 'ddsp-violin',
@@ -1157,7 +1158,7 @@ describe('ClipMidiAiSection — spoken preview duration (issue #3767)', () => {
     });
 
     const requestedDurations = (): Array<number | undefined> =>
-        vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.targetDurationSec);
+        vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0].targetDurationSec);
 
     /** Mount the panel for one clip, type preview text, and press the render button. */
     const launchSpokenRender = (clip: Clip): void => {
@@ -1207,12 +1208,12 @@ describe('ClipMidiAiSection — spoken preview duration (issue #3767)', () => {
         // 120 and the four-beat clip is asked to fit two seconds.
         expect(requestedDurations()).toEqual([4, 4, 4]);
         // The duration fix must not disturb the voice and per-variant speed alternatives.
-        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.speakerId)).toEqual([
+        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0].speakerId)).toEqual([
             'af_heart',
             'af_heart',
             'af_heart',
         ]);
-        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.speed)).toEqual([0.95, 1, 1.05]);
+        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0].speed)).toEqual([0.95, 1, 1.05]);
     });
 
     it('integrates a marker inside the clip and ignores the tempo before its start beat', async () => {

@@ -488,6 +488,7 @@ describe('agent tool catalog', () => {
             .mockImplementationOnce(async (_system, userMessage, schemas) => ({
                 status: 'complete',
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                proposal: null,
             }))
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -498,6 +499,7 @@ describe('agent tool catalog', () => {
                         arguments: { category: 'command', names: ['setTempo'] },
                     },
                 ],
+                proposal: null,
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -510,6 +512,7 @@ describe('agent tool catalog', () => {
                         },
                     },
                 ],
+                proposal: null,
             });
         mockBridgeGroundedLlmToolCalls.mockImplementation(({ calls }: { calls: unknown }) => ({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
@@ -659,10 +662,12 @@ describe('agent tool catalog', () => {
             .mockImplementationOnce(async (_system, userMessage, schemas) => ({
                 status: 'complete',
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                proposal: null,
             }))
             .mockResolvedValue({
                 status: 'complete',
                 toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
+                proposal: null,
             });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
@@ -687,6 +692,7 @@ describe('agent tool catalog', () => {
             .mockImplementationOnce(async (_system, userMessage, schemas) => ({
                 status: 'complete',
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                proposal: null,
             }))
             .mockResolvedValue({
                 status: 'complete',
@@ -699,6 +705,7 @@ describe('agent tool catalog', () => {
                         },
                     },
                 ],
+                proposal: null,
             });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
@@ -867,6 +874,7 @@ describe('agent tool catalog', () => {
     it('routes advertised render and analysis requests through proposal validation instead of execution', async () => {
         vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
             status: 'complete',
+            proposal: null,
             toolCalls: [
                 {
                     id: 'render-1',

@@ -150,12 +150,14 @@ describe('transform.compile Command approval', () => {
             .mockImplementationOnce(async (_system, userMessage, schemas) => ({
                 status: 'complete',
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                proposal: null,
             }))
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
                 ],
+                proposal: null,
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -166,6 +168,7 @@ describe('transform.compile Command approval', () => {
                         arguments: { commands: [], compiledCallIds: ['compile-1'] },
                     },
                 ],
+                proposal: null,
             });
 
         const revision = captureProjectRevision();
@@ -253,6 +256,7 @@ describe('transform.compile Command approval', () => {
             .mockImplementationOnce(async (_system, userMessage, schemas) => ({
                 status: 'complete',
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+                proposal: null,
             }))
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -263,6 +267,7 @@ describe('transform.compile Command approval', () => {
                         arguments: { document: JSON.stringify(creationDocument) },
                     },
                 ],
+                proposal: null,
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -273,6 +278,7 @@ describe('transform.compile Command approval', () => {
                         arguments: { commands: [], compiledCallIds: ['compile-creation'] },
                     },
                 ],
+                proposal: null,
             });
         const creationPrompt =
             'create a MIDI track named Lead and add a MIDI clip named Lead Take on that new track from beat 2 to beat 6';

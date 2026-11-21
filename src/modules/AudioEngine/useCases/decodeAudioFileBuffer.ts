@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { createDecodeError } from '../errors/DecodeError';
@@ -11,23 +12,26 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
  * Web Audio is attempted first for its off-thread, hardware-accelerated path.
  * Symphonia-powered WASM handles codecs that the browser cannot decode.
  */
-export async function decodeAudioFileBuffer(file: File): Promise<AudioBuffer> {
-    const ctx = audioEngine.context;
+export const decodeAudioFileBuffer = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        async function decodeAudioFileBuffer(file: File): Promise<AudioBuffer> {
+            const ctx = audioEngine.context;
 
-    try {
-        return await ctx.decodeAudioData(await file.arrayBuffer());
-    } catch (error) {
-        logger.warn(
-            `[decodeAudioFile] Web Audio decode failed for "${file.name}" — trying Symphonia WASM decoder:`,
-            error
-        );
-    }
+            try {
+                return await ctx.decodeAudioData(await file.arrayBuffer());
+            } catch (error) {
+                logger.warn(
+                    `[decodeAudioFile] Web Audio decode failed for "${file.name}" — trying Symphonia WASM decoder:`,
+                    error
+                );
+            }
 
-    // decodeAudioData detaches its input, so re-read the File for the WASM fallback.
-    const wasmDecoded = await decodeAudioBytesWasm(await file.arrayBuffer());
-    if (!wasmDecoded) {
-        throw createDecodeError(`Unable to decode "${file.name}" — format not supported.`);
-    }
+            // decodeAudioData detaches its input, so re-read the File for the WASM fallback.
+            const wasmDecoded = await decodeAudioBytesWasm(await file.arrayBuffer());
+            if (!wasmDecoded) {
+                throw createDecodeError(`Unable to decode "${file.name}" — format not supported.`);
+            }
 
-    return wasmDecodedToAudioBuffer(wasmDecoded, ctx);
-}
+            return wasmDecodedToAudioBuffer(wasmDecoded, ctx);
+        }
+);

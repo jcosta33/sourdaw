@@ -1,5 +1,10 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
-export function setBusGain(busId: string, gain: number): void {
-    audioEngine.setBusGain(busId, gain);
-}
+export const setBusGain = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function setBusGain(busId: string, gain: number): void {
+            audioEngine.setBusGain(busId, gain);
+        }
+);

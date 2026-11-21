@@ -34,8 +34,8 @@ function isNativeProgrammeOutputOwned(): boolean {
 
 let outputDeviceQueue: Promise<void> = Promise.resolve();
 
-export const setOutputDevice = inject({ logger, notifyUser })(
-    ({ logger, notifyUser }) =>
+export const setOutputDevice = inject({ audioEngine, logger, notifyUser })(
+    ({ audioEngine, logger, notifyUser }) =>
         function setOutputDevice(deviceId: string): Promise<void> {
             const request = outputDeviceQueue.then(async () => {
                 // #3643 — a selection made while the native engine is the

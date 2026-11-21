@@ -791,6 +791,7 @@ describe('bounded metric control admission', () => {
                     return {
                         status: 'complete',
                         toolCalls: [{ name: 'setTrackGain', arguments: { trackId: targetId, gain: 0.7 } }],
+                        proposal: null,
                     };
                 }
                 const schema = schemas.find(
@@ -837,7 +838,7 @@ describe('bounded metric control admission', () => {
                     },
                 };
                 expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                return { status: 'complete', toolCalls: [call] };
+                return { status: 'complete', toolCalls: [call], proposal: null };
             });
             value.context.tracks = [value.context.tracks[2]!];
             const prompt = 'Make Lead Vocal warmer with the selected authored objectives';

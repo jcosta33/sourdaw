@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { type BacteriaModAssignment } from '../../../models/BacteriaPatch';
 import { pushBacteriaModAssignmentsToEngine } from '../pushBacteriaModAssignmentsToEngine';
 
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: any) => fn,
-}));
-
 vi.mock('../bacteriaParamBridgeDependencies', () => ({
-    bacteriaParamBridgeDependencies: {},
+    bacteriaParamBridgeDependencies: {
+        updateDevicePatch: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn(),
+    },
 }));
 
 const TRACK_ID = 'track-1';
@@ -41,7 +42,8 @@ describe('pushBacteriaModAssignmentsToEngine', () => {
             assignment({ sourceId: 'macro1', targetParam: 'band1_filterCutoff', amount: 0.2, bipolar: false }),
         ];
 
-        pushBacteriaModAssignmentsToEngine(deps as never)(DEVICE_ID, table);
+        injectDependencies(pushBacteriaModAssignmentsToEngine, deps);
+        pushBacteriaModAssignmentsToEngine(DEVICE_ID, table);
 
         expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, {
             modAssignments: [
@@ -54,7 +56,8 @@ describe('pushBacteriaModAssignmentsToEngine', () => {
     it('pushes an empty table so a remove that empties the list also silences the engine', () => {
         const deps = makeDeps();
 
-        pushBacteriaModAssignmentsToEngine(deps as never)(DEVICE_ID, []);
+        injectDependencies(pushBacteriaModAssignmentsToEngine, deps);
+        pushBacteriaModAssignmentsToEngine(DEVICE_ID, []);
 
         expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, { modAssignments: [] });
     });
@@ -63,7 +66,8 @@ describe('pushBacteriaModAssignmentsToEngine', () => {
         const deps = makeDeps();
         const table = [assignment({ targetParam: 'drive' })];
 
-        pushBacteriaModAssignmentsToEngine(deps as never)(DEVICE_ID, table);
+        injectDependencies(pushBacteriaModAssignmentsToEngine, deps);
+        pushBacteriaModAssignmentsToEngine(DEVICE_ID, table);
 
         expect(deps.updateDevicePatch).not.toHaveBeenCalled();
     });
@@ -72,7 +76,8 @@ describe('pushBacteriaModAssignmentsToEngine', () => {
         const deps = makeDeps();
         deps.resolveEligibleDeviceWriteTarget.mockReturnValue({ status: 'ineligible', reason: 'no-device' });
 
-        pushBacteriaModAssignmentsToEngine(deps as never)(DEVICE_ID, [assignment()]);
+        injectDependencies(pushBacteriaModAssignmentsToEngine, deps);
+        pushBacteriaModAssignmentsToEngine(DEVICE_ID, [assignment()]);
 
         expect(deps.updateDevicePatch).not.toHaveBeenCalled();
     });

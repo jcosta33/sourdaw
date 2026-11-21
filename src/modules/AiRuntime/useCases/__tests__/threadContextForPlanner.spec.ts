@@ -1704,6 +1704,7 @@ describe('thread context for the planner', () => {
                         arguments: { kind: 'clarify', reason: 'Which target?', questions: ['Which target?'] },
                     },
                 ],
+                proposal: null,
             });
         });
 

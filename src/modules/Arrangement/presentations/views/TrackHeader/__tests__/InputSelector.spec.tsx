@@ -22,8 +22,8 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 describe('InputSelector', () => {
     const mockDevices = [
-        { id: 'dev1', kind: 'audioinput', label: 'Microphone' },
-        { id: 'dev2', kind: 'audioinput', label: 'Line In' },
+        { id: 'dev1', kind: 'audioinput' as const, label: 'Microphone' },
+        { id: 'dev2', kind: 'audioinput' as const, label: 'Line In' },
     ];
 
     beforeEach(() => {
