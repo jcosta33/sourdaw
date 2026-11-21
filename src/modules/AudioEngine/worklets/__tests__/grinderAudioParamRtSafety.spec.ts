@@ -14,6 +14,8 @@ import {
 describe('grinderAudioParamRtSafety', () => {
     it('transfers all eleven parameters numerically and renders the quantum with one WASM call', async () => {
         const processor = await createReadyGrinderProcessor();
+        // The ready path caches the output pointer, so the counter is live and the later zero is observed.
+        expect(grinderCallCounts.rightPtr).toBeGreaterThan(0);
         resetGrinderProcessorCalls();
         const frames = 4;
         const parameters = {
