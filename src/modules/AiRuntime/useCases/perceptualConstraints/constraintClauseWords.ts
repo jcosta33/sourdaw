@@ -312,8 +312,7 @@ export const WITHOUT_WORD = words([WITHOUT]);
 /** "would not", which a wish is refused through as "do not" refuses one: "I wouldn't want the drums louder". */
 export const WOULD_NOT = String.raw`(?:${words([`would ${NOT}`])}|${words(['wouldn t'], CONTRACTION)})${STRESSED}`;
 const CAN = 'can';
-const WILL = 'will';
-const MODAL_WORDS = ['must', 'should', 'may', CAN, WILL];
+const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
 const MODAL = words(MODAL_WORDS);
 /**
  * A negation no modal stands before, which opens a clause of its own ("never get wider"). The "never" of
@@ -358,20 +357,6 @@ export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTIO
  * negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
  */
 export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION}|${SUBJECT_NEVER})`;
-/**
- * The subjects whose "won't make" predicts an effect: "it", or a determiner before at most one word
- * naming the change ("this", "this EQ", "the change"). A person ("you", "I") is none, since what a person
- * won't make is a request or a promise.
- */
-const EFFECT_SUBJECT = String.raw`(?:${words([IT])}|${DETERMINER}(?:\s+${WORD_CHARACTER}+)?)`;
-/** The leads that make what a subject won't do a wish or a promise: "I hope this won't make it louder". */
-const HOPING_LEAD = String.raw`${words(['hope', 'hoping', 'promise', 'trust', 'swear'])}(?:\s+${words([THAT])})?`;
-/**
- * A "will" negation before a making verb, after a subject naming the change and no hope or promise before
- * it, which predicts what that change does rather than asking for a bound: "this won't make it louder"
- * describes the change, while "you won't make it louder" and "I hope this won't make it louder" protect.
- */
-export const PREDICTED_EFFECT = String.raw`(?<=(?<!\b${HOPING_LEAD}\s+)\b${EFFECT_SUBJECT}\s+)(?:${words([`${WILL} ${NOT}`, `${WILL} ${NEVER}`])}|${words(['won t'], CONTRACTION)})${STRESSED}\s+${MAKING_VERB}${WORD_END}`;
 /** A copula's own negation, which describes the sound as it is: "the vocal isn't louder". */
 const COPULA_NEGATION = String.raw`(?:${words([`${IS} ${NOT}`, `are ${NOT}`])}|${words(['isn t', 'aren t'], CONTRACTION)})${STRESSED}`;
 /**

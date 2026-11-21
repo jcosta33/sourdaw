@@ -2414,11 +2414,13 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
             [],
             [unread('without making it louder', IT_AFTER_A_TRACK)],
         ],
-        // a "will" negation before a making verb predicts an effect and states nothing
-        ["this won't make it louder", [], []],
-        ["this won't make the drums wider", [], []],
-        ["this EQ won't make it louder", [], []],
-        // addressed to the agent, or hoped or promised, what won't be made is a protection the net records
+        // a "will" negation before a making verb is a protection the net records, whatever its subject or lead
+        ["this won't make it louder", [], [unread("this won't make it louder", NET_REASON)]],
+        ["this won't make the drums wider", [], [unread("this won't make the drums wider", NET_REASON)]],
+        ["this EQ won't make it louder", [], [unread("this EQ won't make it louder", NET_REASON)]],
+        ["make sure this won't make it louder", [], [unread("make sure this won't make it louder", NET_REASON)]],
+        ["hopefully it won't make it louder", [], [unread("hopefully it won't make it louder", NET_REASON)]],
+        ["the agent won't make it louder", [], [unread("the agent won't make it louder", NET_REASON)]],
         ["You won't make it louder, ok?", [], [unread("You won't make it louder", NET_REASON)]],
         ["I hope you won't make it louder", [], [unread("I hope you won't make it louder", NET_REASON)]],
         ["Promise you won't make it louder", [], [unread("Promise you won't make it louder", NET_REASON)]],
