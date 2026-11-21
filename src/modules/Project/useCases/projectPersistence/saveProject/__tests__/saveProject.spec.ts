@@ -46,10 +46,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
 }));
 
-// The real predicate, read from its defining file so the Arrangement barrel's module graph stays unloaded.
-vi.mock('#/modules/Arrangement/useCases', async () => ({
-    isExternalPluginDeviceType: (await import('#/modules/Arrangement/useCases/device/externalPluginDeviceType'))
-        .isExternalPluginDeviceType,
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    isExternalPluginDeviceType: (deviceType: string) => deviceType === 'external-plugin',
 }));
 
 // The save reads the settled-take count with its snapshot; no take is recorded here.
