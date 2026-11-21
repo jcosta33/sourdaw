@@ -51,7 +51,9 @@ const BRACKET_MARKS = `${OPENING_BRACKET_MARKS}${CLOSING_BRACKET_MARKS}`;
  * the drums louder)" holds the vocal's brightness as its unbracketed form does. An aside the clause goes
  * on after is read inside it instead (`readInnerAsides`).
  */
-const CLAUSE_MARKS = `,.;:!?${BRACKET_MARKS}`;
+/** The semicolon, a clause mark the never-dropped net lets a verbless part continue a protection across. */
+export const SEMICOLON = ';';
+const CLAUSE_MARKS = `,.${SEMICOLON}:!?${BRACKET_MARKS}`;
 export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
@@ -97,13 +99,33 @@ export const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
 const ANY_WORD = 'any';
 const SO = 'so';
-/** The degree words a comparative or a measured word may carry: "any louder", "too bright", "much louder". */
-export const DEGREE_WORD = words([ANY_WORD, 'more', 'less', 'too', 'much', SO]);
+/**
+ * The degree words a comparative or a measured word may carry: "any louder", "too bright", "much louder",
+ * "a lot louder", "far louder". No fixed tolerance says how far any but "any" reaches.
+ */
+export const DEGREE_WORD = words([
+    ANY_WORD,
+    'more',
+    'less',
+    'too',
+    'much',
+    SO,
+    'a lot',
+    'a little',
+    'a bit',
+    'far',
+    'way',
+    'slightly',
+    'even',
+]);
 /** "any" alone, which a comparative may carry ("any wider") and an object never opens with. */
 export const ANY = words([ANY_WORD]);
 
 const AND = 'and';
-const OR = 'or';
+/** The words joining one more member or clause as "and" does: "the drums wider plus the vocal brighter". */
+const AND_WORDS = [AND, 'plus', 'as well as'];
+/** The words listing an alternative as "or" does; under a negation "nor" lists as "or" does. */
+const OR_WORDS = ['or', 'nor'];
 const BUT = 'but';
 const WHILE = 'while';
 const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
@@ -122,25 +144,25 @@ function withAmpersand(joiningWords: string): string {
     return String.raw`(?:${joiningWords}|${AMPERSAND})`;
 }
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
-export const AND_JOIN = joinedBy(withAmpersand(words([AND])));
-/** The words joining list members: "the vocal and the drums", "louder or brighter". */
-export const LIST_JOINER = words([AND, OR]);
+export const AND_JOIN = joinedBy(withAmpersand(words(AND_WORDS)));
+/** The words joining list members: "the vocal and the drums", "louder or brighter", "wider nor louder". */
+export const LIST_JOINER = words([...AND_WORDS, ...OR_WORDS]);
 /**
  * A comma, "and" or "or" joining a later direction or object to the one before it: "brighter, wider, or
  * louder", "don't make the mix wider, or the vocal brighter".
  */
 export const LIST_JOIN = joinedBy(withAmpersand(LIST_JOINER));
 /** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
-export const TERM_JOIN = joinedBy(withAmpersand(words([AND, BUT])));
+export const TERM_JOIN = joinedBy(withAmpersand(words([...AND_WORDS, BUT])));
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
 export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
-const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
+const CLAUSE_BOUNDARY_WORD = words([...AND_WORDS, ...HARD_BOUNDARY_WORDS]);
 /**
  * Every word that ends a clause or joins the members of a list inside one ("or"), which neither a word
  * of an object member nor a character of a clause short of its boundary holds.
  */
-const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
+const ANY_BOUNDARY_WORD = words([...AND_WORDS, ...OR_WORDS, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** Any bracket, opening or closing. */
 export const BRACKET = `[${BRACKET_MARKS}]`;
@@ -192,8 +214,11 @@ export const BECOMING_VERB = words(['get', 'getting', 'become', 'becoming', 'go'
 /** The verbs that make a quality become a level ("don't make it louder"), beside those a held noun takes. */
 const MAKING_VERB = words(['make', 'making', 'let', 'letting']);
 export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
-/** The verb a level is wanted through, which a negation bounds as it bounds a causing verb: "I don't want it louder". */
-export const WANTING_VERB = words(['want', 'wanting']);
+/**
+ * The verb a level is wanted through, which a negation bounds as it bounds a causing verb: "I don't want
+ * it louder", "I don't wanna make it louder".
+ */
+export const WANTING_VERB = words(['want', 'wanting', 'wanna']);
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
 /**
@@ -201,8 +226,11 @@ export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', '
  * no bound ("the vocal never sounds louder"), as "doesn't sound brighter" states none.
  */
 const DESCRIBING_VERB = words(['sound', 'sounds', 'feel', 'feels', 'seem', 'seems']);
-/** The verbs a quality changes into a level through beside "get" and "become": "from going brighter". */
-const CHANGING_VERB = words([
+/**
+ * The verbs a quality changes into a level through beside "get" and "become": "from going brighter",
+ * "the vocal never gets louder".
+ */
+export const CHANGING_VERB = words([
     'goes',
     'turn',
     'turns',
@@ -258,25 +286,54 @@ export const HELD_STATE = String.raw`(?:${THE_SAME}|${words([`where ${IT} ${IS}`
  * one contraction no list names is `NEGATED_CONTRACTION`, any word ending in "n't".
  */
 const CONTRACTION = `${APOSTROPHE}?`;
+/**
+ * The adverbs a negation or modal may carry before what it governs, which change nothing it governs:
+ * "don't really need to", "should really never get wider", "never ever get wider".
+ */
+const STRESSING_ADVERB = words([
+    'really',
+    'even',
+    'ever',
+    'actually',
+    'absolutely',
+    'also',
+    'definitely',
+    'certainly',
+    'truly',
+]);
+/** Any number of stressing adverbs after a negation, modal or wish: "never really", "should absolutely", "to ever". */
+export const STRESSED = String.raw`(?:\s+${STRESSING_ADVERB})*`;
 const WITHOUT = 'without';
 const NOT = 'not';
 const NEVER = 'never';
-export const NEGATION = String.raw`(?:${words([`do ${NOT}`, NEVER, WITHOUT])}|${words(['don t'], CONTRACTION)})`;
+export const NEGATION = String.raw`(?:${words([`do ${NOT}`, NEVER, WITHOUT])}|${words(['don t'], CONTRACTION)})${STRESSED}`;
+/** "without" alone, which may name the subject of the move it rules out: "without the mix getting louder". */
+export const WITHOUT_WORD = words([WITHOUT]);
+/** "would not", which a wish is refused through as "do not" refuses one: "I wouldn't want the drums louder". */
+const WOULD_NOT = String.raw`(?:${words([`would ${NOT}`])}|${words(['wouldn t'], CONTRACTION)})${STRESSED}`;
 const CAN = 'can';
-const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
+const WILL = 'will';
+const MODAL_WORDS = ['must', 'should', 'may', CAN, WILL];
 const MODAL = words(MODAL_WORDS);
 /**
  * A negation no modal stands before, which opens a clause of its own ("never get wider"). The "never" of
- * "the drums should never get wider" is the modal's, and the modal clause reads its subject.
+ * "the drums should never get wider" and "the drums should really never get wider" is the modal's, and
+ * the modal clause reads its subject.
  */
-export const OPENING_NEGATION = String.raw`(?<!\b${MODAL}\s+)${NEGATION}`;
-/** A modal with "never" after it, which states a bound as "must not" does: "the drums should never get wider". */
-const MODAL_NEVER = words(MODAL_WORDS.map((modal) => `${modal} ${NEVER}`));
+export const OPENING_NEGATION = String.raw`(?<!\b${MODAL}${STRESSED}\s+)${NEGATION}`;
+/** The negations a wish is refused through: "I don't want it louder", "I wouldn't want it louder". */
+export const WANT_NEGATION = String.raw`(?:${OPENING_NEGATION}|${WOULD_NOT})`;
 /**
- * A subject's own "never", which states a bound on that subject ("the drums never get wider"), unless a
- * describing verb follows it: "the vocal never sounds louder" describes the vocal as it is.
+ * A modal with "never" after it, stressed or not, which states a bound as "must not" does: "the drums
+ * should never get wider", "should really never get wider", "should never ever get wider".
  */
-const SUBJECT_NEVER = String.raw`${words([NEVER])}(?!\s+${DESCRIBING_VERB}${WORD_END})`;
+const MODAL_NEVER = String.raw`${MODAL}${STRESSED}\s+${words([NEVER])}`;
+/**
+ * A subject's own "never", which states a bound on that subject ("the drums never get wider", "never
+ * really get wider"), unless a describing verb follows it: "the vocal never sounds louder" describes the
+ * vocal as it is.
+ */
+const SUBJECT_NEVER = String.raw`${words([NEVER])}${STRESSED}(?!\s+${DESCRIBING_VERB}${WORD_END})`;
 /** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
 const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
@@ -291,13 +348,30 @@ export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\
  * Each modal followed by "not", and "cannot", the one modal written as one word with it: "must not", "cannot".
  */
 const MODAL_NOT = words([...MODAL_WORDS.map((modal) => `${modal} ${NOT}`), `${CAN}${NOT}`]);
-/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get", "cannot be", "should never get". */
-export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION}|${MODAL_NEVER})`;
+/**
+ * A modal verb's own negation, stressed or not: "shouldn't be", "mustn't get", "can't be", "won't get",
+ * "cannot be", "should never get", "shouldn't really get".
+ */
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION}|${MODAL_NEVER})${STRESSED}`;
 /**
  * A modal negation states a clause, and so do "doesn't get" and a subject's "never"; a plain copula
  * negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
  */
 export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION}|${SUBJECT_NEVER})`;
+/**
+ * A "will" negation before a making verb, which predicts what something does rather than asking for a
+ * bound: "this won't make it louder" describes the change.
+ */
+export const PREDICTED_EFFECT = String.raw`(?:${words([`${WILL} ${NOT}`, `${WILL} ${NEVER}`])}|${words(['won t'], CONTRACTION)})${STRESSED}\s+${MAKING_VERB}${WORD_END}`;
+/** A copula's own negation, which describes the sound as it is: "the vocal isn't louder". */
+const COPULA_NEGATION = String.raw`(?:${words([`${IS} ${NOT}`, `are ${NOT}`])}|${words(['isn t', 'aren t'], CONTRACTION)})${STRESSED}`;
+/**
+ * The words that make what follows a request: after "make sure" or "ensure" a copula negation asks for
+ * a bound ("make sure the vocal isn't any louder") rather than describing the sound.
+ */
+export const ASSURING_LEAD = String.raw`${words(['make sure', 'making sure', 'ensure', 'ensuring', 'be sure'])}(?:\s+${words([THAT])})?`;
+/** The negations an assured clause states its bound through: "isn't", "doesn't get", "won't get". */
+export const ASSURED_NEGATION = String.raw`(?:${COPULA_NEGATION}|${DOES_NOT}${STRESSED}|${MODAL_NEGATION})`;
 const NO_WORD = 'no';
 const BARE_NEGATION = words([NO_WORD, NOT]);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
@@ -335,12 +409,10 @@ const PERMISSION_VERB = words([
     'worry about',
     'care about',
 ]);
-/** The adverbs a negation may carry before what it governs: "don't really need to", "don't even have to". */
-const PERMISSION_ADVERB = words(['really', 'even', 'ever', 'actually']);
 /** "feel", which leads a permission verb as a negation's own verb: "don't feel you need to …". */
 const FEEL = words(['feel']);
-/** The one person a permission may name: "I don't need you to keep …". */
-const PERMITTED_PERSON = words(['you']);
+/** The one person a permission or a wish may name: "I don't need you to keep …", "I don't want you to make …". */
+export const PERMITTED_PERSON = words(['you']);
 /** The negations naming nobody, which a permission verb follows: "nobody needs to keep …". */
 const NOBODY = words(['nobody', 'no one']);
 /**
@@ -382,7 +454,7 @@ const RELEASE_LEAD = words([
     'lift the constraint',
 ]);
 /** A negation or permission governing the verb right after it: "don't", "you don't have to", "nobody needs to". */
-const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+`;
+const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})${STRESSED}(?:\s+${PERMISSION_LEAD})?\s+`;
 /** A verb's gerund, the "-ing" form a release or a continued move goes through: "keeping", "making". */
 const GERUND = String.raw`\p{L}+ing${WORD_END}`;
 /** A release lead no negation or permission governs: "stop", never the "stop" of "don't stop". */
@@ -424,6 +496,11 @@ const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS,
  * needs to be brighter" names "the vocal" and the words after it are a clause of its own.
  */
 export const PREDICATE_WORD = String.raw`(?:${MODAL}|${LINKING_VERB}|${PLAIN_PREDICATE_WORD})`;
+/**
+ * A bare "not" refusing what follows it, which no auxiliary or modal stands before: "just not any
+ * louder". After one ("is not louder") it negates that verb, and a copula negation describes the sound.
+ */
+export const REFUSING_NOT = String.raw`(?<!\b(?:${words(AUXILIARY_WORDS)}|${MODAL})\s+)${words([NOT])}`;
 /**
  * The words opening a subordinate clause or a means: what follows one is the request's own move or
  * condition ("prevent clipping when I make the vocal louder", "stop it getting lost by making it
@@ -615,6 +692,13 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN
 
 /** The verbs that open a clause of their own, which a continued move's object never holds. */
 const CLAUSE_OPENING_VERB = String.raw`(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPING_WORD}|${AVOID_VERB})`;
+/**
+ * A wish and what it wishes for up to the verb or level it names: "want", "want the drums to", "want you
+ * to". The object and "to" are the wish's own, so the move after them is what a refused wish governs ("I
+ * don't want the drums to get louder in the chorus"); a wish for a keep, stop or leave is a permission and
+ * goes on to none ("I don't want to keep the mix from getting wider").
+ */
+export const WANT_LEAD = String.raw`${WANTING_VERB}(?:\s+(?:${OBJECT_MEMBERS}|${PERMITTED_PERSON}))?(?:\s+${TO})?(?!\s+(?:${CLAUSE_OPENING_VERB}|${LEAVE_VERB})${WORD_END})`;
 /**
  * An ampersand, spaced or not, before a verb opening a clause of its own, which joins that clause as
  * "and" does: "keep the vocal bright&stop making the mix wider".

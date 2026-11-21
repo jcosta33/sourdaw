@@ -1,9 +1,13 @@
 import { type UnsupportedPerceptualConstraint } from '../../models/PerceptualConstraint';
 
 import {
+    ANY,
+    ASSURED_NEGATION,
+    ASSURING_LEAD,
     AVOID_VERB,
     BECOMING_VERB,
     CAUSING_VERB,
+    CHANGING_VERB,
     CLAUSE_JOINING_AMPERSAND,
     CLAUSE_PUNCTUATION,
     CLAUSE_SEPARATOR,
@@ -27,22 +31,41 @@ import {
     OBJECT_MEMBERS,
     POSSESSIVE_DETERMINER,
     PREDICATE_WORD,
+    PREDICTED_EFFECT,
+    REFUSING_NOT,
     SCOPE_WORD,
+    SEMICOLON,
     SPACED_AMPERSAND,
     STOP_VERB,
     SUBORDINATOR,
-    WANTING_VERB,
+    WANT_LEAD,
+    WANT_NEGATION,
+    WITHOUT_WORD,
 } from './constraintClauseWords';
-import { DIRECTION, MEASURED_NOUN, MEASURED_WORD, MOVE_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
+import {
+    DIRECTION,
+    MEASURED_NOUN,
+    MEASURED_WORD,
+    MOVE_WORD,
+    NOUN_VERB_HEAD,
+    SPLIT_VERB_HEAD_WORD,
+    SPLIT_VERB_PARTICLE_WORD,
+    WORD_END,
+} from './constraintDirections';
 
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
 /** A clause the net recorded unsupported, with the span of the request it quotes. */
 export type UnreadClause = { unsupported: UnsupportedPerceptualConstraint; span: ConsumedSpan };
 
+/** A level verb split around its object, which names a measured move as "turn up" does: "turn the vocal up". */
+const SPLIT_MOVE = String.raw`${SPLIT_VERB_HEAD_WORD}\s+${OBJECT_MEMBERS}\s+${SPLIT_VERB_PARTICLE_WORD}`;
 /** A clause is recorded only for a measured word a protection governs, so a request naming none reads nothing. */
-const ANY_MEASURED_WORD = new RegExp(String.raw`${MEASURED_WORD}|${MEASURED_NOUN}|${COMPARED_DIRECTION}`, 'iu');
-const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
+const ANY_MEASURED_WORD = new RegExp(
+    String.raw`${MEASURED_WORD}|${MEASURED_NOUN}|${COMPARED_DIRECTION}|${SPLIT_MOVE}${WORD_END}`,
+    'iu'
+);
+const MEASURED_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_WORD}|${SPLIT_MOVE})${WORD_END}`, 'giu');
 /**
  * What a keep or leave holding what it names governs: a measured noun or a comparison it keeps ("keep
  * the drums quieter than the vocal"), never a way a quality moves.
@@ -52,18 +75,23 @@ const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${CO
  * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
  * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
  */
-const LINKED_QUALITY = String.raw`${LINKING_VERB}\s+(?:${DEGREE_WORD}\s+)?${MEASURED_WORD}`;
+const LINKED_QUALITY = String.raw`${LINKING_VERB}\s+(?:${DEGREE_WORD}\s+)*${MEASURED_WORD}`;
 /**
- * The verbs a negation governs a measured word through: one that moves a level, makes it become one or
- * wants it ("I don't want it louder").
+ * The verbs a negation governs a measured word through: one that moves a level, makes it become one,
+ * changes into one ("the vocal never gets louder") or wants it ("I don't want it louder").
  */
-const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${WANTING_VERB}|${NOUN_VERB_HEAD}|${DIRECTION})`;
+const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${CHANGING_VERB}|${WANT_LEAD}|${NOUN_VERB_HEAD}|${DIRECTION})`;
 /**
  * A negation or modal directly before what it governs; a modal names its subject too. A third-person
  * "doesn't" opens nothing here: beside a move it describes the sound or states a purpose ("so it
- * doesn't get lost"), and the bound it states alone ("the mix doesn't get louder") a reader consumes.
+ * doesn't get lost"), and the bound it states alone ("the mix doesn't get louder") a reader consumes. A
+ * "will" negation before a making verb predicts an effect ("this won't make it louder") and opens nothing.
+ * A wish is refused through "would not" too ("I wouldn't want the drums louder in the chorus"), a bare
+ * "not" refuses a direction ("just not any louder"), "make sure" makes a copula negation a request ("make
+ * sure the vocal isn't louder in the chorus"), and "without" may name the subject of the move it rules
+ * out ("without the mix getting louder in the chorus").
  */
-const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}`;
+const NEGATED_GOVERNOR = String.raw`(?:(?:(?!${PREDICTED_EFFECT})(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}|${WANT_NEGATION}\s+${WANT_LEAD}|${REFUSING_NOT}\s+(?:${ANY}\s+)?${DIRECTION}|${ASSURING_LEAD}\s+${OBJECT_MEMBERS}\s+${ASSURED_NEGATION}|${WITHOUT_WORD}\s+${OBJECT_MEMBERS}\s+${MOVE_LEAD_VERB})`;
 /**
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
  * it governs the quality through, or a direction ("mustn't get louder"); a keep-type verb continuing
@@ -112,10 +140,12 @@ const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
  * an ampersand writing one, or an "or" is a boundary whose next clause may share a protection. A comma
  * right before the "and" or "or" is part of that one joiner, as it is in every list ("don't make the drums
  * wider, and the mix louder in the chorus"), so it never ends the protection before the joiner continues it.
- * The joiner is tried first, so the comma is never read as a boundary of its own.
+ * The joiner is tried first, so the comma is never read as a boundary of its own. A semicolon joins as a
+ * joiner does, so a verbless part after one ("don't make the drums wider; the vocal brighter") may continue
+ * the protection before it.
  */
 const BOUNDARY = new RegExp(
-    String.raw`(?<joiner>(?:,\s*)?\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND})|${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
+    String.raw`(?<joiner>(?:,\s*)?\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND}|${SEMICOLON})|${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
     'giu'
 );
 /** The words a joined clause may open with and still continue the protection before it. */

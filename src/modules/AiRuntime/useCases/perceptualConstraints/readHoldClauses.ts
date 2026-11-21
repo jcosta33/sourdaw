@@ -1,6 +1,8 @@
 import {
     AND_JOIN,
     ANY,
+    ASSURED_NEGATION,
+    ASSURING_LEAD,
     AT,
     CAUSING_VERB,
     CLAUSE_END,
@@ -17,18 +19,23 @@ import {
     LIST_JOINER,
     MASK_GLYPH,
     MODAL_NEGATION,
+    MOVE_LEAD_VERB,
     NEGATION,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_MEMBERS,
     OBJECT_PREPOSITION,
     OPENING_NEGATION,
+    PERMITTED_PERSON,
     PURPOSE_HEAD,
     SCOPE_WORD,
+    STRESSED,
     THE,
     THE_SAME,
     TO,
+    WANT_NEGATION,
     WANTING_VERB,
+    WITHOUT_WORD,
 } from './constraintClauseWords';
 import {
     APOSTROPHE,
@@ -43,7 +50,9 @@ import {
     QUALITY_OF,
     QUALITY_VERB,
     SPLIT_VERB_HEAD,
+    SPLIT_VERB_HEAD_WORD,
     SPLIT_VERB_PARTICLE,
+    UNMEASURED_COMPARATIVE,
     WORD_END,
 } from './constraintDirections';
 import { normalizeObjectName } from './normalizeObjectName';
@@ -84,13 +93,18 @@ const NOUN_IN_LIST = new RegExp(
     'dgiu'
 );
 /**
+ * List members naming no measured quality that end the clause, after the directions it bounds: the "or
+ * harsher" of "without making it louder or harsher", which bounds nothing the application measures.
+ */
+const UNMEASURED_LIST_END = String.raw`(?=(?:${LIST_JOIN}${UNMEASURED_COMPARATIVE})+${JOINED_CLAUSE_END})`;
+/**
  * Where a direction clause ends: at a clause end, where a later object with its own direction joins it,
  * so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
  * running on inside the clause, or before a keep, which opens a clause of its own ("don't make the mix
- * wider keep the vocal bright"), and before an ampersand opening one ("don't make the mix wider&keep the
- * vocal bright").
+ * wider keep the vocal bright"), before an ampersand opening one ("don't make the mix wider&keep the
+ * vocal bright"), and before unmeasured members ending it.
  */
-const DIRECTION_CLAUSE_END = String.raw`(?:${JOINED_CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION})|(?=\s+${KEEP_VERBS}\b))`;
+const DIRECTION_CLAUSE_END = String.raw`(?:${JOINED_CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION})|(?=\s+${KEEP_VERBS}\b)|${UNMEASURED_LIST_END})`;
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${DIRECTION_CLAUSE_END}`;
 /**
  * A later object under the same negation, joined as every list is: "don't make the mix louder, and the
@@ -123,14 +137,29 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         String.raw`\b${OPENING_NEGATION}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
-    // "I don't want it louder", "I don't want the drums to get louder"
+    // "I don't want it louder", "I don't want the drums to get louder", "I wouldn't want the drums to ever get louder"
     holdPattern(
-        String.raw`\b${OPENING_NEGATION}\s+${WANTING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+(?:${TO}\s+)?${DIRECTION_CLAUSE}`,
+        String.raw`\b${WANT_NEGATION}\s+${WANTING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?(?:\s+${TO})?${STRESSED}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "I don't want to make the drums wider", "I don't want you to make it louder", "I don't wanna make it louder"
+    holdPattern(
+        String.raw`\b${WANT_NEGATION}\s+${WANTING_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${TO})?${STRESSED}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
     // "the mix must not get louder", "the vocal shouldn't be louder", "the drums should never get wider"
     holdPattern(
         String.raw`${CLAUSE_HEAD}${OBJECT_LIST}\s+${MODAL_NEGATION}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "make sure the vocal isn't any louder": after "make sure" a copula negation asks for a bound
+    holdPattern(
+        String.raw`\b${ASSURING_LEAD}\s+${OBJECT_LIST}\s+${ASSURED_NEGATION}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "without the mix getting louder": "without" may name the subject of the move it rules out
+    holdPattern(
+        String.raw`\b${WITHOUT_WORD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+(?=${MOVE_LEAD_VERB}\s)${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
     // "add some warmth so it doesn't sound louder": a purpose's "doesn't" bounds, even through a linking verb
@@ -145,7 +174,12 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         String.raw`\b${NEGATION}\s+${SPLIT_VERB_HEAD}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}\s+${SPLIT_VERB_PARTICLE}${CLAUSE_END}`,
         null
     ),
-    // "don't widen the drums", "without squashing the mix"
+    // "don't turn the vocal up", "without turning it down"
+    holdPattern(
+        String.raw`\b${OPENING_NEGATION}\s+${SPLIT_VERB_HEAD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+${SPLIT_VERB_PARTICLE}${CLAUSE_END}`,
+        null
+    ),
+    // "don't widen the drums", "without squashing the mix", "don't raise the vocal"
     holdPattern(
         String.raw`\b${OPENING_NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`,
         null
@@ -244,9 +278,12 @@ function readNounPart(match: RegExpExecArray, verb: string | undefined, prompt: 
     };
 }
 
-/** The holds a direction clause states. */
+/**
+ * The holds a direction clause states: its directions, or the split verb it moves its object through
+ * ("turn … up"), or else the level it keeps ("keep the Keys at the same level").
+ */
 function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
-    const direction = match.groups?.direction;
+    const direction = match.groups?.direction ?? verbOf(match);
     return direction === undefined ? [FAMILY_IDS.loudness.held] : directionConstraintIds(direction);
 }
 
@@ -311,10 +348,13 @@ function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldCl
 }
 
 /**
- * Every hold pattern, the unreadable fallback included, requires a direction, a quality verb or a held
- * noun, so a request naming none holds nothing and never pays to compile the patterns.
+ * Every hold pattern, the unreadable fallback included, requires a direction, a quality verb, a split
+ * verb or a held noun, so a request naming none holds nothing and never pays to compile the patterns.
  */
-const HOLD_WORD = new RegExp(String.raw`${DIRECTION}|${QUALITY_VERB}|${HOLD_NOUN_WORD}|${LOUDNESS_NOUN_WORD}`, 'iu');
+const HOLD_WORD = new RegExp(
+    String.raw`${DIRECTION}|${QUALITY_VERB}|${SPLIT_VERB_HEAD_WORD}|${HOLD_NOUN_WORD}|${LOUDNESS_NOUN_WORD}`,
+    'iu'
+);
 
 /** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
 export function readHoldClauses(masked: string, prompt: string): HoldClause[] {

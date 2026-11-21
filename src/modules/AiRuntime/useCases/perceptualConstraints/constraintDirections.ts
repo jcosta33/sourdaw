@@ -54,26 +54,66 @@ export const QUALITY_OF: Readonly<Record<MeasuredConstraintId, string>> = {
     'brightness-not-lowered-v1': 'brightness',
 };
 
+type MovementWords = Readonly<Record<Movement, readonly string[]>>;
+
+/**
+ * The plain adjectives each family grades, by the way they name its metric: "bright" names it high,
+ * "dark" low, so "less bright" and "more dark" both move it down.
+ */
+const PLAIN_ADJECTIVES: Readonly<Record<QualityFamily, MovementWords>> = {
+    loudness: { up: ['loud'], down: ['quiet', 'soft'] },
+    width: { up: ['wide'], down: ['narrow'] },
+    brightness: { up: ['bright'], down: ['dark', 'dull'] },
+    dynamics: { up: [DYNAMIC_TERM], down: ['compressed', 'flat', 'squashed'] },
+};
+
+/** Each family's one-word comparatives, by the way they move its metric. */
+const INFLECTED_COMPARATIVES: Readonly<Record<QualityFamily, MovementWords>> = {
+    loudness: { up: ['louder'], down: ['quieter', 'softer'] },
+    width: { up: ['wider'], down: ['narrower'] },
+    brightness: { up: ['brighter'], down: ['darker', 'duller'] },
+    dynamics: { up: [], down: ['flatter'] },
+};
+
+const MORE = 'more';
+const LESS = 'less';
+
+/** Each adjective behind one degree word: "more quiet", "less bright". */
+function graded(degree: string, adjectives: readonly string[]): string[] {
+    return adjectives.map((adjective) => `${degree} ${adjective}`);
+}
+
+/**
+ * A family's comparatives: its one-word forms, and "more" or "less" before each plain adjective, which
+ * moves the metric the adjective's way or against it ("more quiet" down, "less dull" up).
+ */
+function familyComparatives(family: QualityFamily): MovementWords {
+    const { up, down } = PLAIN_ADJECTIVES[family];
+    const inflected = INFLECTED_COMPARATIVES[family];
+    return {
+        up: [...inflected.up, ...graded(MORE, up), ...graded(LESS, down)],
+        down: [...inflected.down, ...graded(LESS, up), ...graded(MORE, down)],
+    };
+}
+
 /** The comparatives that move each family, by the way they move its metric: "less bright" moves it down. */
-const COMPARATIVES: Readonly<Record<QualityFamily, Readonly<Record<Movement, readonly string[]>>>> = {
-    loudness: { up: ['louder', 'more loud'], down: ['quieter', 'softer', 'less loud'] },
-    width: { up: ['wider', 'more wide'], down: ['narrower', 'less wide'] },
-    brightness: { up: ['brighter', 'more bright'], down: ['darker', 'duller', 'less bright'] },
-    dynamics: {
-        up: ['more dynamic', 'less compressed'],
-        down: ['less dynamic', 'flatter', 'more compressed', 'more squashed'],
-    },
+const COMPARATIVES: Readonly<Record<QualityFamily, MovementWords>> = {
+    loudness: familyComparatives('loudness'),
+    width: familyComparatives('width'),
+    brightness: familyComparatives('brightness'),
+    dynamics: familyComparatives('dynamics'),
 };
 
 /**
- * The verbs that move a family with no held noun ("don't widen the drums"), each also read with
- * "-ing". A held noun takes them too, in its own family's direction ("don't widen the stereo image").
+ * The verbs that move a family with no held noun ("don't widen the drums", "don't turn up the vocal"),
+ * each also read with "-ing". A held noun takes them too, in its own family's direction ("don't widen
+ * the stereo image", "don't raise the width").
  */
-const QUALITY_VERBS: Readonly<Record<QualityFamily, Readonly<Record<Movement, readonly string[]>>>> = {
-    loudness: { up: [], down: [] },
+const QUALITY_VERBS: Readonly<Record<QualityFamily, MovementWords>> = {
+    loudness: { up: ['raise', 'boost', 'turn up'], down: ['lower', 'turn down'] },
     width: { up: ['widen'], down: ['narrow'] },
     brightness: { up: ['brighten'], down: ['darken'] },
-    dynamics: { up: [], down: ['squash', 'flatten'] },
+    dynamics: { up: [], down: ['squash', 'flatten', 'crush'] },
 };
 
 /** The nouns that name each family's metric: "the level of the drums", "the stereo width". */
@@ -92,12 +132,13 @@ const NOUN_QUALIFIER: Readonly<Record<string, string>> = { image: 'stereo', fiel
 
 const CHANGE = 'change';
 /**
- * The verbs a held noun takes in any family, each also read with "-ing": those moving its metric one
- * way ("don't raise the width") and those holding it ("don't change the level").
+ * The verbs only a held noun takes, in any family, each also read with "-ing": those moving its metric
+ * one way ("don't increase the width", "don't kill the dynamics") and those holding it ("don't change
+ * the level"). A held noun takes every quality verb too.
  */
 const NOUN_VERBS: Readonly<Record<Movement | 'either', readonly string[]>> = {
-    up: ['raise', 'increase', 'boost', 'push', 'turn up'],
-    down: ['lower', 'reduce', 'decrease', 'turn down'],
+    up: ['increase', 'push'],
+    down: ['reduce', 'decrease', 'kill'],
     either: [CHANGE, 'alter', 'touch'],
 };
 
@@ -193,18 +234,15 @@ const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
 export const MEASURED_NOUN = String.raw`${words(FREE_TEXT_NOUNS)}s?`;
 /** A word naming a way a measured quality moves: a quality verb or a direction. */
 export const MOVE_WORD = String.raw`(?:${words(VERB_PHRASES)}${WORD_END}|${DIRECTION})`;
-/** The plain adjectives a family's comparatives grade: "bright" of "brighter" and "less bright". */
-const PLAIN_ADJECTIVES: Readonly<Record<QualityFamily, readonly string[]>> = {
-    loudness: ['loud', 'quiet', 'soft'],
-    width: ['wide', 'narrow'],
-    brightness: ['bright', 'dark', 'dull'],
-    dynamics: [DYNAMIC_TERM, 'compressed', 'flat', 'squashed'],
-};
+/** The degree words grading a plain adjective past a threshold the request never states: "too", "overly". */
+const EXCESS_DEGREE = words(['too', 'overly', 'very', 'excessively']);
 /**
- * A plain adjective past a threshold the request never states: "too bright". It names a measured
- * quality, but no fixed tolerance says where "too" begins, so no reader binds it.
+ * A plain adjective past a threshold the request never states: "too bright", "overly loud". It names a
+ * measured quality, but no fixed tolerance says where "too" begins, so no reader binds it.
  */
-const EXCESS_WORD = String.raw`too\s+${words(FAMILIES.flatMap((family) => PLAIN_ADJECTIVES[family]))}${WORD_END}`;
+const EXCESS_WORD = String.raw`${EXCESS_DEGREE}\s+${words(
+    FAMILIES.flatMap((family) => MOVEMENTS.flatMap((movement) => PLAIN_ADJECTIVES[family][movement]))
+)}${WORD_END}`;
 /**
  * Any word naming a measured quality or a way it moves, as free text names it. A plain adjective
  * ("bright", "wide") is none: elsewhere it mostly describes a sound. One "too" grades is ("too bright").
@@ -237,14 +275,26 @@ const NOUN_VERB_HEADS = Array.from(
  * reads: "don't turn the volume of the vocal up" governs the volume through "turn".
  */
 export const NOUN_VERB_HEAD = words(NOUN_VERB_HEADS.flatMap(withIngForm));
-/** The verbs a held noun takes whose particle may stand after the noun: "turn … up". */
-const SPLIT_VERBS = MOVEMENTS.flatMap((movement) => NOUN_VERBS[movement]).filter((phrase) => phrase.includes(' '));
+/** The verbs whose particle may stand after their noun or object: "turn … up". */
+const SPLIT_VERBS = MOVEMENTS.flatMap((movement) => [
+    ...NOUN_VERBS[movement],
+    ...FAMILIES.flatMap((family) => QUALITY_VERBS[family][movement]),
+]).filter((phrase) => phrase.includes(' '));
 const SPLIT_VERB_HEADS = Array.from(new Set(SPLIT_VERBS.map(headWord))).flatMap(withIngForm);
 const SPLIT_VERB_PARTICLES = Array.from(new Set(SPLIT_VERBS.map(particleOf)));
-/** A split verb's first word, also read with "-ing": "don't turn the level of the vocal up". */
-export const SPLIT_VERB_HEAD = String.raw`(?<verb>${words(SPLIT_VERB_HEADS)})`;
-/** The particle a split verb ends on after its noun. */
-export const SPLIT_VERB_PARTICLE = String.raw`(?<particle>${words(SPLIT_VERB_PARTICLES)})`;
+/** A split verb's first word, also read with "-ing", uncaptured: the "turn" of "turn the vocal up". */
+export const SPLIT_VERB_HEAD_WORD = words(SPLIT_VERB_HEADS);
+/** The particle a split verb ends on after its noun or object, uncaptured. */
+export const SPLIT_VERB_PARTICLE_WORD = words(SPLIT_VERB_PARTICLES);
+/** A split verb's first word: "don't turn the level of the vocal up", "don't turn the vocal up". */
+export const SPLIT_VERB_HEAD = String.raw`(?<verb>${SPLIT_VERB_HEAD_WORD})`;
+/** The particle a split verb ends on after its noun or object. */
+export const SPLIT_VERB_PARTICLE = String.raw`(?<particle>${SPLIT_VERB_PARTICLE_WORD})`;
+/**
+ * A comparative-shaped word naming no measured quality, which a direction list may end on and still be
+ * read for the directions it does name: the "harsher" of "without making it louder or harsher".
+ */
+export const UNMEASURED_COMPARATIVE = String.raw`(?!${DIRECTION})\p{L}+er${WORD_END}`;
 /** Those verbs' "-ing" forms alone: what a keep continues a move with ("keep widening the mix"). */
 export const NOUN_VERB_ING = words(NOUN_VERB_HEADS.map(ingForm));
 
