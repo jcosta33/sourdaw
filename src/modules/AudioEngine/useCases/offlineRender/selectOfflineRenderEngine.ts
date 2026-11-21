@@ -242,6 +242,36 @@ function frameCountGateReason(frameCount: number): string | null {
     return `the export is ${frameCount} frames long, past the native render's ceiling of ${NATIVE_OFFLINE_RENDER_MAX_FRAMES} frames`;
 }
 
+/**
+ * Why this unmuted clip cannot render natively, or `null` when it can.
+ *
+ * A loaded hosted instrument is the one MIDI sink the native render voices:
+ * its notes ride `schedule-midi` against that device. Any other sink is voiced
+ * web-side. #2865 — the native wire has no envelope vocabulary, so a bounce
+ * through it would print an envelope-carrying clip with no curve in it. The
+ * Web Audio render applies it, so the project degrades to that renderer with
+ * this reason instead. Clip ids survive comping unchanged (the resolver
+ * spreads the source clip), so this raw-clips walk cannot miss a comped take's
+ * envelope.
+ */
+function clipGateReason(input: {
+    track: Track;
+    clip: Track['clips'][number];
+    hostedRuntime: NativeOfflineHostedRuntime;
+    gainEnvelopes: SelectOfflineRenderEngineInput['gainEnvelopes'];
+}): string | null {
+    const { track, clip, hostedRuntime, gainEnvelopes } = input;
+    if (clip.type === 'midi') {
+        return nativeOfflineInstrumentSink(track, hostedRuntime) === null
+            ? `track "${track.name}" plays MIDI programme`
+            : null;
+    }
+    if (clip.type === 'audio' && clipHasActiveGainEnvelope(clip.id, gainEnvelopes)) {
+        return `track "${track.name}" plays a clip gain envelope the native render does not apply`;
+    }
+    return null;
+}
+
 /** The first gate that holds, or `null` when the native engine can take it. */
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
@@ -261,23 +291,9 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             if (clip.muted) {
                 continue;
             }
-            if (clip.type === 'midi') {
-                // A loaded hosted instrument is the one MIDI sink the native
-                // render voices: its notes ride `schedule-midi` against that
-                // device. Any other sink is voiced web-side.
-                if (nativeOfflineInstrumentSink(track, hostedRuntime) !== null) {
-                    continue;
-                }
-                return `track "${track.name}" plays MIDI programme`;
-            }
-            // #2865 — the native wire has no envelope vocabulary, so a bounce
-            // through it would print an envelope-carrying clip with no curve
-            // in it. The Web Audio render applies it, so the project degrades
-            // to that renderer with this reason instead. Clip ids survive
-            // comping unchanged (the resolver spreads the source clip), so
-            // this raw-clips walk cannot miss a comped take's envelope.
-            if (clip.type === 'audio' && clipHasActiveGainEnvelope(clip.id, input.gainEnvelopes)) {
-                return `track "${track.name}" plays a clip gain envelope the native render does not apply`;
+            const reason = clipGateReason({ track, clip, hostedRuntime, gainEnvelopes: input.gainEnvelopes });
+            if (reason !== null) {
+                return reason;
             }
         }
     }

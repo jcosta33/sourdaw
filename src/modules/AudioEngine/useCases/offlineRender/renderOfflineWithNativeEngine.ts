@@ -224,6 +224,67 @@ function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> })
         }));
 }
 
+type ResolvedClip = ReturnType<typeof resolveTrackClipsWithComping>[number];
+type PlayableClipSource = { sourceId: string; buffer: AudioBuffer };
+
+function scheduleClipCommand(
+    trackId: string,
+    source: PlayableClipSource,
+    playback: ReturnType<typeof projectOfflineAudioClipPlaybacks>[number]
+): AudioGraphCommand {
+    return {
+        kind: 'schedule-clip',
+        playback: {
+            trackId,
+            source,
+            startTime: playback.startSec,
+            sourceOffsetSeconds: playback.bufferOffsetSec,
+            durationSeconds: playback.playDuration,
+            playbackRate: playback.playbackRate,
+            gain: playback.clipGainValue,
+            fade: projectNativeClipFade(playback),
+        },
+    };
+}
+
+type NativeOfflineMidiProjection = {
+    midi: { notesByClipId: NativeOfflineMidiSource['notesByClipId']; probabilitySeed: number } | null | undefined;
+    projectMidiEvents: NativeOfflineMidiSource['projectMidiEvents'] | null | undefined;
+    selectProbability: NativeOfflineMidiSource['selectProbability'] | null | undefined;
+    projectChordPitch: NativeOfflineMidiSource['projectChordPitch'];
+    resolveArticulationId: NativeOfflineMidiSource['resolveArticulationId'];
+};
+
+function liveMidiProjection(): NativeOfflineMidiProjection {
+    return {
+        midi: midiStore.value,
+        projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
+        selectProbability: offlineMidiEventProjectorState.selectProbability,
+        projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
+        resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
+    };
+}
+
+function capturedMidiProjection(
+    context: NonNullable<NativeOfflineRenderInput['captured']>['renderContext']
+): NativeOfflineMidiProjection {
+    return {
+        midi: context.midi,
+        projectMidiEvents: context.projectMidiEvents,
+        selectProbability: context.selectMidiEventProbability,
+        projectChordPitch: context.projectChordPitch ?? null,
+        resolveArticulationId: context.resolveArticulationId ?? null,
+    };
+}
+
+function readMidiProjection(input: NativeOfflineRenderInput): NativeOfflineMidiProjection {
+    const context = input.captured?.renderContext;
+    if (context) {
+        return capturedMidiProjection(context);
+    }
+    return liveMidiProjection();
+}
+
 /**
  * The notes' source for a hosted-instrument track: the render's captured
  * snapshot and projections when it has one, the live ones otherwise (the same
@@ -234,14 +295,8 @@ function nativeOfflineMidiSource(
     input: NativeOfflineRenderInput,
     musical: Pick<NativeOfflineRenderInput, 'sampleRate' | 'defaultTempo' | 'changes' | 'projectPpqEndpoints'>
 ): NativeOfflineMidiSource | null {
-    const context = input.captured?.renderContext;
-    const midi = context ? context.midi : midiStore.value;
-    const projectMidiEvents = context
-        ? context.projectMidiEvents
-        : (offlineMidiEventProjectorState.createProjector?.() ?? null);
-    const selectProbability = context
-        ? context.selectMidiEventProbability
-        : offlineMidiEventProjectorState.selectProbability;
+    const { midi, projectMidiEvents, selectProbability, projectChordPitch, resolveArticulationId } =
+        readMidiProjection(input);
     if (!midi || !projectMidiEvents || !selectProbability) {
         return null;
     }
@@ -254,12 +309,8 @@ function nativeOfflineMidiSource(
         projectPpqEndpoints: musical.projectPpqEndpoints,
         projectMidiEvents,
         selectProbability,
-        projectChordPitch: context
-            ? (context.projectChordPitch ?? null)
-            : (offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null),
-        resolveArticulationId: context
-            ? (context.resolveArticulationId ?? null)
-            : offlineMidiEventProjectorState.resolveArticulationId,
+        projectChordPitch,
+        resolveArticulationId,
     };
 }
 
@@ -379,6 +430,52 @@ export async function renderOfflineWithNativeEngine(
     ]);
 
     // ── Programme: automation writes and clip playbacks per scheduled track ─
+    // The decoded audio an audio clip plays, or `null` (warned) when it has none worth scheduling.
+    function readPlayableClipBuffer(track: Track, clip: ResolvedClip): PlayableClipSource | null {
+        if (!clip.audioBufferId) {
+            return null;
+        }
+        const buffer = (input.captured?.scheduling.buffers ?? audioBufferCache).get(clip.audioBufferId);
+        if (!buffer) {
+            warn(
+                `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
+                    `Try re-importing the file or reloading the project.`
+            );
+            return null;
+        }
+        if (clip.endBeat - clip.startBeat <= 0) {
+            warn(
+                `Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`
+            );
+            return null;
+        }
+        return { sourceId: clip.audioBufferId, buffer };
+    }
+
+    // A loaded hosted instrument is voiced by the engine: its notes ride
+    // `schedule-midi` against the device, after the strip that holds it
+    // (the strips are their own, earlier batch). A strip no audible output
+    // reaches holds no device to address, and nothing would hear it.
+    function buildInstrumentProgramme(track: Track, compensationDelay: number): ProgrammeConversion {
+        if (!contributingTrackIds.has(track.id) || nativeOfflineInstrumentSink(track, hostedRuntime) === null) {
+            return { outcome: 'converted', commands: [] };
+        }
+        const source = nativeOfflineMidiSource(input, { sampleRate, defaultTempo, changes, projectPpqEndpoints });
+        if (source === null) {
+            return { outcome: 'declined', reason: 'the MIDI projection is not configured for the native render' };
+        }
+        return {
+            outcome: 'converted',
+            commands: projectNativeOfflineMidiCommands({
+                track,
+                hostedRuntime,
+                source,
+                durationSeconds: frameCount / sampleRate,
+                compensationDelaySeconds: compensationDelay,
+            }),
+        };
+    }
+
     function buildTrackProgramme(track: Track): ProgrammeConversion {
         const commands: AudioGraphCommand[] = [];
         const compensationDelay = input.captured
@@ -444,33 +541,17 @@ export async function renderOfflineWithNativeEngine(
             commands.push(...writeCommands(target, writes));
         }
 
-        // A loaded hosted instrument is voiced by the engine: its notes ride
-        // `schedule-midi` against the device, after the strip that holds it
-        // (the strips are their own, earlier batch). A strip no audible output
-        // reaches holds no device to address, and nothing would hear it.
-        const instrument = contributingTrackIds.has(track.id)
-            ? nativeOfflineInstrumentSink(track, hostedRuntime)
-            : null;
-        if (instrument !== null) {
-            const source = nativeOfflineMidiSource(input, { sampleRate, defaultTempo, changes, projectPpqEndpoints });
-            if (source === null) {
-                return { outcome: 'declined', reason: 'the MIDI projection is not configured for the native render' };
-            }
-            commands.push(
-                ...projectNativeOfflineMidiCommands({
-                    track,
-                    hostedRuntime,
-                    source,
-                    durationSeconds: frameCount / sampleRate,
-                    compensationDelaySeconds: compensationDelay,
-                })
-            );
+        const instrumentProgramme = buildInstrumentProgramme(track, compensationDelay);
+        if (instrumentProgramme.outcome === 'declined') {
+            return instrumentProgramme;
         }
+        commands.push(...instrumentProgramme.commands);
 
         // What the native strip has left to hold, counted down across the
         // track's clips — the same countdown the live producer runs, because
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
+        const voicedByInstrument = nativeOfflineInstrumentSink(track, hostedRuntime) !== null;
 
         const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
         for (const clip of resolveTrackClipsWithComping(
@@ -482,7 +563,7 @@ export async function renderOfflineWithNativeEngine(
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            if (clip.type === 'midi' && nativeOfflineInstrumentSink(track, hostedRuntime) !== null) {
+            if (clip.type === 'midi' && voicedByInstrument) {
                 // Voiced through `schedule-midi` above.
                 continue;
             }
@@ -493,27 +574,14 @@ export async function renderOfflineWithNativeEngine(
                 // answer is the fallback, not a silent drop.
                 return { outcome: 'declined', reason: `MIDI clip on track "${track.name}" reached the native path` };
             }
-            if (!clip.audioBufferId) {
-                continue;
-            }
-            const buffer = (input.captured?.scheduling.buffers ?? audioBufferCache).get(clip.audioBufferId);
-            if (!buffer) {
-                warn(
-                    `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
-                        `Try re-importing the file or reloading the project.`
-                );
-                continue;
-            }
-            if (clip.endBeat - clip.startBeat <= 0) {
-                warn(
-                    `Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`
-                );
+            const source = readPlayableClipBuffer(track, clip);
+            if (source === null) {
                 continue;
             }
 
             const playbacks = projectOfflineAudioClipPlaybacks({
                 clip,
-                bufferDurationSeconds: buffer.duration,
+                bufferDurationSeconds: source.buffer.duration,
                 regionStartBeat,
                 regionStartSec,
                 durationSeconds,
@@ -531,21 +599,7 @@ export async function renderOfflineWithNativeEngine(
             }
             remainingClipSlots -= playbacks.length;
 
-            for (const playback of playbacks) {
-                commands.push({
-                    kind: 'schedule-clip',
-                    playback: {
-                        trackId: track.id,
-                        source: { sourceId: clip.audioBufferId, buffer },
-                        startTime: playback.startSec,
-                        sourceOffsetSeconds: playback.bufferOffsetSec,
-                        durationSeconds: playback.playDuration,
-                        playbackRate: playback.playbackRate,
-                        gain: playback.clipGainValue,
-                        fade: projectNativeClipFade(playback),
-                    },
-                });
-            }
+            commands.push(...playbacks.map((playback) => scheduleClipCommand(track.id, source, playback)));
         }
         return { outcome: 'converted', commands };
     }

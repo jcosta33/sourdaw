@@ -926,77 +926,71 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
 
             const NATIVE = 'native/offline';
             const WEB = 'web-audio/offline';
-            const cases: {
+            type Case = {
                 name: string;
                 devices: Device[];
                 /** The devices whose instance is loaded; the rest sit on the chain with nothing loaded. */
                 loaded: Device[];
-                engine: typeof NATIVE | typeof WEB;
-                reason?: string;
-            }[] = [
+            };
+            const nativeCases: Case[] = [
                 {
                     name: 'a loaded hosted instrument first',
                     devices: [instrumentA],
                     loaded: [instrumentA],
-                    engine: NATIVE,
-                },
-                {
-                    name: 'a loaded hosted instrument behind a loaded hosted effect',
-                    devices: [effectDevice, instrumentA],
-                    loaded: [effectDevice, instrumentA],
-                    engine: WEB,
-                    reason: 'track "Keys" plays MIDI programme',
                 },
                 {
                     name: 'a loaded hosted instrument then an effect',
                     devices: [instrumentA, gluten],
                     loaded: [instrumentA],
-                    engine: NATIVE,
                 },
                 {
                     name: 'two loaded hosted instruments',
                     devices: [instrumentA, instrumentB],
                     loaded: [instrumentA, instrumentB],
-                    engine: NATIVE,
+                },
+            ];
+            const webCases: (Case & { reason: string })[] = [
+                {
+                    name: 'a loaded hosted instrument behind a loaded hosted effect',
+                    devices: [effectDevice, instrumentA],
+                    loaded: [effectDevice, instrumentA],
+                    reason: 'track "Keys" plays MIDI programme',
                 },
                 {
                     name: 'a built-in instrument',
                     devices: [toaster],
                     loaded: [],
-                    engine: WEB,
                     reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
                 },
                 {
                     name: 'a hosted instrument after a built-in instrument',
                     devices: [toaster, instrumentA],
                     loaded: [instrumentA],
-                    engine: WEB,
                     reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
                 },
                 {
                     name: 'a hosted plugin the scan holds no kind for',
                     devices: [unknownDevice],
                     loaded: [unknownDevice],
-                    engine: WEB,
                     reason: 'track "Keys" carries hosted plugin "Mystery", which the plugin scan records no kind for',
                 },
                 {
                     name: 'a hosted instrument with nothing loaded',
                     devices: [instrumentA],
                     loaded: [],
-                    engine: WEB,
                     reason: 'track "Keys" carries device "external-plugin", which the native render has no body for',
                 },
             ];
 
-            it.each(cases)('$name', async ({ devices, loaded, engine, reason }) => {
-                const track = midiTrack(devices);
-                const selection = await select(track, loadedRuntime(loaded));
+            it.each(nativeCases)('selects the native render for $name', async ({ devices, loaded }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
 
-                if (engine === NATIVE) {
-                    expect(selection).toEqual({ engine: NATIVE, transport: stubTransport });
-                    return;
-                }
+                expect(selection).toEqual({ engine: NATIVE, transport: stubTransport });
+            });
+
+            it.each(webCases)('keeps Web Audio for $name', async ({ devices, loaded, reason }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
+
                 expect(selection).toEqual({ engine: WEB, reason, degraded: true });
             });
         });
