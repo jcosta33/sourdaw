@@ -1,6 +1,7 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::commands::graph::{self, StripReportPayload};
+use crate::commands::graph_refusals::GraphRefusal;
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
     plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
@@ -180,7 +181,7 @@ pub(crate) enum PluginCommandError {
     /// The engine refused a command.
     Engine(CommandError),
     /// The graph registry could not report a touched strip.
-    Graph(String),
+    Graph(GraphRefusal),
     /// A host seam's own refusal text: the control path or the UI-thread hop.
     Host(String),
     RuntimeGateHeld,
@@ -221,9 +222,8 @@ impl fmt::Display for PluginCommandError {
                 f,
                 "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
             ),
-            Self::Recorded(reason) | Self::Graph(reason) | Self::Host(reason) => {
-                f.write_str(reason)
-            }
+            Self::Recorded(reason) | Self::Host(reason) => f.write_str(reason),
+            Self::Graph(refusal) => write!(f, "{refusal}"),
             Self::AlreadyBeingLookedFor { name, path } => write!(
                 f,
                 "Plugin '{name}' is already being looked for at {path}. Try again once that finishes."
@@ -321,6 +321,7 @@ impl std::error::Error for PluginCommandError {
             Self::NotAuthorized { refusal, .. } => Some(refusal),
             Self::Runtime(error) => Some(error),
             Self::Engine(error) => Some(error),
+            Self::Graph(refusal) => Some(refusal),
             _ => None,
         }
     }

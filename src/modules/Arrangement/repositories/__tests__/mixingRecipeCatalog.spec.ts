@@ -7,6 +7,7 @@ import {
     MIX_RECIPE_DESCRIPTOR_EFFECTS,
     MIX_RECIPE_DESCRIPTOR_TERMS,
     MIX_RECIPE_DESCRIPTORS,
+    MIX_RECIPE_DRUM_PARTS,
     MIX_RECIPE_METRIC_IDS,
     MIX_RECIPE_ROLES,
     type MixRecipeMetricExpectation,
@@ -137,6 +138,43 @@ describe('mixingRecipeCatalog', () => {
 
         expect(duplicated).toEqual([]);
         expect(incomplete).toEqual([]);
+    });
+
+    // One drums role spans kick through overheads, so a recipe has to say which parts its move fits:
+    // a shell low shelf on a hi-hat or the overheads is the defect the declaration exists to stop.
+    it('declares the drum parts every drums recipe serves, and only on drums recipes', () => {
+        const drumParts = new Set<string>(MIX_RECIPE_DRUM_PARTS);
+        const undeclared = catalog.recipes
+            .filter((recipe) => recipe.roles.includes('drums') && (recipe.drumParts?.length ?? 0) === 0)
+            .map((recipe) => recipe.id);
+        const misplaced = catalog.recipes
+            .filter((recipe) => !recipe.roles.includes('drums') && recipe.drumParts !== undefined)
+            .map((recipe) => recipe.id);
+        const unknownOrRepeated = catalog.recipes
+            .filter(
+                (recipe) =>
+                    recipe.drumParts !== undefined &&
+                    (recipe.drumParts.some((part) => !drumParts.has(part)) ||
+                        new Set(recipe.drumParts).size !== recipe.drumParts.length)
+            )
+            .map((recipe) => recipe.id);
+
+        expect(undeclared).toEqual([]);
+        expect(misplaced).toEqual([]);
+        expect(unknownOrRepeated).toEqual([]);
+    });
+
+    it('keeps the low-end lift of the thin and warm drums recipes on the shells and the whole kit', () => {
+        const parts = Object.fromEntries(
+            catalog.recipes
+                .filter((recipe) => recipe.id === 'drums-thin' || recipe.id === 'drums-warm')
+                .map((recipe) => [recipe.id, recipe.drumParts])
+        );
+
+        expect(parts).toEqual({
+            'drums-warm': ['kick', 'snare', 'tom', 'drums'],
+            'drums-thin': ['kick', 'snare', 'tom', 'drums'],
+        });
     });
 
     it('names only processing devices and parameters that exist on them', () => {

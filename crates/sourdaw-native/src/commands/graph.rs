@@ -153,7 +153,9 @@
 //! counted drop.
 
 use crate::commands::crumbs::{self, CrumbsState};
-use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
+use crate::commands::graph_refusals::{
+    EngineNotRendering, GraphRefusal, MappingFault, QueueCapacityRefusal, ValueRefusal,
+};
 use crate::commands::levain::LevainBankStore;
 use crate::commands::offline_plugins::{
     build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
@@ -182,9 +184,8 @@ use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipFade,
     ClipPlacement, ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, RampShape,
     RouteTarget, TimelineBus, TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack,
-    AUTOMATION_QUEUE_CAPACITY, BUILTIN_PARAM_NAME_CAPACITY, DEVICE_PARAM_QUEUE_CAPACITY,
-    MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES,
-    MAX_TRACK_SENDS,
+    AUTOMATION_QUEUE_CAPACITY, DEVICE_PARAM_QUEUE_CAPACITY, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
+    MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
 };
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
@@ -247,7 +248,7 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// on registration for the same reason: `register_timeline_sample` copies the
 /// material it accepts, so an unbounded payload is an unbounded allocation
 /// twice over.
-const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
+pub(super) const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
 /// The sample rates an offline render accepts, in Hz. A plugin is activated at
 /// the export rate, so a rate no plugin supports is refused before any state is
@@ -288,7 +289,7 @@ const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_
 /// against [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] before any of that
 /// record's keys are parsed. The op count is therefore a bounded multiple of
 /// `MAX_BATCH_COMMANDS`, plus that ceiling — not an exact sum of the two.
-const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
+pub(super) const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
     * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
 /// The most parameters one `set-device-parameters` record may carry.
@@ -302,7 +303,7 @@ const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
 /// not recognize is simply a silent no-op there. The ceiling is charged
 /// against the record's length before any key is resolved, so a hostile
 /// record is refused without ever parsing a single name.
-const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
+pub(super) const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 
 /// The most immediate device parameters one whole batch may carry, summed
 /// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
@@ -314,7 +315,7 @@ const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 /// `map_batch` charges each record's key count against a running total
 /// before that record's keys are parsed, refusing the batch whole — naming
 /// the running count and this ceiling — the moment it would be crossed.
-const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
+pub(super) const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
     MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
 /// The most modulation-assignment rows one bacteria device's table may carry,
@@ -328,7 +329,7 @@ const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
 /// no behavioural change. The mirror could still drift from the real ceiling
 /// unnoticed; `a_bacteria_mod_assignment_table_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
 /// proves against the real engine that it does not.
-const MAX_BACTERIA_MOD_ASSIGNMENTS: usize = 64;
+pub(super) const MAX_BACTERIA_MOD_ASSIGNMENTS: usize = 64;
 
 /// Modulation sources the bacteria engine's per-sample table addresses.
 ///
@@ -342,7 +343,7 @@ const MAX_BACTERIA_MOD_ASSIGNMENTS: usize = 64;
 /// only partly honours;
 /// `a_bacteria_mod_assignment_source_id_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
 /// proves this mirror does not drift from the real ceiling unnoticed.
-const BACTERIA_MOD_SOURCE_COUNT: usize = 16;
+pub(super) const BACTERIA_MOD_SOURCE_COUNT: usize = 16;
 
 /// Modulation targets the bacteria engine's per-sample table addresses.
 ///
@@ -353,7 +354,7 @@ const BACTERIA_MOD_SOURCE_COUNT: usize = 16;
 /// arithmetic this crate has no reason to reproduce beyond the flat count.
 /// `a_bacteria_mod_assignment_target_param_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
 /// proves this mirror does not drift from the real ceiling unnoticed.
-const BACTERIA_MOD_TARGET_COUNT: usize = 112;
+pub(super) const BACTERIA_MOD_TARGET_COUNT: usize = 112;
 
 /// Refuses one modulation-assignment row whose `source_id` or `target_param`
 /// names no engine source or target, so a validating door catches exactly
@@ -361,18 +362,12 @@ const BACTERIA_MOD_TARGET_COUNT: usize = 112;
 /// (`crates/daw-dsp/src/bacteria/engine.rs`) would otherwise drop with a bare
 /// `return` — the module contract (module docs above, `graph.rs:32-35`)
 /// requires the batch refuse rather than let the engine play a partial table.
-fn bacteria_mod_assignment_route_refusal(source_id: u8, target_param: u16) -> Option<String> {
+fn bacteria_mod_assignment_route_refusal(source_id: u8, target_param: u16) -> Option<GraphRefusal> {
     if source_id as usize >= BACTERIA_MOD_SOURCE_COUNT {
-        return Some(format!(
-            "sourceId {source_id} names no engine modulation source, past the ceiling of \
-             {BACTERIA_MOD_SOURCE_COUNT}"
-        ));
+        return Some(GraphRefusal::ModSourceUnknown { source_id });
     }
     if target_param as usize >= BACTERIA_MOD_TARGET_COUNT {
-        return Some(format!(
-            "targetParam {target_param} names no engine modulation target, past the ceiling of \
-             {BACTERIA_MOD_TARGET_COUNT}"
-        ));
+        return Some(GraphRefusal::ModTargetUnknown { target_param });
     }
     None
 }
@@ -388,13 +383,13 @@ const MIDI_CHANNELS: u8 = 16;
 const NOTES_PER_CHANNEL: u8 = 128;
 
 /// The hardest a MIDI note can be struck.
-const MAX_MIDI_VELOCITY: u8 = 127;
+pub(super) const MAX_MIDI_VELOCITY: u8 = 127;
 
 /// The highest controller number a 7-bit control-change message can name.
-const MAX_MIDI_CONTROLLER: u8 = 127;
+pub(super) const MAX_MIDI_CONTROLLER: u8 = 127;
 
 /// The highest position a 7-bit controller can report.
-const MAX_MIDI_CONTROLLER_VALUE: u8 = 127;
+pub(super) const MAX_MIDI_CONTROLLER_VALUE: u8 = 127;
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -747,7 +742,7 @@ pub struct GrandBoulePreviewAddress {
 }
 
 impl GrandBoulePreviewAddress {
-    fn resolve(&self, registry: &GraphRegistry) -> Result<usize, String> {
+    fn resolve(&self, registry: &GraphRegistry) -> Result<usize, GraphRefusal> {
         let device = registry
             .devices
             .get(&self.device_id)
@@ -758,18 +753,16 @@ impl GrandBoulePreviewAddress {
                         .get(&self.track_id)
                         .is_some_and(|strip| strip.device_ids.contains(&self.device_id))
             })
-            .ok_or_else(|| {
-                "Grand Boule preview target is not on the requested strip".to_string()
-            })?;
+            .ok_or(GraphRefusal::PreviewTargetOffStrip)?;
         if device.builtin() != Some(BuiltinEffectType::GrandBoule) {
-            return Err("Grand Boule preview target is not a Grand Boule device".into());
+            return Err(GraphRefusal::PreviewTargetNotGrandBoule);
         }
         let incarnation = registry
             .engine_incarnation()
-            .ok_or_else(|| "Grand Boule preview engine incarnation is unavailable".to_string())?;
+            .ok_or(GraphRefusal::PreviewIncarnationUnavailable)?;
         if self.generation != grand_boule_preview_generation(&incarnation, device.native_effect_id)
         {
-            return Err("Grand Boule preview target generation is stale".into());
+            return Err(GraphRefusal::PreviewGenerationStale);
         }
         Ok(device.native_effect_id)
     }
@@ -785,7 +778,7 @@ fn grand_boule_preview_addresses(
     })
 }
 
-const GRAND_BOULE_PREVIEW_LIVE_ONLY: &str = "Grand Boule preview is live-only";
+pub(super) const GRAND_BOULE_PREVIEW_LIVE_ONLY: &str = "Grand Boule preview is live-only";
 
 fn grand_boule_preview_generation(incarnation: &str, effect_id: usize) -> String {
     let mut hash = Sha256::new();
@@ -1506,7 +1499,7 @@ fn command_has_native_model(command: &GraphCommandPayload) -> bool {
 fn push_native_grinder_input<'a>(
     inputs: &mut Vec<NativeGrinderInput<'a>>,
     input: NativeGrinderInput<'a>,
-) -> Result<(), String> {
+) -> Result<(), GraphRefusal> {
     if input.request.is_empty()
         || input.request.len() > 128
         || input.device.is_empty()
@@ -1515,10 +1508,10 @@ fn push_native_grinder_input<'a>(
         || input.strip.len() > 128
         || input.text.is_some_and(|text| text.len() > 1_048_576)
     {
-        return Err("Native NAM payload identity/byte limit".into());
+        return Err(GraphRefusal::NamPayloadLimit);
     }
     if inputs.len() >= 16 || inputs.iter().any(|old| old.device == input.device) {
-        return Err("Native NAM transaction has too many or duplicate device requests".into());
+        return Err(GraphRefusal::NamTooManyRequests);
     }
     inputs.push(input);
     Ok(())
@@ -1527,7 +1520,7 @@ fn push_initial_grinder_input<'a>(
     inputs: &mut Vec<NativeGrinderInput<'a>>,
     strip: &'a str,
     device: &'a DevicePayload,
-) -> Result<(), String> {
+) -> Result<(), GraphRefusal> {
     let Some(model) = &device.grinder_model else {
         return Ok(());
     };
@@ -1535,7 +1528,7 @@ fn push_initial_grinder_input<'a>(
         || device.external_instance_id.is_some()
         || device.external_plugin_id.is_some()
     {
-        return Err("Native NAM payload requires a plain built-in Grinder".into());
+        return Err(GraphRefusal::NamRequiresPlainGrinder);
     }
     push_native_grinder_input(
         inputs,
@@ -1548,12 +1541,13 @@ fn push_initial_grinder_input<'a>(
         },
     )
 }
-fn native_grinder_inputs(batch: &GraphBatchPayload) -> Result<Vec<NativeGrinderInput<'_>>, String> {
+fn native_grinder_inputs(
+    batch: &GraphBatchPayload,
+) -> Result<Vec<NativeGrinderInput<'_>>, GraphRefusal> {
     if batch.commands.len() > MAX_BATCH_COMMANDS {
-        return Err(format!(
-            "batch carries {} commands, past the ceiling of {MAX_BATCH_COMMANDS}",
-            batch.commands.len()
-        ));
+        return Err(GraphRefusal::BatchTooLarge {
+            commands: batch.commands.len(),
+        });
     }
     let mut inputs = Vec::with_capacity(16);
     for command in &batch.commands {
@@ -1599,9 +1593,9 @@ fn native_grinder_inputs(batch: &GraphBatchPayload) -> Result<Vec<NativeGrinderI
         .try_fold(0usize, |sum, input| {
             sum.checked_add(input.text.map_or(0, str::len))
         })
-        .ok_or_else(|| "Native NAM byte sum overflow".to_string())?;
+        .ok_or(GraphRefusal::NamByteSumOverflow)?;
     if bytes > 8 * 1_048_576 {
-        return Err("Native NAM transaction byte limit".into());
+        return Err(GraphRefusal::NamTransactionByteLimit);
     }
     Ok(inputs)
 }
@@ -1616,19 +1610,19 @@ fn prepare_native_grinders(
     working: &mut GraphRegistry,
     engine_id: u64,
     sample_rate: f32,
-) -> Result<Vec<GrinderModelReceipt>, String> {
+) -> Result<Vec<GrinderModelReceipt>, GraphRefusal> {
     let mut reservations = Vec::with_capacity(inputs.len());
     let mut metadata = Vec::with_capacity(inputs.len());
     for (input, plan) in inputs.iter().zip(plans) {
         let device = working
             .devices
             .get(input.device)
-            .ok_or_else(|| "Native NAM target was removed or not mapped".to_string())?;
+            .ok_or(GraphRefusal::NamTargetMissing)?;
         if device.strip_id != input.strip || device.builtin() != Some(BuiltinEffectType::Grinder) {
-            return Err("Native NAM target generation mismatch".into());
+            return Err(GraphRefusal::NamTargetGenerationMismatch);
         }
         let (authority, request, applied) = if input.initial {
-            let request = next_native_nam_request().map_err(|error| error.to_string())?;
+            let request = next_native_nam_request()?;
             (Arc::new(AtomicU64::new(request)), request, None)
         } else {
             let command = mapped
@@ -1642,7 +1636,7 @@ fn prepare_native_grinders(
                     }
                     _ => None,
                 })
-                .ok_or_else(|| "Native NAM request command absent".to_string())?;
+                .ok_or(GraphRefusal::NamRequestCommandAbsent)?;
             (
                 Arc::clone(&command.authority),
                 command.request,
@@ -1651,7 +1645,7 @@ fn prepare_native_grinders(
         };
         if let Some(plan) = plan {
             if plan.sample_rate() != sample_rate as u64 {
-                return Err("Native NAM capture/actual engine sample-rate mismatch".into());
+                return Err(GraphRefusal::NamSampleRateMismatch);
             }
             reservations.push(NativeNamReservation {
                 plan: plan.clone(),
@@ -1666,10 +1660,7 @@ fn prepare_native_grinders(
         metadata.push((device.native_effect_id, authority, request, applied));
     }
     // Reserve the whole atomic transaction before the first parser/constructor.
-    let mut leases = transaction
-        .reserve(&reservations)
-        .map_err(|error| error.to_string())?
-        .into_iter();
+    let mut leases = transaction.reserve(&reservations)?.into_iter();
     let mut receipts = Vec::with_capacity(inputs.len());
     for ((input, plan), (effect, authority, request, applied)) in
         inputs.iter().zip(plans).zip(metadata)
@@ -1679,17 +1670,12 @@ fn prepare_native_grinders(
         let prepared = match (input.text, plan) {
             (Some(text), Some(plan)) => {
                 hash.copy_from_slice(&Sha256::digest(text.as_bytes()));
-                let lease = leases
-                    .next()
-                    .ok_or_else(|| "Native NAM reservation absent".to_string())?;
+                let lease = leases.next().ok_or(GraphRefusal::NamReservationAbsent)?;
                 witness = Some(Arc::downgrade(&lease));
-                Some(
-                    NativePreparedNam::build(text, plan, lease, hash)
-                        .map_err(|error| error.to_string())?,
-                )
+                Some(NativePreparedNam::build(text, plan, lease, hash)?)
             }
             (None, None) => None,
-            _ => return Err("Native NAM preflight plan absent".into()),
+            _ => return Err(GraphRefusal::NamPlanAbsent),
         };
         if input.initial {
             let body = mapped
@@ -1703,7 +1689,7 @@ fn prepare_native_grinders(
                     }
                     _ => None,
                 })
-                .ok_or_else(|| "Native NAM initial Grinder body absent".to_string())?;
+                .ok_or(GraphRefusal::NamInitialBodyAbsent)?;
             drop(body.swap_native_model(prepared));
         } else {
             let command = mapped
@@ -1717,7 +1703,7 @@ fn prepare_native_grinders(
                     }
                     _ => None,
                 })
-                .ok_or_else(|| "Native NAM replacement command absent".to_string())?;
+                .ok_or(GraphRefusal::NamReplacementCommandAbsent)?;
             command.model = prepared;
         }
         let receipt = GrinderModelReceipt {
@@ -1742,7 +1728,7 @@ fn prepare_native_grinders(
         receipts.push(receipt);
     }
     if working.grinder_models.len() > 64 {
-        return Err("Native NAM receipt metadata limit".into());
+        return Err(GraphRefusal::NamReceiptMetadataLimit);
     }
     Ok(receipts)
 }
@@ -2344,19 +2330,20 @@ impl QueueBudgets {
     /// building any — and `map_batch` refuses the whole batch on any
     /// record's refusal, so nothing built for an earlier record in the same
     /// batch is ever applied either.
-    fn charge_immediate_device_parameters(&mut self, record_len: usize) -> Result<(), String> {
+    fn charge_immediate_device_parameters(
+        &mut self,
+        record_len: usize,
+    ) -> Result<(), GraphRefusal> {
         if record_len > MAX_IMMEDIATE_DEVICE_PARAMETERS {
-            return Err(format!(
-                "record carries {record_len} parameters, past the ceiling of \
-                 {MAX_IMMEDIATE_DEVICE_PARAMETERS}"
-            ));
+            return Err(GraphRefusal::RecordParameterCeiling {
+                parameters: record_len,
+            });
         }
         let running_total = self.immediate_device_parameters + record_len;
         if running_total > MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH {
-            return Err(format!(
-                "batch carries {running_total} immediate parameters, past the ceiling of \
-                 {MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH}"
-            ));
+            return Err(GraphRefusal::BatchParameterCeiling {
+                parameters: running_total,
+            });
         }
         self.immediate_device_parameters = running_total;
         Ok(())
@@ -2366,14 +2353,14 @@ impl QueueBudgets {
         &mut self,
         target: AutomationTarget,
         write: &AutomationWrite,
-    ) -> Result<(), String> {
+    ) -> Result<(), QueueCapacityRefusal> {
         let queued = self.automation.entry(target).or_default();
         let (start, lands_at) = write_frames(write);
         if !matches!(write, AutomationWrite::Append(_)) {
             queued.retain(|pending| pending.lands_at < start);
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
-            return Err(QueueCapacityRefusal::Automation.to_string());
+            return Err(QueueCapacityRefusal::Automation);
         }
         queued.push(PendingStamp {
             at_frame: start,
@@ -2395,10 +2382,10 @@ impl QueueBudgets {
         effect_id: usize,
         param: DeviceParamTarget,
         at_frame: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), QueueCapacityRefusal> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
-            return Err(QueueCapacityRefusal::DeviceParam.to_string());
+            return Err(QueueCapacityRefusal::DeviceParam);
         }
         queued.push(DeviceParamStamp {
             param,
@@ -2435,25 +2422,35 @@ fn write_frames(write: &AutomationWrite) -> (u64, u64) {
     }
 }
 
-pub(crate) fn finite(value: f64, what: &str) -> Result<f64, String> {
+pub(crate) fn finite(value: f64, what: &str) -> Result<f64, ValueRefusal> {
     if value.is_finite() {
         Ok(value)
     } else {
-        Err(format!("{what} is not a finite number"))
+        Err(ValueRefusal::NotFinite {
+            what: what.to_string(),
+        })
     }
 }
 
-pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> Result<u64, String> {
+pub(crate) fn seconds_to_frames(
+    seconds: f64,
+    sample_rate: f32,
+    what: &str,
+) -> Result<u64, ValueRefusal> {
     let seconds = finite(seconds, what)?;
     if seconds < 0.0 {
-        return Err(format!("{what} is negative"));
+        return Err(ValueRefusal::Negative {
+            what: what.to_string(),
+        });
     }
     // `as u64` saturates, so anything at or past 2^64 would arrive as
     // u64::MAX — a real frame at the end of time — instead of a refusal.
     // Every f64 below 2^64 converts faithfully, so the comparison is exact.
     let frames = (seconds * f64::from(sample_rate)).round();
     if frames >= 18_446_744_073_709_551_616.0 {
-        return Err(format!("{what} exceeds the frame range"));
+        return Err(ValueRefusal::ExceedsFrameRange {
+            what: what.to_string(),
+        });
     }
     Ok(frames as u64)
 }
@@ -2467,13 +2464,12 @@ pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> R
 /// name, or a number past `u32`. A stamp built from either would reach the
 /// audio thread only to be counted as an unmapped call, and refusing whole is
 /// this module's law.
-fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
-    parameter_id.parse().map_err(|_| {
-        format!(
-            "write-device-parameter: parameter '{parameter_id}' is not a hosted plugin \
-             parameter id"
-        )
-    })
+fn hosted_parameter_id(parameter_id: &str) -> Result<u32, GraphRefusal> {
+    parameter_id
+        .parse()
+        .map_err(|_| GraphRefusal::NotHostedParameterId {
+            parameter_id: parameter_id.to_string(),
+        })
 }
 
 /// Resolve the engine plugin id a device's MIDI addresses, or refuse by name.
@@ -2506,21 +2502,27 @@ fn midi_device_plugin_id(
     registry: &GraphRegistry,
     track_id: &str,
     device_id: &str,
-    command: &str,
-) -> Result<usize, String> {
+    command: &'static str,
+) -> Result<usize, GraphRefusal> {
     let device = registry
         .devices
         .get(device_id)
-        .ok_or_else(|| format!("{command}: unknown device '{device_id}'"))?;
+        .ok_or_else(|| GraphRefusal::UnknownDevice {
+            command,
+            device_id: device_id.to_string(),
+        })?;
     if device.strip_id != track_id {
-        return Err(format!(
-            "{command}: device '{device_id}' is not on strip '{track_id}'"
-        ));
+        return Err(GraphRefusal::DeviceNotOnStrip {
+            command,
+            device_id: device_id.to_string(),
+            strip_id: track_id.to_string(),
+        });
     }
     if !device.note_sink() {
-        return Err(format!(
-            "{command}: device '{device_id}' holds no note store"
-        ));
+        return Err(GraphRefusal::NoNoteStore {
+            command,
+            device_id: device_id.to_string(),
+        });
     }
     Ok(device.native_effect_id)
 }
@@ -2530,15 +2532,13 @@ fn midi_device_plugin_id(
 /// Absent probability is the always-plays cutoff, which is exactly what the
 /// live `send_plugin_midi` path writes; a stated one goes through the shared
 /// converter, so this wire and a MIDI FX chain agree on what a chance means.
-fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String> {
+fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, GraphRefusal> {
     let Some(probability) = probability else {
         return Ok(PROBABILITY_CUTOFF_RANGE);
     };
     let probability = finite(probability, "schedule-midi probability")?;
     if !(0.0..=1.0).contains(&probability) {
-        return Err(format!(
-            "schedule-midi: probability {probability} is outside 0..=1"
-        ));
+        return Err(GraphRefusal::ProbabilityOutOfRange { probability });
     }
     Ok(probability_percent_to_cutoff(probability * 100.0))
 }
@@ -2551,12 +2551,10 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
 /// address is never tracked as sounding, so nothing would ever release it —
 /// which is the same reason a stored note and a live one both come through
 /// here.
-fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), String> {
+fn check_note_address(note: u8, channel: i16, command: &'static str) -> Result<(), GraphRefusal> {
     check_channel_address(channel, command)?;
     if note >= NOTES_PER_CHANNEL {
-        return Err(format!(
-            "{command}: note {note} has no address in the note store"
-        ));
+        return Err(GraphRefusal::NoteUnaddressable { command, note });
     }
     Ok(())
 }
@@ -2566,11 +2564,9 @@ fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), Strin
 /// A controller carries a channel and no note, so it needs this half and not
 /// the other. Factored rather than restated so one wire cannot start admitting
 /// a channel the other refuses.
-fn check_channel_address(channel: i16, command: &str) -> Result<(), String> {
+fn check_channel_address(channel: i16, command: &'static str) -> Result<(), GraphRefusal> {
     if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
-        return Err(format!(
-            "{command}: channel {channel} has no address in the note store"
-        ));
+        return Err(GraphRefusal::ChannelUnaddressable { command, channel });
     }
     Ok(())
 }
@@ -2580,7 +2576,7 @@ fn map_midi_note(
     note: &MidiNotePayload,
     probability_seed: u32,
     sample_rate: f32,
-) -> Result<TimedMidiNote, String> {
+) -> Result<TimedMidiNote, GraphRefusal> {
     check_note_address(note.note, i16::from(note.channel), "schedule-midi")?;
     Ok(TimedMidiNote {
         at_frame: seconds_to_frames(note.time, sample_rate, "schedule-midi time")?,
@@ -2602,17 +2598,21 @@ fn map_midi_note(
     })
 }
 
-fn frames_u32(frames: u64, what: &str) -> Result<u32, String> {
-    u32::try_from(frames).map_err(|_| format!("{what} does not fit a ramp span"))
+fn frames_u32(frames: u64, what: &str) -> Result<u32, ValueRefusal> {
+    u32::try_from(frames).map_err(|_| ValueRefusal::ExceedsRampSpan {
+        what: what.to_string(),
+    })
 }
 
 /// The fader law: VCA folds in *before* the clamp (the composition order the
 /// live strip uses), the ceiling is `fader_max_gain()` (+6 dB headroom, not
 /// unity), the floor a hard zero.
-fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
+fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, ValueRefusal> {
     let stored = finite(stored_gain, "gain")?;
     if stored < 0.0 {
-        return Err("gain is negative".to_string());
+        return Err(ValueRefusal::Negative {
+            what: "gain".to_string(),
+        });
     }
     let folded = stored as f32 * vca_multiplier;
     if folded.is_nan() || folded <= 0.0 {
@@ -2622,12 +2622,12 @@ fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
 }
 
 /// −50…+50 project pan onto the engine's −1…+1.
-fn pan_position(project_pan: f64) -> Result<f32, String> {
+fn pan_position(project_pan: f64) -> Result<f32, ValueRefusal> {
     let pan = finite(project_pan, "pan")?;
     Ok((pan as f32 / PROJECT_PAN_SCALE).clamp(-1.0, 1.0))
 }
 
-fn send_level(level: f64) -> Result<f32, String> {
+fn send_level(level: f64) -> Result<f32, ValueRefusal> {
     let level = finite(level, "send level")?;
     Ok((level as f32).clamp(0.0, 1.0))
 }
@@ -2652,7 +2652,7 @@ fn push_automation(
     write: AutomationWrite,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
-) -> Result<(), String> {
+) -> Result<(), QueueCapacityRefusal> {
     budgets.charge_automation(target, &write)?;
     ops.push(GraphCommand::AutomateParam { target, write });
     Ok(())
@@ -2676,18 +2676,15 @@ fn push_automation(
 /// reaches here either, for the same shape of reason: the sampler is an
 /// engine-owned instance the mapper splices rather than a body it builds, so
 /// [`map_device`] answers it ahead of this.
-fn native_body(device: &DevicePayload) -> Result<BuiltinEffectType, String> {
+fn native_body(device: &DevicePayload) -> Result<BuiltinEffectType, GraphRefusal> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
-        return Err(format!(
-            "device '{}' is an externally hosted plugin with no engine-owned instance to bind",
-            device.id
-        ));
+        return Err(GraphRefusal::ExternalPluginUnbound {
+            device_id: device.id.clone(),
+        });
     }
-    builtin_device_type(&device.device_type).ok_or_else(|| {
-        format!(
-            "device '{}' of type '{}' has no native realisation",
-            device.id, device.device_type
-        )
+    builtin_device_type(&device.device_type).ok_or_else(|| GraphRefusal::NoNativeRealisation {
+        device_id: device.id.clone(),
+        device_type: device.device_type.clone(),
     })
 }
 
@@ -2718,13 +2715,10 @@ fn builtin_device_type(device_type: &str) -> Option<BuiltinEffectType> {
 /// ([`BuiltinParamName`]) rather than to any one vocabulary, so the refusal
 /// names the device and the key it read and never the instrument, which it has
 /// nothing instrument-specific to say about.
-fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamName, String> {
-    BuiltinParamName::parse(key).ok_or_else(|| {
-        format!(
-            "device '{device_id}' carries parameter '{key}', which is not an instrument \
-             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of ASCII \
-             letters, digits and underscores"
-        )
+fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamName, GraphRefusal> {
+    BuiltinParamName::parse(key).ok_or_else(|| GraphRefusal::NotInstrumentParameterName {
+        device_id: device_id.to_string(),
+        key: key.to_string(),
     })
 }
 
@@ -2759,8 +2753,8 @@ fn name_ordered_keys(values: &HashMap<String, f64>) -> Vec<&str> {
 /// order.
 fn resolved_param_writes<T>(
     device: &DevicePayload,
-    resolve: impl Fn(&str) -> Result<T, String>,
-) -> Result<Vec<(T, f32)>, String> {
+    resolve: impl Fn(&str) -> Result<T, GraphRefusal>,
+) -> Result<Vec<(T, f32)>, GraphRefusal> {
     name_ordered_keys(&device.parameter_values)
         .into_iter()
         .map(|key| {
@@ -2785,7 +2779,7 @@ fn proof_parameter_writes(
     values: &HashMap<String, f64>,
     record: bool,
     device_id: &str,
-) -> Result<Vec<(BuiltinParamName, f32)>, String> {
+) -> Result<Vec<(BuiltinParamName, f32)>, GraphRefusal> {
     let mut resolved = Vec::new();
     let mut order = [None; 5];
     for key in name_ordered_keys(values) {
@@ -2793,9 +2787,10 @@ fn proof_parameter_writes(
         if proof_parameters::by_name(key).is_some_and(|parameter| {
             parameter.kind != ParameterKind::Continuous && value.fract() != 0.0
         }) {
-            return Err(format!(
-                "device '{device_id}' refuses fractional Proof parameter '{key}'"
-            ));
+            return Err(GraphRefusal::FractionalProofParameter {
+                device_id: device_id.to_string(),
+                key: key.to_string(),
+            });
         }
         match proof_parameters::admit_native(key, value as f32, record) {
             Some(NativeAdmission::Apply { parameter, value }) => {
@@ -2811,9 +2806,10 @@ fn proof_parameter_writes(
                 if parameter.live
                     && (value < parameter.live_minimum || value > parameter.live_maximum)
                 {
-                    return Err(format!(
-                        "device '{device_id}' refuses Proof parameter '{key}' or its value"
-                    ));
+                    return Err(GraphRefusal::ProofParameterRefused {
+                        device_id: device_id.to_string(),
+                        key: key.to_string(),
+                    });
                 }
                 if parameter.route == ParameterRoute::Order {
                     let Some(slot) = key
@@ -2821,9 +2817,10 @@ fn proof_parameter_writes(
                         .and_then(|slot| slot.parse::<usize>().ok())
                         .and_then(|slot| order.get_mut(slot))
                     else {
-                        return Err(format!(
-                            "device '{device_id}' refuses Proof parameter '{key}' or its value"
-                        ));
+                        return Err(GraphRefusal::ProofParameterRefused {
+                            device_id: device_id.to_string(),
+                            key: key.to_string(),
+                        });
                     };
                     *slot = Some(value as u8);
                 }
@@ -2831,9 +2828,10 @@ fn proof_parameter_writes(
             }
             Some(_) => {}
             None => {
-                return Err(format!(
-                    "device '{device_id}' refuses Proof parameter '{key}' or its value"
-                ))
+                return Err(GraphRefusal::ProofParameterRefused {
+                    device_id: device_id.to_string(),
+                    key: key.to_string(),
+                })
             }
         }
     }
@@ -2842,9 +2840,9 @@ fn proof_parameter_writes(
         for &module in order.iter().flatten() {
             let module = module as usize;
             if seen[module] {
-                return Err(format!(
-                    "device '{device_id}' carries a duplicate Proof module order"
-                ));
+                return Err(GraphRefusal::DuplicateProofModuleOrder {
+                    device_id: device_id.to_string(),
+                });
             }
             seen[module] = true;
         }
@@ -2874,27 +2872,32 @@ fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
     device_id: &str,
-) -> Result<DeviceParam, String> {
+) -> Result<DeviceParam, GraphRefusal> {
     match builtin {
         BuiltinEffectType::Proof => {
             if proof_parameters::by_name(key).is_none() {
-                return Err(format!(
-                    "device '{device_id}' has no Proof parameter '{key}'"
-                ));
+                return Err(GraphRefusal::NoProofParameter {
+                    device_id: device_id.to_string(),
+                    key: key.to_string(),
+                });
             }
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
         BuiltinEffectType::TransientShaper => {
             if !matches!(key, "attackGain" | "sustainGain") {
-                return Err(format!(
-                    "device '{device_id}' has no Transient Shaper parameter '{key}'"
-                ));
+                return Err(GraphRefusal::NoTransientShaperParameter {
+                    device_id: device_id.to_string(),
+                    key: key.to_string(),
+                });
             }
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
-        BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
-            format!("device '{device_id}' carries parameter '{key}', which knead does not map")
-        }),
+        BuiltinEffectType::Knead => {
+            DeviceParam::from_name(key).ok_or_else(|| GraphRefusal::KneadUnmapped {
+                device_id: device_id.to_string(),
+                key: key.to_string(),
+            })
+        }
         BuiltinEffectType::Fermenter
         | BuiltinEffectType::GrandBoule
         | BuiltinEffectType::Gluten
@@ -2937,7 +2940,7 @@ fn immediate_device_parameters(
     builtin: BuiltinEffectType,
     values: &HashMap<String, f64>,
     device_id: &str,
-) -> Result<Vec<(DeviceParam, f32)>, String> {
+) -> Result<Vec<(DeviceParam, f32)>, GraphRefusal> {
     if builtin == BuiltinEffectType::Proof {
         return proof_parameter_writes(values, false, device_id).map(|writes| {
             writes
@@ -2950,7 +2953,7 @@ fn immediate_device_parameters(
         .into_iter()
         .map(|key| {
             let param = builtin_parameter(builtin, key, device_id)
-                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
+                .map_err(|reason| GraphRefusal::with_command("set-device-parameters", reason))?;
             let value = finite(values[key], &format!("set-device-parameters value '{key}'"))?;
             let value = if builtin == BuiltinEffectType::TransientShaper {
                 value.clamp(0.0, 2.0)
@@ -2959,7 +2962,7 @@ fn immediate_device_parameters(
             };
             Ok((param, value as f32))
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, GraphRefusal>>()?;
 
     Ok(precedence_first(
         &resolved,
@@ -3059,11 +3062,11 @@ impl HostedInstances {
 
     /// The instances attached to the engine, as an offline render rebinds
     /// them. Read off `engine_plugins` once, before the batch maps.
-    pub(crate) fn offline(state: &AppState) -> Result<Self, String> {
+    pub(crate) fn offline(state: &AppState) -> Result<Self, GraphRefusal> {
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("engine plugins", &error))?;
         Ok(Self {
             law: HostedBindingLaw::Offline,
             instances: engine_plugins
@@ -3096,13 +3099,13 @@ impl HostedInstances {
         device_id: &str,
         instance_id: &str,
         contributes_audio: bool,
-    ) -> Result<Option<EngineOwnedDevice>, String> {
+    ) -> Result<Option<EngineOwnedDevice>, GraphRefusal> {
         let Some(instance) = self.instances.get(instance_id) else {
             if contributes_audio {
-                return Err(format!(
-                    "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
-                     not attached to the engine"
-                ));
+                return Err(GraphRefusal::HostedInstanceNotAttached {
+                    device_id: device_id.to_string(),
+                    instance_id: instance_id.to_string(),
+                });
             }
             return Ok(None);
         };
@@ -3113,11 +3116,10 @@ impl HostedInstances {
                     return Ok(None);
                 }
                 if instance.device.chain_kind != DeviceKind::Effect {
-                    return Err(format!(
-                        "device '{device_id}' hosts the plugin '{}', an instrument: hosted \
-                         instruments do not render offline yet",
-                        instance.plugin_name
-                    ));
+                    return Err(GraphRefusal::HostedInstrumentOffline {
+                        device_id: device_id.to_string(),
+                        plugin_name: instance.plugin_name.clone(),
+                    });
                 }
                 self.bound
                     .entry(instance_id.to_string())
@@ -3211,7 +3213,7 @@ fn map_device(
     registry: &mut GraphRegistry,
     contributes_audio: bool,
     env: MapEnv<'_>,
-) -> Result<Option<MappedDevice>, String> {
+) -> Result<Option<MappedDevice>, GraphRefusal> {
     let MapEnv {
         sample_rate,
         hosted,
@@ -3220,7 +3222,9 @@ fn map_device(
         ops,
     } = env;
     if registry.devices.contains_key(&device.id) {
-        return Err(format!("device id '{}' is already in a chain", device.id));
+        return Err(GraphRefusal::DeviceAlreadyInChain {
+            device_id: device.id.clone(),
+        });
     }
 
     // A modulation-assignment table only ever means something to a plain
@@ -3240,11 +3244,10 @@ fn map_device(
             && device.external_plugin_id.is_none()
             && builtin_device_type(&device.device_type) == Some(BuiltinEffectType::Bacteria);
         if !is_plain_builtin_bacteria {
-            return Err(format!(
-                "device '{}' of type '{}' carries modAssignments, which only a bacteria device \
-                 may set",
-                device.id, device.device_type
-            ));
+            return Err(GraphRefusal::ModAssignmentsNotBacteria {
+                device_id: device.id.clone(),
+                device_type: device.device_type.clone(),
+            });
         }
     }
 
@@ -3284,13 +3287,10 @@ fn map_device(
         && device.external_plugin_id.is_none()
     {
         let Some(plugin_id) = attached_crumbs.find(&device.id) else {
-            let reason = format!(
-                "device '{}' is a Crumbs sampler whose native instance is not attached to the \
-                 engine",
-                device.id
-            );
             if contributes_audio {
-                return Err(reason);
+                return Err(GraphRefusal::CrumbsNotAttached {
+                    device_id: device.id.clone(),
+                });
             }
             // The same degradation law every unbindable device takes: a strip
             // built only to keep the routing graph faithful contributes
@@ -3351,21 +3351,19 @@ fn map_device(
     // its amount is finite.
     if let Some(rows) = device.mod_assignments.as_ref() {
         if rows.len() > MAX_BACTERIA_MOD_ASSIGNMENTS {
-            return Err(format!(
-                "device '{}' names {} mod assignments, past the engine's ceiling of \
-                 {MAX_BACTERIA_MOD_ASSIGNMENTS}",
-                device.id,
-                rows.len()
-            ));
+            return Err(GraphRefusal::TooManyModAssignments {
+                device_id: device.id.clone(),
+                rows: rows.len(),
+            });
         }
         for row in rows {
             if let Some(reason) =
                 bacteria_mod_assignment_route_refusal(row.source_id, row.target_param)
             {
-                return Err(format!("device '{}' {reason}", device.id));
+                return Err(GraphRefusal::for_device(&device.id, reason));
             }
             finite(row.amount as f64, "modAssignments amount")
-                .map_err(|reason| format!("device '{}' {reason}", device.id))?;
+                .map_err(|reason| GraphRefusal::for_device(&device.id, reason))?;
         }
     }
 
@@ -3514,7 +3512,7 @@ fn map_device(
         .and_then(|patch| {
             Ok((
                 PluginCore::transient_shaper_with_patch(sample_rate, &patch)
-                    .map_err(|error| error.to_string())?,
+                    .map_err(GraphRefusal::TransientShaper)?,
                 Vec::new(),
             ))
         }),
@@ -3544,20 +3542,23 @@ fn map_device(
         // silent ones drop the device ([`refuse_or_degrade`]) — so a muted or
         // unrouted Levain whose bank never arrived still loads its project.
         BuiltinEffectType::Levain => match device.sample_bank_key.as_deref() {
-            None => Err(format!(
-                "device '{}' of type levain names no sample bank",
-                device.id
-            )),
-            Some(key) if !levain_banks.is_committed(key) => Err(format!(
-                "device '{}' names levain bank '{key}', which is not registered",
-                device.id
-            )),
+            None => Err(GraphRefusal::LevainNoBank {
+                device_id: device.id.clone(),
+            }),
+            Some(key) if !levain_banks.is_committed(key) => {
+                Err(GraphRefusal::LevainBankUnregistered {
+                    device_id: device.id.clone(),
+                    bank_key: key.to_string(),
+                })
+            }
             Some(key) => {
                 resolved_param_writes(device, |name| builtin_named_parameter(name, &device.id))
                     .and_then(|patch| {
                         Ok((
                             PluginCore::levain_with_patch(
-                                levain_banks.build_instance(key, sample_rate)?,
+                                levain_banks
+                                    .build_instance(key, sample_rate)
+                                    .map_err(GraphRefusal::LevainBank)?,
                                 &patch,
                             ),
                             Vec::new(),
@@ -3569,7 +3570,7 @@ fn map_device(
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
                 .and_then(|writes| {
                     let core = PluginCore::builtin(builtin, sample_rate)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(GraphRefusal::TransientShaper)?;
                     Ok((core, writes))
                 })
         }
@@ -3649,9 +3650,9 @@ fn map_device(
 /// routing graph faithful contributes nothing to hear, so the device is left
 /// out and its absence is what the strip report says.
 fn refuse_or_degrade<T>(
-    resolved: Result<T, String>,
+    resolved: Result<T, GraphRefusal>,
     contributes_audio: bool,
-) -> Result<Option<T>, String> {
+) -> Result<Option<T>, GraphRefusal> {
     match resolved {
         Ok(resolved) => Ok(Some(resolved)),
         Err(reason) if contributes_audio => Err(reason),
@@ -3698,12 +3699,11 @@ fn builtin_chain_kind(builtin: BuiltinEffectType) -> DeviceKind {
 /// and refuses it whole otherwise. Whichever bound is tighter fires first;
 /// neither is the only one, and neither may be widened into a second partial
 /// count.
-fn charge_chain_slot(registry: &GraphRegistry, device_id: &str) -> Result<(), String> {
+fn charge_chain_slot(registry: &GraphRegistry, device_id: &str) -> Result<(), GraphRefusal> {
     if registry.devices.len() >= TIMELINE_CHAIN_SLOT_BUDGET {
-        return Err(format!(
-            "device '{device_id}': the project holds its maximum of \
-             {TIMELINE_CHAIN_SLOT_BUDGET} native devices"
-        ));
+        return Err(GraphRefusal::ChainSlotBudget {
+            device_id: device_id.to_string(),
+        });
     }
     Ok(())
 }
@@ -3786,14 +3786,18 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 fn strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
-) -> Result<Vec<StripReportPayload>, String> {
+) -> Result<Vec<StripReportPayload>, GraphRefusal> {
     strip_ids
         .iter()
         .map(|strip_id| {
-            let entry = registry
-                .strips
-                .get(strip_id)
-                .ok_or_else(|| format!("strip report: unknown strip '{strip_id}'"))?;
+            let entry =
+                registry
+                    .strips
+                    .get(strip_id)
+                    .ok_or_else(|| GraphRefusal::UnknownStrip {
+                        command: "strip report",
+                        strip_id: strip_id.clone(),
+                    })?;
             Ok(StripReportPayload {
                 kind: match entry.kind {
                     StripKind::Track => "track",
@@ -3841,7 +3845,7 @@ fn populate_grand_boule_preview_targets(
 pub(crate) fn live_strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
-) -> Result<Vec<StripReportPayload>, String> {
+) -> Result<Vec<StripReportPayload>, GraphRefusal> {
     let mut reports = strip_reports(registry, strip_ids)?;
     populate_grand_boule_preview_targets(registry, &mut reports);
     Ok(reports)
@@ -3871,36 +3875,36 @@ fn map_batch(
     hosted: &mut HostedInstances,
     attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
-) -> Result<MappedBatch, String> {
+) -> Result<MappedBatch, GraphRefusal> {
     if batch.schema_version != 1 && batch.schema_version != 2 {
-        return Err(format!(
-            "unsupported schemaVersion {} (this backend speaks 1 and model wire 2)",
-            batch.schema_version
-        ));
+        return Err(GraphRefusal::UnsupportedSchemaVersion {
+            schema_version: batch.schema_version,
+        });
     }
     let model_inputs = native_grinder_inputs(batch)?;
     if !model_inputs.is_empty() && batch.schema_version != 2 {
-        return Err("Native NAM payload requires schemaVersion 2".into());
+        return Err(GraphRefusal::NamRequiresSchemaVersion2);
     }
     if batch.commands.len() > MAX_BATCH_COMMANDS {
-        return Err(format!(
-            "batch carries {} commands, past the ceiling of {MAX_BATCH_COMMANDS}",
-            batch.commands.len()
-        ));
+        return Err(GraphRefusal::BatchTooLarge {
+            commands: batch.commands.len(),
+        });
     }
 
     if let Some(lease) = &batch.timeline_lease {
-        let owner = samples.timeline_lease_owner(lease)?;
+        let owner = samples
+            .timeline_lease_owner(lease)
+            .map_err(GraphRefusal::TimelineMaterial)?;
         if !batch.replace_topology
             && registry
                 .timeline_owner
                 .as_deref()
                 .is_some_and(|current| current != owner)
         {
-            return Err("Timeline graph belongs to another project owner".into());
+            return Err(GraphRefusal::TimelineOwnedElsewhere);
         }
     } else if samples.residency.fenced() {
-        return Err("Graph batch requires a timeline material lease".into());
+        return Err(GraphRefusal::TimelineLeaseRequired);
     }
     let mut ops = Vec::new();
     // A replacing batch tears the previous topology down inside its own fence,
@@ -3911,10 +3915,15 @@ fn map_batch(
         ops.extend(registry.take_topology_down());
     }
     if let Some(lease) = &batch.timeline_lease {
-        registry.timeline_owner = Some(samples.timeline_lease_owner(lease)?.into());
+        registry.timeline_owner = Some(
+            samples
+                .timeline_lease_owner(lease)
+                .map_err(GraphRefusal::TimelineMaterial)?
+                .into(),
+        );
     }
     let mut touched: Vec<String> = Vec::new();
-    let mut refusals: Vec<String> = Vec::new();
+    let mut refusals: Vec<(usize, GraphRefusal)> = Vec::new();
     let mut budgets = QueueBudgets::seeded_from(registry);
 
     for (index, command) in batch.commands.iter().enumerate() {
@@ -3933,12 +3942,12 @@ fn map_batch(
             &mut budgets,
             &mut touched,
         ) {
-            refusals.push(format!("commands[{index}]: {reason}"));
+            refusals.push((index, reason));
         }
     }
 
     if !refusals.is_empty() {
-        return Err(refusals.join("; "));
+        return Err(GraphRefusal::Commands(refusals));
     }
 
     registry.automation_pending = budgets.automation;
@@ -3960,7 +3969,7 @@ fn map_batch(
 fn resolve_route_target(
     registry: &GraphRegistry,
     target: &RouteTargetPayload,
-) -> Result<StripOutput, String> {
+) -> Result<StripOutput, GraphRefusal> {
     let strip_id = match target {
         RouteTargetPayload::Master => return Ok(StripOutput::Master),
         RouteTargetPayload::Bus { bus_id } => bus_id,
@@ -3971,7 +3980,9 @@ fn resolve_route_target(
     let entry = registry
         .strips
         .get(strip_id)
-        .ok_or_else(|| format!("route target '{strip_id}' is not a strip this graph holds"))?;
+        .ok_or_else(|| GraphRefusal::RouteTargetUnknown {
+            strip_id: strip_id.clone(),
+        })?;
     Ok(match entry.kind {
         StripKind::Track => StripOutput::Track(entry.native_id),
         StripKind::Bus => StripOutput::Bus(entry.native_id),
@@ -3995,7 +4006,7 @@ fn map_command(
     env: MapEnv<'_>,
     budgets: &mut QueueBudgets,
     touched: &mut Vec<String>,
-) -> Result<(), String> {
+) -> Result<(), GraphRefusal> {
     let MapEnv {
         sample_rate,
         hosted,
@@ -4013,18 +4024,19 @@ fn map_command(
             contributes_audio,
         } => {
             if registry.strips.contains_key(track_id) {
-                return Err(format!(
-                    "create-track-strip: strip id '{track_id}' already exists"
-                ));
+                return Err(GraphRefusal::StripExists {
+                    command: "create-track-strip",
+                    strip_id: track_id.clone(),
+                });
             }
             if registry.track_count == MAX_TIMELINE_TRACKS {
-                return Err(format!(
-                    "create-track-strip: the graph holds its maximum of {MAX_TIMELINE_TRACKS} tracks"
-                ));
+                return Err(GraphRefusal::TrackCapacity);
             }
             let vca = finite(state.vca_multiplier, "vcaMultiplier")? as f32;
             if vca < 0.0 {
-                return Err("create-track-strip: vcaMultiplier is negative".to_string());
+                return Err(GraphRefusal::NegativeVcaMultiplier {
+                    command: "create-track-strip",
+                });
             }
             let gain = fader_gain(state.gain, vca)?;
             let pan = pan_position(state.pan)?;
@@ -4092,9 +4104,10 @@ fn map_command(
                 chain_index += 1;
             }
             if chain_index > MAX_TRACK_DEVICES {
-                return Err(format!(
-                    "create-track-strip: chain exceeds {MAX_TRACK_DEVICES} devices"
-                ));
+                return Err(GraphRefusal::ChainExceeds {
+                    command: "create-track-strip",
+                    max: MAX_TRACK_DEVICES,
+                });
             }
 
             registry.strips.insert(
@@ -4124,18 +4137,19 @@ fn map_command(
             contributes_audio,
         } => {
             if registry.strips.contains_key(bus_id) {
-                return Err(format!(
-                    "create-bus-strip: strip id '{bus_id}' already exists"
-                ));
+                return Err(GraphRefusal::StripExists {
+                    command: "create-bus-strip",
+                    strip_id: bus_id.clone(),
+                });
             }
             if registry.bus_count == MAX_TIMELINE_BUSES {
-                return Err(format!(
-                    "create-bus-strip: the graph holds its maximum of {MAX_TIMELINE_BUSES} buses"
-                ));
+                return Err(GraphRefusal::BusCapacity);
             }
             let vca = finite(state.vca_multiplier, "vcaMultiplier")? as f32;
             if vca < 0.0 {
-                return Err("create-bus-strip: vcaMultiplier is negative".to_string());
+                return Err(GraphRefusal::NegativeVcaMultiplier {
+                    command: "create-bus-strip",
+                });
             }
             let gain = fader_gain(state.gain, vca)?;
             let pan = pan_position(state.pan)?;
@@ -4203,9 +4217,10 @@ fn map_command(
                 chain_index += 1;
             }
             if chain_index > MAX_BUS_DEVICES {
-                return Err(format!(
-                    "create-bus-strip: chain exceeds {MAX_BUS_DEVICES} devices"
-                ));
+                return Err(GraphRefusal::ChainExceeds {
+                    command: "create-bus-strip",
+                    max: MAX_BUS_DEVICES,
+                });
             }
 
             registry.strips.insert(
@@ -4231,12 +4246,16 @@ fn map_command(
             let strip = registry
                 .strips
                 .get(track_id)
-                .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "set-track-output",
+                    strip_id: track_id.clone(),
+                })?
                 .clone();
             if registry.would_cycle(&strip, output) {
-                return Err(format!(
-                    "set-track-output: routing '{track_id}' there closes a cycle"
-                ));
+                return Err(GraphRefusal::ClosesCycle {
+                    command: "set-track-output",
+                    strip_id: track_id.clone(),
+                });
             }
             let route = route_target_for(output);
             ops.push(match strip.kind {
@@ -4246,7 +4265,10 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "set-track-output",
+                    strip_id: track_id.clone(),
+                })?
                 .output = output;
             Ok(())
         }
@@ -4257,34 +4279,43 @@ fn map_command(
             tap,
             level,
         } => {
-            let source = registry
-                .strips
-                .get(track_id)
-                .ok_or_else(|| format!("add-send: unknown strip '{track_id}'"))?;
+            let source =
+                registry
+                    .strips
+                    .get(track_id)
+                    .ok_or_else(|| GraphRefusal::UnknownStrip {
+                        command: "add-send",
+                        strip_id: track_id.clone(),
+                    })?;
             if source.send_bus_ids.iter().any(|id| id == bus_id) {
-                return Err(format!(
-                    "add-send: '{track_id}' already sends to '{bus_id}'"
-                ));
+                return Err(GraphRefusal::AlreadySends {
+                    track_id: track_id.clone(),
+                    bus_id: bus_id.clone(),
+                });
             }
             if source.send_bus_ids.len() == MAX_TRACK_SENDS {
-                return Err(format!(
-                    "add-send: '{track_id}' holds its maximum of {MAX_TRACK_SENDS} sends"
-                ));
+                return Err(GraphRefusal::SendCapacity {
+                    track_id: track_id.clone(),
+                });
             }
-            let destination = registry
-                .strips
-                .get(bus_id)
-                .ok_or_else(|| format!("add-send: unknown bus '{bus_id}'"))?;
+            let destination =
+                registry
+                    .strips
+                    .get(bus_id)
+                    .ok_or_else(|| GraphRefusal::UnknownBus {
+                        command: "add-send",
+                        bus_id: bus_id.clone(),
+                    })?;
             if destination.kind != StripKind::Bus {
-                return Err(format!(
-                    "add-send: send target '{bus_id}' is a track, and a native send lands only on \
-                     a bus"
-                ));
+                return Err(GraphRefusal::SendTargetIsTrack {
+                    bus_id: bus_id.clone(),
+                });
             }
             if registry.would_cycle(source, StripOutput::Bus(destination.native_id)) {
-                return Err(format!(
-                    "add-send: routing '{track_id}' there closes a cycle"
-                ));
+                return Err(GraphRefusal::ClosesCycle {
+                    command: "add-send",
+                    strip_id: track_id.clone(),
+                });
             }
             let source_kind = source.kind;
             let source_native = source.native_id;
@@ -4318,26 +4349,39 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .ok_or_else(|| format!("add-send: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "add-send",
+                    strip_id: track_id.clone(),
+                })?
                 .send_bus_ids
                 .push(bus_id.clone());
             Ok(())
         }
 
         GraphCommandPayload::RemoveSend { track_id, bus_id } => {
-            let source = registry
-                .strips
-                .get(track_id)
-                .ok_or_else(|| format!("remove-send: unknown strip '{track_id}'"))?;
+            let source =
+                registry
+                    .strips
+                    .get(track_id)
+                    .ok_or_else(|| GraphRefusal::UnknownStrip {
+                        command: "remove-send",
+                        strip_id: track_id.clone(),
+                    })?;
             if !source.send_bus_ids.iter().any(|id| id == bus_id) {
-                return Err(format!(
-                    "remove-send: '{track_id}' has no send to '{bus_id}'"
-                ));
+                return Err(GraphRefusal::NoSend {
+                    command: "remove-send",
+                    track_id: track_id.clone(),
+                    bus_id: bus_id.clone(),
+                });
             }
-            let destination = registry
-                .strips
-                .get(bus_id)
-                .ok_or_else(|| format!("remove-send: unknown bus '{bus_id}'"))?;
+            let destination =
+                registry
+                    .strips
+                    .get(bus_id)
+                    .ok_or_else(|| GraphRefusal::UnknownBus {
+                        command: "remove-send",
+                        bus_id: bus_id.clone(),
+                    })?;
             ops.push(match source.kind {
                 StripKind::Track => GraphCommand::RemoveSend {
                     track_id: source.native_id,
@@ -4348,10 +4392,14 @@ fn map_command(
                     bus_id: destination.native_id,
                 },
             });
-            let source = registry
-                .strips
-                .get_mut(track_id)
-                .ok_or_else(|| format!("remove-send: unknown strip '{track_id}'"))?;
+            let source =
+                registry
+                    .strips
+                    .get_mut(track_id)
+                    .ok_or_else(|| GraphRefusal::UnknownStrip {
+                        command: "remove-send",
+                        strip_id: track_id.clone(),
+                    })?;
             source.send_bus_ids.retain(|id| id != bus_id);
             Ok(())
         }
@@ -4364,12 +4412,15 @@ fn map_command(
             let strip = registry
                 .strips
                 .get(track_id)
-                .ok_or_else(|| format!("insert-device: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "insert-device",
+                    strip_id: track_id.clone(),
+                })?
                 .clone();
             if strip.device_ids.len() == strip_device_capacity(strip.kind) {
-                return Err(format!(
-                    "insert-device: the chain on '{track_id}' is at capacity"
-                ));
+                return Err(GraphRefusal::ChainAtCapacity {
+                    track_id: track_id.clone(),
+                });
             }
             // Touched before the degradation branch: a device that cannot
             // build on a non-contributing strip is omitted from the chain,
@@ -4413,7 +4464,10 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .ok_or_else(|| format!("insert-device: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "insert-device",
+                    strip_id: track_id.clone(),
+                })?
                 .device_ids
                 .insert(insert_at, device.id.clone());
             Ok(())
@@ -4426,7 +4480,10 @@ fn map_command(
             let strip = registry
                 .strips
                 .get(track_id)
-                .ok_or_else(|| format!("remove-device: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "remove-device",
+                    strip_id: track_id.clone(),
+                })?
                 .clone();
             // Touched before the device is even looked up, because the strip
             // report is what the caller resyncs its chain from and it is owed
@@ -4445,9 +4502,11 @@ fn map_command(
                 // A wrong-strip command, not an already-satisfied one: the
                 // device exists and this batch is addressing it on a chain it
                 // is not on.
-                return Err(format!(
-                    "remove-device: device '{device_id}' is not on strip '{track_id}'"
-                ));
+                return Err(GraphRefusal::DeviceNotOnStrip {
+                    command: "remove-device",
+                    device_id: device_id.clone(),
+                    strip_id: track_id.clone(),
+                });
             }
             ops.push(remove_device_op(strip.kind, strip.native_id, &device));
             registry.devices.remove(device_id);
@@ -4462,7 +4521,10 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .ok_or_else(|| format!("remove-device: unknown strip '{track_id}'"))?
+                .ok_or_else(|| GraphRefusal::UnknownStrip {
+                    command: "remove-device",
+                    strip_id: track_id.clone(),
+                })?
                 .device_ids
                 .retain(|id| id != device_id);
             Ok(())
@@ -4478,14 +4540,16 @@ fn map_command(
         } => {
             let value = finite(*multiplier, "set-strip-vca-multiplier multiplier")?;
             if value < 0.0 || value > f32::MAX as f64 {
-                return Err(
-                    "set-strip-vca-multiplier requires a nonnegative f32 multiplier".into(),
-                );
+                return Err(GraphRefusal::VcaMultiplierRange);
             }
-            let strip = registry
-                .strips
-                .get_mut(track_id)
-                .ok_or_else(|| format!("set-strip-vca-multiplier: unknown strip '{track_id}'"))?;
+            let strip =
+                registry
+                    .strips
+                    .get_mut(track_id)
+                    .ok_or_else(|| GraphRefusal::UnknownStrip {
+                        command: "set-strip-vca-multiplier",
+                        strip_id: track_id.clone(),
+                    })?;
             // The following raw fader replay maps through this working value.
             // No callback operation is needed until that replay is admitted.
             strip.vca_multiplier = value as f32;
@@ -4498,14 +4562,20 @@ fn map_command(
                 device_id,
                 parameter_id,
             } = target;
-            let device = registry
-                .devices
-                .get(device_id)
-                .ok_or_else(|| format!("write-device-parameter: unknown device '{device_id}'"))?;
+            let device =
+                registry
+                    .devices
+                    .get(device_id)
+                    .ok_or_else(|| GraphRefusal::UnknownDevice {
+                        command: "write-device-parameter",
+                        device_id: device_id.clone(),
+                    })?;
             if device.strip_id != *track_id {
-                return Err(format!(
-                    "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
-                ));
+                return Err(GraphRefusal::DeviceNotOnStrip {
+                    command: "write-device-parameter",
+                    device_id: device_id.clone(),
+                    strip_id: track_id.clone(),
+                });
             }
             let normalized_proof_step = if device.builtin() == Some(BuiltinEffectType::Proof) {
                 let time = match write {
@@ -4551,10 +4621,9 @@ fn map_command(
                 },
                 Some(builtin) => DeviceParamTarget::Builtin(
                     builtin_parameter(builtin, parameter_id, device_id).map_err(|_| {
-                        format!(
-                            "write-device-parameter: parameter '{parameter_id}' has no native \
-                             address"
-                        )
+                        GraphRefusal::NoNativeAddress {
+                            parameter_id: parameter_id.clone(),
+                        }
                     })?,
                 ),
             };
@@ -4581,7 +4650,9 @@ fn map_command(
                     };
                     budgets
                         .charge_device_param(effect_id, param, at_frame)
-                        .map_err(|reason| format!("write-device-parameter: {reason}"))?;
+                        .map_err(|reason| {
+                            GraphRefusal::with_command("write-device-parameter", reason)
+                        })?;
                     ops.push(GraphCommand::AutomateDeviceParam {
                         effect_id,
                         param,
@@ -4603,10 +4674,10 @@ fn map_command(
             let device = registry
                 .devices
                 .get(device_id)
-                .ok_or_else(|| "set-grinder-model: unknown device".to_string())?;
+                .ok_or(GraphRefusal::GrinderModelUnknownDevice)?;
             if device.strip_id != *track_id || device.builtin() != Some(BuiltinEffectType::Grinder)
             {
-                return Err("set-grinder-model: target is not the requested Grinder".into());
+                return Err(GraphRefusal::GrinderModelTargetMismatch);
             }
             let effect_id = device.native_effect_id;
             map_command(
@@ -4628,7 +4699,7 @@ fn map_command(
                 budgets,
                 touched,
             )?;
-            let request = next_native_nam_request().map_err(|error| error.to_string())?;
+            let request = next_native_nam_request()?;
             ops.push(GraphCommand::SetGrinderModel {
                 effect_id,
                 request: Box::new(NativeGrinderModelRequest {
@@ -4646,20 +4717,25 @@ fn map_command(
             device_id,
             values,
         } => {
-            let device = registry
-                .devices
-                .get(device_id)
-                .ok_or_else(|| format!("set-device-parameters: unknown device '{device_id}'"))?;
+            let device =
+                registry
+                    .devices
+                    .get(device_id)
+                    .ok_or_else(|| GraphRefusal::UnknownDevice {
+                        command: "set-device-parameters",
+                        device_id: device_id.clone(),
+                    })?;
             if device.strip_id != *track_id {
-                return Err(format!(
-                    "set-device-parameters: device '{device_id}' is not on strip '{track_id}'"
-                ));
+                return Err(GraphRefusal::DeviceNotOnStrip {
+                    command: "set-device-parameters",
+                    device_id: device_id.clone(),
+                    strip_id: track_id.clone(),
+                });
             }
             let Some(builtin) = device.builtin() else {
-                return Err(format!(
-                    "set-device-parameters: device '{device_id}' is an externally hosted plugin, \
-                     whose parameters take the plugin host's own control path"
-                ));
+                return Err(GraphRefusal::HostedParametersElsewhere {
+                    device_id: device_id.clone(),
+                });
             };
             // Charged against both the per-record ceiling and the running
             // batch total before any key is resolved: a batch admits many
@@ -4668,7 +4744,7 @@ fn map_command(
             // `MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`).
             budgets
                 .charge_immediate_device_parameters(values.len())
-                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
+                .map_err(|reason| GraphRefusal::with_command("set-device-parameters", reason))?;
             let effect_id = device.native_effect_id;
             // No queue charge, unlike the stamped write above: these land on
             // the next drain rather than waiting in the device's
@@ -4689,14 +4765,20 @@ fn map_command(
             device_id,
             bypassed,
         } => {
-            let device = registry
-                .devices
-                .get(device_id)
-                .ok_or_else(|| format!("set-device-bypass: unknown device '{device_id}'"))?;
+            let device =
+                registry
+                    .devices
+                    .get(device_id)
+                    .ok_or_else(|| GraphRefusal::UnknownDevice {
+                        command: "set-device-bypass",
+                        device_id: device_id.clone(),
+                    })?;
             if device.strip_id != *track_id {
-                return Err(format!(
-                    "set-device-bypass: device '{device_id}' is not on strip '{track_id}'"
-                ));
+                return Err(GraphRefusal::DeviceNotOnStrip {
+                    command: "set-device-bypass",
+                    device_id: device_id.clone(),
+                    strip_id: track_id.clone(),
+                });
             }
             // The chain-level bypass belongs to the graph for every device
             // whose bypass no other writer owns: the built-ins this registry
@@ -4706,10 +4788,9 @@ fn map_command(
             // is written by the plugin host's ordered control path, and a
             // second live writer here would race that order.
             if device.origin == DeviceOrigin::Hosted {
-                return Err(format!(
-                    "set-device-bypass: device '{device_id}' is an externally hosted plugin, \
-                     whose bypass takes the plugin host's own control path"
-                ));
+                return Err(GraphRefusal::HostedBypassElsewhere {
+                    device_id: device_id.clone(),
+                });
             }
             // No budget charge, unlike the stamped write above: a bypass lands
             // on the next drain and waits in no queue, so there is no pending
@@ -4725,26 +4806,30 @@ fn map_command(
             device_id,
             assignments,
         } => {
-            let device = registry.devices.get(device_id).ok_or_else(|| {
-                format!("set-device-mod-assignments: unknown device '{device_id}'")
-            })?;
+            let device =
+                registry
+                    .devices
+                    .get(device_id)
+                    .ok_or_else(|| GraphRefusal::UnknownDevice {
+                        command: "set-device-mod-assignments",
+                        device_id: device_id.clone(),
+                    })?;
             if device.strip_id != *track_id {
-                return Err(format!(
-                    "set-device-mod-assignments: device '{device_id}' is not on strip \
-                     '{track_id}'"
-                ));
+                return Err(GraphRefusal::DeviceNotOnStrip {
+                    command: "set-device-mod-assignments",
+                    device_id: device_id.clone(),
+                    strip_id: track_id.clone(),
+                });
             }
             if device.builtin() != Some(BuiltinEffectType::Bacteria) {
-                return Err(format!(
-                    "set-device-mod-assignments: device '{device_id}' is not a bacteria device"
-                ));
+                return Err(GraphRefusal::NotBacteria {
+                    device_id: device_id.clone(),
+                });
             }
             if assignments.len() > MAX_BACTERIA_MOD_ASSIGNMENTS {
-                return Err(format!(
-                    "set-device-mod-assignments: batch carries {} rows, past the ceiling of \
-                     {MAX_BACTERIA_MOD_ASSIGNMENTS}",
-                    assignments.len()
-                ));
+                return Err(GraphRefusal::ModAssignmentRowCeiling {
+                    rows: assignments.len(),
+                });
             }
             // Validated whole before any op is pushed, the same law
             // `map_device`'s construction-time check enforces: an out-of-range
@@ -4756,8 +4841,9 @@ fn map_command(
                 if let Some(reason) =
                     bacteria_mod_assignment_route_refusal(row.source_id, row.target_param)
                 {
-                    return Err(format!(
-                        "set-device-mod-assignments: device '{device_id}' {reason}"
+                    return Err(GraphRefusal::with_command(
+                        "set-device-mod-assignments",
+                        GraphRefusal::for_device(device_id, reason),
                     ));
                 }
             }
@@ -4766,7 +4852,9 @@ fn map_command(
             // before any row is resolved.
             budgets
                 .charge_immediate_device_parameters(assignments.len() + 1)
-                .map_err(|reason| format!("set-device-mod-assignments: {reason}"))?;
+                .map_err(|reason| {
+                    GraphRefusal::with_command("set-device-mod-assignments", reason)
+                })?;
             let effect_id = device.native_effect_id;
             ops.push(GraphCommand::ClearModAssignments(effect_id));
             for row in assignments {
@@ -4788,11 +4876,11 @@ fn map_command(
             velocity,
         } => {
             if midi_to_key(*note).is_none() {
-                return Err("Grand Boule preview note must be in A0 through C8".into());
+                return Err(GraphRefusal::PreviewNoteOutOfRange);
             }
             let normalized_velocity = *velocity as f32;
             if !(0.0..=1.0).contains(velocity) || normalized_velocity == 0.0 {
-                return Err("Grand Boule preview velocity must be in (0, 1]".into());
+                return Err(GraphRefusal::PreviewVelocityOutOfRange);
             }
             ops.push(GraphCommand::SendGrandBoulePreview(
                 target.resolve(registry)?,
@@ -4824,11 +4912,7 @@ fn map_command(
             // answer a batch past it with a refusal counted on the audio
             // thread. Exactly the capacity fits; one more does not.
             if notes.len() > MIDI_NOTE_STORE_CAPACITY {
-                return Err(format!(
-                    "schedule-midi: batch carries {} notes, past the store's ceiling of \
-                     {MIDI_NOTE_STORE_CAPACITY}",
-                    notes.len()
-                ));
+                return Err(GraphRefusal::MidiNoteCeiling { notes: notes.len() });
             }
             let mut mapped = notes
                 .iter()
@@ -4860,9 +4944,9 @@ fn map_command(
         } => {
             let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "send-midi-note")?;
             if *velocity > MAX_MIDI_VELOCITY {
-                return Err(format!(
-                    "send-midi-note: velocity {velocity} is outside 0..={MAX_MIDI_VELOCITY}"
-                ));
+                return Err(GraphRefusal::VelocityOutOfRange {
+                    velocity: *velocity,
+                });
             }
             check_note_address(*note, *channel, "send-midi-note")?;
             // No budget charge: budgets bound the parameter stamps a queue
@@ -4902,14 +4986,12 @@ fn map_command(
             let plugin_id =
                 midi_device_plugin_id(registry, track_id, device_id, "send-midi-control")?;
             if *controller > MAX_MIDI_CONTROLLER {
-                return Err(format!(
-                    "send-midi-control: controller {controller} is outside 0..={MAX_MIDI_CONTROLLER}"
-                ));
+                return Err(GraphRefusal::ControllerOutOfRange {
+                    controller: *controller,
+                });
             }
             if *value > MAX_MIDI_CONTROLLER_VALUE {
-                return Err(format!(
-                    "send-midi-control: value {value} is outside 0..={MAX_MIDI_CONTROLLER_VALUE}"
-                ));
+                return Err(GraphRefusal::ControllerValueOutOfRange { value: *value });
             }
             check_channel_address(*channel, "send-midi-control")?;
             // No budget charge, for the reason `send-midi-note` states and one
@@ -4942,9 +5024,10 @@ fn map_command(
                 None => u64::MAX,
             };
             if from_frame > to_frame {
-                return Err(format!(
-                    "clear-midi: window {from_frame}..{to_frame} ends before it starts"
-                ));
+                return Err(GraphRefusal::ClearWindowInverted {
+                    from_frame,
+                    to_frame,
+                });
             }
             ops.push(GraphCommand::ClearMidiNotes {
                 plugin_id,
@@ -5008,7 +5091,7 @@ fn map_command(
             // fader carries the same +6 dB of make-up gain a strip's does.
             let stored = finite(*gain, "set-master-gain gain")?;
             if stored < 0.0 {
-                return Err("set-master-gain: gain is negative".to_string());
+                return Err(GraphRefusal::MasterGainNegative);
             }
             let value = (stored as f32).min(fader_max_gain());
             // No `touch`: the command names no strip, so there is no realized
@@ -5034,28 +5117,28 @@ fn map_parameter_write(
     sample_rate: f32,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
-) -> Result<(), String> {
+) -> Result<(), GraphRefusal> {
     let strip_for = |strip_id: &String| {
         registry
             .strips
             .get(strip_id)
-            .ok_or_else(|| format!("write-parameter: unknown strip '{strip_id}'"))
+            .ok_or_else(|| GraphRefusal::UnknownStrip {
+                command: "write-parameter",
+                strip_id: strip_id.clone(),
+            })
     };
 
     // The two gates are strip flags natively, not ramped parameters: only a
     // step is representable, and it lands at the block boundary the command
     // reaches. Anything else must refuse rather than glide a gate.
-    let gate_step = |what: &str| -> Result<bool, String> {
+    let gate_step = |gate: &'static str| -> Result<bool, GraphRefusal> {
         match write {
-            ParameterWritePayload::Step { value, .. } => Ok(finite(*value, what)? < 0.5),
-            _ => Err(format!(
-                "write-parameter: gate-write-shape-unsupported — {what} accepts only a step \
-                 natively"
-            )),
+            ParameterWritePayload::Step { value, .. } => Ok(finite(*value, gate)? < 0.5),
+            _ => Err(GraphRefusal::GateWriteShapeUnsupported { gate }),
         }
     };
 
-    type ValueLaw = fn(f64, &StripEntry) -> Result<f32, String>;
+    type ValueLaw = fn(f64, &StripEntry) -> Result<f32, ValueRefusal>;
     let (strip, automation_target, value_law): (&StripEntry, AutomationTarget, ValueLaw) =
         match target {
             StripParameterTargetPayload::TrackMuteGate { track_id } => {
@@ -5103,14 +5186,20 @@ fn map_parameter_write(
             StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
                 let strip = strip_for(track_id)?;
                 if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
-                    return Err(format!(
-                        "write-parameter: '{track_id}' has no send to '{bus_id}'"
-                    ));
+                    return Err(GraphRefusal::NoSend {
+                        command: "write-parameter",
+                        track_id: track_id.clone(),
+                        bus_id: bus_id.clone(),
+                    });
                 }
-                let destination = registry
-                    .strips
-                    .get(bus_id)
-                    .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
+                let destination =
+                    registry
+                        .strips
+                        .get(bus_id)
+                        .ok_or_else(|| GraphRefusal::UnknownBus {
+                            command: "write-parameter",
+                            bus_id: bus_id.clone(),
+                        })?;
                 let target = match strip.kind {
                     StripKind::Track => AutomationTarget::TrackSendLevel {
                         track_id: strip.native_id,
@@ -5134,7 +5223,7 @@ fn map_parameter_write(
             let start = seconds_to_frames(*start_time, sample_rate, "ramp-to startTime")?;
             let land = seconds_to_frames(*land_time, sample_rate, "ramp-to landTime")?;
             if land < start {
-                return Err("write-parameter: ramp-to lands before it starts".to_string());
+                return Err(GraphRefusal::RampLandsBeforeStart);
             }
             AutomationWrite::Replace(AutomationEvent {
                 at_frame: start,
@@ -5144,12 +5233,7 @@ fn map_parameter_write(
             })
         }
         ParameterWritePayload::Smoothed { .. } => {
-            return Err(
-                "write-parameter: smoothed-write-unsupported — the native automation queue has \
-                 no exponential-approach primitive (Web Audio setTargetAtTime); refused rather \
-                 than landed as a different shape"
-                    .to_string(),
-            )
+            return Err(GraphRefusal::SmoothedWriteUnsupported)
         }
         ParameterWritePayload::Step { value, time } => AutomationWrite::Append(AutomationEvent {
             at_frame: seconds_to_frames(*time, sample_rate, "step time")?,
@@ -5163,7 +5247,7 @@ fn map_parameter_write(
     };
 
     push_automation(automation_target, automation_write, budgets, ops)
-        .map_err(|reason| format!("write-parameter: {reason}"))
+        .map_err(|reason| GraphRefusal::with_command("write-parameter", reason))
 }
 
 fn map_schedule_clip(
@@ -5173,35 +5257,37 @@ fn map_schedule_clip(
     timeline_lease: Option<&str>,
     sample_rate: f32,
     ops: &mut Vec<GraphCommand>,
-) -> Result<(), String> {
+) -> Result<(), GraphRefusal> {
+    let unknown_strip = || GraphRefusal::UnknownStrip {
+        command: "schedule-clip",
+        strip_id: playback.track_id.clone(),
+    };
     let strip = registry
         .strips
         .get(&playback.track_id)
-        .ok_or_else(|| format!("schedule-clip: unknown strip '{}'", playback.track_id))?;
+        .ok_or_else(unknown_strip)?;
     if strip.kind == StripKind::Bus {
-        return Err(format!(
-            "schedule-clip: strip '{}' is a bus; only a track plays clips",
-            playback.track_id
-        ));
+        return Err(GraphRefusal::ClipOnBus {
+            track_id: playback.track_id.clone(),
+        });
     }
     if strip.clip_count == MAX_TRACK_CLIPS {
-        return Err(format!(
-            "schedule-clip: track '{}' holds its maximum of {MAX_TRACK_CLIPS} clips",
-            playback.track_id
-        ));
+        return Err(GraphRefusal::ClipCapacity {
+            track_id: playback.track_id.clone(),
+        });
     }
     let native_track_id = strip.native_id;
-    let sample = samples.resolve_timeline_sample(
-        timeline_lease,
-        &playback.source.source_id,
-        playback.source.material_version.as_deref(),
-    )?;
+    let sample = samples
+        .resolve_timeline_sample(
+            timeline_lease,
+            &playback.source.source_id,
+            playback.source.material_version.as_deref(),
+        )
+        .map_err(GraphRefusal::TimelineMaterial)?;
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
     if rate <= 0.0 {
-        return Err(format!(
-            "schedule-clip: playbackRate {rate} refused — a clip rate must be positive"
-        ));
+        return Err(GraphRefusal::ClipRateNotPositive { rate });
     }
     // `ClipPlayback::playback_rate` is varispeed, not pitch-preserving stretch
     // (crates/daw-engine/src/timeline.rs, `ClipPlayback` doc): rate and pitch
@@ -5212,12 +5298,12 @@ fn map_schedule_clip(
     // multiplication into one field the engine already knows how to play.
     let effective_rate = rate * f64::from(sample.sample_rate / sample_rate);
     if !effective_rate.is_finite() || effective_rate <= 0.0 {
-        return Err("schedule-clip: the clip's effective rate is not renderable".to_string());
+        return Err(GraphRefusal::ClipRateUnrenderable);
     }
 
     let gain = finite(playback.gain, "clip gain")?;
     if gain < 0.0 {
-        return Err("schedule-clip: clip gain is negative".to_string());
+        return Err(GraphRefusal::ClipGainNegative);
     }
 
     let start_frame = seconds_to_frames(playback.start_time, sample_rate, "clip startTime")?;
@@ -5250,7 +5336,7 @@ fn map_schedule_clip(
         }) => {
             let at = seconds_to_frames(*at, sample_rate, "fadeIn reachesFullAt")?;
             if at < start_frame {
-                return Err("schedule-clip: fadeIn reaches full before the clip starts".to_string());
+                return Err(GraphRefusal::FadeInBeforeStart);
             }
             Some(frames_u32(at - start_frame, "fadeIn span")?)
         }
@@ -5272,7 +5358,7 @@ fn map_schedule_clip(
             // widest that split can be, so absorb it and keep refusing anything
             // farther out, which is a fade genuinely outside its sound.
             if at > clip_end_frame.saturating_add(1) {
-                return Err("schedule-clip: fadeOut begins after the clip ends".to_string());
+                return Err(GraphRefusal::FadeOutAfterEnd);
             }
             Some(frames_u32(
                 clip_end_frame.saturating_sub(at),
@@ -5309,7 +5395,7 @@ fn map_schedule_clip(
     registry
         .strips
         .get_mut(&playback.track_id)
-        .ok_or_else(|| format!("schedule-clip: unknown strip '{}'", playback.track_id))?
+        .ok_or_else(unknown_strip)?
         .clip_count += 1;
     Ok(())
 }
@@ -5329,32 +5415,23 @@ fn map_schedule_clip(
 /// exactly that. And a payload above the offline render ceiling refuses
 /// because registration copies the material, so the ceiling on allocation is
 /// the same one the renderer holds, applied per channel.
-pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
+pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, GraphRefusal> {
     let bytes_per_frame = 4 * channels;
     if !pcm_len.is_multiple_of(bytes_per_frame) {
-        return Err(format!(
-            "PCM byte length {pcm_len} is not a whole number of {channels}-channel f32 frames"
-        ));
+        return Err(GraphRefusal::PcmNotWholeFrames { pcm_len, channels });
     }
     let frames = pcm_len / bytes_per_frame;
     if frames == 0 {
-        return Err(
-            "PCM payload holds zero frames — a clip scheduled from it could only render \
-             silence, which the contract forbids for a real source"
-                .to_string(),
-        );
+        return Err(GraphRefusal::PcmEmpty);
     }
     if frames > MAX_OFFLINE_RENDER_FRAMES {
-        return Err(format!(
-            "PCM payload holds {frames} frames per channel, above the \
-             {MAX_OFFLINE_RENDER_FRAMES}-frame ceiling"
-        ));
+        return Err(GraphRefusal::PcmTooLong { frames });
     }
     Ok(frames)
 }
 
-fn parse_batch(batch: Value) -> Result<GraphBatchPayload, String> {
-    serde_json::from_value(batch).map_err(|error| format!("Invalid graph command batch: {error}"))
+fn parse_batch(batch: Value) -> Result<GraphBatchPayload, GraphRefusal> {
+    serde_json::from_value(batch).map_err(GraphRefusal::InvalidBatch)
 }
 
 /// What a live batch's correlation claims — the runtime revision it was
@@ -5374,25 +5451,26 @@ struct CorrelationClaims {
 /// is nothing to validate. A correlation that cannot be read is a refusal
 /// too, never a silent skip — a claim this side cannot check must not pass
 /// as checked.
-fn validate_correlation(correlation: Option<&Value>, runtime_revision: u64) -> Result<(), String> {
+fn validate_correlation(
+    correlation: Option<&Value>,
+    runtime_revision: u64,
+) -> Result<(), GraphRefusal> {
     let Some(correlation) = correlation else {
         return Ok(());
     };
-    let claims: CorrelationClaims = serde_json::from_value(correlation.clone())
-        .map_err(|error| format!("correlation-malformed: {error}"))?;
+    let claims: CorrelationClaims =
+        serde_json::from_value(correlation.clone()).map_err(GraphRefusal::CorrelationMalformed)?;
     if claims.app_revision != runtime_revision {
-        return Err(format!(
-            "correlation-stale — the batch was built against live-engine revision {}, but \
-             the engine is at revision {runtime_revision}; the batch lost its race and \
-             refuses before the graph changes",
-            claims.app_revision
-        ));
+        return Err(GraphRefusal::CorrelationStale {
+            app_revision: claims.app_revision,
+            runtime_revision,
+        });
     }
     Ok(())
 }
 
-fn result_json(payload: &GraphApplyResultPayload) -> Result<Value, String> {
-    serde_json::to_value(payload).map_err(|error| format!("Result did not serialize: {error}"))
+fn result_json(payload: &GraphApplyResultPayload) -> Result<Value, GraphRefusal> {
+    serde_json::to_value(payload).map_err(GraphRefusal::ResultNotSerialized)
 }
 
 /// Register decoded timeline material under the app's stable source id.
@@ -5430,7 +5508,7 @@ pub async fn register_timeline_sample(
             ))
         }
     };
-    let frames = pcm_frame_count(pcm.len(), channels)?;
+    let frames = pcm_frame_count(pcm.len(), channels).map_err(|refusal| refusal.to_string())?;
     let mut samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
     samples.admit_legacy_material(&sample_id, pcm.len())?;
     let bytes_per_frame = 4 * channels;
@@ -5522,18 +5600,28 @@ pub async fn apply_graph_commands(
     state: &AppState,
     crumbs: &CrumbsState,
 ) -> Result<Value, String> {
+    apply_live_batch(batch, state, crumbs)
+        .await
+        .map_err(|refusal| refusal.to_string())
+}
+
+async fn apply_live_batch(
+    batch: Value,
+    state: &AppState,
+    crumbs: &CrumbsState,
+) -> Result<Value, GraphRefusal> {
     // A batch that does not even deserialize is a refusal, not a transport
     // error: the contract's one failure vocabulary is the `rejected` result,
     // and a thrown error beside it would be a second vocabulary for the same
     // fact. The serde message is the reason.
     let batch = match parse_batch(batch) {
         Ok(batch) => batch,
-        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason.to_string())),
     };
 
     let native_inputs = match native_grinder_inputs(&batch) {
         Ok(inputs) => inputs,
-        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason.to_string())),
     };
     if !native_inputs.is_empty() && batch.schema_version != 2 {
         return result_json(&GraphApplyResultPayload::rejected(
@@ -5576,7 +5664,7 @@ pub async fn apply_graph_commands(
     let mut registry_guard = state
         .graph
         .lock()
-        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("graph registry", &error))?;
 
     // The race check runs before the lazy bootstrap: a batch that already
     // lost refuses before the graph changes, and a batch that cannot apply
@@ -5584,23 +5672,28 @@ pub async fn apply_graph_commands(
     if let Err(reason) =
         validate_correlation(batch.correlation.as_ref(), registry_guard.runtime_revision)
     {
-        return result_json(&GraphApplyResultPayload::rejected(reason));
+        return result_json(&GraphApplyResultPayload::rejected(reason.to_string()));
     }
 
     let mut preview_count = 0;
     for target in grand_boule_preview_addresses(&batch.commands) {
         if let Err(reason) = target.resolve(&registry_guard) {
-            return result_json(&GraphApplyResultPayload::rejected(reason));
+            return result_json(&GraphApplyResultPayload::rejected(reason.to_string()));
         }
         preview_count += 1;
     }
     let preview_only = preview_count > 0 && preview_count == batch.commands.len();
 
     {
-        let samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+        let samples = state
+            .timeline_samples
+            .lock()
+            .map_err(|error| GraphRefusal::Poisoned {
+                cause: error.to_string(),
+            })?;
         if let Some(lease) = &batch.timeline_lease {
             if let Err(reason) = samples.timeline_lease_owner(lease) {
-                return result_json(&GraphApplyResultPayload::rejected(reason));
+                return result_json(&GraphApplyResultPayload::rejected(reason.to_string()));
             }
         } else if samples.residency.fenced() {
             return result_json(&GraphApplyResultPayload::rejected(
@@ -5612,7 +5705,10 @@ pub async fn apply_graph_commands(
     if preview_count == 0 {
         if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
             return match failure {
-                SlotStartFailure::Lock(error) => Err(format!("Failed to lock engine: {error}")),
+                SlotStartFailure::Lock(cause) => Err(GraphRefusal::LockPoisoned {
+                    lock: "engine",
+                    cause,
+                }),
                 SlotStartFailure::Start(error) => result_json(&GraphApplyResultPayload::rejected(
                     format!("engine-not-running: {error}"),
                 )),
@@ -5637,7 +5733,7 @@ pub async fn apply_graph_commands(
         let engine_guard = state
             .engine
             .lock()
-            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("engine", &error))?;
         if let Some(engine) = engine_guard.as_ref() {
             if !engine.is_rendering() {
                 let fault = match engine.output_stream_fault() {
@@ -5692,7 +5788,7 @@ pub async fn apply_graph_commands(
     let dormant_plugin_count = state
         .plugins
         .lock()
-        .map_err(|error| format!("Failed to lock plugins: {error}"))?
+        .map_err(|error| GraphRefusal::lock_poisoned("plugins", &error))?
         .len();
 
     // The instances a device may bind to, read here because this is the last
@@ -5706,7 +5802,7 @@ pub async fn apply_graph_commands(
         state
             .engine_plugins
             .lock()
-            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
+            .map_err(|error| GraphRefusal::lock_poisoned("engine plugins", &error))?
             .iter()
             .map(|(instance_id, instance)| {
                 (
@@ -5731,7 +5827,7 @@ pub async fn apply_graph_commands(
     let mut engine_guard = state
         .engine
         .lock()
-        .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("engine", &error))?;
     // The engine is installed above and only the quit cascade releases one, so
     // an empty slot here means the process is shutting down under this batch.
     let Some(engine) = engine_guard.as_mut() else {
@@ -5756,11 +5852,11 @@ pub async fn apply_graph_commands(
     let samples = state
         .timeline_samples
         .lock()
-        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("timeline samples", &error))?;
     let mut levain_banks = state
         .levain_banks
         .lock()
-        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("levain banks", &error))?;
 
     let engine_id = engine.instance_id();
     let sample_rate = engine.sample_rate();
@@ -5787,7 +5883,7 @@ pub async fn apply_graph_commands(
         // instance is engine-owned from here on whatever this batch answers.
         Err(reason) => {
             return result_json(
-                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                &GraphApplyResultPayload::rejected(reason.to_string()).reporting_attached_crumbs(
                     attached_crumbs.named_with(&attached_crumbs_this_batch),
                 ),
             )
@@ -5822,7 +5918,9 @@ pub async fn apply_graph_commands(
                 sample_rate,
             ) {
                 Ok(receipts) => receipts,
-                Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+                Err(reason) => {
+                    return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+                }
             },
         };
         #[cfg(test)]
@@ -5834,11 +5932,11 @@ pub async fn apply_graph_commands(
         registry_guard = state
             .graph
             .lock()
-            .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("graph registry", &error))?;
         engine_guard = state
             .engine
             .lock()
-            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("engine", &error))?;
         receipts
     };
     let Some(engine) = engine_guard.as_mut() else {
@@ -5861,7 +5959,7 @@ pub async fn apply_graph_commands(
     for target in grand_boule_preview_addresses(&batch.commands) {
         if let Err(reason) = target.resolve(&working) {
             return result_json(
-                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                &GraphApplyResultPayload::rejected(reason.to_string()).reporting_attached_crumbs(
                     attached_crumbs.named_with(&attached_crumbs_this_batch),
                 ),
             );
@@ -5871,27 +5969,30 @@ pub async fn apply_graph_commands(
     let mut samples = state
         .timeline_samples
         .lock()
-        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("timeline samples", &error))?;
 
     // An incoming owner can retire without moving the committed graph's
     // revision or fence. Keep this exact lease alive through publication and
     // residency recording, rather than trusting only the generation check.
     let material_admission = if let Some(lease) = &batch.timeline_lease {
-        samples.timeline_lease_owner(lease).and_then(|owner| {
-            if working.timeline_owner.as_deref() == Some(owner) {
-                Ok(())
-            } else {
-                Err("Timeline graph belongs to another project owner".into())
-            }
-        })
+        samples
+            .timeline_lease_owner(lease)
+            .map_err(GraphRefusal::TimelineMaterial)
+            .and_then(|owner| {
+                if working.timeline_owner.as_deref() == Some(owner) {
+                    Ok(())
+                } else {
+                    Err(GraphRefusal::TimelineOwnedElsewhere)
+                }
+            })
     } else if samples.residency.fenced() {
-        Err("Graph batch requires a timeline material lease".into())
+        Err(GraphRefusal::TimelineLeaseRequired)
     } else {
         Ok(())
     };
     if let Err(reason) = material_admission {
         return result_json(
-            &GraphApplyResultPayload::rejected(reason)
+            &GraphApplyResultPayload::rejected(reason.to_string())
                 .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
         );
     }
@@ -6135,7 +6236,7 @@ fn replay_prior_commands(
     sample_rate: f32,
     hosted: &mut HostedInstances,
     levain_banks: &mut LevainBankStore,
-) -> Result<(), String> {
+) -> Result<(), MappingFault> {
     while !commands.is_empty() {
         let rest = if commands.len() > MAX_BATCH_COMMANDS {
             commands.split_off(MAX_BATCH_COMMANDS)
@@ -6158,7 +6259,9 @@ fn replay_prior_commands(
             &mut AttachedCrumbs::default(),
             levain_banks,
         )
-        .map_err(|reason| MappingFault::PriorNoLongerMaps { reason }.to_string())?;
+        .map_err(|reason| MappingFault::PriorNoLongerMaps {
+            reason: Box::new(reason),
+        })?;
         commands = rest;
     }
     Ok(())
@@ -6221,9 +6324,20 @@ pub async fn map_graph_batch(
     };
     let prior_commands: Vec<GraphCommandPayload> = serde_json::from_value(prior)
         .map_err(|error| format!("Invalid prior command sequence: {error}"))?;
+    map_probe_batch(prior_commands, batch, sample_rate, session_key, state)
+        .map_err(|refusal| refusal.to_string())
+}
+
+fn map_probe_batch(
+    prior_commands: Vec<GraphCommandPayload>,
+    batch: Value,
+    sample_rate: f64,
+    session_key: Option<MappingSessionKeyPayload>,
+    state: &AppState,
+) -> Result<Value, GraphRefusal> {
     let batch = match parse_batch(batch) {
         Ok(batch) => batch,
-        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason.to_string())),
     };
     if grand_boule_preview_addresses(&prior_commands)
         .chain(grand_boule_preview_addresses(&batch.commands))
@@ -6251,7 +6365,7 @@ pub async fn map_graph_batch(
             let mut sessions = state
                 .graph_mapping_sessions
                 .lock()
-                .map_err(|error| format!("Failed to lock mapping sessions: {error}"))?;
+                .map_err(|error| GraphRefusal::lock_poisoned("mapping sessions", &error))?;
             let resumed = sessions.resume(&key.session_id, key.revision);
             if resumed.is_none() && key.revision != prior_len {
                 // Not held, and the prior cannot re-establish it: replaying
@@ -6261,7 +6375,7 @@ pub async fn map_graph_batch(
                     session_id: key.session_id.clone(),
                     revision: key.revision,
                 }
-                .to_string());
+                .into());
             }
             resumed
         }
@@ -6281,11 +6395,11 @@ pub async fn map_graph_batch(
     let samples = state
         .timeline_samples
         .lock()
-        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("timeline samples", &error))?;
     let mut levain_banks = state
         .levain_banks
         .lock()
-        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+        .map_err(|error| GraphRefusal::lock_poisoned("levain banks", &error))?;
 
     let mut registry = match resumed {
         Some(registry) => registry,
@@ -6330,7 +6444,7 @@ pub async fn map_graph_batch(
         let mut sessions = state
             .graph_mapping_sessions
             .lock()
-            .map_err(|error| format!("Failed to lock mapping sessions: {error}"))?;
+            .map_err(|error| GraphRefusal::lock_poisoned("mapping sessions", &error))?;
         match (&mapped, pre_batch) {
             (Ok(_), _) => sessions.store(&key.session_id, registry, base_revision + batch_len),
             (Err(_), Some(pre_batch)) => sessions.store(&key.session_id, pre_batch, base_revision),
@@ -6341,7 +6455,7 @@ pub async fn map_graph_batch(
                 correlation,
                 mapped.reports,
             )),
-            Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason)),
+            Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason.to_string())),
         };
     }
 
@@ -6350,7 +6464,7 @@ pub async fn map_graph_batch(
             correlation,
             mapped.reports,
         )),
-        Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason)),
+        Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason.to_string())),
     }
 }
 
@@ -6372,15 +6486,15 @@ fn map_offline_batch(
     levain_banks: &mut LevainBankStore,
     sample_rate: f32,
     hosted: &mut HostedInstances,
-) -> Result<Vec<GraphCommand>, String> {
+) -> Result<Vec<GraphCommand>, GraphRefusal> {
     if grand_boule_preview_addresses(&batch.commands)
         .next()
         .is_some()
     {
-        return Err(GRAND_BOULE_PREVIEW_LIVE_ONLY.into());
+        return Err(GraphRefusal::PreviewLiveOnly);
     }
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
-        return Err("Imported native NAM is live-only; offline NAM remains gated".into());
+        return Err(GraphRefusal::NamOfflineGated);
     }
     let mut registry = GraphRegistry::default();
     Ok(map_batch(
@@ -6409,7 +6523,7 @@ fn render_offline_ops(
     sample_rate: f32,
     plugins: Option<&OfflinePluginInstances<'_>>,
     render: &InFlightRender<'_>,
-) -> Result<(Vec<f32>, Vec<f32>), String> {
+) -> Result<(Vec<f32>, Vec<f32>), GraphRefusal> {
     let plugin_commands = plugins.map_or(0, OfflinePluginInstances::command_count);
     // A render is playback by construction: the transport rolls from frame 0
     // unless the batch itself says otherwise (its own set-transport commands
@@ -6420,16 +6534,16 @@ fn render_offline_ops(
             is_playing: true,
             song_pos_seconds: 0.0,
         })
-        .map_err(|error| error.to_string())?;
+        .map_err(GraphRefusal::OfflineCommand)?;
     // Ahead of the batch: its splices name these ids, and the graph refuses an
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
         plugins
             .register(&mut renderer)
-            .map_err(|error| error.to_string())?;
+            .map_err(GraphRefusal::OfflineRender)?;
     }
     for op in ops {
-        renderer.push(op).map_err(|error| error.to_string())?;
+        renderer.push(op).map_err(GraphRefusal::OfflineCommand)?;
     }
 
     // This thread processes every block, so it is every instance's audio
@@ -6439,12 +6553,12 @@ fn render_offline_ops(
     let rendered = renderer.render_controlled(frames, render.control());
     drop(leaving_processing);
     let Ok(rendered) = rendered else {
-        return Err(render.cancelled().to_string());
+        return Err(GraphRefusal::OfflineRender(render.cancelled()));
     };
     if let Some(plugins) = plugins {
         plugins
             .ensure_every_block_processed()
-            .map_err(|error| error.to_string())?;
+            .map_err(GraphRefusal::OfflineRender)?;
     }
 
     // Belt and braces under refuse-don't-drop: `map_batch` refuses anything
@@ -6461,10 +6575,7 @@ fn render_offline_ops(
         ..diagnostics
     };
     if refusals != TimelineRtDiagnosticsSnapshot::default() {
-        return Err(format!(
-            "offline-render-dropped-commands: the engine refused part of the batch after \
-             admission ({diagnostics:?}); the output is not the batch and is discarded"
-        ));
+        return Err(GraphRefusal::OfflineDroppedCommands { diagnostics });
     }
     Ok(rendered)
 }
@@ -6487,14 +6598,16 @@ fn render_offline_batch(
         levain_banks,
         sample_rate,
         &mut HostedInstances::default(),
-    )?;
+    )
+    .map_err(|refusal| refusal.to_string())?;
     let (left, right) = render_offline_ops(
         ops,
         frames,
         sample_rate,
         None,
         &InFlightRender::uncancellable(),
-    )?;
+    )
+    .map_err(|refusal| refusal.to_string())?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
         interleaved.push(left[index]);
@@ -6549,7 +6662,7 @@ pub(crate) async fn render_graph_offline_with(
     state: &AppState,
     seams: &OfflinePluginSeams,
 ) -> Result<Vec<u8>, String> {
-    let batch = parse_batch(batch)?;
+    let batch = parse_batch(batch).map_err(|refusal| refusal.to_string())?;
     if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
         return Err(format!(
             "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
@@ -6569,7 +6682,7 @@ pub(crate) async fn render_graph_offline_with(
     }
 
     let render = InFlightRender::begin(state, render_id).map_err(|error| error.to_string())?;
-    let mut hosted = HostedInstances::offline(state)?;
+    let mut hosted = HostedInstances::offline(state).map_err(|refusal| refusal.to_string())?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
     // into its clip command there and every sampler's instance is built there,
@@ -6594,7 +6707,8 @@ pub(crate) async fn render_graph_offline_with(
             &mut levain_banks,
             sample_rate as f32,
             &mut hosted,
-        )?
+        )
+        .map_err(|refusal| refusal.to_string())?
     };
     // A render cancelled before it starts builds no plugin instance.
     if render.control().is_cancelled() {
@@ -6608,7 +6722,8 @@ pub(crate) async fn render_graph_offline_with(
         .await
         .map_err(|error| error.to_string())?;
     let (left, right) =
-        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
+        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)
+            .map_err(|refusal| refusal.to_string())?;
     drop(plugins);
 
     // Interleave straight into the byte payload; the render's planar pair is
@@ -6998,6 +7113,7 @@ mod tests {
             &mut AttachedCrumbs::default(),
             &mut LevainBankStore::default(),
         )
+        .map_err(|refusal| refusal.to_string())
     }
 
     /// Map a batch against a given Crumbs lookup — device id → the engine
@@ -7019,6 +7135,7 @@ mod tests {
             &mut AttachedCrumbs::new(attached_crumbs.clone()),
             &mut LevainBankStore::default(),
         )
+        .map_err(|refusal| refusal.to_string())
     }
 
     fn sample_pool() -> TimelineSamplePool {
@@ -7138,7 +7255,13 @@ mod tests {
         let error = seconds_to_frames(1e30, 48_000.0, "x")
             .expect_err("seconds whose frame count cannot be held must refuse");
 
-        assert_eq!(error, "x exceeds the frame range");
+        assert_eq!(
+            error,
+            ValueRefusal::ExceedsFrameRange {
+                what: "x".to_string()
+            }
+        );
+        assert_eq!(error.to_string(), "x exceeds the frame range");
     }
 
     /// The refusal starts exactly where the cast stops being faithful — 2^64 —
@@ -7163,7 +7286,7 @@ mod tests {
         let refused = seconds_to_frames(18_446_744_073_709_551_616.0, 1.0, "x")
             .expect_err("2^64 frames is one past the representable range");
 
-        assert_eq!(refused, "x exceeds the frame range");
+        assert_eq!(refused.to_string(), "x exceeds the frame range");
 
         let frames = seconds_to_frames(18_446_744_073_709_549_568.0, 1.0, "x")
             .expect("the largest f64 below 2^64 is representable in u64");
@@ -9862,7 +9985,10 @@ mod tests {
             48_000.0,
             &mut hosted,
         );
-        assert!(matches!(refused, Err(reason) if reason == "Grand Boule preview is live-only"));
+        assert!(matches!(refused, Err(GraphRefusal::PreviewLiveOnly)));
+        assert!(
+            matches!(refused, Err(reason) if reason.to_string() == "Grand Boule preview is live-only")
+        );
         assert!(command_rx.pop().is_err());
 
         let empty = AppState::default();
@@ -10729,12 +10855,15 @@ mod tests {
     /// no validation, exactly what the uncorrelated offline bounce sends.
     #[test]
     fn a_current_correlation_passes_and_an_absent_one_skips_validation() {
-        assert_eq!(validate_correlation(None, 7), Ok(()));
+        assert!(validate_correlation(None, 7).is_ok());
         let current = json!({ "appRevision": 7, "projectRevision": "p1" });
-        assert_eq!(validate_correlation(Some(&current), 7), Ok(()));
+        assert!(validate_correlation(Some(&current), 7).is_ok());
         let stale = json!({ "appRevision": 7, "projectRevision": "p1" });
         let reason = validate_correlation(Some(&stale), 8).expect_err("a passed-by claim refuses");
-        assert!(reason.contains("correlation-stale"), "got: {reason}");
+        assert!(
+            reason.to_string().contains("correlation-stale"),
+            "got: {reason}"
+        );
     }
 
     /// Debt 4's report wire: `map_graph_batch` answers the incoming batch's
@@ -11117,7 +11246,7 @@ mod tests {
         assert!(pcm_frame_count(MAX_OFFLINE_RENDER_FRAMES * 8, 2).is_ok());
         let over = pcm_frame_count((MAX_OFFLINE_RENDER_FRAMES + 1) * 4, 1)
             .expect_err("a frame past the ceiling must refuse");
-        assert!(over.contains("ceiling"), "got: {over}");
+        assert!(over.to_string().contains("ceiling"), "got: {over}");
         assert!(pcm_frame_count((MAX_OFFLINE_RENDER_FRAMES + 1) * 8, 2).is_err());
     }
 
@@ -14936,14 +15065,15 @@ mod tests {
         batch: &GraphBatchPayload,
         state: &AppState,
     ) -> Result<(Vec<GraphCommand>, Vec<BoundHostedInstance>), String> {
-        let mut hosted = HostedInstances::offline(state)?;
+        let mut hosted = HostedInstances::offline(state).map_err(|refusal| refusal.to_string())?;
         let ops = map_offline_batch(
             batch,
             &sample_pool(),
             &mut LevainBankStore::default(),
             48_000.0,
             &mut hosted,
-        )?;
+        )
+        .map_err(|refusal| refusal.to_string())?;
         Ok((ops, hosted.bound()))
     }
 
@@ -15690,6 +15820,7 @@ mod tests {
         ) else {
             panic!("a store holding no bank must refuse the device");
         };
+        let refusal = refusal.to_string();
         assert!(
             refusal.contains("d-levain") && refusal.contains(BANK),
             "the refusal must name the device and the bank it could not find, got: {refusal}"
@@ -16017,7 +16148,7 @@ mod tests {
     /// buffer would be truncated into a different word.
     #[test]
     fn a_fermenter_parameter_key_shaped_unlike_a_name_refuses_naming_the_device_and_key() {
-        let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
+        let too_long = "a".repeat(daw_engine::timeline::BUILTIN_PARAM_NAME_CAPACITY + 1);
 
         for key in ["cut-off", too_long.as_str()] {
             let refusal = map_unbound_batch(
@@ -17320,8 +17451,12 @@ mod tests {
         .expect_err("a non-finite mod-assignment amount must refuse");
 
         assert!(
-            refusal.contains("finite"),
-            "the refusal must name the reason, got: {refusal}"
+            matches!(refusal, GraphRefusal::ForDevice { ref device_id, .. } if device_id == "d-bac"),
+            "the refusal must name the device, got: {refusal:?}"
+        );
+        assert_eq!(
+            refusal.to_string(),
+            "device 'd-bac' modAssignments amount is not a finite number"
         );
     }
 

@@ -10,7 +10,6 @@ import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
 import { getWebLlmRequiredFeatures } from './getWebLlmRequiredFeatures';
 import { readWebGpuAdapterFeatures } from './readWebGpuAdapterFeatures';
 import { retireWebLlmEngine } from './retireWebLlmEngine';
-import { unloadWebLlmEngine } from './unloadWebLlmEngine';
 import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
 import { getWebLlmArtifactManifestModel } from './webLlmArtifactManifest';
 
@@ -25,7 +24,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             if (!MODEL_RELEASE_ADMISSION.webLlm) {
                 return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
             }
-            const targetModel = modelId ?? engineState.activeModelId;
+            // A request that names no model is answered by the loaded engine and leaves a switch
+            // in flight alone. With nothing installed it joins the attempt loading.
+            const inFlightModel = engineState.initSignal?.aborted ? null : engineState.initModelId;
+            const unnamedTarget = engineState.engine ? null : inFlightModel;
+            const targetModel = modelId ?? unnamedTarget ?? engineState.activeModelId;
             let targetArtifactSetDigest: string;
             try {
                 targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
@@ -45,16 +48,20 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 targetModel === engineState.activeModelId &&
                 targetArtifactSetDigest === engineState.activeArtifactSetDigest
             ) {
+                // Naming the loaded model withdraws a switch still in flight for another one.
+                if (modelId !== undefined && engineState.initPromise) {
+                    engineState.initController?.abort(
+                        new DOMException('WebLLM initialization superseded', 'AbortError')
+                    );
+                }
+                // A refused load leaves its error showing, and an aborted one its loading text, while this one
+                // answers; a switch still loading owns the status.
+                const shown = llmStatusStore.value?.state;
+                const switchLoading = engineState.initPromise !== null && !engineState.initSignal?.aborted;
+                if (shown === 'error' || (shown === 'loading' && !switchLoading)) {
+                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                }
                 return Promise.resolve(engineState.engine);
-            }
-
-            // If switching models, unload the current one first
-            if (
-                engineState.engine &&
-                (targetModel !== engineState.activeModelId ||
-                    targetArtifactSetDigest !== engineState.activeArtifactSetDigest)
-            ) {
-                unloadWebLlmEngine();
             }
 
             if (
@@ -71,7 +78,8 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
 
             if (engineState.initPromise) {
                 engineState.initController?.abort(new DOMException('WebLLM initialization superseded', 'AbortError'));
-                if (engineState.worker) {
+                // While the previous engine is installed, the worker is its, not the attempt's.
+                if (engineState.worker && !engineState.engine) {
                     engineState.worker.terminate();
                     engineState.worker = null;
                 }
@@ -89,7 +97,6 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 );
             }
 
-            engineState.activeModelId = targetModel;
             const attemptId = crypto.randomUUID();
             const attemptController = new AbortController();
             const attemptSignal = attemptController.signal;
@@ -119,6 +126,12 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
                         attemptSignal.throwIfAborted();
 
+                        // Two models must not hold GPU memory at once, so the previous engine goes here,
+                        // just before the new worker. Adapter and admission refusals, and an abort before
+                        // this point, keep it; a creation failure after it leaves no engine, and
+                        // activeModelId keeps its previous target: the last loaded model, or the default
+                        // when none has loaded.
+                        retirePreviousWebLlmEngine();
                         const worker = new Worker(new URL('../../workers/llmWorker.ts', import.meta.url), {
                             type: 'module',
                         });
@@ -190,6 +203,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 }
 
                 engineState.engine = initializedEngine;
+                engineState.activeModelId = targetModel;
                 engineState.activeArtifactSetDigest = admission.artifactSetDigest;
                 installWorkerRetirement(workerForAttempt(attemptWorker), initializedEngine);
                 if (!attemptSignal.aborted) {
@@ -223,8 +237,6 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 engineState.initController = null;
                 engineState.initSignal = null;
                 engineState.initWaiterCount = 0;
-                engineState.engine = null;
-                engineState.activeArtifactSetDigest = null;
             });
 
             return waitForWebLlmAttempt({
@@ -234,6 +246,13 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             });
         }
 );
+
+function retirePreviousWebLlmEngine(): void {
+    const previous = engineState.engine;
+    if (previous) {
+        retireWebLlmEngine(previous, new DOMException('WebLLM engine unloaded', 'AbortError'));
+    }
+}
 
 function describeLoadFailure(error: unknown): LlmEngineStatus {
     if (isLocalModelRefusalError(error)) {

@@ -40,6 +40,7 @@ import {
     type GuardFailureReceipt,
 } from './prContract.ts';
 import { captureProcessGroupOfPid, captureProcessGroupSnapshot } from './processSnapshot.ts';
+import { isVerifiedE2eServerStop } from './resourceGuardE2eStop.ts';
 import {
     boundedProcessTreeObservation,
     createProcessTreeState,
@@ -134,6 +135,9 @@ export type GuardedCommandResult = {
     retainedStorage?: { path: string; reason: string };
     // The census that left storage retained as a leak, recorded in the guard-failure receipt.
     census?: string;
+    // Set when the process-tree exit or the storage release could not be proved, whatever the
+    // reported reason: an operator interrupt keeps reason 'signal' but must not discharge a proof.
+    cleanupUnproved?: true;
     // Set when disk pressure refused the command before it started and the guard storage was
     // released: nothing ran and nothing leaked, so the refusal is not a lane-stopping guard failure.
     // Held storage is a leak and keeps its receipt.
@@ -238,6 +242,10 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         return arg;
     }
     return undefined;
+}
+
+function isCleanExit(result: GuardedCommandResult): boolean {
+    return result.code === 0 && result.reason === undefined;
 }
 
 type ExplicitRecoveryProof = {
@@ -2450,7 +2458,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         );
     }
     const tail = output.result();
-    return {
+    const guarded: GuardedCommandResult = {
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
@@ -2461,6 +2469,10 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         maxRssBytes,
         durationMs: Date.now() - startedAt,
     };
+    if (!storageRemoved || (child.pid !== undefined && !treeExitProved)) {
+        guarded.cleanupUnproved = true;
+    }
+    return guarded;
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {
@@ -3264,9 +3276,18 @@ export async function main(
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
-            const explicitProof = hasExplicitProof
-                ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
-                : undefined;
+            // A bare recovery of a recorded e2e server re-runs that server itself, so it is
+            // observed under a run token exactly like an explicit proof; a lint-target
+            // replacement keeps its own refusal in resolveRecoveryLintArgs.
+            const observesRecordedE2eServer =
+                !hasExplicitProof &&
+                input.lintTargetReplacements.length === 0 &&
+                receipt.command === 'node' &&
+                receipt.args[0] === 'scripts/e2eDevServer.ts';
+            const explicitProof =
+                hasExplicitProof || observesRecordedE2eServer
+                    ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
+                    : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args
@@ -3321,7 +3342,7 @@ export async function main(
                     profile: resolvedProfile,
                     maxRssBytes:
                         input.maxRssBytes ??
-                        (explicitProof === undefined
+                        (!hasExplicitProof
                             ? receipt.maxRssBytes
                             : resolveDefaultMaxRssBytes({
                                   profile: resolvedProfile,
@@ -3346,7 +3367,7 @@ export async function main(
             }
             if (explicitProof !== undefined && observationResult !== undefined) {
                 const { observed, mismatch } = observationResult;
-                if (result.code === 0 && result.reason === undefined && !observed) {
+                if (isCleanExit(result) && !observed) {
                     emitGuardedResult(recoveryCommand, result, input.showOutput);
                     error(
                         `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped${mismatch === undefined ? '' : `: ${mismatch}`}`
@@ -3354,7 +3375,11 @@ export async function main(
                     return 1;
                 }
             }
-            if (result.code === 0 && result.reason === undefined) {
+            const stoppedVerifiedE2eServer =
+                receipt.command === 'node' &&
+                observationResult !== undefined &&
+                isVerifiedE2eServerStop(result, observationResult);
+            if (isCleanExit(result) || stoppedVerifiedE2eServer) {
                 emitGuardedResult(recoveryCommand, result, input.showOutput);
                 const cleared = clearGuardFailureReceiptIfUnchanged(
                     lane.primaryRoot,
