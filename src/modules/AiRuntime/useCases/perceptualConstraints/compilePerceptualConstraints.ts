@@ -98,6 +98,8 @@ const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
 /** A kept term may stand behind a linking verb or "as": "keep the vocal sounding bright", "as dynamic". */
 const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|${AS})\s+)?`;
 const TERM_FOLLOWS = String.raw`(?:\s*,\s*(?:${TERM_JOINER}\s+)?|\s+${TERM_JOINER}\s+)`;
+/** A keep, stop or prevent, which names after "from" the move it prevents: "keep the mix from …". */
+const PREVENTING_VERB = String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})`;
 
 function nameVariants(name: string): string[] {
     const normalized = normalizeObjectText(name);
@@ -292,6 +294,7 @@ function readLowEndConstraints(
 
 type QualityPattern = {
     pattern: RegExp;
+    prevented: RegExp;
     continuation: RegExp;
     termPattern: RegExp;
     descriptorOf: (term: string) => string | undefined;
@@ -322,6 +325,11 @@ function readQualityPattern(): QualityPattern {
         String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
         'dgiu'
     );
+    // The words of the move stand between "from" and the quality: "from getting muddy", "from losing the punch".
+    const prevented = new RegExp(
+        String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}(?:\s+${QUALITY_OBJECT_WORD}){1,2}?\s+${TERM_LEAD}(?!${DIRECTION})(?<term>${term})${more}`,
+        'dgiu'
+    );
     const continuation = new RegExp(
         String.raw`${AND_JOIN}(?<object>${OBJECT_MEMBER})\s+${TERM_LEAD}(?!${DIRECTION})(?<term>${term})${more}${CLAUSE_END}`,
         'dyiu'
@@ -330,11 +338,15 @@ function readQualityPattern(): QualityPattern {
         const normalized = normalizePhrase(candidate.replaceAll('-', ' '));
         return entries.find((entry) => entry.term.replaceAll('-', ' ') === normalized)?.descriptor;
     };
-    return { pattern, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
+    return { pattern, prevented, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
 }
 
 function unsupportedQuality(clause: string, reason: string): UnsupportedPerceptualConstraint {
     return { constraintId: 'unsupported', clause, reason };
+}
+
+function unmeasuredQuality(clause: string, term: string): UnsupportedPerceptualConstraint {
+    return unsupportedQuality(clause, `No measurement the application takes shows that “${term}” holds.`);
 }
 
 function readIntimacy(clause: string, object: string, context: ProjectContext, reading: PerceptualConstraintReading) {
@@ -372,11 +384,15 @@ function readQualityPart(match: RegExpExecArray, prompt: string, termPattern: Re
 /** A kept move's object, read from the prompt, or the object of the part it continues. */
 type MovePart = { start: number; object: string | null; constraintIds: MeasuredConstraintId[] };
 
-type KeepPart = { kind: 'quality'; part: QualityPart } | { kind: 'move'; part: MovePart };
+/** A kept quality, a quality a keep, stop or prevent names as the move it prevents, or a kept move. */
+type KeepPart =
+    | { kind: 'quality'; part: QualityPart }
+    | { kind: 'prevented-quality'; part: QualityPart }
+    | { kind: 'move'; part: MovePart };
 
 /** "keep the mix from getting louder": a keep, stop or prevent naming the move it prevents. */
 const KEPT_MOVE = new RegExp(
-    String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
     'dgiu'
 );
 /** A later move under the same keep, its object its own or the one before: "and the drums from getting louder", ", from getting brighter". */
@@ -456,26 +472,33 @@ function pushQualityTerm(
         readIntimacy(clause, part.object, context, reading);
         return;
     }
-    reading.unsupported.push(
-        unsupportedQuality(clause, `No measurement the application takes shows that “${term}” holds.`)
-    );
+    reading.unsupported.push(unmeasuredQuality(clause, term));
 }
 
 /**
- * Each keep's opening part in reading order: a kept quality, or a kept move where no quality opens at
- * the same keep, so "keep the vocal bright and the mix from getting wider" opens on the quality and
- * never reads "the vocal bright and the mix" as a kept move's object.
+ * Each keep's opening part in reading order: a kept quality, a prevented quality, or a kept move where
+ * no quality opens at the same keep, so "keep the vocal bright and the mix from getting wider" opens on
+ * the quality and never reads "the vocal bright and the mix" as a kept move's object.
  */
-function readKeepOpenings({ unread, prompt, termPattern }: KeepText, qualityOpening: RegExp): ReadKeepPart[] {
-    const qualities = Array.from(unread.matchAll(qualityOpening), (match) => ({
+function readKeepOpenings(
+    { unread, prompt, termPattern }: KeepText,
+    { pattern, prevented }: Pick<QualityPattern, 'pattern' | 'prevented'>
+): ReadKeepPart[] {
+    const qualities = Array.from(unread.matchAll(pattern), (match) => ({
         part: { kind: 'quality', part: readQualityPart(match, prompt, termPattern) } satisfies KeepPart,
+        end: match.index + match[0].length,
+    }));
+    const preventedQualities = Array.from(unread.matchAll(prevented), (match) => ({
+        part: { kind: 'prevented-quality', part: readQualityPart(match, prompt, termPattern) } satisfies KeepPart,
         end: match.index + match[0].length,
     }));
     const moves = Array.from(unread.matchAll(KEPT_MOVE), (match) => ({
         part: readMovePart(match, prompt, undefined),
         end: match.index + match[0].length,
     }));
-    return [...qualities, ...moves].toSorted((left, right) => left.part.part.start - right.part.part.start);
+    return [...qualities, ...preventedQualities, ...moves].toSorted(
+        (left, right) => left.part.part.start - right.part.part.start
+    );
 }
 
 function pushKeepPart(
@@ -486,6 +509,11 @@ function pushKeepPart(
 ) {
     if (keep.kind === 'move') {
         pushMeasuredHolds(reader, clause, { ...keep.part, unreadable: null });
+        return;
+    }
+    // A measured hold verifies a quality kept, never one prevented, so a prevented quality is never measured.
+    if (keep.kind === 'prevented-quality') {
+        reader.reading.unsupported.push(...keep.part.terms.map((term) => unmeasuredQuality(clause, term)));
         return;
     }
     const { part } = keep;
@@ -506,10 +534,10 @@ function pushKeepPart(
  */
 function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
     const { prompt } = reader;
-    const { pattern, continuation, termPattern, descriptorOf } = readQualityPattern();
+    const { pattern, prevented, continuation, termPattern, descriptorOf } = readQualityPattern();
     const text: KeepText = { unread, prompt, continuation, termPattern };
     const spans: ConsumedSpan[] = [];
-    for (const opening of readKeepOpenings(text, pattern)) {
+    for (const opening of readKeepOpenings(text, { pattern, prevented })) {
         const start = opening.part.part.start;
         if (spans.some((span) => start < span.end)) {
             continue;

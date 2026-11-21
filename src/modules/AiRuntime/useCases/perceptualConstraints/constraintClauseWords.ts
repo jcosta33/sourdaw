@@ -200,7 +200,10 @@ const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${P
  * changing the tempo keep the vocal bright") permits nothing.
  */
 export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)`;
-/** The one leading words a move clause names its move through: "sound louder", "getting any wider". */
+/**
+ * The one leading words a move clause names its move through: "sound louder", "getting any wider". The
+ * linking or becoming verb is never part of the object, so "sound louder" is a louder clause.
+ */
 export const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
 /**

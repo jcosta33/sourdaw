@@ -1165,6 +1165,10 @@ function unread(clause: string, reason: string): UnsupportedPerceptualConstraint
     return { constraintId: 'unsupported', clause, reason };
 }
 
+function unmeasured(term: string): string {
+    return `No measurement the application takes shows that “${term}” holds.`;
+}
+
 const COMPARATIVE_REASON =
     'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
 const NET_REASON =
@@ -1991,6 +1995,39 @@ describe('reading only governed protections and whole object names', () => {
         [
             'keep the mix from getting wider',
             [measured('stereo-width-not-widened-v1', 'keep the mix from getting wider', MIX)],
+            [],
+        ],
+        // a keep, stop or prevent naming a quality no measurement shows as the move it prevents is
+        // recorded unsupported, while one naming a measured direction still bounds it
+        ['keep the bass from getting muddy', [], [unread('keep the bass from getting muddy', unmeasured('muddy'))]],
+        ['keep it from losing the punch', [], [unread('keep it from losing the punch', unmeasured('punch'))]],
+        ['keep the vocal from sounding thin', [], [unread('keep the vocal from sounding thin', unmeasured('thin'))]],
+        [
+            'make the vocal warmer but keep it from losing the lo-fi sound',
+            [],
+            [unread('keep it from losing the lo-fi', unmeasured('lo-fi'))],
+        ],
+        ['stop the bass from getting muddy', [], [unread('stop the bass from getting muddy', unmeasured('muddy'))]],
+        [
+            'prevent the vocal from sounding thin',
+            [],
+            [unread('prevent the vocal from sounding thin', unmeasured('thin'))],
+        ],
+        // a held quality verifies one kept, never one prevented
+        [
+            'keep the vocal from sounding bright',
+            [],
+            [unread('keep the vocal from sounding bright', unmeasured('bright'))],
+        ],
+        ["don't keep the bass from getting muddy", [], []],
+        [
+            'keep the mix from getting louder',
+            [measured('loudness-not-raised-v1', 'keep the mix from getting louder', MIX)],
+            [],
+        ],
+        [
+            'stop the vocal from getting brighter',
+            [measured('brightness-not-raised-v1', 'stop the vocal from getting brighter', onTracks('vocal'))],
             [],
         ],
         ['keep the stereo image', [measured('stereo-width-held-v1', 'keep the stereo image', MIX)], []],

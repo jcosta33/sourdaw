@@ -55,7 +55,7 @@ export type HoldPart = {
 export type HoldClause = { clause: string; start: number; end: number; parts: HoldPart[] };
 
 const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
-/** "sound louder" is a louder clause: the linking or becoming verb is never part of the object. */
+/** The state a held noun may be kept in after it: "keep the level the same". */
 const HOLD_SUFFIX = String.raw`(?:\s+${HELD_STATE})?`;
 const QUALIFIED = String.raw`(?:${HELD_NOUN_QUALIFIER}\s+)?`;
 /** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
