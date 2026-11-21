@@ -37,7 +37,6 @@ import { preparedStemImportResources } from '../agentReference/registerPreparedS
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget } from '../agentWorkBudget';
-import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
@@ -57,6 +56,8 @@ import { measureAdoptedRecipeProposal } from './measureAdoptedRecipeProposal';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
 import { readAdoptedRecipeMetricState } from './readAdoptedRecipeMetricState';
+import { recordApplicationToolOnlyPlan } from './recordApplicationToolOnlyPlan';
+import { recordFailedToolLoopEvidence } from './recordFailedToolLoopEvidence';
 import { revertThreadCommit } from './revertThreadCommit';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 import { refinedProposalSupersession } from './supersedeRefinedProposal';
@@ -121,43 +122,6 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
     } catch {
         // The user-visible failure remains authoritative when its recovery record cannot persist.
     }
-}
-
-function recordApplicationToolOnlyPlan(input: {
-    runId: string;
-    revision: string;
-    receipts: readonly ApplicationToolReceipt[];
-}): void {
-    if (input.receipts.length === 0) {
-        return;
-    }
-    agentRunLifecycle.recordApplicationToolEvidence({
-        runId: input.runId,
-        summary: input.receipts
-            .map((receipt) => `${receipt.toolName} (${receipt.callId}) ${receipt.status}: ${receipt.summary}`)
-            .join('\n'),
-        applicationToolReceipts: [...input.receipts],
-        revision: input.revision,
-        scope: {
-            targetIds: [],
-            targetRanges: [],
-            protectedTargetIds: [],
-            protectedRanges: [],
-        },
-        grants: {
-            allowedOperationPrefixes: [],
-            create: false,
-            delete: false,
-            routing: false,
-            tempo: false,
-            master: false,
-            file: false,
-            audioUpload: false,
-            remoteGeneration: false,
-            autoCommit: false,
-        },
-        budgets: { limits: {}, consumed: {} },
-    });
 }
 
 function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissionResult {
@@ -915,13 +879,7 @@ async function mapPromptFailure(input: {
     error: unknown;
 }): Promise<void> {
     const { request, admission, aborter, state, error } = input;
-    if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
-        recordApplicationToolOnlyPlan({
-            runId: admission.runId,
-            revision: error.receipts.find((receipt) => receipt.revision !== null)?.revision ?? captureProjectRevision(),
-            receipts: error.receipts,
-        });
-    }
+    recordFailedToolLoopEvidence(admission.runId, error);
     const reason = error instanceof Error ? error.message : String(error);
     const configurationChanged = isAiRuntimeConfigurationChangedError(error);
     const proposalInvalidated = error instanceof AiProposalInvalidatedError;
