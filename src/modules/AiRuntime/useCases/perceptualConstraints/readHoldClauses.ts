@@ -79,11 +79,12 @@ const NOUN_IN_LIST = new RegExp(
     'dgiu'
 );
 /**
- * Where a direction clause ends: at a clause end, or where a later object with its own direction joins
- * it, so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
- * running on inside the clause.
+ * Where a direction clause ends: at a clause end, where a later object with its own direction joins it,
+ * so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
+ * running on inside the clause, or before a keep, which opens a clause of its own ("don't make the mix
+ * wider keep the vocal bright").
  */
-const DIRECTION_CLAUSE_END = String.raw`(?:${CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION}))`;
+const DIRECTION_CLAUSE_END = String.raw`(?:${CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION})|(?=\s+${KEEP_VERBS}\b))`;
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${DIRECTION_CLAUSE_END}`;
 /**
  * A later object under the same negation, joined as every list is: "don't make the mix louder, and the

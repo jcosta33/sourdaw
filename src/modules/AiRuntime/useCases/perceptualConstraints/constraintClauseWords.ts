@@ -373,6 +373,8 @@ const RELEASE_LEAD = words([
 ]);
 /** A negation or permission governing the verb right after it: "don't", "you don't have to", "nobody needs to". */
 const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+`;
+/** A verb's gerund, the "-ing" form a release or a continued move goes through: "keeping", "making". */
+const GERUND = String.raw`\p{L}+ing${WORD_END}`;
 /** A release lead no negation or permission governs: "stop", never the "stop" of "don't stop". */
 const UNREFUSED_RELEASE = String.raw`(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}`;
 /**
@@ -381,7 +383,7 @@ const UNREFUSED_RELEASE = String.raw`(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}
  * its own. This is a lookahead holding a lookbehind: the verb ahead is a gerund and the release stands
  * right before it.
  */
-const RELEASED_GERUND = String.raw`(?<=${UNREFUSED_RELEASE}\s+)\p{L}+ing${WORD_END}`;
+const RELEASED_GERUND = String.raw`(?<=${UNREFUSED_RELEASE}\s+)${GERUND}`;
 /**
  * A governing negation no release gives up, directly or through an intent: a release before the
  * negation gives up the "not" it leads to, so "stop trying to not keep the vocal bright" keeps it.
@@ -593,10 +595,12 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN
 
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
- * making the drums wider", "keep the vocal getting brighter". It asks for more of the move, and never
- * reaches past a separator into the next clause's move, nor takes a move a release or stop leads to,
- * which opens a clause of its own ("keep the vocal bright stop turning it down").
+ * making the drums wider", "keep the vocal getting brighter". It asks for more of the move through a
+ * gerund, and never reaches past a separator into the next clause's move. A finite verb after the
+ * keep's object ("keep the vocal bright make the drums louder") opens a clause of its own, and so does
+ * a gerund after a keep, release, stop or avoid the object would end in ("keep the vocal bright stop
+ * turning it down", "keep the vocal bright keep making it wider").
  */
-const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?<!\b(?:${RELEASE_LEAD}|${STOPPING_WORD})\s+)(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
+const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE}(?<!\b(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPING_WORD}|${AVOID_VERB})\s+))?(?=${GERUND})(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
 export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;

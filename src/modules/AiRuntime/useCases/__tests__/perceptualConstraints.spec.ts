@@ -2600,6 +2600,89 @@ describe('reading only governed protections and whole object names', () => {
             [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
             [],
         ],
+        // a finite verb after a kept quality opens a clause of its own; only a gerund continues the keep's move
+        [
+            'keep the vocal bright make the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright& make the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright now make the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright make the bass 3 dB louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright get the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright let the drums be louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright avoid making the mix wider',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright keep making it wider',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['keep the mix wide make the vocal brighter', [measured('stereo-width-held-v1', 'keep the mix wide', MIX)], []],
+        [
+            'keep the vocal dynamic make the drums louder',
+            [measured('dynamics-held-v1', 'keep the vocal dynamic', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the drums punchy make the bass louder',
+            [],
+            [unread('keep the drums punchy', 'No measurement the application takes shows that “punchy” holds.')],
+        ],
+        // a keep after a direction opens a clause of its own
+        [
+            "don't make the mix wider keep the vocal brighter",
+            [
+                measured('stereo-width-not-widened-v1', "don't make the mix wider", MIX),
+                measured('brightness-held-v1', 'keep the vocal brighter', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            "keep the vocal bright keep making the mix brighter but don't make it wider",
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [unread("don't make it wider", '“it” names no single scope: the request names a track or role before it.')],
+        ],
+        // a spaced ampersand continues a kept term or a kept quality's object as "and" does
+        [
+            'keep the vocal bright & the drums bright',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright & the drums bright', onTracks('vocal')),
+                measured('brightness-held-v1', 'keep the vocal bright & the drums bright', onTracks('drums')),
+            ],
+            [],
+        ],
+        [
+            'keep the vocal bright & dynamic',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright & dynamic', onTracks('vocal')),
+                measured('dynamics-held-v1', 'keep the vocal bright & dynamic', onTracks('vocal')),
+            ],
+            [],
+        ],
         // a release governing a negated keep gives the negation up, so the keep stands
         [
             'stop trying to not keep the vocal bright',
