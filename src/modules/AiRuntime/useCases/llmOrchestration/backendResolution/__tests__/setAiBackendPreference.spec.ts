@@ -44,6 +44,22 @@ describe('setAiBackendPreference', () => {
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 
+    it('keeps the engine ready when a preference the loaded backend satisfies stops an answering turn', () => {
+        const generating: LlmEngineStatus = { state: 'generating', backend: 'webllm', modelId: 'local-model' };
+        const ready: LlmEngineStatus = { state: 'ready', backend: 'webllm', modelId: 'local-model' };
+        llmStatusStore.set(ready);
+        const turn = answeringStatus.openTurn();
+        answeringStatus.publish(turn, generating);
+
+        setAiBackendPreference('webllm');
+
+        expect(llmStatusStore.value).toEqual(generating);
+
+        answeringStatus.settle(turn, answeringStatus.readSettled());
+
+        expect(llmStatusStore.value).toEqual(ready);
+    });
+
     it('cancels an engine load a turn is waiting on when the preference changes', () => {
         const generating: LlmEngineStatus = { state: 'generating', backend: 'webllm', modelId: 'local-model' };
         llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: 'local-model' });
@@ -108,11 +124,15 @@ describe('setAiBackendPreference', () => {
     it('aborts in-flight generation before switching backend', () => {
         const controller = new AbortController();
         setActiveAborter(controller);
-        llmStatusStore.set({ state: 'generating', backend: 'webllm', modelId: 'local-model' });
+        const turn = answeringStatus.openTurn();
+        answeringStatus.publish(turn, { state: 'generating', backend: 'webllm', modelId: 'local-model' });
 
         setAiBackendPreference('retired-local-provider');
 
         expect(controller.signal.aborted).toBe(true);
+
+        answeringStatus.settle(turn, answeringStatus.readSettled());
+
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 

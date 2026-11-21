@@ -31,7 +31,6 @@ export function setAiBackendPreference(preference: unknown): void {
     aiBackendPreferenceStore.set(normalizedPreference);
     if (
         activeBackendWithheld ||
-        answering ||
         (preferenceChanged && status?.state === 'loading') ||
         (status?.state === 'ready' && normalizedPreference !== 'auto' && status.backend !== normalizedPreference)
     ) {
