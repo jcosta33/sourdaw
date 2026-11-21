@@ -159,7 +159,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // 'src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts': removed (0),
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,
+        // Count provenance: measured 4 — the composer hands the engine's
+        // `updateDeviceParam` and `updateDevicePatch` members to the strip
+        // device unit (`updateDeviceParam: devices.updateDeviceParam`, two
+        // names per member). The writes themselves live in that unit.
+        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        // Count provenance: new file, measured 4 — the operation type's
+        // `updateDeviceParam`/`updateDevicePatch` signatures and their two
+        // implementations, each writing only the live strip's device node
+        // (`TrackNode.updateParam`/`updatePatch`). Engine-only, reaches no
+        // document.
+        'src/modules/AudioEngine/repositories/webAudioEngine/createStripDeviceOperations.ts': 4,
         // Count provenance: 0 in code, was 2 lexical — both were doc-comment
         // mentions of `updateDeviceParam` explaining why the offline scheduler
         // passes the quantiser as `quantiseEmit` rather than folding it into
@@ -380,11 +390,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Tuner/useCases/setDisplayMode.ts': 3,
     },
     'strip-add': {
-        // Count provenance: measured 4 — the identifier now lives only as the
-        // engine repository's internal primitive plus the test-harness override.
+        // Count provenance: measured 3 — the engine interface's member and the
+        // composer's adapter that hands it to the strip device unit
+        // (`addDeviceToStrip: ... devices.addDeviceToStrip({ ... })`).
         // Production add/reorder/preset paths compile a runtime graph delta and
         // no longer name `addDeviceToStrip`.
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 3,
+        // Count provenance: new file, measured 4 — the operation type's member,
+        // the internal primitive's declaration, and the returned member that
+        // calls it. Engine-internal; reached only through the engine.
+        'src/modules/AudioEngine/repositories/webAudioEngine/createStripDeviceOperations.ts': 4,
     },
     'direct-built-in': {
         // Count provenance: new file entry, measured 2 with `grep -o` — both
