@@ -72,14 +72,6 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
     return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
 }
 
-/** The last check before the commit write: the task is no longer current, or its track is about to record. */
-function isCommitUnauthorized(
-    task: FreezeTaskIdentity,
-    refusal: Omit<Parameters<typeof refuseFreezeCommitWhileRecording>[0], 'trackId'>
-): boolean {
-    return !isCurrentFreezeTask(task) || refuseFreezeCommitWhileRecording({ trackId: task.trackId, ...refusal });
-}
-
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
@@ -216,9 +208,17 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
+        // Decided before the source check: a running take's own provisional clip is in the track,
+        // so the check would report the track as edited instead of refusing the freeze.
+        if (refuseFreezeCommitWhileRecording(trackId)) {
+            return false;
+        }
         await assertFreezeSourceUnchanged(trackId, hash);
         // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
-        if (isCommitUnauthorized(taskIdentity, { pendingFreeze, settled: previousFreeze, scope })) {
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            return false;
+        }
+        if (refuseFreezeCommitWhileRecording(trackId)) {
             return false;
         }
 
@@ -281,6 +281,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         if (abortController.signal.aborted) {
             return restoreCancelledFreeze({ trackId, pendingFreeze, settled: previousFreeze, scope });
+        }
+
+        // A recording start landing during the source check ends it as an edit, not as a failure.
+        if (refuseFreezeCommitWhileRecording(trackId)) {
+            return false;
         }
 
         const errorMessage = error instanceof Error ? error.message : String(error);

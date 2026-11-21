@@ -1,28 +1,17 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
-import {
-    FREEZE_REFUSED_WHILE_RECORDING_MESSAGE,
-    isFreezeRefusedWhileRecording,
-} from '../../handlers/track/isFreezeRefusedWhileRecording';
-
-import { restoreCancelledFreeze } from './restoreCancelledFreeze';
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 /**
  * The commit-time twin of the action's start gate: a freeze that began with the transport idle keeps
  * rendering when Record is pressed, and committing then would freeze a track the start needs as its
- * take target. Settles the track back to its pre-freeze state and warns once. Returns whether it refused.
+ * take target. Warns once and returns whether it refused; the caller exits without a write, which
+ * aborts the action's transaction and returns the track to its committed state.
  */
-export function refuseFreezeCommitWhileRecording(input: {
-    trackId: string;
-    pendingFreeze: FreezeStateSnapshot | null;
-    settled: FreezeStateSnapshot;
-    scope: (write: () => void) => void;
-}): boolean {
-    if (!isFreezeRefusedWhileRecording(input.trackId)) {
+export function refuseFreezeCommitWhileRecording(trackId: string): boolean {
+    if (!isFreezeRefusedWhileRecording(trackId)) {
         return false;
     }
-    restoreCancelledFreeze(input);
     notifyUser(FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, 'warning');
     return true;
 }

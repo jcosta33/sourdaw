@@ -236,7 +236,19 @@ describe('a freeze whose track starts recording while it renders', () => {
         { name: 'a count-in', engage: () => recordingStartStore.set(true) },
         {
             name: 'a running take',
-            engage: () => transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true }),
+            engage: () => {
+                // The take's provisional clip lands on the track, so its source no longer hashes as rendered.
+                addClip({
+                    id: 'take-clip',
+                    trackId: TRACK_ID,
+                    startBeat: 4,
+                    endBeat: 8,
+                    name: 'Recording',
+                    type: 'audio',
+                });
+                flushAutomergeStorageWrites();
+                transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true });
+            },
         },
     ])('refuses the commit during $name and leaves the track unfrozen', async ({ engage }) => {
         armFixtureTrack();
