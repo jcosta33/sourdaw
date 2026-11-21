@@ -36,6 +36,7 @@ use crate::commands::midi::{MidiState, PushState};
 use crate::commands::provider_gateway::ProviderGatewayState;
 use crate::commands::speech::DictationState;
 use crate::events::EventSink;
+use crate::host::runtime_scope::RuntimeScopeRefusal;
 use crate::state::AppState;
 
 /// Every long-lived singleton the command bodies address.
@@ -61,10 +62,9 @@ pub struct NativeSingletons {
 }
 
 impl NativeSingletons {
-    pub fn new(events: Arc<dyn EventSink>) -> Result<Self, String> {
+    pub fn new(events: Arc<dyn EventSink>) -> Result<Self, RuntimeScopeRefusal> {
         Ok(Self {
-            app_state: AppState::with_persisted_plugin_registry()
-                .map_err(|error| error.to_string())?,
+            app_state: AppState::with_persisted_plugin_registry()?,
             collab: CollabState::default(),
             link: LinkState::default(),
             midi: MidiState::default(),
