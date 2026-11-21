@@ -28,8 +28,8 @@ use daw_plugin_host::scanner::{
     ScannedPlugin,
 };
 use daw_plugin_host::{
-    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode,
-    Vst3Wrapper,
+    signal_pending_editor_resize, AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime,
+    PluginError, ProcessMode, Vst3Wrapper,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -3317,6 +3317,7 @@ pub(crate) fn attach_dormant_plugins(
         ids
     };
 
+    let attempted = !dormant_instance_ids.is_empty();
     let mut attached = Vec::new();
     for instance_id in dormant_instance_ids {
         // Refusals cost the caller nothing, so only an instance actually taken
@@ -3333,6 +3334,13 @@ pub(crate) fn attach_dormant_plugins(
                 );
             }
         }
+    }
+
+    // An instance in transit between the two stores is in neither snapshot an
+    // editor visit takes, so an editor ask raised while it moved was taken by
+    // a tick that could not see it. The next tick visits it in its new place.
+    if attempted {
+        signal_pending_editor_resize();
     }
 
     Ok(attached)
@@ -13868,5 +13876,46 @@ mod tests {
             Ok(1)
         );
         assert!(locked_or_poisoned(&state.engine_plugins).contains_key("held"));
+    }
+
+    /// An editor visit snapshots each store in turn, so a tick that ran while
+    /// the attach moved an instance between them saw it in neither and spent
+    /// the hint. The attach wakes the next tick to look again.
+    #[test]
+    fn an_attach_wakes_the_editor_drain_for_the_instances_it_moved() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        locked_or_poisoned(&state.plugins).insert(
+            "moved".to_string(),
+            PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper)),
+        );
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        daw_plugin_host::take_pending_editor_resize_signal();
+
+        let attached = attach_dormant_plugins(&state, 1).map(|attached| attached.len());
+
+        assert_eq!(attached.map_err(|error| error.to_string()), Ok(1));
+        assert!(
+            daw_plugin_host::take_pending_editor_resize_signal(),
+            "the moved instance is visited again in its new store"
+        );
+    }
+
+    #[test]
+    fn an_attach_with_nothing_dormant_raises_no_editor_wake() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        daw_plugin_host::take_pending_editor_resize_signal();
+
+        let attached = attach_dormant_plugins(&state, 1).map(|attached| attached.len());
+
+        assert_eq!(attached.map_err(|error| error.to_string()), Ok(0));
+        assert!(!daw_plugin_host::take_pending_editor_resize_signal());
     }
 }
