@@ -243,13 +243,18 @@ impl ClapRunLoop {
         let Some(attached) = self.attached.get() else {
             return 0;
         };
-        let due = self.take_due_timers(now);
-        due.into_iter()
-            .filter(|id| self.has_timer(*id))
+        let mut delivered = 0;
+        for id in self.take_due_timers(now) {
+            if !self.has_timer(id) {
+                continue;
+            }
             // SAFETY: attached instances stay live while a pass can reach them
             // (`attach`'s contract), and a pass is the main thread.
-            .filter(|id| unsafe { attached.on_timer(*id) })
-            .count()
+            if unsafe { attached.on_timer(id) } {
+                delivered += 1;
+            }
+        }
+        delivered
     }
 
     fn take_due_timers(&self, now: Instant) -> Vec<clap_id> {
@@ -292,17 +297,19 @@ impl ClapRunLoop {
             return 0;
         }
 
-        watched
-            .iter()
-            .zip(&poll_fds)
-            .filter(|(descriptor, poll_fd)| self.deliverable(descriptor, poll_fd.revents))
-            .filter(|(descriptor, _)| self.still_registered(descriptor))
+        let mut delivered = 0;
+        for (descriptor, poll_fd) in watched.iter().zip(&poll_fds) {
+            if !self.deliverable(descriptor, poll_fd.revents) || !self.still_registered(descriptor)
+            {
+                continue;
+            }
             // SAFETY: attached instances stay live while a pass can reach them
             // (`attach`'s contract), and a pass is the main thread.
-            .filter(|(descriptor, poll_fd)| unsafe {
-                attached.on_fd(descriptor.fd, happened_flags(poll_fd.revents))
-            })
-            .count()
+            if unsafe { attached.on_fd(descriptor.fd, happened_flags(poll_fd.revents)) } {
+                delivered += 1;
+            }
+        }
+        delivered
     }
 
     /// Whether `revents` is something to deliver. A refused descriptor is
