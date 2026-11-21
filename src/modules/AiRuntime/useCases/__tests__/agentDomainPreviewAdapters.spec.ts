@@ -569,7 +569,6 @@ describe('agent domain preview adapters', () => {
 
         afterEach(() => {
             resetAiWorkflowCommandCheckpointRuntime();
-            commandBatchPreflightPort.setProvider(null);
             collaborationStore.set(structuredClone(baseCollaborationState));
         });
 

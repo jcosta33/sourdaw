@@ -74,9 +74,6 @@ export async function reconcileProjectCommandBatchEffects(
         } catch (error) {
             return { status: 'failed', reason: `Idempotency recovery workspace failed: ${failureReason(error)}` };
         }
-        if (!workspace) {
-            return { status: 'failed', reason: 'Idempotency recovery workspace is unavailable' };
-        }
         try {
             for (const [actionIndex, action] of actions.entries()) {
                 const command = input.envelope.commands[actionIndex]!;
@@ -129,7 +126,7 @@ export async function reconcileProjectCommandBatchEffects(
         }
     }
 
-    let currentWorkspace: ReturnType<typeof commandBatchPreviewPort.create> = null;
+    let currentWorkspace: ReturnType<typeof commandBatchPreviewPort.create> | null = null;
     try {
         const exactRetryEffects = receipt.pendingEffects.filter(
             (effect) => !runtimeRepairCommandIds.has(effect.commandId)
@@ -144,53 +141,44 @@ export async function reconcileProjectCommandBatchEffects(
                 }
             } else {
                 currentWorkspace = commandBatchPreviewPort.create(commandProjectRevisionPort.capture());
-                if (!currentWorkspace) {
-                    for (const effect of exactRetryEffects) {
-                        if (effect.kind !== 'runtime-graph') {
-                            return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
-                        }
-                        runtimeRepairCommandIds.add(effect.commandId);
+                for (const [actionIndex, action] of actions.entries()) {
+                    const command = input.envelope.commands[actionIndex]!;
+                    const pendingEffect = pendingEffectByCommandId.get(command.commandId);
+                    if (!pendingEffect || runtimeRepairCommandIds.has(command.commandId)) {
+                        continue;
                     }
-                } else {
-                    for (const [actionIndex, action] of actions.entries()) {
-                        const command = input.envelope.commands[actionIndex]!;
-                        const pendingEffect = pendingEffectByCommandId.get(command.commandId);
-                        if (!pendingEffect || runtimeRepairCommandIds.has(command.commandId)) {
-                            continue;
+                    const handler = getCommandHandler(action);
+                    if (
+                        !handler ||
+                        handler.executionKind === 'runtime' ||
+                        handler.previewExecution !== 'isolated-project'
+                    ) {
+                        if (pendingEffect.kind !== 'runtime-graph') {
+                            return {
+                                status: 'failed',
+                                reason: pendingEffectCannotRetryReason(pendingEffect.kind),
+                            };
                         }
-                        const handler = getCommandHandler(action);
-                        if (
-                            !handler ||
-                            handler.executionKind === 'runtime' ||
-                            handler.previewExecution !== 'isolated-project'
-                        ) {
-                            if (pendingEffect.kind !== 'runtime-graph') {
-                                return {
-                                    status: 'failed',
-                                    reason: pendingEffectCannotRetryReason(pendingEffect.kind),
-                                };
-                            }
-                            runtimeRepairCommandIds.add(command.commandId);
-                            continue;
+                        runtimeRepairCommandIds.add(command.commandId);
+                        continue;
+                    }
+                    const before = JSON.stringify(currentWorkspace.getProjectDocument());
+                    const result = currentWorkspace.scope(() =>
+                        handler.execute(action, {
+                            actions,
+                            actionIndex,
+                            executionMode: 'isolated-preview',
+                        })
+                    );
+                    const after = JSON.stringify(currentWorkspace.getProjectDocument());
+                    if (result?.status === 'conflict' || before !== after) {
+                        if (pendingEffect.kind !== 'runtime-graph') {
+                            return {
+                                status: 'failed',
+                                reason: pendingEffectCannotRetryReason(pendingEffect.kind),
+                            };
                         }
-                        const before = JSON.stringify(currentWorkspace.getProjectDocument());
-                        const result = currentWorkspace.scope(() =>
-                            handler.execute(action, {
-                                actions,
-                                actionIndex,
-                                executionMode: 'isolated-preview',
-                            })
-                        );
-                        const after = JSON.stringify(currentWorkspace.getProjectDocument());
-                        if (result?.status === 'conflict' || before !== after) {
-                            if (pendingEffect.kind !== 'runtime-graph') {
-                                return {
-                                    status: 'failed',
-                                    reason: pendingEffectCannotRetryReason(pendingEffect.kind),
-                                };
-                            }
-                            runtimeRepairCommandIds.add(command.commandId);
-                        }
+                        runtimeRepairCommandIds.add(command.commandId);
                     }
                 }
             }
@@ -220,14 +208,7 @@ export async function reconcileProjectCommandBatchEffects(
                     reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
                 };
             }
-            const repair = commandRuntimeRepairPort.repair();
-            if (!repair) {
-                return {
-                    status: 'failed',
-                    reason: 'Current-project runtime repair is unavailable; manual repair is required',
-                };
-            }
-            await repair;
+            await commandRuntimeRepairPort.repair();
         }
         for (const effect of receipt.pendingEffects) {
             if (runtimeRepairCommandIds.has(effect.commandId)) {

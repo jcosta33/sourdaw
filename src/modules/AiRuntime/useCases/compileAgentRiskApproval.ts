@@ -46,9 +46,6 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         ...new Set([...getVersionedCommandBatchDivergenceTargetIds(envelope), ...envelope.scope.protectedTargetIds]),
     ];
     const preflight = commandBatchPreflightPort.capture({ assetReferences: [], targetIds });
-    if (!preflight) {
-        throw new Error('Command target fingerprint capture is unavailable.');
-    }
     if (preflight.projectId !== envelope.projectId) {
         throw new Error(COMMAND_BATCH_PROJECT_IDENTITY_STALE_REASON);
     }

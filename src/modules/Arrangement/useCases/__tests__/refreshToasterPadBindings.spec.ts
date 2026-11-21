@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
     resolveToasterPadBinding: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    hasPadOutputHost: (await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()).hasPadOutputHost,
     setTrackOutput: mocks.setTrackOutput,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
 }));

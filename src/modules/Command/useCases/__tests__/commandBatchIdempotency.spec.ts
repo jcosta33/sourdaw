@@ -354,13 +354,7 @@ describe('command batch idempotency', () => {
         vi.unstubAllGlobals();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
-        commandBatchPreviewPort.setRecoveryProvider(null);
-        commandBatchIdempotencyPort.setRepository(null);
-        commandBatchExecutionAuthorityPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
         localStorage.removeItem(durableStorageKey);
         clearHandlerRegistry();
     });
@@ -399,37 +393,6 @@ describe('command batch idempotency', () => {
         await expect(
             getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
         ).resolves.toBe('unknown');
-    });
-
-    it('preserves a fresh approved batch revision while replay is probed without durable idempotency', async () => {
-        commandBatchIdempotencyPort.setRepository(null);
-        const batch = compileBatch();
-        const proposalRevision = commandProjectRevisionPort.capture();
-        const hydrateLedger = vi.spyOn(commandBatchIdempotencyStore, 'hydrate');
-
-        await expect(
-            getVersionedCommandBatchIdempotentReplay({
-                authority: batch.authority,
-                serialized: batch.serialized,
-            })
-        ).resolves.toBeNull();
-
-        expect(commandProjectRevisionPort.capture()).toBe(proposalRevision);
-        expect(mutationCount).toBe(0);
-        expect(hydrateLedger).not.toHaveBeenCalled();
-        expect(projectDocument).not.toHaveProperty('commandBatchIdempotency');
-
-        await expect(
-            executeVersionedCommandBatchEnvelope({
-                authority: batch.authority,
-                confirmed: true,
-                serialized: batch.serialized,
-            })
-        ).resolves.toMatchObject({ status: 'committed' });
-
-        expect(mutationCount).toBe(1);
-        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
-        expect(runtimeEffectCount).toBe(1);
     });
 
     it('returns the prior verified receipt for an exact retry without repeating project or runtime effects', async () => {
@@ -1262,7 +1225,6 @@ describe('command batch idempotency', () => {
     });
 
     it('returns the prior receipt after the durable repository is recreated', async () => {
-        commandBatchIdempotencyPort.setRepository(null);
         configureCommandBatchIdempotency({ canExecute: () => true });
         const batch = compileBatch();
 
@@ -1271,7 +1233,6 @@ describe('command batch idempotency', () => {
             confirmed: true,
             serialized: batch.serialized,
         });
-        commandBatchIdempotencyPort.setRepository(null);
         configureCommandBatchIdempotency({ canExecute: () => true });
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,

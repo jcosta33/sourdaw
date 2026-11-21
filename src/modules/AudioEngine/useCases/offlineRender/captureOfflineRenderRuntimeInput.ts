@@ -3,6 +3,7 @@ import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { audioBufferCache } from '../../stores/audioBufferCache';
+import { capturesNativeCalibration } from '../deviceCapabilities/capturesNativeCalibration';
 import { getDeviceLatencyMs } from '../latencyCompensation/compensation/getDeviceLatencyMs';
 import { readLoadedExternalInstanceIds } from '../livePlayback/readLoadedExternalInstanceIds';
 
@@ -29,7 +30,7 @@ export function captureOfflineRenderRuntimeInput(
     for (const track of tracks) {
         for (const device of track.devices) {
             deviceLatencyMs.set(device.id, getDeviceLatencyMs(device.id, device.type, sampleRate));
-            if (device.type === 'grand-boule') {
+            if (capturesNativeCalibration(device.type)) {
                 calibrationByDevice.set(
                     device.id,
                     structuredClone(

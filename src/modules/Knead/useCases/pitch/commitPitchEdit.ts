@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { updateClipInStore } from '#/modules/Arrangement/stores';
+import { commitPitchEdit as renderPitchEdit } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
@@ -8,7 +9,6 @@ import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '../../
 import { clearClipPitchAnalysis } from '../clearClipPitchAnalysis';
 
 import { findPitchEditClip } from './findPitchEditClip';
-import { getPitchEditDependencies } from './getPitchEditDependencies';
 
 export type CommitPitchEditInput = {
     clipId: string;
@@ -47,7 +47,7 @@ function pitchEditOutputAudioPath(clipId: string, sourceFileId: string): string 
 
 /**
  * Implementation behind the `commitPitchEdit` AppAction handler. Renders the manual
- * pitch shift through the injected AudioEngine dependency and swaps the clip's file
+ * pitch shift through the AudioEngine render and swaps the clip's file
  * pointer to the rendered output.
  *
  * Undo is handled by the action layer: `handleCommitPitchEdit.describe()` emits a
@@ -85,7 +85,6 @@ export async function commitPitchEdit({
     const scope = captureAutomergeStorageTransactionScope();
 
     try {
-        const { commitPitchEdit: renderPitchEdit } = getPitchEditDependencies();
         const { renderedAudioBufferId } = await renderPitchEdit({
             inputAudioPath: originalFileId,
             outputAudioPath,

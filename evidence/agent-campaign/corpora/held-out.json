@@ -3554,7 +3554,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5 “”; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "guitar-bright",
                     "targetName": "Guitar"
@@ -3602,7 +3602,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Slow autopan across a sustaining part” describes “wide” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The part sustains long enough for movement below 1 Hz to be perceived as image rather than as tremolo.”. Contraindications: “Skip on a rhythmic comping part, where movement fights the groove instead of supporting it.”; “Skip when the mix will be judged primarily in mono, where the pan collapses to level modulation.”. Authored parameter windows: “Rate” 0.3–1 “Hz”; “Depth” 0.3–0.6 “”; “Shape” 0–0 “”. Choose Propose this to prepare it for “Keys” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Slow autopan across a sustaining part” describes “wide” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The part sustains long enough for movement below 1 Hz to be perceived as image rather than as tremolo.”. Contraindications: “Skip on a rhythmic comping part, where movement fights the groove instead of supporting it.”; “Skip when the mix will be judged primarily in mono, where the pan collapses to level modulation.”. Authored parameter windows: “Rate” 0.3–1 “Hz”; “Depth” 0.3–0.6; “Shape” 0–0. Choose Propose this to prepare it for “Keys” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "keys-wide",
                     "targetName": "Keys"

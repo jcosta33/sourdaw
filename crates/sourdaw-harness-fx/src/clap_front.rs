@@ -1,5 +1,5 @@
-//! The CLAP front end: `clap_entry`, a factory with five classes over the
-//! same DSP, and the extensions the host's process-mode path reads.
+//! The CLAP front end: `clap_entry`, a factory with six classes, and the
+//! extensions the host's process-mode path reads.
 //!
 //! The second class differs only in its `clap.render` answer: it declares a
 //! hard real-time requirement, which is what a host building an offline
@@ -7,7 +7,9 @@
 //! ([`crate::FAILING_PROCESS_CALL`]) with `CLAP_PROCESS_ERROR`, and the fourth
 //! only in refusing `start_processing`: both are what a host must not let pass
 //! as processed audio. The fifth adds an embedded editor and a `Command`
-//! parameter that drives it (see [`crate::clap_gui`]).
+//! parameter that drives it (see [`crate::clap_gui`]). The sixth is an
+//! instrument: no audio input, a note input port, and the note-driven voice of
+//! [`crate::note_voice`] in place of the echo, with no latency and no tail.
 //!
 //! Every class records the smallest block `activate` promised and the smallest
 //! block `process` was then handed, so a host test can hold one to the other.
@@ -16,11 +18,12 @@ use crate::clap_gui::{GuiFixture, COMMAND_PARAM_ID, GUI};
 use crate::echo::{
     Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN, LATENCY_FRAMES,
 };
+use crate::note_voice::NoteVoice;
 use crate::state::CHUNK_BYTES;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_event_param_value, clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID,
-    CLAP_EVENT_PARAM_VALUE,
+    clap_event_note, clap_event_param_value, clap_input_events, clap_output_events,
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE,
 };
 use clap_sys::ext::audio_ports::{
     clap_audio_port_info, clap_plugin_audio_ports, CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS,
@@ -28,6 +31,9 @@ use clap_sys::ext::audio_ports::{
 };
 use clap_sys::ext::gui::CLAP_EXT_GUI;
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
+use clap_sys::ext::note_ports::{
+    clap_note_port_info, clap_plugin_note_ports, CLAP_EXT_NOTE_PORTS, CLAP_NOTE_DIALECT_CLAP,
+};
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
 };
@@ -64,6 +70,8 @@ pub const CLAP_PROCESS_ERROR_PLUGIN_ID: &str = "com.sourdaw.harness-fx.process-e
 pub const CLAP_START_REFUSED_PLUGIN_ID: &str = "com.sourdaw.harness-fx.start-refused";
 /// The class with an embedded editor.
 pub const CLAP_EDITOR_PLUGIN_ID: &str = "com.sourdaw.harness-fx.editor";
+/// The instrument class: it sounds the notes it is sent.
+pub const CLAP_INSTRUMENT_PLUGIN_ID: &str = "com.sourdaw.harness-fx.instrument";
 /// The `Gain` parameter's id, in both formats.
 pub const GAIN_PARAM_ID: u32 = 0;
 
@@ -72,14 +80,17 @@ static HARD_REALTIME_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.hard-realtime\0
 static PROCESS_ERROR_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.process-error\0";
 static START_REFUSED_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.start-refused\0";
 static EDITOR_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.editor\0";
+static INSTRUMENT_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.instrument\0";
 static PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx\0";
 static HARD_REALTIME_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Hard Realtime\0";
 static PROCESS_ERROR_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Process Error\0";
 static START_REFUSED_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Start Refused\0";
 static EDITOR_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Editor\0";
+static INSTRUMENT_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Instrument\0";
 static PLUGIN_VENDOR: &[u8] = b"Sourdaw\0";
 static PLUGIN_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 static FEATURE_AUDIO_EFFECT: &[u8] = b"audio-effect\0";
+static FEATURE_INSTRUMENT: &[u8] = b"instrument\0";
 static FEATURE_STEREO: &[u8] = b"stereo\0";
 
 /// A null-terminated static array of C string pointers, as
@@ -96,7 +107,17 @@ static FEATURES: StaticCStrList<3> = StaticCStrList([
     ptr::null(),
 ]);
 
-const fn descriptor(id: &'static [u8], name: &'static [u8]) -> clap_plugin_descriptor {
+static INSTRUMENT_FEATURES: StaticCStrList<3> = StaticCStrList([
+    FEATURE_INSTRUMENT.as_ptr() as *const c_char,
+    FEATURE_STEREO.as_ptr() as *const c_char,
+    ptr::null(),
+]);
+
+const fn descriptor(
+    id: &'static [u8],
+    name: &'static [u8],
+    features: &'static StaticCStrList<3>,
+) -> clap_plugin_descriptor {
     clap_plugin_descriptor {
         clap_version: CLAP_VERSION,
         id: id.as_ptr() as *const c_char,
@@ -107,18 +128,33 @@ const fn descriptor(id: &'static [u8], name: &'static [u8]) -> clap_plugin_descr
         support_url: ptr::null(),
         version: PLUGIN_VERSION.as_ptr() as *const c_char,
         description: ptr::null(),
-        features: FEATURES.0.as_ptr(),
+        features: features.0.as_ptr(),
     }
 }
 
-static DESCRIPTOR: clap_plugin_descriptor = descriptor(PLUGIN_ID, PLUGIN_NAME);
-static HARD_REALTIME_DESCRIPTOR: clap_plugin_descriptor =
-    descriptor(HARD_REALTIME_PLUGIN_ID, HARD_REALTIME_PLUGIN_NAME);
-static PROCESS_ERROR_DESCRIPTOR: clap_plugin_descriptor =
-    descriptor(PROCESS_ERROR_PLUGIN_ID, PROCESS_ERROR_PLUGIN_NAME);
-static START_REFUSED_DESCRIPTOR: clap_plugin_descriptor =
-    descriptor(START_REFUSED_PLUGIN_ID, START_REFUSED_PLUGIN_NAME);
-static EDITOR_DESCRIPTOR: clap_plugin_descriptor = descriptor(EDITOR_PLUGIN_ID, EDITOR_PLUGIN_NAME);
+static DESCRIPTOR: clap_plugin_descriptor = descriptor(PLUGIN_ID, PLUGIN_NAME, &FEATURES);
+static HARD_REALTIME_DESCRIPTOR: clap_plugin_descriptor = descriptor(
+    HARD_REALTIME_PLUGIN_ID,
+    HARD_REALTIME_PLUGIN_NAME,
+    &FEATURES,
+);
+static PROCESS_ERROR_DESCRIPTOR: clap_plugin_descriptor = descriptor(
+    PROCESS_ERROR_PLUGIN_ID,
+    PROCESS_ERROR_PLUGIN_NAME,
+    &FEATURES,
+);
+static START_REFUSED_DESCRIPTOR: clap_plugin_descriptor = descriptor(
+    START_REFUSED_PLUGIN_ID,
+    START_REFUSED_PLUGIN_NAME,
+    &FEATURES,
+);
+static EDITOR_DESCRIPTOR: clap_plugin_descriptor =
+    descriptor(EDITOR_PLUGIN_ID, EDITOR_PLUGIN_NAME, &FEATURES);
+static INSTRUMENT_DESCRIPTOR: clap_plugin_descriptor = descriptor(
+    INSTRUMENT_PLUGIN_ID,
+    INSTRUMENT_PLUGIN_NAME,
+    &INSTRUMENT_FEATURES,
+);
 
 /// One instance, boxed behind `clap_plugin.plugin_data`.
 struct ClapInstance {
@@ -127,6 +163,10 @@ struct ClapInstance {
     refuses_to_start_processing: bool,
     process_calls: ProcessCalls,
     gui: Option<GuiFixture>,
+    /// Whether this is the instrument class, which sounds notes in place of
+    /// echoing its input.
+    instrument: bool,
+    voice: NoteVoice,
 }
 
 /// How one class departs from the plain effect.
@@ -136,6 +176,7 @@ struct Departures {
     fails_a_process_call: bool,
     refuses_to_start_processing: bool,
     has_editor: bool,
+    instrument: bool,
 }
 
 // ── Entry and factory ───────────────────────────────────────────────────
@@ -174,7 +215,7 @@ static FACTORY: clap_plugin_factory = clap_plugin_factory {
 };
 
 unsafe extern "C" fn plugin_count(_factory: *const clap_plugin_factory) -> u32 {
-    5
+    6
 }
 
 unsafe extern "C" fn plugin_descriptor(
@@ -187,6 +228,7 @@ unsafe extern "C" fn plugin_descriptor(
         2 => &raw const PROCESS_ERROR_DESCRIPTOR,
         3 => &raw const START_REFUSED_DESCRIPTOR,
         4 => &raw const EDITOR_DESCRIPTOR,
+        5 => &raw const INSTRUMENT_DESCRIPTOR,
         _ => ptr::null(),
     }
 }
@@ -227,6 +269,12 @@ unsafe extern "C" fn create_plugin(
             ..Departures::default()
         };
         (&raw const EDITOR_DESCRIPTOR, departures)
+    } else if requested == INSTRUMENT_PLUGIN_ID {
+        let departures = Departures {
+            instrument: true,
+            ..Departures::default()
+        };
+        (&raw const INSTRUMENT_DESCRIPTOR, departures)
     } else {
         return ptr::null();
     };
@@ -237,6 +285,8 @@ unsafe extern "C" fn create_plugin(
         refuses_to_start_processing: departures.refuses_to_start_processing,
         process_calls: ProcessCalls::new(departures.fails_a_process_call),
         gui: departures.has_editor.then(|| GuiFixture::new(host)),
+        instrument: departures.instrument,
+        voice: NoteVoice::new(),
     }));
     Box::into_raw(Box::new(clap_plugin {
         desc,
@@ -316,6 +366,7 @@ unsafe extern "C" fn activate(
     match unsafe { instance_of(plugin) } {
         Some(instance) => {
             instance.echo.reset();
+            instance.voice.reset();
             instance.echo.record_declared_min_frames(min_frames_count);
             true
         }
@@ -336,6 +387,7 @@ unsafe extern "C" fn reset(plugin: *const clap_plugin) {
     // SAFETY: the host passes the plugin it created.
     if let Some(instance) = unsafe { instance_of(plugin) } {
         instance.echo.reset();
+        instance.voice.reset();
     }
 }
 
@@ -367,6 +419,10 @@ unsafe extern "C" fn get_extension(
     }
     if id == CLAP_EXT_RENDER {
         return &raw const RENDER as *const c_void;
+    }
+    // SAFETY: the host passes the plugin it created.
+    if id == CLAP_EXT_NOTE_PORTS && unsafe { instance_of(plugin) }.is_some_and(|i| i.instrument) {
+        return &raw const NOTE_PORTS as *const c_void;
     }
     // SAFETY: the host passes the plugin it created.
     if id == CLAP_EXT_GUI && unsafe { gui_of(plugin) }.is_some() {
@@ -407,8 +463,13 @@ unsafe extern "C" fn process(
     }
     // SAFETY: `in_events` is valid for the duration of this call.
     unsafe { apply_parameter_events(instance, process.in_events) };
-    // SAFETY: the bus tables are valid for the duration of this call.
-    unsafe { render_block(&instance.echo, process) };
+    if instance.instrument {
+        // SAFETY: the event list and bus tables are valid for this call.
+        unsafe { render_notes(instance, process) };
+    } else {
+        // SAFETY: the bus tables are valid for the duration of this call.
+        unsafe { render_block(&instance.echo, process) };
+    }
     CLAP_PROCESS_CONTINUE
 }
 
@@ -500,6 +561,108 @@ unsafe fn render_block(echo: &Echo, process: &clap_process) {
     }
 }
 
+/// Render the block of the instrument class: the voice's level in both
+/// channels, each note applied on the sample its event names.
+///
+/// # Safety
+/// The event list and the bus tables `process` names must be valid for its
+/// `frames_count`.
+unsafe fn render_notes(instance: &ClapInstance, process: &clap_process) {
+    if process.audio_outputs.is_null() || process.audio_outputs_count == 0 {
+        return;
+    }
+    // SAFETY: the caller guarantees the output table is valid.
+    let output = unsafe { &*process.audio_outputs };
+    if output.data32.is_null() || (output.channel_count as usize) < CHANNELS {
+        return;
+    }
+    let events = if process.in_events.is_null() {
+        None
+    } else {
+        // SAFETY: the caller guarantees the list is live.
+        Some(unsafe { &*process.in_events })
+    };
+    let (count, get) = match events.and_then(|events| Some((events.size?, events.get?))) {
+        // SAFETY: the list's own callback, called on the list it belongs to.
+        Some((size, get)) => (unsafe { size(process.in_events) }, Some(get)),
+        None => (0, None),
+    };
+    let gain = instance.echo.gain() as f32;
+    let mut next_event = 0;
+    for frame in 0..process.frames_count {
+        while let Some(get) = get.filter(|_| next_event < count) {
+            // SAFETY: as above; `next_event` is below the list's own count.
+            let header = unsafe { get(process.in_events, next_event) };
+            // SAFETY: a non-null header the list handed out is readable.
+            let Some(header_ref) = (unsafe { header.as_ref() }) else {
+                next_event += 1;
+                continue;
+            };
+            if header_ref.time > frame {
+                break;
+            }
+            next_event += 1;
+            if header_ref.space_id != CLAP_CORE_EVENT_SPACE_ID
+                || (header_ref.size as usize) < size_of::<clap_event_note>()
+            {
+                continue;
+            }
+            // SAFETY: a core-space note event of at least that size is a
+            // `clap_event_note`.
+            let note = unsafe { &*(header as *const clap_event_note) };
+            match header_ref.type_ {
+                CLAP_EVENT_NOTE_ON => instance.voice.note_on(note.key, note.velocity as f32),
+                CLAP_EVENT_NOTE_OFF => instance.voice.note_off(note.key),
+                _ => {}
+            }
+        }
+        let level = instance.voice.level(gain);
+        for channel in 0..CHANNELS {
+            // SAFETY: `channel < CHANNELS <= channel_count`, inside the channel table.
+            let entry = unsafe { output.data32.add(channel) };
+            // SAFETY: `entry` is a table slot, as above.
+            let channel_buffer = unsafe { *entry };
+            // SAFETY: `frame < frames_count`.
+            let target = unsafe { channel_buffer.add(frame as usize) };
+            // SAFETY: `target` is inside the output channel buffer.
+            unsafe { *target = level };
+        }
+    }
+}
+
+// ── clap.note-ports ─────────────────────────────────────────────────────
+
+static NOTE_PORTS: clap_plugin_note_ports = clap_plugin_note_ports {
+    count: Some(note_port_count),
+    get: Some(note_port_get),
+};
+
+/// One note input port, speaking the CLAP dialect this host's events are in.
+unsafe extern "C" fn note_port_count(_plugin: *const clap_plugin, is_input: bool) -> u32 {
+    u32::from(is_input)
+}
+
+unsafe extern "C" fn note_port_get(
+    _plugin: *const clap_plugin,
+    index: u32,
+    is_input: bool,
+    info: *mut clap_note_port_info,
+) -> bool {
+    if info.is_null() || index != 0 || !is_input {
+        return false;
+    }
+    // SAFETY: `info` is a valid out parameter.
+    unsafe {
+        *info = clap_note_port_info {
+            id: 0,
+            supported_dialects: CLAP_NOTE_DIALECT_CLAP,
+            preferred_dialect: CLAP_NOTE_DIALECT_CLAP,
+            name: c_name(b"Notes\0"),
+        }
+    };
+    true
+}
+
 // ── clap.audio-ports ────────────────────────────────────────────────────
 
 static AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
@@ -507,17 +670,21 @@ static AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
     get: Some(audio_port_get),
 };
 
-unsafe extern "C" fn audio_port_count(_plugin: *const clap_plugin, _is_input: bool) -> u32 {
-    1
+/// One stereo output; an effect has a stereo input as well, an instrument none.
+unsafe extern "C" fn audio_port_count(plugin: *const clap_plugin, is_input: bool) -> u32 {
+    // SAFETY: the host passes the plugin it created.
+    let instrument = unsafe { instance_of(plugin) }.is_some_and(|instance| instance.instrument);
+    u32::from(!(is_input && instrument))
 }
 
 unsafe extern "C" fn audio_port_get(
-    _plugin: *const clap_plugin,
+    plugin: *const clap_plugin,
     index: u32,
     is_input: bool,
     info: *mut clap_audio_port_info,
 ) -> bool {
-    if info.is_null() || index != 0 {
+    // SAFETY: the host passes the plugin it created.
+    if info.is_null() || index != 0 || unsafe { audio_port_count(plugin, is_input) } == 0 {
         return false;
     }
     let label: &[u8] = if is_input { b"Input\0" } else { b"Output\0" };
@@ -740,16 +907,25 @@ static LATENCY: clap_plugin_latency = clap_plugin_latency {
     get: Some(latency_get),
 };
 
-unsafe extern "C" fn latency_get(_plugin: *const clap_plugin) -> u32 {
-    LATENCY_FRAMES as u32
+/// The instrument answers instantly: no latency and no tail.
+unsafe extern "C" fn latency_get(plugin: *const clap_plugin) -> u32 {
+    // SAFETY: the host passes the plugin it created.
+    match unsafe { instance_of(plugin) } {
+        Some(instance) if instance.instrument => 0,
+        _ => LATENCY_FRAMES as u32,
+    }
 }
 
 static TAIL: clap_plugin_tail = clap_plugin_tail {
     get: Some(tail_get),
 };
 
-unsafe extern "C" fn tail_get(_plugin: *const clap_plugin) -> u32 {
-    ECHO_FRAMES as u32
+unsafe extern "C" fn tail_get(plugin: *const clap_plugin) -> u32 {
+    // SAFETY: the host passes the plugin it created.
+    match unsafe { instance_of(plugin) } {
+        Some(instance) if instance.instrument => 0,
+        _ => ECHO_FRAMES as u32,
+    }
 }
 
 // ── clap.render ─────────────────────────────────────────────────────────

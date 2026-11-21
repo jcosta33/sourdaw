@@ -1,4 +1,4 @@
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { findMidiTransformDevice, getAudioContext } from '#/modules/AudioEngine/useCases';
 import {
     frozenMidiTakeRepeats,
     projectFrozenMidiTakeWindow,
@@ -360,7 +360,7 @@ export async function prepareYeastTrackNotes(
     cancellation?: SchedulerCancellation
 ) {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
-    const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+    const yeastDevice = findMidiTransformDevice(track.devices);
     const liveYeastIterations: LiveYeastIteration[] = [];
     let activeYeastCarrierRouteId: string | undefined;
 

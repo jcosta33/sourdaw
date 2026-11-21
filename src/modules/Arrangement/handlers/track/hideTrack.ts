@@ -9,10 +9,15 @@ import { describeMissingTrack, readPlannedDisplayTrack } from './readPlannedDisp
 type HideTrackAction = Extract<AppAction, { type: 'hideTrack' }>;
 
 function findRefusal(action: HideTrackAction, context: HandlerValidationContext): string | null {
-    const { trackId, expectedHidden } = action.payload;
+    const { trackId, hidden, expectedHidden } = action.payload;
     const track = readPlannedDisplayTrack(trackId, context);
     if (track === null) {
         return describeMissingTrack(trackId);
+    }
+    // Only a fresh hide is refused: a restore carrying expectedHidden puts back state a saved project held,
+    // so a master saved hidden can still be shown, and that show can be undone and redone.
+    if (track.kind === 'master' && hidden && expectedHidden === undefined) {
+        return 'The master track cannot be hidden';
     }
     return expectedHidden === undefined || track.hidden === expectedHidden
         ? null

@@ -7,12 +7,38 @@ import {
     type ExecutableAppActionTargetRule,
 } from './sharedDescriptorParts';
 
+const existingHideableTrackTargetRules = [
+    { argument: 'trackId', capability: 'hideable-track', allowBatchLocal: false },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
 const existingFolderTargetRules = [
     { argument: 'trackId', capability: 'folder-track', allowBatchLocal: false },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 /** Track display edits change what the arrangement shows, never what plays. */
 export const trackDisplayDescriptors = [
+    {
+        actionType: 'hideTrack',
+        risk: 'bounded-reversible',
+        description: "Hide a track's row from the arrangement and mixer, or show it again; a hidden track still plays.",
+        intentPhrases: ['hide', 'unhide'],
+        targetRules: existingHideableTrackTargetRules,
+        valueRules: [
+            {
+                argument: 'hidden',
+                kind: 'boolean-intent',
+                truePhrases: ['hide'],
+                falsePhrases: ['unhide'],
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing track ID' },
+                hidden: { type: 'boolean', description: 'true=hide, false=show' },
+            },
+            required: ['trackId', 'hidden'],
+        },
+    },
     {
         actionType: 'foldTrack',
         risk: 'bounded-reversible',
@@ -67,12 +93,14 @@ export const trackDisplayDescriptors = [
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
 export const trackDisplayMutationIdentityRulesByType = {
+    hideTrack: TRACK_MUTATION_IDENTITY,
     foldTrack: TRACK_MUTATION_IDENTITY,
     setTrackHeight: TRACK_MUTATION_IDENTITY,
 } as const;
 
 /** Whether applying the same command twice leaves the state one application leaves. */
 export const trackDisplayMutationIdempotenceByType = {
+    hideTrack: true,
     foldTrack: true,
     setTrackHeight: true,
 } as const;

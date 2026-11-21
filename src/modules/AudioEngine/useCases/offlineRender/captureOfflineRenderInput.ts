@@ -2,6 +2,7 @@ import { getVcaGroupsState } from '#/modules/Arrangement/stores';
 
 import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../../engine/audioDeviceRuntimeSink';
 import { createExportError } from '../../errors/ExportError';
+import { capturesNativeCalibration } from '../deviceCapabilities/capturesNativeCalibration';
 import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNativeBody';
 
 import { captureOfflineRenderRuntimeInput } from './captureOfflineRenderRuntimeInput';
@@ -55,7 +56,7 @@ export function captureOfflineRenderInput(
                     nativeSampleBankKey: sink.nativeSampleBankKey,
                     nativeModAssignments: sink.nativeModAssignments,
                     projectNativeDeviceState: (input) => {
-                        if (input.deviceType === 'grand-boule') {
+                        if (capturesNativeCalibration(input.deviceType)) {
                             return runtime.calibrationByDevice.get(input.deviceId) ?? null;
                         }
                         return sink.projectNativeDeviceState(input);

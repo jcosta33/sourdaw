@@ -69,7 +69,7 @@ export async function getVersionedCommandBatchCommitDisposition(
     }
     try {
         const repositoryReceipt = await commandBatchIdempotencyPort.lookup(proof);
-        return repositoryReceipt?.status === 'complete'
+        return repositoryReceipt.status === 'complete'
             ? getReceiptDisposition(repositoryReceipt.serializedReceipt, proof)
             : 'unknown';
     } catch {

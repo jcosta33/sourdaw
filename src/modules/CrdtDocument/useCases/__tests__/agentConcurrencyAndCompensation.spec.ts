@@ -279,10 +279,7 @@ describe('agent concurrency and compensation', () => {
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         clearUndoHistory();
-        commandProjectDivergencePort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        commandBatchPreflightPort.setProvider(null);
         agentProjectInspectionPort.setProvider(null);
         agentProjectRepairStateStore.set(null);
         automergeRepository.reset();
