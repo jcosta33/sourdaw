@@ -6,6 +6,8 @@ import { setTrackPan } from '../../useCases/setTrackGainPan/setTrackPan';
 import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
+import { readPlannedDisplayTrack } from './readPlannedDisplayTrack';
+
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
     canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
@@ -34,8 +36,8 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
         const currentPan = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan;
         return currentPan === action.payload.expectedPan && currentPan === action.payload.pan;
     },
-    describe: (alpha) => {
-        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+    describe: (alpha, context) => {
+        const prev = readPlannedDisplayTrack(alpha.payload.trackId, context);
         // Both replay legs inherit the forward policy: undoing or redoing a
         // static edit is still not a pan gesture.
         const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
