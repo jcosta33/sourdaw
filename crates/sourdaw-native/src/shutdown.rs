@@ -198,6 +198,13 @@ fn shutdown_with_wait(
 /// cascade is that thread's turn. That drain is charged to the budget with the
 /// polls; dropping it instead would leave a render waiting on this thread for
 /// a turn that never comes.
+///
+/// One drain runs every release posted so far, and each release is a plugin's
+/// teardown, so one drain can hold several teardowns and can exceed its share
+/// of the budget: the budget is checked between drains, never inside one. The
+/// shell's force-exit deadline backs it. Only releases run here — a posted
+/// construction stays queued, and reads the render's cancel when it does run
+/// (`offline_plugins::build_offline_instances`), so it opens no plugin.
 pub(crate) fn stop_offline_renders<Ui: UiThread + ?Sized>(
     app_state: &AppState,
     ui: &Ui,
