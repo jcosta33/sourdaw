@@ -49,7 +49,8 @@ import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { setShowHiddenTracks } from '../../useCases/timelineEditing/setShowHiddenTracks';
 import { toggleInlineAutomation } from '../../useCases/timelineEditing/toggleInlineAutomation';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { getTabStopTrackId, useTrackListFocusRestore } from '../hooks/useTrackListFocusRestore';
+import { getTabStopTrackId } from '../helpers/getTabStopTrackId';
+import { useTrackListFocusRestore } from '../hooks/useTrackListFocusRestore';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';

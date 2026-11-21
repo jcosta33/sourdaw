@@ -203,6 +203,43 @@ describe('TrackListView focus after a header menu removes its row', () => {
         expect(document.activeElement).toBe(getRow('d'));
     });
 
+    const openDialogHoldingFocus = (): HTMLElement => {
+        const dialog = document.body.appendChild(document.createElement('div'));
+        dialog.setAttribute('role', 'dialog');
+        const cancel = dialog.appendChild(document.createElement('button'));
+        cancel.textContent = 'Cancel';
+        cancel.focus();
+        return dialog;
+    };
+
+    it('focuses the next row when the confirm dialog that held focus is gone before the row is removed', async () => {
+        const { rerender } = renderList(threeTracks());
+        getRow('b').focus();
+        const dialog = openDialogHoldingFocus();
+        await act(async () => {});
+        dialog.remove();
+        expect(document.activeElement).toBe(document.body);
+        finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'b'));
+        expect(document.activeElement).toBe(getRow('c'));
+    });
+
+    it('leaves focus inside an open dialog when the row is removed under it', async () => {
+        const { rerender } = renderList(threeTracks());
+        getRow('b').focus();
+        const dialog = openDialogHoldingFocus();
+        await act(async () => {});
+        finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'b'));
+        expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
+        dialog.remove();
+    });
+
+    it('focuses the next row when a control inside the removed row held focus', () => {
+        const { rerender } = renderList(threeTracks());
+        within(getRow('b')).getAllByRole('button')[0]!.focus();
+        finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'b'));
+        expect(document.activeElement).toBe(getRow('c'));
+    });
+
     it('leaves focus alone when a row is removed while focus rests outside the list', async () => {
         const { rerender } = renderList(threeTracks());
         getRow('b').focus();

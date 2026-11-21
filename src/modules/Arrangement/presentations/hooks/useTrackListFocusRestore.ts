@@ -1,15 +1,14 @@
 import { type FocusEvent, type RefObject, useLayoutEffect, useRef } from 'react';
 
+// A NUL cannot occur in a track id, so the joined key stays unambiguous.
+const ROW_ID_SEPARATOR = '\u0000';
+
 /**
- * The one row that takes Tab: the selected track's row while the list draws it,
- * else the first drawn row, so the list stays reachable when nothing is
- * selected or the selection sits in a collapsed folder or a hidden track.
+ * A menu or confirmation dialog portaled out of the grid: focus parked there
+ * still belongs to the row's flow, so the remembered row is kept.
  */
-export function getTabStopTrackId(rows: readonly { id: string }[], selectedTrackId: string | null): string | null {
-    if (selectedTrackId !== null && rows.some((row) => row.id === selectedTrackId)) {
-        return selectedTrackId;
-    }
-    return rows[0]?.id ?? null;
+function isInPortaledOverlay(element: Element): boolean {
+    return element.closest('[role="menu"], [role="dialog"]') !== null;
 }
 
 /**
@@ -32,8 +31,6 @@ function getNeighbourRowId(
     }
     return previousIds.slice(0, removedIndex).findLast(surviving) ?? null;
 }
-
-const ROW_ID_SEPARATOR = '\u0000';
 
 /**
  * Focus is adrift on the body, or still on the row's own context menu, which
@@ -99,14 +96,14 @@ export function useTrackListFocusRestore(
     };
 
     // Focus that leaves the list for the page (or any other control) is no
-    // longer the list's to restore. Moving into the row's portaled menu keeps it.
+    // longer the list's to restore. Moving into the row's portaled menu or dialog keeps it.
     const handleRowBlur = (event: FocusEvent<HTMLDivElement>): void => {
         const grid = event.currentTarget;
         if (!(event.target instanceof Node) || !grid.contains(event.target)) {
             return;
         }
         const next = event.relatedTarget;
-        if (next instanceof Element && (grid.contains(next) || next.closest('[role="menu"]') !== null)) {
+        if (next instanceof Element && (grid.contains(next) || isInPortaledOverlay(next))) {
             return;
         }
         // Chromium fires blur (relatedTarget null) on a focused element as it is
@@ -116,7 +113,7 @@ export function useTrackListFocusRestore(
         const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
         queueMicrotask(() => {
             const active = document.activeElement;
-            if (row?.isConnected && !(active && (grid.contains(active) || active.closest('[role="menu"]')))) {
+            if (row?.isConnected && !(active && (grid.contains(active) || isInPortaledOverlay(active)))) {
                 focusedRowIdRef.current = null;
             }
         });

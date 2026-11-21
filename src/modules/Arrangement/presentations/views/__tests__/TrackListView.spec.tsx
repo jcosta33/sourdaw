@@ -699,6 +699,12 @@ describe('TrackListView', () => {
             expect(tabStopIds()).toEqual(['a']);
         });
 
+        it('makes the grid itself focusable only when no row is drawn', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.getByRole('grid', { name: 'Track list' })).toHaveAttribute('tabindex', '-1');
+        });
+
         it('keeps the grid out of the tab order while rows exist', () => {
             vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b')], selectedTrackId: null });
             renderWithTooltip(<TrackListView />);
