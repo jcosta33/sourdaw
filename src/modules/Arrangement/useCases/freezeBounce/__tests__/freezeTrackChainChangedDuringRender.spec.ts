@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    cacheAudioBuffer,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -26,6 +27,7 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { getArrangementHandlers, setArrangementEventBus } from '../../index';
@@ -40,6 +42,12 @@ registerSupportingServicePorts();
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
+// Real digest, wrapped so one call can be intercepted.
+vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
+    return { computeTrackHash: vi.fn(original.computeTrackHash) };
+});
+
 vi.mock('../../device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
 }));
@@ -49,12 +57,14 @@ vi.mock('../../device/applyDeviceChainRuntimeDelta', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
     removeDeviceFromStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
 }));
 
 const TRACK_ID = 'track-1';
+const CHANGED_MESSAGE = 'The track changed while it was freezing. Freeze it again.';
 
 function findTrack() {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID);
@@ -98,6 +108,7 @@ async function freezeWhile(duringRender: () => Promise<void>): Promise<void> {
 beforeEach(async () => {
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
+    vi.mocked(cacheAudioBuffer).mockClear();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('freeze chain change test');
     removeCrdtDoc('root');
@@ -181,6 +192,33 @@ describe('a freeze whose device chain changes during the render', () => {
         expect(track.freezeState.status).toBe('unfrozen');
         expect(track.freezeState.sourceContentHash).toBeUndefined();
         expect(track.freezeState.frozenBufferId).toBeUndefined();
-        expect(notifyUser).toHaveBeenCalledWith(expect.stringMatching(/changed while it was freezing/), 'error');
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('refuses the take when a device is added while the post-render digest is pending', async () => {
+        const realHash = (
+            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                '../../../services/computeTrackHash'
+            )
+        ).computeTrackHash;
+        await freezeWhile(async () => {
+            // The next digest is the freeze's own check of the live track: the edit lands after
+            // that digest was taken from the chain it saw and before it is compared.
+            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+                const staleHash = await realHash(clips, devices);
+                await executeAppAction({
+                    type: 'addDevice',
+                    payload: { trackId: TRACK_ID, deviceType: 'builtin-reverb' },
+                });
+                return staleHash;
+            });
+        });
+
+        const track = findTrack();
+        expect(track.frozen).toBe(false);
+        expect(track.frozenBufferId).toBeUndefined();
+        expect(track.freezeState.sourceContentHash).toBeUndefined();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 });
