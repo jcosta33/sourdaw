@@ -1173,6 +1173,10 @@ const COMPARATIVE_REASON =
     'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
 const NET_REASON =
     'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
+function exceptionReason(exception: string): string {
+    return `“${exception}” excepts part of what its clause holds, and a measured bound or hold covers its whole scope.`;
+}
+
 function asideObjectReason(aside: string): string {
     return `“${aside}” names an object beside the one its clause holds, so no single scope can be measured.`;
 }
@@ -2270,6 +2274,56 @@ describe('reading only governed protections and whole object names', () => {
                 PerceptualConstraintReading['unsupported'],
             ] => [prompt, [], [unread(prompt, asideObjectReason(aside))]]
         ),
+        // a protection with an exception after or before it, in brackets, after a comma or a dash, records
+        // its clause unsupported once, never a bound or hold over the whole scope it excepts part of
+        ...(
+            [
+                ['keep the mix from getting brighter (except the vocal)', 'except the vocal'],
+                ['keep the mix from getting brighter (but the vocal can)', 'but the vocal can'],
+                ['keep the mix from getting louder (apart from the vocal)', 'apart from the vocal'],
+                ['keep the mix from getting louder (excluding the drums)', 'excluding the drums'],
+                ['keep the mix from getting louder, except the vocal', 'except the vocal'],
+                ['keep the mix level (the vocal may rise)', 'the vocal may rise'],
+                ['keep the mix level (drums only may change)', 'drums only may change'],
+                ['keep the mix level — the vocal aside', 'the vocal aside'],
+                ['keep the mix level, vocal excepted', 'vocal excepted'],
+                ["don't make the vocal brighter [other than in the chorus]", 'other than in the chorus'],
+                ['except for the vocal, keep the mix from getting louder', 'except for the vocal'],
+            ] satisfies [string, string][]
+        ).map(
+            ([prompt, exception]): [
+                string,
+                PerceptualConstraintReading['constraints'],
+                PerceptualConstraintReading['unsupported'],
+            ] => [prompt, [], [unread(prompt, exceptionReason(exception))]]
+        ),
+        [
+            'keep the vocal bright, but make the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['keep every track level (except the vocal)', [], [unread('keep every track level', NET_REASON)]],
+        [
+            'keep the mix level (not the vocal)',
+            [],
+            [unread('keep the mix level (not the vocal)', exceptionReason('not the vocal'))],
+        ],
+        [
+            'keep the vocal bright, not harsh',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        // a permission naming another scope states that scope's change, never an exception to the hold
+        [
+            'keep the vocal bright, the drums can be louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright (the vocal may get darker)',
+            [],
+            [unread('keep the vocal bright (the vocal may get darker)', exceptionReason('the vocal may get darker'))],
+        ],
         // no clause ends in its bracket
         [
             "don't make it louder (and add reverb)",

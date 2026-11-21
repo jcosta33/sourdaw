@@ -37,7 +37,6 @@ import {
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
     OBJECT_MEMBERS,
-    OBJECT_ONLY_ASIDE,
     OBJECT_PREPOSITION,
     ROLE_WORD,
     ROLE_WORDS,
@@ -62,6 +61,7 @@ import {
 import { normalizeObjectText } from './normalizeObjectText';
 import { normalizePhrase } from './normalizePhrase';
 import { readAcrossBrackets } from './readAcrossBrackets';
+import { type QualifiedText, readClauseQualifier } from './readClauseQualifier';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { readInnerAsides } from './readInnerAsides';
 import { type ConsumedSpan, readUnreadConstraintClauses, type UnreadClause } from './readUnreadConstraintClauses';
@@ -202,6 +202,12 @@ function readClauses(pattern: RegExp, masked: string, prompt: string): ClauseMat
         const object = span === undefined ? null : prompt.slice(span[0], span[1]);
         return { clause, object, start: match.index, end };
     });
+}
+
+/** The tracks an object names, or null where it names none. */
+function namedTrackIds(object: string, context: ProjectContext): readonly string[] | null {
+    const resolution = resolveConstraintObject(object, context);
+    return resolution.kind === 'tracks' ? resolution.trackIds : null;
 }
 
 function toScope(resolution: Extract<ObjectResolution, { kind: 'mix' | 'tracks' }>): PerceptualConstraintScope {
@@ -601,7 +607,11 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = readInnerAsides(maskTrackReferences(prompt, context, MASK_GLYPH));
-    const request = withObjectAsidesUnsupported(readMaskedRequest(masked, prompt, context), masked, prompt);
+    const request = withQualifiedClausesUnsupported(readMaskedRequest(masked, prompt, context), {
+        masked,
+        prompt,
+        trackIdsOf: (object) => namedTrackIds(object, context),
+    });
     return unionPerceptualConstraintReadings({
         constraints: request.constraints.map(({ entry }) => entry),
         unsupported: [
@@ -630,43 +640,24 @@ function readMaskedRequest(masked: string, prompt: string, context: ProjectConte
     return { constraints: reader.constraints, unsupported, consumed };
 }
 
-const TRAILING_OBJECT_ASIDE = new RegExp(String.raw`^\s*${OBJECT_ONLY_ASIDE}`, 'iu');
-
-/** The aside naming only an object that stands right after a span, as offsets into the masked request. */
-function readTrailingObjectAside(masked: string, span: ConsumedSpan): ConsumedSpan | null {
-    const aside = TRAILING_OBJECT_ASIDE.exec(masked.slice(span.end));
-    return aside === null ? null : { start: span.end, end: span.end + aside[0].length };
-}
-
 /**
- * The reading with every constraint an object-only aside follows recorded unsupported once per clause,
- * quoting the clause and its aside: the aside names an object beside the one the clause was read on
- * ("don't touch the low end (vocal)", "don't make it louder (the vocal)"), so neither scope is measured,
- * as "keep the vocal (lead) bright" is not. An aside opening with "of", "on" or "in" names the clause's
- * own object and is read inside it ("keep the brightness (of the vocal)").
+ * The reading with every constraint a qualifier follows or opens recorded unsupported once per clause,
+ * quoting the clause and its qualifier (`readClauseQualifier`), never measured on any scope it names.
  */
-function withObjectAsidesUnsupported(
-    request: MaskedRequestReading,
-    masked: string,
-    prompt: string
-): MaskedRequestReading {
-    const followed = request.constraints.flatMap((constraint) => {
-        const aside = readTrailingObjectAside(masked, constraint.span);
-        return aside === null ? [] : [{ constraint, aside, start: constraint.span.start, end: aside.end }];
+function withQualifiedClausesUnsupported(request: MaskedRequestReading, text: QualifiedText): MaskedRequestReading {
+    const qualified = request.constraints.flatMap((constraint) => {
+        const qualifier = readClauseQualifier(text, constraint.entry.scope, constraint.span);
+        return qualifier === null ? [] : [{ constraint, ...qualifier }];
     });
-    if (followed.length === 0) {
+    if (qualified.length === 0) {
         return request;
     }
-    const unsupported: ReadUnsupported[] = outermostSpans(followed).map(({ start, end, aside }) => ({
-        entry: {
-            constraintId: 'unsupported',
-            clause: prompt.slice(start, end).trim(),
-            reason: `“${prompt.slice(aside.start, aside.end).trim()}” names an object beside the one its clause holds, so no single scope can be measured.`,
-        },
+    const unsupported: ReadUnsupported[] = outermostSpans(qualified).map(({ start, end, reason }) => ({
+        entry: { constraintId: 'unsupported', clause: text.prompt.slice(start, end).trim(), reason },
         span: { start, end },
     }));
     const constraints = request.constraints.filter(
-        (constraint) => !followed.some((entry) => entry.constraint === constraint)
+        (constraint) => !qualified.some((entry) => entry.constraint === constraint)
     );
     return { constraints, unsupported: [...request.unsupported, ...unsupported], consumed: request.consumed };
 }

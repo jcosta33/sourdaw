@@ -8,17 +8,20 @@ import {
 } from './agentReference/findAgentReferenceNameSpans';
 import { readProjectObjectNames } from './projectObjectNameCensus';
 
-/** The punctuation a name ends in: the bracket of "Bass (DI)". */
-const NAME_CLOSING_PUNCTUATION = /[^\p{L}\p{M}\p{N}\s]+$/u;
+/** The closing bracket a name ends in, after the bracket it closes: the ")" of "Bass (DI)". */
+const NAME_CLOSING_BRACKET = /(?:\([^()[\]]*(\))|\[[^()[\]]*(\]))$/u;
 
 /**
- * A name's range with the punctuation the name itself ends in, where the text types the name as it is
- * written and that punctuation right after the range: a name's reading stops short of its closing
- * punctuation, but that punctuation is still the name's own, so "Bass (DI)" is blanked whole and leaves
- * no bracket of its own behind, while "Bass DI)" read as Bass (DI) leaves its bracket standing.
+ * A name's range with the closing bracket the name itself opened and closes, where the text types the
+ * name as it is written and that bracket right after the range: a name's reading stops short of its
+ * closing bracket, but that bracket is still the name's own, so "Bass (DI)" is blanked whole and leaves
+ * no bracket of its own behind, while "Bass DI)" read as Bass (DI) leaves its bracket standing. Other
+ * closing punctuation ("Lead.", "Pad?", "Keys)") is left to the text, where it may end a sentence or a
+ * bracket the text opened.
  */
 function withNameClosing(text: string, name: string, span: AgentReferenceNameSpan): AgentReferenceTextRange {
-    const closing = NAME_CLOSING_PUNCTUATION.exec(name.trim())?.[0];
+    const bracket = NAME_CLOSING_BRACKET.exec(name.trim());
+    const closing = bracket?.[1] ?? bracket?.[2];
     if (span.closeness !== 'typed' || closing === undefined || !text.startsWith(closing, span.end)) {
         return span;
     }

@@ -327,6 +327,72 @@ export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
  * object: "don't touch the low end (vocal)", "don't make it louder (the vocal)".
  */
 export const OBJECT_ONLY_ASIDE = String.raw`${OPENING_BRACKET}\s*${OBJECT_MEMBERS}\s*(?:[${CLOSING_BRACKET_MARKS}]|${CLAUSE_END})`;
+/**
+ * The words opening an exception to what a protection names: "except the vocal", "apart from the drums",
+ * "unless the chorus needs it".
+ */
+const EXCEPTION_LEAD = words([
+    'except',
+    'except for',
+    'excepting',
+    'excluding',
+    'not including',
+    'apart from',
+    'aside from',
+    'other than',
+    'besides',
+    `${BUT} ${NOT}`,
+    'save for',
+    'barring',
+    'unless',
+    'with the exception of',
+]);
+/** The words a permission an exception grants opens with: "the vocal may rise", "but the vocal can". */
+const PERMISSION_MODAL = words([
+    'may',
+    CAN,
+    'could',
+    'might',
+    'should',
+    `${IS} allowed to`,
+    'are allowed to',
+    `${IS} free to`,
+    'are free to',
+]);
+/** The states an excepted object is left in: "the vocal aside", "vocal excepted". */
+const EXCEPTED_STATE = words([
+    'aside',
+    'excepted',
+    'excluded',
+    'exempt',
+    'exempted',
+    'apart',
+    'left out',
+    'not included',
+]);
+/** "only", which narrows the object an exception permits: "drums only may change", "only the drums can". */
+const ONLY = words(['only']);
+/** The marks an exception after a protection may stand behind: a comma, a colon, a separator or a bracket. */
+const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})?\s*`;
+/** An object a permission names, "only" before or after it: "only the drums", "drums only". */
+const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<permitted>${OBJECT_MEMBERS})(?:\s+${ONLY})?`;
+/**
+ * An exception right after a protection, to the end of its clause and any closing bracket: an exception
+ * word ("(except the vocal)", ", excluding the drums"), an object refused ("(not the vocal)"), a permission on an object ("(the vocal may rise)",
+ * "(but the vocal can)", "(drums only may change)") or an object left out ("— the vocal aside", ", vocal
+ * excepted"). A protection excepting part of its scope holds no measured bound over that whole scope.
+ * The object a refusal, a permission or a leaving-out names is captured as `refused`, `permitted` or
+ * `excepted`, so a reader can tell an exception from a statement about another scope ("keep the vocal
+ * bright, the drums can be louder") or a refused quality ("keep the vocal bright, not harsh").
+ */
+export const EXCEPTION_AFTER = String.raw`${EXCEPTION_MARK}(?:${EXCEPTION_LEAD}${WORD_END}|${words([NOT])}\s+(?<refused>${OBJECT_MEMBERS})${CLAUSE_END}|(?:${words([BUT])}\s+)?${PERMITTED_OBJECT}\s+${PERMISSION_MODAL}${WORD_END}|(?<excepted>${OBJECT_MEMBERS})\s+${EXCEPTED_STATE}${CLAUSE_END})${SAME_CLAUSE_CHARACTER}*[${CLOSING_BRACKET_MARKS}]?`;
+/** The marks setting an exception off from its clause, which its quotation leaves out: ", except the vocal" quotes "except the vocal". */
+export const EXCEPTION_EDGE_MARKS = new RegExp(
+    String.raw`^(?:\s*[,;:${BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})+|(?:[,;:${BRACKET_MARKS}]|${CLAUSE_SEPARATOR})+\s*$`,
+    'gu'
+);
+/** An exception opening the clause right before a protection: "except for the vocal, keep the mix …". */
+export const EXCEPTION_BEFORE = String.raw`\b${EXCEPTION_LEAD}${WORD_END}${SAME_CLAUSE_CHARACTER}*(?:[,;:]|${CLAUSE_SEPARATOR})?\s*$`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
 export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
 /** "than", which a comparison names its other scope after. */
