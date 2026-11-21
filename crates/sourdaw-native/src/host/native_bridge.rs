@@ -427,7 +427,9 @@ impl PluginRuntimeLifecycle {
     // verdict, then read the state) and a cancelled unload (reactivate, then
     // read the verdict) each write one flag and read the other, and only a
     // single total order over both guarantees that at least one of them sees
-    // the other's write and asks the instance to process again.
+    // the other's write and asks the instance to process again. The same order
+    // pairs the lifecycle with the intent to process across the SeqCst fences
+    // in `SharedHostedPlugin::{begin_unload, cancel_unload, restart_if_active}`.
 
     /// Record the verdict; `true` only for the call that made it.
     fn mark_unresponsive(&self) -> bool {
@@ -451,8 +453,8 @@ impl PluginRuntimeLifecycle {
         let _ = self.state.compare_exchange(
             PLUGIN_LIFECYCLE_ACTIVE,
             PLUGIN_LIFECYCLE_UNLOADING,
-            Ordering::AcqRel,
-            Ordering::Acquire,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
         );
     }
 
@@ -557,7 +559,29 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     /// drops after `wrapper`, on the same thread.
     #[cfg(test)]
     teardown_witness: OnceLock<TeardownWitness>,
+    /// What a test runs on another side of a race when a recovery reaches the
+    /// step it names.
+    #[cfg(test)]
+    recovery_interleaving: Mutex<Option<RecoveryInterleaving<Runtime>>>,
 }
+
+/// A point inside a recovery at which a test runs the other side of a race.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RecoveryStep {
+    /// The verdict is withdrawn and the lifecycle not yet read.
+    VerdictWithdrawn,
+    /// The lifecycle was read active and the start not yet requested.
+    LifecycleReadActive,
+    /// The start is requested and the lifecycle not yet read again.
+    StartRequested,
+}
+
+#[cfg(test)]
+type RecoveryInterleaving<Runtime> = (
+    RecoveryStep,
+    Box<dyn FnOnce(&SharedHostedPlugin<Runtime>) + Send>,
+);
 
 /// Pushes the thread it drops on into a test's record.
 #[cfg(test)]
@@ -607,6 +631,51 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             unserved_blocks: AtomicU64::new(0),
             #[cfg(test)]
             teardown_witness: OnceLock::new(),
+            #[cfg(test)]
+            recovery_interleaving: Mutex::new(None),
+        }
+    }
+
+    /// Run `other_side` once, the first time a recovery reaches `step`.
+    #[cfg(test)]
+    pub(crate) fn interleave_with_recovery(
+        &self,
+        step: RecoveryStep,
+        other_side: impl FnOnce(&Self) + Send + 'static,
+    ) {
+        *self
+            .recovery_interleaving
+            .lock()
+            .expect("the recovery interleaving slot must not be poisoned") =
+            Some((step, Box::new(other_side)));
+    }
+
+    /// Whether the interleaving a test set is still waiting for its step.
+    #[cfg(test)]
+    fn recovery_interleaving_pending(&self) -> bool {
+        self.recovery_interleaving
+            .lock()
+            .expect("the recovery interleaving slot must not be poisoned")
+            .is_some()
+    }
+
+    #[cfg(test)]
+    fn reach_recovery_step(&self, step: RecoveryStep) {
+        let other_side = {
+            let mut slot = self
+                .recovery_interleaving
+                .lock()
+                .expect("the recovery interleaving slot must not be poisoned");
+            match slot.take() {
+                Some((at, other_side)) if at == step => Some(other_side),
+                unmatched => {
+                    *slot = unmatched;
+                    None
+                }
+            }
+        };
+        if let Some(other_side) = other_side {
+            other_side(self);
         }
     }
 
@@ -843,21 +912,36 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         })
     }
 
+    /// Close the lifecycle, then withdraw the intent to process across a
+    /// SeqCst fence.
+    ///
+    /// A racing recovery requests the start, fences, and re-reads the
+    /// lifecycle (`restart_if_active`): either it reads this unload and
+    /// withdraws its own start, or its start precedes this withdrawal. Either
+    /// way the unloading instance ends not asked to process.
+    ///
+    /// The audio thread — the only thread CLAP lets leave the processing state
+    /// — skips an unloading instance without processing it and leaves the
+    /// processing state on its first block after the withdrawal. The instance
+    /// stays in the scheduler until the unload finishes, so that block arrives.
     pub fn begin_unload(&self) {
-        // Withdraw the intent to process before the lifecycle closes the door,
-        // so the audio thread — the only thread CLAP lets leave the processing
-        // state — still has blocks in which to do it. The instance stays in the
-        // scheduler until the unload finishes, so those blocks do arrive.
-        self.processing.request_stop();
         self.lifecycle.begin_unload();
+        fence(Ordering::SeqCst);
+        self.processing.request_stop();
     }
 
     /// Reactivate first, then restart unless the instance is unresponsive. A
     /// recovery racing this clears the verdict first and then restarts if the
     /// instance is active, so whichever of the two reads second sees the
     /// other's write and the restart is never lost.
+    ///
+    /// The SeqCst fence between reactivating and restarting pairs with the one
+    /// a recovery takes after withdrawing a start it found unloading
+    /// (`restart_if_active`): either the recovery reads this
+    /// reactivation and starts again, or its withdrawal precedes this start.
     pub fn cancel_unload(&self) {
         self.lifecycle.cancel_unload();
+        fence(Ordering::SeqCst);
         self.restart_unless_unresponsive();
     }
 
@@ -1110,15 +1194,41 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// restart: each writes one flag before reading the other. The cost is
     /// that the audio thread may meet a processable instance still asked to
     /// stop for a block, which only delays its start by that block.
+    ///
+    /// The restart re-reads the lifecycle after requesting the start
+    /// ([`Self::restart_if_active`]), so a racing [`Self::begin_unload`] that
+    /// lands between the first read and the start cannot leave the unloading
+    /// instance asked to process.
     fn recover_if_unresponsive(&self) {
         if self.lifecycle.clear_unresponsive() {
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::VerdictWithdrawn);
             self.restart_if_active();
         }
     }
 
+    /// Request the start, then re-read the lifecycle across a SeqCst fence and
+    /// withdraw the start if it is no longer active.
+    ///
+    /// Each side of the race writes before it reads the other's flag:
+    /// [`Self::begin_unload`] closes the lifecycle, fences, and withdraws, so
+    /// a start this re-read finds still active precedes that withdrawal. A
+    /// withdrawal made here is fenced before the next read, so a
+    /// [`Self::cancel_unload`] landing after it is either read here and
+    /// started again, or starts after the withdrawal itself.
     fn restart_if_active(&self) {
-        if self.lifecycle.is_active() {
+        while self.lifecycle.is_active() {
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::LifecycleReadActive);
             self.processing.request_start();
+            fence(Ordering::SeqCst);
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::StartRequested);
+            if self.lifecycle.is_active() {
+                return;
+            }
+            self.processing.request_stop();
+            fence(Ordering::SeqCst);
         }
     }
 
@@ -2700,56 +2810,92 @@ mod tests {
         );
     }
 
+    /// When the other side of a race with a recovery runs: before the
+    /// recovery, at one of its steps, or after it.
+    #[derive(Clone, Copy, Debug)]
+    enum RacePoint {
+        Before,
+        At(RecoveryStep),
+        After,
+    }
+
+    /// Run the real recovery with `other_side` at `point`, and fail if the
+    /// point was never reached.
+    fn recover_with_other_side_at(
+        shared: &SharedHostedPlugin<ClapWrapper>,
+        point: RacePoint,
+        other_side: fn(&SharedHostedPlugin<ClapWrapper>),
+    ) {
+        match point {
+            RacePoint::Before => {
+                other_side(shared);
+                shared.recover_if_unresponsive();
+            }
+            RacePoint::At(step) => {
+                shared.interleave_with_recovery(step, other_side);
+                shared.recover_if_unresponsive();
+                assert!(
+                    !shared.recovery_interleaving_pending(),
+                    "the recovery never reached {step:?}"
+                );
+            }
+            RacePoint::After => {
+                shared.recover_if_unresponsive();
+                other_side(shared);
+            }
+        }
+    }
+
     /// A recovery and a cancelled unload can race on an instance that is both
-    /// unresponsive and unloading. Each half of each is run here in every
-    /// order the two threads could interleave them, and in every one the
-    /// instance must end up asked to process and processable. The halves are
-    /// called the way `recover_if_unresponsive` and `cancel_unload` compose
-    /// them; the composition itself is two lines each and is read, not run.
+    /// unresponsive and unloading. Whether the unload is cancelled before the
+    /// recovery, between its withdrawing the verdict and its restart, or after
+    /// it, the instance must end up asked to process and processable.
     #[test]
     fn a_recovery_racing_a_cancelled_unload_never_loses_the_restart() {
-        #[derive(Clone, Copy, Debug)]
-        enum Step {
-            WithdrawVerdict,
-            RestartIfActive,
-            Reactivate,
-            RestartUnlessUnresponsive,
-        }
-        let recovery = [Step::WithdrawVerdict, Step::RestartIfActive];
-        let cancel = [Step::Reactivate, Step::RestartUnlessUnresponsive];
-        let interleavings: [[usize; 4]; 6] = [
-            [0, 0, 1, 1],
-            [0, 1, 0, 1],
-            [0, 1, 1, 0],
-            [1, 0, 0, 1],
-            [1, 0, 1, 0],
-            [1, 1, 0, 0],
+        let points = [
+            RacePoint::Before,
+            RacePoint::At(RecoveryStep::VerdictWithdrawn),
+            RacePoint::After,
         ];
-        for interleaving in interleavings {
+        for point in points {
             let wrapper =
                 ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
             let shared = SharedHostedPlugin::new(wrapper);
-            shared.processing.request_stop();
-            shared.lifecycle.begin_unload();
-            assert!(shared.lifecycle.mark_unresponsive());
-            let mut cursors = [0usize, 0usize];
-            let mut withdrew = false;
-            let mut taken = Vec::new();
-            for side in interleaving {
-                let step = [recovery, cancel][side][cursors[side]];
-                cursors[side] += 1;
-                taken.push(step);
-                match step {
-                    Step::WithdrawVerdict => withdrew = shared.lifecycle.clear_unresponsive(),
-                    Step::RestartIfActive if withdrew => shared.restart_if_active(),
-                    Step::RestartIfActive => {}
-                    Step::Reactivate => shared.lifecycle.cancel_unload(),
-                    Step::RestartUnlessUnresponsive => shared.restart_unless_unresponsive(),
-                }
-            }
+            shared.begin_unload();
+            shared.mark_unresponsive();
+            recover_with_other_side_at(&shared, point, |shared| shared.cancel_unload());
             assert!(
                 shared.processing_gate().wants_processing() && shared.lifecycle.allows_process(),
-                "the restart was lost in the order {taken:?}"
+                "the restart was lost with the unload cancelled at {point:?}"
+            );
+        }
+    }
+
+    /// A recovery and an unload can race on an active, unresponsive instance.
+    /// Wherever the unload lands relative to the recovery, the unloading
+    /// instance must end up not asked to process.
+    #[test]
+    fn a_recovery_racing_an_unload_never_leaves_the_unloading_instance_asked_to_process() {
+        let points = [
+            RacePoint::Before,
+            RacePoint::At(RecoveryStep::VerdictWithdrawn),
+            RacePoint::At(RecoveryStep::LifecycleReadActive),
+            RacePoint::At(RecoveryStep::StartRequested),
+            RacePoint::After,
+        ];
+        for point in points {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+            let shared = SharedHostedPlugin::new(wrapper);
+            shared.mark_unresponsive();
+            recover_with_other_side_at(&shared, point, |shared| shared.begin_unload());
+            assert!(
+                !shared.lifecycle.is_active(),
+                "the unload at {point:?} must leave the instance unloading"
+            );
+            assert!(
+                !shared.processing_gate().wants_processing(),
+                "the unloading instance was left asked to process with the unload at {point:?}"
             );
         }
     }
