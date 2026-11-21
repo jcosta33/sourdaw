@@ -1351,6 +1351,11 @@ mod tests {
     /// that never charges the drain still ends, late, rather than hanging.
     const SLOW_DRAINS: usize = 8;
 
+    /// How many drains end a wait that never stops, with a named failure
+    /// rather than a drain log that grows until the process runs out of
+    /// memory. Far above any drain count a stopping wait reaches.
+    const RUNAWAY_DRAINS: usize = 10_000;
+
     /// A UI thread whose posted work takes [`SLOW_POSTED_WORK`] on each of
     /// its first [`SLOW_DRAINS`] drains, recording how long every drain really
     /// took: a sleep has a floor and no ceiling, so the test judges the wait
@@ -1368,6 +1373,10 @@ mod tests {
                 .lock()
                 .expect("the drain log is not poisoned")
                 .len();
+            assert!(
+                drain < RUNAWAY_DRAINS,
+                "the wait never stopped draining: {drain} drains"
+            );
             if drain < SLOW_DRAINS {
                 thread::sleep(SLOW_POSTED_WORK);
             }
