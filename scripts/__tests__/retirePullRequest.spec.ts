@@ -1303,6 +1303,21 @@ describe('native obsolete pull-request retirement', () => {
             expect(writes(calls)).toEqual([]);
         });
 
+        it('refuses a review response that omits the head branch', () => {
+            const { calls, port } = fixture();
+            port.inspectRetirementReviewState = (number) =>
+                inspectRetirementReviewState(number, headRefName, () => {
+                    const response = providerProjection(noReviews);
+                    Reflect.deleteProperty(response.data.repository.pullRequest, 'headRefName');
+                    return JSON.stringify(response);
+                });
+
+            expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /has no head branch/u
+            );
+            expect(writes(calls)).toEqual([]);
+        });
+
         it.each([
             [
                 'review history',
