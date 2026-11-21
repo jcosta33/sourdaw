@@ -57,7 +57,16 @@ const EXPECTED_ROWS: ReadonlyArray<readonly [string, boolean, boolean]> = [
 
 describe('resolveDeviceRoles', () => {
     it.each(EXPECTED_ROWS)('answers the roles of %s', (deviceType, midiTransform, offlineSource) => {
-        expect(resolveDeviceRoles(deviceType)).toEqual({ midiTransform, offlineSource });
+        expect(resolveDeviceRoles(deviceType)).toEqual({
+            midiTransform,
+            offlineSource,
+            padOutputHost: deviceType === 'toaster',
+        });
+    });
+
+    it('marks toaster alone as hosting pad outputs', () => {
+        const hosts = BUILTIN_DEVICE_TYPES.filter((deviceType) => resolveDeviceRoles(deviceType)?.padOutputHost);
+        expect(hosts).toEqual(['toaster']);
     });
 
     // The variant families the catalog generates fold to their base row.
@@ -67,7 +76,7 @@ describe('resolveDeviceRoles', () => {
         ['builtin-synth-x', false, false],
         ['Knead', false, false],
     ])('folds the unlisted string %j to its family row', (deviceType, midiTransform, offlineSource) => {
-        expect(resolveDeviceRoles(deviceType)).toEqual({ midiTransform, offlineSource });
+        expect(resolveDeviceRoles(deviceType)).toEqual({ midiTransform, offlineSource, padOutputHost: false });
     });
 
     it.each(['Yeast', 'constructor', '__proto__', '', 'faust-x', 'external-plugin', 'crumbs'])(

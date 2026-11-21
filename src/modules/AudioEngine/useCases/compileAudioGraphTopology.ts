@@ -1,5 +1,7 @@
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
+import { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
+
 type AudioGraphTrack = {
     readonly devices: readonly { readonly id: string; readonly type: string }[];
     readonly id: string;
@@ -31,7 +33,7 @@ function createsAudioNode(track: AudioGraphTrack): boolean {
     if (track.kind === 'vca') {
         return false;
     }
-    return track.kind !== 'folder' || track.devices.some((device) => device.type === 'toaster');
+    return track.kind !== 'folder' || hasPadOutputHost(track.devices);
 }
 
 export function compileAudioGraphTopology(input: CompileAudioGraphTopologyInput): AudioGraphCompilationResult {

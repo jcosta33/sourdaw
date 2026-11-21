@@ -230,6 +230,17 @@ export const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE_DYNAMICS = [
                 ['A ceiling too close to 0 dB can clip on inter-sample peaks after conversion.'],
                 noExternalModulation
             ),
+            'lim-auto-makeup': parameterGuidance(
+                'Automatic makeup gain',
+                'On adds a fixed gain set by lim-threshold to everything the limiter passes; off passes material below lim-threshold at its own level.',
+                0,
+                0,
+                [
+                    'lim-threshold sets this gain while it is on: keep it off so lowering lim-threshold only catches more peaks.',
+                ],
+                ['On, a low lim-threshold adds up to 17 dB of gain that the ceiling then has to remove.'],
+                noExternalModulation
+            ),
         }
     ),
     descriptorGuidance(

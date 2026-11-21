@@ -4,6 +4,7 @@ import { asBaseAudioContext, createMockAudioContext } from '../../../../helpers/
 import { COMPRESSOR_AUTO_MAKEUP_TWIN_NODE } from '../../models/DeviceParamLaws';
 import { createOfflineDeviceNode } from '../../repositories/deviceNodeFactory';
 import { applyBuiltinCompressorParams } from '../../repositories/devices/dynamics/applyCompressorAutoMakeup';
+import { applyLimiterParams } from '../../repositories/devices/dynamics/applyLimiterParams';
 import {
     resolveDeviceCurveWriteTargets,
     resolveDeviceParam,
@@ -210,4 +211,56 @@ describe('resolveDeviceParamTargets compressor Auto Makeup twin', () => {
             expect(targets[0]?.scale).toBe(scale);
         }
     );
+});
+
+describe('resolveDeviceParamTargets limiter Auto Makeup twin', () => {
+    function createLimiterNode(autoMakeup: 0 | 1) {
+        const context = createMockAudioContext();
+        const node = createOfflineDeviceNode({
+            context: asBaseAudioContext(context),
+            deviceType: 'builtin-limiter',
+        });
+        if (!node) {
+            throw new Error('expected a builtin-limiter offline node');
+        }
+        // The mock's nodes carry a bare context stub; the twin is built from the node's own context.
+        Object.defineProperty(node.namedNodes?.comp, 'context', { value: context });
+        applyLimiterParams(node, { 'lim-auto-makeup': autoMakeup });
+        return node;
+    }
+
+    // Descriptor release is milliseconds; the compressor node's is seconds.
+    const rows: readonly { parameterId: string; property: 'threshold' | 'release'; scale: number }[] = [
+        { parameterId: 'lim-threshold', property: 'threshold', scale: 1 },
+        { parameterId: 'lim-release', property: 'release', scale: 1 / 1000 },
+    ];
+
+    it.each(rows)(
+        'targets the limiter and its Auto Makeup twin for $parameterId when Auto Makeup is off',
+        ({ parameterId, property, scale }) => {
+            const node = createLimiterNode(0);
+            const compressor = node.namedNodes?.comp as DynamicsCompressorNode;
+            const twin = node.namedNodes?.[COMPRESSOR_AUTO_MAKEUP_TWIN_NODE] as DynamicsCompressorNode | undefined;
+            if (!twin) {
+                throw new Error('expected Auto Makeup off to build the twin');
+            }
+
+            const targets = resolveDeviceParamTargets('builtin-limiter', parameterId, node);
+
+            expect(new Set(targets.map((target) => target.audioParam))).toEqual(
+                new Set([compressor[property], twin[property]])
+            );
+            expect(targets.map((target) => target.scale)).toEqual([scale, scale]);
+        }
+    );
+
+    it.each(rows)('targets only the limiter for $parameterId when Auto Makeup is on', ({ parameterId, property }) => {
+        const node = createLimiterNode(1);
+        const compressor = node.namedNodes?.comp as DynamicsCompressorNode;
+
+        expect(node.namedNodes?.[COMPRESSOR_AUTO_MAKEUP_TWIN_NODE]).toBeUndefined();
+        const targets = resolveDeviceParamTargets('builtin-limiter', parameterId, node);
+
+        expect(targets.map((target) => target.audioParam)).toEqual([compressor[property]]);
+    });
 });

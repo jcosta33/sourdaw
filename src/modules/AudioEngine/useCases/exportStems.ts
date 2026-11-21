@@ -14,6 +14,7 @@ import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/co
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
+import { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { acquireRenderLockFromAgentRender } from './offlineRender/acquireRenderLockFromAgentRender';
@@ -214,7 +215,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         !track.disabled &&
                         track.kind !== 'master' &&
                         shouldCreateLiveTrackStrip(track) &&
-                        track.devices.some((device) => device.type === 'toaster')
+                        hasPadOutputHost(track.devices)
                 )
                 .map((track) => track.id)
         );

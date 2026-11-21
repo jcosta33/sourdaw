@@ -1,4 +1,4 @@
-import { type BriefMixAlternative } from '../models/BriefReading';
+import { type RequestedBriefMixAlternative } from '../models/BriefReading';
 
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 import { readBriefMixIntent } from './readBriefMixIntent';
@@ -10,7 +10,9 @@ type MixIntent = NonNullable<ReturnType<typeof readBriefMixIntent>>;
 type MixDescriptor = MixIntent['requestedDescriptors'][number];
 
 /** A reading whose characters are the recipe catalogue's own descriptors, not any string. */
-export type CatalogBriefMixAlternative = BriefMixAlternative & { requestedDescriptors: readonly MixDescriptor[] };
+export type CatalogBriefMixAlternative = RequestedBriefMixAlternative & {
+    requestedDescriptors: readonly MixDescriptor[];
+};
 
 type ReadMixIntentWithAlternatives =
     | { status: 'read'; mixIntent: MixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
@@ -56,7 +58,7 @@ function readAlternative(value: unknown, descriptors: readonly MixDescriptor[]):
     return { name, requestedDescriptors: selected };
 }
 
-function describeDuplicate(alternatives: readonly BriefMixAlternative[]): string | null {
+function describeDuplicate(alternatives: readonly RequestedBriefMixAlternative[]): string | null {
     const names = new Set<string>();
     const sets = new Set<string>();
     for (const alternative of alternatives) {
