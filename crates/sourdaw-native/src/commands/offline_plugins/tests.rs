@@ -295,40 +295,63 @@ impl UiThread for RecordingUiThread {
 /// returns, so a task has to be counted before its caller is answered.
 ///
 /// The window between the answer and a late count is a few instructions, so
-/// the loop runs with every core kept busy: preempting the UI thread inside it
-/// is what a loaded CI runner does.
+/// the loop runs with half the cores kept busy: preempting the UI thread inside
+/// it is what a loaded CI runner does. The other half, and the time bound, are
+/// for the tests of this process running beside it, several of which hold
+/// wall-clock deadlines.
 #[test]
 fn a_ui_thread_task_is_counted_before_its_caller_is_answered() {
-    let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let cores = thread::available_parallelism().map_or(4, usize::from);
-    let spinners: Vec<_> = (0..cores)
-        .map(|_| {
-            let spinning = Arc::clone(&spinning);
-            thread::spawn(move || {
-                while spinning.load(Ordering::Relaxed) {
-                    std::hint::spin_loop();
-                }
-            })
-        })
-        .collect();
+    const ROUND_TRIPS: usize = 20_000;
+    const LOAD_BOUND: std::time::Duration = std::time::Duration::from_millis(500);
+    let cores = thread::available_parallelism().map_or(2, usize::from);
+    let _load = SpinLoad::start((cores / 2).max(1));
     let ui = RecordingUiThread::start();
-    let mut late_counts = 0;
-    for expected in 1..=20_000 {
+    let started = std::time::Instant::now();
+
+    for expected in 1..=ROUND_TRIPS {
+        if started.elapsed() > LOAD_BOUND {
+            break;
+        }
         ui.run_on_ui_thread(&UiThreadTask::new(|| {}))
             .expect("the UI thread runs the task");
-        if ui.tasks_run() != expected {
-            late_counts += 1;
-            while ui.tasks_run() != expected {
-                thread::yield_now();
-            }
+        assert_eq!(
+            ui.tasks_run(),
+            expected,
+            "an answered task must already be counted"
+        );
+    }
+}
+
+/// Threads that keep cores busy until dropped, on every path out of a test.
+struct SpinLoad {
+    spinning: Arc<std::sync::atomic::AtomicBool>,
+    spinners: Vec<thread::JoinHandle<()>>,
+}
+
+impl SpinLoad {
+    fn start(threads: usize) -> Self {
+        let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let spinners = (0..threads)
+            .map(|_| {
+                let spinning = Arc::clone(&spinning);
+                thread::spawn(move || {
+                    while spinning.load(Ordering::Relaxed) {
+                        std::hint::spin_loop();
+                    }
+                })
+            })
+            .collect();
+        Self { spinning, spinners }
+    }
+}
+
+impl Drop for SpinLoad {
+    fn drop(&mut self) {
+        self.spinning.store(false, Ordering::Relaxed);
+        for spinner in self.spinners.drain(..) {
+            let _ = spinner.join();
         }
     }
-    spinning.store(false, Ordering::Relaxed);
-    for spinner in spinners {
-        spinner.join().expect("a spinner stops");
-    }
-
-    assert_eq!(late_counts, 0, "an answered task must already be counted");
 }
 
 // ── The live instance ───────────────────────────────────────────────────
