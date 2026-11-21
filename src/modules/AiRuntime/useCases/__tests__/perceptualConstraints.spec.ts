@@ -1942,6 +1942,36 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             ],
             [],
         ],
+        // a spaced ampersand joins a later object as "and" does
+        [
+            "don't make the mix wider & the vocal brighter",
+            [
+                measured('stereo-width-not-widened-v1', "don't make the mix wider & the vocal brighter", MIX),
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the mix wider & the vocal brighter",
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the vocal & the drums brighter",
+            [
+                measured(
+                    'brightness-not-raised-v1',
+                    "don't make the vocal & the drums brighter",
+                    onTracks('vocal', 'drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            'keep the level of the vocal & the drums',
+            [measured('loudness-held-v1', 'keep the level of the vocal & the drums', onTracks('vocal', 'drums'))],
+            [],
+        ],
+        ["don't make it louder & add reverb", [measured('loudness-not-raised-v1', "don't make it louder", MIX)], []],
         // "or" joins a later object under the negation as "and" does, after a comma or alone
         [
             "don't make the mix wider, or the vocal brighter",
@@ -2548,6 +2578,39 @@ describe('reading only governed protections and whole object names', () => {
             [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
             [],
         ],
+        // a release or stop after a kept quality opens a clause of its own, so the keep reads as it does alone
+        [
+            'keep the vocal bright stop turning it down',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright done turning it up',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['keep the mix wide stop turning', [measured('stereo-width-held-v1', 'keep the mix wide', MIX)], []],
+        [
+            'keep the vocal bright quit turning',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright stop getting wider',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        // a release governing a negated keep gives the negation up, so the keep stands
+        [
+            'stop trying to not keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'stop trying not keep the vocal bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
         // a release governs only a verb it leads to as a gerund or through an intent, so a release word
         // before a bare keep is a clause of its own and the keep holds
         [
@@ -2953,6 +3016,10 @@ describe('reading only governed protections and whole object names', () => {
         ['make the guitar pop, keep Keys - from getting wider', 'keep Keys - from getting wider'],
         ["don't let Keys - get louder", "don't let Keys - get louder"],
         ["don't make Keys - louder but the vocal can be louder", "don't make Keys - louder"],
+        // a joining word or a spaced ampersand leaves the rest of the protection standing as a dash does
+        ['keep Keys & from getting wider', 'keep Keys & from getting wider'],
+        ['keep Keys and from getting wider', 'keep Keys and from getting wider'],
+        ["don't let Keys & get louder", "don't let Keys & get louder"],
     ])('records "%s" unsupported', (prompt, clause) => {
         expect(compilePerceptualConstraints(prompt, grammarContext('Keys'))).toEqual({
             constraints: [],

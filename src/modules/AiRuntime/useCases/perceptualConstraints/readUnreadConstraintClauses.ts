@@ -27,6 +27,7 @@ import {
     POSSESSIVE_DETERMINER,
     PREDICATE_WORD,
     SCOPE_WORD,
+    SPACED_AMPERSAND,
     STOP_VERB,
     SUBORDINATOR,
 } from './constraintClauseWords';
@@ -88,11 +89,11 @@ const PREVENTED_MOVE = new RegExp(
 const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT})${WORD_END}`, 'iu');
 const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
 /**
- * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and"
- * or "or" is a boundary whose next clause may share a protection.
+ * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and",
+ * a spaced ampersand writing one, or an "or" is a boundary whose next clause may share a protection.
  */
 const BOUNDARY = new RegExp(
-    String.raw`${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b|\b(?<joiner>${LIST_JOINER})\b`,
+    String.raw`${CLAUSE_PUNCTUATION}|(?<joiner>\b${LIST_JOINER}\b|${SPACED_AMPERSAND})|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
     'giu'
 );
 /** The words a joined clause may open with and still continue the protection before it. */
@@ -101,7 +102,7 @@ const CONTINUES = new RegExp(
     'iu'
 );
 /**
- * The words a segment after a separator opens with when it is the rest of the protection before it,
+ * The words a segment after a separator or joiner opens with when it is the rest of the protection before it,
  * which named its object and nothing it governs: a prevented move ("keep Keys - from getting wider"), a
  * becoming or linking verb ("don't let Keys - get louder") or a comparative ("don't make Keys - louder").
  * A verb of its own ("don't make it harsh - brighten the vocal") opens a clause of its own.
@@ -197,8 +198,9 @@ function overlapsConsumed(governed: Governed, consumed: readonly ConsumedSpan[])
 }
 
 /**
- * A joined segment may continue an open chain, and a separated one the rest of a protection that
- * governed nothing before the separator; any other opens a chain only if it protects.
+ * A joined segment may continue an open chain, and a separated or joined one the rest of a protection
+ * that governed nothing before the separator or joiner ("keep Keys & from getting wider"); any other
+ * opens a chain only if it protects.
  */
 function chainStep(segment: Segment, chain: Chain | null, request: NetRequest): ChainStep | null {
     const text = request.masked.slice(segment.start, segment.end);
@@ -206,7 +208,7 @@ function chainStep(segment: Segment, chain: Chain | null, request: NetRequest): 
     if (chain?.continuable === true && segment.joined && continuesChain(text)) {
         return { chain, governed: { start: segment.start, end, holds: chain.holds } };
     }
-    if (chain !== null && !chain.continuable && segment.separated && DANGLING_REST.test(text)) {
+    if (chain !== null && !chain.continuable && (segment.separated || segment.joined) && DANGLING_REST.test(text)) {
         const governed = { start: segment.start, end, holds: false };
         return { chain: { ...chain, holds: false, continuable: true }, governed };
     }

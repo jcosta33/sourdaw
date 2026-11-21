@@ -57,15 +57,22 @@ export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
 export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
-/** The mark joining two object members as "and" does, spaced or not: "the vocal & the drums", "vocal&drums". */
+/**
+ * The ampersand, which is "and" written as a mark: spaced, it ends a clause where "and" does (it is a
+ * separator token) and joins a later member wherever "and" joins one ("don't make the mix wider & the
+ * vocal brighter"), and unspaced it joins object members ("vocal&drums").
+ */
 const AMPERSAND = '&';
+/** A spaced ampersand: "and" written as a mark. */
+export const SPACED_AMPERSAND = String.raw`(?<!\S)${AMPERSAND}(?!\S)`;
 /** The marks separating clauses only as a token of their own, since each may join words: "lo-fi", "3–4 dB". */
 const TOKEN_SEPARATOR_MARKS = String.raw`\-–${AMPERSAND}/`;
 /** An em dash, which joins no word, so it separates clauses spaced or not: "the punch—make the vocal brighter". */
 const EM_DASH = '—';
 /**
- * What separates two clauses without a clause mark: a dash, ampersand or slash standing as a token of its
- * own ("keep the vocal bright - make the drums wider"), an em dash wherever it stands, or a line break.
+ * What separates two clauses without a clause mark: a dash, ampersand (as "and" ends one) or slash
+ * standing as a token of its own ("keep the vocal bright - make the drums wider"), an em dash wherever it
+ * stands, or a line break.
  * It is never a word of either.
  */
 export const CLAUSE_SEPARATOR = String.raw`(?:(?<!\S)[${TOKEN_SEPARATOR_MARKS}${EM_DASH}]+(?!\S)|${EM_DASH}|[\n\r])`;
@@ -118,17 +125,21 @@ const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
 function joinedBy(joiningWords: string): string {
     return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s*(?:${CLAUSE_SEPARATOR}|${OPENING_BRACKET})\s*${joiningWords}\s+|\s+${joiningWords}\s+)`;
 }
+/** Joining words holding "and", which a spaced ampersand also writes: "the level & the width". */
+function withAmpersand(joiningWords: string): string {
+    return String.raw`(?:${joiningWords}|${AMPERSAND})`;
+}
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
-export const AND_JOIN = joinedBy(words([AND]));
+export const AND_JOIN = joinedBy(withAmpersand(words([AND])));
 /** The words joining list members: "the vocal and the drums", "louder or brighter". */
 export const LIST_JOINER = words([AND, OR]);
 /**
  * A comma, "and" or "or" joining a later direction or object to the one before it: "brighter, wider, or
  * louder", "don't make the mix wider, or the vocal brighter".
  */
-export const LIST_JOIN = joinedBy(LIST_JOINER);
+export const LIST_JOIN = joinedBy(withAmpersand(LIST_JOINER));
 /** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
-export const TERM_JOIN = joinedBy(words([AND, BUT]));
+export const TERM_JOIN = joinedBy(withAmpersand(words([AND, BUT])));
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
 export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
@@ -372,6 +383,11 @@ const UNREFUSED_RELEASE = String.raw`(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}
  */
 const RELEASED_GERUND = String.raw`(?<=${UNREFUSED_RELEASE}\s+)\p{L}+ing${WORD_END}`;
 /**
+ * A governing negation no release gives up, directly or through an intent: a release before the
+ * negation gives up the "not" it leads to, so "stop trying to not keep the vocal bright" keeps it.
+ */
+const UNRELEASED_NEGATION = String.raw`(?<!${UNREFUSED_RELEASE}(?:\s+${RELEASED_INTENT})?\s+)${GOVERNING_NEGATION}`;
+/**
  * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
  * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
  * want to keep …", "don't bother keeping …", "don't worry about keeping …", "nobody needs to keep …",
@@ -380,10 +396,11 @@ const RELEASED_GERUND = String.raw`(?<=${UNREFUSED_RELEASE}\s+)\p{L}+ing${WORD_E
  * …") or through an intent ("stop trying to keep …", "stop caring about keeping …"). Either permits what a
  * keep, stop, prevent or leave names, so neither a reader nor the net reads a protection there. A
  * negation or permission governing the release refuses it, so the keep stands as it would alone
- * ("don't stop keeping …", "you don't have to stop keeping …"). A negation governing an earlier verb
+ * ("don't stop keeping …", "you don't have to stop keeping …"), and a release governing the negation
+ * gives it up ("stop trying to not keep …"). A negation governing an earlier verb
  * ("without changing the tempo keep the vocal bright") permits nothing.
  */
-export const NOT_PERMITTED = String.raw`(?<!${GOVERNING_NEGATION})(?!${RELEASED_GERUND})(?<!${UNREFUSED_RELEASE}\s+${RELEASED_INTENT}\s+)`;
+export const NOT_PERMITTED = String.raw`(?<!${UNRELEASED_NEGATION})(?!${RELEASED_GERUND})(?<!${UNREFUSED_RELEASE}\s+${RELEASED_INTENT}\s+)`;
 /**
  * The one leading words a move clause names its move through: "sound louder", "getting any wider",
  * "going brighter". The verb is never part of the object, so "sound louder" is a louder clause.
@@ -577,8 +594,9 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
  * making the drums wider", "keep the vocal getting brighter". It asks for more of the move, and never
- * reaches past a separator into the next clause's move.
+ * reaches past a separator into the next clause's move, nor takes a move a release or stop leads to,
+ * which opens a clause of its own ("keep the vocal bright stop turning it down").
  */
-const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
+const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?<!\b(?:${RELEASE_LEAD}|${STOPPING_WORD})\s+)(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
 export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
