@@ -4,11 +4,13 @@ import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedErro
 import { WEB_LLM_COMPLETION_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 import { WEBLLM_THINKING_MODEL_IDS } from '../../models/ModelInfo';
 
-import { engineState } from './engineLifecycleState';
+import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { initWebLlmEngine } from './initWebLlmEngine';
 import { webLlmRequestCoordinator } from './webLlmRequestCoordinator';
 
 type GenerateWebLlmCompletionOptions = {
+    /** The model to load when none is loaded; the caller resolves it, since this layer cannot know what the machine is offered. */
+    modelId?: string;
     temperature?: number;
     maxTokens?: number;
     signal?: AbortSignal;
@@ -36,7 +38,7 @@ export async function generateWebLlmCompletion(
     options?: GenerateWebLlmCompletionOptions
 ): Promise<string> {
     options?.signal?.throwIfAborted();
-    const eng = await initWebLlmEngine(undefined, { signal: options?.signal });
+    const eng = await loadEngine(options);
     options?.signal?.throwIfAborted();
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -84,6 +86,10 @@ export async function generateWebLlmCompletion(
     // Qwen3 prefixes answers with <think>...</think> reasoning blocks.
     // Strip them so callers receive only the final output.
     return raw.replaceAll(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
+function loadEngine(options: GenerateWebLlmCompletionOptions | undefined): Promise<WebLlmEngine> {
+    return initWebLlmEngine(options?.modelId, { signal: options?.signal });
 }
 
 // web-llm prepends an empty thinking block for any model it is sent the switch for, so a model with no thinking block never gets it.

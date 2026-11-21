@@ -1,28 +1,40 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { pendingKeyedUnloads } from '../pendingKeyedUnloads';
+import { loadedExternalInstances } from '../loadedExternalInstances';
+import { pendingKeyedUnloadGenerations, pendingKeyedUnloads } from '../pendingKeyedUnloads';
+import { scheduleKeyedUnload } from '../scheduleKeyedUnload';
 
-describe('pendingKeyedUnloads', () => {
-    it('keeps a later unload pending when an earlier unload of the same instance settles', async () => {
-        const earlier = Promise.withResolvers<void>();
-        const later = Promise.withResolvers<void>();
-        pendingKeyedUnloads.track('overlap', earlier.promise);
-        pendingKeyedUnloads.track('overlap', later.promise);
+const INSTANCE_ID = 'pending-unload-instance';
 
-        earlier.resolve();
-        await earlier.promise;
-
-        expect(pendingKeyedUnloads.get('overlap')).toBe(later.promise);
-        later.resolve();
-        await later.promise;
-        expect(pendingKeyedUnloads.get('overlap')).toBeUndefined();
+describe('pending keyed unloads', () => {
+    afterEach(() => {
+        loadedExternalInstances.delete(INSTANCE_ID);
     });
 
-    it('advances the generation once per admitted unload', () => {
-        const before = pendingKeyedUnloads.generation('counted');
-        pendingKeyedUnloads.track('counted', Promise.resolve());
-        pendingKeyedUnloads.track('counted', Promise.resolve());
+    it('keeps a later unload pending when an earlier unload of the same instance settles', async () => {
+        loadedExternalInstances.add(INSTANCE_ID);
+        const earlierNative = Promise.withResolvers<void>();
+        const laterNative = Promise.withResolvers<void>();
+        const earlier = scheduleKeyedUnload(INSTANCE_ID, () => earlierNative.promise);
+        const later = scheduleKeyedUnload(INSTANCE_ID, () => laterNative.promise);
 
-        expect(pendingKeyedUnloads.generation('counted')).toBe(before + 2);
+        earlierNative.resolve();
+        await earlier;
+
+        expect(pendingKeyedUnloads.get(INSTANCE_ID)).toBe(later);
+        laterNative.resolve();
+        await later;
+        expect(pendingKeyedUnloads.has(INSTANCE_ID)).toBe(false);
+    });
+
+    it('advances the instance generation once per admitted unload', async () => {
+        const before = pendingKeyedUnloadGenerations.get(INSTANCE_ID) ?? 0;
+
+        await Promise.all([
+            scheduleKeyedUnload(INSTANCE_ID, () => Promise.resolve()),
+            scheduleKeyedUnload(INSTANCE_ID, () => Promise.resolve()),
+        ]);
+
+        expect(pendingKeyedUnloadGenerations.get(INSTANCE_ID)).toBe(before + 2);
     });
 });

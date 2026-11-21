@@ -1,13 +1,37 @@
-import { roundToThousandths } from '#/utils/Math/roundToThousandths';
-
 import { type MetricGoalEvaluation } from '../../models/MetricGoalAdmission';
 import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from '../objectiveMetricProjection';
+import { readVerdictFigures } from '../readVerdictFigures';
 
 type Criterion = MetricGoalEvaluation['criteria'][number];
 type Failure = NonNullable<MetricGoalEvaluation['failure']>;
 
-function figure(value: number | undefined): string {
-    return value === undefined ? 'unavailable' : String(roundToThousandths(value));
+function movementVerb(relation: Criterion['relation']): string {
+    if (relation === 'no-increase') {
+        return 'rose';
+    }
+    if (relation === 'no-decrease') {
+        return 'fell';
+    }
+    return 'moved';
+}
+
+function describeOutOfTolerance(criterion: Criterion, clause: string, subject: string, unit: string): string {
+    const moved = movementVerb(criterion.relation);
+    const [baseline] = criterion.baseline;
+    const [observed] = criterion.observed;
+    if (baseline === undefined || observed === undefined) {
+        return `The preview breaks “${clause}”: ${subject} ${moved} from ${String(baseline ?? 'unavailable')} to ${String(observed ?? 'unavailable')} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
+    }
+    const { from, to, movement } = readVerdictFigures({
+        from: baseline,
+        to: observed,
+        relation: criterion.relation,
+        tolerance: criterion.tolerance,
+        rounding: 'decimals',
+        start: 3,
+        movement: 'printed',
+    });
+    return `The preview breaks “${clause}”: ${subject} ${moved} from ${String(from)} to ${String(to)} ${unit}, a movement of ${String(movement)} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
 }
 
 /** The refusal the user sees for a constraint goal: the clause, and for a measured one the metric and figures. */
@@ -28,14 +52,7 @@ export function describePerceptualConstraintFailure(
     const unit = Object.entries(OBJECTIVE_METRIC_UNITS).find(([id]) => id === metricId)?.[1] ?? '';
     const subject = `${metric}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${criterion.targetIds.map(nameOf).join(', ')}`;
     if (failure === 'out-of-tolerance') {
-        let moved = 'moved';
-        if (criterion.relation === 'no-increase') {
-            moved = 'rose';
-        }
-        if (criterion.relation === 'no-decrease') {
-            moved = 'fell';
-        }
-        return `The preview breaks “${clause}”: ${subject} ${moved} from ${figure(criterion.baseline[0])} to ${figure(criterion.observed[0])} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
+        return describeOutOfTolerance(criterion, clause, subject, unit);
     }
     return `“${clause}” is unverified: no compatible baseline and preview measurement of ${subject} exists for this batch. Re-preview to measure it.`;
 }

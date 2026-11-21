@@ -24,7 +24,8 @@ import {
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
-import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { pendingKeyedUnloadGenerations, pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from './pendingUnloadWaitTimeout';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -129,6 +130,58 @@ function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPlugi
     }
 }
 
+type PendingUnloadWait = 'settled' | 'timed-out';
+
+/**
+ * Ordering only: the unload's own outcome stays its caller's, so a rejection
+ * counts as settled here. Bounded, because the native unload is not.
+ */
+function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnloadWait> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = pendingUnload.then(
+        (): PendingUnloadWait => 'settled',
+        (): PendingUnloadWait => 'settled'
+    );
+    const deadline = new Promise<PendingUnloadWait>((resolve) => {
+        timer = setTimeout(() => resolve('timed-out'), PENDING_UNLOAD_WAIT_TIMEOUT_MS);
+    });
+    return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Activate once the queued unload of the same instance settles, so the
+ * activation reflects the instance the unload leaves. An unload still pending
+ * at the deadline keeps the instance and its pending entry; a later activation
+ * waits again. A later unload of the instance or a runtime rebuild admitted
+ * during the wait decided the instance's fate instead, so the waiter does not
+ * reload: reloading would leave a plugin loaded that nothing in the project
+ * holds (Remove, Undo, Redo).
+ */
+async function activateAfterPendingUnload(
+    input: ActivateExternalPluginInput,
+    pendingUnload: Promise<void>
+): Promise<ExternalPluginActivationResult> {
+    const unloadGeneration = pendingKeyedUnloadGenerations.get(input.instanceId);
+    const activationEpoch = externalPluginActivationEpoch.current;
+    if ((await waitForPendingUnload(pendingUnload)) === 'settled') {
+        if (
+            pendingKeyedUnloadGenerations.get(input.instanceId) !== unloadGeneration ||
+            externalPluginActivationEpoch.current !== activationEpoch
+        ) {
+            return {
+                status: 'failed',
+                stage: 'load',
+                reason: 'External plugin activation was superseded by a later unload',
+            };
+        }
+        return activateExternalPlugin(input);
+    }
+    const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
+    setActivationStatus(input.instanceId, 'error', reason);
+    logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
+    return { status: 'failed', stage: 'load', reason };
+}
+
 /**
  * Instantiate a native plugin in the live audio graph and restore its persisted
  * state chunk — exactly once per graph generation. This is the single activation
@@ -144,35 +197,6 @@ function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPlugi
  * (`add_hosted_plugin` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
-type DeferredActivation = {
-    readonly input: ActivateExternalPluginInput;
-    readonly unloadGeneration: number;
-    readonly activationEpoch: number;
-};
-
-/**
- * Resume an activation that waited for a pending unload, unless a later unload of the same instance
- * or a runtime rebuild was admitted meanwhile: that later owner decided the instance's fate, and
- * reloading here would leave a plugin loaded that nothing in the project holds (Remove, Undo, Redo).
- */
-function resumeAfterUnload({
-    input,
-    unloadGeneration,
-    activationEpoch,
-}: DeferredActivation): Promise<ExternalPluginActivationResult> {
-    if (
-        pendingKeyedUnloads.generation(input.instanceId) !== unloadGeneration ||
-        externalPluginActivationEpoch.current !== activationEpoch
-    ) {
-        return Promise.resolve({
-            status: 'failed',
-            stage: 'load',
-            reason: 'External plugin activation was superseded by a later unload',
-        });
-    }
-    return activateExternalPlugin(input);
-}
-
 export function activateExternalPlugin({
     pluginId,
     instanceId,
@@ -190,24 +214,11 @@ export function activateExternalPlugin({
             })
         );
     }
-    const activationEpoch = externalPluginActivationEpoch.current;
-    // An Undo that restores a removed device can land while the removal's unload still waits on the
-    // native host, or still queues behind the instance's first load: the instance reads loaded, yet
-    // the unload is about to forget it, so joining an in-flight activation would answer for a plugin
-    // that is about to go.
     const pendingUnload = pendingKeyedUnloads.get(instanceId);
     if (pendingUnload) {
-        const waited: DeferredActivation = {
-            input: { pluginId, instanceId, stateChunk, onLatencyMs },
-            unloadGeneration: pendingKeyedUnloads.generation(instanceId),
-            activationEpoch,
-        };
-        // The unload's own caller owns its failure; either outcome settles whether the instance is loaded.
-        return pendingUnload.then(
-            () => resumeAfterUnload(waited),
-            () => resumeAfterUnload(waited)
-        );
+        return activateAfterPendingUnload({ pluginId, instanceId, stateChunk, onLatencyMs }, pendingUnload);
     }
+    const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);
     if (activeTask) {
         return activeTask;

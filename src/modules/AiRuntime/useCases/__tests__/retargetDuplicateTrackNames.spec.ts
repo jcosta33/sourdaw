@@ -563,6 +563,19 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         expect(newestCommittedTrackIds()).toEqual(['lead-d']);
     });
 
+    it('reads an order answer for a shared name holding regex metacharacters as that track', () => {
+        setProjectTracks([
+            ['take-a', 'Lead (take'],
+            ['bass', 'Bass'],
+            ['take-b', 'Lead (take'],
+        ]);
+
+        expect(readNamedTracks('the second Lead (take', getProjectContext())).toEqual({
+            status: 'named',
+            ids: ['take-b'],
+        });
+    });
+
     it('reads "the first First Lead" as the first of the tracks named First Lead, not a Lead', () => {
         setProjectTracks([
             ['first-a', 'First Lead'],
@@ -620,6 +633,24 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         expect(lastAssistantMessage()?.content ?? '').not.toContain('cannot be told apart');
     });
 
+    it.each(['Lead louder too', 'the third Lead louder too'])(
+        'leaves "%s" beside two Leads to ordinary planning, not a which-track ask',
+        async (prompt) => {
+            setProjectTracks(TWO_LEADS);
+            scriptProvider([
+                [VOCALS_DOWN_3_DB],
+                [{ name: 'muteTrack', arguments: { trackId: 'track-bass', muted: true } }],
+            ]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage(prompt);
+
+            expect(providerCallCount()).toBeGreaterThan(calls);
+            expect(lastAssistantMessage()?.content ?? '').not.toContain('Which track should take the last change');
+        }
+    );
+
     it('takes "the first Lead" of a single Lead as that track', async () => {
         setProjectTracks([
             ['track-vocals', 'Vocals'],
@@ -640,14 +671,21 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         ['the second', TWO_LEADS, 'unread'],
         ['track 2', TWO_LEADS, 'unread'],
         ['the second Lead Bass', TWO_LEADS, 'unread'],
-        ['the 2nd Lead', TWO_LEADS, 'ambiguous'],
-        ['Lead 2', TWO_LEADS, 'ambiguous'],
-        ['the zeroth Lead', TWO_LEADS, 'ambiguous'],
+        ['the 2nd Lead', TWO_LEADS, 'unread'],
+        ['Lead 2', TWO_LEADS, 'unread'],
+        ['the zeroth Lead', TWO_LEADS, 'unread'],
+        ['Lead and blah', TWO_LEADS, 'unread'],
+        ['Lead and Bass', TWO_LEADS, 'ambiguous'],
+        ['the third Lead and Bass', TWO_LEADS, 'ambiguous'],
+        ['the first Lead and the third Lead', TWO_LEADS, 'ambiguous'],
+        ['the third Lead and the first Lead', TWO_LEADS, 'ambiguous'],
+        ['the first Lead and the second Lead', SECOND_LEAD_TRACKS, 'collision'],
+        ['the second Lead and the first Lead', SECOND_LEAD_TRACKS, 'collision'],
         ['the second Lead', THREE_LEADS, 'named'],
         ['the fourth Lead', THREE_LEADS, 'ambiguous'],
         ['the second Lead', SECOND_LEAD_TRACKS, 'collision'],
         ['the second Lead louder', SECOND_LEAD_TRACKS, 'unread'],
-        ['the third Lead louder', TWO_LEADS, 'ambiguous'],
+        ['the third Lead louder', TWO_LEADS, 'unread'],
         ['the fourth Lead', FOUR_LEADS, 'named'],
         [
             'the first First Lead',

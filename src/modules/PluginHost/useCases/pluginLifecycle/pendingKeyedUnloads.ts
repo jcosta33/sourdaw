@@ -1,34 +1,20 @@
 /**
- * Keyed unloads admitted but not yet settled, by instance id. An activation of an instance that is
- * still loaded only because its unload has not reached the native host waits here, so it reloads
- * after the teardown instead of answering active for an instance about to be forgotten. Each
- * admitted unload advances the instance's generation, so a waiting activation can tell that a later
- * unload was requested while it waited and must not reload.
+ * The keyed unload each instance id has queued on its lifecycle turn and not
+ * yet settled.
+ *
+ * Activation is not serialized on that turn, so a reactivation of an instance
+ * still loaded would answer from the prior outcome and then lose the instance
+ * to the queued unload. `activateExternalPlugin` waits on the entry here
+ * instead, and activates once the unload has settled. An entry leaves on its
+ * own settlement, and only while it is still the latest unload for that id.
+ *
+ * Ephemeral runtime state, not project truth.
  */
-const pending = new Map<string, Promise<void>>();
-const generations = new Map<string, number>();
+export const pendingKeyedUnloads = new Map<string, Promise<void>>();
 
-function forgetSettled(instanceId: string, unload: Promise<void>): void {
-    if (pending.get(instanceId) === unload) {
-        pending.delete(instanceId);
-    }
-}
-
-export const pendingKeyedUnloads = {
-    track(instanceId: string, unload: Promise<void>): void {
-        pending.set(instanceId, unload);
-        generations.set(instanceId, (generations.get(instanceId) ?? 0) + 1);
-        unload.then(
-            () => forgetSettled(instanceId, unload),
-            () => forgetSettled(instanceId, unload)
-        );
-    },
-
-    get(instanceId: string): Promise<void> | undefined {
-        return pending.get(instanceId);
-    },
-
-    generation(instanceId: string): number {
-        return generations.get(instanceId) ?? 0;
-    },
-};
+/**
+ * How many keyed unloads each instance id has had admitted. An activation that
+ * waited on one compares it after the wait: a later unload admitted meanwhile
+ * (Remove, Undo, Redo) owns the instance's fate, so the waiter must not reload.
+ */
+export const pendingKeyedUnloadGenerations = new Map<string, number>();

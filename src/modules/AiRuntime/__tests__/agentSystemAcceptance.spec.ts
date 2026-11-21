@@ -31,7 +31,12 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { getProjectHandlers, parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import {
+    getCanonicalTrackRole,
+    getProjectHandlers,
+    parseSemanticProjectQueryInput,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -1733,6 +1738,11 @@ async function scorePlannedCorpusCase(
     }
 
     let matchesOracle = true;
+    if (testCase.oracle.kind === 'denied') {
+        // A fixed policy denies before any provider turn; a denial reached after one is the provider's
+        // own decline or rejection, never the policy the case pins.
+        matchesOracle = runtimeMocks.generateWebLlmCompletion.mock.calls.length === 0;
+    }
     if (testCase.oracle.kind === 'answer') {
         matchesOracle = answerMatchesOracle({
             oracle: parseAnswerOracle(testCase.oracle, testCase.questionKind),
@@ -3104,6 +3114,28 @@ describe('agent acceptance corpora', () => {
         expect(parseFrozenThresholds(doc)).toEqual(AGENT_ACCEPTANCE_THRESHOLDS);
     });
 
+    it('gives every fixture track the canonical role the app derives for it', () => {
+        const derived = context.tracks.map((track) => ({
+            id: track.id,
+            canonicalRole: getCanonicalTrackRole({
+                track: {
+                    id: track.id,
+                    name: track.name,
+                    kind: track.kind,
+                    clips: track.clips.map((clip) => ({ id: clip.id, type: clip.type })),
+                    devices: track.devices.map((device) => ({
+                        type: device.type,
+                        parameterValues: Object.fromEntries(
+                            (device.parameters ?? []).map((parameter) => [parameter.id, parameter.value])
+                        ),
+                    })),
+                },
+            }),
+        }));
+
+        expect(context.tracks.map((track) => ({ id: track.id, canonicalRole: track.canonicalRole }))).toEqual(derived);
+    });
+
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus schema', (corpusName) => {
         const corpus = corpora[corpusName];
 
@@ -3472,6 +3504,37 @@ describe('agent acceptance corpora', () => {
                 vi.unstubAllGlobals();
                 runtimeMocks.generateWebLlmCompletion.mockReset();
             }
+        });
+
+        it('scores a policy denial only when no provider turn came before it', async () => {
+            const policyDenial = corpusCase('development', 'AC054-DEV-DENY-1');
+            const providerDenial: CorpusCase = {
+                ...policyDenial,
+                id: 'deny-after-provider-turn',
+                prompt: 'publish this song to every streaming service',
+                providerTurns: [
+                    {
+                        kind: 'decline',
+                        args: { kind: 'unsupported', reason: 'No command publishes a song.', questions: [] },
+                    },
+                ],
+            };
+            const scored = async (testCase: CorpusCase) =>
+                fixtureLifetime.track(async () => {
+                    const barrel = spyOnBarrelWrites();
+                    try {
+                        return await runCorpusCase(testCase, barrel.log);
+                    } finally {
+                        barrel.restore();
+                    }
+                });
+
+            const policy = await scored(policyDenial);
+            expect(policy.result).toMatchObject({ observed: 'deny-policy', exactMatch: true });
+
+            const provider = await scored(providerDenial);
+            expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(1);
+            expect(provider.result).toMatchObject({ observed: 'deny-policy', exactMatch: false });
         });
 
         it('counts a project write a preview render makes against its measured case', async () => {
