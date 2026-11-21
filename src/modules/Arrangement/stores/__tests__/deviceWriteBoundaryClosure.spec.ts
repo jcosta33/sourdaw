@@ -566,13 +566,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and call). These pure helpers compile or admit data into a versioned Command
         // envelope; they do not perform device IO or hydration.
         'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
-        // Count provenance: measured 7 — the `compilePreviewMeasurementProposal`
-        // import, module-path literal, two calls and type-level
-        // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
-        // local `compileProposal` declaration and call. The type reference adds no IO;
-        // measurement still uses the same grounding and versioned-envelope route, with
-        // no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
+        // Count provenance: measured 10 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, one call and two type-level references
+        // (`Parameters<…>` and `ReturnType<…>`), plus the local `compileSource`
+        // declaration and its two calls and the `compileProposals` declaration and
+        // call. A preview of several recipes compiles each cumulative prefix through
+        // that one call; the type references add no IO, and measurement keeps the
+        // same grounding and versioned-envelope route with no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 10,
         // Count provenance: new file, measured 4 — the `compilePreviewMeasurementProposal`
         // import, module-path literal and one call, plus the `compilePreviewPrefix`
         // declaration. It compiles one prefix's prepared batch into an immutable Command

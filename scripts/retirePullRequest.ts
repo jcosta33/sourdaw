@@ -508,6 +508,9 @@ function readReviewProjection(number: number, headRefName: string, gh: ReadGh) {
     if (repository.nameWithOwner !== REQUIRED_REPOSITORY || pullRequest.number !== number) {
         fail(`cannot inspect retirement reviews for PR #${number}`);
     }
+    if (typeof pullRequest.headRefName !== 'string') {
+        fail(`retirement response for PR #${number} has no head branch`);
+    }
     if (pullRequest.headRefName !== headRefName) {
         fail(`PR #${number} head branch moved during retirement review inspection`);
     }

@@ -436,6 +436,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['read_plugin_tails', ['instance_ids']],
     ['register_levain_sample', ['bank_key', 'sample_id', 'sample_rate', 'channels', 'pcm']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
     ['timeline_sample_lifecycle', ['request']],
