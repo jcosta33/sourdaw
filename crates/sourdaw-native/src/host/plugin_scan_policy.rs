@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -147,31 +148,25 @@ impl PluginScanPolicy {
     /// walked — a symlinked allowed root's own canonical path — is
     /// authorized too; only a request that itself carries a symlink
     /// component and is not an own root is refused.
-    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, String> {
+    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, ScanPathRefusal> {
         if requested_path.as_os_str().is_empty() {
-            return Err("Plugin scan path cannot be empty".to_string());
+            return Err(ScanPathRefusal::Empty);
         }
 
         if !requested_path.is_absolute() {
-            return Err(format!(
-                "Plugin scan path must be absolute: {}",
-                requested_path.display()
-            ));
+            return Err(ScanPathRefusal::Relative(requested_path.to_path_buf()));
         }
 
         let requested_path_exists = requested_path.exists();
         if requested_path_exists {
             match path_has_symlink_component(requested_path) {
                 Ok(true) if self.is_own_allowed_root(requested_path) => {
-                    return fs::canonicalize(requested_path).map_err(|error| {
-                        format!(
-                            "Plugin scan path cannot be resolved: {}: {}",
-                            requested_path.display(),
-                            error
-                        )
-                    });
+                    return fs::canonicalize(requested_path)
+                        .map_err(|error| unresolvable_scan_path(requested_path, &error));
                 }
-                Ok(true) => return Err(unauthorized_scan_path(requested_path)),
+                Ok(true) => {
+                    return Err(ScanPathRefusal::Unauthorized(requested_path.to_path_buf()))
+                }
                 Ok(false) => {}
                 Err(error) => return Err(error),
             }
@@ -180,13 +175,7 @@ impl PluginScanPolicy {
         let requested_path = if requested_path_exists {
             match fs::canonicalize(requested_path) {
                 Ok(path) => path,
-                Err(error) => {
-                    return Err(format!(
-                        "Plugin scan path cannot be resolved: {}: {}",
-                        requested_path.display(),
-                        error
-                    ));
-                }
+                Err(error) => return Err(unresolvable_scan_path(requested_path, &error)),
             }
         } else {
             normalize_path_lexically(requested_path)
@@ -217,7 +206,7 @@ impl PluginScanPolicy {
             return Ok(requested_path);
         }
 
-        Err(unauthorized_scan_path(&requested_path))
+        Err(ScanPathRefusal::Unauthorized(requested_path))
     }
 
     /// Whether `path` is one of this policy's own platform roots, compared
@@ -252,11 +241,61 @@ fn resolve_allowed_root(allowed_root: &Path) -> PathBuf {
     fs::canonicalize(allowed_root).unwrap_or_else(|_| normalize_path_lexically(allowed_root))
 }
 
-fn unauthorized_scan_path(path: &Path) -> String {
-    format!(
-        "Unauthorized plugin scan path: {}. It is not inside a default plugin folder or a folder added in plugin settings.",
-        path.display()
-    )
+/// Why a path was not authorized as a scan root or plugin file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanPathRefusal {
+    Empty,
+    Relative(PathBuf),
+    /// The path exists but did not canonicalize; `cause` is the OS error text.
+    Unresolvable {
+        path: PathBuf,
+        cause: String,
+    },
+    /// A component could not be inspected for a symlink; `cause` is the OS error text.
+    Uninspectable {
+        path: PathBuf,
+        cause: String,
+    },
+    /// The path is inside no allowed root and no granted folder, or reaches
+    /// one through a symlink.
+    Unauthorized(PathBuf),
+}
+
+impl fmt::Display for ScanPathRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("Plugin scan path cannot be empty"),
+            Self::Relative(path) => {
+                write!(f, "Plugin scan path must be absolute: {}", path.display())
+            }
+            Self::Unresolvable { path, cause } => write!(
+                f,
+                "Plugin scan path cannot be resolved: {}: {}",
+                path.display(),
+                cause
+            ),
+            Self::Uninspectable { path, cause } => write!(
+                f,
+                "Plugin scan path cannot be inspected: {}: {}",
+                path.display(),
+                cause
+            ),
+            Self::Unauthorized(path) => write!(
+                f,
+                "Unauthorized plugin scan path: {}. It is not inside a default plugin folder or a folder added in plugin settings.",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ScanPathRefusal {}
+
+fn unresolvable_scan_path(path: &Path, error: &std::io::Error) -> ScanPathRefusal {
+    ScanPathRefusal::Unresolvable {
+        path: path.to_path_buf(),
+        cause: error.to_string(),
+    }
 }
 
 /// The platform's plugin folders, **most specific first**.
@@ -379,7 +418,7 @@ pub(crate) fn normalize_path_lexically(path: &Path) -> PathBuf {
     normalized_path
 }
 
-pub(crate) fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
+pub(crate) fn path_has_symlink_component(path: &Path) -> Result<bool, ScanPathRefusal> {
     let mut current_path = PathBuf::new();
 
     for component in path.components() {
@@ -398,11 +437,10 @@ pub(crate) fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(error) => {
-                return Err(format!(
-                    "Plugin scan path cannot be inspected: {}: {}",
-                    current_path.display(),
-                    error
-                ));
+                return Err(ScanPathRefusal::Uninspectable {
+                    path: current_path,
+                    cause: error.to_string(),
+                });
             }
         }
     }
@@ -612,11 +650,15 @@ mod tests {
 
         let result = policy.authorize_scan_root(&rejected_path);
 
-        assert!(
-            result
-                .as_ref()
-                .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
-            "expected unauthorized path error, got {result:?}"
+        let Err(ScanPathRefusal::Unauthorized(refused)) = &result else {
+            panic!("expected unauthorized path error, got {result:?}");
+        };
+        assert_eq!(
+            result.as_ref().unwrap_err().to_string(),
+            format!(
+                "Unauthorized plugin scan path: {}. It is not inside a default plugin folder or a folder added in plugin settings.",
+                refused.display()
+            )
         );
     }
 
@@ -639,7 +681,10 @@ mod tests {
         assert!(
             result
                 .as_ref()
-                .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
+                .is_err_and(|error| matches!(error, ScanPathRefusal::Unauthorized(_))
+                    && error
+                        .to_string()
+                        .starts_with("Unauthorized plugin scan path: ")),
             "expected symlink escape to be rejected, got {result:?}"
         );
     }
@@ -729,7 +774,10 @@ mod tests {
         assert!(
             result
                 .as_ref()
-                .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
+                .is_err_and(|error| matches!(error, ScanPathRefusal::Unauthorized(_))
+                    && error
+                        .to_string()
+                        .starts_with("Unauthorized plugin scan path: ")),
             "expected symlinked allowed-root descendant to be rejected, got {result:?}"
         );
     }
@@ -763,7 +811,8 @@ mod tests {
         assert!(
             result
                 .as_ref()
-                .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
+                .is_err_and(|error| matches!(error, ScanPathRefusal::Unauthorized(_))
+                    && error.to_string().starts_with("Unauthorized plugin scan path: ")),
             "expected the symlink-then-parent-traversal path to be rejected rather than matched to the allowed root's own spelling, got {result:?}"
         );
     }
@@ -792,10 +841,13 @@ mod tests {
             )
         }
 
-        fn is_unauthorized(result: &Result<PathBuf, String>) -> bool {
-            result
-                .as_ref()
-                .is_err_and(|error| error.contains("Unauthorized plugin scan path"))
+        fn is_unauthorized(result: &Result<PathBuf, ScanPathRefusal>) -> bool {
+            result.as_ref().is_err_and(|error| {
+                matches!(error, ScanPathRefusal::Unauthorized(_))
+                    && error
+                        .to_string()
+                        .starts_with("Unauthorized plugin scan path: ")
+            })
         }
 
         #[test]

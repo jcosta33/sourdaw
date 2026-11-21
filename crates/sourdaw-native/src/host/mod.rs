@@ -1,5 +1,6 @@
 pub mod latency_watcher;
 pub mod native_bridge;
+pub mod plugin_editor_asks;
 pub mod plugin_folder_grants;
 pub mod plugin_host_requests;
 pub mod plugin_parameter_events;
@@ -85,7 +86,7 @@ pub(crate) fn retry_unreached_instance(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     context: &str,
-    error: &str,
+    error: &dyn std::fmt::Display,
     reraise: fn(),
 ) {
     if runtime.ensure_public_control_allowed().is_err() {

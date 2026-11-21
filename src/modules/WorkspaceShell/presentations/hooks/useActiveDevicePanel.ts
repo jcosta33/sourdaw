@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
+import { type DevicePanelKind, devicePanelKindOf } from '../../models/DevicePanelByDeviceType';
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 
 /**
@@ -55,7 +55,7 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
     const [activePanel, setActivePanel] = useState<ActiveDevicePanel | null>(null);
 
     useEffect(() => {
-        type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'yeast' }>['kind'];
+        type NeedsDeviceId = Exclude<DevicePanelKind, 'yeast'>;
         type DeviceVariant<Kind extends NeedsDeviceId> = Extract<ActiveDevicePanel, { kind: Kind }>;
         const currentTrackId = (): string | null => trackStore.value?.selectedTrackId ?? null;
         // Yeast rack state is per device instance (issue #2422), so the panel
@@ -112,38 +112,19 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
                 }
                 setActivePanel(devicePanelBuilders[kind](param.deviceId));
             };
-        // Device types (as carried on `panel.showDevice`) that own a device-
-        // bearing panel. Yeast is handled before this lookup because its panel
-        // tolerates a null deviceId; types without a panel here — e.g.
-        // `automation`, which AppShell routes to the bottom dock itself — are
-        // ignored by this hook.
-        const deviceTypeToPanelKind = {
-            [DEVICE_TYPE_IDS.fermenter]: 'fermenter',
-            [DEVICE_TYPE_IDS.toaster]: 'toaster',
-            [DEVICE_TYPE_IDS.levain]: 'levain',
-            [DEVICE_TYPE_IDS.dutchOven]: 'proofChamber',
-            [DEVICE_TYPE_IDS.gluten]: 'gluten',
-            [DEVICE_TYPE_IDS.bacteria]: 'bacteria',
-            [DEVICE_TYPE_IDS.grinder]: 'grinder',
-            [DEVICE_TYPE_IDS.proof]: 'proof',
-            [DEVICE_TYPE_IDS.nativeScoring]: 'scoring',
-            [DEVICE_TYPE_IDS.crust]: 'crust',
-            [DEVICE_TYPE_IDS.builtinCrumbs]: 'sampler',
-            [DEVICE_TYPE_IDS.grandBoule]: 'grandBoule',
-        } as const satisfies Record<string, NeedsDeviceId>;
         let previousTracks = trackStore.value;
         const subs = [
             onShowDevicePanel(({ deviceType, deviceId }) => {
-                if (deviceType === 'yeast') {
+                const kind = devicePanelKindOf(deviceType);
+                if (kind === null) {
+                    return;
+                }
+                if (kind === 'yeast') {
                     setActivePanel({
                         kind: 'yeast',
                         deviceId: yeastDeviceIdForOpen(deviceId),
                         trackId: currentTrackId(),
                     });
-                    return;
-                }
-                const kind = deviceTypeToPanelKind[deviceType as keyof typeof deviceTypeToPanelKind];
-                if (kind === undefined) {
                     return;
                 }
                 openForKind(kind)({ deviceId });

@@ -45,6 +45,16 @@ type Root = {
     tracks: Pick<TrackStoreState, 'tracks'>;
 };
 
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getTrackCompensationDelay(): number {
+    return 0.125;
+}
+
 function root() {
     const document = getCrdtDoc<Root>('root');
     if (!document) {
@@ -173,9 +183,10 @@ describe('recorded automation ride project authority and guarded action history'
         });
         // At 48 kHz, 3,000 + 3,000 hardware and 6,000 track frames are
         // 0.25 seconds: exactly 0.5 beat at this fixture's flat 120 BPM.
+        recordingContext = context;
         setAutomationRecordingDependencies({
-            getAudioContext: () => context,
-            getCompensationDelay: () => 0.125,
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getTrackCompensationDelay,
         });
     });
 

@@ -30,6 +30,7 @@
 //! rate and cached, because a device built at 48 kHz and another built at the
 //! same rate later must not pay for the conversion twice.
 
+use crate::commands::graph_refusals::GraphRefusal;
 use crate::state::AppState;
 use audioadapter_buffers::direct::InterleavedSlice;
 use daw_dsp::levain::LevainInstance;
@@ -40,6 +41,7 @@ use rubato::{
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -181,6 +183,284 @@ fn legato_dynamic_id(name: &str) -> u8 {
     }
 }
 
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+/// Why the bank store refused a step. `Display` is the text the renderer
+/// receives.
+#[derive(Debug)]
+pub(crate) enum LevainBankError {
+    EmptyBankKey,
+    EmptyInstrumentId {
+        bank_key: String,
+    },
+    EmptySampleId {
+        bank_key: String,
+    },
+    SampleRateNotPositive {
+        bank_key: String,
+        sample_id: String,
+    },
+    SampleRateOutOfRange {
+        bank_key: String,
+        sample_id: String,
+        sample_rate: f64,
+    },
+    UnsupportedChannelCount {
+        bank_key: String,
+        sample_id: String,
+        channels: u32,
+    },
+    PcmLayout {
+        bank_key: String,
+        sample_id: String,
+        /// Boxed so this one wide variant does not size every refusal.
+        refusal: Box<GraphRefusal>,
+    },
+    DuplicateSample {
+        bank_key: String,
+        sample_id: String,
+    },
+    NoArticulations {
+        bank_key: String,
+        articulations: u32,
+    },
+    NoMics {
+        bank_key: String,
+        mics: u32,
+    },
+    ZoneSampleNotRegistered {
+        bank_key: String,
+        sample_id: String,
+    },
+    LegatoSampleNotRegistered {
+        bank_key: String,
+        sample_id: String,
+    },
+    BuildRateInvalid {
+        bank_key: String,
+        sample_rate: f32,
+    },
+    BuildRateOutOfRange {
+        bank_key: String,
+        sample_rate: f32,
+    },
+    BankNotRegistered {
+        bank_key: String,
+    },
+    BankNotCommitted {
+        bank_key: String,
+    },
+    InstrumentRefusedSample {
+        bank_key: String,
+        sample_id: String,
+    },
+    BuildZoneSampleMissing {
+        bank_key: String,
+        index: usize,
+        sample_id: String,
+    },
+    BuildLegatoSampleMissing {
+        bank_key: String,
+        sample_id: String,
+    },
+    InstrumentRefusedZoneMap {
+        bank_key: String,
+        articulations: u32,
+        mics: u32,
+    },
+    InstrumentRefusedCommit {
+        bank_key: String,
+    },
+    BankNotOpened {
+        bank_key: String,
+    },
+    BankAlreadyCommitted {
+        bank_key: String,
+    },
+    ResamplerCreate(rubato::ResamplerConstructionError),
+    ResamplerInput(audioadapter_buffers::SizeError),
+    ResamplerOutput(audioadapter_buffers::SizeError),
+    Resample(rubato::ResampleError),
+}
+
+impl fmt::Display for LevainBankError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyBankKey => f.write_str("Levain bank key must not be empty"),
+            Self::EmptyInstrumentId { bank_key } => {
+                write!(f, "levain bank '{bank_key}' names an empty instrument id")
+            }
+            Self::EmptySampleId { bank_key } => write!(
+                f,
+                "levain bank '{bank_key}' was handed a sample with an empty id"
+            ),
+            Self::SampleRateNotPositive {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' sample '{sample_id}': sample rate must be a positive, \
+                 finite number"
+            ),
+            Self::SampleRateOutOfRange {
+                bank_key,
+                sample_id,
+                sample_rate,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' sample '{sample_id}': sample rate {sample_rate} Hz lies \
+                 outside the {} to {} Hz this backend converts banks across",
+                BANK_SAMPLE_RATE_HZ.start(),
+                BANK_SAMPLE_RATE_HZ.end()
+            ),
+            Self::UnsupportedChannelCount {
+                bank_key,
+                sample_id,
+                channels,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' sample '{sample_id}': unsupported channel count \
+                 {channels} (mono or stereo)"
+            ),
+            Self::PcmLayout {
+                bank_key,
+                sample_id,
+                refusal,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' sample '{sample_id}': {refusal}"
+            ),
+            Self::DuplicateSample {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' already holds a sample under id '{sample_id}'"
+            ),
+            Self::NoArticulations {
+                bank_key,
+                articulations,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' declares {articulations} articulations; a bank holds at \
+                 least one"
+            ),
+            Self::NoMics { bank_key, mics } => write!(
+                f,
+                "levain bank '{bank_key}' declares {mics} mic positions; a bank holds at least one"
+            ),
+            Self::ZoneSampleNotRegistered {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' has a zone naming sample '{sample_id}', which is not \
+                 registered in it"
+            ),
+            Self::LegatoSampleNotRegistered {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' has a legato transition naming sample '{sample_id}', \
+                 which is not registered in it"
+            ),
+            Self::BuildRateInvalid {
+                bank_key,
+                sample_rate,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' cannot build at sample rate {sample_rate}"
+            ),
+            Self::BuildRateOutOfRange {
+                bank_key,
+                sample_rate,
+            } => write!(
+                f,
+                "levain bank '{bank_key}' cannot build at sample rate {sample_rate} Hz: it lies \
+                 outside the {} to {} Hz this backend converts banks across",
+                BANK_SAMPLE_RATE_HZ.start(),
+                BANK_SAMPLE_RATE_HZ.end()
+            ),
+            Self::BankNotRegistered { bank_key } => {
+                write!(
+                    f,
+                    "levain bank '{bank_key}' is not registered in this process"
+                )
+            }
+            Self::BankNotCommitted { bank_key } => write!(
+                f,
+                "levain bank '{bank_key}' has not been committed, so it holds no zone map"
+            ),
+            Self::InstrumentRefusedSample {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}': the instrument refused sample '{sample_id}'"
+            ),
+            Self::BuildZoneSampleMissing {
+                bank_key,
+                index,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}': zone {index} names sample '{sample_id}', which is not \
+                 registered in it"
+            ),
+            Self::BuildLegatoSampleMissing {
+                bank_key,
+                sample_id,
+            } => write!(
+                f,
+                "levain bank '{bank_key}': a legato transition names sample '{sample_id}', which \
+                 is not registered in it"
+            ),
+            Self::InstrumentRefusedZoneMap {
+                bank_key,
+                articulations,
+                mics,
+            } => write!(
+                f,
+                "levain bank '{bank_key}': the instrument refused the zone map at {articulations} \
+                 articulations and {mics} mic positions"
+            ),
+            Self::InstrumentRefusedCommit { bank_key } => write!(
+                f,
+                "levain bank '{bank_key}': the instrument refused to commit the staged bank"
+            ),
+            Self::BankNotOpened { bank_key } => write!(
+                f,
+                "levain bank '{bank_key}' has not been opened in this process"
+            ),
+            Self::BankAlreadyCommitted { bank_key } => write!(
+                f,
+                "levain bank '{bank_key}' is already committed; open it again to replace it"
+            ),
+            Self::ResamplerCreate(error) => {
+                write!(f, "Failed to create the levain bank resampler: {error}")
+            }
+            Self::ResamplerInput(error) => write!(f, "Levain bank resampler input error: {error}"),
+            Self::ResamplerOutput(error) => {
+                write!(f, "Levain bank resampler output error: {error}")
+            }
+            Self::Resample(error) => write!(f, "Levain bank resample error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for LevainBankError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::PcmLayout { refusal, .. } => Some(refusal.as_ref()),
+            Self::ResamplerCreate(source) => Some(source),
+            Self::ResamplerInput(source) | Self::ResamplerOutput(source) => Some(source),
+            Self::Resample(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
 // ── Store ───────────────────────────────────────────────────────────────────
 
 /// One registered file of a bank: the PCM as the renderer decoded it, plus the
@@ -198,7 +478,7 @@ struct LevainBankSample {
 
 impl LevainBankSample {
     /// This material at `to_hz`, converting and caching on first ask.
-    fn data_at(&mut self, to_hz: u32) -> Result<Arc<[f32]>, String> {
+    fn data_at(&mut self, to_hz: u32) -> Result<Arc<[f32]>, LevainBankError> {
         if self.sample_rate == to_hz {
             return Ok(Arc::clone(&self.interleaved));
         }
@@ -254,14 +534,14 @@ impl LevainBankStore {
     /// Replacing rather than refusing: the key names the bank's identity, and
     /// the renderer owns when that identity changes — the same law
     /// `register_timeline_sample` applies to a source id.
-    fn begin(&mut self, bank_key: &str, instrument_id: &str) -> Result<(), String> {
+    fn begin(&mut self, bank_key: &str, instrument_id: &str) -> Result<(), LevainBankError> {
         if bank_key.is_empty() {
-            return Err("Levain bank key must not be empty".to_string());
+            return Err(LevainBankError::EmptyBankKey);
         }
         if instrument_id.is_empty() {
-            return Err(format!(
-                "levain bank '{bank_key}' names an empty instrument id"
-            ));
+            return Err(LevainBankError::EmptyInstrumentId {
+                bank_key: bank_key.to_string(),
+            });
         }
         self.banks.insert(
             bank_key.to_string(),
@@ -283,44 +563,51 @@ impl LevainBankStore {
         sample_rate: f64,
         channels: u32,
         pcm: &[u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, LevainBankError> {
         if sample_id.is_empty() {
-            return Err(format!(
-                "levain bank '{bank_key}' was handed a sample with an empty id"
-            ));
+            return Err(LevainBankError::EmptySampleId {
+                bank_key: bank_key.to_string(),
+            });
         }
         if !(sample_rate.is_finite() && sample_rate > 0.0) {
-            return Err(format!(
-                "levain bank '{bank_key}' sample '{sample_id}': sample rate must be a positive, \
-                 finite number"
-            ));
+            return Err(LevainBankError::SampleRateNotPositive {
+                bank_key: bank_key.to_string(),
+                sample_id: sample_id.to_string(),
+            });
         }
         let rate_hz = sample_rate.round() as u32;
         if !BANK_SAMPLE_RATE_HZ.contains(&rate_hz) {
-            return Err(format!(
-                "levain bank '{bank_key}' sample '{sample_id}': sample rate {sample_rate} Hz lies \
-                 outside the {} to {} Hz this backend converts banks across",
-                BANK_SAMPLE_RATE_HZ.start(),
-                BANK_SAMPLE_RATE_HZ.end()
-            ));
+            return Err(LevainBankError::SampleRateOutOfRange {
+                bank_key: bank_key.to_string(),
+                sample_id: sample_id.to_string(),
+                sample_rate,
+            });
         }
         let channels = match channels {
             1 | 2 => channels as usize,
             other => {
-                return Err(format!(
-                    "levain bank '{bank_key}' sample '{sample_id}': unsupported channel count \
-                     {other} (mono or stereo)"
-                ))
+                return Err(LevainBankError::UnsupportedChannelCount {
+                    bank_key: bank_key.to_string(),
+                    sample_id: sample_id.to_string(),
+                    channels: other,
+                })
             }
         };
-        let frames = crate::commands::graph::pcm_frame_count(pcm.len(), channels)
-            .map_err(|reason| format!("levain bank '{bank_key}' sample '{sample_id}': {reason}"))?;
+        let frames =
+            crate::commands::graph::pcm_frame_count(pcm.len(), channels).map_err(|refusal| {
+                LevainBankError::PcmLayout {
+                    bank_key: bank_key.to_string(),
+                    sample_id: sample_id.to_string(),
+                    refusal: Box::new(refusal),
+                }
+            })?;
 
         let bank = self.staged_mut(bank_key)?;
         if bank.samples.contains_key(sample_id) {
-            return Err(format!(
-                "levain bank '{bank_key}' already holds a sample under id '{sample_id}'"
-            ));
+            return Err(LevainBankError::DuplicateSample {
+                bank_key: bank_key.to_string(),
+                sample_id: sample_id.to_string(),
+            });
         }
         let interleaved: Arc<[f32]> = pcm
             .as_chunks::<4>()
@@ -342,36 +629,38 @@ impl LevainBankStore {
 
     /// Close a staged bank against its layout, refusing anything a build could
     /// only discover as a missing zone.
-    fn commit(&mut self, bank_key: &str, layout: LevainBankLayout) -> Result<Value, String> {
+    fn commit(
+        &mut self,
+        bank_key: &str,
+        layout: LevainBankLayout,
+    ) -> Result<Value, LevainBankError> {
         if layout.num_articulations < 1 {
-            return Err(format!(
-                "levain bank '{bank_key}' declares {} articulations; a bank holds at least one",
-                layout.num_articulations
-            ));
+            return Err(LevainBankError::NoArticulations {
+                bank_key: bank_key.to_string(),
+                articulations: layout.num_articulations,
+            });
         }
         if layout.num_mics < 1 {
-            return Err(format!(
-                "levain bank '{bank_key}' declares {} mic positions; a bank holds at least one",
-                layout.num_mics
-            ));
+            return Err(LevainBankError::NoMics {
+                bank_key: bank_key.to_string(),
+                mics: layout.num_mics,
+            });
         }
         let bank = self.staged_mut(bank_key)?;
         for zone in &layout.zones {
             if !bank.samples.contains_key(&zone.sample_id) {
-                return Err(format!(
-                    "levain bank '{bank_key}' has a zone naming sample '{}', which is not \
-                     registered in it",
-                    zone.sample_id
-                ));
+                return Err(LevainBankError::ZoneSampleNotRegistered {
+                    bank_key: bank_key.to_string(),
+                    sample_id: zone.sample_id.clone(),
+                });
             }
         }
         for transition in &layout.legato_transitions {
             if !bank.samples.contains_key(&transition.sample_id) {
-                return Err(format!(
-                    "levain bank '{bank_key}' has a legato transition naming sample '{}', which \
-                     is not registered in it",
-                    transition.sample_id
-                ));
+                return Err(LevainBankError::LegatoSampleNotRegistered {
+                    bank_key: bank_key.to_string(),
+                    sample_id: transition.sample_id.clone(),
+                });
             }
         }
         let ack = serde_json::json!({
@@ -412,29 +701,30 @@ impl LevainBankStore {
     /// whichever control thread took the batch, so a publication would be
     /// invisible to the next build as often as not. The `Arc` cache above is
     /// what makes a second build of the same bank cheap instead.
-    pub fn build_instance(
+    pub(crate) fn build_instance(
         &mut self,
         bank_key: &str,
         sample_rate: f32,
-    ) -> Result<LevainInstance, String> {
+    ) -> Result<LevainInstance, LevainBankError> {
         if !(sample_rate.is_finite() && sample_rate > 0.0) {
-            return Err(format!(
-                "levain bank '{bank_key}' cannot build at sample rate {sample_rate}"
-            ));
+            return Err(LevainBankError::BuildRateInvalid {
+                bank_key: bank_key.to_string(),
+                sample_rate,
+            });
         }
         let engine_rate = sample_rate.round() as u32;
         if !BANK_SAMPLE_RATE_HZ.contains(&engine_rate) {
-            return Err(format!(
-                "levain bank '{bank_key}' cannot build at sample rate {sample_rate} Hz: it lies \
-                 outside the {} to {} Hz this backend converts banks across",
-                BANK_SAMPLE_RATE_HZ.start(),
-                BANK_SAMPLE_RATE_HZ.end()
-            ));
+            return Err(LevainBankError::BuildRateOutOfRange {
+                bank_key: bank_key.to_string(),
+                sample_rate,
+            });
         }
-        let bank = self
-            .banks
-            .get_mut(bank_key)
-            .ok_or_else(|| format!("levain bank '{bank_key}' is not registered in this process"))?;
+        let bank =
+            self.banks
+                .get_mut(bank_key)
+                .ok_or_else(|| LevainBankError::BankNotRegistered {
+                    bank_key: bank_key.to_string(),
+                })?;
         // Field-wise so the layout can be read while the samples are converted
         // in place.
         let LevainBank {
@@ -443,9 +733,9 @@ impl LevainBankStore {
             layout,
         } = bank;
         let Some(layout) = layout.as_ref() else {
-            return Err(format!(
-                "levain bank '{bank_key}' has not been committed, so it holds no zone map"
-            ));
+            return Err(LevainBankError::BankNotCommitted {
+                bank_key: bank_key.to_string(),
+            });
         };
 
         let mut instance = LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES);
@@ -467,19 +757,20 @@ impl LevainBankStore {
             let frames = data.len() / channels as usize;
             let engine_id = instance
                 .add_sample(data.to_vec(), frames as u32, channels, sample_rate)
-                .ok_or_else(|| {
-                    format!("levain bank '{bank_key}': the instrument refused sample '{sample_id}'")
+                .ok_or_else(|| LevainBankError::InstrumentRefusedSample {
+                    bank_key: bank_key.to_string(),
+                    sample_id: sample_id.clone(),
                 })?;
             engine_ids.insert(sample_id.clone(), (engine_id, sample.sample_rate));
         }
 
         for (index, zone) in layout.zones.iter().enumerate() {
             let (engine_id, from_hz) = *engine_ids.get(&zone.sample_id).ok_or_else(|| {
-                format!(
-                    "levain bank '{bank_key}': zone {index} names sample '{}', which is not \
-                     registered in it",
-                    zone.sample_id
-                )
+                LevainBankError::BuildZoneSampleMissing {
+                    bank_key: bank_key.to_string(),
+                    index,
+                    sample_id: zone.sample_id.clone(),
+                }
             })?;
             // The authored loop points are frame indices into the material as
             // decoded, so a converted sample moves them with it — the same
@@ -514,11 +805,10 @@ impl LevainBankStore {
 
         for transition in &layout.legato_transitions {
             let (engine_id, _) = *engine_ids.get(&transition.sample_id).ok_or_else(|| {
-                format!(
-                    "levain bank '{bank_key}': a legato transition names sample '{}', which is \
-                     not registered in it",
-                    transition.sample_id
-                )
+                LevainBankError::BuildLegatoSampleMissing {
+                    bank_key: bank_key.to_string(),
+                    sample_id: transition.sample_id.clone(),
+                }
             })?;
             instance.add_legato_transition(
                 transition.interval,
@@ -530,30 +820,33 @@ impl LevainBankStore {
         }
 
         if !instance.build_zone_map(layout.num_articulations, layout.num_mics) {
-            return Err(format!(
-                "levain bank '{bank_key}': the instrument refused the zone map at {} \
-                 articulations and {} mic positions",
-                layout.num_articulations, layout.num_mics
-            ));
+            return Err(LevainBankError::InstrumentRefusedZoneMap {
+                bank_key: bank_key.to_string(),
+                articulations: layout.num_articulations,
+                mics: layout.num_mics,
+            });
         }
         if !instance.commit_sample_bank() {
-            return Err(format!(
-                "levain bank '{bank_key}': the instrument refused to commit the staged bank"
-            ));
+            return Err(LevainBankError::InstrumentRefusedCommit {
+                bank_key: bank_key.to_string(),
+            });
         }
         Ok(instance)
     }
 
     /// The bank under `bank_key`, refusing one that does not exist or that a
     /// commit has already closed.
-    fn staged_mut(&mut self, bank_key: &str) -> Result<&mut LevainBank, String> {
-        let bank = self.banks.get_mut(bank_key).ok_or_else(|| {
-            format!("levain bank '{bank_key}' has not been opened in this process")
-        })?;
+    fn staged_mut(&mut self, bank_key: &str) -> Result<&mut LevainBank, LevainBankError> {
+        let bank = self
+            .banks
+            .get_mut(bank_key)
+            .ok_or_else(|| LevainBankError::BankNotOpened {
+                bank_key: bank_key.to_string(),
+            })?;
         if bank.layout.is_some() {
-            return Err(format!(
-                "levain bank '{bank_key}' is already committed; open it again to replace it"
-            ));
+            return Err(LevainBankError::BankAlreadyCommitted {
+                bank_key: bank_key.to_string(),
+            });
         }
         Ok(bank)
     }
@@ -598,7 +891,7 @@ fn resample_interleaved(
     channels: u8,
     from_hz: u32,
     to_hz: u32,
-) -> Result<(Vec<f32>, u32), String> {
+) -> Result<(Vec<f32>, u32), LevainBankError> {
     let channels = channels as usize;
     debug_assert_ne!(
         from_hz, to_hz,
@@ -626,7 +919,7 @@ fn resample_interleaved(
         channels,
         FixedAsync::Input,
     )
-    .map_err(|error| format!("Failed to create the levain bank resampler: {error}"))?;
+    .map_err(LevainBankError::ResamplerCreate)?;
 
     let delay = resampler.output_delay();
     let chunk_frames = resampler.input_frames_next();
@@ -635,8 +928,8 @@ fn resample_interleaved(
     // call that reaches it.
     let capacity = delay + target_frames + resampler.output_frames_max();
 
-    let source = InterleavedSlice::new(input, channels, frames)
-        .map_err(|error| format!("Levain bank resampler input error: {error}"))?;
+    let source =
+        InterleavedSlice::new(input, channels, frames).map_err(LevainBankError::ResamplerInput)?;
     let mut converted = vec![0.0_f32; capacity * channels];
     let mut indexing = Indexing {
         input_offset: 0,
@@ -647,13 +940,13 @@ fn resample_interleaved(
     {
         let mut destination =
             InterleavedSlice::new_mut(converted.as_mut_slice(), channels, capacity)
-                .map_err(|error| format!("Levain bank resampler output error: {error}"))?;
+                .map_err(LevainBankError::ResamplerOutput)?;
         let mut produced = 0usize;
         let mut frames_left = frames;
         while frames_left > chunk_frames {
             let (taken, made) = resampler
                 .process_into_buffer(&source, &mut destination, Some(&indexing))
-                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+                .map_err(LevainBankError::Resample)?;
             frames_left -= taken;
             produced += made;
             indexing.input_offset += taken;
@@ -663,7 +956,7 @@ fn resample_interleaved(
             indexing.partial_len = Some(frames_left);
             let (_taken, made) = resampler
                 .process_into_buffer(&source, &mut destination, Some(&indexing))
-                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+                .map_err(LevainBankError::Resample)?;
             produced += made;
             indexing.output_offset += made;
         }
@@ -673,7 +966,7 @@ fn resample_interleaved(
         while produced < delay + target_frames {
             let (_taken, made) = resampler
                 .process_into_buffer(&source, &mut destination, Some(&indexing))
-                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+                .map_err(LevainBankError::Resample)?;
             produced += made;
             indexing.output_offset += made;
         }
@@ -697,7 +990,9 @@ pub async fn begin_levain_bank(
         .levain_banks
         .lock()
         .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
-    banks.begin(&bank_key, &instrument_id)?;
+    banks
+        .begin(&bank_key, &instrument_id)
+        .map_err(|error| error.to_string())?;
     Ok(serde_json::json!({ "bankKey": bank_key }))
 }
 
@@ -716,7 +1011,9 @@ pub async fn register_levain_sample(
         .levain_banks
         .lock()
         .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
-    let frames = banks.add_sample(&bank_key, &sample_id, sample_rate, channels, &pcm)?;
+    let frames = banks
+        .add_sample(&bank_key, &sample_id, sample_rate, channels, &pcm)
+        .map_err(|error| error.to_string())?;
     Ok(serde_json::json!({ "frames": frames }))
 }
 
@@ -734,7 +1031,9 @@ pub async fn commit_levain_bank(
         .levain_banks
         .lock()
         .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
-    banks.commit(&bank_key, layout)
+    banks
+        .commit(&bank_key, layout)
+        .map_err(|error| error.to_string())
 }
 
 /// Drop the Levain bank under `bank_key`, with its material and every
@@ -984,6 +1283,16 @@ mod tests {
             )
             .expect_err("a layout naming material the bank never took must refuse");
 
+        assert!(matches!(
+            refusal,
+            LevainBankError::ZoneSampleNotRegistered { .. }
+        ));
+        let refusal = refusal.to_string();
+        assert_eq!(
+            refusal,
+            "levain bank 'strings@1' has a zone naming sample 'c4.wav', which is not registered \
+             in it"
+        );
         assert!(
             refusal.contains("c4.wav") && refusal.contains(BANK),
             "the refusal must name the sample and the bank, got: {refusal}"
@@ -998,6 +1307,15 @@ mod tests {
             .add_sample(BANK, "b3.wav", 48_000.0, 1, &pcm_bytes(&sine(48_000)))
             .expect_err("a committed bank must not take further material");
 
+        assert!(matches!(
+            refusal,
+            LevainBankError::BankAlreadyCommitted { .. }
+        ));
+        let refusal = refusal.to_string();
+        assert_eq!(
+            refusal,
+            "levain bank 'strings@1' is already committed; open it again to replace it"
+        );
         assert!(
             refusal.contains(BANK),
             "the refusal must name the bank, got: {refusal}"
@@ -1013,6 +1331,18 @@ mod tests {
             let refusal = store
                 .add_sample(BANK, SAMPLE, rate, 1, &pcm_bytes(&[0.0; 8]))
                 .expect_err("a rate outside the accepted range must refuse");
+            assert!(matches!(
+                refusal,
+                LevainBankError::SampleRateOutOfRange { .. }
+            ));
+            let refusal = refusal.to_string();
+            assert_eq!(
+                refusal,
+                format!(
+                    "levain bank 'strings@1' sample 'a3.wav': sample rate {rate} Hz lies outside \
+                     the 8000 to 192000 Hz this backend converts banks across"
+                )
+            );
             assert!(
                 refusal.contains(SAMPLE) && refusal.contains(&format!("{rate}")),
                 "the refusal must name the sample and the rate it read, got: {refusal}"
@@ -1057,6 +1387,12 @@ mod tests {
             .add_sample(BANK, SAMPLE, 48_000.0, 1, &pcm_bytes(&sine(48_000)))
             .expect_err("a second registration under one id must refuse");
 
+        assert!(matches!(refusal, LevainBankError::DuplicateSample { .. }));
+        let refusal = refusal.to_string();
+        assert_eq!(
+            refusal,
+            "levain bank 'strings@1' already holds a sample under id 'a3.wav'"
+        );
         assert!(
             refusal.contains(BANK) && refusal.contains(SAMPLE),
             "the refusal must name the bank and the sample, got: {refusal}"
@@ -1068,7 +1404,7 @@ mod tests {
     fn build_refusal_at(store: &mut LevainBankStore, rate: f32, why: &str) -> String {
         match store.build_instance(BANK, rate) {
             Ok(_) => panic!("{why}"),
-            Err(refusal) => refusal,
+            Err(refusal) => refusal.to_string(),
         }
     }
 

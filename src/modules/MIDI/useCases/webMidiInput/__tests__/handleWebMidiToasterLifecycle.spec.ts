@@ -14,29 +14,37 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => targetTrackId.value,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    writeNativeBuiltinParameters: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    audioEngine: {
-        context: {
-            currentTime: 2,
-            sampleRate: 48000,
-            baseLatency: 0,
-            outputLatency: 0,
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: vi.fn() },
+        writeNativeBuiltinParameters: vi.fn(),
+        applyNoteExpression: vi.fn(),
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        audioEngine: {
+            context: {
+                currentTime: 2,
+                sampleRate: 48000,
+                baseLatency: 0,
+                outputLatency: 0,
+            },
+            ensureTrackStrip,
+            getTrackStrip,
         },
-        ensureTrackStrip,
-        getTrackStrip,
-    },
-    getCompensationDelay: () => 0,
-    getDefaultBendRangeSemitones: () => 48,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-}));
+        getCompensationDelay: () => 0,
+        getDefaultBendRangeSemitones: () => 48,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+    };
+});
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');

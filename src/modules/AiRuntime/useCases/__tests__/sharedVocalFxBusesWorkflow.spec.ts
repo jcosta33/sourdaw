@@ -1217,6 +1217,7 @@ describe('shared vocal FX buses workflow', () => {
                     deviceId: 'device-lead-delay',
                     expectedTrackId: 'track-lead-vocal',
                     expectedDeviceIds: ['device-lead-eq', 'device-lead-delay'],
+                    expectedFrozen: false,
                 },
             },
             {
@@ -1234,6 +1235,7 @@ describe('shared vocal FX buses workflow', () => {
                     deviceId: 'device-lead-double-delay',
                     expectedTrackId: 'track-lead-double',
                     expectedDeviceIds: ['device-lead-double-delay'],
+                    expectedFrozen: false,
                 },
             },
             {
@@ -1251,6 +1253,7 @@ describe('shared vocal FX buses workflow', () => {
                     deviceId: 'device-bgv-reverb',
                     expectedTrackId: 'track-bgv-high',
                     expectedDeviceIds: ['device-bgv-reverb'],
+                    expectedFrozen: false,
                 },
             },
             {
@@ -1268,6 +1271,7 @@ describe('shared vocal FX buses workflow', () => {
                     deviceId: 'device-bgv-low-reverb',
                     expectedTrackId: 'track-bgv-low',
                     expectedDeviceIds: ['device-bgv-low-reverb'],
+                    expectedFrozen: false,
                 },
             },
             {
