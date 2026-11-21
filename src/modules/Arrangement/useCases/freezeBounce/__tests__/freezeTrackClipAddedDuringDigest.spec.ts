@@ -184,6 +184,32 @@ describe.each(['audio', 'midi'] as const)(
             expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
         });
 
+        it('commits the take when the track arrays are rebuilt with identical content during the digest', async () => {
+            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+                const original = await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                    '../../../services/computeTrackHash'
+                );
+                const hash = await original.computeTrackHash(clips, devices);
+                const state = trackStore.value!;
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((candidate) => ({
+                        ...candidate,
+                        clips: structuredClone(candidate.clips),
+                        devices: structuredClone(candidate.devices),
+                    })),
+                });
+                return hash;
+            });
+            vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+
+            await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+            expect(findTrack().frozen).toBe(true);
+            expect(renderTrackOffline).toHaveBeenCalledTimes(1);
+            expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
+        });
+
         it('refuses the take when a clip is added during the digest and removed before the commit', async () => {
             addLateClipDuringFirstDigest(kind);
             renderThenRemoveLateClip();
