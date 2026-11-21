@@ -1,6 +1,6 @@
 /**
  * The nodes that cancel Chromium's hidden makeup gain for one built-in
- * compressor whose Auto Makeup switch is off: probe → twin compressor → scale
+ * compressor or limiter whose Auto Makeup switch is off: probe → twin compressor → scale
  * → reciprocal shaper, which drives the device's trim gain.
  */
 export type AutoMakeupCanceller = {

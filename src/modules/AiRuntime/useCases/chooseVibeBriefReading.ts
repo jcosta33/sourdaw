@@ -30,7 +30,7 @@ import { agentRunCancellation } from './cancelAgentRun';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 import { getProjectContext } from './getProjectContext';
-import { type readBriefMixIntent } from './readBriefMixIntent';
+import { type CatalogBriefMixIntent } from './readBriefMixIntent';
 import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailability';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './vibeRun/briefReadingRefusals';
@@ -62,7 +62,7 @@ type ChoiceAdmission =
           offer: BriefReadings;
           run: AgentRun;
           interactionMode: 'apply' | 'macro';
-          mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+          mixIntent: CatalogBriefMixIntent;
       };
 
 /** Whether the card still offers the reading, and the project still plans it as offered. */
@@ -194,7 +194,7 @@ async function planChosenReading(input: {
     offer: BriefReadings;
     reading: BriefReading;
     run: AgentRun;
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    mixIntent: CatalogBriefMixIntent;
     interactionMode: 'apply' | 'macro';
     signal: AbortSignal;
 }): Promise<ChooseVibeBriefReadingOutput> {
@@ -285,7 +285,7 @@ async function planAfterRetire(input: {
     offer: BriefReadings;
     reading: BriefReading;
     run: AgentRun;
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    mixIntent: CatalogBriefMixIntent;
     interactionMode: 'apply' | 'macro';
     signal: AbortSignal;
     replacementId: string;

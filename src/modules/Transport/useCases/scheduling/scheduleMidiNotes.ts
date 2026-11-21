@@ -14,6 +14,7 @@ import {
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
     hostsPadOutputs,
+    hostsStoredControllers,
     isBypassedNoteReceiver,
     isMidiTransformDevice,
     registerScheduledSource,
@@ -182,7 +183,7 @@ function resolveStoredControllerDevice(
         return null;
     }
     const device = findReceiverOfKind(track.devices, 'worklet-synth');
-    if (!device || (device.type !== 'grand-boule' && device.type !== 'levain')) {
+    if (!device || !hostsStoredControllers(device.type)) {
         return null;
     }
     const node = strip.deviceNodes.find((candidate) => candidate.deviceId === device.id);

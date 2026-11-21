@@ -52,7 +52,11 @@ export async function createPodcastTemplate(): Promise<void> {
                     'eq-high-q': 0.7,
                 },
             },
-            { type: 'builtin-limiter', name: 'Voice Limit', params: { 'lim-threshold': -3, 'lim-release': 80 } },
+            {
+                type: 'builtin-limiter',
+                name: 'Voice Limit',
+                params: { 'lim-auto-makeup': 1, 'lim-threshold': -3, 'lim-release': 80 },
+            },
         ],
     });
     const musicBus = createBus({
