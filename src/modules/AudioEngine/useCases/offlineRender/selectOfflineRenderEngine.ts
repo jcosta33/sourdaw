@@ -54,6 +54,10 @@
  * omits a solo-gated track from `scheduledTracks` rather than solo-gating
  * the strip, matching the web path.
  *
+ * Ahead of every content gate sits the length: an export whose frame count
+ * (the clamped, post-tail figure the render will request) is past the native
+ * render's ceiling (`NATIVE_OFFLINE_RENDER_MAX_FRAMES`) would be refused by it.
+ *
  * The gates admit conservatively: anything they cannot prove native-renderable
  * goes web, because a wrong `web-audio/offline` answer costs speed while a
  * wrong `native/offline` answer costs a failed or unfaithful export.
@@ -65,6 +69,7 @@ import { type NativeGraphTransport } from '../../repositories/nativeGraph/native
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
+import { NATIVE_OFFLINE_RENDER_MAX_FRAMES } from './constants';
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
 import { classifyNativeOfflineHostedDevice, type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
@@ -113,6 +118,8 @@ export type OfflineRenderGateAdjustmentLayer = Readonly<{
 }>;
 
 export type SelectOfflineRenderEngineInput = Readonly<{
+    /** The frame count the render will request: `clampRenderFrameCount`'s answer, tail included. */
+    frameCount: number;
     gainEnvelopes?: GainEnvelopeStoreState['envelopes'];
     /** Every sidechain route the render reads, wired or not. */
     sidechainRoutes: readonly OfflineRenderSidechainRoute[];
@@ -230,6 +237,14 @@ function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): st
     return null;
 }
 
+/** Why the export is too long for one native render, or `null` when it fits. */
+function frameCountGateReason(frameCount: number): string | null {
+    if (frameCount <= NATIVE_OFFLINE_RENDER_MAX_FRAMES) {
+        return null;
+    }
+    return `the export is ${frameCount} frames long, past the native render's ceiling of ${NATIVE_OFFLINE_RENDER_MAX_FRAMES} frames`;
+}
+
 /** The first gate that holds, or `null` when the native engine can take it. */
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
@@ -297,7 +312,7 @@ export async function selectOfflineRenderEngine(
             degraded: availability.runtime === 'desktop',
         };
     }
-    const gate = contentGateReason(input);
+    const gate = frameCountGateReason(input.frameCount) ?? contentGateReason(input);
     if (gate !== null) {
         return { engine: 'web-audio/offline', reason: gate, degraded: true };
     }
