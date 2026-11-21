@@ -25,6 +25,7 @@ import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { timelineEditingStore } from '../stores/timelineEditingStore';
 import { getTimelineTrackHeightMode, getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
@@ -132,6 +133,7 @@ const renderCache: {
     takeLane: unknown;
     automation: unknown;
     automationSubLanes: unknown;
+    showHiddenTracks: boolean | null;
 } = {
     model: null,
     track: null,
@@ -145,6 +147,7 @@ const renderCache: {
     takeLane: null,
     automation: null,
     automationSubLanes: null,
+    showHiddenTracks: null,
 };
 
 // The cached render model consumes one render-affecting transport field
@@ -210,18 +213,21 @@ type InlineAutomationSnapshot = ReturnType<typeof readInlineAutomationSnapshot>;
 function updateRenderGeometryCache(
     takeLaneState: typeof takeLaneStore.value,
     { editing, lanes }: InlineAutomationSnapshot,
-    trackHeightMode: Preferences['trackHeight']
+    trackHeightMode: Preferences['trackHeight'],
+    showHiddenTracks: boolean
 ): boolean {
     const automationSubLanes = editing?.automationSubLanes ?? null;
     const changed =
         takeLaneState !== renderCache.takeLane ||
         lanes !== renderCache.automation ||
         automationSubLanes !== renderCache.automationSubLanes ||
-        trackHeightMode !== renderCache.trackHeightMode;
+        trackHeightMode !== renderCache.trackHeightMode ||
+        showHiddenTracks !== renderCache.showHiddenTracks;
     renderCache.takeLane = takeLaneState;
     renderCache.automation = lanes;
     renderCache.automationSubLanes = automationSubLanes;
     renderCache.trackHeightMode = trackHeightMode;
+    renderCache.showHiddenTracks = showHiddenTracks;
     return changed;
 }
 
@@ -238,7 +244,8 @@ export function buildTimelineRenderModel(
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
     const automation = readInlineAutomationSnapshot(inlineAutomation);
-    const geometryChanged = updateRenderGeometryCache(takeLaneState, automation, trackHeightMode);
+    const showHiddenTracks = timelineEditingStore.value?.showHiddenTracks ?? false;
+    const geometryChanged = updateRenderGeometryCache(takeLaneState, automation, trackHeightMode, showHiddenTracks);
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -270,7 +277,7 @@ export function buildTimelineRenderModel(
         const scrollX = viewState?.scrollX ?? 0;
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
-        const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
+        const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? [], showHiddenTracks);
         const trackHeightScale = getTimelineTrackHeightScale(trackHeightMode);
         const automationRows = projectInlineAutomationLanes(visibleTracks, automation);
         const trackHeightPreview = viewState?.trackHeightPreview;

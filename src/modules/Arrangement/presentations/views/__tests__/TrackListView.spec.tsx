@@ -261,6 +261,31 @@ describe('TrackListView', () => {
         }
     });
 
+    it('leaves a hidden track out of the list until Show hidden tracks is turned on', () => {
+        const track = (id: string, hidden: boolean) =>
+            normalizeTrack({ id, name: id, kind: 'audio', parentId: null, collapsed: false, height: 64, hidden });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [track('t1', false), track('t2', true)],
+            selectedTrackId: 't1',
+        });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-t2')).toBeNull();
+            expect(screen.getByTestId('track-t1')).toBeInTheDocument();
+
+            const toggle = screen.getByRole('button', { name: 'Show hidden tracks (1)' });
+            expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            fireEvent.click(toggle);
+
+            expect(toggle).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByTestId('track-t2')).toBeInTheDocument();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
     it('should render master spectrum in header', () => {
         renderWithTooltip(<TrackListView />);
         expect(screen.getByTestId('master-spectrum')).toBeInTheDocument();

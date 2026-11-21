@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, markerStore, timelineEditingStore, trackStore } from '#/modules/Arrangement/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
@@ -36,6 +36,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { name: 'trackStore' },
     markerStore: { name: 'markerStore' },
     adjustmentLayerStore: { name: 'adjustmentLayerStore' },
+    timelineEditingStore: { name: 'timelineEditingStore' },
+    defaultTimelineEditingState: { showHiddenTracks: false },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -79,7 +81,15 @@ describe('useArrangementMinimumHeight', () => {
         storeValues.set(preferencesStore, { trackHeight: 'compact', showMinimap: false, timelineMinimapHeight: 28 });
         rerender();
 
-        expect(getTimelineSurfaceMinimumHeight).toHaveBeenLastCalledWith([audioTrack], null, 'compact');
+        expect(getTimelineSurfaceMinimumHeight).toHaveBeenLastCalledWith([audioTrack], null, 'compact', false);
+    });
+
+    it('tells the row floor when hidden tracks are shown', () => {
+        storeValues.set(timelineEditingStore, { showHiddenTracks: true });
+
+        renderHook(() => useArrangementMinimumHeight());
+
+        expect(getTimelineSurfaceMinimumHeight).toHaveBeenLastCalledWith([audioTrack], null, undefined, true);
     });
 
     it('adds the minimap at its persisted height while it is shown', () => {

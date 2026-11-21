@@ -246,6 +246,16 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
+            label: track.hidden ? 'Show Track' : 'Hide Track',
+            action: () => {
+                void executeUserAppAction({
+                    type: 'hideTrack',
+                    payload: { trackId: track.id, hidden: !track.hidden },
+                });
+                close();
+            },
+        },
+        {
             label: track.disabled ? 'Enable Track' : 'Disable Track',
             action: () => {
                 void executeUserAppAction({

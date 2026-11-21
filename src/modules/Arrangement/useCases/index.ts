@@ -279,6 +279,8 @@ export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
 export { setSnapValue } from './timelineEditing/setSnapValue';
 export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+export { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
+export { filterTracksShownInViews } from './filterTracksShownInViews';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 

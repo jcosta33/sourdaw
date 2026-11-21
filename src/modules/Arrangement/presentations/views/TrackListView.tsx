@@ -44,12 +44,15 @@ import {
 } from '../../models/TimelineTrackExtent';
 import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
+import { getVisibleTimelineTracks } from '../../transformers/getVisibleTimelineTracks';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
+import { setShowHiddenTracks } from '../../useCases/timelineEditing/setShowHiddenTracks';
 import { toggleInlineAutomation } from '../../useCases/timelineEditing/toggleInlineAutomation';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
+import { ShowHiddenTracksButton } from './ShowHiddenTracksButton';
 import { TrackHeader } from './TrackHeader';
 
 /**
@@ -159,12 +162,9 @@ export const TrackListView = ({
         };
     }, []);
 
-    const collapsedFolders = new Set(
-        tracks.filter((track) => track.kind === 'folder' && track.collapsed).map((track) => track.id)
-    );
-    const visibleTracks = tracks.filter(
-        (track) => track.kind !== 'master' && !collapsedFolders.has(track.parentId ?? '')
-    );
+    const showHiddenTracks = editing?.showHiddenTracks ?? false;
+    const hiddenTrackCount = tracks.filter((track) => track.hidden && track.kind !== 'master').length;
+    const visibleTracks = getVisibleTimelineTracks(tracks, showHiddenTracks);
     const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
 
     const handleDragStart = (trackId: string) => {
@@ -319,6 +319,11 @@ export const TrackListView = ({
                             </TooltipTrigger>
                             <TooltipContent>Inline automation</TooltipContent>
                         </Tooltip>
+                        <ShowHiddenTracksButton
+                            hiddenCount={hiddenTrackCount}
+                            pressed={showHiddenTracks}
+                            onToggle={() => setShowHiddenTracks(!showHiddenTracks)}
+                        />
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button

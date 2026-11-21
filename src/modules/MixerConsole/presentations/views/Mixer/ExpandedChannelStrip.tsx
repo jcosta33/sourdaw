@@ -547,6 +547,7 @@ export const ExpandedChannelStrip = ({
                 widthClass,
                 'border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
                 isSelected && 'ring-1 ring-ring border-transparent',
+                track.hidden && 'opacity-50',
                 'outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'
             )}
             style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
@@ -597,6 +598,11 @@ export const ExpandedChannelStrip = ({
                 </span>
             )}
             <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
+            {track.hidden ? (
+                <DawMicroBadge className="uppercase" data-testid={`channel-hidden-${track.id}`}>
+                    Hidden
+                </DawMicroBadge>
+            ) : null}
             {track.vcaGroupId ? (
                 <DawMicroBadge tone="cyan" rounded="full" className="font-mono">
                     VCA

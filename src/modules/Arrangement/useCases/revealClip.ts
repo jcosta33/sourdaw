@@ -7,6 +7,7 @@ import {
     VARIATION_LANE_HEIGHT,
 } from '../models/TimelineTrackExtent';
 import { type Clip, type Track } from '../models/Track';
+import { timelineEditingStore } from '../stores/timelineEditingStore';
 import { getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { setScrollX, setScrollY, timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
@@ -86,6 +87,13 @@ function getClipVerticalBounds(
     return null;
 }
 
+function readVisibleTracks(): Track[] {
+    return getVisibleTimelineTracks(
+        trackStore.value?.tracks ?? [],
+        timelineEditingStore.value?.showHiddenTracks ?? false
+    );
+}
+
 /** Select a held clip and bring its row and start into view without changing zoom. */
 export function revealClip(clipId: string): boolean {
     const tracks = trackStore.value?.tracks ?? [];
@@ -100,8 +108,7 @@ export function revealClip(clipId: string): boolean {
         toggleVariationLanes(located.track.id, true);
     }
 
-    const visibleTracks = getVisibleTimelineTracks(trackStore.value?.tracks ?? []);
-    const bounds = getClipVerticalBounds(visibleTracks, located, view.trackHeightPreview);
+    const bounds = getClipVerticalBounds(readVisibleTracks(), located, view.trackHeightPreview);
     if (!bounds) {
         return false;
     }
