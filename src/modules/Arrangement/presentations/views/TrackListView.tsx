@@ -294,18 +294,23 @@ export const TrackListView = ({
             return;
         }
 
-        // Start from the tab-stop row, so an undrawn selection never reads as -1.
-        const currentIndex = visibleTracks.findIndex((time) => time.id === tabStopTrackId);
+        // -1 when nothing is selected or the selection is not drawn: Down then
+        // selects the first drawn row (the tab stop) and Up the last.
+        const currentIndex = visibleTracks.findIndex((time) => time.id === selectedTrackId);
 
         if (event.key === 'ArrowDown') {
             event.preventDefault();
-            if (currentIndex >= 0 && currentIndex < visibleTracks.length - 1) {
+            if (currentIndex < visibleTracks.length - 1) {
                 selectTrack(visibleTracks[currentIndex + 1]!.id);
+            } else if (currentIndex === -1 && visibleTracks.length > 0) {
+                selectTrack(visibleTracks[0]!.id);
             }
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             if (currentIndex > 0) {
                 selectTrack(visibleTracks[currentIndex - 1]!.id);
+            } else if (currentIndex === -1 && visibleTracks.length > 0) {
+                selectTrack(visibleTracks[visibleTracks.length - 1]!.id);
             }
         } else if (event.key === 'Enter' && selectedTrackId) {
             event.preventDefault();
