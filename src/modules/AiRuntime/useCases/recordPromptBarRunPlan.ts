@@ -2,7 +2,7 @@ import { type parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCa
 
 import { type AgentRunGrants } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type AgentRunPlanBoundRefusal } from '../stores/readAgentRunPlanBoundRefusal';
+import { type AgentRunPlanBoundRefusal } from '../validators/readAgentRunPlanBoundRefusal';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
@@ -19,6 +19,10 @@ type PlanAuthority = {
     grants: Omit<AgentRunGrants, 'allowedOperationPrefixes'> & { allowedOperationPrefixes: readonly string[] };
 };
 type ParsedEnvelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
+/** The parsed batch envelope's identity and command ids, which the plan records. */
+type PlannedEnvelope = Pick<ParsedEnvelope, 'idempotencyKey'> & {
+    commands: readonly Pick<ParsedEnvelope['commands'][number], 'commandId'>[];
+};
 
 /**
  * Records the plan of the one batch a Prompt Bar request compiled, or returns the refusal naming the
@@ -29,7 +33,7 @@ export function recordPromptBarRunPlan(input: {
     actionLabels: readonly string[];
     metricGoalState: string | undefined;
     receipts: ApplicationToolReceipt[] | undefined;
-    envelope: ParsedEnvelope;
+    envelope: PlannedEnvelope;
     authority: PlanAuthority;
     revision: string;
 }): AgentRunPlanBoundRefusal | null {

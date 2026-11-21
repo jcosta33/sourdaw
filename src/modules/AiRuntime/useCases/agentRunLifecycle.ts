@@ -39,9 +39,12 @@ import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecove
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
-import { readAgentRunPlanBoundRefusal, type AgentRunPlanBoundRefusal } from '../stores/readAgentRunPlanBoundRefusal';
 import { createLegacyAgentRunPlan } from '../transformers/createLegacyAgentRunPlan';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
+import {
+    readAgentRunPlanBoundRefusal,
+    type AgentRunPlanBoundRefusal,
+} from '../validators/readAgentRunPlanBoundRefusal';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import {

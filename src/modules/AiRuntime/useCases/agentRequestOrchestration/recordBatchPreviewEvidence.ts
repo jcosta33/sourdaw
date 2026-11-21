@@ -1,5 +1,5 @@
 import { type AgentRun } from '../../models/AgentRun';
-import { type AgentRunPlanBoundRefusal } from '../../stores/readAgentRunPlanBoundRefusal';
+import { type AgentRunPlanBoundRefusal } from '../../validators/readAgentRunPlanBoundRefusal';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';

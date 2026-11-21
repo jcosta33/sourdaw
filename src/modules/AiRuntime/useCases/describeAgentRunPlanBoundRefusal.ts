@@ -1,4 +1,4 @@
-import { type AgentRunPlanBoundRefusal } from '../stores/readAgentRunPlanBoundRefusal';
+import { type AgentRunPlanBoundRefusal } from '../validators/readAgentRunPlanBoundRefusal';
 
 /** The sentence every caller reports a refused plan write with. */
 export function describeAgentRunPlanBoundRefusal(refusal: AgentRunPlanBoundRefusal): string {

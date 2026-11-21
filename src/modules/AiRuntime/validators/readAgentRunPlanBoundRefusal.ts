@@ -1,7 +1,10 @@
 import { type AgentRunPlan } from '../models/AgentRun';
+import {
+    MAX_COLLECTION_LENGTH,
+    MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+    MAX_PLAN_CAPABILITIES,
+} from '../models/AgentRunPlanBounds';
 import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, measureApplicationToolReceiptBytes } from '../models/ApplicationOwnedTool';
-
-import { MAX_COLLECTION_LENGTH, MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from './agentRunStore';
 
 export type AgentRunPlanBoundedCollection =
     | 'commandIds'

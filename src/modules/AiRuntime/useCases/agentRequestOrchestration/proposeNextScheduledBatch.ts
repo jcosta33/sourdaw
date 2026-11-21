@@ -13,8 +13,8 @@ import {
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
-import { type AgentRunPlanBoundRefusal } from '../../stores/readAgentRunPlanBoundRefusal';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
+import { type AgentRunPlanBoundRefusal } from '../../validators/readAgentRunPlanBoundRefusal';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
