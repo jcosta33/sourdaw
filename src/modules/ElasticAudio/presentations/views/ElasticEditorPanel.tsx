@@ -28,6 +28,7 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -172,6 +173,7 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const beatWidth = Math.max(1, 40 * zoom);
     const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
+    const playbackStretchRatio = resolvePlaybackStretchRatio(clip);
     const audioOffsetSeconds = clip ? resolveAudioSourceOffsetSeconds(clip, tempo) : 0;
 
     useEffect(() => {
@@ -183,6 +185,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
             clipLengthBeats,
+            stretchRatio: playbackStretchRatio,
             tempo,
             audioOffsetSeconds,
             scrollKey: `${clipId ?? ''}:${clip?.audioBufferId ?? ''}:${audioOffsetSeconds}`,
@@ -215,6 +218,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         viewScrollLeft,
         clip?.audioBufferId,
         clipLengthBeats,
+        playbackStretchRatio,
         tempo,
         audioOffsetSeconds,
     ]);
@@ -590,6 +594,28 @@ function visibleMarkers(
     });
 }
 
+// Same gate and bound playback applies (`scheduleAudioClips`, `audioWaveformSpan`): an off clip
+// ignores its stored ratio.
+function resolvePlaybackStretchRatio(clip: { stretchMode?: string; stretchRatio?: number } | null): number {
+    if (!clip?.stretchMode || clip.stretchMode === 'off') {
+        return 1;
+    }
+    return boundStretchRatio(clip.stretchRatio ?? 1);
+}
+
+const PEAK_BIN_MARGIN = 16;
+
+/** Inclusive peak-bin span covering the viewport plus a margin; every bin while the viewport is unmeasured. */
+function visibleBinRange(scrollLeft: number, viewportWidth: number, binCount: number): { first: number; last: number } {
+    if (viewportWidth <= 0) {
+        return { first: 0, last: binCount - 1 };
+    }
+    return {
+        first: Math.max(0, Math.floor(scrollLeft) - PEAK_BIN_MARGIN),
+        last: Math.min(binCount - 1, Math.ceil(scrollLeft + viewportWidth) + PEAK_BIN_MARGIN),
+    };
+}
+
 type DrawArgs = {
     canvasRef: { current: HTMLCanvasElement | null };
     containerRef: { current: HTMLDivElement | null };
@@ -598,6 +624,7 @@ type DrawArgs = {
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
     clipLengthBeats: number;
+    stretchRatio: number;
     tempo: number;
     audioOffsetSeconds: number;
     scrollKey: string;
@@ -652,6 +679,7 @@ function drawWaveform(args: DrawArgs): void {
         warpState,
         clipAudioBufferId,
         clipLengthBeats,
+        stretchRatio,
         tempo,
         audioOffsetSeconds,
         scrollKey,
@@ -673,7 +701,7 @@ function drawWaveform(args: DrawArgs): void {
     const sourceSeconds = clipAudioBufferId ? (audioBufferCache.get(clipAudioBufferId)?.duration ?? 0) : 0;
     const sourceBeats = (sourceSeconds * tempo) / 60;
     const windowStartBeats = (audioOffsetSeconds * tempo) / 60;
-    const windowEndBeats = windowStartBeats + clipLengthBeats;
+    const windowEndBeats = windowStartBeats + clipLengthBeats * stretchRatio;
     // The source and the audible window set the extent, so the canvas keeps its size when Detect adds
     // markers: growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
@@ -735,6 +763,8 @@ function drawWaveform(args: DrawArgs): void {
         scrolledToWindowRef.current = scrollKey;
         container.scrollLeft = windowStartX;
     }
+    // Only the bins in view are stroked, so a scroll redraw costs the viewport, not the source length.
+    const binRange = visibleBinRange(container.scrollLeft, container.clientWidth, peaks?.length ?? 0);
 
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
@@ -750,12 +780,12 @@ function drawWaveform(args: DrawArgs): void {
         if (peaks.some((v) => v > 0)) {
             ctx.fillStyle = 'rgba(90,150,115,0.5)';
             ctx.beginPath();
-            ctx.moveTo(0, midY);
-            for (let i = 0; i < peaks.length; i++) {
+            ctx.moveTo(binRange.first, midY);
+            for (let i = binRange.first; i <= binRange.last; i++) {
                 ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
             }
-            ctx.lineTo(peaks.length - 1, midY);
-            for (let i = peaks.length - 1; i >= 0; i--) {
+            ctx.lineTo(binRange.last, midY);
+            for (let i = binRange.last; i >= binRange.first; i--) {
                 ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
             }
             ctx.closePath();

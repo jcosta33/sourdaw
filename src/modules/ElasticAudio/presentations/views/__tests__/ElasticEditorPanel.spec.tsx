@@ -713,6 +713,83 @@ describe('ElasticEditorPanel', () => {
                 expect(container?.scrollLeft).toBe(120 * BEAT_WIDTH);
                 expect(observed.drawing.fill).toHaveBeenCalledWith(0, 0, 120 * BEAT_WIDTH, 120);
             });
+
+            type StretchedClip = { endBeat: number; stretchMode?: string; stretchRatio?: number };
+
+            function fixtureClip(): StretchedClip {
+                const clip = mocks.trackStoreValue.tracks[0]?.clips[0] as StretchedClip | undefined;
+                if (!clip) {
+                    throw new Error('Missing fixture clip');
+                }
+                return clip;
+            }
+
+            it('ends the audible window at the source position a stretched clip reaches', () => {
+                const clip = fixtureClip();
+                // An 8-beat clip at ratio 2 plays 16 beats of the file.
+                mocks.source.seconds = 40;
+                clip.stretchMode = 'repitch';
+                clip.stretchRatio = 2;
+                const drawing = observeDrawing();
+                render(<ElasticEditorPanel />);
+                flushFrame();
+
+                const width = screen.getByTestId('elastic-waveform-canvas').style.width;
+                expect(width).toBe(`${88 * BEAT_WIDTH}px`);
+                expect(drawing.fill).toHaveBeenCalledWith(16 * BEAT_WIDTH, 0, 88 * BEAT_WIDTH - 16 * BEAT_WIDTH, 120);
+            });
+
+            it('ignores the stored ratio for a clip whose stretch mode is off', () => {
+                const clip = fixtureClip();
+                mocks.source.seconds = 40;
+                clip.stretchMode = 'off';
+                clip.stretchRatio = 2;
+                const drawing = observeDrawing();
+                render(<ElasticEditorPanel />);
+                flushFrame();
+
+                expect(drawing.fill).toHaveBeenCalledWith(8 * BEAT_WIDTH, 0, 88 * BEAT_WIDTH - 8 * BEAT_WIDTH, 120);
+            });
+
+            it('sizes the canvas to the whole source when the source is far longer than the clip', () => {
+                const clip = fixtureClip();
+                // A 4-beat clip of a 120-beat source: only the source extent makes the canvas this wide.
+                mocks.source.seconds = 60;
+                clip.endBeat = 4;
+                observeDrawing();
+                render(<ElasticEditorPanel />);
+                flushFrame();
+
+                expect(screen.getByTestId('elastic-waveform-canvas').style.width).toBe(`${(120 + 8) * BEAT_WIDTH}px`);
+            });
+
+            it('strokes only the peak bins near the viewport of a long source', () => {
+                const clip = fixtureClip() as StretchedClip & { audioOffsetSeconds?: number };
+                // 120 beats is 4800 bins. The editor opens scrolled to beat 50 (x 2000) in a 200 px viewport.
+                mocks.source.seconds = 60;
+                clip.audioOffsetSeconds = 25;
+                mocks.waveformPeaks.set('buf-1:4800', new Float32Array(4800).fill(0.5));
+                const drawing = observeDrawing();
+                const upperEdgeY = 120 / 2 - 0.5 * (120 / 2) * 0.9;
+                const peakXs: number[] = [];
+                vi.spyOn(drawing.context, 'lineTo').mockImplementation((x, y) => {
+                    if (Math.abs(y - upperEdgeY) < 1e-6) {
+                        peakXs.push(x);
+                    }
+                });
+                render(<ElasticEditorPanel />);
+                const container = screen.getByTestId('elastic-waveform-canvas').parentElement;
+                if (!container) {
+                    throw new Error('Missing waveform container');
+                }
+                Object.defineProperty(container, 'clientWidth', { configurable: true, value: 200 });
+                flushFrame();
+
+                expect(container.scrollLeft).toBe(2000);
+                expect(peakXs[0]).toBe(2000 - 16);
+                expect(peakXs[peakXs.length - 1]).toBe(2200 + 16);
+                expect(peakXs).toHaveLength(200 + 2 * 16 + 1);
+            });
         });
 
         it('keeps the backing store within the canvas limits for a long clip at a high pixel ratio', () => {
