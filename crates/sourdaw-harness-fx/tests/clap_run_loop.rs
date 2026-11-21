@@ -54,12 +54,23 @@ fn pump_until(wrapper: &ClapWrapper, done: impl Fn(&RunLoopRecord) -> bool) -> R
     }
 }
 
+/// TEMPORARY diagnostic for a CI-only crash: written straight to the stderr
+/// descriptor, past the test harness's capture, so a signal cannot swallow it.
+fn phase(name: &str) {
+    use std::io::Write;
+    let mut stderr = std::io::stderr();
+    let _ = writeln!(stderr, "[clap_run_loop phase] {name}");
+    let _ = stderr.flush();
+}
+
 #[test]
 fn an_editors_timer_and_descriptor_fire_on_the_pump_until_it_closes_and_nothing_after_drop() {
+    phase("start");
     let plugin = InstalledPlugin::create("clap-run-loop");
     let mut wrapper = plugin
         .clap(CLAP_EDITOR_PLUGIN_ID, ProcessMode::Realtime)
         .expect("the editor class should load and activate");
+    phase("loaded");
     assert!(
         run_loop_record(&wrapper).offered,
         "the host offers both extensions on Linux"
@@ -68,9 +79,11 @@ fn an_editors_timer_and_descriptor_fire_on_the_pump_until_it_closes_and_nothing_
     wrapper
         .open_gui(ptr::null_mut())
         .expect("the editor class should open its editor");
+    phase("opened");
     let open = pump_until(&wrapper, |record| {
         record.editor_timer_fires > 0 && record.editor_fd_fires > 0
     });
+    phase(&format!("pumped open: {open:?}"));
     assert!(
         open.editor_timer_fires > 0,
         "the editor's timer fired: {open:?}"
@@ -85,10 +98,12 @@ fn an_editors_timer_and_descriptor_fire_on_the_pump_until_it_closes_and_nothing_
     );
 
     wrapper.close_gui();
+    phase("closed");
     let at_close = run_loop_record(&wrapper);
     let closed = pump_until(&wrapper, |record| {
         record.init_timer_fires > at_close.init_timer_fires
     });
+    phase(&format!("pumped closed: {closed:?}"));
     assert!(
         closed.init_timer_fires > at_close.init_timer_fires,
         "the pump still serves the instance: its init-time timer keeps firing"
@@ -100,9 +115,13 @@ fn an_editors_timer_and_descriptor_fire_on_the_pump_until_it_closes_and_nothing_
     );
 
     drop(wrapper);
+    phase("dropped");
     let after_drop: usize = (0..10).map(|_| turn()).sum();
+    phase("pumped after drop");
     assert_eq!(
         after_drop, 0,
         "a dropped instance has left the pump, init-time timer and all"
     );
+    drop(plugin);
+    phase("end");
 }
