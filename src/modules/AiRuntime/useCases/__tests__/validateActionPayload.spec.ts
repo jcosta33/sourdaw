@@ -340,7 +340,13 @@ const guardedPayloadContractCases = [
     guardedPayloadCase({
         actionType: 'removeDevice',
         validPayload: { deviceId: 'device-1' },
-        invalidPayloads: [{ deviceId: '' }, {}, { deviceId: 1 }, { deviceId: 'device-1', trackId: 'track-1' }],
+        invalidPayloads: [
+            { deviceId: '' },
+            {},
+            { deviceId: 1 },
+            { deviceId: 'device-1', trackId: 'track-1' },
+            { deviceId: 'device-1', expectedFrozen: false },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'createBus',

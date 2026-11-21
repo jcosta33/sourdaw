@@ -32,6 +32,17 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
     };
 }
 
+/**
+ * A recorded automation pass begins its entry with this inverse; the owner keeps only the
+ * pass whose undo restores exactly what it replaced.
+ */
+function createEntryBeginningReplayContract(actionType: 'restoreAutomationLanePoints'): SessionActionContract {
+    return {
+        ...createInternalReplayContract(actionType),
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
+
 function createCapturedDeviceReplayContract(
     actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
 ): SessionActionContract {
@@ -139,7 +150,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('removeSendAutomationRange'),
         createInternalReplayContract('removeSendAutomationRanges'),
         createInternalReplayContract('removeAutomationLane'),
-        createInternalReplayContract('restoreAutomationLanePoints'),
+        createEntryBeginningReplayContract('restoreAutomationLanePoints'),
         createInternalReplayContract('restoreTimeOperationState'),
         createInternalReplayContract('restoreCompRegionInterval'),
         createInternalReplayContract('restoreTempoEdit'),

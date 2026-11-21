@@ -86,6 +86,14 @@ function projectSolo(action: ActionOf<'soloTrack'>, projected: Track): void {
     projected.soloed = action.payload.soloed;
 }
 
+function projectFreeze(_action: ActionOf<'freezeTrack'>, projected: Track): void {
+    projected.frozen = true;
+}
+
+function projectUnfreeze(_action: ActionOf<'unfreezeTrack'>, projected: Track): void {
+    projected.frozen = false;
+}
+
 function projectTrackOutput(action: ActionOf<'setTrackOutput'>, projected: Track): void {
     projected.outputId = action.payload.outputId;
 }
@@ -189,8 +197,8 @@ export const trackProjectionByActionType: {
     setSoloSafe: keepTrack,
     restoreSoloSafe: keepTrack,
     armTrack: keepTrack,
-    freezeTrack: keepTrack,
-    unfreezeTrack: keepTrack,
+    freezeTrack: projectFreeze,
+    unfreezeTrack: projectUnfreeze,
     restoreFreezeState: keepTrack,
     flattenTrack: keepTrack,
     bounceInPlace: keepTrack,

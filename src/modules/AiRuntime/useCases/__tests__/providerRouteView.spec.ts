@@ -140,7 +140,7 @@ describe('provider route view', () => {
             capability: { operations: ['text', 'tools', 'structured-output'], modalities: ['text'], streaming: true },
             fidelity: 'configured-remote',
             fallback: { attempted: true, reasons: ['unhealthy'] },
-            fallbackPolicy: 'hosted-then-local',
+            fallbackPolicy: 'hosted-only',
             dataDisclosure: { categories: ['prompt-text'], retention: UNKNOWN_RETENTION },
             usage: {
                 provenance: 'provider-reported',
@@ -384,7 +384,7 @@ describe('provider route view', () => {
         expect(view?.fallbackPolicy).toBe('local-only');
     });
 
-    it('admits the requested hosted route and reports a hosted-then-local fallback policy', () => {
+    it('admits the requested hosted route and reports a hosted-only policy with no local fallback', () => {
         agentRunLifecycle.create({
             runId: 'route-cloud-options',
             request: 'Render the chorus using the configured provider.',
@@ -399,7 +399,7 @@ describe('provider route view', () => {
         });
 
         expect(view?.options).toEqual([{ routeId: 'cloud', admitted: true, reasons: [] }]);
-        expect(view?.fallbackPolicy).toBe('hosted-then-local');
+        expect(view?.fallbackPolicy).toBe('hosted-only');
     });
 
     it('returns null for an unknown run', () => {
