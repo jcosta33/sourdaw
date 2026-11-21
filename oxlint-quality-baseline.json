@@ -4323,14 +4323,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/chooseVibeBriefReading.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts": {
         "eslint/complexity": {
             "count": 2
@@ -5076,7 +5068,7 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/vibeRun/readVibeBatchValueReply.ts": {
@@ -7529,11 +7521,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/folder/createFolder.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 7
@@ -7591,11 +7578,6 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
-    "src/modules/Arrangement/useCases/freezeBounce/cancelFreezeTrack.ts": {
-        "typescript/no-non-null-assertion": {
             "count": 1
         }
     },

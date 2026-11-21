@@ -340,7 +340,7 @@ export function demo5_NebulaDrift(): void {
         'width-side': 1.38,
         'width-mono-bass': 155,
     });
-    addDev(masterTrack, 'builtin-limiter', 'Ceiling', { 'lim-threshold': -0.9 });
+    addDev(masterTrack, 'builtin-limiter', 'Ceiling', { 'lim-auto-makeup': 1, 'lim-threshold': -0.9 });
     addDev(masterTrack, 'builtin-lufs-meter', 'LUFS', { 'lufs-target': -15 });
 
     // Drones + motion FX

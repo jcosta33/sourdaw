@@ -56,6 +56,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      # The real-model Kokoro spec reads its pinned artifacts from this directory;
+      # without it the spec would download them inside its own test timeout.
+      - name: Restore Kokoro fixtures
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/kokoro-fixtures
+          key: kokoro-fixtures-v1-${{ hashFiles('tests/e2e/kokoroFixtureArtifacts.ts') }}
+
+      - name: Prefetch Kokoro fixtures
+        timeout-minutes: 15
+        env:
+          SOURDAW_KOKORO_FIXTURE_DIR: ${{ runner.temp }}/kokoro-fixtures
+        run: node scripts/prefetchKokoroFixtures.ts
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -76,6 +90,7 @@ jobs:
         env:
           E2E_SPECS: ${{ toJSON(matrix.specs) }}
           SOURDAW_SHARED_E2E_BUILD: '1'
+          SOURDAW_KOKORO_FIXTURE_DIR: ${{ runner.temp }}/kokoro-fixtures
         run: node scripts/prValidationScope.ts run
 
       # As in the unit matrix: the failure is already fatal, and this names the

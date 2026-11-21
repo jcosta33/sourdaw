@@ -1,3 +1,5 @@
+import { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
+
 type ToasterPadBindingTrack = {
     id: string;
     parentId: string | null;
@@ -10,7 +12,7 @@ export function resolveToasterPadBinding(tracks: readonly ToasterPadBindingTrack
         return undefined;
     }
     const parent = tracks.find((candidate) => candidate.id === track.parentId);
-    if (!parent?.devices.some((device) => device.type === 'toaster')) {
+    if (!parent || !hasPadOutputHost(parent.devices)) {
         return undefined;
     }
     const padIndex = tracks

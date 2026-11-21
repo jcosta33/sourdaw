@@ -7,11 +7,14 @@ import {
     type classifyNoteReceivingDevice,
     ensureTrackStrip,
     findMidiTransformDevice,
+    findPadOutputHost,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
+    hostsPadOutputs,
+    hostsStoredControllers,
     isBypassedNoteReceiver,
     isMidiTransformDevice,
     registerScheduledSource,
@@ -95,7 +98,7 @@ type NoteReceivingInstrumentKind = NonNullable<ReturnType<typeof classifyNoteRec
 // A Toaster child's notes go to its parent's kit, whatever else the parent's
 // chain holds; only this parent arm looks for a toaster outside the receiver.
 function findToasterDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
-    return devices.find((device) => device.type === 'toaster');
+    return findPadOutputHost(devices);
 }
 
 // The receiver of a track's own notes when it is of one family, else undefined.
@@ -154,7 +157,9 @@ function resolveToasterTarget(
     }
     const toasterDevice = device;
     const ownerStrip = ownerTrack.id === track.id ? strip : ensureTrackStrip(ownerTrack.id);
-    const node = ownerStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id || data.type === 'toaster');
+    const node = ownerStrip.deviceNodes.find(
+        (data) => data.deviceId === toasterDevice.id || hostsPadOutputs(data.type)
+    );
     return node?.toasterControls ? { ownerTrack, device: toasterDevice, pad, controls: node.toasterControls } : null;
 }
 
@@ -178,7 +183,7 @@ function resolveStoredControllerDevice(
         return null;
     }
     const device = findReceiverOfKind(track.devices, 'worklet-synth');
-    if (!device || (device.type !== 'grand-boule' && device.type !== 'levain')) {
+    if (!device || !hostsStoredControllers(device.type)) {
         return null;
     }
     const node = strip.deviceNodes.find((candidate) => candidate.deviceId === device.id);

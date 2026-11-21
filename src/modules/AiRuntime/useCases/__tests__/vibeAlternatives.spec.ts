@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { undoHistoryStore } from '#/modules/Command/stores';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
+import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
 
 import {
     BASS_ID,
@@ -26,13 +29,18 @@ import {
     type Confirmation,
     type ScriptedPlanningTurn,
 } from '../../__tests__/vibeRunWorkflowFixture';
+import { type BriefReading } from '../../models/BriefReading';
+import { type ProjectContextProductionBrief } from '../../models/ProjectContext';
 import { chatStore } from '../../stores/chatStore';
 import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
+import { pendingActionResourceSettlement } from '../agentRequestOrchestration/pendingActionResourceSettlement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
+import { toggleChat } from '../aiPanelActions/toggleChat';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { chooseVibeBriefReading } from '../chooseVibeBriefReading';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -40,7 +48,11 @@ import { executeBriefCompile } from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
+import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
+import { readBriefMixIntent } from '../readBriefMixIntent';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+import { planVibeRunSchedule } from '../vibeRun/planVibeRunSchedule';
+import { prepareVibeRunSchedule } from '../vibeRun/prepareVibeRunSchedule';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
@@ -74,6 +86,21 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     }),
 }));
 
+const planning = vi.hoisted(() => ({ afterPlanned: null as (() => Promise<void>) | null }));
+
+// The planner itself runs for real; a case may land its own project edit once the plan has resolved.
+vi.mock('../vibeRun/planBriefVibeRun', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../vibeRun/planBriefVibeRun')>();
+    return {
+        ...actual,
+        planBriefVibeRun: async (...args: Parameters<typeof actual.planBriefVibeRun>) => {
+            const planned = await actual.planBriefVibeRun(...args);
+            await planning.afterPlanned?.();
+            return planned;
+        },
+    };
+});
+
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
     renderOffline: vi.fn(),
@@ -89,6 +116,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    planning.afterPlanned = null;
     tearDownVibeRunFixture();
 });
 
@@ -145,6 +173,59 @@ function scheduledDescriptors(runId: string): string[][] {
     return plan.batches.map((batch) => batch.objective.descriptors);
 }
 
+/** A live run the way the loop holds one while it calls `brief.compile`. */
+function createLiveRun(limits: Record<string, number> = {}): string {
+    const runId = `run-${crypto.randomUUID()}`;
+    agentRunLifecycle.create({
+        runId,
+        request: AMBIGUOUS_PROMPT,
+        mode: 'macro',
+        createdRevision: captureProjectRevision(),
+        budgets: { limits, consumed: {} },
+    });
+    return runId;
+}
+
+/** What the pre-measurement stage plans for these characters on the live project: the plan a reading must retain. */
+function preparedFor(runId: string, brief: ProjectContextProductionBrief, descriptors: readonly string[]) {
+    const mixIntent = readBriefMixIntent({
+        catalogId: getBriefMixIntentCatalog().catalogId,
+        requestedDescriptors: descriptors,
+    });
+    if (mixIntent === null) {
+        throw new TypeError('Expected the characters to be a selection from the live catalogue');
+    }
+    const context = getProjectContext();
+    const prepared = prepareVibeRunSchedule({
+        prompt: AMBIGUOUS_PROMPT,
+        context,
+        reading: compilePerceptualConstraints(AMBIGUOUS_PROMPT, context),
+        brief,
+        mixIntent,
+        runId,
+        priorReceipts: agentRunLifecycle.get(runId)?.plan?.applicationToolReceipts ?? [],
+    });
+    if (prepared.status !== 'prepared') {
+        throw new TypeError(`Expected ${descriptors.join(', ')} to prepare a plan, got ${prepared.status}`);
+    }
+    return prepared;
+}
+
+type PlanBatchShape = { targetIds: readonly string[]; commandCount: number; targets: readonly unknown[] };
+
+/** The batches' targets, recipes, expected deltas and command counts: what a plan stands for. */
+function planShape(batches: readonly PlanBatchShape[]) {
+    return batches.map(({ targetIds, commandCount, targets }) => ({ targetIds, commandCount, targets }));
+}
+
+function requireOffer(card: Confirmation) {
+    const offer = card.approvalSnapshot.briefReadings;
+    if (offer === undefined) {
+        throw new TypeError('Expected the card to offer readings');
+    }
+    return offer;
+}
+
 describe('a brief request whose characters admit more than one reading', () => {
     it.each([
         ['two readings', THREE_READINGS.slice(0, 2)],
@@ -169,9 +250,114 @@ describe('a brief request whose characters admit more than one reading', () => {
             expect(content.split('\n')).toContain(`- ${name}: ${requestedDescriptors.join(', ')}`);
         }
         expect(content).toMatch(/more than one way/u);
+        expect(content.split('\n')).toContain(
+            'Confirm records the brief only. Choosing a reading runs the plan shown for it; a track measured silent after the choice is left out.'
+        );
         expect(getAgentApprovalView({ confirmationId: card.id })?.readings.map((reading) => reading.name)).toEqual(
             alternatives.map(({ name }) => name)
         );
+    });
+
+    it('retains, on each reading, exactly the plan the pre-measurement stage makes for its characters', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const offer = requireOffer(card);
+
+        for (const reading of offer.readings) {
+            const expected = preparedFor(card.runId, offer.brief, reading.descriptors);
+            expect(reading.plan.batches.length).toBeGreaterThan(0);
+            expect(reading.plan.planDigest).toBe(expected.planDigest);
+            expect(planShape(reading.plan.batches)).toEqual(planShape(expected.batches));
+        }
+        const view = getAgentApprovalView({ confirmationId: card.id })?.readings ?? [];
+        expect(view.map((reading) => reading.name)).toEqual(THREE_READINGS.map(({ name }) => name));
+        for (const [position, reading] of offer.readings.entries()) {
+            const lines = view[position]?.planLines ?? [];
+            expect(lines[0]).toMatch(/^Batch 2 of \d+: /u);
+            for (const trackId of reading.plan.batches.flatMap((batch) => batch.targetIds)) {
+                const trackName = reading.plan.trackNames[trackId] ?? trackId;
+                expect(lines.some((line) => line.startsWith(`${trackName}: `))).toBe(true);
+            }
+        }
+        const [first, second] = offer.readings;
+        expect(planShape(first?.plan.batches ?? [])).not.toEqual(planShape(second?.plan.batches ?? []));
+        expect(first?.plan.planDigest).not.toBe(second?.plan.planDigest);
+    });
+
+    it("states each reading's plan in these exact lines on the real approval view", async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+
+        const planLines = getAgentApprovalView({ confirmationId: card.id })?.readings.map(
+            (reading) => reading.planLines
+        );
+
+        expect(planLines).toEqual([
+            [
+                'Batch 2 of 4: dark drums',
+                'Drums: Cymbal shelf and attack region pulled down. Expected: spectral centroid down, frequency-band energy (presence) down.',
+                'Batch 3 of 4: dark vocal',
+                'Vocal: Upper shelf cut with an upper-mid dip. Expected: spectral centroid down, frequency-band energy (presence) down.',
+                'Batch 4 of 4: dark bass',
+                'Bass: Harmonic top removed above the note region. Expected: spectral centroid down, frequency-band energy (high-mid) down.',
+            ],
+            [
+                'Batch 2 of 4: warm drums',
+                'Drums: Shell weight lifted, cymbal shelf eased. Expected: frequency-band energy (bass) up, spectral centroid down.',
+                'Batch 3 of 4: warm vocal',
+                'Vocal: Chest-register lift with a softened upper shelf. Expected: frequency-band energy (bass) up, spectral centroid down.',
+                'Batch 4 of 4: warm bass',
+                'Bass: Fundamental weight with string noise eased. Expected: frequency-band energy (bass) up, spectral centroid down.',
+            ],
+            [
+                'Batch 2 of 4: warm and vintage drums',
+                'Drums: Shell weight lifted, cymbal shelf eased, Saturated body with reduced bandwidth. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+                'Batch 3 of 4: warm and vintage vocal',
+                'Vocal: Chest-register lift with a softened upper shelf, Low-drive saturation under a rolled top end. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+                'Batch 4 of 4: warm and vintage bass',
+                'Bass: Fundamental weight with string noise eased, Harmonic drive with the top rolled away. Expected: frequency-band energy (bass) up, spectral centroid down, crest factor down, frequency-band energy (air) down.',
+            ],
+        ]);
+    });
+
+    it('keeps the readings, their plans and their choice after the chat is closed and reopened', async () => {
+        updateWorkspaceState({ chatPanelOpen: true });
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const before = getAgentApprovalView({ confirmationId: card.id })?.readings;
+
+        toggleChat();
+        expect(workspaceStore.value?.chatPanelOpen).toBe(false);
+        toggleChat();
+        expect(workspaceStore.value?.chatPanelOpen).toBe(true);
+
+        const after = getAgentApprovalView({ confirmationId: card.id })?.readings;
+        expect(before?.map((reading) => reading.name)).toEqual(THREE_READINGS.map(({ name }) => name));
+        expect(after).toEqual(before);
+        expect(requireOnlyProposedCard().id).toBe(card.id);
+        updateWorkspaceState({ chatPanelOpen: false });
+        await expect(
+            chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'More low-mid body') })
+        ).resolves.toEqual({ status: 'chosen' });
+    });
+
+    it('is inert: offering the readings renders, measures, reserves and writes nothing, and asks no provider', async () => {
+        const revision = captureProjectRevision();
+        const history = structuredClone(undoHistoryStore.value);
+        const { card, providerTurns } = await ask(mixIntentWith(THREE_READINGS));
+
+        expect(readingsOf(card)).toHaveLength(3);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+        expect(audio.renderOfflineInput).not.toHaveBeenCalled();
+        // The brief turn is the only provider traffic: intake, compile, propose.
+        expect(providerTurns()).toBe(3);
+        const consumed = agentRunLifecycle.get(card.runId)?.budgets.consumed ?? {};
+        expect(consumed.maxRenderJobs ?? 0).toBe(0);
+        expect(consumed.localAnalysis ?? 0).toBe(0);
+        expect(agentRunLifecycle.get(card.runId)?.plan?.applicationToolReceipts?.map((r) => r.origin)).not.toContain(
+            'application-verification'
+        );
+        expect(captureProjectRevision()).toBe(revision);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(liveBriefRevision()).toBe(BRIEF_REVISION);
     });
 
     it('records only the brief when Confirm is chosen over every reading, and plans no batch', async () => {
@@ -203,7 +389,7 @@ describe('an unambiguous brief request', () => {
 });
 
 describe('the rules a reading list must meet', () => {
-    function compileWith(mixIntent: unknown, prompt = AMBIGUOUS_PROMPT) {
+    function compileWith(mixIntent: unknown, prompt = AMBIGUOUS_PROMPT, sourceRunId: string | null = createLiveRun()) {
         return executeBriefCompile({
             call: { id: 'brief-compile', name: 'brief.compile', arguments: { vision: 'A warmer mix', mixIntent } },
             callId: 'brief-compile',
@@ -211,18 +397,78 @@ describe('the rules a reading list must meet', () => {
             revision: captureProjectRevision(),
             prompt,
             context: getProjectContext(),
-            sourceRunId: 'run-1',
+            sourceRunId,
             isBriefOffered: true,
             isBriefRequested: () => true,
         });
     }
 
     it('accepts two valid readings, keeping the mix intent two-key', () => {
-        const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)));
+        const runId = createLiveRun();
+        const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), AMBIGUOUS_PROMPT, runId);
 
         expect(result.receipt.status).toBe('success');
         expect(result.mixIntent).toEqual({ catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] });
-        expect(result.mixAlternatives).toEqual(THREE_READINGS.slice(0, 2));
+        expect(
+            result.mixAlternatives?.map(({ name, requestedDescriptors }) => ({ name, requestedDescriptors }))
+        ).toEqual(THREE_READINGS.slice(0, 2));
+        const brief = result.composedBrief;
+        if (brief === null) {
+            throw new TypeError('Expected a composed brief');
+        }
+        for (const alternative of result.mixAlternatives ?? []) {
+            const expected = preparedFor(runId, brief, alternative.requestedDescriptors);
+            expect(alternative.plan.planDigest).toBe(expected.planDigest);
+            expect(alternative.plan.constraintReading).toEqual(
+                compilePerceptualConstraints(AMBIGUOUS_PROMPT, getProjectContext())
+            );
+            expect(planShape(alternative.plan.batches)).toEqual(planShape(expected.batches));
+        }
+    });
+
+    it('retains on each reading the perceptual constraints its request states, not an empty reading', () => {
+        const prompt = "make this mix warmer but don't make it louder";
+        const expected = compilePerceptualConstraints(prompt, getProjectContext());
+        // Without a stated constraint both sides would be empty readings and any stored value would match.
+        expect(expected.constraints.length).toBeGreaterThan(0);
+
+        const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), prompt);
+
+        expect(result.receipt.status).toBe('success');
+        expect(result.mixAlternatives).toHaveLength(2);
+        for (const alternative of result.mixAlternatives ?? []) {
+            expect(alternative.plan.constraintReading).toEqual(expected);
+        }
+    });
+
+    it('offers no reading to a request without a live run, as a correctable failure', () => {
+        for (const sourceRunId of [null, 'run-that-does-not-exist']) {
+            const result = compileWith(mixIntentWith(THREE_READINGS.slice(0, 2)), AMBIGUOUS_PROMPT, sourceRunId);
+
+            expect(result.commands).toBeNull();
+            expect(result.mixAlternatives).toBeUndefined();
+            expect(result.receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+            expect(result.receipt.error?.safeMessage).toMatch(/no live run/u);
+        }
+    });
+
+    it('refuses a reading whose plan does not fit the run, naming the reading and the budget', () => {
+        const result = compileWith(
+            mixIntentWith(THREE_READINGS.slice(0, 2)),
+            AMBIGUOUS_PROMPT,
+            createLiveRun({ maxRenderJobs: 1 })
+        );
+
+        expect(result.commands).toBeNull();
+        expect(result.mixAlternatives).toBeUndefined();
+        expect(result.receipt).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments', retryable: true },
+        });
+        expect(result.receipt.error?.safeMessage).toMatch(/"Darker top end".*maxRenderJobs/u);
     });
 
     it.each([
@@ -329,6 +575,58 @@ describe('the rules a reading list must meet', () => {
         });
         expect(result.receipt.error?.safeMessage).toMatch(/"Nothing here".*no authored recipe that plans/u);
     });
+
+    describe('when only a later reading cannot be planned', () => {
+        const PLANS_ON_A_HI_HAT = { name: 'Darker top end', requestedDescriptors: ['dark'] };
+        const NO_HI_HAT_RECIPE = { name: 'More low-mid body', requestedDescriptors: ['warm'] };
+        const FITS_TWELVE_RENDERS = { name: 'Brighter', requestedDescriptors: ['bright'] };
+        const NEEDS_SIXTEEN_RENDERS = { name: 'Airy and punchy', requestedDescriptors: ['airy', 'punchy'] };
+
+        function expectRefusedNamingOnly(result: ReturnType<typeof compileWith>, named: RegExp, notNamed: string) {
+            expect(result.commands).toBeNull();
+            expect(result.mixAlternatives).toBeUndefined();
+            expect(result.receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+            const message = result.receipt.error?.safeMessage ?? '';
+            expect(message).toMatch(named);
+            expect(message).not.toContain(notNamed);
+        }
+
+        it('refuses a second reading no authored recipe plans, naming it, though the first plans', async () => {
+            // Only a hi-hat is left to plan: the "dark" recipe serves one, the "warm" recipe serves kick, snare and toms.
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: DRUMS_ID, name: 'Hi-Hat' } });
+            const leaveOthers = 'make this mix warmer but leave the Vocal and the Bass alone';
+            const control = compileWith(
+                mixIntentWith([PLANS_ON_A_HI_HAT, { name: 'Brighter', requestedDescriptors: ['bright'] }]),
+                leaveOthers
+            );
+            expect(control.receipt.status).toBe('success');
+
+            const result = compileWith(mixIntentWith([PLANS_ON_A_HI_HAT, NO_HI_HAT_RECIPE]), leaveOthers);
+
+            expectRefusedNamingOnly(result, /"More low-mid body".*no authored recipe that plans/u, '"Darker top end"');
+        });
+
+        it('refuses a second reading that does not fit the run, naming it and the budget, though the first fits', () => {
+            const limits = { maxRenderJobs: 12 };
+            const control = compileWith(
+                mixIntentWith([FITS_TWELVE_RENDERS, PLANS_ON_A_HI_HAT]),
+                AMBIGUOUS_PROMPT,
+                createLiveRun(limits)
+            );
+            expect(control.receipt.status).toBe('success');
+
+            const result = compileWith(
+                mixIntentWith([FITS_TWELVE_RENDERS, NEEDS_SIXTEEN_RENDERS]),
+                AMBIGUOUS_PROMPT,
+                createLiveRun(limits)
+            );
+
+            expectRefusedNamingOnly(result, /"Airy and punchy".*maxRenderJobs/u, '"Brighter"');
+        });
+    });
 });
 
 describe('choosing one reading of the brief card', () => {
@@ -368,6 +666,30 @@ describe('choosing one reading of the brief card', () => {
         expect(getPendingActionConfirmation(card.id)?.approvalSnapshot.briefReadings?.readings).toHaveLength(3);
         expect(getAgentApprovalView({ confirmationId: card.id })?.readings).toEqual([]);
     });
+
+    it.each([
+        ['the first reading', 'Darker top end'],
+        ['the last reading', 'Gentle saturation'],
+    ])(
+        'runs exactly the plan retained on %s: the same targets, recipes, deltas and counts, with no provider turn',
+        async (_label, name) => {
+            const { card, providerTurns } = await ask(mixIntentWith(THREE_READINGS));
+            const retained = readingsOf(card).find((candidate) => candidate.name === name)?.plan;
+            const turnsBefore = providerTurns();
+
+            await chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, name) });
+
+            const schedule = agentRunLifecycle.get(card.runId)?.plan?.batchSchedule;
+            if (schedule?.kind !== 'vibe-run' || retained === undefined) {
+                throw new TypeError('Expected the chosen reading to schedule a vibe run');
+            }
+            const scheduled = readScheduledVibeRunPlan(schedule.serializedPlan);
+            expect(scheduled).not.toBeNull();
+            expect(retained.batches.length).toBeGreaterThan(0);
+            expect(planShape(scheduled?.batches ?? [])).toEqual(planShape(retained.batches));
+            expect(providerTurns()).toBe(turnsBefore);
+        }
+    );
 
     it('records the chosen reading under the provider proposal the readings card was planned with', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
@@ -512,6 +834,28 @@ function withSeededPlan(
     };
 }
 
+/** The card with one reading's retained plan replaced, as if it had been prepared against another project. */
+function withRetainedPlan(cardId: string, readingName: string, change: (reading: BriefReading) => BriefReading) {
+    return (confirmation: Confirmation): Confirmation => {
+        const readings = confirmation.approvalSnapshot.briefReadings;
+        if (confirmation.id !== cardId || readings === undefined) {
+            return confirmation;
+        }
+        return {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                briefReadings: {
+                    ...readings,
+                    readings: readings.readings.map((reading) =>
+                        reading.name === readingName ? change(reading) : reading
+                    ),
+                },
+            },
+        };
+    };
+}
+
 /** The card as it would read if the mix catalogue had changed after the card was made. */
 function withOldCatalog(cardId: string) {
     return (confirmation: Confirmation): Confirmation => {
@@ -565,12 +909,30 @@ describe('a chosen reading that cannot be planned once its card is retired', () 
         expect(planningMessage()?.stoppableRunId).toBeUndefined();
     });
 
+    it('ends the run as failed, with no card, when the project changes after the plan was measured', async () => {
+        planning.afterPlanned = editBrief;
+
+        const { card, outcome } = await chooseDarker();
+
+        const reason =
+            'the project changed while the reading was planned, so no plan was made. Ask again for the change you want';
+        expect(outcome).toEqual({ status: 'refused', reason });
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalled();
+        expect(agentRunLifecycle.get(card.runId)?.phase).toBe('failed');
+        expect(agentRunLifecycle.get(card.runId)?.plan?.batchSchedule).toBeUndefined();
+        expect(proposedCards()).toEqual([]);
+        expect(planningMessage()).toMatchObject({
+            content: `No plan was made for the reading "Darker top end": ${reason}`,
+            error: reason,
+        });
+        expect(planningMessage()?.stoppableRunId).toBeUndefined();
+    });
+
     it('leaves a stopped reading cancelled, with no recorded error, when Stop lands while it measures', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         const errorsBefore = agentRunLifecycle.get(card.runId)?.errors.length;
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: Parameters<typeof renderTrack>[0]) => {
             void agentRunCancellation.cancel({ runId: card.runId, reason: 'Cancelled by user' });
-            await Promise.resolve();
             return renderTrack(input);
         });
 
@@ -619,6 +981,30 @@ describe('a choice that no longer applies', () => {
         };
     }
 
+    /** The card and run are as they were, and the refusal is told once, with its reason, in one new assistant message. */
+    function expectRefusalOnlyTold(card: Confirmation, before: ReturnType<typeof snapshotOf>, outcome: unknown) {
+        if (
+            typeof outcome !== 'object' ||
+            outcome === null ||
+            !('reason' in outcome) ||
+            typeof outcome.reason !== 'string'
+        ) {
+            throw new TypeError('Expected a refusal carrying its reason');
+        }
+        const after = snapshotOf(card);
+        expect(after.card).toEqual(before.card);
+        expect(after.run).toEqual(before.run);
+        const earlier = before.messages ?? [];
+        expect(after.messages).toEqual([
+            ...earlier,
+            expect.objectContaining({
+                role: 'assistant',
+                error: outcome.reason,
+                content: expect.stringContaining(outcome.reason),
+            }),
+        ]);
+    }
+
     it('refuses a second choice on the card the first choice superseded, leaving the replacement alone', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         await chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') });
@@ -648,7 +1034,7 @@ describe('a choice that no longer applies', () => {
             status: 'refused',
             reason: expect.stringMatching(/production brief changed/u),
         });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
@@ -659,7 +1045,7 @@ describe('a choice that no longer applies', () => {
         const outcome = await chooseVibeBriefReading({ confirmationId: card.id, readingId: 'reading-9' });
 
         expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/offers no reading/u) });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
@@ -676,19 +1062,237 @@ describe('a choice that no longer applies', () => {
         });
 
         expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/catalogue changed/u) });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
     });
 
     it('refuses a choice once the run has ended, and a card that does not exist', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         agentRunLifecycle.transitionPhase({ runId: card.runId, phase: 'cancelled' });
+        const before = snapshotOf(card);
 
-        await expect(
-            chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') })
-        ).resolves.toMatchObject({ status: 'refused', reason: expect.stringMatching(/run .* has ended/u) });
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+        expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/run .* has ended/u) });
+        expectRefusalOnlyTold(card, before, outcome);
         await expect(
             chooseVibeBriefReading({ confirmationId: 'no-such-card', readingId: 'reading-1' })
         ).resolves.toEqual({ status: 'missing' });
+    });
+
+    it('refuses, telling why, when the run ends between admitting the choice and claiming its work', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const live = agentRunLifecycle.get(card.runId);
+        if (live === null) {
+            throw new TypeError('Expected a live run');
+        }
+        // The run ended after the choice was admitted: admission reads the run as it was, the claim reads it as it is.
+        agentRunLifecycle.transitionPhase({ runId: card.runId, phase: 'cancelled' });
+        const readRun = agentRunLifecycle.get.bind(agentRunLifecycle);
+        const staleRead = vi
+            .spyOn(agentRunLifecycle, 'get')
+            .mockImplementation((runId) => (runId === card.runId ? live : readRun(runId)));
+        const messagesBefore = chatStore.value?.messages.length ?? 0;
+        const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
+
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+        staleRead.mockRestore();
+
+        const reason = 'The reading could not be planned: terminal-run.';
+        expect(outcome).toEqual({ status: 'refused', reason });
+        const told = (chatStore.value?.messages ?? []).slice(messagesBefore);
+        expect(told).toEqual([
+            expect.objectContaining({
+                role: 'assistant',
+                error: reason,
+                content: `Could not plan the reading "Darker top end": ${reason}`,
+            }),
+        ]);
+        expect(getPendingActionConfirmation(card.id)?.status).toBe('proposed');
+        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBe(rendersBefore);
+    });
+
+    describe('whose retained plan no longer holds', () => {
+        const READING = 'Darker top end';
+
+        /** Chooses the reading and checks that the card, run and renders are as they were; returns the outcome. */
+        async function chooseLeavingUntouched(card: Confirmation) {
+            const before = snapshotOf(card);
+            const renders = audio.renderTrackSubgraphOffline.mock.calls.length;
+
+            const outcome = await chooseVibeBriefReading({
+                confirmationId: card.id,
+                readingId: readingIdOf(card, READING),
+            });
+
+            expectRefusalOnlyTold(card, before, outcome);
+            expect(getPendingActionConfirmation(card.id)?.status).toBe('proposed');
+            expect(agentRunLifecycle.get(card.runId)?.phase).toBe(before.run?.phase);
+            expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBe(renders);
+            expect(proposedCards().map((candidate) => candidate.id)).toEqual([card.id]);
+            return outcome;
+        }
+
+        it('refuses a recipe the live catalogue no longer publishes, naming it', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            pendingActionConfirmationStore.set({
+                confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map(
+                    withRetainedPlan(card.id, READING, (reading) => ({
+                        ...reading,
+                        plan: {
+                            ...reading.plan,
+                            batches: reading.plan.batches.map((batch) => ({
+                                ...batch,
+                                targets: batch.targets.map((target) => ({
+                                    ...target,
+                                    recipeIds: ['retired-recipe', ...target.recipeIds.slice(1)],
+                                })),
+                            })),
+                        },
+                    }))
+                ),
+            });
+
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/"retired-recipe".*no longer published/u),
+            });
+        });
+
+        it('refuses a target the project no longer holds, naming its track', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            const plan = readingsOf(card).find((reading) => reading.name === READING)?.plan;
+            const removedId = plan?.batches[0]?.targetIds[0];
+            const removedName = removedId === undefined ? undefined : plan?.trackNames[removedId];
+            if (removedId === undefined || removedName === undefined) {
+                throw new TypeError('Expected the reading to plan a named track');
+            }
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: removedId } });
+
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
+            });
+        });
+
+        it('refuses a choice once the project changed without moving the brief or any track the plan names', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            const plan = readingsOf(card).find((reading) => reading.name === READING)?.plan;
+            const targetId = plan?.batches[0]?.targetIds[0];
+            if (targetId === undefined) {
+                throw new TypeError('Expected the reading to plan a track');
+            }
+            await executeAppAction({ type: 'setTrackColor', payload: { trackId: targetId, color: '#ff5500' } });
+
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/project changed since this card was made/u),
+            });
+        });
+
+        it('refuses a plan the live project prepares differently', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            pendingActionConfirmationStore.set({
+                confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map(
+                    withRetainedPlan(card.id, READING, (reading) => ({
+                        ...reading,
+                        plan: { ...reading.plan, planDigest: 'a-digest-the-live-project-does-not-prepare' },
+                    }))
+                ),
+            });
+
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/no longer plans this reading as offered/u),
+            });
+        });
+    });
+
+    describe('whose project moves while the card is being retired', () => {
+        async function chooseWhileRetiring(card: Confirmation, moveProject: () => Promise<void>) {
+            const original = pendingActionResourceSettlement.settleBestEffort.bind(pendingActionResourceSettlement);
+            let release: () => void = () => undefined;
+            const gate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.spyOn(pendingActionResourceSettlement, 'settleBestEffort').mockImplementation(async (input) => {
+                await gate;
+                return original(input);
+            });
+            const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
+            const choosing = chooseVibeBriefReading({
+                confirmationId: card.id,
+                readingId: readingIdOf(card, 'Darker top end'),
+            });
+            await moveProject();
+            release();
+            const outcome = await choosing;
+            return { outcome, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
+        }
+
+        /** The chat tells the user why no plan was made, in the one message that said it was planning. */
+        function expectReasonTold(outcome: unknown, expectedReason: RegExp) {
+            if (typeof outcome !== 'object' || outcome === null || !('reason' in outcome)) {
+                throw new TypeError('Expected a refusal carrying its reason');
+            }
+            const { reason } = outcome;
+            if (typeof reason !== 'string') {
+                throw new TypeError('Expected the reason to be text');
+            }
+            expect(reason).toMatch(expectedReason);
+            const told = (chatStore.value?.messages ?? []).filter((message) =>
+                message.content.startsWith('No plan was made for the reading')
+            );
+            expect(told).toHaveLength(1);
+            expect(told[0]?.content).toBe(`No plan was made for the reading "Darker top end": ${reason}`);
+            expect(told[0]?.error).toBe(reason);
+        }
+
+        function expectRunEndedWithoutPlan(card: Confirmation, renders: number) {
+            expect(renders).toBe(0);
+            expect(proposedCards()).toEqual([]);
+            const run = agentRunLifecycle.get(card.runId);
+            expect(run?.phase).toBe('failed');
+            expect(run?.plan?.batchSchedule).toBeUndefined();
+        }
+
+        it('refuses a reading whose target track was removed during the retire, and measures nothing', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            const plan = readingsOf(card).find((reading) => reading.name === 'Darker top end')?.plan;
+            const removedId = plan?.batches[0]?.targetIds[0];
+            const removedName = removedId === undefined ? undefined : plan?.trackNames[removedId];
+            if (removedId === undefined || removedName === undefined) {
+                throw new TypeError('Expected the reading to plan a named track');
+            }
+
+            const { outcome, renders } = await chooseWhileRetiring(card, () =>
+                executeAppAction({ type: 'removeTrack', payload: { trackId: removedId } }).then(() => undefined)
+            );
+
+            expect(outcome).toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
+            });
+            expectRunEndedWithoutPlan(card, renders);
+            expectReasonTold(outcome, new RegExp(`"${removedName}".*no longer in the project`, 'u'));
+        });
+
+        it('refuses a reading whose plan is unchanged but whose brief moved during the retire, and measures nothing', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+
+            const { outcome, renders } = await chooseWhileRetiring(card, editBrief);
+
+            expect(outcome).toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/production brief changed/u),
+            });
+            expectRunEndedWithoutPlan(card, renders);
+            expectReasonTold(outcome, /production brief changed/u);
+        });
     });
 
     it('refuses a card that offered no readings', async () => {
@@ -700,5 +1304,89 @@ describe('a choice that no longer applies', () => {
         await expect(
             chooseVibeBriefReading({ confirmationId: card.id, readingId: 'reading-1' })
         ).resolves.toMatchObject({ status: 'refused', reason: expect.stringMatching(/offers no reading/u) });
+    });
+});
+
+describe('planning a reading against the plan it was offered with', () => {
+    async function offerForPlanning() {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const offer = requireOffer(card);
+        const reading = offer.readings[0];
+        if (reading === undefined) {
+            throw new TypeError('Expected a reading');
+        }
+        const mixIntent = readBriefMixIntent({ catalogId: offer.catalogId, requestedDescriptors: reading.descriptors });
+        const run = agentRunLifecycle.get(card.runId);
+        if (mixIntent === null || run === null) {
+            throw new TypeError('Expected a live run and a catalogue selection');
+        }
+        return { card, offer, reading, mixIntent, run };
+    }
+
+    async function planAgainst(
+        offered: Awaited<ReturnType<typeof offerForPlanning>>,
+        expectedPlanDigest: string | undefined,
+        prompt: string = offered.run.request
+    ) {
+        const { card, offer, mixIntent, run } = offered;
+        const admit = vi.fn(agentWorkBudget.admitMeasurement(card.runId));
+        const rendersBefore = audio.renderTrackSubgraphOffline.mock.calls.length;
+        const planned = await planVibeRunSchedule({
+            prompt,
+            context: getProjectContext(),
+            brief: offer.brief,
+            mixIntent,
+            budgets: run.budgets,
+            runId: card.runId,
+            sourceRevision: settlePendingProjectWritesAndCaptureRevision(),
+            signal: new AbortController().signal,
+            admit,
+            priorReceipts: run.plan?.applicationToolReceipts ?? [],
+            expectedPlanDigest,
+        });
+        return { planned, admit, renders: audio.renderTrackSubgraphOffline.mock.calls.length - rendersBefore };
+    }
+
+    it('measures nothing and plans nothing when the live preparation differs from the digest', async () => {
+        const offered = await offerForPlanning();
+
+        const { planned, admit, renders } = await planAgainst(offered, 'a-digest-the-live-project-does-not-prepare');
+
+        expect(planned).toMatchObject({
+            status: 'unscheduled',
+            lines: [expect.stringMatching(/no longer plans this reading as offered/u)],
+        });
+        expect(admit).not.toHaveBeenCalled();
+        expect(renders).toBe(0);
+    });
+
+    it('plans nothing, as unscheduled, when a digest is expected and the project now prepares no batch', async () => {
+        const offered = await offerForPlanning();
+        const protectEverything = 'make this mix warmer but leave the Drums, the Vocal and the Bass alone';
+        const withoutDigest = await planAgainst(offered, undefined, protectEverything);
+        expect(withoutDigest.planned).toEqual({ status: 'none' });
+
+        const { planned, admit, renders } = await planAgainst(
+            offered,
+            offered.reading.plan.planDigest,
+            protectEverything
+        );
+
+        expect(planned).toMatchObject({
+            status: 'unscheduled',
+            lines: ['No batches were scheduled after the brief: the project no longer plans this reading as offered.'],
+        });
+        expect(admit).not.toHaveBeenCalled();
+        expect(renders).toBe(0);
+    });
+
+    it('measures and schedules when the live preparation equals the digest', async () => {
+        const offered = await offerForPlanning();
+
+        const { planned, admit, renders } = await planAgainst(offered, offered.reading.plan.planDigest);
+
+        expect(planned.status).toBe('scheduled');
+        expect(admit).toHaveBeenCalled();
+        expect(renders).toBeGreaterThan(0);
     });
 });

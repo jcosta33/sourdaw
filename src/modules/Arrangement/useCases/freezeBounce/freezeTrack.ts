@@ -30,7 +30,10 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
+import { restoreCancelledFreeze } from './restoreCancelledFreeze';
+import { settledBeforeFreeze } from './settledBeforeFreeze';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -71,6 +74,7 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
+        settledBeforeFreeze.delete(trackId);
     }
 }
 
@@ -95,7 +99,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return false;
     }
-    const previousFreeze = captureFreezeStateSnapshot(track);
+    const previousFreeze = rememberSettledFreezeState(track);
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -267,17 +271,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         if (abortController.signal.aborted) {
-            // A cancelled refresh keeps the take it was replacing, so the track stays
-            // frozen on it and can still be unfrozen; a cancelled first freeze is unfrozen.
-            scope(() => {
-                updateTrack(trackId, (time) => ({
-                    ...time,
-                    frozen: previousFreeze.frozen,
-                    frozenBufferId: previousFreeze.frozenBufferId,
-                    freezeState: previousFreeze.freezeState,
-                }));
-            });
-            return true;
+            return restoreCancelledFreeze({ trackId, pendingFreeze, settled: previousFreeze, scope });
         }
 
         const errorMessage = error instanceof Error ? error.message : String(error);
