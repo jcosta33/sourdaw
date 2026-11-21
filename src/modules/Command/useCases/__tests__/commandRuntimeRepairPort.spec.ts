@@ -20,6 +20,12 @@ describe('commandRuntimeRepairPort', () => {
         expect(first).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects when the provider rejects', async () => {
+        commandRuntimeRepairPort.setProvider(() => Promise.reject(new Error('runtime graph rebuild failed')));
+
+        await expect(commandRuntimeRepairPort.repair()).rejects.toThrow('runtime graph rebuild failed');
+    });
+
     it('runs only the second provider after a second fill', async () => {
         commandRuntimeRepairPort.setProvider(second);
 
