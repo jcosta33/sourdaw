@@ -2407,6 +2407,32 @@ describe('reading only governed protections and whole object names', () => {
             [],
             [unread("don't change the brightness of everything but the vocal", exceptionReason('but the vocal'))],
         ],
+        [
+            "don't make the mix wider but the vocal",
+            [],
+            [unread("don't make the mix wider but the vocal", exceptionReason('but the vocal'))],
+        ],
+        [
+            "don't make it wider but the vocal",
+            [],
+            [unread("don't make it wider but the vocal", exceptionReason('but the vocal'))],
+        ],
+        [
+            'keep the width of everything but the vocal the same',
+            [],
+            [unread('keep the width of everything but the vocal the same', exceptionReason('but the vocal the same'))],
+        ],
+        // a "but" before a quality, or before a track outside a track-scoped clause, carves nothing out
+        [
+            'keep the mix wide but warm',
+            [measured('stereo-width-held-v1', 'keep the mix wide but warm', MIX)],
+            [unread('keep the mix wide but warm', unmeasured('warm'))],
+        ],
+        [
+            'keep the vocal bright but the drums',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
         // a "but" before a clause of its own, its object taking a predicate, carves nothing out
         [
             'keep everything bright but the vocal is too loud',

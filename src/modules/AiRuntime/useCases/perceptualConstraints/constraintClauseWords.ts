@@ -32,9 +32,7 @@ export const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = ne
     ['keys', 'keys'],
 ]);
 const IT = 'it';
-/** The pronouns naming the whole mix by every part of it, which a "but" may carve a part out of. */
-const UNIVERSAL_PRONOUN_WORDS = ['everything', 'anything'];
-const MIX_PRONOUN_WORDS = [IT, ...UNIVERSAL_PRONOUN_WORDS];
+const MIX_PRONOUN_WORDS = [IT, 'everything', 'anything'];
 /** The pronouns that hold the mix while the request names no track or role before them. */
 export const MIX_PRONOUNS: ReadonlySet<string> = new Set(MIX_PRONOUN_WORDS);
 export const MIX_PRONOUN = words(MIX_PRONOUN_WORDS);
@@ -488,7 +486,8 @@ const CONDITIONED_GROUP = 'conditioned';
 const REFUSED_GROUP = 'refused';
 const PERMITTED_GROUP = 'permitted';
 const EXCEPTED_GROUP = 'excepted';
-const SPARED_GROUP = 'spared';
+/** The group a "but" captures the track or role it carves out under. */
+export const SPARED_GROUP = 'spared';
 /** The groups an exception's object is captured under, one per form of `EXCEPTION_AFTER` and `SPARING_EXCEPTION`. */
 export const EXCEPTED_OBJECT_GROUPS = [
     LISTED_GROUP,
@@ -502,11 +501,12 @@ function exceptedPart(group: string, objectEnd: string = EXCEPTED_OBJECT_END): s
     return String.raw`(?:${EXCEPTION_PREPOSITION}${WORD_END}|(?:${ONLY}\s+)?(?<${group}>${OBJECT_MEMBERS})${objectEnd})`;
 }
 /**
- * Where an object a "but" carves out ends: a stretch it is carved out in or the end of the clause, never
- * a predicate, which makes it the subject of a clause of its own ("keep everything bright but the vocal
+ * Where an object a "but" carves out ends: a stretch it is carved out in, the state the clause keeps it
+ * in ("keep the width of everything but the guitar the same") or the end of the clause, never a
+ * predicate, which makes it the subject of a clause of its own ("keep everything bright but the vocal
  * is too loud").
  */
-const SPARED_OBJECT_END = String.raw`(?=\s+${EXCEPTION_PREPOSITION}${WORD_END}|${CLAUSE_END})`;
+const SPARED_OBJECT_END = String.raw`(?=\s+(?:${EXCEPTION_PREPOSITION}${WORD_END}|${HELD_STATE}|${LEFT_STATE})|${CLAUSE_END})`;
 /** The marks an exception after a protection may stand behind: a comma, a colon, a separator or a bracket. */
 const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})?\s*`;
 /**
@@ -530,13 +530,12 @@ const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<${PERMITTED_GROUP}>${OBJEC
  */
 export const EXCEPTION_AFTER = String.raw`${EXCEPTION_MARK}(?:${EXCEPTION_LEAD}(?:\s+${exceptedPart(LISTED_GROUP)}|${WORD_END})|${CONDITION_LEAD}\s+${exceptedPart(CONDITIONED_GROUP)}|(?:${words([BUT])}\s+)?${words([NOT])}\s+${exceptedPart(REFUSED_GROUP)}|(?:${words([BUT])}\s+)?${PERMITTED_OBJECT}\s+${PERMISSION_MODAL}${WORD_END}|(?<${EXCEPTED_GROUP}>${OBJECT_MEMBERS})\s+${EXCEPTED_STATE}${CLAUSE_END})${EXCEPTION_TAIL}[${CLOSING_BRACKET_MARKS}]?`;
 /**
- * A "but" carving an object out of a clause naming every part of its scope, right after that clause:
- * "don't make anything wider but the vocal", "the brightness of everything but the vocal". The object
- * is captured as `spared`; only a clause the universal object below names reads it.
+ * A "but" carving an object out of the clause right before it: "don't make anything wider but the
+ * vocal", "don't make the mix wider but the vocal". The object is captured as `spared`, and a reader
+ * reads the "but" as an exception only where that object names a track or role, so "keep the mix wide
+ * but warm" carves nothing out.
  */
 export const SPARING_EXCEPTION = String.raw`${EXCEPTION_MARK}${words([BUT])}\s+${exceptedPart(SPARED_GROUP, SPARED_OBJECT_END)}${EXCEPTION_TAIL}[${CLOSING_BRACKET_MARKS}]?`;
-/** The words naming every part of a scope, which a "but" may carve an object out of: "everything", "every track". */
-export const UNIVERSAL_OBJECT = String.raw`\b${words([...UNIVERSAL_PRONOUN_WORDS, 'all', 'every'])}${WORD_END}`;
 /** The marks setting an exception off from its clause, which its quotation leaves out: ", except the vocal" quotes "except the vocal". */
 export const EXCEPTION_EDGE_MARKS = new RegExp(
     String.raw`^(?:\s*[,;:${BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})+|(?:[,;:${BRACKET_MARKS}]|${CLAUSE_SEPARATOR})+\s*$`,
