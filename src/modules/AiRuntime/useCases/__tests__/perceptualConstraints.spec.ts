@@ -2422,6 +2422,84 @@ describe('reading only governed protections and whole object names', () => {
             [],
             [unread('keep the width of everything but the vocal the same', exceptionReason('but the vocal the same'))],
         ],
+        // a negation or permission governing a release refuses it, so the keep reads as it would alone
+        [
+            "don't stop keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'never stop keeping the vocal wide',
+            [measured('stereo-width-held-v1', 'keeping the vocal wide', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't stop keeping the drums bright",
+            [measured('brightness-held-v1', 'keeping the drums bright', onTracks('drums'))],
+            [],
+        ],
+        [
+            'never stop keeping the level of the mix',
+            [measured('loudness-held-v1', 'keeping the level of the mix', MIX)],
+            [],
+        ],
+        [
+            'never stop preserving the bass dynamics',
+            [measured('dynamics-held-v1', 'preserving the bass dynamics', onTracks('bass'))],
+            [],
+        ],
+        [
+            'do not stop keeping the drums from getting wider',
+            [measured('stereo-width-not-widened-v1', 'keeping the drums from getting wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'never cease keeping the vocal bright',
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['never quit keeping the mix wide', [measured('stereo-width-held-v1', 'keeping the mix wide', MIX)], []],
+        [
+            "don't ever stop keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't quit keeping the drums dynamic",
+            [measured('dynamics-held-v1', 'keeping the drums dynamic', onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't want to stop keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "you don't have to stop keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'no need to stop keeping the vocal bright',
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't cancel keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't give up keeping the vocal bright",
+            [measured('brightness-held-v1', 'keeping the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "forget the EQ and don't stop keeping the mix wide",
+            [measured('stereo-width-held-v1', 'keeping the mix wide', MIX)],
+            [],
+        ],
+        ["don't skip keeping the drums punchy", [], [unread('keeping the drums punchy', unmeasured('punchy'))]],
         // a "but" before a quality, or before a track outside a track-scoped clause, carves nothing out
         [
             'keep the mix wide but warm',

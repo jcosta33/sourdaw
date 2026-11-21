@@ -353,6 +353,8 @@ const RELEASE_LEAD = words([
     'drop the constraint',
     'lift the constraint',
 ]);
+/** A negation or permission governing the verb right after it: "don't", "you don't have to", "nobody needs to". */
+const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+`;
 /**
  * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
  * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
@@ -360,10 +362,11 @@ const RELEASE_LEAD = words([
  * "you no longer need to keep …"), past any adverb ("you don't really need to stop …"), and not where
  * a release gives the verb up ("stop keeping …", "forget about preventing …"). Either permits what a
  * keep, stop, prevent or leave names, so neither a reader nor the net reads a protection there. A
- * negation governing an earlier verb ("without changing the tempo keep the vocal bright") permits
- * nothing.
+ * negation or permission governing the release refuses it, so the keep stands as it would alone
+ * ("don't stop keeping …", "you don't have to stop keeping …"). A negation governing an earlier verb
+ * ("without changing the tempo keep the vocal bright") permits nothing.
  */
-export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)(?<!\b${RELEASE_LEAD}\s+)`;
+export const NOT_PERMITTED = String.raw`(?<!${GOVERNING_NEGATION})(?<!(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}\s+)`;
 /**
  * The one leading words a move clause names its move through: "sound louder", "getting any wider",
  * "going brighter". The verb is never part of the object, so "sound louder" is a louder clause.

@@ -557,7 +557,7 @@ function pushKeepPart(
         return;
     }
     const { part } = keep;
-    // "keep the lo-fi vibe" states a quality with no object to hold it on.
+    // An object of nothing but quotation marks (`keep "" warm`) names nothing to hold a quality on.
     if (normalizeObjectText(part.object).length === 0) {
         return;
     }
