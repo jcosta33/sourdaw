@@ -31,7 +31,7 @@ import {
     MIX_WORDS,
     NEGATION,
     NO,
-    normalizeObjectText,
+    normalizeObjectName,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_MEMBER,
@@ -51,13 +51,16 @@ import {
     CHANGE_NOUN,
     DIRECTION,
     directionConstraintIds,
+    DYNAMIC_TERM,
     FAMILY_IDS,
     LOW_END_HOLDING_VERB,
     type MeasuredConstraintId,
     QUALITY_OF,
     WORD_END,
 } from './constraintDirections';
+import { normalizeObjectText } from './normalizeObjectText';
 import { normalizePhrase } from './normalizePhrase';
+import { readAcrossBrackets } from './readAcrossBrackets';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { readInnerAsides } from './readInnerAsides';
 import { type ConsumedSpan, readUnreadConstraintClauses, type UnreadClause } from './readUnreadConstraintClauses';
@@ -87,8 +90,6 @@ const QUALITY_OBJECT_WORD = String.raw`(?!${FROM}\b)${WORD_CHARACTER}+`;
 const QUALITY_OBJECT = String.raw`(?<object>(?:${QUALITY_OBJECT_WORD}\s+){0,3}?${QUALITY_OBJECT_WORD})`;
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
-/** A quality no recipe produces but a crest factor measures: the one quality read beside the catalog's terms. */
-const DYNAMIC_TERM = 'dynamic';
 /**
  * The qualities whose preservation a measured hold verifies. Keys are the catalog's descriptor ids and
  * `dynamic`, the one quality read beside the catalog, never words read from the request: the request's
@@ -112,8 +113,24 @@ const PREVENTING_VERB = String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})`;
 const PREVENTED_QUALITY_OBJECT = String.raw`(?<object>${OBJECT_MEMBERS}|${IN_CLAUSE_CHARACTER}+?)`;
 
 function nameVariants(name: string): string[] {
-    const normalized = normalizeObjectText(name);
+    const normalized = normalizeObjectName(name);
     return [normalized, `${normalized}s`, normalized.replace(/s$/u, '')];
+}
+
+function measurableTracks(context: ProjectContext): ProjectContext['tracks'] {
+    return context.tracks.filter((track) => MEASURABLE_TRACK_KINDS.has(track.kind));
+}
+
+/**
+ * The tracks a member names, each by its name as written, brackets and all, so "Bass DI" never names Bass
+ * (DI): the member's own words first, then, only where those name none, its words without the brackets
+ * of an aside read inside its clause ("don't make (the) vocal louder" names Vocal).
+ */
+function findNamedTracks(member: string, context: ProjectContext): ProjectContext['tracks'] {
+    const tracks = measurableTracks(context);
+    const named = (text: string) => tracks.filter((track) => nameVariants(track.name).includes(text));
+    const byName = named(normalizeObjectName(member));
+    return byName.length > 0 ? byName : named(normalizeObjectText(member));
 }
 
 function resolveMember(member: string, context: ProjectContext): ObjectResolution {
@@ -124,12 +141,12 @@ function resolveMember(member: string, context: ProjectContext): ObjectResolutio
     if (MIX_WORDS.has(normalized)) {
         return { kind: 'mix' };
     }
-    const tracks = context.tracks.filter((track) => MEASURABLE_TRACK_KINDS.has(track.kind));
-    const named = tracks.filter((track) => nameVariants(track.name).includes(normalized));
+    const named = findNamedTracks(member, context);
     if (named.length > 0) {
         return { kind: 'tracks', trackIds: named.map((track) => track.id), families: named.map(resolveRoleFamily) };
     }
     const family = ROLE_WORDS.get(normalized);
+    const tracks = measurableTracks(context);
     const byRole = family === undefined ? [] : tracks.filter((track) => resolveRoleFamily(track) === family);
     if (byRole.length > 0) {
         return {
@@ -213,13 +230,15 @@ function resolveHoldObject(
 type ReadClause = { text: string; span: ConsumedSpan };
 /** An unsupported entry with the span of the clause it quotes, so the net can tell which clause it came from. */
 type ReadUnsupported = { entry: UnsupportedPerceptualConstraint; span: ConsumedSpan };
+/** A constraint with the span of the clause it was read from. */
+type ReadConstraint = { entry: PerceptualConstraintReading['constraints'][number]; span: ConsumedSpan };
 
 /** What every reader of one request shares: its masked and own text, the project, and what it reads. */
 type RequestReader = {
     masked: string;
     prompt: string;
     context: ProjectContext;
-    constraints: PerceptualConstraintReading['constraints'];
+    constraints: ReadConstraint[];
     unsupported: ReadUnsupported[];
 };
 
@@ -257,10 +276,8 @@ function pushMeasuredHolds(reader: RequestReader, clause: ReadClause, hold: Hold
     }
     for (const constraintId of constraintIds) {
         constraints.push({
-            constraintId,
-            clause: clause.text,
-            scope: toScope(resolution),
-            protection: { kind: 'measured' },
+            entry: { constraintId, clause: clause.text, scope: toScope(resolution), protection: { kind: 'measured' } },
+            span: clause.span,
         });
     }
 }
@@ -298,10 +315,13 @@ function readLowEndConstraints(reader: RequestReader): ConsumedSpan[] {
             continue;
         }
         constraints.push({
-            constraintId: 'low-end-untouched-v1',
-            clause,
-            scope: toScope(resolution),
-            protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
+            entry: {
+                constraintId: 'low-end-untouched-v1',
+                clause,
+                scope: toScope(resolution),
+                protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
+            },
+            span: { start, end },
         });
     }
     return clauses;
@@ -371,10 +391,13 @@ function readIntimacy(reader: RequestReader, clause: ReadClause, object: string)
         return;
     }
     reader.constraints.push({
-        constraintId: 'vocal-intimacy-v1',
-        clause: clause.text,
-        scope: { kind: 'tracks', trackIds: resolution.trackIds },
-        protection: { kind: 'exclude-dimension', dimension: 'ambience' },
+        entry: {
+            constraintId: 'vocal-intimacy-v1',
+            clause: clause.text,
+            scope: { kind: 'tracks', trackIds: resolution.trackIds },
+            protection: { kind: 'exclude-dimension', dimension: 'ambience' },
+        },
+        span: clause.span,
     });
 }
 
@@ -577,6 +600,20 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = readInnerAsides(maskTrackReferences(prompt, context, MASK_GLYPH));
+    const request = readMaskedRequest(masked, prompt, context);
+    return unionPerceptualConstraintReadings({
+        constraints: request.constraints.map(({ entry }) => entry),
+        unsupported: [
+            ...request.unsupported.map(({ entry }) => entry),
+            ...readBracketedClauses(masked, prompt, context, request),
+        ],
+    });
+}
+
+/** Every constraint and unsupported entry one masked reading of a request yields, and every span a reader read. */
+type MaskedRequestReading = Pick<RequestReader, 'constraints' | 'unsupported'> & { consumed: ConsumedSpan[] };
+
+function readMaskedRequest(masked: string, prompt: string, context: ProjectContext): MaskedRequestReading {
     const reader: RequestReader = { masked, prompt, context, constraints: [], unsupported: [] };
     const lowEnd = readLowEndConstraints(reader);
     const holds = readHoldClauses(masked, prompt);
@@ -586,10 +623,58 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     const consumed = [...lowEnd, ...holds, ...keeps];
     const unread = readUnreadConstraintClauses(masked, prompt, consumed);
     const unsupported = [
-        ...reader.unsupported.filter(({ span }) => !isQuotedWithin(span, unread)).map(({ entry }) => entry),
-        ...unread.map((clause) => clause.unsupported),
+        ...reader.unsupported.filter(({ span }) => !isQuotedWithin(span, unread)),
+        ...unread.map(({ unsupported: entry, span }) => ({ entry, span })),
     ];
-    return unionPerceptualConstraintReadings({ constraints: reader.constraints, unsupported });
+    return { constraints: reader.constraints, unsupported, consumed };
+}
+
+const BRACKETED_REASON =
+    'A bracket stands inside these words, so the application reads no measured bound or hold in them.';
+
+/**
+ * The clauses a bracket standing inside them hid from every reader ("keep the ( drums punchy", "keep
+ * the vocal ((lead)) bright"), each recorded unsupported once, quoting its words: read again with every
+ * standing bracket as a masked character of its word, any clause read across one that the first reading
+ * left untouched. Its object holds the bracket, so it is never measured, on that scope or any other.
+ */
+function readBracketedClauses(
+    masked: string,
+    prompt: string,
+    context: ProjectContext,
+    request: MaskedRequestReading
+): UnsupportedPerceptualConstraint[] {
+    const { text, brackets } = readAcrossBrackets(masked);
+    if (brackets.length === 0) {
+        return [];
+    }
+    const read = [...request.consumed, ...readSpans(request)];
+    const across = readSpans(readMaskedRequest(text, prompt, context)).filter(
+        (span) => brackets.some((index) => span.start <= index && index < span.end) && !overlapsAny(span, read)
+    );
+    return outermostSpans(across).map((span) => ({
+        constraintId: 'unsupported',
+        clause: prompt.slice(span.start, span.end).trim(),
+        reason: BRACKETED_REASON,
+    }));
+}
+
+function readSpans({ constraints, unsupported }: Pick<MaskedRequestReading, 'constraints' | 'unsupported'>) {
+    return [...constraints, ...unsupported].map(({ span }) => span);
+}
+
+/** One span per clause: each distinct span once, less any another one holds, so one clause yields one entry. */
+function outermostSpans(spans: readonly ConsumedSpan[]): ConsumedSpan[] {
+    const distinct = spans.filter(
+        (span, index) => spans.findIndex((other) => other.start === span.start && other.end === span.end) === index
+    );
+    return distinct.filter(
+        (span) => !distinct.some((other) => other !== span && other.start <= span.start && span.end <= other.end)
+    );
+}
+
+function overlapsAny(span: ConsumedSpan, spans: readonly ConsumedSpan[]): boolean {
+    return spans.some((other) => other.start < span.end && span.start < other.end);
 }
 
 /**

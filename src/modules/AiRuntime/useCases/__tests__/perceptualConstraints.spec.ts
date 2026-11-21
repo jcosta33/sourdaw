@@ -1173,6 +1173,8 @@ const COMPARATIVE_REASON =
     'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
 const NET_REASON =
     'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
+const BRACKET_REASON =
+    'A bracket stands inside these words, so the application reads no measured bound or hold in them.';
 
 /**
  * The fixture project with a Drums track, a track whose name holds "louder", a guitar known only by
@@ -2228,6 +2230,24 @@ describe('reading only governed protections and whole object names', () => {
             ],
             [],
         ],
+        // a nested, unclosed or stray bracket inside an object records its clause unsupported once,
+        // never nothing and never a reading on another scope
+        ...[
+            'keep the vocal ((lead)) bright',
+            'keep the ( drums punchy',
+            "don't make the (unclosed vocal louder",
+            'keep the closed) vocal bright',
+            "don't make the (please) vocal louder",
+            'keep the ( drums bright',
+        ].map(
+            (
+                prompt
+            ): [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']] => [
+                prompt,
+                [],
+                [unread(prompt, BRACKET_REASON)],
+            ]
+        ),
         // no clause ends in its bracket
         [
             "don't make it louder (and add reverb)",
@@ -2299,6 +2319,34 @@ describe('reading only governed protections and whole object names', () => {
         'reads "%s"',
         (prompt, constraints, unsupported) => {
             const context = grammarContext('Lead or Rhythm', 'Salt and Pepper', 'Rock, Paper');
+            expect(compilePerceptualConstraints(prompt, context)).toEqual({ constraints, unsupported });
+        }
+    );
+
+    // a name is matched with its brackets, so two names differing only by brackets never read as each other
+    it.each([
+        ['keep Bass DI bright', [measured('brightness-held-v1', 'keep Bass DI bright', onTracks('extra-1'))], []],
+        ['keep Bass (DI) bright', [measured('brightness-held-v1', 'keep Bass (DI) bright', onTracks('extra-0'))], []],
+        [
+            'keep the level of Bass (DI) and Bass DI the same',
+            [
+                measured(
+                    'loudness-held-v1',
+                    'keep the level of Bass (DI) and Bass DI the same',
+                    onTracks('extra-0', 'extra-1')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make (the) vocal louder",
+            [measured('loudness-not-raised-v1', "don't make (the) vocal louder", onTracks('vocal'))],
+            [],
+        ],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s" beside a Bass (DI) and a Bass DI',
+        (prompt, constraints, unsupported) => {
+            const context = grammarContext('Bass (DI)', 'Bass DI');
             expect(compilePerceptualConstraints(prompt, context)).toEqual({ constraints, unsupported });
         }
     );

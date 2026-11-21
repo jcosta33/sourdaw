@@ -85,10 +85,14 @@ export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
 export const POSSESSIVE_DETERMINER = words(['its', 'their']);
 const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
-/** A quotation mark, an apostrophe or a bracket, which an object's name is read without. */
-const QUOTE_MARK = new RegExp(`["“”‘${BRACKET_MARKS}]|${APOSTROPHE}`, 'gu');
+/** A quotation mark or an apostrophe, which an object's name is read without. */
+const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
-export function normalizeObjectText(text: string): string {
+/**
+ * An object's name as a track's name is matched against: its brackets kept, since they are part of a
+ * name, so "Bass DI" never names Bass (DI). `normalizeObjectText` reads its words without them.
+ */
+export function normalizeObjectName(text: string): string {
     return normalizePhrase(text.replaceAll(QUOTE_MARK, '')).replace(LEADING_DETERMINER, '');
 }
 
@@ -131,8 +135,12 @@ const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** Any bracket, opening or closing. */
 export const BRACKET = `[${BRACKET_MARKS}]`;
-/** A closed aside the clause goes on after: "keep the level (of the vocal) the same", never "… bright (please)". */
-export const INNER_ASIDE = String.raw`${OPENING_BRACKET}[^${BRACKET_MARKS}]*[${CLOSING_BRACKET_MARKS}](?!${CLAUSE_END})`;
+/**
+ * A closed aside the clause goes on after: "keep the level (of the vocal) the same", never "… bright
+ * (please)". One holding a word that ends a clause whatever follows is none, since read inside its
+ * clause that word would end it: "don't make the (please) vocal louder".
+ */
+export const INNER_ASIDE = String.raw`${OPENING_BRACKET}(?:(?!\b${HARD_BOUNDARY_WORD}\b)[^${BRACKET_MARKS}])*[${CLOSING_BRACKET_MARKS}](?!${CLAUSE_END})`;
 
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
 export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;

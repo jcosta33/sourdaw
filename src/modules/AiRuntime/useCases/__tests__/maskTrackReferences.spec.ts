@@ -126,6 +126,12 @@ describe('maskTrackReferences', () => {
             'make the ######## brighter',
         ],
         [
+            'a track name ending in its own bracket, the bracket with it',
+            context({ tracks: [track('di', 'Bass (DI)'), track('bass-di', 'Bass DI')] }),
+            'make Bass (DI) brighter than Bass DI)',
+            'make ######### brighter than #######)',
+        ],
+        [
             'quoted text, as before',
             context(),
             'name it "Dark Room" and make it brighter',

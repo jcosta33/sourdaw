@@ -16,7 +16,7 @@ import {
     MASK_GLYPH,
     MODAL_NEGATION,
     NEGATION,
-    normalizeObjectText,
+    normalizeObjectName,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_PREPOSITION,
@@ -186,7 +186,7 @@ function nounObjects(match: RegExpExecArray, nouns: readonly RegExpExecArray[], 
     const objects = new Map<string, string>();
     const tail = spanText(prompt, match.indices?.groups?.object);
     if (tail !== null) {
-        objects.set(normalizeObjectText(tail), tail);
+        objects.set(normalizeObjectName(tail), tail);
     }
     const nounsStart = match.indices?.groups?.nouns?.[0];
     if (nounsStart === undefined) {
@@ -195,7 +195,7 @@ function nounObjects(match: RegExpExecArray, nouns: readonly RegExpExecArray[], 
     for (const noun of nouns) {
         const pre = preObjectOf(noun, nounsStart, prompt);
         if (pre !== null) {
-            objects.set(normalizeObjectText(pre), pre);
+            objects.set(normalizeObjectName(pre), pre);
         }
     }
     return Array.from(objects.values());

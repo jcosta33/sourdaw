@@ -1,8 +1,29 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { maskQuotedTextContents } from '../transformers/promptParser/promptQuotedText';
 
-import { findAgentReferenceNameSpans } from './agentReference/findAgentReferenceNameSpans';
+import {
+    type AgentReferenceNameSpan,
+    type AgentReferenceTextRange,
+    findAgentReferenceNameSpans,
+} from './agentReference/findAgentReferenceNameSpans';
 import { readProjectObjectNames } from './projectObjectNameCensus';
+
+/** The punctuation a name ends in: the bracket of "Bass (DI)". */
+const NAME_CLOSING_PUNCTUATION = /[^\p{L}\p{M}\p{N}\s]+$/u;
+
+/**
+ * A name's range with the punctuation the name itself ends in, where the text types the name as it is
+ * written and that punctuation right after the range: a name's reading stops short of its closing
+ * punctuation, but that punctuation is still the name's own, so "Bass (DI)" is blanked whole and leaves
+ * no bracket of its own behind, while "Bass DI)" read as Bass (DI) leaves its bracket standing.
+ */
+function withNameClosing(text: string, name: string, span: AgentReferenceNameSpan): AgentReferenceTextRange {
+    const closing = NAME_CLOSING_PUNCTUATION.exec(name.trim())?.[0];
+    if (span.closeness !== 'typed' || closing === undefined || !text.startsWith(closing, span.end)) {
+        return span;
+    }
+    return { start: span.start, end: span.end + closing.length };
+}
 
 /**
  * The prompt with quoted text and every name and literal id of an object the request can cite blanked
@@ -14,7 +35,9 @@ import { readProjectObjectNames } from './projectObjectNameCensus';
 export function maskTrackReferences(prompt: string, context: ProjectContext, fill: string): string {
     const names = readProjectObjectNames(context);
     const original = maskQuotedTextContents(prompt);
-    const spans = names.flatMap((name) => findAgentReferenceNameSpans(original, name, 'exact', names));
+    const spans = names.flatMap((name) =>
+        findAgentReferenceNameSpans(original, name, 'exact', names).map((span) => withNameClosing(original, name, span))
+    );
     const masked = original.split('');
     for (const span of spans) {
         for (let index = span.start; index < span.end; index += 1) {

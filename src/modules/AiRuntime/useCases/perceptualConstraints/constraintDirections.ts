@@ -14,6 +14,9 @@ export const WORD_END = `(?![${WORD_CONTINUING}])`;
 /** Unlike WORD_END, an apostrophe also continues the word, so "don't" is never read as "don". */
 export const WHOLE_WORD_END = `(?![${WORD_CONTINUING}${APOSTROPHES}])`;
 
+/** A quality no recipe produces but a crest factor measures: the one kept term read beside the catalog's terms. */
+export const DYNAMIC_TERM = 'dynamic';
+
 type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
 type Movement = 'up' | 'down';
 
