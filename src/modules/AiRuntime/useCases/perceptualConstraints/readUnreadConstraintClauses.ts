@@ -1,0 +1,264 @@
+import { type UnsupportedPerceptualConstraint } from '../../models/PerceptualConstraint';
+
+import {
+    AVOID_VERB,
+    BECOMING_VERB,
+    CAUSING_VERB,
+    CLAUSE_PUNCTUATION,
+    CLAUSE_SEPARATOR,
+    CLAUSE_SUBJECT,
+    COMPARED_DIRECTION,
+    DEGREE_WORD,
+    DETERMINER,
+    FROM,
+    HARD_BOUNDARY_WORD,
+    HOLDING_KEEP,
+    LEAVE_VERB,
+    LINKING_VERB,
+    LIST_JOINER,
+    MASK_GLYPH,
+    MIX_PRONOUN,
+    MODAL_VERB_NEGATION,
+    NEGATION,
+    NO,
+    NOT_PERMITTED,
+    OBJECT_MEMBERS,
+    POSSESSIVE_DETERMINER,
+    PREDICATE_WORD,
+    SCOPE_WORD,
+    STOP_VERB,
+    SUBORDINATOR,
+} from './constraintClauseWords';
+import { DIRECTION, MEASURED_NOUN, MEASURED_WORD, MOVE_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
+
+/** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
+export type ConsumedSpan = { start: number; end: number };
+/** A clause the net recorded unsupported, with the span of the request it quotes. */
+export type UnreadClause = { unsupported: UnsupportedPerceptualConstraint; span: ConsumedSpan };
+
+const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
+/**
+ * What a keep or leave holding what it names governs: a measured noun or a comparison it keeps ("keep
+ * the drums quieter than the vocal"), never a way a quality moves.
+ */
+const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${COMPARED_DIRECTION})`, 'giu');
+/**
+ * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
+ * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
+ */
+const LINKED_QUALITY = String.raw`${LINKING_VERB}\s+(?:${DEGREE_WORD}\s+)?${MEASURED_WORD}`;
+/** The verbs a negation governs a measured word through: one that moves a level or makes it become one. */
+const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${NOUN_VERB_HEAD}|${DIRECTION})`;
+/**
+ * A negation or modal directly before what it governs; a modal names its subject too. A third-person
+ * "doesn't" opens nothing here: beside a move it describes the sound or states a purpose ("so it
+ * doesn't get lost"), and the bound it states alone ("the mix doesn't get louder") a reader consumes.
+ */
+const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}`;
+/**
+ * What makes a clause protective of a measured quality: a negation or modal directly before a verb
+ * it governs the quality through, or a direction ("mustn't get louder"); a keep-type verb continuing
+ * no move, or a leave; a stop or prevent; or "no" before the measured word itself ("no louder"). A
+ * keep, leave, stop or prevent a negation governs is permitted, not protective ("don't stop the mix
+ * getting wider", "there's no need to leave the width alone"). A negation of
+ * anything else ("don't forget to make the bass wider", "no reverb") governs no measured word, so it
+ * opens nothing.
+ */
+const PROTECTIVE = new RegExp(
+    String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_PERMITTED}(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_PERMITTED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
+    'iu'
+);
+/**
+ * A keep naming the move it prevents ("keep the mix from getting louder", "from widening") bounds that
+ * move, so it governs ways a quality moves as a negation does rather than holding what it names.
+ */
+const PREVENTED_MOVE = new RegExp(
+    String.raw`\b${FROM}\s+(?:${CAUSING_VERB}\s+)?(?:${DEGREE_WORD}\s+)?${MOVE_WORD}`,
+    'iu'
+);
+/**
+ * Where a protection's governed words end: the first subordinator or subject pronoun after it, whatever
+ * verb follows, since a subject pronoun in a protection's own complement is taken to open a clause of
+ * its own. Past it stand the request's own move or condition ("prevent clipping when I make the vocal
+ * louder"), while a prevented move named in the protection's own complement ("stop the drums from
+ * getting wider") sits before it.
+ */
+const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT})${WORD_END}`, 'iu');
+const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
+/**
+ * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and"
+ * or "or" is a boundary whose next clause may share a protection.
+ */
+const BOUNDARY = new RegExp(
+    String.raw`${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b|\b(?<joiner>${LIST_JOINER})\b`,
+    'giu'
+);
+/** The words a joined clause may open with and still continue the protection before it. */
+const CONTINUES = new RegExp(
+    String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${DEGREE_WORD})${WORD_END}|${MASK_GLYPH}|${SCOPE_WORD}\b|${DIRECTION})`,
+    'iu'
+);
+/**
+ * The words a segment after a separator opens with when it is the rest of the protection before it,
+ * which named its object and nothing it governs: a prevented move ("keep Keys - from getting wider"), a
+ * becoming or linking verb ("don't let Keys - get louder") or a comparative ("don't make Keys - louder").
+ * A verb of its own ("don't make it harsh - brighten the vocal") opens a clause of its own.
+ */
+const DANGLING_REST = new RegExp(
+    String.raw`^\s*(?:${FROM}|${BECOMING_VERB}|${LINKING_VERB}|(?:${DEGREE_WORD}\s+)?${DIRECTION})`,
+    'iu'
+);
+/** A joined clause whose object takes a verb of its own states its own clause: "and the vocal needs …". */
+const OWN_PREDICATE = new RegExp(String.raw`^\s*${OBJECT_MEMBERS}\s+${PREDICATE_WORD}${WORD_END}`, 'iu');
+/** A clause whose only words before a modal negation are its subject: "the vocal level shouldn't change". */
+const SUBJECT_ONLY = new RegExp(String.raw`^\s*${OBJECT_MEMBERS}\s*$`, 'iu');
+
+const COMPARATIVE_REASON =
+    'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
+const UNREAD_REASON =
+    'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
+
+/** A segment between boundaries: whether a joining word or a separator opens it. */
+type Segment = { start: number; end: number; joined: boolean; separated: boolean };
+
+function segmentsOf(masked: string): Segment[] {
+    const segments: Segment[] = [];
+    let start = 0;
+    let joined = false;
+    let separated = false;
+    for (const boundary of masked.matchAll(BOUNDARY)) {
+        segments.push({ start, end: boundary.index, joined, separated });
+        start = boundary.index + boundary[0].length;
+        joined = boundary.groups?.joiner !== undefined;
+        separated = boundary.groups?.separator !== undefined;
+    }
+    segments.push({ start, end: masked.length, joined, separated });
+    return segments;
+}
+
+function continuesChain(text: string): boolean {
+    return CONTINUES.test(text) && !OWN_PREDICATE.test(text);
+}
+
+/**
+ * The words a segment's protection governs, as offsets into the masked request, and whether the
+ * protection is a keep or leave holding what it names rather than a negation bounding a move.
+ */
+type Governed = { start: number; end: number; holds: boolean };
+
+/**
+ * A protection chain: where it starts, whether it holds what it names, and whether a joined segment
+ * may continue it, which only an opening that governed a measured word or a reader's clause allows,
+ * so "without making it harsh and the drums louder" continues nothing.
+ */
+type Chain = { start: number; holds: boolean; continuable: boolean };
+
+type ChainStep = { chain: Chain; governed: Governed };
+
+/** The masked request the net reads and the spans its readers consumed. */
+type NetRequest = { masked: string; consumed: readonly ConsumedSpan[] };
+
+function governedEnd(text: string, from: number): number {
+    const end = GOVERNED_END.exec(text.slice(from));
+    return end === null ? text.length : from + end.index;
+}
+
+/**
+ * What a segment's protection governs, or null for a segment that protects nothing: from the
+ * protective word, or from the clause's head for a modal negation whose subject is all that stands
+ * before it, to the governed end. A measured word stated before an unrelated protection ("brighten the
+ * vocal without making it harsh") is the request, never a protected quality.
+ */
+function readProtection(segment: Segment, text: string): Governed | null {
+    const protection = PROTECTIVE.exec(text);
+    if (protection === null) {
+        return null;
+    }
+    const modalSubject = protection.groups?.modal !== undefined && SUBJECT_ONLY.test(text.slice(0, protection.index));
+    const start = modalSubject ? 0 : protection.index;
+    const end = governedEnd(text, protection.index + protection[0].length);
+    const holds = protection.groups?.holding !== undefined && !PREVENTED_MOVE.test(text.slice(protection.index, end));
+    return { start: segment.start + start, end: segment.start + end, holds };
+}
+
+/** Where the measured words a span governs stand; a hold governs what it names, never a move a joined clause asks for. */
+function governedWords(masked: string, governed: Governed): number[] {
+    const pattern = governed.holds ? HELD_QUALITY : MEASURED_QUALITY;
+    return Array.from(
+        masked.slice(governed.start, governed.end).matchAll(pattern),
+        (word) => governed.start + word.index
+    );
+}
+
+function overlapsConsumed(governed: Governed, consumed: readonly ConsumedSpan[]): boolean {
+    return consumed.some((span) => span.start < governed.end && governed.start < span.end);
+}
+
+/**
+ * A joined segment may continue an open chain, and a separated one the rest of a protection that
+ * governed nothing before the separator; any other opens a chain only if it protects.
+ */
+function chainStep(segment: Segment, chain: Chain | null, request: NetRequest): ChainStep | null {
+    const text = request.masked.slice(segment.start, segment.end);
+    const end = segment.start + governedEnd(text, 0);
+    if (chain?.continuable === true && segment.joined && continuesChain(text)) {
+        return { chain, governed: { start: segment.start, end, holds: chain.holds } };
+    }
+    if (chain !== null && !chain.continuable && segment.separated && DANGLING_REST.test(text)) {
+        const governed = { start: segment.start, end, holds: false };
+        return { chain: { ...chain, holds: false, continuable: true }, governed };
+    }
+    const governed = readProtection(segment, text);
+    if (governed === null) {
+        return null;
+    }
+    const continuable =
+        governedWords(request.masked, governed).length > 0 || overlapsConsumed(governed, request.consumed);
+    return { chain: { start: segment.start, holds: governed.holds, continuable }, governed };
+}
+
+function isConsumed(index: number, consumed: readonly ConsumedSpan[]): boolean {
+    return consumed.some((span) => span.start <= index && index < span.end);
+}
+
+function unreadClause(masked: string, prompt: string, start: number, end: number): UnsupportedPerceptualConstraint {
+    const reason = COMPARISON.test(masked.slice(start, end)) ? COMPARATIVE_REASON : UNREAD_REASON;
+    return { constraintId: 'unsupported', clause: prompt.slice(start, end).trim(), reason };
+}
+
+/**
+ * The never-dropped net. A protective clause, or one an "and" or "or" joins to it ("don't make the mix
+ * louder and the vocal much quieter"), that names a measured quality no reader consumed is recorded
+ * unsupported with its words, so no protective clause the readers miss is silently dropped. It reads
+ * the masked request, so a track name or a quotation never opens or fills one. Each entry carries the
+ * span it quotes.
+ */
+export function readUnreadConstraintClauses(
+    masked: string,
+    prompt: string,
+    consumed: readonly ConsumedSpan[]
+): UnreadClause[] {
+    const unread: (UnsupportedPerceptualConstraint & ConsumedSpan)[] = [];
+    let chain: Chain | null = null;
+    for (const segment of segmentsOf(masked)) {
+        const step = chainStep(segment, chain, { masked, consumed });
+        chain = step?.chain ?? null;
+        if (step === null) {
+            continue;
+        }
+        const missed = governedWords(masked, step.governed).some((index) => !isConsumed(index, consumed));
+        if (!missed) {
+            continue;
+        }
+        // A chain is one clause: a later missed segment of it widens the entry rather than adding one.
+        const { start } = step.chain;
+        if (unread.at(-1)?.start === start) {
+            unread.pop();
+        }
+        unread.push({ start, end: segment.end, ...unreadClause(masked, prompt, start, segment.end) });
+    }
+    return unread.map(({ constraintId, clause, reason, start, end }) => ({
+        unsupported: { constraintId, clause, reason },
+        span: { start, end },
+    }));
+}
