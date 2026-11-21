@@ -354,7 +354,10 @@ export async function installPunchRecordingClockWitness(page: Pick<Page, 'addIni
                     event('capture-stop-click');
                 }
                 if (target?.closest('[data-testid="transport-play"]')) {
-                    event('capture-pause-click');
+                    // The spec pairs this click's beat with its frame, so the frame is
+                    // read last, after waiting out a busy producer, and the beat is read
+                    // immediately after it.
+                    event('capture-pause-click', {}, readWaitingForProducer);
                 }
             },
             true
