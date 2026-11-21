@@ -382,11 +382,15 @@ impl IEventListTrait for HostEventList {
 /// storage preallocated at construction, until the processor answers: a call it
 /// refuses produced no output the host stands behind, so its notes are
 /// discarded, and only a successful call's are handed to the instance's
-/// wait-free [`OutputNoteQueue`]. Nothing here allocates.
+/// wait-free [`OutputNoteQueue`], together with the count of notes staging had
+/// no room for. Nothing here allocates.
 struct HostOutputEventList {
     notes: Arc<OutputNoteQueue>,
     staged: Box<[Cell<HostMidiEvent>]>,
     staged_count: Cell<usize>,
+    overflowed: Cell<u32>,
+    /// Frames in the current call's block; an idle flush has none.
+    block_frames: Cell<usize>,
 }
 
 impl HostOutputEventList {
@@ -397,21 +401,28 @@ impl HostOutputEventList {
                 .map(|_| Cell::new(HostMidiEvent::default()))
                 .collect(),
             staged_count: Cell::new(0),
+            overflowed: Cell::new(0),
+            block_frames: Cell::new(0),
         }
     }
 
+    /// Start a call over a block of `frames`, dropping whatever an earlier
+    /// call left uncommitted. **RT-safe.**
+    fn begin(&self, frames: usize) {
+        self.staged_count.set(0);
+        self.overflowed.set(0);
+        self.block_frames.set(frames);
+    }
+
     /// Hand this call's notes to the queue, in the order the plugin wrote
-    /// them. **RT-safe.** A note the queue has no room for is counted there.
+    /// them, and count the ones staging could not hold. **RT-safe.** A note
+    /// the queue has no room for is counted there.
     fn commit(&self) {
         for note in &self.staged[..self.staged_count.get()] {
             self.notes.push(note.get());
         }
-        self.discard();
-    }
-
-    /// Drop this call's notes. **RT-safe.**
-    fn discard(&self) {
-        self.staged_count.set(0);
+        self.notes.count_dropped(self.overflowed.get());
+        self.begin(0);
     }
 }
 
@@ -430,8 +441,9 @@ impl IEventListTrait for HostOutputEventList {
 
     /// Capture a note the plugin produced. Any other event type is accepted
     /// and not kept: the seam carries notes, and refusing the rest would tell
-    /// the plugin its output failed. A full queue refuses the note, and the
-    /// queue counts it.
+    /// the plugin its output failed. A malformed note is refused and not
+    /// kept. A note staging has no room for is refused, and counted as dropped
+    /// if the call succeeds.
     unsafe fn addEvent(&self, e: *mut Event) -> int32 {
         if e.is_null() {
             return kInvalidArgument;
@@ -439,12 +451,14 @@ impl IEventListTrait for HostOutputEventList {
         // SAFETY: non-null (checked above); `addEvent`'s `e` points at the
         // plugin's event, live for this call.
         let event = unsafe { &*e };
-        let Some(note) = output_note(event) else {
-            return kResultOk;
+        let note = match output_event(event, self.block_frames.get()) {
+            OutputEvent::Note(note) => note,
+            OutputEvent::Malformed => return kInvalidArgument,
+            OutputEvent::Other => return kResultOk,
         };
         let count = self.staged_count.get();
         let Some(slot) = self.staged.get(count) else {
-            self.notes.count_dropped();
+            self.overflowed.set(self.overflowed.get().saturating_add(1));
             return kResultFalse;
         };
         slot.set(note);
@@ -453,37 +467,55 @@ impl IEventListTrait for HostOutputEventList {
     }
 }
 
-/// The note one output event carries, or `None` for an event that is not one.
-fn output_note(event: &Event) -> Option<HostMidiEvent> {
-    let frame_offset = u32::try_from(event.sampleOffset).unwrap_or(0);
-    if event.r#type == EventTypes_::kNoteOnEvent as u16 {
-        // SAFETY: the type tag names the `noteOn` arm of the payload union.
-        let on = unsafe { event.__field0.noteOn };
-        return Some(HostMidiEvent {
-            note: midi_byte(on.pitch),
-            velocity: midi_velocity(on.velocity),
-            channel: on.channel,
-            is_note_on: true,
-            frame_offset,
-        });
-    }
-    if event.r#type == EventTypes_::kNoteOffEvent as u16 {
-        // SAFETY: the type tag names the `noteOff` arm of the payload union.
-        let off = unsafe { event.__field0.noteOff };
-        return Some(HostMidiEvent {
-            note: midi_byte(off.pitch),
-            velocity: midi_velocity(off.velocity),
-            channel: off.channel,
-            is_note_on: false,
-            frame_offset,
-        });
-    }
-    None
+/// What one output event is to the note capture.
+enum OutputEvent {
+    Note(HostMidiEvent),
+    /// A note the host cannot stand behind: its pitch is not a MIDI note, its
+    /// velocity is not finite, or its offset lies outside the call's block.
+    Malformed,
+    /// Any event type other than a note.
+    Other,
 }
 
-/// A VST3 pitch as a MIDI note number, clamped to the 0..=127 range.
-fn midi_byte(pitch: i16) -> u8 {
-    pitch.clamp(0, 127) as u8
+/// Read one output event of a call over a block of `block_frames`.
+///
+/// An idle flush has no frames, so its only valid offset is 0.
+fn output_event(event: &Event, block_frames: usize) -> OutputEvent {
+    let (pitch, velocity, channel, is_note_on) = if event.r#type == EventTypes_::kNoteOnEvent as u16
+    {
+        // SAFETY: the type tag names the `noteOn` arm of the payload union.
+        let on = unsafe { event.__field0.noteOn };
+        (on.pitch, on.velocity, on.channel, true)
+    } else if event.r#type == EventTypes_::kNoteOffEvent as u16 {
+        // SAFETY: the type tag names the `noteOff` arm of the payload union.
+        let off = unsafe { event.__field0.noteOff };
+        (off.pitch, off.velocity, off.channel, false)
+    } else {
+        return OutputEvent::Other;
+    };
+    let Some(note) = u8::try_from(pitch).ok().filter(|note| *note <= 127) else {
+        return OutputEvent::Malformed;
+    };
+    let Some(frame_offset) = offset_within(event.sampleOffset, block_frames) else {
+        return OutputEvent::Malformed;
+    };
+    if !velocity.is_finite() {
+        return OutputEvent::Malformed;
+    }
+    OutputEvent::Note(HostMidiEvent {
+        note,
+        velocity: midi_velocity(velocity),
+        channel,
+        is_note_on,
+        frame_offset,
+    })
+}
+
+/// `offset` as a frame of a block of `block_frames`, or `None` when it falls
+/// outside it. A block of no frames admits offset 0 alone.
+fn offset_within(offset: int32, block_frames: usize) -> Option<u32> {
+    let frame = u32::try_from(offset).ok()?;
+    (usize::try_from(frame).ok()? < block_frames.max(1)).then_some(frame)
 }
 
 /// A normalised VST3 velocity as a MIDI velocity, the inverse of
@@ -2048,7 +2080,7 @@ impl Vst3Wrapper {
         }
 
         self.output_parameter_changes.reset();
-        self.output_events.discard();
+        self.output_events.begin(0);
         let mut data = flush_process_data(
             self.process_mode,
             borrowed_ptr::<_, IParameterChanges>(&self.parameter_changes),
@@ -2270,7 +2302,7 @@ impl Vst3Wrapper {
         };
 
         self.output_parameter_changes.reset();
-        self.output_events.discard();
+        self.output_events.begin(samples);
         let refused = {
             let mut data = ProcessData {
                 processMode: self.process_mode,

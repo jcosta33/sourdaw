@@ -12,7 +12,7 @@
 //! Two writes put the host's guards to the test: with `Drive` it also claims an
 //! output queue for [`EMPTY_CLAIM_PARAM_ID`] and adds no point to it, and a
 //! write to [`REFUSE_PARAM_ID`] makes it report [`REFUSED_REPORT`] for the
-//! modulated control and emit its notes, and then fail the block.
+//! modulated control, emit its marker and notes, and then fail the call.
 //!
 //! The controller half holds only what the host tells it, so a test reads
 //! through the controller exactly what the host forwarded.
@@ -53,9 +53,25 @@ const PARAMS: [ParamID; 3] = [DRIVE_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID
 /// An output queue the processor claims on every `Drive` write and never
 /// fills. Not a declared parameter: only the host's output list sees it.
 pub const EMPTY_CLAIM_PARAM_ID: ParamID = 23;
-/// Writing this makes the processor report [`REFUSED_REPORT`] and emit its
-/// notes, and then refuse the block. Not a declared parameter.
+/// Writing this makes the processor report [`REFUSED_REPORT`], emit the
+/// [`DRIVE_MARKER_PITCH`] note and its notes, and then refuse the call, so even
+/// an idle flush with no input notes writes a note it then disowns. Not a
+/// declared parameter.
 pub const REFUSE_PARAM_ID: ParamID = 24;
+/// Writing this makes the processor emit, before anything else in the call, a
+/// note of each shape a host must refuse — a non-finite velocity, a pitch
+/// outside 0..=127, an offset outside the block — and then one well-formed
+/// note of [`WELL_FORMED_PITCH`] on the block's last frame. Not a declared
+/// parameter.
+pub const MALFORMED_PARAM_ID: ParamID = 25;
+/// The pitch of the malformed notes that have a valid one, and of the
+/// well-formed note that follows them.
+pub const WELL_FORMED_PITCH: i16 = 2;
+/// Writing this makes the processor emit [`FLOOD_NOTES`] notes, before
+/// anything else in the call. Not a declared parameter.
+pub const FLOOD_PARAM_ID: ParamID = 26;
+/// More notes than a host should take from one call.
+pub const FLOOD_NOTES: usize = 1100;
 /// What a refused block reports for [`MODULATED_PARAM_ID`] before failing.
 pub const REFUSED_REPORT: ParamValue = 0.25;
 
@@ -64,8 +80,8 @@ pub const EMITTED_TRANSPOSE: i16 = 12;
 /// How many frames after its cause an emitted note lands.
 pub const EMITTED_DELAY_FRAMES: int32 = 1;
 /// The pitch of the note-on the processor emits, at frame 0, on every call
-/// that writes `Drive`, so a call with no input notes still says whether it was
-/// handed an output event list.
+/// that writes `Drive` or [`REFUSE_PARAM_ID`], so a call with no input notes
+/// still says whether it was handed an output event list.
 pub const DRIVE_MARKER_PITCH: i16 = 1;
 
 const MIDI_CHANNELS: int32 = 16;
@@ -214,11 +230,11 @@ unsafe fn pass_audio(data: &ProcessData) -> f32 {
     peak
 }
 
-/// Emit the note-on that marks a `Drive` write.
+/// Emit one note-on, exactly as given, into the current call's output list.
 ///
 /// # Safety
 /// `data` must be the live `ProcessData` of the current call.
-unsafe fn emit_drive_marker(data: &ProcessData) {
+unsafe fn emit_note(data: &ProcessData, pitch: i16, velocity: f32, sample_offset: int32) {
     // SAFETY: the output list is live for this call, or null.
     let Some(outputs) = (unsafe { ComRef::from_raw(data.outputEvents) }) else {
         return;
@@ -226,10 +242,52 @@ unsafe fn emit_drive_marker(data: &ProcessData) {
     // SAFETY: `Event` is plain C data; zero is valid for every arm.
     let mut event: Event = unsafe { std::mem::zeroed() };
     event.r#type = EventTypes_::kNoteOnEvent as u16;
-    event.__field0.noteOn.pitch = DRIVE_MARKER_PITCH;
-    event.__field0.noteOn.velocity = 1.0;
+    event.sampleOffset = sample_offset;
+    event.__field0.noteOn.pitch = pitch;
+    event.__field0.noteOn.velocity = velocity;
     // SAFETY: a live list; `event` is a local the host copies.
     unsafe { outputs.addEvent(&mut event) };
+}
+
+/// Emit the note-on that marks a `Drive` write.
+///
+/// # Safety
+/// `data` must be the live `ProcessData` of the current call.
+unsafe fn emit_drive_marker(data: &ProcessData) {
+    // SAFETY: forwarded from the caller.
+    unsafe { emit_note(data, DRIVE_MARKER_PITCH, 1.0, 0) };
+}
+
+/// Emit one note of every malformed shape, then [`WELL_FORMED_PITCH`].
+///
+/// # Safety
+/// `data` must be the live `ProcessData` of the current call.
+unsafe fn emit_malformed_notes(data: &ProcessData) {
+    let past_block = data.numSamples.max(1);
+    let notes = [
+        (WELL_FORMED_PITCH, f32::NAN, 0),
+        (WELL_FORMED_PITCH, f32::INFINITY, 0),
+        (128, 1.0, 0),
+        (-1, 1.0, 0),
+        (WELL_FORMED_PITCH, 1.0, past_block),
+        (WELL_FORMED_PITCH, 1.0, -1),
+        (WELL_FORMED_PITCH, 1.0, past_block - 1),
+    ];
+    for (pitch, velocity, sample_offset) in notes {
+        // SAFETY: forwarded from the caller.
+        unsafe { emit_note(data, pitch, velocity, sample_offset) };
+    }
+}
+
+/// Emit [`FLOOD_NOTES`] note-ons at frame 0.
+///
+/// # Safety
+/// `data` must be the live `ProcessData` of the current call.
+unsafe fn emit_flood(data: &ProcessData) {
+    for _ in 0..FLOOD_NOTES {
+        // SAFETY: forwarded from the caller.
+        unsafe { emit_note(data, DRIVE_MARKER_PITCH, 1.0, 0) };
+    }
 }
 
 /// Emit every note of the input list an octave up and a frame later.
@@ -428,6 +486,19 @@ impl IAudioProcessorTrait for Emitter {
         let written = inputs.and_then(|changes| unsafe { last_written(changes, DRIVE_PARAM_ID) });
         // SAFETY: as above.
         let refuse = inputs.and_then(|changes| unsafe { last_written(changes, REFUSE_PARAM_ID) });
+        // SAFETY: as above.
+        let flood = inputs.and_then(|changes| unsafe { last_written(changes, FLOOD_PARAM_ID) });
+        // SAFETY: as above.
+        let malformed =
+            inputs.and_then(|changes| unsafe { last_written(changes, MALFORMED_PARAM_ID) });
+        if flood.is_some() {
+            // SAFETY: the current call's live `ProcessData`.
+            unsafe { emit_flood(data) };
+        }
+        if malformed.is_some() {
+            // SAFETY: the current call's live `ProcessData`.
+            unsafe { emit_malformed_notes(data) };
+        }
         if refuse.is_some() {
             // SAFETY: the output list is live for this call, or null.
             if let Some(changes) = unsafe { ComRef::from_raw(data.outputParameterChanges) } {
@@ -435,6 +506,8 @@ impl IAudioProcessorTrait for Emitter {
                 unsafe { report(changes, MODULATED_PARAM_ID, REFUSED_REPORT) };
             }
             // SAFETY: the current call's live `ProcessData`.
+            unsafe { emit_drive_marker(data) };
+            // SAFETY: as above.
             unsafe { emit_notes(data) };
             return kResultFalse;
         }

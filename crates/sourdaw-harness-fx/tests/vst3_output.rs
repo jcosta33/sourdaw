@@ -19,8 +19,8 @@ use daw_plugin_host::{
 };
 use sourdaw_harness_fx::{
     DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE,
-    EMPTY_CLAIM_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID,
-    VST3_EMITTER_CLASS_ID,
+    EMPTY_CLAIM_PARAM_ID, FLOOD_NOTES, FLOOD_PARAM_ID, MALFORMED_PARAM_ID, METER_PARAM_ID,
+    MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID, VST3_EMITTER_CLASS_ID, WELL_FORMED_PITCH,
 };
 use std::cell::Cell;
 use std::sync::Mutex;
@@ -373,6 +373,35 @@ fn an_idle_flush_hands_the_processor_its_output_lists_and_forwards_what_it_repor
     );
 }
 
+/// An idle flush the processor refuses is not its output either: the report
+/// and the note it wrote before failing reach neither the observers, the
+/// controller nor the note capture.
+#[test]
+fn a_refused_idle_flush_forwards_nothing_the_processor_reported() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-refused-flush");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    observed(&wrapper);
+
+    wrapper.set_parameter(REFUSE_PARAM_ID, 1.0);
+
+    assert_eq!(
+        observed(&wrapper),
+        [],
+        "observers hear nothing of a refused flush"
+    );
+    wrapper.flush_parameters_off_audio_thread();
+    assert_ne!(
+        controller_value(&wrapper, MODULATED_PARAM_ID),
+        REFUSED_REPORT,
+        "the controller is not told a refused flush's report"
+    );
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    assert_eq!(captured, [], "a refused flush's note is not captured");
+}
+
 // ── Output events (#6562) ───────────────────────────────────────────────
 
 /// Every note the plugin writes is captured with the frame it was stamped
@@ -406,6 +435,67 @@ fn notes_the_plugin_emits_are_captured_with_their_frame_offsets() {
         ]
     );
     assert_eq!(notes.take_dropped(), 0);
+}
+
+/// A note the host cannot stand behind is refused, without costing the
+/// well-formed note the same call writes after it.
+#[test]
+fn malformed_notes_are_refused_and_a_well_formed_one_beside_them_is_kept() {
+    let plugin = InstalledPlugin::create("vst3-output-malformed");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    let malformed = HostParameterUpdate {
+        param_id: MALFORMED_PARAM_ID,
+        value: 1.0,
+    };
+
+    process(&mut wrapper, &[], &[malformed]);
+
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    assert_eq!(
+        captured
+            .iter()
+            .map(|captured| (captured.note, captured.velocity, captured.frame_offset))
+            .collect::<Vec<_>>(),
+        [(WELL_FORMED_PITCH as u8, 127, BLOCK_FRAMES as u32 - 1)],
+        "no non-finite velocity, out-of-range pitch or out-of-block offset is captured"
+    );
+}
+
+/// What staging could not hold counts as dropped only once the call that
+/// wrote it succeeds.
+#[test]
+fn a_refused_blocks_overflow_is_not_counted_as_dropped() {
+    const { assert!(FLOOD_NOTES > OUTPUT_NOTE_CAPACITY) };
+    let plugin = InstalledPlugin::create("vst3-output-refused-overflow");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    let flood = HostParameterUpdate {
+        param_id: FLOOD_PARAM_ID,
+        value: 1.0,
+    };
+    let mut captured = Vec::new();
+
+    process(&mut wrapper, &[], &[flood, refuse()]);
+
+    notes.drain(&mut captured);
+    assert_eq!(
+        captured.len(),
+        0,
+        "a refused block's notes are not captured"
+    );
+    assert_eq!(notes.take_dropped(), 0, "nor is its overflow counted");
+
+    process(&mut wrapper, &[], &[flood]);
+
+    notes.drain(&mut captured);
+    assert_eq!(captured.len(), OUTPUT_NOTE_CAPACITY);
+    assert_eq!(
+        notes.take_dropped() as usize,
+        FLOOD_NOTES - OUTPUT_NOTE_CAPACITY,
+        "a successful block's overflow is counted"
+    );
 }
 
 /// A plugin that writes more notes than the capture holds between drains

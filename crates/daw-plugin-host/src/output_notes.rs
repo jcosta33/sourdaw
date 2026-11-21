@@ -133,9 +133,9 @@ impl OutputNoteQueue {
         self.read.store(cursor, Ordering::Release);
     }
 
-    /// Count a note lost before it reached the queue. **Wait-free.**
-    pub fn count_dropped(&self) {
-        self.dropped.fetch_add(1, Ordering::Relaxed);
+    /// Count `notes` lost before they reached the queue. **Wait-free.**
+    pub fn count_dropped(&self, notes: u32) {
+        self.dropped.fetch_add(notes, Ordering::Relaxed);
     }
 
     /// Read and clear how many notes the queue had no room for.
