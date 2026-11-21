@@ -45,7 +45,13 @@ export const ROLE_WORD = words(Array.from(ROLE_WORDS.keys()));
 /** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
 export const SCOPE_WORD = words([...ROLE_WORDS.keys(), ...MIX_WORDS]);
 
-export const DETERMINER = words(['the', 'my', 'our', 'this', 'that']);
+/** The glyph a masked track name or quotation is read as, one per character. */
+export const MASK_GLYPH = '□';
+
+const THE_WORD = 'the';
+export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', 'that']);
+/** The definite article alone, which a held noun list and a held state open with: "the level", "the same". */
+export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
 export const POSSESSIVE_DETERMINER = words(['its', 'their']);
 const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
@@ -54,13 +60,17 @@ export function normalizeObjectText(text: string): string {
     return normalizePhrase(text.replaceAll(/["'“”‘’]/gu, '')).replace(LEADING_DETERMINER, '');
 }
 
+const ANY_WORD = 'any';
+const SO = 'so';
 /** The degree words a comparative or a measured word may carry: "any louder", "too bright". */
-export const DEGREE_WORD = words(['any', 'more', 'less', 'too', 'so']);
+export const DEGREE_WORD = words([ANY_WORD, 'more', 'less', 'too', SO]);
+/** "any" alone, which a comparative may carry ("any wider") and an object never opens with. */
+export const ANY = words([ANY_WORD]);
 
 const AND = 'and';
 const OR = 'or';
 const BUT = 'but';
-const HARD_BOUNDARY_WORDS = [BUT, 'while', 'so', 'then', 'please'];
+const HARD_BOUNDARY_WORDS = [BUT, 'while', SO, 'then', 'please'];
 /** The one word joining nouns and continued objects under one verb: "the level and the width". */
 export const AND_WORD = AND;
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
@@ -72,18 +82,22 @@ export const TERM_JOINER = words([AND, BUT]);
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
 export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
-export const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
+const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
 /** Every word a clause may open or end at. */
 export const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|[,.;:!?]|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
 export const CLAUSE_HEAD = String.raw`(?<=^|[,.;:!?]\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
+/** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
+export const OBJECT_PREPOSITION = words(['of', 'on', 'in']);
 
 export const KEEP = words(['keep', 'keeping']);
 const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintaining', 'retain', 'retaining']);
 export const KEEP_VERBS = String.raw`(?:${KEEP}|${PRESERVING_VERB})`;
 export const LEAVE_VERB = words(['leave', 'leaving']);
 export const STOP_VERB = words(['stop', 'stopping', 'prevent', 'preventing']);
+/** "avoid making it louder" governs what follows as a negation does. */
+export const AVOID_VERB = words(['avoid', 'avoiding']);
 /** The verbs a subject becomes a level through on its own: "the mix must not get louder". */
 export const BECOMING_VERB = words(['get', 'getting', 'become', 'becoming']);
 /** The verbs that make a quality become a level ("don't make it louder"), beside those a held noun takes. */
@@ -95,7 +109,9 @@ export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', '
 /** The states a kept object stays in: "intact", "as it is". */
 export const UNCHANGED_STATE = String.raw`(?:unchanged|intact|as\s+(?:it\s+)?is)`;
 /** The states a kept measured noun stays in: "keep the level the same", "where it is". */
-export const HELD_STATE = String.raw`(?:the\s+same|where\s+it\s+is|${UNCHANGED_STATE})`;
+/** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
+export const THE_SAME = String.raw`${THE}\s+same`;
+export const HELD_STATE = String.raw`(?:${THE_SAME}|where\s+it\s+is|${UNCHANGED_STATE})`;
 
 export const NEGATION = String.raw`(?:do\s+not|don['’]?t|never|without)`;
 const MODAL = words(['must', 'should', 'may', 'can', 'will']);
@@ -106,14 +122,20 @@ const DOES_NEGATION = String.raw`(?:does\s+not|doesn['’]?t)(?!\s+${LINKING_VER
  * copula negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
  */
 export const MODAL_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n['’]?t|can['’]?t|won['’]?t|${DOES_NEGATION})`;
-const BARE_NEGATION = words(['no', 'not']);
+const NO_WORD = 'no';
+const BARE_NEGATION = words([NO_WORD, 'not']);
+/** "no" alone, before what it negates: "no louder", "no changes to the low end". */
+export const NO = words([NO_WORD]);
 const NEGATED_CONTRACTION = String.raw`\p{L}+n['’]t`;
 /** Any negation at all: one may permit a move a later keep or stop names ("you don't have to keep …"). */
 export const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
 
 const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'do', 'does', 'did'];
 const PREDICATE_VERB_WORDS = ['needs', 'need', 'wants', 'want', 'gets', 'got'];
-const COMPLEMENT_WORDS = ['to', 'from'];
+const FROM_WORD = 'from';
+const COMPLEMENT_WORDS = ['to', FROM_WORD];
+/** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
+export const FROM = words([FROM_WORD]);
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
 /**
  * The words opening a predicate or its complement, which an object member never holds, so "the vocal
@@ -129,7 +151,7 @@ const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|
  */
 const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END})[^\s,.;:!?]+`;
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
-export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|□+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
+export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
 const MEMBER_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${LIST_JOINER}\s+|\s*&\s*)`;
 /**
  * A list of objects. A conjunction continues it only before another member, so "the vocal and the
@@ -141,7 +163,7 @@ export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
 export const OBJECT_MEMBER_SEPARATOR = new RegExp(String.raw`\s*(?:,|&|\b${LIST_JOINER}\b)\s*`, 'u');
 /** Comparatives one clause applies to one object: "brighter and louder", "louder or brighter". */
-export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_JOINER}\s+(?:any\s+)?${DIRECTION})*)`;
+export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_JOINER}\s+(?:${ANY}\s+)?${DIRECTION})*)`;
 
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep

@@ -4,7 +4,7 @@ import { normalizePhrase } from './normalizePhrase';
 
 export type MeasuredConstraintId = MeasuredPerceptualConstraint['constraintId'];
 
-export type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
+type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
 type Movement = 'up' | 'down';
 
 /** Each family's two-way hold and its two one-way bounds: `raised` limits a rise, `lowered` a fall. */
@@ -168,7 +168,11 @@ export const FAMILY_OF_NOUN: ReadonlyMap<string, QualityFamily> = new Map(
 /** A verb a held noun takes, moving its metric or holding it: "raise", "turning up", "change". */
 export const NOUN_VERB = String.raw`(?<verb>${alternation(NOUN_VERB_PHRASES)})`;
 /** The verbs holding a held noun's metric either way: "don't change the level", "touching the width". */
-export const HOLDING_NOUN_VERB = String.raw`(?:${alternation(NOUN_VERBS.either.flatMap(withIngForm))})`;
+const HOLDING_NOUN_VERB = String.raw`(?:${alternation(NOUN_VERBS.either.flatMap(withIngForm))})`;
+/** The verbs only the low end is held by beside those: "don't affect the low end", "don't mess with". */
+const LOW_END_ONLY_VERBS = ['affect', 'mess with'];
+/** Every verb holding the low end: the held-noun hold verbs and the low end's own. */
+export const LOW_END_HOLDING_VERB = String.raw`(?:${HOLDING_NOUN_VERB}|${alternation(LOW_END_ONLY_VERBS.flatMap(withIngForm))})`;
 /** Every held noun of every family: "level", "stereo width" is "width" behind its qualifier. */
 export const HOLD_NOUN_WORD = String.raw`(?:${alternation(Array.from(FAMILY_OF_NOUN.keys()))})`;
 /** The nouns naming loudness alone: "keep the Keys at the same level". */

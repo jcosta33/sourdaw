@@ -1,6 +1,7 @@
 import {
     AND_JOIN,
     AND_WORD,
+    ANY,
     ANY_BOUNDARY_WORD,
     ANY_NEGATION,
     BECOMING_VERB,
@@ -8,17 +9,22 @@ import {
     CLAUSE_END,
     CLAUSE_HEAD,
     DIRECTION_LIST,
+    FROM,
     HELD_STATE,
     KEEP,
     KEEP_VERBS,
     LINKING_VERB,
     LIST_JOINER,
+    MASK_GLYPH,
     MODAL_NEGATION,
     NEGATION,
     normalizeObjectText,
     OBJECT_LIST,
+    OBJECT_PREPOSITION,
     SCOPE_WORD,
     STOP_VERB,
+    THE,
+    THE_SAME,
 } from './constraintClauseWords';
 import {
     directionConstraintIds,
@@ -48,20 +54,20 @@ export type HoldPart = {
 /** A clause a measured-hold reader consumed: its own words, the span it covers and its parts. */
 export type HoldClause = { clause: string; start: number; end: number; parts: HoldPart[] };
 
-const LIST_TAIL = String.raw`(?:\s+(?:of|on|in)\s+${OBJECT_LIST})?`;
+const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
 /** "sound louder" is a louder clause: the linking or becoming verb is never part of the object. */
-const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:any\s+)?`;
+const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
 const HOLD_SUFFIX = String.raw`(?:\s+${HELD_STATE})?`;
 const QUALIFIED = String.raw`(?:${HELD_NOUN_QUALIFIER}\s+)?`;
 /** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
-const PRE_MEMBER = String.raw`(?:□+|(?:${SCOPE_WORD})\b)(?:['’]s?)?`;
-const PRE_LIST = String.raw`${PRE_MEMBER}(?:\s+${AND_WORD}\s+(?:the\s+)?${PRE_MEMBER})*`;
+const PRE_MEMBER = String.raw`(?:${MASK_GLYPH}+|(?:${SCOPE_WORD})\b)(?:['’]s?)?`;
+const PRE_LIST = String.raw`${PRE_MEMBER}(?:\s+${AND_WORD}\s+(?:${THE}\s+)?${PRE_MEMBER})*`;
 function holdNoun(word: string): string {
     return String.raw`(?:${PRE_LIST}\s+)?${QUALIFIED}${word}\b`;
 }
 /** Nouns joined by "and" or commas share the clause's one object: "the width and dynamics of the vocal". */
 function nounList(word: string): string {
-    return String.raw`(?<nouns>the\s+${holdNoun(word)}(?:${AND_JOIN}(?:the\s+)?${holdNoun(word)})*)`;
+    return String.raw`(?<nouns>${THE}\s+${holdNoun(word)}(?:${AND_JOIN}(?:${THE}\s+)?${holdNoun(word)})*)`;
 }
 const NOUN_IN_LIST = new RegExp(
     String.raw`(?:(?<pre>${PRE_LIST})\s+)?${QUALIFIED}(?<noun>${HOLD_NOUN_WORD})\b`,
@@ -70,7 +76,7 @@ const NOUN_IN_LIST = new RegExp(
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
 /** A later object under the same negation: "don't make the mix louder and the vocal quieter". */
 const DIRECTION_CONTINUATION = new RegExp(
-    String.raw`\s+${AND_WORD}\s+(?!any\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
+    String.raw`\s+${AND_WORD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
     'dyiu'
 );
 /**
@@ -91,7 +97,7 @@ type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
 const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)[^,.;:!?])`;
 const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!\b${ANY_NEGATION}\b${IN_CLAUSE_CHARACTER}*)`;
 /** "keep the mix from getting louder"; a negation right before it permits the move instead. */
-const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}(?<permitted>\b${NEGATION}\s+)?\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+from\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
+const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}(?<permitted>\b${NEGATION}\s+)?\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
 
 function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
     return { pattern: new RegExp(source, 'dgiu'), continuation };
@@ -101,7 +107,7 @@ function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
 const HOLD_PATTERNS: readonly HoldPattern[] = [
     // "don't make it sound louder", "without making the drums any quieter", "don't make the mix any wider"
     holdPattern(
-        String.raw`\b${NEGATION}\s+${CAUSING_VERB}(?:\s+(?!any\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
+        String.raw`\b${NEGATION}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
     // "the mix must not get louder", "the vocal shouldn't be louder"
@@ -120,7 +126,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         null
     ),
     // "don't widen the drums", "without squashing the mix"
-    holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!any\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
+    holdPattern(String.raw`\b${NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`, null),
     // "keep the mix from getting louder"; "don't stop the mix from getting wider" permits the move
     holdPattern(KEPT_FROM, null),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
@@ -129,7 +135,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         NOUN_CONTINUATION
     ),
     // "keep the Keys at the same level"
-    holdPattern(String.raw`\b${KEEP}\s+${OBJECT_LIST}\s+at\s+the\s+same\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`, null),
+    holdPattern(String.raw`\b${KEEP}\s+${OBJECT_LIST}\s+at\s+${THE_SAME}\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`, null),
 ];
 /**
  * A character of a fallback object: it never crosses a conjunction, a negation or a "please" into the

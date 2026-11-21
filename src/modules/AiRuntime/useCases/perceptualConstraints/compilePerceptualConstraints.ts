@@ -19,18 +19,22 @@ import {
     KEEP_VERBS,
     LEAVE_VERB,
     LINKING_VERB,
+    MASK_GLYPH,
     MIX_PRONOUNS,
     MIX_WORDS,
     NEGATION,
+    NO,
     normalizeObjectText,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
+    OBJECT_PREPOSITION,
     ROLE_WORD,
     ROLE_WORDS,
     TERM_JOINER,
+    THE,
     UNCHANGED_STATE,
 } from './constraintClauseWords';
-import { FAMILY_IDS, HOLDING_NOUN_VERB, type MeasuredConstraintId, QUALITY_OF } from './constraintDirections';
+import { FAMILY_IDS, LOW_END_HOLDING_VERB, type MeasuredConstraintId, QUALITY_OF } from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { type ConsumedSpan, readUnreadConstraintClauses } from './readUnreadConstraintClauses';
@@ -43,27 +47,27 @@ type ObjectResolution =
 type ClauseMatch = { clause: string; object: string | null; start: number; end: number };
 
 const LOW_END = String.raw`(?:low|bottom)[\s-]+end`;
-const OBJECT_TAIL = String.raw`(?:\s+(?:of|on|in)\s+(?<object>[^,.;:!?]+?))?`;
-/** Beside the verbs holding a held noun, the low end's own: "don't affect", "don't mess with". */
-const LOW_END_VERB = String.raw`(?:${HOLDING_NOUN_VERB}|affect(?:ing)?|mess(?:ing)?\s+with)`;
+const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>[^,.;:!?]+?))?`;
 const LOW_END_PROHIBITION = new RegExp(
-    String.raw`\b(?:${NEGATION}|no\s+changes?\s+to)\s+(?:${LOW_END_VERB}\s+)?the\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
+    String.raw`\b(?:${NEGATION}|${NO}\s+changes?\s+to)\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
     'giu'
 );
 const LOW_END_LEFT = String.raw`(?:alone|untouched|${UNCHANGED_STATE})`;
 const LOW_END_PRESERVATION = new RegExp(
-    String.raw`\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+the\s+${LOW_END}${OBJECT_TAIL}\s+${LOW_END_LEFT}${CLAUSE_END}`,
+    String.raw`\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+${THE}\s+${LOW_END}${OBJECT_TAIL}\s+${LOW_END_LEFT}${CLAUSE_END}`,
     'giu'
 );
 /** At most four words, so a quality later in the request never reads as this clause's object. */
 const QUALITY_OBJECT = String.raw`(?<object>(?:[^\s,.;:!?]+\s+){0,3}?[^\s,.;:!?]+)`;
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
-const SCOPE_NAMED = new RegExp(String.raw`□|\b${ROLE_WORD}\b`, 'iu');
+const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
+/** A quality no recipe produces but a crest factor measures, read beside the catalog's terms. */
+const DYNAMIC_TERM = 'dynamic';
 /** The catalog descriptors whose preservation a measured hold verifies; `dynamic` is read beside them. */
 const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
     ['wide', FAMILY_IDS.width.held],
     ['bright', FAMILY_IDS.brightness.held],
-    ['dynamic', FAMILY_IDS.dynamics.held],
+    [DYNAMIC_TERM, FAMILY_IDS.dynamics.held],
 ]);
 /** A kept term may stand behind a linking verb or "as": "keep the vocal sounding bright", "as dynamic". */
 const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|as)\s+)?`;
@@ -275,7 +279,7 @@ function readQualityPattern(): QualityPattern {
         ...catalog.descriptors.flatMap((descriptor) =>
             catalog.descriptorTerms[descriptor].map((term) => ({ term, descriptor }))
         ),
-        { term: 'dynamic', descriptor: 'dynamic' },
+        { term: DYNAMIC_TERM, descriptor: DYNAMIC_TERM },
     ];
     const terms = entries
         .map((entry) => entry.term)
@@ -422,7 +426,7 @@ function readQualityConstraints(unread: string, reader: RequestReader): Consumed
 export function compilePerceptualConstraints(prompt: string, context: ProjectContext): PerceptualConstraintReading {
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
-    const masked = maskTrackReferences(prompt, context, '□');
+    const masked = maskTrackReferences(prompt, context, MASK_GLYPH);
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     const reader: RequestReader = { masked, prompt, context, reading };
     const lowEnd = readLowEndConstraints(masked, prompt, context, reading);

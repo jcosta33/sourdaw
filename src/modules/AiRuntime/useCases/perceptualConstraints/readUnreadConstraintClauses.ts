@@ -1,6 +1,7 @@
 import { type UnsupportedPerceptualConstraint } from '../../models/PerceptualConstraint';
 
 import {
+    AVOID_VERB,
     CAUSING_VERB,
     DEGREE_WORD,
     DETERMINER,
@@ -9,9 +10,11 @@ import {
     LEAVE_VERB,
     LINKING_VERB,
     LIST_JOINER,
+    MASK_GLYPH,
     MIX_PRONOUN,
     MODAL_NEGATION,
     NEGATION,
+    NO,
     OBJECT_MEMBERS,
     POSSESSIVE_DETERMINER,
     PREDICATE_WORD,
@@ -33,7 +36,7 @@ const LINKED_QUALITY = String.raw`${LINKING_VERB}\s+(?:${DEGREE_WORD}\s+)?${MEAS
 /** The verbs a negation governs a measured word through: one that moves a level or makes it become one. */
 const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${NOUN_VERB_HEAD}|${DIRECTION})`;
 /** A negation or modal directly before what it governs; a modal names its subject too. */
-const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_NEGATION})|${NEGATION}|avoid|avoiding)\s+${GOVERNED_VERB}`;
+const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}`;
 /** A negated stop or prevent permits what it governs: "don't stop the mix getting wider". */
 const NOT_NEGATED = String.raw`(?<!(?:${NEGATION}|${MODAL_NEGATION})\s+)`;
 /**
@@ -44,7 +47,7 @@ const NOT_NEGATED = String.raw`(?<!(?:${NEGATION}|${MODAL_NEGATION})\s+)`;
  * governs no measured word, so it opens nothing.
  */
 const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATED_GOVERNOR}|${HOLDING_KEEP}|${LEAVE_VERB}|${NOT_NEGATED}${STOP_VERB}|no\s+${MEASURED_WORD})${WORD_END}`,
+    String.raw`\b(?:${NEGATED_GOVERNOR}|${HOLDING_KEEP}|${LEAVE_VERB}|${NOT_NEGATED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
     'iu'
 );
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
@@ -52,7 +55,7 @@ const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
 const BOUNDARY = new RegExp(String.raw`[,.;:!?]|\b${HARD_BOUNDARY_WORD}\b|\b(?<joiner>${LIST_JOINER})\b`, 'giu');
 /** The words a joined clause may open with and still continue the protection before it. */
 const CONTINUES = new RegExp(
-    String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${DEGREE_WORD})${WORD_END}|□|${SCOPE_WORD}\b|${DIRECTION})`,
+    String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${DEGREE_WORD})${WORD_END}|${MASK_GLYPH}|${SCOPE_WORD}\b|${DIRECTION})`,
     'iu'
 );
 /** A joined clause whose object takes a verb of its own states its own clause: "and the vocal needs …". */
