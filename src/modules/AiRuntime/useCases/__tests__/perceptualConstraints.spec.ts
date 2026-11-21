@@ -4026,6 +4026,15 @@ describe('which built-in device types edit a perceptual dimension', () => {
         );
     });
 
+    it.each(SPECTRAL_TYPES)('admits adding %s, which sits at its defaults, under either constraint', (type) => {
+        expect(
+            readExcludedEdit('Shape the Vocal chain but keep the vocal intimate', [adding(type)], getProjectContext())
+        ).toBeNull();
+        expect(
+            readExcludedEdit("Shape the Vocal chain but don't touch the low end", [adding(type)], getProjectContext())
+        ).toBeNull();
+    });
+
     it('admits removing every other built-in device type under either constraint', () => {
         const others = BUILTIN_DEVICE_TYPES.filter((type) => ![...SPECTRAL_TYPES, ...SPATIAL_TYPES].includes(type));
         for (const type of others) {
