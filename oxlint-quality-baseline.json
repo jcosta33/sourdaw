@@ -7607,11 +7607,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/freezeBounce/cancelFreezeTrack.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/captureSelectionBounceSource.ts": {
         "eslint/max-lines-per-function": {
             "count": 1
