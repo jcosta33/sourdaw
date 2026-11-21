@@ -46,6 +46,18 @@ import { COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE } from '#/utils/dynamicsCompressorM
  * value, is the user's setting and is never touched. The fill is idempotent the
  * same way the rescale is: once filled the key is present, and a present key
  * never fires it again.
+ *
+ * ## Stored encoding of a fill
+ *
+ * The fill runs on the CRDT projection, so every store reader sees an explicit
+ * value. The document must not: a store write reconciles the projected value
+ * back into the document, and a filled key the document lacks would land there
+ * on the first unrelated edit of the track, rewriting every legacy device.
+ * `encodeStoredDeviceParameterValues` is the fill's inverse on the way out: a
+ * fill key holding its `legacyValue` is stored as absence, which already reads
+ * as that value, and any other value is stored as written. The two directions
+ * are symmetric, so a projection followed by an encode returns the record the
+ * document held.
  */
 
 type StoredParameterMigration = {
@@ -110,4 +122,26 @@ export function migrateStoredDeviceParameterValues(
         migrated = { ...migrated, [fill.paramId]: fill.legacyValue };
     }
     return migrated;
+}
+
+/**
+ * The parameter values a device should be stored as holding: the inverse of
+ * the fill. A fill key equal to its `legacyValue` is dropped, because absence
+ * already reads as that value.
+ *
+ * Returns the input untouched when nothing applies.
+ */
+export function encodeStoredDeviceParameterValues(
+    deviceType: string,
+    parameterValues: Record<string, number>
+): Record<string, number> {
+    let encoded = parameterValues;
+    for (const fill of STORED_PARAMETER_FILLS) {
+        if (fill.deviceType !== deviceType || parameterValues[fill.paramId] !== fill.legacyValue) {
+            continue;
+        }
+        const { [fill.paramId]: _legacy, ...rest } = encoded;
+        encoded = rest;
+    }
+    return encoded;
 }

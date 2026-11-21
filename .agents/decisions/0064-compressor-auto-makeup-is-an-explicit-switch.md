@@ -39,7 +39,11 @@ gain. Removing it outright would change the level of every existing project.
    a second migration kind beside the unit rescale: a parameter added after devices were stored is
    filled with the value the old device sounded like, only where the record lacks the key. Every
    read of a stored device goes through it (the CRDT projection, track templates, user presets),
-   and it is idempotent because a filled key is present. The engine applies the same reading: a
+   and it is idempotent because a filled key is present. The fill never reaches the document: the
+   track store writes through `encodeStoredDeviceParameterValues`, its inverse, so the document
+   stores the switch on as absence and off as 0, while every store reader sees an explicit 0 or 1.
+   Without that, the projected fill would land in every legacy compressor on the first unrelated
+   write to its track. The engine applies the same reading: a
    node whose parameters never name the switch (an adjustment layer, any caller that predates it)
    stays on.
 4. **Factory presets, mix recipe steps, project templates and the demo state the switch on**,

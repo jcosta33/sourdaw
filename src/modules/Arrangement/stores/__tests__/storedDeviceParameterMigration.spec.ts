@@ -1,10 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { change, from, type Doc } from '@automerge/automerge';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+    resetAutomergeStorageProjections,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
-import { migrateStoredDeviceParameterValues } from '../../models/StoredDeviceParameterMigration';
+import {
+    encodeStoredDeviceParameterValues,
+    migrateStoredDeviceParameterValues,
+} from '../../models/StoredDeviceParameterMigration';
+import { createTrack, type Track } from '../../models/Track';
 import { composeAddedDeviceParameterValues } from '../../useCases/device/composeAddedDeviceParameterValues';
 import { getPluginById } from '../../useCases/getPluginById';
-import { sanitizeTrackSnapshot } from '../trackStore';
+import { sanitizeTrackSnapshot, trackStore } from '../trackStore';
 
 /**
  * The Brick-Wall Limiter's `release` was redeclared from seconds (0.01..1,
@@ -209,5 +220,144 @@ describe('stored built-in compressor reads Auto Makeup as on when the record pre
             storedProjectWithDevices([{ type: 'builtin-compressor', parameterValues: added }])
         );
         expect(values?.['comp-auto-makeup']).toBe(0);
+    });
+});
+
+/**
+ * The fill runs on the CRDT projection, and the store writes its projected
+ * value back through the reconciler. Without a stored encoding symmetric with
+ * the fill, the first unrelated write to a track would land the filled key in
+ * the document of every legacy compressor. These rows drive the real store
+ * against a real Automerge document and read the document itself.
+ */
+type RootDocument = Record<string, unknown> & { tracks?: { tracks: Track[] } };
+
+function attachDocument(initial: Doc<RootDocument>): { read: () => Doc<RootDocument> } {
+    let doc = initial;
+    configureAutomergeStoragePort({
+        getDoc: () => doc,
+        getSemanticMessage: () => undefined,
+        hasDoc: (docId: string) => docId === 'root',
+        mutateDoc: ({ changeFn }) => {
+            doc = change(doc, (draft) => changeFn(draft));
+        },
+    });
+    resetAutomergeStorageProjections('root');
+    trackStore.hydrate();
+    return { read: () => doc };
+}
+
+function legacyDocument(): Doc<RootDocument> {
+    const track = createTrack({ id: 'track-1', name: 'Vocal', kind: 'audio' });
+    return from<RootDocument>({
+        tracks: {
+            tracks: [
+                {
+                    ...track,
+                    devices: [
+                        {
+                            id: 'dev-comp',
+                            name: 'Compressor',
+                            type: 'builtin-compressor',
+                            bypassed: false,
+                            parameterValues: LEGACY_COMPRESSOR_VALUES,
+                        },
+                        {
+                            id: 'dev-eq',
+                            name: 'EQ',
+                            type: 'builtin-eq',
+                            bypassed: false,
+                            parameterValues: { 'eq-low-gain': 1 },
+                        },
+                    ],
+                },
+            ],
+        },
+    });
+}
+
+function editTracks(edit: (track: Track) => Track): void {
+    const state = trackStore.value;
+    if (!state) {
+        throw new Error('trackStore must hold a projected value');
+    }
+    trackStore.set({ ...state, tracks: state.tracks.map(edit) });
+    flushAutomergeStorageWrites();
+}
+
+function setSwitch(value: number): void {
+    const withSwitch = (device: Track['devices'][number]): Track['devices'][number] => {
+        if (device.id !== 'dev-comp') {
+            return device;
+        }
+        return { ...device, parameterValues: { ...device.parameterValues, 'comp-auto-makeup': value } };
+    };
+    editTracks((track) => ({ ...track, devices: track.devices.map(withSwitch) }));
+}
+
+function storedValues(doc: Doc<RootDocument>, deviceId: string): Record<string, number> | undefined {
+    return doc.tracks?.tracks[0]?.devices.find((candidate) => candidate.id === deviceId)?.parameterValues;
+}
+
+function projectedSwitch(): number | undefined {
+    return trackStore.value?.tracks[0]?.devices.find((device) => device.id === 'dev-comp')?.parameterValues[
+        'comp-auto-makeup'
+    ];
+}
+
+afterEach(() => {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+});
+
+describe('the document stores Auto Makeup on as absence, symmetric with the fill', () => {
+    it('leaves a legacy compressor without the key when an unrelated track write lands', () => {
+        const document = attachDocument(legacyDocument());
+        expect(projectedSwitch()).toBe(1);
+
+        editTracks((track) => ({ ...track, gain: 0.5 }));
+
+        expect(document.read().tracks?.tracks[0]?.gain).toBe(0.5);
+        expect(storedValues(document.read(), 'dev-comp')).toEqual(LEGACY_COMPRESSOR_VALUES);
+        expect(projectedSwitch()).toBe(1);
+    });
+
+    it('stores 0 when the switch is set off, and removes the key when it is set on again', () => {
+        const document = attachDocument(legacyDocument());
+
+        setSwitch(0);
+        expect(storedValues(document.read(), 'dev-comp')).toEqual({
+            ...LEGACY_COMPRESSOR_VALUES,
+            'comp-auto-makeup': 0,
+        });
+        expect(projectedSwitch()).toBe(0);
+
+        setSwitch(1);
+        expect(storedValues(document.read(), 'dev-comp')).toEqual(LEGACY_COMPRESSOR_VALUES);
+        expect(projectedSwitch()).toBe(1);
+    });
+
+    it('stores a non-compressor device exactly as written', () => {
+        const document = attachDocument(legacyDocument());
+
+        editTracks((track) => ({ ...track, gain: 0.5 }));
+
+        expect(storedValues(document.read(), 'dev-eq')).toEqual({ 'eq-low-gain': 1 });
+    });
+
+    it('encodes only a fill key at its legacy value, and returns the record untouched otherwise', () => {
+        const off = { ...LEGACY_COMPRESSOR_VALUES, 'comp-auto-makeup': 0 };
+        expect(encodeStoredDeviceParameterValues('builtin-compressor', off)).toBe(off);
+        expect(encodeStoredDeviceParameterValues('builtin-compressor', LEGACY_COMPRESSOR_VALUES)).toBe(
+            LEGACY_COMPRESSOR_VALUES
+        );
+        const onForOtherType = { 'comp-auto-makeup': 1 };
+        expect(encodeStoredDeviceParameterValues('builtin-sidechain-compressor', onForOtherType)).toBe(onForOtherType);
+        expect(
+            encodeStoredDeviceParameterValues('builtin-compressor', {
+                ...LEGACY_COMPRESSOR_VALUES,
+                'comp-auto-makeup': 1,
+            })
+        ).toEqual(LEGACY_COMPRESSOR_VALUES);
     });
 });

@@ -1301,13 +1301,14 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/models/PlannedDeviceWrite.ts': 1,
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
         // Count provenance: new file entry from #2347 ("migrate stored device
-        // parameters before preset load"), measured 1 — the `parameterValues:
-        // Record<string, number>` parameter type on
-        // `migrateStoredDeviceParameterValues`. Type-only device-data shape, the
-        // same class as `trackEligibility.ts` below: a static declaration, not
-        // an executable access. The module imports nothing, holds no store or
-        // CRDT write, and returns its input untouched when no migration applies.
-        'src/modules/Arrangement/models/StoredDeviceParameterMigration.ts': 1,
+        // parameters before preset load"), was 1, measured 2 — the `parameterValues:
+        // Record<string, number>` parameter types on
+        // `migrateStoredDeviceParameterValues` and its inverse
+        // `encodeStoredDeviceParameterValues`. Type-only device-data shapes, the
+        // same class as `trackEligibility.ts` below: static declarations, not
+        // executable accesses. The module holds no store or CRDT write, and both
+        // functions return their input untouched when nothing applies.
+        'src/modules/Arrangement/models/StoredDeviceParameterMigration.ts': 2,
         'src/modules/Arrangement/models/Track.ts': 7,
         'src/modules/Arrangement/models/TrackTemplate.ts': 1,
         'src/modules/Arrangement/repositories/presets/bassPresets.ts': 7,
