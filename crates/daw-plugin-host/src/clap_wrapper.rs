@@ -2098,6 +2098,15 @@ impl ClapWrapper {
         self.editor_window = Some(window);
     }
 
+    /// The window the pending asks go to, leaving them recorded. Control path
+    /// only; no plugin call.
+    pub fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        if !self.host_state.has_pending_editor_window_asks() {
+            return None;
+        }
+        self.editor_window.clone()
+    }
+
     /// Take what the plugin asked of its editor window, with the window to
     /// answer it through. Control path only; no plugin call.
     ///
@@ -3859,6 +3868,10 @@ impl AudioPlugin for ClapWrapper {
 
     fn set_editor_window(&mut self, window: SharedEditorWindow) {
         ClapWrapper::set_editor_window(self, window)
+    }
+
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        ClapWrapper::editor_window_with_pending_asks(self)
     }
 
     fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {

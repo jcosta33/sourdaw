@@ -24,7 +24,8 @@ pub async fn analyze_pitch(
     analysis_id: String,
     audio_path: String,
 ) -> Result<PitchContour, String> {
-    let audio_path = filesystem::resolve_existing_file_path(&audio_path)?;
+    let audio_path =
+        filesystem::resolve_existing_file_path(&audio_path).map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
         let mut reader =
             WavReader::open(&audio_path).map_err(|e| format!("Failed to open WAV: {}", e))?;
@@ -150,8 +151,10 @@ fn default_true() -> bool {
 }
 
 pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String> {
-    let input_audio_path = filesystem::resolve_existing_file_path(&request.input_audio_path)?;
-    let output_audio_path = filesystem::resolve_writable_file_path(&request.output_audio_path)?;
+    let input_audio_path = filesystem::resolve_existing_file_path(&request.input_audio_path)
+        .map_err(|e| e.to_string())?;
+    let output_audio_path = filesystem::resolve_writable_file_path(&request.output_audio_path)
+        .map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
         let mut reader =
             WavReader::open(&input_audio_path).map_err(|e| format!("Failed to open WAV: {}", e))?;
@@ -227,7 +230,7 @@ fn write_committed_wav(
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    filesystem::write_wav_atomically(path, spec, write_samples)
+    filesystem::write_wav_atomically(path, spec, write_samples).map_err(|e| e.to_string())
 }
 
 /// Stream the committed mono samples into an already-open writer. Split from

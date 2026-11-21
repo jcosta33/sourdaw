@@ -11,6 +11,7 @@ import {
     getPlatformPlugins,
     getPluginById,
 } from '#/modules/Arrangement/useCases';
+import { isDrumDevice } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -22,7 +23,6 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { gainLaneLevelLaw, toLevelDb } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { isDrumDevice } from '#/utils/deviceTypeMatching';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';

@@ -4,13 +4,18 @@ import { getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
     builtinSynthVoice,
+    type classifyNoteReceivingDevice,
     ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
+    isBypassedNoteReceiver,
     registerScheduledSource,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
+    resolveLiveNoteControls,
     scheduleFaustNote,
     startNoteExpression,
 } from '#/modules/AudioEngine/useCases';
@@ -33,12 +38,6 @@ import {
 } from '#/modules/MIDI/useCases';
 import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import {
-    isBypassedNoteReceiver,
-    type NoteReceivingInstrumentKind,
-    resolveDrumKitBy,
-    resolveDrumKitOutputGain,
-} from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -89,27 +88,7 @@ import type { PreparedInitialMidiWindow } from './prepareInitialMidiWindow';
 import type { LiveYeastNote } from './processLiveYeastTrackBlock';
 import type { SchedulerCancellation } from './schedulerCancellation';
 
-// Worklet synth device types that share a common noteOn/noteOff controls interface.
-// Each entry maps a device type to the controls property name on the device node
-// and an optional velocity transform (defaults to identity).
-type WorkletSynthEntry = {
-    controlsKey: 'fermenterControls' | 'grandBouleControls' | 'levainControls' | 'crumbsControls';
-    velocityTransform?: (velocity: number) => number;
-};
-
-const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
-    fermenter: { controlsKey: 'fermenterControls' },
-    'grand-boule': {
-        controlsKey: 'grandBouleControls',
-        velocityTransform: (value: number) => value / 127,
-    },
-    levain: { controlsKey: 'levainControls' },
-    // Crumbs' catalog id carries the `builtin-` prefix. Without this row a
-    // Crumbs track fell through to the built-in fallback synth here while the
-    // offline render voiced the real sampler — the same live/offline split the
-    // device's export refusal was hiding, just pointing the other way.
-    'builtin-crumbs': { controlsKey: 'crumbsControls' },
-};
+type NoteReceivingInstrumentKind = NonNullable<ReturnType<typeof classifyNoteReceivingDevice>>;
 
 // A Toaster child's notes go to its parent's kit, whatever else the parent's
 // chain holds; only this parent arm looks for a toaster outside the receiver.
@@ -964,9 +943,7 @@ export async function scheduleMidiNotes(
             const workletSynthDevice = toasterRoute
                 ? null
                 : (findReceiverOfKind(track.devices, 'worklet-synth') ?? null);
-            const workletSynthEntry = workletSynthDevice
-                ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
-                : null;
+            const workletSynthEntry = workletSynthDevice ? resolveLiveNoteControls(workletSynthDevice.type) : null;
             const workletSynthNode = workletSynthDevice
                 ? (strip.deviceNodes.find((data) => data.deviceId === workletSynthDevice.id) ?? null)
                 : null;
@@ -1307,9 +1284,7 @@ export async function scheduleMidiNotes(
                                 continue;
                             }
                             const rawVel = projectedNote.velocity;
-                            const vel = workletSynthEntry.velocityTransform
-                                ? workletSynthEntry.velocityTransform(rawVel)
-                                : rawVel;
+                            const vel = workletSynthEntry.scaleVelocity(rawVel);
                             const noteChannel = note.channel ?? 0;
                             const articulationId = workletSynthDevice
                                 ? resolveMidiNoteArticulationId({

@@ -92,9 +92,14 @@ const mocks = vi.hoisted(() => {
 const previewIntents = vi.hoisted(() => {
     let exclusive: AbortController | null = null;
     let ordinarySignal: AbortSignal | null = null;
+    let restoration: Promise<void> | undefined;
     return {
         get ordinarySignal() {
             return ordinarySignal;
+        },
+        /** The output restoration an aborted exclusive preview leaves pending; the next ordinary intent waits on it. */
+        holdRestoration(held: Promise<void> | undefined) {
+            restoration = held;
         },
         beginExclusive() {
             const controller = new AbortController();
@@ -107,11 +112,12 @@ const previewIntents = vi.hoisted(() => {
             previous?.abort('preempted');
             const controller = new AbortController();
             ordinarySignal = controller.signal;
-            return { signal: controller.signal, release: () => controller.abort('released') };
+            return { signal: controller.signal, release: () => controller.abort('released'), ready: restoration };
         },
         reset() {
             exclusive?.abort('reset');
             exclusive = null;
+            restoration = undefined;
         },
     };
 });
@@ -299,6 +305,80 @@ describe('toggleRecording', () => {
 
         expect(exclusive.signal.aborted).toBe(true);
         expect(events).toEqual(['preview-abort', 'recording-admission']);
+    });
+
+    describe('count-in while an exclusive preview owns the listening output', () => {
+        const countInTransport = () =>
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: true,
+                countInBars: 1,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+                playheadPosition: 0,
+            });
+
+        it('ends the preview before the first count-in click is scheduled', () => {
+            const events: string[] = [];
+            previewIntents.beginExclusive().signal.addEventListener('abort', () => events.push('preview-abort'));
+            mocks.scheduleClick.mockImplementation(() => events.push('click'));
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+
+            expect(events).toEqual(['preview-abort', 'click', 'click', 'click', 'click']);
+        });
+
+        it('schedules no click until the preview output is restored, then counts in from that moment', async () => {
+            const restored = Promise.withResolvers<void>();
+            const exclusive = previewIntents.beginExclusive();
+            previewIntents.holdRestoration(restored.promise);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+            audioClock.currentTime = 1;
+
+            toggleRecording();
+
+            expect(exclusive.signal.aborted).toBe(true);
+            expect(mocks.scheduleClick).not.toHaveBeenCalled();
+            audioClock.currentTime = 1.25;
+            restored.resolve();
+            await vi.waitFor(() => expect(mocks.scheduleClick).toHaveBeenCalledTimes(4));
+            expect(mocks.scheduleClick.mock.calls.map((call) => call[0])).toEqual([1.25, 1.75, 2.25, 2.75]);
+        });
+
+        it('still counts in, with a warning, when the preview output could not be restored', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            previewIntents.beginExclusive();
+            previewIntents.holdRestoration(Promise.reject(new Error('restore refused')));
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+            await vi.waitFor(() => expect(mocks.scheduleClick).toHaveBeenCalledTimes(4));
+
+            expect(warn).toHaveBeenCalledOnce();
+        });
+
+        it('a Record press during the restoration wait cancels the count-in instead of stacking a second one', async () => {
+            const restored = Promise.withResolvers<void>();
+            previewIntents.beginExclusive();
+            previewIntents.holdRestoration(restored.promise);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+            toggleRecording();
+            restored.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+            expect(mocks.scheduleClick).not.toHaveBeenCalled();
+        });
     });
 
     it('should count in using the resolved meter at the playhead, not the flat numerator', () => {

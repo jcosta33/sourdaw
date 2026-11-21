@@ -63,7 +63,8 @@ pub struct NativeSingletons {
 impl NativeSingletons {
     pub fn new(events: Arc<dyn EventSink>) -> Result<Self, String> {
         Ok(Self {
-            app_state: AppState::with_persisted_plugin_registry()?,
+            app_state: AppState::with_persisted_plugin_registry()
+                .map_err(|error| error.to_string())?,
             collab: CollabState::default(),
             link: LinkState::default(),
             midi: MidiState::default(),

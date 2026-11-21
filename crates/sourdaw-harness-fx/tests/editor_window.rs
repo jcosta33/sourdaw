@@ -201,6 +201,33 @@ fn the_window_follows_the_plugins_resizability_each_time_its_hints_change() {
 }
 
 #[test]
+fn hints_refusing_both_axes_make_the_window_not_resizable_though_the_plugin_can_resize() {
+    let plugin = InstalledPlugin::create("editor-axes-refused");
+    let mut wrapper = editor_instance(&plugin);
+    let window = Arc::new(RecordingWindow::default());
+    open_into(&mut wrapper, &window);
+
+    command(&mut wrapper, GuiCommand::ToggleResizable);
+    answer_asks(&mut wrapper);
+    assert!(gui_record(&wrapper).can_resize);
+    assert_eq!(window.calls(), [WindowCall::SetResizable(true)]);
+
+    command(&mut wrapper, GuiCommand::ToggleAxesRefused);
+    answer_asks(&mut wrapper);
+    assert!(
+        gui_record(&wrapper).can_resize,
+        "the plugin still answers can_resize true"
+    );
+    assert_eq!(
+        window.calls(),
+        [
+            WindowCall::SetResizable(true),
+            WindowCall::SetResizable(false)
+        ]
+    );
+}
+
+#[test]
 fn a_hide_then_a_show_reach_the_editor_and_then_its_window() {
     let plugin = InstalledPlugin::create("editor-visibility");
     let mut wrapper = editor_instance(&plugin);
@@ -244,4 +271,21 @@ fn a_hide_or_show_is_refused_while_no_window_is_installed() {
     );
     assert!(wrapper.take_editor_window_asks().is_none());
     assert_eq!(record.calls, [GuiCall::Create, GuiCall::Show]);
+}
+
+#[test]
+fn asks_a_previous_editor_made_are_dropped_when_the_next_one_opens() {
+    let plugin = InstalledPlugin::create("editor-stale-asks");
+    let mut wrapper = editor_instance(&plugin);
+    let window = Arc::new(RecordingWindow::default());
+    open_into(&mut wrapper, &window);
+    command(&mut wrapper, GuiCommand::RequestHide);
+    wrapper.close_gui();
+
+    open_into(&mut wrapper, &window);
+
+    assert!(
+        wrapper.take_editor_window_asks().is_none(),
+        "a hide the closed editor asked must not land on the editor opened after it"
+    );
 }

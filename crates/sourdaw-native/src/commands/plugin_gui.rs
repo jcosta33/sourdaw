@@ -16,17 +16,24 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, MutexGuard, TryLockError};
+use std::fmt;
+use std::sync::{Arc, MutexGuard, PoisonError, TryLockError};
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::native_bridge::{PluginControlError, PluginControlRefusal};
 use crate::host::plugin_editor_asks::editor_window_host;
 use crate::host::plugin_window::{
     next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
-    PluginWindowHost,
+    PluginWindowError, PluginWindowHost,
 };
-use crate::host::ui_thread::lend_on_ui_thread;
-use crate::state::{AppState, EditorTeardownSignal, PluginInstanceData, PluginWindowRecords};
-use daw_plugin_host::{AudioPlugin, EditorWindowResizer, HostedRuntime, SharedEditorWindow};
+use crate::host::ui_thread::{lend_on_ui_thread, UiThreadError};
+use crate::state::{
+    AppState, EditorTeardownSignal, EnginePluginControlError, PluginInstanceData,
+    PluginWindowRecords,
+};
+use daw_plugin_host::{
+    AudioPlugin, EditorWindowResizer, HostedRuntime, PluginError, SharedEditorWindow,
+};
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
 pub const PLUGIN_GUI_CLOSED_EVENT: &str = "plugin-gui-closed";
@@ -86,6 +93,118 @@ struct HostWindow {
     scale_factor: f64,
 }
 
+/// Why a plugin editor command refused.
+///
+/// `Display` is the text the renderer receives through the napi edge,
+/// byte-identical to the text it replaced (ADR 0059). `openPluginGui.ts`
+/// matches [`Self::AlreadyOpen`]'s text.
+#[derive(Debug)]
+pub(crate) enum PluginGuiError {
+    /// A state store's mutex was poisoned.
+    Lock {
+        store: &'static str,
+        cause: String,
+    },
+    NoInstance {
+        instance_id: String,
+    },
+    GuiUnsupported,
+    AlreadyOpen,
+    EditorStateChanged,
+    /// The plugin's editor refused.
+    Editor(PluginError),
+    /// The control path refused to run an operation on the instance.
+    Control(PluginControlRefusal),
+    /// The control path refused an editor call, or the UI-thread hop did.
+    ControlledUiCall(PluginControlError<UiThreadError>),
+    /// The engine-owned instance could not be reached, or its editor call
+    /// was refused.
+    EngineUiCall(EnginePluginControlError<UiThreadError>),
+    /// The shell's UI thread did not take the editor call.
+    UiThread(UiThreadError),
+    /// The window host could not create or expose the editor's window.
+    Window(PluginWindowError),
+}
+
+impl From<PluginControlRefusal> for PluginGuiError {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Control(refusal)
+    }
+}
+
+impl From<PluginControlError<UiThreadError>> for PluginGuiError {
+    fn from(error: PluginControlError<UiThreadError>) -> Self {
+        Self::ControlledUiCall(error)
+    }
+}
+
+impl From<EnginePluginControlError<UiThreadError>> for PluginGuiError {
+    fn from(error: EnginePluginControlError<UiThreadError>) -> Self {
+        Self::EngineUiCall(error)
+    }
+}
+
+impl From<UiThreadError> for PluginGuiError {
+    fn from(error: UiThreadError) -> Self {
+        Self::UiThread(error)
+    }
+}
+
+impl From<PluginWindowError> for PluginGuiError {
+    fn from(error: PluginWindowError) -> Self {
+        Self::Window(error)
+    }
+}
+
+impl PluginGuiError {
+    fn lock<Guard>(store: &'static str) -> impl FnOnce(PoisonError<Guard>) -> Self {
+        move |error| Self::Lock {
+            store,
+            cause: error.to_string(),
+        }
+    }
+
+    fn no_instance(instance_id: &str) -> Self {
+        Self::NoInstance {
+            instance_id: instance_id.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for PluginGuiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Lock { store, cause } => write!(f, "Failed to lock {store}: {cause}"),
+            Self::NoInstance { instance_id } => write!(f, "No plugin instance: {instance_id}"),
+            Self::GuiUnsupported => f.write_str("Plugin does not support GUI"),
+            Self::AlreadyOpen => f.write_str("Plugin GUI is already open"),
+            Self::EditorStateChanged => {
+                f.write_str("Plugin editor state changed while its window was opening")
+            }
+            Self::Editor(error) => write!(f, "{error}"),
+            Self::Control(refusal) => write!(f, "{refusal}"),
+            Self::ControlledUiCall(error) => write!(f, "{error}"),
+            Self::EngineUiCall(error) => write!(f, "{error}"),
+            Self::UiThread(error) => write!(f, "{error}"),
+            Self::Window(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for PluginGuiError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Editor(error) => Some(error),
+            Self::Control(refusal) => Some(refusal),
+            Self::ControlledUiCall(error) => Some(error),
+            Self::EngineUiCall(error) => Some(error),
+            Self::UiThread(error) => Some(error),
+            Self::Window(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 /// What an editor that just opened tells the shell about the window it is in.
 struct OpenedEditor {
     size: (u32, u32),
@@ -106,15 +225,15 @@ fn call_plugin_on_ui_thread<Answer: Send + 'static>(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
     call: impl FnOnce(&mut (dyn AudioPlugin + 'static)) -> Answer + Send + 'static,
-) -> Result<Answer, String> {
+) -> Result<Answer, PluginGuiError> {
     {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginGuiError::lock("plugins"))?;
         if let Some(instance) = plugins.get_mut(instance_id) {
             let plugin: &mut dyn AudioPlugin = &mut instance.plugin;
-            return lend_on_ui_thread(windows_host, plugin, call);
+            return lend_on_ui_thread(windows_host, plugin, call).map_err(PluginGuiError::from);
         }
     }
 
@@ -122,14 +241,16 @@ fn call_plugin_on_ui_thread<Answer: Send + 'static>(
         .engine_plugins
         .lock()
         .map(|engine_plugins| engine_plugins.contains_key(instance_id))
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        .map_err(PluginGuiError::lock("engine_plugins"))?;
     if !is_engine_owned {
-        return Err(format!("No plugin instance: {}", instance_id));
+        return Err(PluginGuiError::no_instance(instance_id));
     }
 
-    state.with_engine_plugin_control(instance_id, |plugin| {
-        lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
-    })
+    state
+        .with_engine_plugin_control(instance_id, |plugin| {
+            lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
+        })
+        .map_err(PluginGuiError::from)
 }
 
 /// Resize an open editor because the host's own window was resized.
@@ -150,11 +271,10 @@ pub async fn resize_plugin_gui(
 ) -> Result<PluginEditorSize, String> {
     let (width, height) =
         call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
-            plugin
-                .request_editor_size(width, height)
-                .map_err(|error| error.to_string())
+            plugin.request_editor_size(width, height)
         })
-        .and_then(|granted| granted)?;
+        .and_then(|granted| granted.map_err(PluginGuiError::Editor))
+        .map_err(|error| error.to_string())?;
 
     Ok(PluginEditorSize { width, height })
 }
@@ -173,11 +293,10 @@ pub async fn apply_plugin_gui_scale(
 ) -> Result<PluginEditorSize, String> {
     let (width, height) =
         call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
-            plugin
-                .apply_editor_content_scale(scale_factor)
-                .map_err(|error| error.to_string())
+            plugin.apply_editor_content_scale(scale_factor)
         })
-        .and_then(|granted| granted)?;
+        .and_then(|granted| granted.map_err(PluginGuiError::Editor))
+        .map_err(|error| error.to_string())?;
 
     Ok(PluginEditorSize { width, height })
 }
@@ -187,13 +306,17 @@ pub async fn is_plugin_gui_supported(
     instance_id: String,
     state: &AppState,
 ) -> Result<bool, String> {
+    plugin_gui_support(&instance_id, state).map_err(|error| error.to_string())
+}
+
+fn plugin_gui_support(instance_id: &str, state: &AppState) -> Result<bool, PluginGuiError> {
     {
         let plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginGuiError::lock("plugins"))?;
 
-        if let Some(instance) = plugins.get(&instance_id) {
+        if let Some(instance) = plugins.get(instance_id) {
             return Ok(instance.has_gui);
         }
     }
@@ -201,13 +324,16 @@ pub async fn is_plugin_gui_supported(
     let engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if let Some(instance) = engine_plugins.get(&instance_id) {
-        instance.runtime.ensure_public_control_allowed()?;
+        .map_err(PluginGuiError::lock("engine_plugins"))?;
+    if let Some(instance) = engine_plugins.get(instance_id) {
+        instance
+            .runtime
+            .ensure_public_control_allowed()
+            .map_err(PluginGuiError::from)?;
         return Ok(instance.has_gui);
     }
 
-    Err(format!("No plugin instance: {}", instance_id))
+    Err(PluginGuiError::no_instance(instance_id))
 }
 
 /// The host's answer to a plugin that resizes its own editor.
@@ -277,16 +403,24 @@ pub async fn open_plugin_gui(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginGuiInfo, String> {
+    open_editor_in_new_window(instance_id, windows_host, state).map_err(|error| error.to_string())
+}
+
+fn open_editor_in_new_window(
+    instance_id: String,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) -> Result<PluginGuiInfo, PluginGuiError> {
     // 1. Get plugin name and check GUI support
     let (plugin_name, engine_runtime) = {
         let plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginGuiError::lock("plugins"))?;
         match plugins.get(&instance_id) {
             Some(instance) => {
                 if !instance.has_gui {
-                    return Err("Plugin does not support GUI".to_string());
+                    return Err(PluginGuiError::GuiUnsupported);
                 }
 
                 (instance.name.clone(), None)
@@ -295,20 +429,23 @@ pub async fn open_plugin_gui(
                 let engine_plugins = state
                     .engine_plugins
                     .lock()
-                    .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+                    .map_err(PluginGuiError::lock("engine_plugins"))?;
                 if let Some(engine_instance) = engine_plugins.get(&instance_id) {
                     if !engine_instance.has_gui {
-                        return Err("Plugin does not support GUI".to_string());
+                        return Err(PluginGuiError::GuiUnsupported);
                     }
 
-                    engine_instance.runtime.ensure_public_control_allowed()?;
+                    engine_instance
+                        .runtime
+                        .ensure_public_control_allowed()
+                        .map_err(PluginGuiError::from)?;
 
                     (
                         engine_instance.name.clone(),
                         Some(std::sync::Arc::clone(&engine_instance.runtime)),
                     )
                 } else {
-                    return Err(format!("No plugin instance: {}", instance_id));
+                    return Err(PluginGuiError::no_instance(&instance_id));
                 }
             }
         }
@@ -322,14 +459,14 @@ pub async fn open_plugin_gui(
         let windows = state
             .plugin_windows
             .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            .map_err(PluginGuiError::lock("plugin_windows"))?;
         windows.get(&instance_id).cloned()
     };
     if open_window_label
         .as_deref()
         .is_some_and(|label| windows_host.window_exists(label))
     {
-        return Err("Plugin GUI is already open".to_string());
+        return Err(PluginGuiError::AlreadyOpen);
     }
 
     // 3. Create a bare native window (no WebView) for the plugin editor
@@ -337,8 +474,11 @@ pub async fn open_plugin_gui(
 
     // Shared rather than owned: the resizer installed below outlives this
     // command, because a plugin editor resizes itself while it is open.
-    let plugin_window: Arc<dyn PluginEditorWindow> =
-        Arc::from(windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?);
+    let plugin_window: Arc<dyn PluginEditorWindow> = Arc::from(
+        windows_host
+            .create_editor_window(&window_label, &plugin_name, &instance_id)
+            .map_err(PluginGuiError::from)?,
+    );
 
     // 4. Retire the stale record this open's check identified, and with it the
     // editor behind it. See `retire_stale_editor_for_reopen`; here, because a
@@ -359,7 +499,7 @@ pub async fn open_plugin_gui(
         Ok(handle_ptr) => handle_ptr,
         Err(error) => {
             plugin_window.destroy();
-            return Err(error);
+            return Err(PluginGuiError::from(error));
         }
     };
 
@@ -372,7 +512,7 @@ pub async fn open_plugin_gui(
     // cast back on the far side — the same representation `JsEditorWindow` holds
     // it in for the same reason.
     let handle = handle_ptr as usize;
-    let open_editor = move |plugin: &mut dyn AudioPlugin| -> Result<OpenedEditor, String> {
+    let open_editor = move |plugin: &mut dyn AudioPlugin| -> Result<OpenedEditor, PluginGuiError> {
         open_editor_reporting_resizability(
             plugin,
             HostWindow {
@@ -388,19 +528,21 @@ pub async fn open_plugin_gui(
             .with_control(std::time::Duration::from_secs(2), |plugin| {
                 lend_on_ui_thread(windows_host, plugin, move |plugin| open_editor(plugin))
             })
+            .map_err(PluginGuiError::from)
             .and_then(|opened| opened)
     } else {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            .map_err(PluginGuiError::lock("plugins"))?;
         let instance = plugins
             .get_mut(&instance_id)
-            .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+            .ok_or_else(|| PluginGuiError::no_instance(&instance_id))?;
 
         lend_on_ui_thread(windows_host, &mut instance.plugin, move |plugin| {
             open_editor(plugin)
         })
+        .map_err(PluginGuiError::from)
         .and_then(|opened| opened)
     };
 
@@ -415,13 +557,13 @@ pub async fn open_plugin_gui(
         }
     };
 
-    let publish_window = || -> Result<(), String> {
+    let publish_window = || -> Result<(), PluginGuiError> {
         publish_plugin_gui_window_in_label_order(
             || {
                 let mut windows = state
                     .plugin_windows
                     .lock()
-                    .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+                    .map_err(PluginGuiError::lock("plugin_windows"))?;
                 claim_editor_record_for_opened_window(
                     &mut windows,
                     &instance_id,
@@ -441,7 +583,11 @@ pub async fn open_plugin_gui(
 
     if let Some(runtime) = engine_runtime.as_ref() {
         let publish_result = publish_engine_gui_window_with_lifecycle_checks(
-            || runtime.ensure_public_control_allowed(),
+            || {
+                runtime
+                    .ensure_public_control_allowed()
+                    .map_err(PluginGuiError::from)
+            },
             publish_window,
         );
         cleanup_opened_engine_gui_after_rejected_lifecycle(
@@ -504,7 +650,7 @@ fn open_editor_reporting_resizability(
     plugin: &mut dyn AudioPlugin,
     host_window: HostWindow,
     handle: usize,
-) -> Result<OpenedEditor, String> {
+) -> Result<OpenedEditor, PluginGuiError> {
     let size = open_editor_or_release_host_window(
         plugin,
         |plugin| {
@@ -514,7 +660,7 @@ fn open_editor_reporting_resizability(
         },
         |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(PluginGuiError::Editor)?;
 
     Ok(OpenedEditor {
         size,
@@ -522,10 +668,10 @@ fn open_editor_reporting_resizability(
     })
 }
 
-fn publish_engine_gui_window_with_lifecycle_checks(
-    ensure_public_control_allowed: impl Fn() -> Result<(), String>,
-    publish_window: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
+fn publish_engine_gui_window_with_lifecycle_checks<Refusal>(
+    ensure_public_control_allowed: impl Fn() -> Result<(), Refusal>,
+    publish_window: impl FnOnce() -> Result<(), Refusal>,
+) -> Result<(), Refusal> {
     ensure_public_control_allowed()?;
     publish_window()?;
     ensure_public_control_allowed()
@@ -549,9 +695,9 @@ fn claim_editor_record_for_opened_window(
     instance_id: &str,
     observed: Option<&str>,
     window_label: &str,
-) -> Result<(), String> {
+) -> Result<(), PluginGuiError> {
     if windows.get(instance_id).map(String::as_str) != observed {
-        return Err("Plugin editor state changed while its window was opening".to_string());
+        return Err(PluginGuiError::EditorStateChanged);
     }
 
     windows.insert(instance_id.to_string(), window_label.to_string());
@@ -561,10 +707,10 @@ fn claim_editor_record_for_opened_window(
 /// Publish the plugin window: record the window label BEFORE showing. A close
 /// racing the show path must always find the label recorded, otherwise the
 /// close-requested reset would miss it and leave a stale entry behind.
-fn publish_plugin_gui_window_in_label_order(
-    insert_label: impl FnOnce() -> Result<(), String>,
+fn publish_plugin_gui_window_in_label_order<Refusal>(
+    insert_label: impl FnOnce() -> Result<(), Refusal>,
     show_window: impl FnOnce(),
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     insert_label()?;
     show_window();
     Ok(())
@@ -772,14 +918,14 @@ fn retire_stale_editor_for_reopen(
     stale_label: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<(), PluginGuiError> {
     let teardown = {
         let mut windows = state
             .plugin_windows
             .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            .map_err(PluginGuiError::lock("plugin_windows"))?;
         if !remove_recorded_editor_window(&mut windows, instance_id, stale_label) {
-            return Err("Plugin editor state changed while its window was opening".to_string());
+            return Err(PluginGuiError::EditorStateChanged);
         }
         // Registered under the same lock as the claim, so the report this claim
         // beats finds the teardown it is held behind — never a window the shell
@@ -802,12 +948,12 @@ fn retire_stale_editor_for_reopen(
     Ok(())
 }
 
-fn cleanup_opened_engine_gui_after_rejected_lifecycle(
-    lifecycle_result: Result<(), String>,
+fn cleanup_opened_engine_gui_after_rejected_lifecycle<Refusal>(
+    lifecycle_result: Result<(), Refusal>,
     close_gui: impl FnOnce(),
     remove_window_label: impl FnOnce(),
     destroy_window: impl FnOnce(),
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     if let Err(error) = lifecycle_result {
         close_gui();
         remove_window_label();
@@ -824,15 +970,24 @@ pub async fn close_plugin_gui(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), String> {
+    close_editor_and_window(&instance_id, windows_host, state).map_err(|error| error.to_string())
+}
+
+fn close_editor_and_window(
+    instance_id: &str,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) -> Result<(), PluginGuiError> {
     let closed_command_owned = {
         let mut plugins = state
             .plugins
             .lock()
-            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        if let Some(instance) = plugins.get_mut(&instance_id) {
+            .map_err(PluginGuiError::lock("plugins"))?;
+        if let Some(instance) = plugins.get_mut(instance_id) {
             lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
                 plugin.close_gui()
-            })?;
+            })
+            .map_err(PluginGuiError::from)?;
             true
         } else {
             false
@@ -844,14 +999,16 @@ pub async fn close_plugin_gui(
             let engine_plugins = state
                 .engine_plugins
                 .lock()
-                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-            engine_plugins.contains_key(&instance_id)
+                .map_err(PluginGuiError::lock("engine_plugins"))?;
+            engine_plugins.contains_key(instance_id)
         };
 
         if is_engine_owned {
-            state.with_engine_plugin_control(&instance_id, |plugin| {
-                lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-            })?;
+            state
+                .with_engine_plugin_control(instance_id, |plugin| {
+                    lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
+                })
+                .map_err(PluginGuiError::from)?;
         }
     }
 
@@ -860,8 +1017,8 @@ pub async fn close_plugin_gui(
         let mut windows = state
             .plugin_windows
             .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
-        windows.remove(&instance_id)
+            .map_err(PluginGuiError::lock("plugin_windows"))?;
+        windows.remove(instance_id)
     };
 
     if let Some(label) = window_label {
@@ -883,7 +1040,7 @@ pub async fn close_plugin_gui(
 fn record_plugin_gui_close_outcome(
     report: &mut PluginGuiCloseReport,
     instance_id: &str,
-    close_result: Result<(), String>,
+    close_result: Result<(), PluginGuiError>,
 ) {
     match close_result {
         Ok(()) => report.closed_instance_ids.push(instance_id.to_string()),
@@ -905,7 +1062,7 @@ pub async fn close_all_plugin_guis(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginGuiCloseReport, String> {
-    close_every_plugin_gui(Some(windows_host), state)
+    close_every_plugin_gui(Some(windows_host), state).map_err(|error| error.to_string())
 }
 
 /// Take the command-owned instances, without parking the shell's UI thread on a
@@ -921,19 +1078,19 @@ pub async fn close_all_plugin_guis(
 fn claim_command_owned_instances<'stores>(
     state: &'stores AppState,
     editor_thread: &dyn PluginWindowHost,
-) -> Result<Option<MutexGuard<'stores, HashMap<String, PluginInstanceData>>>, String> {
+) -> Result<Option<MutexGuard<'stores, HashMap<String, PluginInstanceData>>>, PluginGuiError> {
     if !editor_thread.is_ui_thread() {
         return state
             .plugins
             .lock()
             .map(Some)
-            .map_err(|error| format!("Failed to lock plugins: {error}"));
+            .map_err(PluginGuiError::lock("plugins"));
     }
 
     match state.plugins.try_lock() {
         Ok(plugins) => Ok(Some(plugins)),
         Err(TryLockError::WouldBlock) => Ok(None),
-        Err(TryLockError::Poisoned(error)) => Err(format!("Failed to lock plugins: {error}")),
+        Err(TryLockError::Poisoned(error)) => Err(PluginGuiError::lock("plugins")(error)),
     }
 }
 
@@ -950,15 +1107,19 @@ fn close_engine_owned_editor(
     instance_id: &str,
     editor_thread: &dyn PluginWindowHost,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<(), PluginGuiError> {
     let close = |plugin: &mut HostedRuntime| {
         lend_on_ui_thread(editor_thread, plugin, |plugin| plugin.close_gui())
     };
 
     if editor_thread.is_ui_thread() {
-        return state.try_with_engine_plugin_control(instance_id, close);
+        return state
+            .try_with_engine_plugin_control(instance_id, close)
+            .map_err(PluginGuiError::from);
     }
-    state.with_engine_plugin_control(instance_id, close)
+    state
+        .with_engine_plugin_control(instance_id, close)
+        .map_err(PluginGuiError::from)
 }
 
 /// The window host is optional because the exit path may run after the shell's
@@ -969,10 +1130,10 @@ fn close_engine_owned_editor(
 /// and the difference matters: on the UI thread nothing here may wait for a lock
 /// a worker holds, because that worker may be waiting for this thread to run its
 /// editor call.
-pub fn close_every_plugin_gui(
+pub(crate) fn close_every_plugin_gui(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<PluginGuiCloseReport, String> {
+) -> Result<PluginGuiCloseReport, PluginGuiError> {
     let mut report = PluginGuiCloseReport::default();
     // An exit that has already lost its windows has also lost the shell thread
     // they lived on, and `NoWindowHost` says so: the editor calls run here,
@@ -987,7 +1148,7 @@ pub fn close_every_plugin_gui(
         let windows = state
             .plugin_windows
             .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            .map_err(PluginGuiError::lock("plugin_windows"))?;
         windows.instance_ids().map(str::to_string).collect()
     };
 
@@ -1013,7 +1174,7 @@ pub fn close_every_plugin_gui(
         let engine_plugins = state
             .engine_plugins
             .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            .map_err(PluginGuiError::lock("engine_plugins"))?;
         engine_plugins
             .keys()
             .filter(|instance_id| instances_with_editors.contains(*instance_id))
@@ -1032,7 +1193,7 @@ pub fn close_every_plugin_gui(
         let mut windows = state
             .plugin_windows
             .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            .map_err(PluginGuiError::lock("plugin_windows"))?;
         windows.take_labels()
     };
 
@@ -1053,7 +1214,7 @@ pub async fn hide_all_plugin_guis(
     let windows = state
         .plugin_windows
         .lock()
-        .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+        .map_err(|error| PluginGuiError::lock("plugin_windows")(error).to_string())?;
 
     for label in windows.labels() {
         windows_host.hide_window(label);
@@ -1070,7 +1231,7 @@ pub async fn show_all_plugin_guis(
     let windows = state
         .plugin_windows
         .lock()
-        .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+        .map_err(|error| PluginGuiError::lock("plugin_windows")(error).to_string())?;
 
     for label in windows.labels() {
         windows_host.show_window(label);
@@ -1372,6 +1533,7 @@ mod tests {
                 opens: Some((640, 480)),
                 calls: Vec::new(),
                 can_resize,
+                editor_window: None,
             };
 
             let opened = open_editor_reporting_resizability(
@@ -1390,6 +1552,62 @@ mod tests {
                 "the opened editor must report the plugin's own answer"
             );
         }
+    }
+
+    /// A host window that counts the destroys asked of it.
+    #[derive(Default)]
+    struct DestroyCountingWindow {
+        destroys: std::sync::atomic::AtomicUsize,
+    }
+
+    impl daw_plugin_host::EditorWindowHost for DestroyCountingWindow {
+        fn show(&self) {}
+        fn hide(&self) {}
+        fn set_resizable(&self, _resizable: bool) {}
+        fn destroy(&self) {
+            self.destroys
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            work();
+            Ok(())
+        }
+    }
+
+    /// The open is the only place a plugin learns where its show, hide, closed
+    /// and new-hints asks are answered. A plugin opened without that window
+    /// keeps asking into nothing, and every one of those callbacks goes dead.
+    #[test]
+    fn an_opened_editor_is_handed_the_window_its_asks_are_answered_in() {
+        let window = Arc::new(DestroyCountingWindow::default());
+        let mut plugin = RecordingPlugin {
+            opens: Some((640, 480)),
+            calls: Vec::new(),
+            can_resize: false,
+            editor_window: None,
+        };
+
+        open_editor_reporting_resizability(
+            &mut plugin,
+            HostWindow {
+                resize: Arc::new(|_, _| {}),
+                window: Arc::clone(&window) as SharedEditorWindow,
+                scale_factor: 1.0,
+            },
+            std::ptr::null_mut::<std::ffi::c_void>() as usize,
+        )
+        .expect("the recording plugin's editor should open");
+
+        plugin
+            .editor_window
+            .as_ref()
+            .expect("the open must hand the plugin its host window")
+            .destroy();
+        assert_eq!(
+            window.destroys.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the window handed over must be the editor's own host window"
+        );
     }
 
     /// The close half. `close_gui` is what reaches VST3 `removed` and CLAP
@@ -1665,7 +1883,9 @@ mod tests {
     }
 
     impl PluginEditorWindow for DestroyRecordingWindow {
-        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+        fn native_handle_ptr(
+            &self,
+        ) -> Result<*mut std::ffi::c_void, crate::host::plugin_window::PluginWindowError> {
             self.inner.native_handle_ptr()
         }
 
@@ -1748,7 +1968,10 @@ mod tests {
             self.inner.is_ui_thread()
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             self.inner.run_on_ui_thread(task)
         }
     }
@@ -1763,7 +1986,8 @@ mod tests {
             label: &str,
             title: &str,
             instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
             let window = self.inner.create_editor_window(label, title, instance_id)?;
             // The report lands here, mid-create: the record still names the
             // stale label, so this report wins the claim and tears the editor
@@ -2128,7 +2352,7 @@ mod tests {
         let destroyed_window = Cell::new(false);
 
         let result = cleanup_opened_engine_gui_after_rejected_lifecycle(
-            Ok(()),
+            Ok::<(), String>(()),
             || {
                 closed_gui.set(true);
             },
@@ -2269,7 +2493,7 @@ mod tests {
                 .map_err(|error| error.to_string())
         });
         assert_eq!(
-            reopen.err().as_deref(),
+            reopen.err().map(|error| error.to_string()).as_deref(),
             Some("GUI is already open"),
             "the stale report must not have closed the plugin's GUI out from under the editor \
              the user just opened"
@@ -2307,7 +2531,7 @@ mod tests {
         let result = publish_plugin_gui_window_in_label_order(
             || {
                 order.borrow_mut().push("insert");
-                Ok(())
+                Ok::<(), String>(())
             },
             || {
                 order.borrow_mut().push("show");
@@ -2363,7 +2587,7 @@ mod tests {
             "plugin-inst-1:2",
         );
 
-        assert_eq!(claimed, Ok(()));
+        assert_eq!(claimed.map_err(|error| error.to_string()), Ok(()));
         assert_eq!(
             windows.get("inst-1").map(String::as_str),
             Some("plugin-inst-1:2")
@@ -2420,7 +2644,7 @@ mod tests {
         let claimed =
             claim_editor_record_for_opened_window(&mut windows, "inst-1", None, "plugin-inst-1:1");
 
-        assert_eq!(claimed, Ok(()));
+        assert_eq!(claimed.map_err(|error| error.to_string()), Ok(()));
         assert_eq!(
             windows.get("inst-1").map(String::as_str),
             Some("plugin-inst-1:1")
@@ -2437,6 +2661,8 @@ mod tests {
         /// What this plugin answers when asked whether its editor accepts a
         /// host-chosen size.
         can_resize: bool,
+        /// The window the open handed it, where its later asks are answered.
+        editor_window: Option<SharedEditorWindow>,
     }
 
     impl AudioPlugin for RecordingPlugin {
@@ -2464,6 +2690,10 @@ mod tests {
             self.calls.push("window");
         }
 
+        fn set_editor_window(&mut self, window: SharedEditorWindow) {
+            self.editor_window = Some(window);
+        }
+
         fn open_gui(&mut self, _: *mut std::ffi::c_void) -> Result<(u32, u32), PluginError> {
             self.calls.push("open");
             self.opens.ok_or_else(|| {
@@ -2488,6 +2718,7 @@ mod tests {
             opens: None,
             calls: Vec::new(),
             can_resize: false,
+            editor_window: None,
         };
 
         let opened = open_editor_or_release_host_window(
@@ -2508,6 +2739,7 @@ mod tests {
             opens: Some((640, 480)),
             calls: Vec::new(),
             can_resize: false,
+            editor_window: None,
         };
 
         let opened = open_editor_or_release_host_window(
@@ -2550,7 +2782,8 @@ mod tests {
         let closing = Arc::clone(state);
         let (answer, answered) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = answer.send(close_every_plugin_gui(None, &closing));
+            let _ = answer
+                .send(close_every_plugin_gui(None, &closing).map_err(|error| error.to_string()));
         });
         answered
             .recv_timeout(wait)
@@ -2579,7 +2812,7 @@ mod tests {
             let _ = runtime.with_control(std::time::Duration::from_secs(2), |_| {
                 let _ = claimed.send(());
                 let _ = released.recv();
-                Ok(())
+                Ok::<_, String>(())
             });
         });
         was_claimed

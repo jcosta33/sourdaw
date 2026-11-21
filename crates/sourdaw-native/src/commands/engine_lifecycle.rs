@@ -432,8 +432,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err(crate::host::plugin_window::PluginWindowError::NoWindowServer)
         }
 
         fn destroy_window(&self, label: &str) {
@@ -762,7 +763,8 @@ mod tests {
         assert_eq!(
             observed
                 .ensure_public_control_allowed()
-                .expect_err("a retired runtime admits no public control"),
+                .expect_err("a retired runtime admits no public control")
+                .to_string(),
             "Engine-owned plugin instance 'Retire Fixture' has been retired",
             "a runtime left merely unloading reads as an operation still in flight, not as one whose instance is gone"
         );
@@ -1163,7 +1165,7 @@ mod tests {
                         control_released
                             .recv()
                             .expect("the test thread releases this hold");
-                        Ok(())
+                        Ok::<_, String>(())
                     })
                     .expect("the control hold takes the seam it is standing in for")
             });
@@ -1219,7 +1221,8 @@ mod tests {
         assert_eq!(
             observed
                 .ensure_public_control_allowed()
-                .expect_err("a retired runtime admits no public control"),
+                .expect_err("a retired runtime admits no public control")
+                .to_string(),
             "Engine-owned plugin instance 'Retire Fixture' has been retired",
             "the loop still closes the lifecycle, and the withdrawal moving earlier must not leave it merely unloading"
         );

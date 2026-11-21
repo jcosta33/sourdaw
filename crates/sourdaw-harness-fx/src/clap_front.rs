@@ -563,7 +563,7 @@ unsafe extern "C" fn param_count(plugin: *const clap_plugin) -> u32 {
 }
 
 /// The highest `Command` value; `0` issues nothing.
-const COMMAND_MAX: f64 = 4.0;
+const COMMAND_MAX: f64 = 5.0;
 
 unsafe extern "C" fn param_get_info(
     plugin: *const clap_plugin,
