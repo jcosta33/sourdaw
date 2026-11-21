@@ -2160,6 +2160,29 @@ describe('reading a protection only over the words it governs', () => {
         // the low end's own hold verbs
         ["don't mess with the low end", [lowEndUntouched("don't mess with the low end")], []],
         ['without messing with the low end', [lowEndUntouched('without messing with the low end')], []],
+        // after a keep or leave, a joined object and a direction alone ask for a move and state nothing
+        [
+            'Keep the vocal bright and the drums louder',
+            [measured('brightness-held-v1', 'Keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'Keep the vocal bright and the mix wider',
+            [measured('brightness-held-v1', 'Keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['Leave the vocal alone and the drums louder', [], []],
+        // a keep naming the move it prevents bounds that move, so a joined direction stays in its net
+        [
+            'keep the mix from getting louder and the vocal quieter',
+            [measured('loudness-not-raised-v1', 'keep the mix from getting louder', MIX)],
+            [unread('keep the mix from getting louder and the vocal quieter', NET_REASON)],
+        ],
+        [
+            'Keep the bass punchy and the mix quieter',
+            [],
+            [unread('Keep the bass punchy', 'No measurement the application takes shows that “punchy” holds.')],
+        ],
         // the low end's own left state and its "no change" form
         ['leave the low end untouched', [lowEndUntouched('leave the low end untouched')], []],
         ['no changes to the low end', [lowEndUntouched('no changes to the low end')], []],

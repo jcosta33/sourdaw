@@ -40,6 +40,7 @@ import {
 } from './constraintClauseWords';
 import {
     CHANGE_NOUN,
+    DIRECTION,
     FAMILY_IDS,
     LOW_END_HOLDING_VERB,
     type MeasuredConstraintId,
@@ -280,7 +281,8 @@ type QualityPattern = {
  * A kept quality: a catalog term, or "dynamic", which no recipe produces but a crest factor measures.
  * Further terms joined by "and", "but" or commas share the object ("keep the vocal intimate and
  * dynamic"), and are read only when the clause ends after them, so "and warm up the drums" is not one.
- * A later object with its own term continues the keep ("keep the vocal warm and the drums bright").
+ * A later object with its own term continues the keep ("keep the vocal warm and the drums bright"),
+ * while one with a direction asks for a move and continues nothing ("and the mix wider").
  */
 function readQualityPattern(): QualityPattern {
     const catalog = getMixRecipeCatalog();
@@ -307,7 +309,7 @@ function readQualityPattern(): QualityPattern {
         'dgiu'
     );
     const continuation = new RegExp(
-        String.raw`${AND_JOIN}(?<object>${OBJECT_MEMBER})\s+${TERM_LEAD}(?<term>${term})${more}${CLAUSE_END}`,
+        String.raw`${AND_JOIN}(?<object>${OBJECT_MEMBER})\s+${TERM_LEAD}(?!${DIRECTION})(?<term>${term})${more}${CLAUSE_END}`,
         'dyiu'
     );
     const descriptorOf = (candidate: string): string | undefined => {

@@ -6,6 +6,7 @@ import {
     CLAUSE_PUNCTUATION,
     DEGREE_WORD,
     DETERMINER,
+    FROM,
     HARD_BOUNDARY_WORD,
     HOLDING_KEEP,
     LEAVE_VERB,
@@ -47,9 +48,16 @@ const NOT_NEGATED = String.raw`(?<!(?:${NEGATION}|${MODAL_NEGATION})\s+)`;
  * governs no measured word, so it opens nothing.
  */
 const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATED_GOVERNOR}|${HOLDING_KEEP}|${LEAVE_VERB}|${NOT_NEGATED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
+    String.raw`\b(?:${NEGATED_GOVERNOR}|(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_NEGATED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
     'iu'
 );
+/** A keep naming the move it prevents ("keep the mix from getting louder") bounds that move rather than holding. */
+const PREVENTED_MOVE = new RegExp(
+    String.raw`\b${FROM}\s+(?:${CAUSING_VERB}\s+)?(?:${DEGREE_WORD}\s+)?${DIRECTION}`,
+    'iu'
+);
+/** A joined object and a direction alone asks for a move: "keep the vocal bright and the drums louder". */
+const MOVE_REQUEST = new RegExp(String.raw`^\s*${OBJECT_MEMBERS}\s+(?:${DEGREE_WORD}\s+)?${DIRECTION}\s*$`, 'iu');
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
 /** Hard clause boundaries; an "and" or "or" is a boundary whose next clause may share a protection. */
 const BOUNDARY = new RegExp(
@@ -96,25 +104,40 @@ function continuesChain(text: string): boolean {
  * all that stands before it. A measured word stated before an unrelated protection ("brighten the
  * vocal without making it harsh") is the request, never a protected quality.
  */
-function governedStart(text: string): number | null {
+function governedStart(text: string): { governed: number; holds: boolean } | null {
     const protection = PROTECTIVE.exec(text);
     if (protection === null) {
         return null;
     }
     const modalSubject = protection.groups?.modal !== undefined && SUBJECT_ONLY.test(text.slice(0, protection.index));
-    return modalSubject ? 0 : protection.index;
+    const holds = protection.groups?.holding !== undefined && !PREVENTED_MOVE.test(text.slice(protection.index));
+    return { governed: modalSubject ? 0 : protection.index, holds };
 }
 
-/** Where the protection chain starts after a segment, and where the segment's governed words begin. */
-type ChainStep = { chainStart: number | null; governed: number | null };
+/**
+ * Where the protection chain starts after a segment, where the segment's governed words begin, and
+ * whether the chain is a keep or leave holding what it names rather than a negation bounding a move.
+ */
+type ChainStep = { chainStart: number | null; governed: number | null; holds: boolean };
 
-/** A joined segment continuing the chain is governed whole; any other opens a chain only if it protects. */
-function chainStep(segment: Segment, text: string, chainStart: number | null): ChainStep {
-    if (segment.joined && chainStart !== null && continuesChain(text)) {
-        return { chainStart, governed: 0 };
+const NO_CHAIN: ChainStep = { chainStart: null, governed: null, holds: false };
+
+/**
+ * A joined segment continuing the chain is governed whole, except that after a hold an object and a
+ * direction alone ask for a move and end the chain; any other segment opens a chain only if it protects.
+ */
+function chainStep(segment: Segment, text: string, chain: ChainStep): ChainStep {
+    if (segment.joined && chain.chainStart !== null && continuesChain(text)) {
+        if (chain.holds && MOVE_REQUEST.test(text)) {
+            return NO_CHAIN;
+        }
+        return { ...chain, governed: 0 };
     }
-    const governed = governedStart(text);
-    return { chainStart: governed === null ? null : segment.start, governed };
+    const protection = governedStart(text);
+    if (protection === null) {
+        return NO_CHAIN;
+    }
+    return { chainStart: segment.start, ...protection };
 }
 
 function isConsumed(index: number, consumed: readonly ConsumedSpan[]): boolean {
@@ -138,12 +161,11 @@ export function readUnreadConstraintClauses(
     consumed: readonly ConsumedSpan[]
 ): UnsupportedPerceptualConstraint[] {
     const unread: (UnsupportedPerceptualConstraint & { start: number })[] = [];
-    let chainStart: number | null = null;
+    let chain = NO_CHAIN;
     for (const segment of segmentsOf(masked)) {
         const text = masked.slice(segment.start, segment.end);
-        const step = chainStep(segment, text, chainStart);
-        chainStart = step.chainStart;
-        const { governed } = step;
+        chain = chainStep(segment, text, chain);
+        const { chainStart, governed } = chain;
         if (chainStart === null || governed === null) {
             continue;
         }
