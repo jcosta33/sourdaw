@@ -116,6 +116,19 @@ beforeEach(() => {
     });
 });
 
+describe('an answer about a recipe whose compressor states the Auto Makeup switch', () => {
+    it('reads the switch window as its state and never ends a window in an empty unit quote', () => {
+        const read = discoveryRead('recipe', null, 'drums', { descriptors: ['punchy'], presetTerms: [] });
+        const recipeId = read.source.kind === 'recipe' ? read.source.value.candidates[0]?.id : undefined;
+
+        const answer = accepted(compose([{ kind: 'recipe', callId: 'recipe', recipeId: recipeId ?? '' }], [read]));
+
+        expect(recipeId).toBe('drums-punchy');
+        expect(answer.text).toContain('Authored parameter windows: “Auto Makeup” on; “Threshold” -20–-12 “dB”;');
+        expect(answer.text).not.toContain('“”');
+    });
+});
+
 describe('an answer about a factory preset that names no perceptual descriptor', () => {
     it('says the recipe carries no descriptor and never claims it describes one', () => {
         const read = discoveryRead('recipe', VOCAL_ID, null, { descriptors: [], presetTerms: ['slapback'] });

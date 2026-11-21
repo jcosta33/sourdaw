@@ -4,8 +4,10 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
+import { COMPRESSOR_AUTO_MAKEUP_TWIN_NODE } from '../../../models/DeviceParamLaws';
 import { resolveDeviceCurveWriteTargets, resolveDeviceParamTargets } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
+import { applyBuiltinCompressorParams } from '../../devices/dynamics/applyCompressorAutoMakeup';
 import { makeCeilingClipCurve } from '../../devices/dynamics/makeCeilingClipCurve';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 
@@ -190,6 +192,46 @@ describe('builtin device automation units reproduction (#3738)', () => {
         });
 
         expect(makeup.gain.setValueAtTime).toHaveBeenCalledWith(expect.closeTo(dbToGain(6), 5), 0);
+    });
+
+    it('schedules an automated comp-threshold lane on the Auto Makeup twin too when the switch is off', () => {
+        const context = createMockAudioContext();
+        const deviceNode = createOfflineDeviceNode({
+            context: asBaseAudioContext(context),
+            deviceType: 'builtin-compressor',
+        });
+        if (!deviceNode) {
+            throw new Error('Expected builtin-compressor factory');
+        }
+        // The mock's nodes carry a bare context stub; the twin is built from the node's own context.
+        Object.defineProperty(deviceNode.nodes[0], 'context', { value: context });
+        applyBuiltinCompressorParams(deviceNode, { 'comp-auto-makeup': 0 });
+        const comp = deviceNode.nodes[0] as DynamicsCompressorNode;
+        const twin = deviceNode.namedNodes?.[COMPRESSOR_AUTO_MAKEUP_TWIN_NODE] as DynamicsCompressorNode | undefined;
+        if (!twin) {
+            throw new Error('Expected Auto Makeup off to build the twin');
+        }
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:comp-threshold',
+                    minValue: -60,
+                    maxValue: 0,
+                    points: [{ beat: 0, value: -30, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-compressor', deviceNode)],
+            durationSeconds: 5,
+            defaultTempo: 120,
+            changes: [],
+        });
+
+        expect(comp.threshold.setValueAtTime).toHaveBeenCalledWith(-30, 0);
+        expect(twin.threshold.setValueAtTime).toHaveBeenCalledWith(-30, 0);
     });
 
     it('schedules limiter release in seconds and writes the ceiling curve at every automation point', () => {

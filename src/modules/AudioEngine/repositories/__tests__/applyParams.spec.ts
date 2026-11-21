@@ -36,7 +36,9 @@ const mockAppliers = vi.hoisted(() => {
 });
 
 vi.mock('../devices/dynamics/applyEqParams', () => ({ applyEqParams: mockAppliers.eq }));
-vi.mock('../devices/dynamics/applyCompressorParams', () => ({ applyCompressorParams: mockAppliers.compressor }));
+vi.mock('../devices/dynamics/applyCompressorAutoMakeup', () => ({
+    applyBuiltinCompressorParams: mockAppliers.compressor,
+}));
 vi.mock('../devices/dynamics/applySidechainCompressorParams', () => ({
     applySidechainCompressorParams: mockAppliers.sidechainCompressor,
 }));

@@ -17,6 +17,7 @@ import {
 
 import {
     AppActionAdmissionRefusedError,
+    AppActionBlockedError,
     AppActionCommittedError,
     AppActionConflictError,
     AppActionNotDispatchedError,
@@ -477,6 +478,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 storage_transaction.abort();
                 commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 clearSemanticContext();
+                if (execution_result.blocked === true) {
+                    throw new AppActionBlockedError(action.type, refusal);
+                }
                 throw new AppActionConflictError(action.type, refusal);
             }
 
