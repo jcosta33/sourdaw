@@ -15,7 +15,7 @@ use super::MAX_FILE_IPC_BYTES;
 use super::MAX_RENDERER_PATH_BYTES;
 
 #[derive(Debug)]
-pub(crate) enum FileRefusal {
+pub enum FileRefusal {
     /// The path did not canonicalise: it is missing or unreadable.
     NotFoundOrNotAccessible,
     /// The path resolved to something that is not a directory.

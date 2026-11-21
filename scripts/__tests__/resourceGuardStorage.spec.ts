@@ -5808,6 +5808,7 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             const storagePath = dirname(tempDirectory);
             expect(result?.code).toBe(status);
             expect(result?.reason).toBeUndefined();
+            expect(result?.cleanupUnproved).toBe(true);
             expect(code).toBe(expectedCode);
             expect(existsSync(tempDirectory)).toBe(true);
             expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
@@ -5823,6 +5824,15 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             }
         }
     );
+
+    it('leaves cleanupUnproved unset when the tree exit and storage release are proved', async () => {
+        const root = fixture();
+        const { code, result } = await runCli(root, { args: ['-e', 'process.exitCode=0'] });
+        expect(code).toBe(0);
+        expect(result?.reason).toBeUndefined();
+        expect(result?.retainedStorage).toBeUndefined();
+        expect(result?.cleanupUnproved).toBeUndefined();
+    });
 
     // Deleted after the guard's first host sample, which would otherwise report the missing volume as a monitor failure.
     const deleteOwnTemp = "setTimeout(()=>require('node:fs').rmSync(require('node:os').tmpdir(),{recursive:true}),600)";

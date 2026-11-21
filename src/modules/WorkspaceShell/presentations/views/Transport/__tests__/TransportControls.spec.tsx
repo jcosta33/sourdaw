@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
     setMetronomeVolume: vi.fn(),
     toggleRecording: vi.fn(),
     toggleCountIn: vi.fn(),
-    setCountInBars: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -30,8 +29,12 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setMetronomeVolume: mocks.setMetronomeVolume,
     toggleRecording: mocks.toggleRecording,
     toggleCountIn: mocks.toggleCountIn,
-    setCountInBars: mocks.setCountInBars,
 }));
+
+const countInBarsAction = (bars: number): { type: 'setCountInBars'; payload: { bars: number } } => ({
+    type: 'setCountInBars',
+    payload: { bars },
+});
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
@@ -218,7 +221,10 @@ describe('TransportControls', () => {
             });
             expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
             expect(mocks.setMetronomeVolume).toHaveBeenCalled();
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'setCountInBars',
+                payload: { bars: 4 },
+            });
         });
 
         it('does not render the overdub button when showOverdub is false', () => {
@@ -266,31 +272,31 @@ describe('TransportControls', () => {
         it('cycles 1 -> 2 when countInBars is 1', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={1} />);
             fireEvent.click(screen.getByLabelText('Count-in bars: 1. Click to cycle.'));
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(2);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(countInBarsAction(2));
         });
 
         it('cycles 2 -> 4 when countInBars is 2', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={2} />);
             fireEvent.click(screen.getByLabelText('Count-in bars: 2. Click to cycle.'));
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(countInBarsAction(4));
         });
 
         it('cycles 4 -> 1 when countInBars is 4', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={4} />);
             fireEvent.click(screen.getByLabelText('Count-in bars: 4. Click to cycle.'));
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(countInBarsAction(1));
         });
 
         it('cycles 0 -> 1 (default branch) when countInBars is 0', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={0} />);
             fireEvent.click(screen.getByLabelText('Count-in bars: 0. Click to cycle.'));
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(countInBarsAction(1));
         });
 
         it('cycles 3 -> 4 (>= 2 but < 4 branch) when countInBars is 3', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={3} />);
             fireEvent.click(screen.getByLabelText('Count-in bars: 3. Click to cycle.'));
-            expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(countInBarsAction(4));
         });
     });
 });

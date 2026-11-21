@@ -5,7 +5,10 @@
 //! `IEditController` → connect them → `setupProcessing` → `setActive(true)` →
 //! `setProcessing(true)` on the processing thread → `IAudioProcessor::process`.
 //! The processing thread is the audio thread, or an offline instance's render
-//! thread.
+//! thread. Two control-path exceptions, each made under the exclusive access
+//! seam so no processing thread is inside the plugin: a forced stop before a
+//! lifecycle call, and the zero-sample parameter flush of an idle instance,
+//! which enters and leaves the processing state around its one `process`.
 //!
 //! RT-safety: every buffer, parameter queue, bus array and event the processing
 //! thread hands the plugin is allocated while activating — including the
@@ -28,7 +31,9 @@ use crate::vst3_class_id::{same_class_id, ClassIdError};
 use crate::vst3_editor::{
     plugin_offers_an_editor, EditorError, EditorSession, EditorSize, Vst3Editor,
 };
-use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
+use crate::vst3_host::{
+    read_string128, MessageTarget, Vst3HostContext, Vst3HostState, COMPONENT_RESTART_FLAGS,
+};
 use crate::vst3_module::{ModuleError, Vst3Module};
 use crate::vst3_scanner::{category_from_vst3_sub_categories, split_sub_categories};
 use std::cell::Cell;
@@ -43,12 +48,12 @@ use vst3::Steinberg::Vst::{
     IParamValueQueueTrait, IParameterChanges, IParameterChangesTrait, MediaTypes_, NoteOffEvent,
     NoteOnEvent, ParamID, ParamValue, ParameterInfo, ParameterInfo_::ParameterFlags_,
     ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
-    SymbolicSampleSizes_,
+    RestartFlags_, SymbolicSampleSizes_,
 };
 use vst3::Steinberg::{
-    int32, int64, kInvalidArgument, kOutOfMemory, kResultFalse, kResultOk, tresult, IBStream,
-    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory, IPluginFactory2,
-    IPluginFactory2Trait, IPluginFactoryTrait, TUID,
+    int32, int64, kInvalidArgument, kNotImplemented, kOutOfMemory, kResultFalse, kResultOk,
+    tresult, IBStream, IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait,
+    IPluginFactory, IPluginFactory2, IPluginFactory2Trait, IPluginFactoryTrait, TUID,
 };
 use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 
@@ -68,6 +73,10 @@ const MAX_PARAMETER_QUEUES: usize = 64;
 /// makes before it stops chasing a plugin that re-flags from inside its own
 /// activation. Mirrors the CLAP backend's cap for the same reason.
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
+/// How many reactivation cycles one `apply_component_restart` runs before it
+/// stops chasing a plugin that asks for another from inside the last one.
+/// Bounded for the reason `MAX_LATENCY_REQUERY_PASSES` is.
+const MAX_COMPONENT_RESTART_PASSES: u32 = 4;
 /// Consecutive blocks in which a refused `setProcessing(1)` is retried before
 /// the slot settles on passing audio through.
 ///
@@ -1259,6 +1268,13 @@ pub struct Vst3Wrapper {
     /// The restart flags this host does not act on, as last reported. Held so a
     /// flag word that stops growing stops printing.
     reported_restart_flags: int32,
+    /// Why the instance is out of service after a component restart left it
+    /// with buses this host cannot route. While set the instance is inactive
+    /// and every block is handled as for a failed slot, never processed with
+    /// the geometry it had before the restart.
+    layout_refusal: Option<String>,
+    /// Whether that refusal has already been reported.
+    layout_refusal_reported: bool,
     /// Whether the factory calls this class an instrument. Copied off the
     /// instance at activation so the audio thread reads a plain bool.
     is_instrument: bool,
@@ -1351,31 +1367,52 @@ impl Vst3Wrapper {
             processing_start_refused: false,
             process_refusal_reported: false,
             reported_restart_flags: 0,
+            layout_refusal: None,
+            layout_refusal_reported: false,
         };
         wrapper.activate()?;
         Ok(wrapper)
     }
 
-    /// Activate buses, declare the processing setup, and make the component
-    /// active. Entering the processing state is left to the processing thread —
-    /// the audio thread, or an offline instance's render thread — which is the
-    /// only thread VST3 allows `setProcessing` from.
+    /// Find the component's audio processor and bring the component up on it.
+    /// Entering the processing state is left to the processing thread — the
+    /// audio thread, or an offline instance's render thread — which is the only
+    /// thread that enters it once blocks flow.
     fn activate(&mut self) -> Result<(), Vst3Error> {
-        let component = self.instance.component();
-        let Some(processor) = component.cast::<IAudioProcessor>() else {
+        let Some(processor) = self.instance.component().cast::<IAudioProcessor>() else {
             return Err(Vst3Error::NoAudioProcessor {
                 name: self.instance.name().to_string(),
             });
         };
+        // SAFETY: `activate` runs once, from `activated`, on an instance that
+        // `Vst3Instance::create` initialised and never activated; `processor` is
+        // that component's own audio processor.
+        unsafe { self.configure_and_activate(&processor) }?;
+        self.processor = Some(processor);
+        Ok(())
+    }
+
+    /// Negotiate buses, activate them, declare the processing setup, and make
+    /// the component active — the whole of what an inactive component needs
+    /// before blocks, and the order VST3 defines it in.
+    ///
+    /// # Safety
+    /// The component must be initialised and inactive, `processor` must be its
+    /// own audio processor, and the caller must hold exclusive access, so no
+    /// `process` runs concurrently.
+    unsafe fn configure_and_activate(
+        &mut self,
+        processor: &ComPtr<IAudioProcessor>,
+    ) -> Result<(), Vst3Error> {
+        let component = self.instance.component();
 
         // Before activation, because `setBusArrangements` is only defined
         // while the component is inactive — and after it, every block's
         // shape is fixed by what the plugin agreed to here.
-        // SAFETY: `activate` runs once, from `activated`, on an instance that
-        // `Vst3Instance::create` initialised and never activated; `processor` is
-        // that component's own audio processor.
+        // SAFETY: this fn's contract makes the component initialised and
+        // inactive and `processor` its own audio processor.
         let bus_layout =
-            unsafe { negotiate_bus_layout(component, &processor, self.instance.name()) }?;
+            unsafe { negotiate_bus_layout(component, processor, self.instance.name()) }?;
 
         // SAFETY: the component is initialised and still inactive, the only
         // state in which bus activation is defined.
@@ -1396,21 +1433,21 @@ impl Vst3Wrapper {
             });
         }
 
-        // SAFETY: the component is initialised, set up and inactive; this runs on
-        // the control path during construction, never concurrently with `process`.
+        // SAFETY: the component is initialised, set up and inactive; the caller's
+        // exclusive access keeps any `process` from running concurrently.
         if unsafe { component.setActive(1) } != kResultOk {
             return Err(Vst3Error::ActivateRefused {
                 name: self.instance.name().to_string(),
             });
         }
 
-        // Every geometry-dependent allocation happens here, once: a block reads
-        // the bus count out of these arrays rather than out of the plugin, and
-        // growing them would be an allocation on the audio thread.
+        // Every geometry-dependent allocation happens here, on the control
+        // path: a block reads the bus count out of these arrays rather than out
+        // of the plugin, and growing them would be an allocation on the audio
+        // thread.
         self.input_bus_buffers = empty_bus_buffers(bus_layout.inputs.len());
         self.output_bus_buffers = empty_bus_buffers(bus_layout.outputs.len());
         self.bus_layout = bus_layout;
-        self.processor = Some(processor);
         self.activated = true;
         self.processing_start_refusals = 0;
         // The first audio block enters the processing state, on the thread VST3
@@ -1598,6 +1635,10 @@ impl Vst3Wrapper {
             );
         }
 
+        if let Some(report) = self.take_layout_refusal_report() {
+            eprintln!("{report}");
+        }
+
         let unhandled = self.instance.host.state.unhandled_restart_flags();
         if unhandled != self.reported_restart_flags {
             self.reported_restart_flags = unhandled;
@@ -1645,6 +1686,11 @@ impl Vst3Wrapper {
         let Some(processor) = self.processor.clone() else {
             return Ok(0);
         };
+        // An instance a component restart took out of service holds a layout
+        // the host refused; only a restart that routes can bring it back.
+        if self.layout_refusal.is_some() {
+            return Ok(0);
+        }
 
         if self.activated {
             self.force_stop_processing_off_audio_thread();
@@ -1677,6 +1723,201 @@ impl Vst3Wrapper {
         self.activated = true;
         self.processing.request_start();
         Ok(self.latency_samples())
+    }
+
+    /// Run the reactivation cycles the plugin asked for with `kIoChanged` or
+    /// `kReloadComponent`, and report whether any ran.
+    ///
+    /// Each cycle stops processing, deactivates, re-reads and re-negotiates the
+    /// buses, sets processing up again and reactivates — the deactivate,
+    /// re-read, reactivate answer VST3 asks of a host for both flags. A reload
+    /// also asks for the parameter list to be read again, because the plugin
+    /// may have changed what it publishes.
+    ///
+    /// **Control path, on the host's UI thread**: every call in the cycle is
+    /// one VST3 binds to that thread. The caller holds the exclusive claim, so
+    /// the audio thread cannot run a block concurrently, which is also why the
+    /// stop uses the counted off-audio-thread route.
+    ///
+    /// A layout the host cannot route leaves the instance inactive and its
+    /// slot out of service, with the reason latched for the control path to
+    /// report; the cycle answers with that reason.
+    pub fn apply_component_restart(&mut self) -> Result<bool, Vst3Error> {
+        let mut restarted = false;
+        for _ in 0..MAX_COMPONENT_RESTART_PASSES {
+            let flags = self.instance.host.state.take_component_restart();
+            if flags & COMPONENT_RESTART_FLAGS == 0 {
+                return Ok(restarted);
+            }
+            self.restart_component(flags)?;
+            restarted = true;
+        }
+        if self.instance.host.state.take_component_restart() != 0 {
+            eprintln!(
+                "[VST3] '{}' asked for another component restart on all {} passes; \
+                 keeping the layout the last pass agreed and dropping the request",
+                self.instance.name(),
+                MAX_COMPONENT_RESTART_PASSES
+            );
+        }
+        Ok(restarted)
+    }
+
+    /// One deactivate/re-read/reactivate cycle. See
+    /// [`Self::apply_component_restart`].
+    fn restart_component(&mut self, flags: int32) -> Result<(), Vst3Error> {
+        let Some(processor) = self.processor.clone() else {
+            return Ok(());
+        };
+
+        if self.activated {
+            self.force_stop_processing_off_audio_thread();
+            // SAFETY: exclusive control access (`&mut self`, caller's claim);
+            // the component is live and active, and processing was stopped above.
+            unsafe { self.instance.component().setActive(0) };
+            self.activated = false;
+        }
+
+        // SAFETY: the component is initialised and was just made inactive (or
+        // already was), `processor` is its own, and `&mut self` is the caller's
+        // exclusive claim.
+        if let Err(reason) = unsafe { self.configure_and_activate(&processor) } {
+            self.layout_refusal = Some(reason.to_string());
+            self.layout_refusal_reported = false;
+            // The control path's failure reporter is what prints it.
+            signal_pending_process_refusal();
+            return Err(reason);
+        }
+        self.layout_refusal = None;
+
+        if flags & RestartFlags_::kReloadComponent != 0 {
+            self.instance.host.state.request_parameters_rescan();
+        }
+        Ok(())
+    }
+
+    /// Answer a block the plugin must not be handed, the way ADR 0021 DG-003
+    /// decides for a failed slot: only an effect with a valid dry input passes
+    /// it, because muting a crashed EQ takes the track with it.
+    ///
+    /// Two shapes have no valid dry input to pass. An instrument, which the
+    /// factory's sub-categories name — a synth fed routed audio would otherwise
+    /// emit that signal at unity out of a voice slot. And any plugin declaring
+    /// no main input bus, a generator such as a test-tone, whose own bus
+    /// declaration says it consumes no audio and so has none to hand back.
+    ///
+    /// The CLAP backend splits on the same two, for the same reasons.
+    fn pass_failed_block(&self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
+        if self.fails_silent() {
+            Self::silence_outputs(outputs, num_samples);
+        } else {
+            Self::pass_through(inputs, outputs, num_samples);
+        }
+    }
+
+    /// Whether a failed slot is silenced rather than passed dry: see
+    /// [`Self::pass_failed_block`].
+    fn fails_silent(&self) -> bool {
+        self.is_instrument || self.bus_layout.main_input_channels() == 0
+    }
+
+    /// The line saying this slot is out of service for a layout the host
+    /// refused, the first time it is asked after the refusal; `None` once it
+    /// has been taken, or while no refusal stands. **Control path only.**
+    pub fn take_layout_refusal_report(&mut self) -> Option<String> {
+        if self.layout_refusal_reported {
+            return None;
+        }
+        let reason = self.layout_refusal.as_ref()?;
+        let handling = if self.fails_silent() {
+            "its blocks are silenced"
+        } else {
+            "its blocks pass through unprocessed"
+        };
+        let report = format!("{reason}; {handling}");
+        self.layout_refusal_reported = true;
+        Some(report)
+    }
+
+    /// Hand the plugin the parameter writes waiting for it, with no audio, while
+    /// nothing else will. **Control path only.**
+    ///
+    /// A processor learns a host write only from a block's
+    /// `inputParameterChanges`, and an instance no engine is running receives
+    /// no block — so a plugin whose controller defers to its processor (one
+    /// that refuses `setParamNormalized` and reads its values back from the
+    /// processor) would hold the old value, report it, and save it, for as long
+    /// as the instance stays out of the engine. VST3 defines the host's answer:
+    /// a `process` call with no audio buses, which exists to flush parameters.
+    ///
+    /// Only while the instance is active and not in the processing state, which
+    /// with the caller's exclusive access means no processing thread is inside
+    /// or about to enter the plugin. The writes are read without being taken
+    /// and cleared only once the plugin has processed them, so a plugin that
+    /// refuses the flush keeps them queued for its first real block, and an
+    /// editor edit made meanwhile is never replaced by the older value.
+    fn flush_parameters_while_idle(&mut self) {
+        if !self.activated || self.processing.is_processing() {
+            return;
+        }
+        let Some(processor) = self.processor.clone() else {
+            return;
+        };
+
+        self.parameter_changes.reset();
+        let peeked = self
+            .instance
+            .host
+            .state
+            .peek_parameter_edits(self.gesture_scratch.as_mut_slice());
+        if peeked == 0 {
+            return;
+        }
+        for update in &self.gesture_scratch[..peeked] {
+            self.parameter_changes.stage(update.param_id, update.value);
+        }
+
+        // SAFETY: exclusive control access, the claim every control-path
+        // lifecycle call is made under; the component is active and not
+        // processing, so no processing thread is inside the plugin.
+        if !entered_processing(unsafe { processor.setProcessing(1) }) {
+            self.parameter_changes.reset();
+            return;
+        }
+
+        let mut data = flush_process_data(
+            self.process_mode,
+            borrowed_ptr::<_, IParameterChanges>(&self.parameter_changes),
+        );
+        // SAFETY: exclusive control access inside the processing state just
+        // entered; `data` names no audio bus, and its parameter list is this
+        // wrapper's own, live for the call.
+        let flushed = unsafe { processor.process(&mut data) } == kResultOk;
+        // SAFETY: as for the `setProcessing(1)` above.
+        unsafe { processor.setProcessing(0) };
+
+        if flushed {
+            self.instance
+                .host
+                .state
+                .settle_parameter_edits(&self.gesture_scratch[..peeked]);
+        }
+        self.parameter_changes.reset();
+    }
+
+    /// Queue the engine's writes for a block the plugin is not handed, so they
+    /// land on the first block that reaches the processor. They go in as host
+    /// writes, which take precedence over a gesture for the same parameter
+    /// exactly as they would have inside the block.
+    ///
+    /// RT-safe: the queue coalesces into preallocated slots without a lock.
+    fn hold_host_parameter_updates(&self, parameter_updates: &[HostParameterUpdate]) {
+        for update in parameter_updates {
+            self.instance
+                .host
+                .state
+                .queue_host_parameter_write(update.param_id, update.value);
+        }
     }
 
     /// Write silence over the engine's bus, for a block whose output the plugin
@@ -1739,9 +1980,25 @@ impl Vst3Wrapper {
     ///
     /// RT-safe: no allocation, no lock, no I/O. Everything it hands the plugin
     /// was allocated in `from_factory` and is refilled in place.
-    fn process_block(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        if !self.activated {
-            Self::pass_through(inputs, outputs, num_samples);
+    ///
+    /// The waiting parameter writes are taken only once the block is known to
+    /// reach the plugin: a block it is not handed leaves the editor's gestures
+    /// queued and queues the engine's writes behind them, so nothing is lost
+    /// and nothing older is put back over a newer edit.
+    fn process_block(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        parameter_updates: &[HostParameterUpdate],
+    ) {
+        if self.layout_refusal.is_some() || !self.activated {
+            self.hold_host_parameter_updates(parameter_updates);
+            if self.layout_refusal.is_some() {
+                self.pass_failed_block(inputs, outputs, num_samples);
+            } else {
+                Self::pass_through(inputs, outputs, num_samples);
+            }
             return;
         }
 
@@ -1753,9 +2010,13 @@ impl Vst3Wrapper {
             if self.processing.wants_processing() {
                 self.processing_start_refused = true;
             }
+            self.hold_host_parameter_updates(parameter_updates);
             Self::pass_through(inputs, outputs, num_samples);
             return;
         }
+
+        // An active instance always holds its processor: activation needs it.
+        self.stage_parameter_updates(parameter_updates);
 
         // Borrowed, not cloned: cloning would put an `AddRef`/`Release` pair —
         // vendor code, and an atomic each — on every block. Bound once here so
@@ -1770,14 +2031,7 @@ impl Vst3Wrapper {
         let fed_channels = self.bus_layout.main_input_channels().min(CHANNELS);
         let taken_channels = self.bus_layout.main_output_channels().min(CHANNELS);
 
-        for channel in 0..CHANNELS {
-            let source = inputs.get(channel).filter(|_| channel < fed_channels);
-            let len = source.map_or(0, |source| source.len().min(samples));
-            if let Some(source) = source {
-                self.input_scratch[channel][..len].copy_from_slice(&source[..len]);
-            }
-            self.input_scratch[channel][len..samples].fill(0.0);
-        }
+        fill_input_scratch(&mut self.input_scratch, inputs, fed_channels, samples);
         self.output_scratch[0][..samples].fill(0.0);
         self.output_scratch[1][..samples].fill(0.0);
 
@@ -1853,23 +2107,8 @@ impl Vst3Wrapper {
 
         if refused {
             // The output scratch holds nothing the plugin stands behind, so it
-            // never reaches the bus. What does is what ADR 0021 DG-003 decides
-            // for a failed slot: only an effect with a valid dry input passes
-            // it, because muting a crashed EQ takes the track with it.
-            //
-            // Two shapes have no valid dry input to pass. An instrument, which
-            // the factory's sub-categories name — a synth fed routed audio would
-            // otherwise emit that signal at unity out of a voice slot. And any
-            // plugin declaring no main input bus, a generator such as a
-            // test-tone, whose own bus declaration says it consumes no audio and
-            // so has none to hand back.
-            //
-            // The CLAP backend splits on the same two, for the same reasons.
-            if self.is_instrument || self.bus_layout.main_input_channels() == 0 {
-                Self::silence_outputs(outputs, num_samples);
-            } else {
-                Self::pass_through(inputs, outputs, num_samples);
-            }
+            // never reaches the bus.
+            self.pass_failed_block(inputs, outputs, num_samples);
             self.latch_process_refusal();
             return;
         }
@@ -1917,9 +2156,8 @@ impl Drop for Vst3Wrapper {
 
 impl AudioPlugin for Vst3Wrapper {
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        self.stage_parameter_updates(&[]);
         self.stage_midi(&[]);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, &[]);
     }
 
     /// Write a parameter the way VST3 requires a host to: the controller is told
@@ -1940,6 +2178,7 @@ impl AudioPlugin for Vst3Wrapper {
             .host
             .state
             .queue_host_parameter_write(param_id, clamped);
+        self.flush_parameters_while_idle();
     }
 
     /// The controller's parameter list, and the control-path visit the rest of
@@ -2098,6 +2337,10 @@ impl AudioPlugin for Vst3Wrapper {
         self.instance.host.state.take_state_dirty()
     }
 
+    fn take_parameters_rescan(&mut self) -> bool {
+        self.instance.host.state.take_parameters_rescan()
+    }
+
     fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
         Some(Vst3Wrapper::parameter_event_queue(self))
     }
@@ -2112,8 +2355,9 @@ impl HostedPluginRuntime for Vst3Wrapper {
         Arc::clone(&self.processing)
     }
 
-    /// **Audio thread only** — the caller's thread affinity is what makes
-    /// `setProcessing` legal.
+    /// **Audio thread only.** The processing thread is where the engine's
+    /// intent to start or stop lands; the control path enters the processing
+    /// state only around an idle flush (see the module note).
     ///
     /// A plugin that keeps refusing to start is asked a bounded number of times
     /// and then left alone. Retrying on every block spends an unbounded number of
@@ -2142,7 +2386,7 @@ impl HostedPluginRuntime for Vst3Wrapper {
         }
 
         // SAFETY: the processor is live and the component is active.
-        if unsafe { processor.setProcessing(1) } == kResultOk {
+        if entered_processing(unsafe { processor.setProcessing(1) }) {
             self.processing.mark_started();
             self.processing_start_refusals = 0;
             return;
@@ -2180,9 +2424,8 @@ impl HostedPluginRuntime for Vst3Wrapper {
         num_samples: usize,
         parameter_updates: &[HostParameterUpdate],
     ) {
-        self.stage_parameter_updates(parameter_updates);
         self.stage_midi(&[]);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, parameter_updates);
     }
 
     fn process_with_midi_and_parameters(
@@ -2193,9 +2436,8 @@ impl HostedPluginRuntime for Vst3Wrapper {
         midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
-        self.stage_parameter_updates(parameter_updates);
         self.stage_midi(midi_events);
-        self.process_block(inputs, outputs, num_samples);
+        self.process_block(inputs, outputs, num_samples, parameter_updates);
     }
 
     fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
@@ -2260,6 +2502,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
         unsafe { processor.getTailSamples() }
     }
 
+    fn apply_component_restart(&mut self) -> Result<bool, PluginError> {
+        Ok(Vst3Wrapper::apply_component_restart(self)?)
+    }
+
     fn report_plugin_observations(&mut self) {
         Vst3Wrapper::report_plugin_observations(self)
     }
@@ -2268,8 +2514,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
         self.process_refused
     }
 
+    /// A slot out of service on a refused layout passes its blocks through
+    /// unprocessed exactly as a refused start does.
     fn has_passed_a_block_unprocessed(&self) -> bool {
-        self.processing_start_refused
+        self.processing_start_refused || self.layout_refusal.is_some()
     }
 }
 
@@ -2462,6 +2710,78 @@ unsafe fn activate_first_event_bus(component: &ComPtr<IComponent>) {
     // SAFETY: the component is initialised and inactive (this fn's contract), as
     // `activateBus` requires, and bus zero exists per the count just read.
     unsafe { component.activateBus(media, direction, 0, 1) };
+}
+
+/// Whether a `setProcessing(true)` answer means the plugin is processing.
+///
+/// `kNotImplemented` is the SDK's own default — `AudioEffect::setProcessing`
+/// answers it — so a plugin that never overrode the call is telling the host it
+/// has nothing to do on the transition, not refusing it. Reading it as a
+/// refusal leaves every such plugin passing audio through unprocessed.
+fn entered_processing(result: tresult) -> bool {
+    result == kResultOk || result == kNotImplemented
+}
+
+/// The `ProcessData` of a parameter flush: no audio buses, no events, and the
+/// one parameter list. VST3 defines a `process` call with `numInputs` and
+/// `numOutputs` zeroed as the host's way to deliver parameter changes without
+/// audio.
+fn flush_process_data(process_mode: int32, parameters: *mut IParameterChanges) -> ProcessData {
+    ProcessData {
+        processMode: process_mode,
+        symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
+        numSamples: 0,
+        numInputs: 0,
+        numOutputs: 0,
+        inputs: ptr::null_mut(),
+        outputs: ptr::null_mut(),
+        inputParameterChanges: parameters,
+        outputParameterChanges: ptr::null_mut(),
+        inputEvents: ptr::null_mut(),
+        outputEvents: ptr::null_mut(),
+        processContext: ptr::null_mut(),
+    }
+}
+
+/// Copy the engine's channels into the main input bus's scratch for one block.
+///
+/// A main input narrower than the engine's pair hears the pair's average, which
+/// is the stereo-to-mono downmix the Web Audio channel rules state for a mono
+/// destination (`0.5 * (L + R)`) and what a mono-input plugin on a stereo
+/// channel hears in an established DAW. Feeding it channel 0 alone would leave
+/// anything panned right unheard. The average keeps a centred source at unity,
+/// where an equal-power sum would raise it by 3 dB. The narrower output side
+/// fans the other way (`process_block`), so a mono plugin on a stereo slot
+/// takes the middle and returns to it.
+///
+/// RT-safe: plain loops over preallocated scratch.
+fn fill_input_scratch(
+    scratch: &mut [[f32; MAX_BUFFER]; CHANNELS],
+    inputs: &[&[f32]],
+    fed_channels: usize,
+    samples: usize,
+) {
+    if let ([left, right, ..], 1) = (inputs, fed_channels) {
+        let len = left.len().min(right.len()).min(samples);
+        let downmix = scratch[0][..len]
+            .iter_mut()
+            .zip(left[..len].iter().zip(&right[..len]));
+        for (sample, (left, right)) in downmix {
+            *sample = 0.5 * (left + right);
+        }
+        scratch[0][len..samples].fill(0.0);
+        scratch[1][..samples].fill(0.0);
+        return;
+    }
+
+    for (channel, destination) in scratch.iter_mut().enumerate() {
+        let source = inputs.get(channel).filter(|_| channel < fed_channels);
+        let len = source.map_or(0, |source| source.len().min(samples));
+        if let Some(source) = source {
+            destination[..len].copy_from_slice(&source[..len]);
+        }
+        destination[len..samples].fill(0.0);
+    }
 }
 
 /// One zeroed `AudioBusBuffers` per declared bus, allocated at activation so the

@@ -15,7 +15,8 @@ use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
 #[cfg(any(feature = "napi-addon", test))]
 use refusals::ExportFileError;
-pub(crate) use refusals::{AtomicWriteError, FileRefusal, WavWriteError};
+pub use refusals::FileRefusal;
+pub(crate) use refusals::{AtomicWriteError, WavWriteError};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::Write;

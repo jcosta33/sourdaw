@@ -32,7 +32,9 @@ use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
 use daw_engine::midi::note_store::MidiNoteStore;
 use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
-use daw_engine::{CaptureCompletionService, CaptureServiceProgress, EngineHandle, GraphBatchError};
+use daw_engine::{
+    CaptureCompletionService, CaptureServiceProgress, CommandError, EngineHandle, GraphBatchError,
+};
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -190,7 +192,7 @@ impl CrumbsInstanceData {
     /// Attached, that is the command ring. Dormant, it is the parked-write
     /// table: the engine reads this state on the slot's first pass, so a
     /// write made before play lands exactly as one made after it.
-    fn send(&mut self, command: CrumbsCommand) -> Result<(), String> {
+    fn send(&mut self, command: CrumbsCommand) -> Result<(), CrumbsRefusal> {
         let mode = match &command {
             CrumbsCommand::SetMode(mode) => Some(*mode),
             _ => None,
@@ -199,7 +201,7 @@ impl CrumbsInstanceData {
             CrumbsEngineSlot::Attached { ends, .. } => ends
                 .command_tx
                 .push(command)
-                .map_err(|_| "Command queue full".to_string())?,
+                .map_err(|_| CrumbsRefusal::CommandQueueFull)?,
             CrumbsEngineSlot::Dormant(writes) => writes.record(command)?,
         }
         if let Some(mode) = mode {
@@ -217,7 +219,7 @@ impl DormantCrumbsWrites {
     /// both silently and both while the panel reports the gesture as taken,
     /// so those refuse where the panel can report them. Anything not parked
     /// here is refused for that reason.
-    fn record(&mut self, command: CrumbsCommand) -> Result<(), String> {
+    fn record(&mut self, command: CrumbsCommand) -> Result<(), CrumbsRefusal> {
         match command {
             CrumbsCommand::SetParam { param, value } => {
                 match self.params.iter_mut().find(|(held, _)| *held == param) {
@@ -238,7 +240,7 @@ impl DormantCrumbsWrites {
             // instance holds and already carries the data; the engine's pool
             // is filled from it at attach.
             CrumbsCommand::AddSample { .. } => Ok(()),
-            _ => Err("Native engine not running".to_string()),
+            _ => Err(CrumbsRefusal::EngineNotRunning),
         }
     }
 }
@@ -458,11 +460,9 @@ pub struct LoopPointDetectionResult {
 /// ceiling.
 fn ensure_crumbs_capture_headroom(
     instances: &HashMap<String, CrumbsInstanceData>,
-) -> Result<(), String> {
+) -> Result<(), CrumbsRefusal> {
     if instances.len() >= CRUMBS_CAPTURE_RESERVE {
-        return Err(format!(
-            "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
-        ));
+        return Err(CrumbsRefusal::CaptureHeadroomExhausted);
     }
     Ok(())
 }
@@ -477,7 +477,7 @@ fn register_crumbs_slot(
     engine_handle: &mut EngineHandle,
     metering: &Arc<CrumbsMetering>,
     slot_ends: CrumbsSlotEnds,
-) -> Result<usize, String> {
+) -> Result<usize, CrumbsRefusal> {
     // A reserved id is an opaque handle, never a dense index, so a refused
     // batch below simply leaves this one unused.
     let id = engine_handle.reserve_plugin_id();
@@ -512,7 +512,7 @@ fn register_crumbs_slot(
             GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
         ])
         .map_err(|error| match error {
-            GraphBatchError::Refused(reason) => reason.to_string(),
+            GraphBatchError::Refused(reason) => CrumbsRefusal::SlotRefused(reason),
             // Unreachable by construction, and deliberately not unwound:
             // the only route to the audio thread is the ring that just
             // failed, so a removal command would have nowhere to go.
@@ -520,9 +520,11 @@ fn register_crumbs_slot(
                 pushed,
                 total,
                 error,
-            } => format!(
-                "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
-            ),
+            } => CrumbsRefusal::SlotPublishedInPart {
+                pushed,
+                total,
+                error,
+            },
         })?;
 
     registry.record_fenced_batch();
@@ -604,14 +606,14 @@ pub fn attach_dormant_crumbs(
     state: &CrumbsState,
     registry: &mut GraphRegistry,
     engine: &Mutex<Option<EngineHandle>>,
-) -> Result<CrumbsAttachReport, String> {
+) -> Result<CrumbsAttachReport, CrumbsRefusal> {
     let mut instances = state
         .instances
         .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+        .map_err(|err| CrumbsRefusal::lock_poisoned("crumbs state", &err))?;
     let mut engine_guard = engine
         .lock()
-        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+        .map_err(|e| CrumbsRefusal::lock_poisoned("engine", &e))?;
     let Some(engine_handle) = engine_guard.as_mut() else {
         return Ok(CrumbsAttachReport::default());
     };
@@ -653,7 +655,7 @@ pub fn attach_dormant_crumbs(
 #[derive(Debug, Default)]
 pub struct CrumbsAttachReport {
     pub attached: Vec<String>,
-    pub refusals: Vec<(String, String)>,
+    pub refusals: Vec<(String, CrumbsRefusal)>,
 }
 
 /// Every instance holding a slot on the live engine, as the graph mapper reads
@@ -870,24 +872,78 @@ pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bo
         .is_some_and(|instance| matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }))
 }
 
-/// A refused Crumbs create. `syncCrumbsNativeInstances.ts` matches the
-/// `already exists` text to treat a duplicate create as success (ADR 0059).
+/// A refused Crumbs operation below the napi edge, which converts it with
+/// `to_string()`. `syncCrumbsNativeInstances.ts` matches the `already exists`
+/// text to treat a duplicate create as success (ADR 0059). None of these is
+/// built on the audio callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CrumbsCreateRefusal {
-    AlreadyExists { instance_id: String },
+pub enum CrumbsRefusal {
+    AlreadyExists {
+        instance_id: String,
+    },
+    /// The slot's command ring had no room for the write.
+    CommandQueueFull,
+    /// A dormant instance was asked for a gesture only a running audio thread
+    /// can answer.
+    EngineNotRunning,
+    /// The session already holds `CRUMBS_CAPTURE_RESERVE` live instances.
+    CaptureHeadroomExhausted,
+    /// The engine refused the slot's registration batch whole.
+    SlotRefused(CommandError),
+    /// The registration batch was pushed in part.
+    SlotPublishedInPart {
+        pushed: usize,
+        total: usize,
+        error: CommandError,
+    },
+    /// A mutex this operation needs was poisoned; `cause` is the poison
+    /// error's own text.
+    LockPoisoned {
+        lock: &'static str,
+        cause: String,
+    },
+    UnknownParameter {
+        name: String,
+    },
 }
 
-impl std::fmt::Display for CrumbsCreateRefusal {
+impl CrumbsRefusal {
+    fn lock_poisoned(lock: &'static str, cause: &impl std::fmt::Display) -> Self {
+        Self::LockPoisoned {
+            lock,
+            cause: cause.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for CrumbsRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AlreadyExists { instance_id } => {
                 write!(f, "Crumbs instance '{instance_id}' already exists")
             }
+            Self::CommandQueueFull => f.write_str("Command queue full"),
+            Self::EngineNotRunning => f.write_str("Native engine not running"),
+            Self::CaptureHeadroomExhausted => write!(
+                f,
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            ),
+            Self::SlotRefused(reason) => write!(f, "{reason}"),
+            Self::SlotPublishedInPart {
+                pushed,
+                total,
+                error,
+            } => write!(
+                f,
+                "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
+            ),
+            Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
+            Self::UnknownParameter { name } => write!(f, "Unknown crumbs parameter: {name}"),
         }
     }
 }
 
-impl std::error::Error for CrumbsCreateRefusal {}
+impl std::error::Error for CrumbsRefusal {}
 
 /// Create a new crumbs engine instance.
 ///
@@ -943,10 +999,10 @@ pub async fn create_crumbs(
     // otherwise the insert below replaces the first ledger entry and strands
     // its slot.
     if instances.contains_key(&instance_id) {
-        return Err(CrumbsCreateRefusal::AlreadyExists { instance_id }.to_string());
+        return Err(CrumbsRefusal::AlreadyExists { instance_id }.to_string());
     }
 
-    ensure_crumbs_capture_headroom(&instances)?;
+    ensure_crumbs_capture_headroom(&instances).map_err(|refusal| refusal.to_string())?;
 
     let metering = Arc::new(CrumbsMetering::default());
 
@@ -968,7 +1024,8 @@ pub async fn create_crumbs(
             Some(engine_handle) => {
                 let (ends, slot_ends) = new_crumbs_rings();
                 let plugin_id =
-                    register_crumbs_slot(&mut registry_guard, engine_handle, &metering, slot_ends)?;
+                    register_crumbs_slot(&mut registry_guard, engine_handle, &metering, slot_ends)
+                        .map_err(|refusal| refusal.to_string())?;
                 CrumbsEngineSlot::Attached { plugin_id, ends }
             }
             None => CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default()),
@@ -1159,11 +1216,15 @@ pub async fn load_sample(
 
     // Send to the engine. A dormant instance records the selection instead;
     // the pool itself is replayed from the map above when it attaches.
-    instance.send(CrumbsCommand::AddSample {
-        id: sample_id,
-        data: shared_data,
-    })?;
-    instance.send(CrumbsCommand::SetActiveSample(sample_id))?;
+    instance
+        .send(CrumbsCommand::AddSample {
+            id: sample_id,
+            data: shared_data,
+        })
+        .map_err(|refusal| refusal.to_string())?;
+    instance
+        .send(CrumbsCommand::SetActiveSample(sample_id))
+        .map_err(|refusal| refusal.to_string())?;
 
     Ok(SampleLoadResult {
         sample_id,
@@ -1228,7 +1289,7 @@ pub async fn set_crumbs_param(
     value: f32,
     state: &CrumbsState,
 ) -> Result<(), String> {
-    let param_enum = parse_crumbs_param(&param)?;
+    let param_enum = parse_crumbs_param(&param).map_err(|refusal| refusal.to_string())?;
 
     let mut instances = state
         .instances
@@ -1238,10 +1299,12 @@ pub async fn set_crumbs_param(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::SetParam {
-        param: param_enum,
-        value,
-    })?;
+    instance
+        .send(CrumbsCommand::SetParam {
+            param: param_enum,
+            value,
+        })
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -1263,7 +1326,9 @@ pub async fn set_crumbs_mode(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::SetMode(mode_enum))?;
+    instance
+        .send(CrumbsCommand::SetMode(mode_enum))
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -1421,7 +1486,9 @@ pub async fn crumbs_all_sound_off(instance_id: String, state: &CrumbsState) -> R
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::AllSoundOff)?;
+    instance
+        .send(CrumbsCommand::AllSoundOff)
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -2025,9 +2092,12 @@ impl NativeTakeCompletion {
 /// The name table lives in `daw_dsp::crumbs::types` so this command and the
 /// wasm `CrumbsInstance` binding cannot disagree about what `filterCutoff`
 /// means; only the error shape is local to the IPC boundary.
-fn parse_crumbs_param(name: &str) -> Result<CrumbsParam, String> {
-    daw_dsp::crumbs::types::parse_crumbs_param(name)
-        .ok_or_else(|| format!("Unknown crumbs parameter: {name}"))
+fn parse_crumbs_param(name: &str) -> Result<CrumbsParam, CrumbsRefusal> {
+    daw_dsp::crumbs::types::parse_crumbs_param(name).ok_or_else(|| {
+        CrumbsRefusal::UnknownParameter {
+            name: name.to_string(),
+        }
+    })
 }
 
 fn classify_sample(
@@ -2055,7 +2125,7 @@ pub(crate) mod tests {
     #[test]
     fn already_exists_refusal_carries_the_text_typescript_matches() {
         assert_eq!(
-            super::CrumbsCreateRefusal::AlreadyExists {
+            super::CrumbsRefusal::AlreadyExists {
                 instance_id: "d-crumbs".into()
             }
             .to_string(),
@@ -3241,8 +3311,9 @@ pub(crate) mod tests {
             ensure_crumbs_capture_headroom(&instances)
                 .expect_err("a session at the capture ceiling must refuse another instance")
         };
+        assert_eq!(refusal, CrumbsRefusal::CaptureHeadroomExhausted);
         assert_eq!(
-            refusal,
+            refusal.to_string(),
             format!(
                 "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
             )
@@ -4417,7 +4488,17 @@ pub(crate) mod tests {
         let error = attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
             .expect_err("a lock the attach cannot take is an error, not an empty result");
         assert!(
-            error.starts_with("Failed to lock crumbs state"),
+            matches!(
+                error,
+                CrumbsRefusal::LockPoisoned {
+                    lock: "crumbs state",
+                    ..
+                }
+            ),
+            "the refusal must name the lock it could not take: {error:?}"
+        );
+        assert!(
+            error.to_string().starts_with("Failed to lock crumbs state"),
             "the message must be the one every sibling uses: {error}"
         );
     }

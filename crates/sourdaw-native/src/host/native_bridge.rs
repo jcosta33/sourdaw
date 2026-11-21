@@ -3422,6 +3422,7 @@ mod tests {
     /// the loss must be counted, never silent.
     #[test]
     fn events_a_full_retention_queue_cannot_hold_are_counted_as_dropped() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (mut slot, shared, notes) = seam_recording_slot();
         let first = full_block_of_held_notes(1);
         let overflow = [
