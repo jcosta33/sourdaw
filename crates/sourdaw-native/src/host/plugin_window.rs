@@ -22,6 +22,43 @@ use raw_window_handle::RawWindowHandle;
 
 use crate::host::ui_thread::UiThread;
 
+/// Why an editor window could not be created or addressed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginWindowError {
+    /// The window handle is of a windowing system no plugin GUI is hosted on.
+    UnsupportedPlatform,
+    /// A shell delivered a native handle of the wrong width.
+    HandleLength { expected: usize, actual: usize },
+    /// The host has no window server to create a window on.
+    NoWindowServer,
+    /// The shell's own reason, text this crate does not generate.
+    Shell(String),
+}
+
+impl std::fmt::Display for PluginWindowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedPlatform => f.write_str("Unsupported platform for plugin GUI"),
+            Self::HandleLength { expected, actual } => write!(
+                f,
+                "Native window handle must be {} bytes, got {}",
+                expected, actual
+            ),
+            Self::NoWindowServer => f.write_str("This host cannot create plugin editor windows"),
+            Self::Shell(reason) => f.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for PluginWindowError {}
+
+/// A shell implementation's reason for refusing a window.
+impl From<String> for PluginWindowError {
+    fn from(reason: String) -> Self {
+        Self::Shell(reason)
+    }
+}
+
 /// Label the shell gives the DAW's own window.
 ///
 /// Shared with the shell because editor ownership is decided against it: the
@@ -147,13 +184,13 @@ pub fn plugin_editor_needs_always_on_top(parented: bool) -> bool {
 /// One cast per windowing system, and the set is closed: a platform this does
 /// not name cannot host an embedded editor at all, and saying so is better than
 /// handing the plugin a pointer of the wrong kind.
-pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, String> {
+pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, PluginWindowError> {
     match handle {
         RawWindowHandle::AppKit(h) => Ok(h.ns_view.as_ptr()),
         #[cfg(target_os = "windows")]
         RawWindowHandle::Win32(h) => Ok(h.hwnd.get() as *mut c_void),
         RawWindowHandle::Xlib(h) => Ok(h.window as *mut c_void),
-        _ => Err("Unsupported platform for plugin GUI".to_string()),
+        _ => Err(PluginWindowError::UnsupportedPlatform),
     }
 }
 
@@ -165,14 +202,14 @@ pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, 
 /// read of exactly one pointer. Any other length is a corrupt handle and is
 /// refused: handing the CLAP GUI extension a truncated pointer is a crash
 /// inside the plugin, not an error here.
-pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
-    let array: [u8; size_of::<usize>()] = bytes.try_into().map_err(|_| {
-        format!(
-            "Native window handle must be {} bytes, got {}",
-            size_of::<usize>(),
-            bytes.len()
-        )
-    })?;
+pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, PluginWindowError> {
+    let array: [u8; size_of::<usize>()] =
+        bytes
+            .try_into()
+            .map_err(|_| PluginWindowError::HandleLength {
+                expected: size_of::<usize>(),
+                actual: bytes.len(),
+            })?;
     Ok(usize::from_ne_bytes(array))
 }
 
@@ -187,7 +224,7 @@ pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
 /// tolerates being asked to size a window the platform has already ended.
 pub trait PluginEditorWindow: Send + Sync {
     /// The native handle to hand the plugin, already cast for this platform.
-    fn native_handle_ptr(&self) -> Result<*mut c_void, String>;
+    fn native_handle_ptr(&self) -> Result<*mut c_void, PluginWindowError>;
 
     /// Resize to the plugin's preferred editor size, in logical units.
     ///
@@ -309,7 +346,7 @@ pub trait PluginWindowHost: UiThread {
         label: &str,
         title: &str,
         instance_id: &str,
-    ) -> Result<Box<dyn PluginEditorWindow>, String>;
+    ) -> Result<Box<dyn PluginEditorWindow>, PluginWindowError>;
 
     /// Destroy the window with this label, if it still exists.
     fn destroy_window(&self, label: &str);
@@ -342,8 +379,8 @@ impl PluginWindowHost for NoWindowHost {
         _label: &str,
         _title: &str,
         _instance_id: &str,
-    ) -> Result<Box<dyn PluginEditorWindow>, String> {
-        Err("This host cannot create plugin editor windows".to_string())
+    ) -> Result<Box<dyn PluginEditorWindow>, PluginWindowError> {
+        Err(PluginWindowError::NoWindowServer)
     }
 
     fn destroy_window(&self, _label: &str) {}
@@ -519,8 +556,11 @@ pub mod testing {
             thread::current().id() == self.thread_id
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
-            post_and_wait(&self.work, task)
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
+            post_and_wait(&self.work, task).map_err(Into::into)
         }
     }
 
@@ -563,7 +603,9 @@ pub mod testing {
     }
 
     impl PluginEditorWindow for BareEditorWindow {
-        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+        fn native_handle_ptr(
+            &self,
+        ) -> Result<*mut std::ffi::c_void, crate::host::plugin_window::PluginWindowError> {
             Ok(std::ptr::null_mut())
         }
 
@@ -610,7 +652,8 @@ pub mod testing {
             label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
             self.held_windows
                 .lock()
                 .expect("held windows")
@@ -801,7 +844,30 @@ mod tests {
     /// plugin is a crash in the plugin — refusal is the only safe answer.
     #[test]
     fn a_wrong_sized_handle_buffer_is_refused() {
-        assert!(native_handle_from_bytes(&[1, 2, 3, 4]).is_err());
+        assert_eq!(
+            native_handle_from_bytes(&[1, 2, 3, 4]),
+            Err(PluginWindowError::HandleLength {
+                expected: size_of::<usize>(),
+                actual: 4
+            })
+        );
+        assert_eq!(
+            native_handle_from_bytes(&[1, 2, 3, 4])
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Native window handle must be {} bytes, got 4",
+                size_of::<usize>()
+            )
+        );
+        assert_eq!(
+            PluginWindowError::UnsupportedPlatform.to_string(),
+            "Unsupported platform for plugin GUI"
+        );
+        assert_eq!(
+            PluginWindowError::NoWindowServer.to_string(),
+            "This host cannot create plugin editor windows"
+        );
         assert!(native_handle_from_bytes(&[0; 16]).is_err());
         assert!(native_handle_from_bytes(&[]).is_err());
     }

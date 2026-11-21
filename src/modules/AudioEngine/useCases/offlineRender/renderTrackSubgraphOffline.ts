@@ -235,7 +235,6 @@ export async function renderTrackSubgraphOffline({
     // afterwards is registered too late and the device degrades silently.
     const renderTrackIds = new Set(renderTracks.map((track) => track.id));
     const wiredDetectorRoutes = collectWiredSidechainDetectorRoutes({ tracks: renderTracks, routes: sidechainRoutes });
-    const keyedSidechainDevices = new Set<object>(wiredDetectorRoutes.map((route) => route.targetDevice));
     /** Tracks whose only role here is feeding a keyed device's detector. */
     const sidechainKeySourceIds = new Set(wiredDetectorRoutes.map((route) => route.sourceTrackId));
 
@@ -264,7 +263,6 @@ export async function renderTrackSubgraphOffline({
     await prepareOfflineContext({
         offlineCtx,
         tracks: renderTracks,
-        sidechainTargetDevices: keyedSidechainDevices,
         onWarning,
     });
 

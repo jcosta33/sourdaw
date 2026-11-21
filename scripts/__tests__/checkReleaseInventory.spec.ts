@@ -5008,6 +5008,100 @@ describe('release inventory', () => {
         }
     });
 
+    describe('Rust literal scan', () => {
+        const rustPath = 'crates/demo/src/lib.rs';
+        const lifetimesAndCharLiterals = [
+            "struct Borrowed<'a>(&'a str);",
+            "impl fmt::Display for Failure<'_> {",
+            "    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {",
+            '        formatter.write_str("failure")',
+            '    }',
+            '}',
+            "const QUOTE: char = '\\'';",
+            "const DOUBLE_QUOTE: char = '\"';",
+            "const UNDERSCORE: u8 = b'_';",
+            "const NEWLINE: char = '\\n';",
+            "fn label() { 'outer: loop { break 'outer; } }",
+        ].join('\n');
+
+        function scanRust(contents: string): RepositorySnapshot['externalReferences'] {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+            mkdirSync(join(root, dirname(rustPath)), { recursive: true });
+            writeFileSync(join(root, rustPath), contents);
+            try {
+                return loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [rustPath]).externalReferences;
+            } finally {
+                removeTemporaryDirectory(root);
+            }
+        }
+
+        function rustSnapshot(contents: string): RepositorySnapshot {
+            const base = snapshot();
+            return {
+                ...base,
+                releaseFiles: [...base.releaseFiles, rustPath],
+                externalReferences: [...base.externalReferences, ...scanRust(contents)],
+            };
+        }
+
+        function rustInventory(values: readonly string[]): ReleaseInventory {
+            const value = inventory();
+            value.surfaces[0]!.paths.push('crates/**');
+            value.externalReferences.push(...values.map((url) => ({ surface: 'runtime', file: rustPath, value: url })));
+            return value;
+        }
+
+        it('finds URL literals after lifetimes, char and byte literals, attributes, and raw strings', () => {
+            const contents = [
+                lifetimesAndCharLiterals,
+                '#[deprecated(note = "see https://attribute.example.net/notes")]',
+                'const RAW: &str = r#"{"endpoint": "https://raw.example.net/v1"}"#;',
+                'const RAW_BYTES: &[u8] = br##"https://raw-bytes.example.net/"#still-raw"##;',
+                'const API: &str = "https://api.example.net/v1/messages";',
+            ].join('\n');
+
+            expect(scanRust(contents)).toEqual([
+                { file: rustPath, value: 'https://api.example.net/v1/messages' },
+                { file: rustPath, value: 'https://attribute.example.net/notes' },
+                { file: rustPath, value: 'https://raw-bytes.example.net/' },
+                { file: rustPath, value: 'https://raw.example.net/v1' },
+            ]);
+        });
+
+        it('finds a URL literal after one unpaired lifetime', () => {
+            const contents = 'const ENDPOINT: &\'static str = "https://lifetime.example.net/v1";';
+
+            expect(scanRust(contents)).toEqual([{ file: rustPath, value: 'https://lifetime.example.net/v1' }]);
+        });
+
+        it('does not report URLs inside line or nested block comments', () => {
+            const contents = [
+                lifetimesAndCharLiterals,
+                '// let ignored = "https://line-comment.example.net";',
+                '/* outer /* inner */ "https://nested-comment.example.net" */',
+                'const API: &str = "https://api.example.net/v1/messages";',
+            ].join('\n');
+
+            expect(scanRust(contents)).toEqual([{ file: rustPath, value: 'https://api.example.net/v1/messages' }]);
+        });
+
+        it('reports a Rust URL literal without an inventory entry as missing', () => {
+            const contents = `${lifetimesAndCharLiterals}\nconst API: &str = "https://api.example.net/v1/messages";\n`;
+
+            expect(validateReleaseInventory(rustInventory([]), rustSnapshot(contents))).toContain(
+                `external references missing from inventory:\n- ${rustPath} -> https://api.example.net/v1/messages`
+            );
+        });
+
+        it('reports an inventory entry for a commented-out Rust URL as stale', () => {
+            const contents = `${lifetimesAndCharLiterals}\n// const API: &str = "https://api.example.net/v1/messages";\n`;
+
+            expect(
+                validateReleaseInventory(rustInventory(['https://api.example.net/v1/messages']), rustSnapshot(contents))
+            ).toContain(`stale external-reference assignments:\n- ${rustPath} -> https://api.example.net/v1/messages`);
+        });
+    });
+
     it('detects template-expression drift', () => {
         const value = inventory();
         value.externalReferences[0]!.templateSha256 = fixtureDigest;

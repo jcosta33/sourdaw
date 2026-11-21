@@ -35,9 +35,12 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
 use crate::host::plugin_window::{
-    apply_editor_size_on_ui_thread, native_handle_from_bytes, PluginEditorWindow, PluginWindowHost,
+    apply_editor_size_on_ui_thread, native_handle_from_bytes, PluginEditorWindow,
+    PluginWindowError, PluginWindowHost,
 };
-use crate::host::ui_thread::{call_on_ui_thread, PostedUiThread, UiThread, UiThreadTask};
+use crate::host::ui_thread::{
+    call_on_ui_thread, PostedUiThread, UiThread, UiThreadError, UiThreadTask,
+};
 
 /// How long one JS round trip may take before the operation fails.
 ///
@@ -223,18 +226,22 @@ impl UiThread for JsUiThread {
         std::thread::current().id() == self.thread_id
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), String> {
+    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), UiThreadError> {
         if self.is_ui_thread() {
             // Unreachable through `call_on_ui_thread`, which runs the work in
             // place instead. Refused rather than queued because the pump cannot
             // run until this call returns, so the wait would never end.
-            return Err("The shell's main thread cannot wait for its own turn".to_string());
+            return Err(UiThreadError::Shell(
+                "The shell's main thread cannot wait for its own turn".to_string(),
+            ));
         }
 
         self.posted.post_and_wait(task, || {
             let status = self.pump.call((), ThreadsafeFunctionCallMode::NonBlocking);
             if status != Status::Ok {
-                return Err(format!("Shell main thread is unreachable: {status}"));
+                return Err(UiThreadError::Shell(format!(
+                    "Shell main thread is unreachable: {status}"
+                )));
             }
             Ok(())
         })
@@ -283,7 +290,7 @@ impl UiThread for JsWindowHost {
         self.ui.is_ui_thread()
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), String> {
+    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), UiThreadError> {
         self.ui.run_on_ui_thread(task)
     }
 
@@ -340,12 +347,12 @@ fn create_over_js(
             let answer = match response {
                 Ok(response) => match (response.error, response.handle) {
                     (Some(error), _) => Err(error),
-                    (None, Some(handle)) => {
-                        native_handle_from_bytes(&handle).map(|handle| CreatedWindow {
+                    (None, Some(handle)) => native_handle_from_bytes(&handle)
+                        .map(|handle| CreatedWindow {
                             handle,
                             scale_factor: response.scale_factor,
                         })
-                    }
+                        .map_err(|error| error.to_string()),
                     (None, None) => {
                         Err("Window host returned neither a handle nor an error".to_string())
                     }
@@ -384,7 +391,7 @@ impl PluginWindowHost for JsWindowHost {
         label: &str,
         title: &str,
         instance_id: &str,
-    ) -> std::result::Result<Box<dyn PluginEditorWindow>, String> {
+    ) -> std::result::Result<Box<dyn PluginEditorWindow>, PluginWindowError> {
         let created = create_over_js(
             &self.callbacks,
             CreateEditorWindowRequest {
@@ -445,7 +452,7 @@ fn apply_editor_window_size(
 }
 
 impl PluginEditorWindow for JsEditorWindow {
-    fn native_handle_ptr(&self) -> std::result::Result<*mut std::ffi::c_void, String> {
+    fn native_handle_ptr(&self) -> std::result::Result<*mut std::ffi::c_void, PluginWindowError> {
         Ok(self.handle as *mut std::ffi::c_void)
     }
 
@@ -507,6 +514,6 @@ impl PluginEditorWindow for JsEditorWindow {
     }
 
     fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> std::result::Result<(), String> {
-        call_on_ui_thread(self.ui.as_ref(), work)
+        call_on_ui_thread(self.ui.as_ref(), work).map_err(|error| error.to_string())
     }
 }

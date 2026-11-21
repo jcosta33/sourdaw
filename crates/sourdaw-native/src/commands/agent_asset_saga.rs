@@ -43,7 +43,7 @@ use sha2::{Digest, Sha256};
 use super::filesystem::grant_registry::{self, GrantMode};
 use super::filesystem::{
     ensure_file_ipc_size, ipc_temp_dir, replace_file_atomically, resolve_existing_file_path,
-    resolve_writable_file_path,
+    resolve_writable_file_path, FileRefusal,
 };
 
 /// Prefix every handle id carries, so a caller cannot pass a path where a
@@ -88,8 +88,8 @@ pub enum AgentAssetSagaError {
     ReadStagedAsset(std::io::Error),
     WriteDestination(std::io::Error),
     StagedDigestMismatch,
-    /// A refusal from the shared filesystem helpers, which still report text.
-    Filesystem(String),
+    /// A refusal from the shared filesystem helpers.
+    Filesystem(FileRefusal),
 }
 
 impl std::fmt::Display for AgentAssetSagaError {
@@ -122,7 +122,7 @@ impl std::fmt::Display for AgentAssetSagaError {
             Self::StagedDigestMismatch => {
                 f.write_str("Staged bytes did not match the expected digest")
             }
-            Self::Filesystem(message) => f.write_str(message),
+            Self::Filesystem(refusal) => refusal.fmt(f),
         }
     }
 }
@@ -141,11 +141,11 @@ impl std::error::Error for AgentAssetSagaError {
             | Self::OpenStagedAsset(error)
             | Self::ReadStagedAsset(error)
             | Self::WriteDestination(error) => Some(error),
+            Self::Filesystem(refusal) => Some(refusal),
             Self::UnknownHandleMode(_)
             | Self::MalformedHandleId
             | Self::MalformedSha256
-            | Self::StagedDigestMismatch
-            | Self::Filesystem(_) => None,
+            | Self::StagedDigestMismatch => None,
         }
     }
 }
@@ -687,7 +687,7 @@ fn register_handle(
                 OPERATION_REGISTER_HANDLE,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::NotNeeded,
-                message,
+                message.to_string(),
             ));
         }
     };
@@ -1121,7 +1121,7 @@ fn finalize_claimed_saga(
                 AgentAssetSagaState::Failed,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::Available,
-                message,
+                message.to_string(),
             );
         }
     };
@@ -1150,7 +1150,7 @@ fn finalize_claimed_saga(
             AgentAssetSagaState::Failed,
             failure,
             AgentAssetCompensation::Available,
-            message,
+            message.to_string(),
         );
     }
 
@@ -1624,8 +1624,10 @@ mod tests {
                 "Staged bytes did not match the expected digest",
             ),
             (
-                AgentAssetSagaError::Filesystem("File exceeds the IPC limit".to_string()),
-                "File exceeds the IPC limit",
+                AgentAssetSagaError::Filesystem(FileRefusal::PayloadTooLarge {
+                    command: "agent_asset_import".to_string(),
+                }),
+                "agent_asset_import payload exceeds 1073741824-byte IPC limit",
             ),
         ] {
             assert_eq!(error.to_string(), text);

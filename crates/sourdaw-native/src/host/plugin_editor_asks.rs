@@ -12,9 +12,9 @@
 //! order every other editor path keeps. The asks are taken on the window's
 //! thread, so a hop that never ran leaves them recorded for the retry.
 
-use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::native_bridge::{PluginControlError, SharedHostedPlugin};
 use crate::host::plugin_window::PluginEditorWindow;
-use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadTask};
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError, UiThreadTask};
 use crate::host::{all_engine_runtimes, retry_unreached_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
@@ -82,9 +82,11 @@ impl UiThread for EditorWindowThread {
         false
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), UiThreadError> {
         let task = Arc::clone(task);
-        self.0.run_on_window_thread(Box::new(move || task.run()))
+        self.0
+            .run_on_window_thread(Box::new(move || task.run()))
+            .map_err(UiThreadError::from)
     }
 }
 
@@ -108,7 +110,9 @@ pub fn answer_pending_editor_window_asks(engine_plugins: &EnginePlugins) {
     }
 }
 
-fn answer_instance_asks(runtime: &SharedHostedPlugin) -> Result<(), String> {
+fn answer_instance_asks(
+    runtime: &SharedHostedPlugin,
+) -> Result<(), PluginControlError<UiThreadError>> {
     runtime.try_with_control(ASK_CONTROL_TIMEOUT, |plugin| {
         let Some(window) = plugin.editor_window_with_pending_asks() else {
             return Ok(());

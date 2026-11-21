@@ -86,7 +86,7 @@ pub(crate) fn retry_unreached_instance(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     context: &str,
-    error: &str,
+    error: &dyn std::fmt::Display,
     reraise: fn(),
 ) {
     if runtime.ensure_public_control_allowed().is_err() {
