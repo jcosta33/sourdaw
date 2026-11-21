@@ -75,10 +75,12 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   construction on the UI thread from the file its load vetted, activation at the export rate in
   offline mode, and release on the UI thread on every path out. The live instance is touched only by
   that state read. An instrument is fed by the `schedule-midi` batch through the note store its
-  offline slot owns, exactly as a built-in instrument is. An instance the engine does not hold, an
-  unreadable state, a failed construction, a block the offline instance was not served or failed to
-  process, and a scheduled-note batch the engine refused on the render thread (a full note store, a
-  block's event buffer) each refuse the render, by device and plugin name where a plugin is
+  offline slot owns, exactly as a built-in instrument is. That store is sized control-side from the
+  events the batch sends the device, since a render holds the whole arrangement where live playback
+  streams it; a device sent more than `OFFLINE_NOTE_EVENT_CEILING` events is refused by name. An
+  instance the engine does not hold, an unreadable state, a failed construction, a block the
+  offline instance was not served or failed to process, and a scheduled-note batch the engine
+  refused on the render thread (a block's event buffer) each refuse the render, by device and plugin name where a plugin is
   involved; nothing prints dry and no note prints as a rest.
   `map_graph_batch` admits and refuses exactly that set, through the same mapping.
 

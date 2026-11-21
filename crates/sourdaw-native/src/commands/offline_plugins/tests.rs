@@ -585,9 +585,20 @@ fn render(
     seams: &OfflinePluginSeams,
     render_id: Option<&str>,
 ) -> Result<Vec<f32>, String> {
+    render_frames(batch, FRAMES as u32, state, ui, seams, render_id)
+}
+
+fn render_frames(
+    batch: Value,
+    frames: u32,
+    state: &AppState,
+    ui: &dyn UiThread,
+    seams: &OfflinePluginSeams,
+    render_id: Option<&str>,
+) -> Result<Vec<f32>, String> {
     block_on_test(render_graph_offline_with(
         batch,
-        FRAMES as u32,
+        frames,
         EXPORT_RATE,
         render_id.map(str::to_string),
         ui,
@@ -1480,34 +1491,104 @@ fn a_hosted_instrument_on_a_silent_strip_builds_no_instance() {
     assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
 }
 
-/// Two batches that each fit the note store but not together: the engine
-/// refuses the second on the render thread and counts it, and the print — which
-/// would carry that batch as rests — is refused instead. The first batch is
-/// spread so no block holds more notes than the block's event buffer, which
-/// would be a second refusal.
+/// Notes in the long part below: past the live store's reserve of events.
+const LONG_PART_NOTES: usize = 3_000;
+/// Frames between one note's on and the next's, and how long each is held.
+/// Ten frames apart puts about fifty events in a 512-frame block, under the
+/// block's event buffer, so only the store's size is under test.
+const LONG_PART_SPACING: usize = 10;
+const LONG_PART_HELD: usize = 4;
+const LONG_PART_START: usize = 1_000;
+
+fn long_part_velocity(index: usize) -> u8 {
+    (1 + index % 127) as u8
+}
+
+fn long_part_on(index: usize) -> usize {
+    LONG_PART_START + LONG_PART_SPACING * index
+}
+
+/// 3,000 notes is 6,000 events, three times what a live store holds.
+fn a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(format: Format) {
+    const {
+        assert!(2 * LONG_PART_NOTES > daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY);
+    }
+    let fx = InstalledFx::create(&format!("instrument-long-{format:?}"));
+    let (state, _live) = state_with_live_instrument(&fx, format);
+    let ui = RecordingUiThread::start();
+    let notes = (0..LONG_PART_NOTES)
+        .flat_map(|index| {
+            let velocity = long_part_velocity(index);
+            [
+                note(long_part_on(index), 60, velocity, true),
+                note(long_part_on(index) + LONG_PART_HELD, 60, velocity, false),
+            ]
+        })
+        .collect();
+    let frames = long_part_on(LONG_PART_NOTES) + 2_048;
+    let commands = vec![strip("t1", json!([fx_device()])), schedule_notes(notes)];
+
+    let print = render_frames(
+        batch(commands),
+        frames as u32,
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("a part longer than the live store holds prints whole");
+
+    let level = |index: usize| instrument_level(format, long_part_velocity(index));
+    for index in [0, LONG_PART_NOTES / 2, LONG_PART_NOTES - 1] {
+        let on = long_part_on(index);
+        assert_eq!(print[on - 1], 0.0, "silent before note {index}");
+        assert_eq!(
+            print[on..on + LONG_PART_HELD],
+            [level(index); LONG_PART_HELD],
+            "note {index} held"
+        );
+        assert_eq!(print[on + LONG_PART_HELD], 0.0, "silent after note {index}");
+    }
+    let sounding = print.iter().filter(|sample| **sample != 0.0).count();
+    assert_eq!(sounding, LONG_PART_NOTES * LONG_PART_HELD);
+}
+
 #[test]
-fn a_scheduled_note_batch_the_store_refuses_fails_the_render_by_name() {
-    const CAPACITY: usize = daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
-    let fx = InstalledFx::create("instrument-store-full");
+fn a_clap_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Clap);
+}
+
+#[test]
+fn a_vst3_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Vst3);
+}
+
+/// Two batches at one device that together pass the offline ceiling are
+/// refused by name before an instance is built: each fits the per-batch
+/// ceiling, so only the per-device total can refuse them.
+#[test]
+fn notes_past_the_offline_ceiling_across_batches_refuse_the_render_by_name() {
+    const CEILING: usize = super::OFFLINE_NOTE_EVENT_CEILING;
+    let fx = InstalledFx::create("instrument-ceiling");
     let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
-    let filling = (0..CAPACITY)
-        .map(|index| note(1_000 + 5 * index, 60, 100, index % 2 == 0))
-        .collect();
+    let half = (0..CEILING / 2 + 1)
+        .map(|index| note(index, 60, 100, true))
+        .collect::<Vec<_>>();
     let commands = vec![
         strip("t1", json!([fx_device()])),
-        schedule_notes(filling),
-        schedule_notes(vec![note(500, 62, 100, true)]),
+        schedule_notes(half.clone()),
+        schedule_notes(half),
     ];
 
     let refusal = render(batch(commands), &state, &ui, &fx.seams(), None)
-        .expect_err("a print that dropped a note batch is not the project");
+        .expect_err("a store past the offline ceiling is refused");
 
     assert!(
-        refusal.starts_with("offline-render-dropped-midi:")
-            && refusal.contains("note-store batch refusals: 1,"),
+        refusal.contains(&format!("past the store's ceiling of {CEILING}")),
         "{refusal}"
     );
+    assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
 }
 
 // ── (e) Cancellation ────────────────────────────────────────────────────

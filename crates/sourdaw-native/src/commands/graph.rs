@@ -158,8 +158,8 @@ use crate::commands::graph_refusals::{
 };
 use crate::commands::levain::LevainBankStore;
 use crate::commands::offline_plugins::{
-    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
-    OfflinePluginSeams,
+    build_offline_instances, leaves_processing_on_drop, offline_note_store, InFlightRender,
+    OfflinePluginInstances, OfflinePluginSeams, ScheduledNoteEvents, OFFLINE_NOTE_EVENT_CEILING,
 };
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
@@ -3148,6 +3148,14 @@ impl HostedInstances {
         }
     }
 
+    /// The most note events one `schedule-midi` batch may carry under this law.
+    fn note_batch_ceiling(&self) -> usize {
+        match self.law {
+            HostedBindingLaw::Engine => MIDI_NOTE_STORE_CAPACITY,
+            HostedBindingLaw::Offline => OFFLINE_NOTE_EVENT_CEILING,
+        }
+    }
+
     /// Every instance an offline mapping bound, in instance-id order.
     pub(crate) fn bound(&self) -> Vec<BoundHostedInstance> {
         self.bound
@@ -4930,9 +4938,15 @@ fn map_command(
             let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "schedule-midi")?;
             // The store's ceiling, checked here because the store can only
             // answer a batch past it with a refusal counted on the audio
-            // thread. Exactly the capacity fits; one more does not.
-            if notes.len() > MIDI_NOTE_STORE_CAPACITY {
-                return Err(GraphRefusal::MidiNoteCeiling { notes: notes.len() });
+            // thread. Exactly the ceiling fits; one more does not. The live
+            // engine's store is the fixed live reserve; an offline render
+            // sizes its stores from the batch, up to the offline ceiling.
+            let ceiling = hosted.note_batch_ceiling();
+            if notes.len() > ceiling {
+                return Err(GraphRefusal::MidiNoteCeiling {
+                    notes: notes.len(),
+                    ceiling,
+                });
             }
             let mut mapped = notes
                 .iter()
@@ -6450,6 +6464,8 @@ fn map_probe_batch(
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
+    // The probe refuses what the render refuses, so the offline note total is
+    // checked on its mapped batch as the render checks it.
     let mapped = map_batch(
         &batch,
         &mut registry,
@@ -6458,7 +6474,11 @@ fn map_probe_batch(
         &mut hosted,
         &mut AttachedCrumbs::default(),
         &mut levain_banks,
-    );
+    )
+    .and_then(|mapped| {
+        check_offline_note_totals(&scheduled_note_events(&mapped.ops))?;
+        Ok(mapped)
+    });
     drop(levain_banks);
     drop(samples);
 
@@ -6518,8 +6538,11 @@ fn map_offline_batch(
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
         return Err(GraphRefusal::NamOfflineGated);
     }
+    // An offline mapping is offline whatever instances it was handed: the note
+    // ceiling it maps under is the offline one.
+    hosted.law = HostedBindingLaw::Offline;
     let mut registry = GraphRegistry::default();
-    Ok(map_batch(
+    let mut ops = map_batch(
         batch,
         &mut registry,
         samples,
@@ -6528,7 +6551,58 @@ fn map_offline_batch(
         &mut AttachedCrumbs::default(),
         levain_banks,
     )?
-    .ops)
+    .ops;
+    size_offline_note_stores(&mut ops)?;
+    Ok(ops)
+}
+
+/// The note events a mapped batch schedules at each engine plugin id.
+fn scheduled_note_events(ops: &[GraphCommand]) -> ScheduledNoteEvents {
+    let mut scheduled = ScheduledNoteEvents::new();
+    for op in ops {
+        if let GraphCommand::ScheduleMidiNotes { plugin_id, notes } = op {
+            *scheduled.entry(*plugin_id).or_default() += notes.len();
+        }
+    }
+    scheduled
+}
+
+/// Refuse a batch that schedules more note events at one device than an
+/// offline store may reserve. Each batch passed the per-batch ceiling, but
+/// several batches at one device add up in one store.
+fn check_offline_note_totals(scheduled: &ScheduledNoteEvents) -> Result<(), GraphRefusal> {
+    match scheduled
+        .values()
+        .copied()
+        .find(|&events| events > OFFLINE_NOTE_EVENT_CEILING)
+    {
+        Some(notes) => Err(GraphRefusal::MidiNoteCeiling {
+            notes,
+            ceiling: OFFLINE_NOTE_EVENT_CEILING,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Replace the note store each built-in instrument is registered with by one
+/// sized for the events the batch schedules at it, after refusing a batch
+/// past the offline ceiling. Hosted instruments are sized at registration
+/// ([`OfflinePluginInstances::register`]) from the same count.
+fn size_offline_note_stores(ops: &mut [GraphCommand]) -> Result<(), GraphRefusal> {
+    let scheduled = scheduled_note_events(ops);
+    check_offline_note_totals(&scheduled)?;
+    for op in ops {
+        let (GraphCommand::AddEffect(id, _, Some(store))
+        | GraphCommand::AddDetachedEffect(id, _, Some(store))) = op
+        else {
+            continue;
+        };
+        let events = scheduled.get(id).copied().unwrap_or(0);
+        if events > store.capacity() {
+            *store = offline_note_store(events);
+        }
+    }
+    Ok(())
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
@@ -6561,7 +6635,7 @@ fn render_offline_ops(
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
         plugins
-            .register(&mut renderer)
+            .register(&mut renderer, &scheduled_note_events(&ops))
             .map_err(GraphRefusal::OfflineRender)?;
     }
     for op in ops {
@@ -16334,15 +16408,16 @@ mod tests {
         );
     }
 
-    /// The offline renderer's one view of the engine's MIDI refusals: a
-    /// scheduled batch the device's store cannot hold, after another batch
-    /// filled it, is counted on the render thread and nowhere else, so the
-    /// print must be refused rather than carry the batch as rests.
+    /// An offline render holds the whole arrangement at once, so a built-in
+    /// instrument's store is sized from the notes the batch sends it: two
+    /// batches that together pass the live store's reserve print whole, where
+    /// a store built at the live reserve would refuse the second on the render
+    /// thread and the render would be refused for the rests it would carry.
     #[test]
-    fn an_offline_render_refuses_a_scheduled_batch_the_notes_store_refused() {
+    fn an_offline_render_sizes_a_builtins_note_store_from_the_notes_it_is_sent() {
         const SAMPLE_RATE: f32 = 48_000.0;
         // Five frames apart: no block holds more than its event buffer does.
-        let filling: Vec<Value> = (0..MIDI_NOTE_STORE_CAPACITY)
+        let filling: Vec<Value> = (0..3 * MIDI_NOTE_STORE_CAPACITY)
             .map(|index| note_at((480 + 5 * index) as f64 / f64::from(SAMPLE_RATE), 60, 0))
             .collect();
         let commands = |second: Value| {
@@ -16371,21 +16446,59 @@ mod tests {
                 &midi_batch(commands(second)),
                 &sample_pool(),
                 &mut LevainBankStore::default(),
-                12_000,
+                40_000,
                 SAMPLE_RATE,
             )
         };
 
-        let refusal = render(second_batch(json!([note_at(0.005, 62, 0)])))
-            .expect_err("the store is full when the second batch arrives");
+        render(second_batch(json!([note_at(0.005, 62, 0)])))
+            .expect("a store sized from both batches takes the second");
+    }
+
+    /// The offline ceiling is the one an offline mapping refuses by: more
+    /// events than the live store holds map, one past the offline ceiling is
+    /// refused by name.
+    #[test]
+    fn an_offline_mapping_refuses_a_batch_past_the_offline_note_ceiling() {
+        let map = |count: usize| {
+            let notes: Vec<Value> = (0..count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            let commands = json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes },
+            ]);
+            map_offline_batch(
+                &midi_batch(commands),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                48_000.0,
+                &mut HostedInstances::default(),
+            )
+            .map(|ops| ops.len())
+            .map_err(|refusal| refusal.to_string())
+        };
+
+        map(MIDI_NOTE_STORE_CAPACITY + 1).expect("past the live reserve, within the offline one");
+        map(OFFLINE_NOTE_EVENT_CEILING).expect("exactly the offline ceiling fits");
+        let refusal = map(OFFLINE_NOTE_EVENT_CEILING + 1)
+            .expect_err("one event past the offline ceiling is refused");
         assert!(
-            refusal.starts_with("offline-render-dropped-midi:")
-                && refusal.contains("note-store batch refusals: 1, event-buffer overflows: 0"),
+            refusal.contains(&format!(
+                "past the store's ceiling of {OFFLINE_NOTE_EVENT_CEILING}"
+            )),
             "{refusal}"
         );
-
-        // The same render with an empty second batch fits the store exactly.
-        render(second_batch(json!([]))).expect("a batch that fits the store prints");
     }
 
     /// More notes at one frame than a block's event buffer holds: the buffer

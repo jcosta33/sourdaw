@@ -16,7 +16,6 @@ use super::timeline_sample_lifecycle::TimelineMaterialError;
 
 use daw_dsp::grinder::nam::NamAdmissionError;
 use daw_dsp::toaster::transient::TransientShaperError;
-use daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
 use daw_engine::offline::OfflineCommandError;
 use daw_engine::scheduler::TIMELINE_CHAIN_SLOT_BUDGET;
 use daw_engine::timeline::{
@@ -319,8 +318,11 @@ pub(crate) enum GraphRefusal {
         command: &'static str,
         channel: i16,
     },
+    /// More note events scheduled at one device than its store may hold: in
+    /// one batch, or across an offline render's whole batch.
     MidiNoteCeiling {
         notes: usize,
+        ceiling: usize,
     },
     VelocityOutOfRange {
         velocity: u8,
@@ -721,10 +723,10 @@ impl fmt::Display for GraphRefusal {
                 f,
                 "{command}: channel {channel} has no address in the note store"
             ),
-            Self::MidiNoteCeiling { notes } => write!(
+            Self::MidiNoteCeiling { notes, ceiling } => write!(
                 f,
-                "schedule-midi: batch carries {notes} notes, past the store's ceiling of \
-                 {MIDI_NOTE_STORE_CAPACITY}"
+                "schedule-midi: {notes} notes for one device, past the store's ceiling of \
+                 {ceiling}"
             ),
             Self::VelocityOutOfRange { velocity } => write!(
                 f,
