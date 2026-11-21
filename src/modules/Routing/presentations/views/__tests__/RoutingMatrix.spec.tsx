@@ -23,12 +23,16 @@ type TrackFixture = {
     color: string;
     sends: Send[];
     outputId: string;
+    parentId: string | null;
+    hidden: boolean;
 };
 
 const track = (over: Partial<TrackFixture> & Pick<TrackFixture, 'id' | 'name' | 'kind'>): TrackFixture => ({
     color: '#888',
     sends: [],
     outputId: 'master',
+    parentId: null,
+    hidden: false,
     ...over,
 });
 

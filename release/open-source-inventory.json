@@ -1641,7 +1641,7 @@
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
-                "src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts",
+                "src/modules/AiRuntime/useCases/perceptualConstraints/constraintClauseWords.ts",
                 "src/modules/Arrangement/models/DeviceParameter.ts",
                 "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts",
                 "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptorsGuidance.ts",
@@ -1649,6 +1649,9 @@
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/AudioEngine/models/DeviceRolesByDeviceType.ts",
+                "src/modules/AudioEngine/models/LiveNoteControlsByDeviceType.ts",
+                "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
@@ -1680,7 +1683,9 @@
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
-                "src/modules/Toaster/repositories/toasterPresets.ts"
+                "src/modules/Toaster/repositories/toasterPresets.ts",
+                "src/modules/WorkspaceShell/models/DevicePanelByDeviceType.ts",
+                "src/utils/builtinDeviceTypes.ts"
             ],
             "sources": [
                 "public/legal/TRADEMARKS.md",
@@ -1950,6 +1955,11 @@
             "surface": "cloud-ai-providers",
             "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
             "value": "https://api.anthropic.com"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.anthropic.com/v1/messages"
         },
         {
             "surface": "cloud-ai-providers",
@@ -2799,8 +2809,13 @@
             "value": "Mellotron",
             "paths": [
                 "src/modules/Arrangement/models/DeviceParameter.ts",
+                "src/modules/AudioEngine/models/DeviceRolesByDeviceType.ts",
+                "src/modules/AudioEngine/models/LiveNoteControlsByDeviceType.ts",
+                "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
-                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx"
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
+                "src/modules/WorkspaceShell/models/DevicePanelByDeviceType.ts",
+                "src/utils/builtinDeviceTypes.ts"
             ]
         },
         {
@@ -2871,7 +2886,7 @@
                 "docs/manual/devices/11-grinder.md",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
-                "src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts",
+                "src/modules/AiRuntime/useCases/perceptualConstraints/constraintClauseWords.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
                 "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
                 "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",

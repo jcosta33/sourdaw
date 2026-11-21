@@ -77,6 +77,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 10, maximum: 20 },
@@ -102,6 +103,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'edit',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
                     { paramId: 'comp-release', minimum: 60, maximum: 120 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
@@ -303,6 +305,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -406,6 +409,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },

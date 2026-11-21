@@ -895,7 +895,13 @@ describe('renderOfflineWithNativeEngine — Cancel during the native render (#45
                 return Promise.resolve();
             },
         };
-        return { transport, renderIds, cancels, finish: () => finishRender() };
+        return {
+            transport,
+            renderIds,
+            cancels,
+            finish: () => finishRender(),
+            cancelNatively: () => cancelRender(),
+        };
     }
 
     beforeEach(() => {
@@ -930,6 +936,21 @@ describe('renderOfflineWithNativeEngine — Cancel during the native render (#45
         controller.abort();
 
         await expect(rendering).rejects.toThrow('Export cancelled');
+    });
+
+    it('ends as Export cancelled when the native side cancels the render with no signal or flag raised (#6911)', async () => {
+        // Quit cancels every native render in flight from the native side:
+        // no abort signal fires and no export flag is raised, so only the
+        // native refusal's own text says the render was cancelled.
+        const frames = 480;
+        const { transport, renderIds, cancels, cancelNatively } = cancellableTransport(frames);
+
+        const rendering = renderOneTrack({ transport, frames, devices: [] });
+        await vi.waitFor(() => expect(renderIds).toHaveLength(1));
+        cancelNatively();
+
+        await expect(rendering).rejects.toThrow('Export cancelled');
+        expect(cancels).toEqual([]);
     });
 
     it('sends no cancel for an abort after the render settled', async () => {

@@ -11,6 +11,7 @@ import {
     type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
+import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
@@ -18,14 +19,13 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
-import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
-import { chooseVibeBatchValues, type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
-import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
+import { chooseVibeBatchValues } from '../vibeRun/chooseVibeBatchValues';
+import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
@@ -270,14 +270,6 @@ async function proposeMeasuredVibeBatch(input: {
         commandBatch,
         envelope: parsedCommandBatch.envelope,
     });
-    const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
-    const cardLines = describeVibeBatchCard({
-        batch: input.batch,
-        context: grounded.context,
-        criteria: evaluation.criteria,
-        adoptedRecipes: grounded.result.adoptedRecipes ?? [],
-        valueChoice: input.valueChoice,
-    });
     persistPromptActionConfirmation({
         runId: run.runId,
         prompt: run.request,
@@ -297,7 +289,16 @@ async function proposeMeasuredVibeBatch(input: {
         group: commandGroup,
         projectRevision: grounded.revision,
         parsedCommandBatch,
-        content: [input.description.content, ...cardLines].join('\n'),
+        vibeValueChoice: input.valueChoice,
+        content: composeVibeBatchCardContent({
+            descriptionContent: input.description.content,
+            batch: input.batch,
+            context: grounded.context,
+            state: proof.state,
+            commandBatch,
+            adoptedRecipes: grounded.result.adoptedRecipes ?? [],
+            valueChoice: input.valueChoice,
+        }),
     });
     return { status: 'awaiting-approval' };
 }
@@ -440,6 +441,7 @@ async function proposeVibeRunBatch(
     const choice = await chooseVibeBatchValues({
         runId: run.runId,
         request: built.request,
+        plannedTier: preflight.valueChoiceTier,
         onBegin: () => {
             shown.messageId = appendBatchMessage(
                 run,

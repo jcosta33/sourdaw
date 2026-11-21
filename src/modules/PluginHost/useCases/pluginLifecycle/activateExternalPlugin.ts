@@ -8,6 +8,7 @@ import {
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
+import { activationFailureMessage } from './activationFailureMessage';
 import {
     carriedExternalPluginStateFence,
     carriedExternalPluginStates,
@@ -24,6 +25,8 @@ import {
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
+import { pendingKeyedUnloadGenerations, pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from './pendingUnloadWaitTimeout';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -48,6 +51,12 @@ type ActivateExternalPluginInput = {
      * latency-change event, which carries no rate for a caller to divide by.
      */
     onLatencyMs?: (latencyMs: number) => void;
+};
+
+const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
+    status: 'failed',
+    stage: 'restore',
+    reason: 'External plugin activation was superseded by a runtime teardown',
 };
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
@@ -92,7 +101,7 @@ async function restoreCarriedState(
     instanceId: string,
     pluginId: string,
     carried: CarriedExternalPluginState,
-    activationEpoch: number
+    isCurrentActivation: () => boolean
 ): Promise<'restored' | 'rejected' | 'superseded'> {
     let rejection: string | null = null;
     try {
@@ -100,7 +109,7 @@ async function restoreCarriedState(
     } catch (error) {
         rejection = String(error);
     }
-    if (activationEpoch !== externalPluginActivationEpoch.current || !loadedExternalInstances.has(instanceId)) {
+    if (!isCurrentActivation()) {
         return 'superseded';
     }
     if (rejection === null) {
@@ -126,6 +135,58 @@ function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPlugi
     if (loadedExternalInstances.has(instanceId) && carriedExternalPluginStates.get(instanceId) === consumed) {
         carriedExternalPluginStates.delete(instanceId);
     }
+}
+
+type PendingUnloadWait = 'settled' | 'timed-out';
+
+/**
+ * Ordering only: the unload's own outcome stays its caller's, so a rejection
+ * counts as settled here. Bounded, because the native unload is not.
+ */
+function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnloadWait> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = pendingUnload.then(
+        (): PendingUnloadWait => 'settled',
+        (): PendingUnloadWait => 'settled'
+    );
+    const deadline = new Promise<PendingUnloadWait>((resolve) => {
+        timer = setTimeout(() => resolve('timed-out'), PENDING_UNLOAD_WAIT_TIMEOUT_MS);
+    });
+    return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Activate once the queued unload of the same instance settles, so the
+ * activation reflects the instance the unload leaves. An unload still pending
+ * at the deadline keeps the instance and its pending entry; a later activation
+ * waits again. A later unload of the instance or a runtime rebuild admitted
+ * during the wait decided the instance's fate instead, so the waiter does not
+ * reload: reloading would leave a plugin loaded that nothing in the project
+ * holds (Remove, Undo, Redo).
+ */
+async function activateAfterPendingUnload(
+    input: ActivateExternalPluginInput,
+    pendingUnload: Promise<void>
+): Promise<ExternalPluginActivationResult> {
+    const unloadGeneration = pendingKeyedUnloadGenerations.get(input.instanceId);
+    const activationEpoch = externalPluginActivationEpoch.current;
+    if ((await waitForPendingUnload(pendingUnload)) === 'settled') {
+        if (
+            pendingKeyedUnloadGenerations.get(input.instanceId) !== unloadGeneration ||
+            externalPluginActivationEpoch.current !== activationEpoch
+        ) {
+            return {
+                status: 'failed',
+                stage: 'load',
+                reason: 'External plugin activation was superseded by a later unload',
+            };
+        }
+        return activateExternalPlugin(input);
+    }
+    const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
+    setActivationStatus(input.instanceId, 'error', reason);
+    logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
+    return { status: 'failed', stage: 'load', reason };
 }
 
 /**
@@ -160,6 +221,10 @@ export function activateExternalPlugin({
             })
         );
     }
+    const pendingUnload = pendingKeyedUnloads.get(instanceId);
+    if (pendingUnload) {
+        return activateAfterPendingUnload({ pluginId, instanceId, stateChunk, onLatencyMs }, pendingUnload);
+    }
     const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);
     if (activeTask) {
@@ -168,14 +233,16 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
+            // Every teardown that destroys or replaces the instance drops this task with it. A rebuild
+            // or session retirement ends the graph generation but waits on this retry with the
+            // instance still loaded, so its outcome still describes the instance the rebuild reads.
+            function retryHoldsInstance(): boolean {
+                return externalPluginActivationTasks.get(instanceId) === restoreTask;
+            }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (activationEpoch !== externalPluginActivationEpoch.current) {
-                        return {
-                            status: 'failed',
-                            stage: 'restore',
-                            reason: 'External plugin activation was superseded by a runtime graph rebuild',
-                        };
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     setActivationStatus(instanceId, 'active');
                     // The saved chunk is in the plugin again, so what it reports
@@ -184,8 +251,11 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
+                    }
                     const reason = String(error);
-                    setActivationStatus(instanceId, 'error', reason);
+                    setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, reason));
                     // The plugin rejected the chunk and holds its defaults; its
                     // runtime state must not reach a save until real state
                     // exists again.
@@ -241,6 +311,13 @@ export function activateExternalPlugin({
             externalPluginActivationTasks.get(instanceId) === activationTask &&
             loadedExternalInstances.has(instanceId)
         );
+    }
+
+    // The project chunk's restore settles on the instance whatever the epoch: a rebuild or session
+    // retirement waits on this activation with the instance still loaded and reads its marker,
+    // while every teardown that destroys or replaces the instance drops this task with it.
+    function activationHoldsInstance(): boolean {
+        return externalPluginActivationTasks.get(instanceId) === activationTask;
     }
 
     let restoredCarry: CarriedExternalPluginState | undefined;
@@ -310,13 +387,9 @@ export function activateExternalPlugin({
         // instance is never carried; a capture writes the live state itself.
         const carried = takeCarriedState(instanceId, pluginId);
         if (carried !== undefined) {
-            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, activationEpoch);
+            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, isCurrentActivation);
             if (carriedRestore === 'superseded') {
-                return {
-                    status: 'failed',
-                    stage: 'restore',
-                    reason: 'External plugin activation was superseded by a runtime teardown',
-                };
+                return SUPERSEDED_RESTORE;
             }
             if (carriedRestore === 'restored') {
                 restoredCarry = carried;
@@ -329,14 +402,22 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            if (!activationHoldsInstance()) {
+                return SUPERSEDED_RESTORE;
+            }
             // The saved chunk is in the plugin again, so what it reports over
             // get-state is authoritative state.
             clearExternalPluginRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
+            // A teardown that overtook the load owns the instance now, and a newer activation may hold
+            // the same id: this restore's outcome is no longer this instance's state.
+            if (!activationHoldsInstance()) {
+                return SUPERSEDED_RESTORE;
+            }
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
-            setActivationStatus(instanceId, 'error', String(error));
+            setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, String(error)));
             // The plugin rejected the chunk and holds its defaults; its runtime
             // state must not reach a save until real state exists again.
             markExternalPluginRestoreFailure(instanceId);

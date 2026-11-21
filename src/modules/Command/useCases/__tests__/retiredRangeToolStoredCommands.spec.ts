@@ -238,7 +238,6 @@ describe('the range write a retired tool now asks for', () => {
     });
 
     afterEach(() => {
-        setAutomationParameterRangeResolver(null);
         clearHandlerRegistry();
         clearUndoHistory();
     });
@@ -409,7 +408,6 @@ describe('a range write in the undo history a project reload restores', () => {
     });
 
     afterEach(() => {
-        setAutomationParameterRangeResolver(null);
         clearHandlerRegistry();
         clearUndoHistory();
         sessionStorage.removeItem(UNDO_SESSION_KEY);

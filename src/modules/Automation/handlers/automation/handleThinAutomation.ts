@@ -5,6 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
 import { findFollowerLaneRefusal } from './followerLaneRefusal';
+import { isLaneTransformSessionEntry } from './validateAutomationSessionEntries';
 
 export const handleThinAutomation = createHandler<'thinAutomation'>({
     execute: (alpha) => {
@@ -26,6 +27,7 @@ export const handleThinAutomation = createHandler<'thinAutomation'>({
             type: 'thin',
             tolerance: alpha.payload.tolerance,
         }),
+    validateSessionEntry: isLaneTransformSessionEntry,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

@@ -10,7 +10,10 @@ import {
     proposePendingActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { type persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+import { describeBriefReadings } from '../vibeRun/describeBriefReadings';
+import { describeRePreviewedBriefReadings } from '../vibeRun/describeRePreviewedBriefReadings';
 
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
@@ -33,7 +36,7 @@ const mocks = vi.hoisted(() => ({
     compileApproval: vi.fn(),
     compilePartial: vi.fn(),
     getRun: vi.fn(),
-    persistConfirmation: vi.fn(),
+    persistConfirmation: vi.fn<typeof persistPromptActionConfirmation>(),
     preview: vi.fn(),
     recordBatch: vi.fn(),
     refresh: vi.fn(),
@@ -122,6 +125,7 @@ const subsetBatch = buildBatch('batch-subset', CURRENT_REVISION, [0, 2]);
 
 const AGENT_APPROVAL = {
     schemaVersion: 1 as const,
+    explicitApprovalRequired: true,
     actionHashes: ['hash-kick', 'hash-snare', 'hash-hat'],
     sourceRevision: ORIGINAL_REVISION,
     targetFingerprints: {},
@@ -176,7 +180,8 @@ function propose(
     actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId)),
     adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'],
     protectionFacts?: Parameters<typeof proposePendingActionConfirmation>[0]['protectionFacts'],
-    metricGoalState: string | null = configuredLiteralMetricState(originalBatch)
+    metricGoalState: string | null = configuredLiteralMetricState(originalBatch),
+    recorded: Partial<Parameters<typeof proposePendingActionConfirmation>[0]> = {}
 ) {
     const confirmation = proposePendingActionConfirmation({
         id,
@@ -194,6 +199,7 @@ function propose(
         groupId: 'group-repropose',
         groupLabel: 'Rebalance the drums',
         projectRevision: ORIGINAL_REVISION,
+        ...recorded,
     });
     if (!confirmation) {
         throw new Error('The store refused the proposal.');
@@ -429,6 +435,171 @@ describe('reproposePendingChatActions', () => {
         });
         expect(mocks.cancelRun).not.toHaveBeenCalled();
         expect(mocks.transitionPhase).not.toHaveBeenCalled();
+    });
+
+    // Red when the replacement card says only that it was re-previewed and drops the description of
+    // what it changes (#6551).
+    it('keeps the card description of the refreshed batch beside the re-preview sentence', async () => {
+        propose('confirmation-described');
+        mocks.refresh.mockReturnValue(readyRefresh(refreshedBatch));
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-described' })).resolves.toMatchObject({
+            status: 'reproposed',
+        });
+
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        if (persisted === undefined) {
+            throw new TypeError('Expected the re-preview to persist its replacement card');
+        }
+        const { content } = persisted;
+        expect(content.startsWith('This prompt requires confirmation before execution.')).toBe(true);
+        expect(content.match(/^- \*\*setTrackGain\*\*: /gmu)).toHaveLength(3);
+        expect(content.endsWith('\n\nRe-previewed against the current project.')).toBe(true);
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content }));
+    });
+
+    // Red when a re-previewed brief card drops the lines its first proposal showed after the description (#7142).
+    it.each([
+        {
+            kind: 'ambiguous brief readings',
+            lines: [
+                'This request reads more than one way. Confirm records the brief only.',
+                '- Reading "Warm": warm, dark',
+                '- Reading "Open": airy, bright',
+            ],
+        },
+        {
+            kind: 'scheduled brief no-batches line',
+            lines: [
+                'No batches were scheduled after the brief: initial measurements require a live run, original revision, cancellation signal and budget admission.',
+            ],
+        },
+    ])('keeps the $kind lines on a whole re-preview', async ({ lines }) => {
+        propose('confirmation-brief', undefined, undefined, undefined, undefined, { plannedRunLines: lines });
+
+        await reproposePendingChatActions({ confirmationId: 'confirmation-brief' });
+
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        expect(
+            persisted?.content.endsWith(`\n\n${lines.join('\n')}\n\nRe-previewed against the current project.`)
+        ).toBe(true);
+        expect(persisted?.plannedRunLines).toEqual(lines);
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content: persisted?.content }));
+    });
+
+    // Red when the offered readings are carried: their goals stay bound to the original revision, so a choice would plan with superseded goals.
+    it('carries no offered brief readings onto a whole or a subset re-preview', async () => {
+        const briefReadings: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['briefReadings']> = {
+            catalogId: 'catalog',
+            metricGoalState: 'state',
+            readings: [
+                { id: 'r1', name: 'Warm', descriptors: ['warm'] },
+                { id: 'r2', name: 'Bright', descriptors: ['bright', 'airy'] },
+            ],
+            brief: {
+                schemaVersion: 1,
+                id: 'brief-1',
+                revision: 1,
+                vision: null,
+                references: [],
+                hardConstraints: [],
+                preferences: [],
+                sectionGoals: [],
+                trackRoles: [],
+                locks: [],
+                decisions: [],
+                unresolvedQuestions: [],
+                sourceRunLinks: [],
+                supersedesBriefId: null,
+                supersededByBriefId: null,
+                createdAt: 0,
+                updatedAt: 0,
+            },
+            trustCeiling: null,
+        };
+        propose('confirmation-readings', undefined, undefined, undefined, undefined, {
+            briefReadings,
+            plannedRunLines: describeBriefReadings(briefReadings.readings),
+        });
+        await reproposePendingChatActions({ confirmationId: 'confirmation-readings' });
+        const whole = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        expect(whole?.briefReadings).toBeUndefined();
+        // The card must not promise a choice it can no longer honour: no reading control survives the re-preview.
+        expect(whole?.content).not.toContain('Choosing a reading plans');
+        expect(whole?.plannedRunLines).not.toContain(describeBriefReadings(briefReadings.readings).at(-1));
+        const rePreviewedLines = describeRePreviewedBriefReadings(briefReadings.readings);
+        expect(whole?.plannedRunLines).toEqual(rePreviewedLines);
+        expect(whole?.content).toContain(rePreviewedLines.join('\n'));
+
+        propose('confirmation-readings-subset', undefined, undefined, undefined, undefined, {
+            briefReadings,
+            plannedRunLines: describeBriefReadings(briefReadings.readings),
+        });
+        mocks.preview.mockReturnValue(previewedSelection());
+        mocks.compilePartial.mockReturnValue({
+            status: 'compiled',
+            authority: subsetBatch.authority,
+            serialized: subsetBatch.serialized,
+            includedOriginalCommandIds: [COMMAND_IDS[0], COMMAND_IDS[2]],
+        });
+        mocks.refresh.mockReturnValue(readyRefresh(subsetBatch));
+        await reproposePendingChatActions({
+            confirmationId: 'confirmation-readings-subset',
+            selectedIntentGroupIds: [COMMAND_IDS[2]],
+        });
+        const subset = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        expect(subset?.briefReadings).toBeUndefined();
+        expect(subset?.plannedRunLines).toBeUndefined();
+        expect(subset?.content).not.toContain('reads more than one way');
+    });
+
+    // Red when the re-previewed refinement card omits the note its kept actions carried at first proposal (#7142).
+    it('notes the actions a refinement kept in the re-previewed content', async () => {
+        propose('confirmation-kept', undefined, undefined, undefined, undefined, {
+            keptDirectionActionIndexes: [1],
+            workflowCapabilityId: 'drum-routing',
+        });
+
+        await reproposePendingChatActions({ confirmationId: 'confirmation-kept' });
+
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        const intended = persisted?.content.match(/^- \*\*setTrackGain\*\*: .*$/gmu) ?? [];
+        expect(intended).toHaveLength(3);
+        expect(intended.map((line) => line.includes('(direction kept from the pending proposal)'))).toEqual([
+            false,
+            true,
+            false,
+        ]);
+        expect(persisted?.keptDirectionActionIndexes).toEqual([1]);
+        expect(persisted?.workflowCapabilityId).toBe('drum-routing');
+    });
+
+    // Red when a subset re-preview keeps the original positions, noting the wrong action.
+    it('moves the kept-direction positions with the actions a subset keeps', async () => {
+        propose('confirmation-kept-subset', undefined, undefined, undefined, undefined, {
+            keptDirectionActionIndexes: [2],
+        });
+        mocks.preview.mockReturnValue(previewedSelection());
+        mocks.compilePartial.mockReturnValue({
+            status: 'compiled',
+            authority: subsetBatch.authority,
+            serialized: subsetBatch.serialized,
+            includedOriginalCommandIds: [COMMAND_IDS[0], COMMAND_IDS[2]],
+        });
+        mocks.refresh.mockReturnValue(readyRefresh(subsetBatch));
+
+        await reproposePendingChatActions({
+            confirmationId: 'confirmation-kept-subset',
+            selectedIntentGroupIds: [COMMAND_IDS[2]],
+        });
+
+        const persisted = mocks.persistConfirmation.mock.calls.at(-1)?.[0];
+        const intended = persisted?.content.match(/^- \*\*setTrackGain\*\*: .*$/gmu) ?? [];
+        expect(intended.map((line) => line.includes('(direction kept from the pending proposal)'))).toEqual([
+            false,
+            true,
+        ]);
+        expect(persisted?.keptDirectionActionIndexes).toEqual([1]);
     });
 
     // Red when a partial selection re-proposes actions its dependency closure never included.

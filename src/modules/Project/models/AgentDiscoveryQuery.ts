@@ -85,8 +85,7 @@ export type AgentDiscoveryReceipt = {
 };
 
 /** Why a catalog that exists cannot be read right now. */
-export type AgentDiscoveryUnavailableReason =
-    'capability-provider-unregistered' | 'catalog-not-indexed' | 'groove-pool-unavailable' | 'plugin-scan-not-run';
+export type AgentDiscoveryUnavailableReason = 'catalog-not-indexed' | 'groove-pool-unavailable' | 'plugin-scan-not-run';
 
 /** Why the query itself is outside what this layer answers. */
 export type AgentDiscoveryUnsupportedReason = 'unknown-domain' | 'sample-browse-requires-text' | 'filter-not-supported';

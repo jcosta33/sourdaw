@@ -66,6 +66,7 @@
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::all_engine_runtimes;
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::plugin_editor_asks::answer_pending_editor_window_asks;
 use crate::host::plugin_host_requests::apply_pending_editor_resizes;
 use crate::host::process_refusal_reporter::report_pending_process_refusals;
 use crate::host::tail_watcher::publish_pending_tail_changes;
@@ -275,7 +276,7 @@ fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
 
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "parameter flush") {
         let reached = runtime.try_with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
-            Ok(plugin.flush_parameters_off_audio_thread())
+            Ok::<_, std::convert::Infallible>(plugin.flush_parameters_off_audio_thread())
         });
 
         match reached {
@@ -293,7 +294,11 @@ fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
 /// control path busy right now — the audio thread is inside a block, and the next
 /// tick finds it free — and an instance unloading or retired, which would refuse
 /// every retry and turn the hint into a tick-forever spin.
-fn retry_unanswered_flush(runtime: &SharedHostedPlugin, instance_id: &str, error: &str) {
+fn retry_unanswered_flush(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    error: &dyn std::fmt::Display,
+) {
     if runtime.ensure_public_control_allowed().is_err() {
         return;
     }
@@ -339,6 +344,7 @@ fn run_tick(
 
     if take_pending_editor_resize_signal() {
         apply_pending_editor_resizes(engine_plugins);
+        answer_pending_editor_window_asks(engine_plugins);
     }
 }
 
@@ -369,27 +375,20 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_editor_asks::editor_window_host;
+    use crate::host::plugin_window::testing::DedicatedUiWindowHost;
+    use crate::host::plugin_window::{PluginEditorWindow, PluginWindowHost};
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
 
     /// Both hints are process-wide, so any test that pushes an event or arms a
     /// flush raises one for every test running beside it. Every test below that
-    /// pushes, arms, or drives a tick takes this first.
-    static HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Serialise against the other hint users and start from a clean slate, so a
-    /// hint left raised by whichever test ran before cannot stand in for the one
-    /// this test is about.
+    /// pushes, arms, or drives a tick takes this first, which serialises against
+    /// the other hint users and starts from a clean slate, so a hint left raised
+    /// by whichever test ran before cannot stand in for the one this test is
+    /// about.
     fn hint_guard() -> std::sync::MutexGuard<'static, ()> {
-        let guard = HINT_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        take_pending_parameter_events_signal();
-        take_pending_parameter_flush_signal();
-        take_pending_tail_change_signal();
-        take_pending_process_refusal_signal();
-        take_pending_editor_resize_signal();
-        guard
+        crate::host::hint_test_support::guard()
     }
 
     #[derive(Default)]
@@ -578,7 +577,7 @@ mod tests {
                 .with_control(Duration::from_secs(5), |_plugin| {
                     holding.send(()).expect("the test is still listening");
                     released.recv().expect("the test releases the gate");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("a live fixture accepts control");
         });
@@ -765,7 +764,7 @@ mod tests {
                 .with_control(Duration::from_secs(5), |_plugin| {
                     holding.send(()).expect("the test is still listening");
                     released.recv().expect("the test releases the gate");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("a live fixture accepts control");
         });
@@ -1074,5 +1073,174 @@ mod tests {
             ]
         );
         assert!(open.is_empty());
+    }
+
+    /// A plugin that reports its editor destroyed from its own thread is
+    /// answered on the next tick, and on the editor window's own thread: the
+    /// `gui.destroy` acknowledgement and the window's teardown both run where
+    /// the shell drains its editor work, never on the drain thread itself.
+    #[test]
+    fn a_tick_acknowledges_an_editor_the_plugin_destroyed_on_its_windows_thread() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let editor_calls = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("a fixture logs its editor calls");
+        let window: Arc<dyn PluginEditorWindow> = Arc::from(
+            shell
+                .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                .expect("the shell opens a window"),
+        );
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(true);
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(
+            editor_calls.lock().expect("editor call log").last(),
+            Some(&shell.thread_id),
+            "the acknowledgement must run on the window's thread"
+        );
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+        let reopened = runtime.try_with_control(Duration::from_secs(1), |plugin| {
+            plugin
+                .open_gui(std::ptr::null_mut())
+                .map_err(|error| error.to_string())
+        });
+        assert!(
+            reopened.is_ok(),
+            "the acknowledged session leaves room for a new editor: {reopened:?}"
+        );
+    }
+
+    /// A window whose thread refuses its first hop, as a shell mid-teardown does,
+    /// and carries every later one out.
+    struct WindowRefusingItsFirstHop {
+        inner: Arc<dyn PluginEditorWindow>,
+        refused: AtomicBool,
+    }
+
+    impl PluginEditorWindow for WindowRefusingItsFirstHop {
+        fn native_handle_ptr(
+            &self,
+        ) -> Result<*mut std::ffi::c_void, crate::host::plugin_window::PluginWindowError> {
+            self.inner.native_handle_ptr()
+        }
+
+        fn set_size(&self, width: u32, height: u32) {
+            self.inner.set_size(width, height);
+        }
+
+        fn set_resizable(&self, resizable: bool) {
+            self.inner.set_resizable(resizable);
+        }
+
+        fn show_and_focus(&self) {
+            self.inner.show_and_focus();
+        }
+
+        fn destroy(&self) {
+            self.inner.destroy();
+        }
+
+        fn show(&self) {
+            self.inner.show();
+        }
+
+        fn hide(&self) {
+            self.inner.hide();
+        }
+
+        fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            if !self.refused.swap(true, Ordering::SeqCst) {
+                return Err("the shell's thread is not taking work".to_string());
+            }
+            self.inner.run_on_ui_thread(work)
+        }
+    }
+
+    /// A hop the window's thread refused never ran, so the plugin's ask is still
+    /// owed an answer: the next tick makes it, rather than leaving a dead window
+    /// standing and the editor impossible to reopen.
+    #[test]
+    fn an_ask_whose_hop_the_window_thread_refused_is_answered_on_the_next_tick() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let window: Arc<dyn PluginEditorWindow> = Arc::new(WindowRefusingItsFirstHop {
+            inner: Arc::from(
+                shell
+                    .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                    .expect("the shell opens a window"),
+            ),
+            refused: AtomicBool::new(false),
+        });
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(true);
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(
+            shell.window_calls(),
+            Vec::new(),
+            "a refused hop answers nothing"
+        );
+        assert!(
+            take_pending_editor_resize_signal(),
+            "the unanswered ask raises the hint again for the next tick"
+        );
+        daw_plugin_host::signal_pending_editor_resize();
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+    }
+
+    /// A plugin that ended its editor and asked for nothing else is answered by
+    /// the acknowledgement alone: the window is torn down.
+    #[test]
+    fn a_closed_ask_with_no_other_asks_tears_the_editor_down() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let window: Arc<dyn PluginEditorWindow> = Arc::from(
+            shell
+                .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                .expect("the shell opens a window"),
+        );
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(false);
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
     }
 }

@@ -1,10 +1,13 @@
 import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureFreezeStateSnapshot } from '../../useCases/freezeBounce/freezeStateSnapshot';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 type MutableFreezeStateSnapshot = {
     frozen: boolean;
@@ -21,6 +24,10 @@ const pendingFreezeSnapshots = new WeakMap<object, MutableFreezeStateSnapshot>()
 
 export const handleFreezeTrack = createHandler<'freezeTrack'>({
     execute: async (action) => {
+        if (isFreezeRefusedWhileRecording(action.payload.trackId)) {
+            notifyUser(FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, 'warning');
+            return toHandlerExecutionResult(false);
+        }
         const didWrite = await freezeTrack(action.payload.trackId, action.payload.freezeId);
         if (didWrite) {
             const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
@@ -35,6 +42,8 @@ export const handleFreezeTrack = createHandler<'freezeTrack'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: (action) => {
+        // Recording state is deliberately not read here. A batch describes every action before it runs
+        // any, so a refusal decided now could disagree with `execute`, which is the one recording gate.
         // `unfreezeTrack` is not a complete inverse. Freeze also accepts `stale` and
         // `error` states, and those can already carry a buffer — a bare unfreeze clears it
         // and collapses the metadata to `unfrozen`, which is not where the action started.

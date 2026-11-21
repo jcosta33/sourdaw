@@ -301,7 +301,11 @@ export type ArrangementTrackAppAction =
           type: 'setAutomationMode';
           payload: { trackId: string; mode: AutomationMode; expectedMode?: AutomationMode };
       }
-    | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
+    | {
+          type: 'hideTrack';
+          /** `expectedHidden` is internal replay metadata: the state this write expects to find. */
+          payload: { trackId: string; hidden: boolean; expectedHidden?: boolean };
+      }
     | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
     | {
           /** Guarded inverse and redo of `disableTrack`. Negating the requested value is
@@ -315,8 +319,16 @@ export type ArrangementTrackAppAction =
           type: 'restoreTrackDisabled';
           payload: { trackId: string; expected: boolean; replacement: boolean };
       }
-    | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
-    | { type: 'foldTrack'; payload: { trackId: string; folded: boolean } }
+    | {
+          type: 'setTrackHeight';
+          /** `expectedHeight` is internal replay metadata: the stored height this write expects to find. */
+          payload: { trackId: string; height: number; expectedHeight?: number };
+      }
+    | {
+          type: 'foldTrack';
+          /** `expectedFolded` is internal replay metadata: the state this write expects to find. */
+          payload: { trackId: string; folded: boolean; expectedFolded?: boolean };
+      }
     | { type: 'groupTracks'; payload: { trackIds: string[]; name: string } }
     | { type: 'ungroupTracks'; payload: { groupId: string } }
     | { type: 'clearSolos'; payload?: undefined }

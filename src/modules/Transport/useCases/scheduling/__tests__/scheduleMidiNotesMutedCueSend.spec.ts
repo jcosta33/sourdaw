@@ -28,20 +28,55 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
-}));
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
+        addWarpMarker: actual.addWarpMarker,
+        markerStore: actual.markerStore,
+        readMusicalRange: actual.readMusicalRange,
+        readMusicalRangeInputs: actual.readMusicalRangeInputs,
+        resolveEligibleDeviceWriteTarget: actual.resolveEligibleDeviceWriteTarget,
+        adjustmentLayerStore: actual.adjustmentLayerStore,
+        clampDeviceParamWrite: actual.clampDeviceParamWrite,
+        clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
+        clipSelectionStore: actual.clipSelectionStore,
+        deriveEffectiveAudibility: actual.deriveEffectiveAudibility,
+        deriveVcaMultiplier: actual.deriveVcaMultiplier,
+        gainEnvelopeStore: actual.gainEnvelopeStore,
+        getGainEnvelopeSeries: actual.getGainEnvelopeSeries,
+        getStoredWarpState: actual.getStoredWarpState,
+        getTrackEligibility: actual.getTrackEligibility,
+        getVcaGroupsState: actual.getVcaGroupsState,
+        getWarpState: actual.getWarpState,
+        setWarpState: actual.setWarpState,
+        shouldCreateLiveTrackStrip: actual.shouldCreateLiveTrackStrip,
+        soloModeStore: actual.soloModeStore,
+        takeLaneStore: actual.takeLaneStore,
+        vcaGroupStore: actual.vcaGroupStore,
+        trackStore: { value: { tracks: [] } },
+    };
+});
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: null },
 }));
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { value: null },
-}));
-vi.mock('#/modules/Automation/useCases', () => ({
-    getAutomationValueAtBeat: vi.fn(() => null),
-    isRecordingAutomation: vi.fn(() => false),
-}));
+vi.mock('#/modules/Automation/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
+    return {
+        modulationStore: actual.modulationStore,
+        automationStore: { value: null },
+    };
+});
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+        getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
+        getAutomationValueAtBeat: vi.fn(() => null),
+        isRecordingAutomation: vi.fn(() => false),
+    };
+});
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
@@ -60,28 +95,38 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: () => synthVoices },
-    applyNoteExpression: vi.fn(),
-    startNoteExpression: vi.fn(),
-    advanceNoteExpression: vi.fn(),
-    relocateNoteExpression: vi.fn(),
-    registerScheduledSource: registerScheduledSourceMock,
-    // The one definition of the MPE member default, as the production barrel
-    // exports it (audit MD-8).
-    getDefaultBendRangeSemitones: () => 48,
-    getNoteExpressionDimensions: () => [],
-    getCompensationDelay: vi.fn(() => 0),
-    ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
-    getTrackStrip: vi.fn(),
-    getCurrentTime: vi.fn(() => 0),
-    getDrumKitByIndex: vi.fn(() => null),
-    getAudioContext: vi.fn(() => ({
-        sampleRate: 48000,
-        createGain: vi.fn(() => ({ connect: vi.fn() })),
-    })),
-    scheduleFaustNote: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: () => synthVoices },
+        applyNoteExpression: vi.fn(),
+        startNoteExpression: vi.fn(),
+        advanceNoteExpression: vi.fn(),
+        relocateNoteExpression: vi.fn(),
+        registerScheduledSource: registerScheduledSourceMock,
+        // The one definition of the MPE member default, as the production barrel
+        // exports it (audit MD-8).
+        getDefaultBendRangeSemitones: () => 48,
+        getNoteExpressionDimensions: () => [],
+        getCompensationDelay: vi.fn(() => 0),
+        ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
+        getTrackStrip: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+        getDrumKitByIndex: vi.fn(() => null),
+        getAudioContext: vi.fn(() => ({
+            sampleRate: 48000,
+            createGain: vi.fn(() => ({ connect: vi.fn() })),
+        })),
+        scheduleFaustNote: vi.fn(),
+    };
+});
 // The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
 const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(() => null),

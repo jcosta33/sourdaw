@@ -38,23 +38,24 @@
 use crate::commands::graph::BoundHostedInstance;
 use crate::commands::plugins::{
     activation_refusal_reason, construct_runtime_on_ui_thread, create_hosted_runtime,
-    hold_plugin_runtime_gate, host_backend, HostBackend, VettedRegistryEntry,
+    hold_plugin_runtime_gate, host_backend, HostBackend, PluginCommandError, VettedRegistryEntry,
 };
-use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
+use crate::host::native_bridge::{HostedPluginSlot, PluginControlRefusal, SharedHostedPlugin};
 #[cfg(test)]
 use crate::host::plugin_folder_grants::ForbiddenRoots;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use crate::state::AppState;
 use daw_engine::midi::note_store::MidiNoteStore;
-use daw_engine::offline::{OfflineRenderControl, OfflineRenderer};
+use daw_engine::offline::{OfflineCommandError, OfflineRenderControl, OfflineRenderer};
 use daw_engine::pdc::CompensationDelay;
 use daw_engine::scheduler::{GraphCommand, HOSTED_PLUGIN_RESERVE};
-use daw_plugin_host::{AudioPlugin, HostedPluginRuntime, HostedRuntime, ProcessMode};
+use daw_plugin_host::{AudioPlugin, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode};
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 #[cfg(test)]
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 #[cfg(test)]
@@ -88,18 +89,14 @@ pub const RENDER_ID_MAX_BYTES: usize = 128;
 pub const OFFLINE_RENDER_ID_INVALID: &str = "offline-render-id-invalid";
 
 /// Refuse a render id that is empty or longer than [`RENDER_ID_MAX_BYTES`].
-fn check_render_id(render_id: &str) -> Result<(), String> {
+fn check_render_id(render_id: &str) -> Result<(), OfflineRenderError> {
     if render_id.is_empty() {
-        return Err(format!(
-            "{OFFLINE_RENDER_ID_INVALID}: a render id must not be empty"
-        ));
+        return Err(OfflineRenderError::RenderIdEmpty);
     }
     if render_id.len() > RENDER_ID_MAX_BYTES {
-        return Err(format!(
-            "{OFFLINE_RENDER_ID_INVALID}: a render id must be at most {RENDER_ID_MAX_BYTES} \
-             bytes; this one is {}",
-            render_id.len()
-        ));
+        return Err(OfflineRenderError::RenderIdTooLong {
+            length: render_id.len(),
+        });
     }
     Ok(())
 }
@@ -108,24 +105,274 @@ fn check_render_id(render_id: &str) -> Result<(), String> {
 /// renderer side matches on.
 pub const OFFLINE_RENDER_CANCELLED: &str = "offline-render-cancelled";
 
-/// The offline renders in flight, by the id their caller named, the cancels
-/// that arrived before their render did, and the ids that recently finished.
+/// How many offline renders may be in flight at once, named or not.
+///
+/// One export plus one agent render are the most the renderer's render lock
+/// lets run together, and each may hold a full-length output buffer.
+pub const MAX_OFFLINE_RENDERS_IN_FLIGHT: usize = 2;
+
+/// The text a render refused for want of a slot starts with.
+pub const OFFLINE_RENDER_LIMIT_REACHED: &str = "offline-render-limit-reached";
+
+/// The text a render refused once quit has cancelled every render starts with.
+pub const OFFLINE_RENDER_CLOSED: &str = "offline-render-closed";
+
+/// Why an offline render, or a cancel of one, refused.
+///
+/// `Display` is the text the renderer receives, byte-identical to the text it
+/// replaced (ADR 0059); `isNativeOfflineRenderCancelled.ts` matches the
+/// [`OFFLINE_RENDER_CANCELLED`] prefix of [`Self::Cancelled`].
+#[derive(Debug)]
+pub(crate) enum OfflineRenderError {
+    RenderIdEmpty,
+    RenderIdTooLong {
+        length: usize,
+    },
+    /// Every slot is held ([`MAX_OFFLINE_RENDERS_IN_FLIGHT`]).
+    LimitReached,
+    /// Quit has cancelled every render and refuses every later one.
+    Closed,
+    RenderIdInUse {
+        render_id: String,
+    },
+    /// A state store's mutex was poisoned.
+    Lock {
+        store: &'static str,
+        cause: String,
+    },
+    Cancelled {
+        render_id: Option<String>,
+        frames: usize,
+    },
+    /// The offline renderer refused a command.
+    Command(OfflineCommandError),
+    TooManyPlugins {
+        count: usize,
+    },
+    /// One instance refused, named by device and plugin. Boxed so the refusal's
+    /// own sources do not size every render result.
+    Plugin {
+        device_id: String,
+        plugin_name: String,
+        refusal: Box<OfflinePluginRefusal>,
+    },
+}
+
+impl OfflineRenderError {
+    fn lock<Guard>(store: &'static str) -> impl FnOnce(PoisonError<Guard>) -> Self {
+        move |error| Self::Lock {
+            store,
+            cause: error.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for OfflineRenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RenderIdEmpty => write!(
+                f,
+                "{OFFLINE_RENDER_ID_INVALID}: a render id must not be empty"
+            ),
+            Self::RenderIdTooLong { length } => write!(
+                f,
+                "{OFFLINE_RENDER_ID_INVALID}: a render id must be at most {RENDER_ID_MAX_BYTES} \
+                 bytes; this one is {length}"
+            ),
+            Self::LimitReached => write!(
+                f,
+                "{OFFLINE_RENDER_LIMIT_REACHED}: {MAX_OFFLINE_RENDERS_IN_FLIGHT} offline renders \
+                 are already in flight; this one was refused before anything was mapped or \
+                 built for it"
+            ),
+            Self::Closed => write!(
+                f,
+                "{OFFLINE_RENDER_CLOSED}: the application is quitting, so no offline render starts"
+            ),
+            Self::RenderIdInUse { render_id } => write!(
+                f,
+                "offline-render-id-in-use: a render under id '{render_id}' is already in flight"
+            ),
+            Self::Lock { store, cause } => write!(f, "Failed to lock {store}: {cause}"),
+            Self::Cancelled { render_id, frames } => {
+                write!(f, "{OFFLINE_RENDER_CANCELLED}: render")?;
+                if let Some(render_id) = render_id {
+                    write!(f, " '{render_id}'")?;
+                }
+                write!(
+                    f,
+                    " was cancelled after {frames} frames; nothing was returned"
+                )
+            }
+            Self::Command(error) => write!(f, "{error}"),
+            Self::TooManyPlugins { count } => write!(
+                f,
+                "offline-render-plugin: the render binds {count} hosted effects, past the {} \
+                 the offline effect table reserves for hosted plugins",
+                HOSTED_PLUGIN_RESERVE
+            ),
+            Self::Plugin {
+                device_id,
+                plugin_name,
+                refusal,
+            } => write!(
+                f,
+                "offline-render-plugin: device '{device_id}' (plugin '{plugin_name}') cannot \
+                 render offline: {refusal}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for OfflineRenderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Command(error) => Some(error),
+            Self::Plugin { refusal, .. } => Some(refusal.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+/// Why one offline instance refused the render.
+#[derive(Debug)]
+pub(crate) enum OfflinePluginRefusal {
+    Unserved {
+        missed: u64,
+    },
+    /// The control path could not read the wrapper's failure latch.
+    ProcessingUnreadable(PluginControlRefusal),
+    FailedABlock,
+    NeverStartedProcessing,
+    Unloaded,
+    Replaced,
+    PendingParameterWrites,
+    StateUnreadable(PluginCommandError),
+    /// Resolving the backend, constructing or activating the instance.
+    Load(PluginCommandError),
+    StateNotRestored(PluginError),
+    /// The control path's own refusal while restoring the state.
+    Control(PluginControlRefusal),
+}
+
+impl fmt::Display for OfflinePluginRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unserved { missed } => write!(
+                f,
+                "it was not served {missed} block(s) of the render, which would pass through dry"
+            ),
+            Self::ProcessingUnreadable(reason) => write!(
+                f,
+                "whether it processed every block could not be read: {reason}"
+            ),
+            Self::FailedABlock => f.write_str(
+                "it failed to process a block of the render, which its host passed through \
+                 unprocessed",
+            ),
+            Self::NeverStartedProcessing => f.write_str(
+                "it refused to start processing, so its host passed blocks of the render \
+                 through unprocessed",
+            ),
+            Self::Unloaded => {
+                f.write_str("its live instance was unloaded while the render started")
+            }
+            Self::Replaced => {
+                f.write_str("its live instance was replaced while the render started")
+            }
+            Self::PendingParameterWrites => f.write_str(
+                "its live state could not be read: the plugin has parameter writes pending that \
+                 the live engine has not processed yet",
+            ),
+            Self::StateUnreadable(reason) => {
+                write!(f, "its live state could not be read: {reason}")
+            }
+            Self::Load(reason) => write!(f, "{reason}"),
+            Self::StateNotRestored(reason) => {
+                write!(f, "its live state could not be restored: {reason}")
+            }
+            Self::Control(refusal) => write!(f, "{refusal}"),
+        }
+    }
+}
+
+impl std::error::Error for OfflinePluginRefusal {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::StateUnreadable(error) | Self::Load(error) => Some(error),
+            Self::StateNotRestored(error) => Some(error),
+            Self::ProcessingUnreadable(refusal) | Self::Control(refusal) => Some(refusal),
+            _ => None,
+        }
+    }
+}
+
+/// The offline renders in flight — every admitted one, and by the id their
+/// caller named the ones that have one — the cancels that arrived before their
+/// render did, and the ids that recently finished.
 #[derive(Debug, Default)]
 pub struct OfflineRenders {
+    admitted: Vec<Arc<OfflineRenderControl>>,
+    /// Set once quit has cancelled every render: nothing is admitted after.
+    closed: bool,
     in_flight: HashMap<String, Arc<OfflineRenderControl>>,
     pending_cancels: VecDeque<String>,
     recently_finished: VecDeque<String>,
 }
 
 impl OfflineRenders {
+    /// Take one of the [`MAX_OFFLINE_RENDERS_IN_FLIGHT`] slots for a render,
+    /// registering it under `render_id` when it has one. Refused by name, with
+    /// nothing taken, when every slot is held or the id is in use.
+    fn admit(
+        &mut self,
+        render_id: Option<&str>,
+    ) -> Result<Arc<OfflineRenderControl>, OfflineRenderError> {
+        if self.closed {
+            return Err(OfflineRenderError::Closed);
+        }
+        if self.admitted.len() >= MAX_OFFLINE_RENDERS_IN_FLIGHT {
+            return Err(OfflineRenderError::LimitReached);
+        }
+        let control = match render_id {
+            Some(render_id) => self.begin(render_id)?,
+            None => Arc::new(OfflineRenderControl::default()),
+        };
+        self.admitted.push(Arc::clone(&control));
+        Ok(control)
+    }
+
+    /// Cancel every admitted render, named or not, and admit none after: what
+    /// quit does, so nothing renders on past the plugin drain.
+    fn cancel_all(&mut self) {
+        self.closed = true;
+        for control in &self.admitted {
+            control.cancel();
+        }
+    }
+
+    /// How many renders hold a slot.
+    fn admitted_count(&self) -> usize {
+        self.admitted.len()
+    }
+
+    /// Give back the slot [`Self::admit`] handed `control`, and finish its id.
+    fn release(&mut self, control: &Arc<OfflineRenderControl>, render_id: Option<&str>) {
+        self.admitted
+            .retain(|admitted| !Arc::ptr_eq(admitted, control));
+        if let Some(render_id) = render_id {
+            self.finish(render_id);
+        }
+    }
+
     /// Register a render under `render_id`, cancelled already if its cancel
     /// arrived first. Refused when a render under that id is still in flight:
     /// a cancel could not say which of the two it meant.
-    fn begin(&mut self, render_id: &str) -> Result<Arc<OfflineRenderControl>, String> {
+    fn begin(&mut self, render_id: &str) -> Result<Arc<OfflineRenderControl>, OfflineRenderError> {
         if self.in_flight.contains_key(render_id) {
-            return Err(format!(
-                "offline-render-id-in-use: a render under id '{render_id}' is already in flight"
-            ));
+            return Err(OfflineRenderError::RenderIdInUse {
+                render_id: render_id.to_string(),
+            });
         }
         self.recently_finished
             .retain(|finished| finished != render_id);
@@ -191,37 +438,48 @@ impl OfflineRenders {
     }
 }
 
-/// One render's hold on its control: registered under its id while it runs,
-/// and taken out of the registry however the render ends.
+/// One render's hold on its slot and its control: admitted, and registered
+/// under its id when it has one, while it runs, and given back however the
+/// render ends.
 pub(crate) struct InFlightRender<'a> {
     control: Arc<OfflineRenderControl>,
-    registration: Option<(&'a AppState, String)>,
+    admission: Option<Admission<'a>>,
+}
+
+/// The registry a render was admitted to, and the id it was registered under.
+struct Admission<'a> {
+    state: &'a AppState,
+    render_id: Option<String>,
 }
 
 impl<'a> InFlightRender<'a> {
-    /// A render the caller named, so it can be cancelled; or, with no id, one
-    /// nothing can cancel.
-    pub(crate) fn begin(state: &'a AppState, render_id: Option<String>) -> Result<Self, String> {
-        let Some(render_id) = render_id else {
-            return Ok(Self::uncancellable());
-        };
-        check_render_id(&render_id)?;
+    /// Admit a render, refused by name past [`MAX_OFFLINE_RENDERS_IN_FLIGHT`].
+    /// One the caller named can be cancelled by that id.
+    pub(crate) fn begin(
+        state: &'a AppState,
+        render_id: Option<String>,
+    ) -> Result<Self, OfflineRenderError> {
+        if let Some(render_id) = &render_id {
+            check_render_id(render_id)?;
+        }
         let control = state
             .offline_renders
             .lock()
-            .map_err(|error| format!("Failed to lock offline renders: {error}"))?
-            .begin(&render_id)?;
+            .map_err(OfflineRenderError::lock("offline renders"))?
+            .admit(render_id.as_deref())?;
         Ok(Self {
             control,
-            registration: Some((state, render_id)),
+            admission: Some(Admission { state, render_id }),
         })
     }
 
-    /// A render no caller named, which nothing can cancel.
+    /// A render outside the registry, which takes no slot and nothing can
+    /// cancel.
+    #[cfg(test)]
     pub(crate) fn uncancellable() -> Self {
         Self {
             control: Arc::new(OfflineRenderControl::default()),
-            registration: None,
+            admission: None,
         }
     }
 
@@ -229,27 +487,32 @@ impl<'a> InFlightRender<'a> {
         &self.control
     }
 
+    /// The control a closure that outlives this borrow reads the cancel from.
+    fn shared_control(&self) -> Arc<OfflineRenderControl> {
+        Arc::clone(&self.control)
+    }
+
     /// The refusal a cancelled render answers with, once it has stopped.
-    pub(crate) fn cancelled(&self) -> String {
-        let id = self
-            .registration
-            .as_ref()
-            .map_or(String::new(), |(_, id)| format!(" '{id}'"));
-        format!(
-            "{OFFLINE_RENDER_CANCELLED}: render{id} was cancelled after {} frames; nothing was \
-             returned",
-            self.control.rendered_frames()
-        )
+    pub(crate) fn cancelled(&self) -> OfflineRenderError {
+        OfflineRenderError::Cancelled {
+            render_id: self
+                .admission
+                .as_ref()
+                .and_then(|admission| admission.render_id.clone()),
+            frames: self.control.rendered_frames(),
+        }
     }
 }
 
 impl Drop for InFlightRender<'_> {
     fn drop(&mut self) {
-        if let Some((state, render_id)) = self.registration.take() {
-            match state.offline_renders.lock() {
-                Ok(mut renders) => renders.finish(&render_id),
-                Err(poisoned) => poisoned.into_inner().finish(&render_id),
-            }
+        let Some(admission) = self.admission.take() else {
+            return;
+        };
+        let render_id = admission.render_id.as_deref();
+        match admission.state.offline_renders.lock() {
+            Ok(mut renders) => renders.release(&self.control, render_id),
+            Err(poisoned) => poisoned.into_inner().release(&self.control, render_id),
         }
     }
 }
@@ -257,28 +520,67 @@ impl Drop for InFlightRender<'_> {
 /// Cancel the offline render under `render_id`. A cancel before its render
 /// starts still cancels it; one for a finished id does nothing.
 pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), String> {
-    check_render_id(&render_id)?;
+    cancel_render(&render_id, state).map_err(|error| error.to_string())
+}
+
+fn cancel_render(render_id: &str, state: &AppState) -> Result<(), OfflineRenderError> {
+    check_render_id(render_id)?;
     state
         .offline_renders
         .lock()
-        .map_err(|error| format!("Failed to lock offline renders: {error}"))?
-        .cancel(&render_id);
+        .map_err(OfflineRenderError::lock("offline renders"))?
+        .cancel(render_id);
     Ok(())
+}
+
+/// Cancel every offline render in flight and refuse every later one: the first
+/// step of the quit cascade (`shutdown::shutdown`). A poisoned registry is
+/// still cancelled: quit must not leave a render running because another
+/// panicked.
+pub(crate) fn cancel_every_offline_render(state: &AppState) {
+    match state.offline_renders.lock() {
+        Ok(mut renders) => renders.cancel_all(),
+        Err(poisoned) => poisoned.into_inner().cancel_all(),
+    }
+}
+
+/// How many offline renders still hold a slot, or `None` while a render holds
+/// the registry: the quit cascade polls this rather than wait on a lock a
+/// render needs to give its slot back.
+pub(crate) fn offline_renders_in_flight(state: &AppState) -> Option<usize> {
+    match state.offline_renders.try_lock() {
+        Ok(renders) => Some(renders.admitted_count()),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+            Some(poisoned.into_inner().admitted_count())
+        }
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
 }
 
 /// How an offline render reads a live instance's state, from the very runtime
 /// whose load the offline instance is built from. The state is the world the
 /// read happens in; production reads the runtime alone ([`read_live_state`]).
-pub(crate) type CaptureState = fn(&SharedHostedPlugin, &AppState) -> Result<Vec<u8>, String>;
+pub(crate) type CaptureState = fn(
+    &SharedHostedPlugin,
+    &AppState,
+    &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError>;
 
 /// Read a live engine instance's state chunk: refused, not drained, while its
 /// parameter writes wait for the live engine — what the state save does for
-/// the same instance (`plugins::read_plugin_state_chunk`).
+/// the same instance (`plugins::read_plugin_state_chunk`). The wait for the
+/// instance's control gate is the state save's own, deadline and verdict
+/// included, except that it ends when `render_control` is cancelled.
 pub(crate) fn read_live_state(
     runtime: &SharedHostedPlugin,
     _state: &AppState,
-) -> Result<Vec<u8>, String> {
-    runtime.get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
+    render_control: &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError> {
+    runtime
+        .get_state_after_pending_parameters_drain_unless(OFFLINE_CONTROL_TIMEOUT, &|| {
+            render_control.is_cancelled()
+        })
+        .map_err(PluginCommandError::StateRead)
 }
 
 /// A test's look at every built instance just before the render.
@@ -291,7 +593,7 @@ pub(crate) type AfterMapping = Box<dyn Fn(&AppState) + Send + Sync>;
 
 /// How an offline render builds a runtime once its file is vetted.
 pub(crate) type ConstructRuntime =
-    fn(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>;
+    fn(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, PluginError>;
 
 /// What an offline render reaches the plugin world through. Production has
 /// exactly one value ([`Self::production`]); a test swaps a seam to drive a
@@ -304,6 +606,10 @@ pub(crate) struct OfflinePluginSeams {
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
     pub(crate) after_build: Option<AfterBuild>,
+    /// Run once the render holds its slot and before it maps anything, so a
+    /// test can hold the slot.
+    #[cfg(test)]
+    pub(crate) after_admission: Option<Box<dyn Fn() + Send + Sync>>,
     /// Run once the batch is mapped against the hosted instances and before
     /// any is built, so a test can change the live records in between.
     #[cfg(test)]
@@ -312,6 +618,10 @@ pub(crate) struct OfflinePluginSeams {
     /// free again, just before its live state is restored into it.
     #[cfg(test)]
     pub(crate) before_restore: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run for each instance just before its build waits on the runtime gate,
+    /// so a test can cancel the render while it waits there.
+    #[cfg(test)]
+    pub(crate) before_runtime_gate: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl OfflinePluginSeams {
@@ -343,9 +653,13 @@ impl OfflinePluginSeams {
             #[cfg(test)]
             after_build: None,
             #[cfg(test)]
+            after_admission: None,
+            #[cfg(test)]
             after_mapping: None,
             #[cfg(test)]
             before_restore: None,
+            #[cfg(test)]
+            before_runtime_gate: None,
         }
     }
 }
@@ -376,7 +690,10 @@ impl OfflinePluginInstances<'_> {
     /// Register every instance in `renderer` ahead of the mapped batch: the
     /// slot, then the instance's own latency, so the graph compensates every
     /// route it sits on from the first block.
-    pub(crate) fn register(&self, renderer: &mut OfflineRenderer) -> Result<(), String> {
+    pub(crate) fn register(
+        &self,
+        renderer: &mut OfflineRenderer,
+    ) -> Result<(), OfflineRenderError> {
         for instance in &self.instances {
             let id = instance.bound.engine_plugin_id;
             renderer
@@ -385,14 +702,14 @@ impl OfflinePluginInstances<'_> {
                     Box::new(HostedPluginSlot::new(Arc::clone(&instance.runtime))),
                     MidiNoteStore::new(),
                 ))
-                .map_err(|error| error.to_string())?;
+                .map_err(OfflineRenderError::Command)?;
             renderer
                 .push(GraphCommand::SetEffectLatency {
                     effect_id: id,
                     latency_frames: instance.latency_frames,
                     dry_delay: CompensationDelay::for_latency(instance.latency_frames),
                 })
-                .map_err(|error| error.to_string())?;
+                .map_err(OfflineRenderError::Command)?;
         }
         Ok(())
     }
@@ -422,22 +739,19 @@ impl OfflinePluginInstances<'_> {
     /// has a hole in it and is not the project. Called after the last block,
     /// once the render thread has left every instance's processing state, so
     /// the control-path read of the wrapper's failure latch sees every block.
-    pub(crate) fn ensure_every_block_processed(&self) -> Result<(), String> {
+    pub(crate) fn ensure_every_block_processed(&self) -> Result<(), OfflineRenderError> {
         for instance in &self.instances {
             let missed = instance.runtime.unserved_blocks();
             if missed > 0 {
                 return Err(refusal(
                     &instance.bound,
-                    &format!(
-                        "it was not served {missed} block(s) of the render, which would pass \
-                         through dry"
-                    ),
+                    OfflinePluginRefusal::Unserved { missed },
                 ));
             }
             let (failed, never_processing) = instance
                 .runtime
                 .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                    Ok((
+                    Ok::<_, std::convert::Infallible>((
                         plugin.has_failed_a_process_call(),
                         plugin.has_passed_a_block_unprocessed(),
                     ))
@@ -445,21 +759,16 @@ impl OfflinePluginInstances<'_> {
                 .map_err(|reason| {
                     refusal(
                         &instance.bound,
-                        &format!("whether it processed every block could not be read: {reason}"),
+                        OfflinePluginRefusal::ProcessingUnreadable(reason.into_refusal()),
                     )
                 })?;
             if failed {
-                return Err(refusal(
-                    &instance.bound,
-                    "it failed to process a block of the render, which its host passed through \
-                     unprocessed",
-                ));
+                return Err(refusal(&instance.bound, OfflinePluginRefusal::FailedABlock));
             }
             if never_processing {
                 return Err(refusal(
                     &instance.bound,
-                    "it refused to start processing, so its host passed blocks of the render \
-                     through unprocessed",
+                    OfflinePluginRefusal::NeverStartedProcessing,
                 ));
             }
         }
@@ -499,34 +808,32 @@ struct LiveRecord {
 }
 
 /// Take every bound instance's live record under one lock, refusing by name an
-/// instance whose record is gone, or is no longer the plugin the batch was
-/// mapped against — an unload and a reload under the same id can land between
-/// the mapping and this read, and could be another plugin or an instrument.
+/// instance whose record is gone, or no longer holds the very runtime the batch
+/// was mapped against — an unload and a reload under the same id can land
+/// between the mapping and this read, and could be another plugin, another
+/// file under the same plugin name, or an instrument. The runtime is the load's
+/// identity: an engine plugin id restarts with the engine, so a replacement can
+/// reuse the mapped one, and the same runtime re-attached under a new id is
+/// still the plugin the batch was mapped against. The render registers its
+/// offline instance under the mapped id either way.
 fn live_records(
     bound: &[BoundHostedInstance],
     state: &AppState,
-) -> Result<Vec<LiveRecord>, String> {
+) -> Result<Vec<LiveRecord>, OfflineRenderError> {
     let engine_plugins = state
         .engine_plugins
         .lock()
-        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+        .map_err(OfflineRenderError::lock("engine plugins"))?;
     bound
         .iter()
         .map(|instance| {
             let Some(record) = engine_plugins.get(&instance.instance_id) else {
-                return Err(refusal(
-                    instance,
-                    "its live instance was unloaded while the render started",
-                ));
+                return Err(refusal(instance, OfflinePluginRefusal::Unloaded));
             };
-            let mapped_under = record.engine_plugin_id == instance.engine_plugin_id
-                && record.chain_kind == instance.chain_kind
-                && record.name == instance.plugin_name;
-            if !mapped_under {
-                return Err(refusal(
-                    instance,
-                    "its live instance was replaced while the render started",
-                ));
+            let mapped_against =
+                std::ptr::eq(Arc::as_ptr(&record.runtime), instance.live_runtime.as_ptr());
+            if !mapped_against {
+                return Err(refusal(instance, OfflinePluginRefusal::Replaced));
             }
             Ok(LiveRecord {
                 instance_id: instance.instance_id.clone(),
@@ -565,20 +872,35 @@ fn capture_live_state(
     runtime: &SharedHostedPlugin,
     state: &AppState,
     seams: &OfflinePluginSeams,
-) -> Result<Vec<u8>, String> {
+    render: &InFlightRender<'_>,
+) -> Result<Vec<u8>, OfflineRenderError> {
     if runtime.has_pending_parameter_writes() {
-        return Err(refusal(
+        return Err(refusal_unless_cancelled(
+            render,
             instance,
-            "its live state could not be read: the plugin has parameter writes pending that the \
-             live engine has not processed yet",
+            OfflinePluginRefusal::PendingParameterWrites,
         ));
     }
-    (seams.capture_state)(runtime, state).map_err(|reason| {
-        refusal(
+    (seams.capture_state)(runtime, state, render.control()).map_err(|reason| {
+        refusal_unless_cancelled(
+            render,
             instance,
-            &format!("its live state could not be read: {reason}"),
+            OfflinePluginRefusal::StateUnreadable(reason),
         )
     })
+}
+
+/// The refusal for one instance, or the cancelled refusal when the render was
+/// cancelled: a cancel is never reported as a plugin's failure.
+fn refusal_unless_cancelled(
+    render: &InFlightRender<'_>,
+    bound: &BoundHostedInstance,
+    reason: OfflinePluginRefusal,
+) -> OfflineRenderError {
+    if render.control().is_cancelled() {
+        return render.cancelled();
+    }
+    refusal(bound, reason)
 }
 
 /// Leaves every offline instance's processing state when dropped; see
@@ -606,11 +928,32 @@ impl Drop for LeavesProcessing<'_, '_> {
 }
 
 /// The refusal for one instance, by device and plugin.
-fn refusal(bound: &BoundHostedInstance, reason: &str) -> String {
-    format!(
-        "offline-render-plugin: device '{}' (plugin '{}') cannot render offline: {reason}",
-        bound.device_id, bound.plugin_name
-    )
+fn refusal(bound: &BoundHostedInstance, refusal: OfflinePluginRefusal) -> OfflineRenderError {
+    OfflineRenderError::Plugin {
+        device_id: bound.device_id.clone(),
+        plugin_name: bound.plugin_name.clone(),
+        refusal: Box::new(refusal),
+    }
+}
+
+/// The constructor a render's construction hop runs: `construct`, unless the
+/// render is cancelled by the time the UI thread reaches it. The hop's deadline
+/// bounds only the wait for the UI thread to start it, so a construction posted
+/// before a quit's cancel can run after it; this read is what stops it opening
+/// a plugin's module then. The refusal is never shown: the caller answers a
+/// cancelled render with its cancelled refusal.
+fn construct_unless_cancelled(
+    construct: ConstructRuntime,
+    render_control: Arc<OfflineRenderControl>,
+) -> impl FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, PluginError>
+       + Send
+       + 'static {
+    move |backend, path, descriptor_id, sample_rate, mode| {
+        if render_control.is_cancelled() {
+            return Err(PluginError::ConstructionWithdrawn);
+        }
+        construct(backend, path, descriptor_id, sample_rate, mode)
+    }
 }
 
 /// Build an offline instance of every bound effect, at `sample_rate`, with the
@@ -618,14 +961,25 @@ fn refusal(bound: &BoundHostedInstance, reason: &str) -> String {
 ///
 /// Every live state is captured first, at render start, so the print is one
 /// moment of the session rather than a smear across the constructions. A
-/// refusal partway releases whatever was already built.
+/// refusal partway releases whatever was already built. So does a cancel of
+/// `render`, read before each state read, before each construction and again
+/// once the runtime gate is taken, and before each restore: a render cancelled
+/// at quit reads and builds nothing more on the thread waiting for it to end.
+/// A cancel also ends a state read waiting on a held control gate — which, left
+/// uncancelled, waits the live instance's own gate deadline and gives the same
+/// unresponsive verdict as a state save — and is read
+/// again on the UI thread, immediately before the plugin's code is opened: a
+/// construction posted before the cancel and run after it opens nothing. The
+/// restore into the fresh instance waits on no gate — nothing else holds it —
+/// so it has no wait to cut short.
 pub(crate) async fn build_offline_instances<'a>(
     bound: &[BoundHostedInstance],
     sample_rate: f64,
     state: &'a AppState,
     ui: &'a dyn UiThread,
     seams: &OfflinePluginSeams,
-) -> Result<OfflinePluginInstances<'a>, String> {
+    render: &InFlightRender<'_>,
+) -> Result<OfflinePluginInstances<'a>, OfflineRenderError> {
     let mut built = OfflinePluginInstances {
         instances: Vec::with_capacity(bound.len()),
         state,
@@ -637,12 +991,7 @@ pub(crate) async fn build_offline_instances<'a>(
     // The offline effect table reserves the hosted instances a session may
     // hold; a render binding more than that would be refused by the table.
     if bound.len() > HOSTED_PLUGIN_RESERVE {
-        return Err(format!(
-            "offline-render-plugin: the render binds {} hosted effects, past the {} the offline \
-             effect table reserves for hosted plugins",
-            bound.len(),
-            HOSTED_PLUGIN_RESERVE
-        ));
+        return Err(OfflineRenderError::TooManyPlugins { count: bound.len() });
     }
 
     // Every state is captured before anything is constructed, each from the
@@ -652,7 +1001,12 @@ pub(crate) async fn build_offline_instances<'a>(
     let mut captured = Vec::with_capacity(bound.len());
     let mut refused = None;
     for (instance, record) in bound.iter().zip(records.by_ref()) {
-        let chunk = capture_live_state(instance, &record.runtime, state, seams);
+        if render.control().is_cancelled() {
+            return_live_runtime(&record.instance_id, record.runtime, state);
+            refused = Some(render.cancelled());
+            break;
+        }
+        let chunk = capture_live_state(instance, &record.runtime, state, seams, render);
         return_live_runtime(&record.instance_id, record.runtime, state);
         match chunk {
             Ok(chunk) => captured.push((chunk, record.load_resolution)),
@@ -670,13 +1024,24 @@ pub(crate) async fn build_offline_instances<'a>(
     }
 
     for (instance, (chunk, vetted)) in bound.iter().zip(captured) {
-        let backend =
-            host_backend(&vetted.entry.format).map_err(|reason| refusal(instance, &reason))?;
+        if render.control().is_cancelled() {
+            return Err(render.cancelled());
+        }
+        let backend = host_backend(&vetted.entry.format)
+            .map_err(|reason| refusal(instance, OfflinePluginRefusal::Load(reason)))?;
         // The gate spans this instance's vet and construction only: released
         // here, before the state restore and before any refusal tears down the
         // instances already built — the order a load's refusal keeps.
+        #[cfg(test)]
+        if let Some(before_runtime_gate) = &seams.before_runtime_gate {
+            before_runtime_gate();
+        }
         let runtime = {
             let _runtime_gate = hold_plugin_runtime_gate().await;
+            // A cancel can land while the build waits its turn at the gate.
+            if render.control().is_cancelled() {
+                return Err(render.cancelled());
+            }
             construct_runtime_on_ui_thread(
                 ui,
                 backend,
@@ -684,10 +1049,15 @@ pub(crate) async fn build_offline_instances<'a>(
                 vetted,
                 sample_rate,
                 ProcessMode::Offline,
-                seams.construct,
+                construct_unless_cancelled(seams.construct, render.shared_control()),
             )
-        }
-        .map_err(|reason| refusal(instance, &reason))?;
+        };
+        let runtime = match runtime {
+            Err(_) if render.control().is_cancelled() => return Err(render.cancelled()),
+            runtime => {
+                runtime.map_err(|reason| refusal(instance, OfflinePluginRefusal::Load(reason)))?
+            }
+        };
         let activated = runtime.is_activated();
         let shared = Arc::new(SharedHostedPlugin::new(runtime));
         built.instances.push(OfflinePluginInstance {
@@ -695,23 +1065,44 @@ pub(crate) async fn build_offline_instances<'a>(
             runtime: Arc::clone(&shared),
             latency_frames: 0,
         });
+        // A runtime built just before the cancel is in `built` already, so
+        // this refusal releases it on the UI thread like any other.
+        if render.control().is_cancelled() {
+            return Err(render.cancelled());
+        }
         if !activated {
             return Err(refusal(
                 instance,
-                &activation_refusal_reason(&instance.plugin_name),
+                OfflinePluginRefusal::Load(activation_refusal_reason(&instance.plugin_name)),
             ));
         }
         #[cfg(test)]
         if let Some(before_restore) = &seams.before_restore {
             before_restore();
         }
+        if render.control().is_cancelled() {
+            return Err(render.cancelled());
+        }
         let latency_frames = shared
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                AudioPlugin::set_state(plugin, &chunk)
-                    .map_err(|reason| format!("its live state could not be restored: {reason}"))?;
-                Ok(<HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize)
+                Ok::<_, std::convert::Infallible>(AudioPlugin::set_state(plugin, &chunk).map(
+                    |()| <HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize,
+                ))
             })
-            .map_err(|reason| refusal(instance, &reason))?;
+            .map_err(|reason| {
+                refusal_unless_cancelled(
+                    render,
+                    instance,
+                    OfflinePluginRefusal::Control(reason.into_refusal()),
+                )
+            })?
+            .map_err(|reason| {
+                refusal_unless_cancelled(
+                    render,
+                    instance,
+                    OfflinePluginRefusal::StateNotRestored(reason),
+                )
+            })?;
         if let Some(last) = built.instances.last_mut() {
             last.latency_frames = latency_frames;
         }

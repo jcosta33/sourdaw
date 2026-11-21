@@ -1,5 +1,6 @@
 pub mod latency_watcher;
 pub mod native_bridge;
+pub mod plugin_editor_asks;
 pub mod plugin_folder_grants;
 pub mod plugin_host_requests;
 pub mod plugin_parameter_events;
@@ -85,7 +86,7 @@ pub(crate) fn retry_unreached_instance(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     context: &str,
-    error: &str,
+    error: &dyn std::fmt::Display,
     reraise: fn(),
 ) {
     if runtime.ensure_public_control_allowed().is_err() {
@@ -97,4 +98,34 @@ pub(crate) fn retry_unreached_instance(
         context, instance_id, error
     );
     reraise();
+}
+
+/// The process-wide hints every watcher reads are shared by every test in the
+/// binary, so a test that raises one, sweeps on one, or asserts one is
+/// absent takes this first, and starts from a slate with none raised.
+#[cfg(test)]
+pub(crate) mod hint_test_support {
+    use daw_plugin_host::{
+        take_pending_editor_resize_signal, take_pending_latency_requery_signal,
+        take_pending_main_thread_callback_signal, take_pending_parameter_events_signal,
+        take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
+        take_pending_tail_change_signal,
+    };
+    use std::sync::{Mutex, MutexGuard};
+
+    static HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(crate) fn guard() -> MutexGuard<'static, ()> {
+        let guard = HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_pending_main_thread_callback_signal();
+        take_pending_parameter_events_signal();
+        take_pending_parameter_flush_signal();
+        take_pending_tail_change_signal();
+        take_pending_process_refusal_signal();
+        take_pending_editor_resize_signal();
+        take_pending_latency_requery_signal();
+        guard
+    }
 }

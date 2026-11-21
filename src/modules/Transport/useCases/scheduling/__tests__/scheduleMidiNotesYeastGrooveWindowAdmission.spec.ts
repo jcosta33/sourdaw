@@ -143,44 +143,54 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    builtinSynthVoice: { read: () => synthVoices },
-    // The bounce's own Yeast projection: what the export renders is what the
-    // live windows are compared against, so the barrel serves the real one.
-    projectOfflineYeastTrackNotes: (
-        await vi.importActual<Pick<typeof import('#/modules/AudioEngine/useCases'), 'projectOfflineYeastTrackNotes'>>(
-            '#/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes'
-        )
-    ).projectOfflineYeastTrackNotes,
-    applyNoteExpression: vi.fn(),
-    startNoteExpression: vi.fn(),
-    advanceNoteExpression: vi.fn(),
-    relocateNoteExpression: vi.fn(),
-    registerScheduledSource: registerScheduledSourceMock,
-    // The one definition of the MPE member default, as the production barrel
-    // exports it (audit MD-8).
-    getDefaultBendRangeSemitones: () => 48,
-    getNoteExpressionDimensions: () => [],
-    getCompensationDelay: vi.fn(() => 0),
-    ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
-    getTrackStrip: vi.fn(),
-    getCurrentTime: vi.fn(() => 0),
-    getDrumKitByIndex: vi.fn(() => null),
-    getAudioContext: vi.fn(() => ({
-        sampleRate: 48000,
-        createGain: vi.fn(() => ({ connect: vi.fn() })),
-    })),
-    scheduleFaustNote: vi.fn(),
-    // Pulled in transitively by Levain's param bridge and the web-MIDI
-    // message-handler bundle through the real MIDI use-case barrel below;
-    // omitted members fail the file at import.
-    getFactoryDrumKitByIndex: vi.fn(() => null),
-    isDeviceCarriedByNativeSession: vi.fn(() => false),
-    sendNativeLiveMidiControl: vi.fn(),
-    sendNativeLiveMidiNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: () => synthVoices },
+        // The bounce's own Yeast projection: what the export renders is what the
+        // live windows are compared against, so the barrel serves the real one.
+        projectOfflineYeastTrackNotes: (
+            await vi.importActual<
+                Pick<typeof import('#/modules/AudioEngine/useCases'), 'projectOfflineYeastTrackNotes'>
+            >('#/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes')
+        ).projectOfflineYeastTrackNotes,
+        applyNoteExpression: vi.fn(),
+        startNoteExpression: vi.fn(),
+        advanceNoteExpression: vi.fn(),
+        relocateNoteExpression: vi.fn(),
+        registerScheduledSource: registerScheduledSourceMock,
+        // The one definition of the MPE member default, as the production barrel
+        // exports it (audit MD-8).
+        getDefaultBendRangeSemitones: () => 48,
+        getNoteExpressionDimensions: () => [],
+        getCompensationDelay: vi.fn(() => 0),
+        ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
+        getTrackStrip: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+        getDrumKitByIndex: vi.fn(() => null),
+        getAudioContext: vi.fn(() => ({
+            sampleRate: 48000,
+            createGain: vi.fn(() => ({ connect: vi.fn() })),
+        })),
+        scheduleFaustNote: vi.fn(),
+        // Pulled in transitively by Levain's param bridge and the web-MIDI
+        // message-handler bundle through the real MIDI use-case barrel below;
+        // omitted members fail the file at import.
+        getFactoryDrumKitByIndex: vi.fn(() => null),
+        isDeviceCarriedByNativeSession: vi.fn(() => false),
+        sendNativeLiveMidiControl: vi.fn(),
+        sendNativeLiveMidiNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+    };
+});
 // The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
 const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(() => null),

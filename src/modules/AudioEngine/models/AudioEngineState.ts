@@ -349,7 +349,7 @@ export type BuiltinDeviceNode = {
      * MessagePort).
      *
      * No `noteExpression`: `CrumbsEngine` has no per-note bend, pressure or
-     * timbre path, so Crumbs is absent from `NOTE_EXPRESSION_DEVICES` and the
+     * timbre path, so Crumbs sounds no expression in `LiveNoteControlsByDeviceType` and the
      * editor never offers those lanes for it. `channel` is accepted on
      * `noteOn`/`noteOff` only because the shared worklet-synth scheduling path
      * passes it positionally; the engine releases by pitch.

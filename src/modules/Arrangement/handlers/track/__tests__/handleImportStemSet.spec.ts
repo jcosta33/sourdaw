@@ -57,36 +57,48 @@ const mocks = vi.hoisted(() => ({
     wireSidechainRoutes: vi.fn<() => void>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
-    removeBusStrip: mocks.removeBusStrip,
-    removeTrackStrip: mocks.removeTrackStrip,
-    stopTrackInputMonitoring: vi.fn(),
-    reportLatency: mocks.reportLatency,
-    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
-    resolveToasterPadBinding: mocks.resolveToasterPadBinding,
-    setTrackGain: mocks.setTrackGain,
-    setTrackMute: mocks.setTrackMute,
-    setTrackOutput: mocks.setTrackOutput,
-    setTrackPan: mocks.setTrackPan,
-    setTrackSoloGate: mocks.setTrackSoloGate,
-    updateDeviceBypass: mocks.updateDeviceBypass,
-    updateDeviceParam: mocks.updateDeviceParam,
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    audioEngine: {},
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        builtinSynthVoice: { read: vi.fn() },
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
+        removeBusStrip: mocks.removeBusStrip,
+        removeTrackStrip: mocks.removeTrackStrip,
+        stopTrackInputMonitoring: vi.fn(),
+        reportLatency: mocks.reportLatency,
+        getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+        resolveToasterPadBinding: mocks.resolveToasterPadBinding,
+        setTrackGain: mocks.setTrackGain,
+        setTrackMute: mocks.setTrackMute,
+        setTrackOutput: mocks.setTrackOutput,
+        setTrackPan: mocks.setTrackPan,
+        setTrackSoloGate: mocks.setTrackSoloGate,
+        updateDeviceBypass: mocks.updateDeviceBypass,
+        updateDeviceParam: mocks.updateDeviceParam,
+        analyzePitchForClip: vi.fn(),
+        applyNoteExpression: vi.fn(),
+        audioEngine: {},
+        createRuntimeGraphTopologyFingerprint: vi.fn(),
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        isDrumDevice: actual.isDrumDevice,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+    };
+});
 collaborationAssetTransfer.configure({
     current: () => ({
         stageLocalAsset: vi.fn(),
@@ -97,11 +109,24 @@ collaborationAssetTransfer.configure({
     }),
     isSessionActive: () => false,
 });
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    isFaustInstrumentModule: vi.fn(() => false),
-    registerFaustDSP: vi.fn(),
-    activateExternalPlugin: mocks.activateExternalPlugin,
-}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        isFaustInstrumentModule: vi.fn(() => false),
+        registerFaustDSP: vi.fn(),
+        activateExternalPlugin: mocks.activateExternalPlugin,
+        isFaustModule: actual.isFaustModule,
+        compileFaustDSP: actual.compileFaustDSP,
+        createFaustNode: actual.createFaustNode,
+        getFaustModuleLatencyMs: actual.getFaustModuleLatencyMs,
+        setPluginBypass: actual.setPluginBypass,
+        setPluginParameter: actual.setPluginParameter,
+        markExternalPluginEngineAttached: actual.markExternalPluginEngineAttached,
+        forgetRetiredPluginInstances: actual.forgetRetiredPluginInstances,
+        readExternalPluginStatesBeforeEngineRetire: actual.readExternalPluginStatesBeforeEngineRetire,
+        registerBuiltinFaustDSP: actual.registerBuiltinFaustDSP,
+    };
+});
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: () => [],
     removeSidechainRoute: () => null,

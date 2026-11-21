@@ -46,24 +46,34 @@ vi.mock('../recordingMidiAdmissionPort', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    writeNativeBuiltinParameters: vi.fn(),
-    audioEngine: {
-        context: clock,
-        ensureTrackStrip: (trackId: string) => (trackId === 'track-2' ? otherStrip : strip),
-        getTrackStrip: (trackId: string) => (trackId === 'track-2' ? otherStrip : strip),
-    },
-    getCompensationDelay: () => 0,
-    getDefaultBendRangeSemitones: () => 48,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-    soundsNativeNotes: () => false,
-    startFaustNote: () => () => {},
-    applyNoteExpression,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: vi.fn() },
+        writeNativeBuiltinParameters: vi.fn(),
+        audioEngine: {
+            context: clock,
+            ensureTrackStrip: (trackId: string) => (trackId === 'track-2' ? otherStrip : strip),
+            getTrackStrip: (trackId: string) => (trackId === 'track-2' ? otherStrip : strip),
+        },
+        getCompensationDelay: () => 0,
+        getDefaultBendRangeSemitones: () => 48,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: () => false,
+        startFaustNote: () => () => {},
+        applyNoteExpression,
+    };
+});
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrackId: () => target.value }));
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({ getMpeEnabled: () => true }));
 

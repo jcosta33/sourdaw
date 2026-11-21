@@ -61,11 +61,29 @@ impl ModuleInfo {
     }
 }
 
+/// Why a `moduleinfo.json` document could not be read.
+#[derive(Debug)]
+pub enum ModuleInfoError {
+    /// The normalised document is not JSON of the declared shape.
+    Unreadable(serde_json::Error),
+}
+
+impl std::fmt::Display for ModuleInfoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(cause) => {
+                write!(f, "VST3 moduleinfo.json could not be read: {cause}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ModuleInfoError {}
+
 /// Parse a `moduleinfo.json` document.
-pub fn parse_module_info(source: &str) -> Result<ModuleInfo, String> {
+pub fn parse_module_info(source: &str) -> Result<ModuleInfo, ModuleInfoError> {
     let normalised = json5_to_json(source);
-    serde_json::from_str(&normalised)
-        .map_err(|error| format!("VST3 moduleinfo.json could not be read: {error}"))
+    serde_json::from_str(&normalised).map_err(ModuleInfoError::Unreadable)
 }
 
 /// Rewrite the two JSON5 extensions the format uses into plain JSON.
@@ -358,6 +376,17 @@ mod tests {
         assert_eq!(
             normalised.chars().count(),
             SDK_STYLE_DOCUMENT.chars().count()
+        );
+    }
+
+    #[test]
+    fn an_unreadable_document_is_refused_with_the_parse_reason() {
+        let refusal = parse_module_info("not json at all").expect_err("not JSON");
+
+        let ModuleInfoError::Unreadable(cause) = &refusal;
+        assert_eq!(
+            refusal.to_string(),
+            format!("VST3 moduleinfo.json could not be read: {cause}")
         );
     }
 }

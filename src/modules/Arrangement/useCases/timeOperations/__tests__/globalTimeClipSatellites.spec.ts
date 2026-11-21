@@ -162,7 +162,6 @@ describe('global time operations retire per-clip satellite data', () => {
         warpStates.clear();
         __resetGainEnvelopesForTest();
         restoreAutomationSnapshot({ lanes: [] });
-        setTimeOperationDependencies(null);
         setTracks([]);
     });
 

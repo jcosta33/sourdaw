@@ -265,6 +265,24 @@ describe('recipe holds at admission', () => {
         expect(evaluation).toMatchObject({ status: 'blocked', failure: 'stale' });
     });
 
+    it.each([
+        ['at a large magnitude, by less than its relative rounding', 1e7, 10000000.010000002, 'verified'],
+        ['at a large magnitude, by more than its relative rounding', 1e7, 10000000.01000003, 'blocked'],
+        ['at a small magnitude, by a ten-billionth', 0.5, 0.5100000001, 'blocked'],
+    ] as const)('judges a movement past its tolerance %s', (_label, baseline, preview, status) => {
+        expect(wide({ baseline, preview }).status).toBe(status);
+    });
+
+    it('blocks a hold with no measurable metric but a tolerance as a stale source', () => {
+        const evaluation = admit(
+            'bass-wide',
+            { sideEnergyFraction: WIDE_SIDE, lowFrequencyStereoContent: { baseline: 0.5, preview: 0.5 } },
+            (goals) =>
+                goals.map((goal) => (goal.relation === 'hold' ? { ...goal, metricId: null, tolerance: 0.01 } : goal))
+        );
+        expect(evaluation).toMatchObject({ status: 'blocked', failure: 'stale' });
+    });
+
     it('keeps increase and decrease goals at tolerance zero and judged by direction alone', () => {
         const goals = readGoals('bass-intimate').map(({ metricId, relation, tolerance }) => ({
             metricId,
@@ -296,6 +314,12 @@ describe('the refusal of a broken recipe hold', () => {
         const evaluation = wide({ baseline: 0.5, preview: 0.5123 });
         expect(evaluation.reason).toBe(
             "The preview breaks the recipe's hold on low-frequency stereo content on “Bass”: it moved from 0.5 to 0.5123 ratio, a movement of 0.0123 ratio, beyond its 0.01 ratio tolerance."
+        );
+    });
+
+    it('prints the endpoint it moved to at the precision that makes the movement read', () => {
+        expect(wide({ baseline: 0.5, preview: 0.5123000004 }).reason).toContain(
+            'it moved from 0.5 to 0.5123 ratio, a movement of 0.0123 ratio'
         );
     });
 

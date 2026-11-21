@@ -44,12 +44,17 @@ import {
 } from '../../models/TimelineTrackExtent';
 import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
+import { getTimelineRowTracks } from '../../useCases/getTimelineRowTracks';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
+import { setShowHiddenTracks } from '../../useCases/timelineEditing/setShowHiddenTracks';
 import { toggleInlineAutomation } from '../../useCases/timelineEditing/toggleInlineAutomation';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+import { getTabStopTrackId } from '../helpers/getTabStopTrackId';
+import { useTrackListFocusRestore } from '../hooks/useTrackListFocusRestore';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
+import { ShowHiddenTracksButton } from './ShowHiddenTracksButton';
 import { TrackHeader } from './TrackHeader';
 
 /**
@@ -82,6 +87,7 @@ export const TrackListView = ({
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const dragTrackIdRef = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
     const isSyncingRef = useRef(false);
     const scrollRafRef = useRef<number | null>(null);
     const prefs = useStore(preferencesStore, defaultPreferences);
@@ -159,13 +165,16 @@ export const TrackListView = ({
         };
     }, []);
 
-    const collapsedFolders = new Set(
-        tracks.filter((track) => track.kind === 'folder' && track.collapsed).map((track) => track.id)
-    );
-    const visibleTracks = tracks.filter(
-        (track) => track.kind !== 'master' && !collapsedFolders.has(track.parentId ?? '')
-    );
+    const showHiddenTracks = editing?.showHiddenTracks ?? false;
+    const hiddenTrackCount = tracks.filter((track) => track.hidden && track.kind !== 'master').length;
+    const visibleTracks = getTimelineRowTracks(tracks, showHiddenTracks);
     const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
+
+    const tabStopTrackId = getTabStopTrackId(visibleTracks, selectedTrackId);
+    const { onFocus: handleRowFocus, onBlur: handleRowBlur } = useTrackListFocusRestore(
+        gridRef,
+        visibleTracks.map((track) => track.id)
+    );
 
     const handleDragStart = (trackId: string) => {
         dragTrackIdRef.current = trackId;
@@ -215,6 +224,8 @@ export const TrackListView = ({
             return;
         }
 
+        // -1 when nothing is selected or the selection is not drawn: Down then
+        // selects the first drawn row (the tab stop) and Up the last.
         const currentIndex = visibleTracks.findIndex((time) => time.id === selectedTrackId);
 
         if (event.key === 'ArrowDown') {
@@ -319,6 +330,11 @@ export const TrackListView = ({
                             </TooltipTrigger>
                             <TooltipContent>Inline automation</TooltipContent>
                         </Tooltip>
+                        <ShowHiddenTracksButton
+                            hiddenCount={hiddenTrackCount}
+                            pressed={showHiddenTracks}
+                            onToggle={() => setShowHiddenTracks(!showHiddenTracks)}
+                        />
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -390,13 +406,20 @@ export const TrackListView = ({
                 onKeyDown={handleKeyDown}
                 onClick={handleRowClick}
             >
-                <div role="grid" aria-label="Track list">
+                <div
+                    ref={gridRef}
+                    role="grid"
+                    aria-label="Track list"
+                    tabIndex={visibleTracks.length === 0 ? -1 : undefined}
+                    onFocus={handleRowFocus}
+                    onBlur={handleRowBlur}
+                >
                     {visibleTracks.map((track, index) => {
                         return (
                             <div
                                 key={track.id}
                                 role="row"
-                                tabIndex={track.id === selectedTrackId ? 0 : -1}
+                                tabIndex={track.id === tabStopTrackId ? 0 : -1}
                                 aria-selected={track.id === selectedTrackId}
                                 draggable
                                 onDragStart={(event) => {

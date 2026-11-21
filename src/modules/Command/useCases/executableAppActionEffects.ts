@@ -295,6 +295,15 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement'],
         scope: 'target',
     },
+    // Display edits write one row's saved view state; the folder's children keep their own flags.
+    foldTrack: {
+        dimensions: ['cosmetic'],
+        scope: 'target',
+    },
+    setTrackHeight: {
+        dimensions: ['cosmetic'],
+        scope: 'target',
+    },
     setTempo: {
         dimensions: ['project-timing', 'arrangement', 'clip-audio'],
         scope: 'project',

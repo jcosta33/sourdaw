@@ -14,21 +14,31 @@ import { scheduleToasterHit } from '../scheduleToasterHit';
 import { startSequencer } from '../startSequencer';
 import { stopSequencer } from '../stopSequencer';
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    getAudioTime: vi.fn(() => 0),
-    applyNoteExpression: vi.fn(),
-    audioEngine: {},
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        builtinSynthVoice: { read: vi.fn() },
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        getAudioTime: vi.fn(() => 0),
+        applyNoteExpression: vi.fn(),
+        audioEngine: {},
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+    };
+});
 
 vi.mock('../scheduleToasterHit', () => ({
     scheduleToasterHit: vi.fn(),

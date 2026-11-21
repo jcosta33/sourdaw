@@ -5,6 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
 import { findFollowerLaneRefusal } from './followerLaneRefusal';
+import { isLaneTransformSessionEntry } from './validateAutomationSessionEntries';
 
 export const handleStretchAutomation = createHandler<'stretchAutomation'>({
     execute: (alpha) => {
@@ -27,6 +28,7 @@ export const handleStretchAutomation = createHandler<'stretchAutomation'>({
             factor: alpha.payload.factor,
             anchorBeat: alpha.payload.anchorBeat,
         }),
+    validateSessionEntry: isLaneTransformSessionEntry,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

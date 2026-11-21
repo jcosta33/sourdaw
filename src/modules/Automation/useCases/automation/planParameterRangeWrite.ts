@@ -16,8 +16,8 @@ import { buildParameterRangePoints } from '../../services/buildParameterRangePoi
 import { sampleStoredLaneCurve } from '../../services/sampleStoredLaneCurve';
 import { automationStore } from '../../stores/automationStore';
 
+import { automationParameterRangePort } from './automationParameterRangeDependencies';
 import { getAutomationLaneCeiling } from './getAutomationLaneCeiling';
-import { getAutomationParameterRangeResolver } from './getAutomationParameterRangeResolver';
 import { getPlannedBus } from './getPlannedBus';
 import { getPlannedSend } from './getPlannedSend';
 import { getSendAutomationBusId } from './getSendAutomationBusId';
@@ -118,7 +118,7 @@ function deviceTarget(track: Track, parameterId: string): ParameterTarget | Refu
     if (!device || !paramId) {
         return refuse('unknown-parameter', `Parameter ${parameterId} names nothing on track "${track.name}".`);
     }
-    const range = getAutomationParameterRangeResolver()?.({ trackId: track.id, parameterTargetId: parameterId });
+    const range = automationParameterRangePort.read()({ trackId: track.id, parameterTargetId: parameterId });
     if (!range) {
         return refuse('not-automatable', `Parameter ${paramId} of "${device.name}" cannot be automated.`);
     }

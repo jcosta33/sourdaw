@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { type MixRecipe } from '#/modules/Arrangement/models/MixRecipe';
-import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Track } from '#/modules/Arrangement/stores';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 
 import { createTrack } from '../useCases/__tests__/trackFixture';
 import { readRecipeExpectationTolerance } from '../useCases/metricHoldTolerances';
 
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
+
+registerDeviceEnginePorts();
+
+type MixRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
 
 const TEMPO = 120;
 const BEATS = 8;
@@ -35,7 +39,7 @@ type DynamicsMetric = (typeof DYNAMICS_METRICS)[number];
 type Stage = 'before' | 'after';
 
 /**
- * Every non-drum recipe the law cannot render, by the first step it has no rule for. Asserted equal
+ * Every recipe the law cannot render, by the first step it has no rule for. Asserted equal
  * to what the catalog holds, so a recipe the law can render never sits here unchecked.
  */
 const UNRENDERABLE_RECIPES: Readonly<Record<string, string>> = {
@@ -191,8 +195,7 @@ const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [
 ];
 
 describe('mix recipe metric claims against the acceptance render law', () => {
-    // The drum recipes are left out: #6947 and the drums lane own their claims and their rows.
-    const recipes = buildMixRecipeCatalog().recipes.filter((recipe) => !recipe.roles.includes('drums'));
+    const recipes = getMixRecipeCatalog().recipes;
     const claimed = recipes.filter(
         (recipe) => firstUnrenderableDevice(recipe) === null && dynamicsClaims(recipe).length > 0
     );

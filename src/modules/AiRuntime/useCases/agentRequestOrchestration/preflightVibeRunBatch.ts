@@ -4,17 +4,15 @@ import { digest } from '#/utils/canonicalDigest';
 
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
 import { type ScheduledVibeRunBatch, type VibeRunInitialEvidence } from '../../models/VibeRunPlan';
-import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
+import { type PlannedValueChoiceTier } from '../vibeRun/readPlannedValueChoiceDefaults';
 import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
+import { readStoredVibeRunBatch } from './readStoredVibeRunBatch';
 import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
-
-/** The batches after the brief, which holds position 1 of its run. */
-const FIRST_BATCH_POSITION = 2;
 
 /** A target the plan named that the project no longer lets a recipe change, refused rather than skipped. */
 function readTargetRefusal(batch: ScheduledVibeRunBatch, context: ReturnType<typeof getProjectContext>): string | null {
@@ -28,15 +26,6 @@ function readTargetRefusal(batch: ScheduledVibeRunBatch, context: ReturnType<typ
         }
     }
     return null;
-}
-
-function readStoredBatch(schedule: AgentRunVibeRunBatchSchedule, position: number) {
-    const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
-    const batch = plan?.batches[position - FIRST_BATCH_POSITION];
-    if (plan === null || batch === undefined || plan.briefRevision !== schedule.briefRevision) {
-        return null;
-    }
-    return { plan, batch };
 }
 
 function readInitialWitnessRefusal(goal: MetricGoal, initial: VibeRunInitialEvidence): string | null {
@@ -100,6 +89,8 @@ export type VibeRunBatchPreflight =
           catalog: ReturnType<typeof getMixRecipeCatalog>;
           context: ReturnType<typeof getProjectContext>;
           revision: string;
+          /** The tier the run was planned under; a plan stored before it was recorded reads as `unrecorded`. */
+          valueChoiceTier: PlannedValueChoiceTier;
       }
     | { status: 'rejected'; reason: string };
 
@@ -114,7 +105,7 @@ export function preflightVibeRunBatch(
     schedule: AgentRunVibeRunBatchSchedule,
     position: number
 ): VibeRunBatchPreflight {
-    const stored = readStoredBatch(schedule, position);
+    const stored = readStoredVibeRunBatch(schedule, position);
     if (stored === null) {
         return { status: 'rejected', reason: 'its stored plan could not be read back' };
     }
@@ -137,5 +128,13 @@ export function preflightVibeRunBatch(
     if (targetRefusal !== null) {
         return { status: 'rejected', reason: targetRefusal };
     }
-    return { status: 'admitted', batch, initial: plan.initial, catalog, context, revision };
+    return {
+        status: 'admitted',
+        batch,
+        initial: plan.initial,
+        catalog,
+        context,
+        revision,
+        valueChoiceTier: plan.valueChoiceTier ?? 'unrecorded',
+    };
 }

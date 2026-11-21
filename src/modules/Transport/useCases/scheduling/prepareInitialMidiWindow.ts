@@ -1,3 +1,5 @@
+import { isMidiTransformDevice } from '#/modules/AudioEngine/useCases';
+
 import { prepareYeastTrackNotes, type PreparedYeastTrackNotes } from './prepareYeastTrackNotes';
 import { resolveMidiWindowClips } from './resolveMidiWindowClips';
 
@@ -33,7 +35,7 @@ export async function prepareInitialMidiWindow(
                 track.kind !== 'midi' ||
                 (track.muted && !track.sends.some((send) => send.preFader && busIds.has(send.busId))) ||
                 (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) ||
-                !track.devices.some((device) => device.type === 'yeast')
+                !track.devices.some((device) => isMidiTransformDevice(device.type))
             ) {
                 continue;
             }
