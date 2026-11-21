@@ -47,6 +47,7 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        commitPitchEdit: vi.fn(),
         captureOfflineRenderProjectSource: vi.fn(() => {
             throw new Error('Unexpected selection render capture in this fixture');
         }),

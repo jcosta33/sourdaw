@@ -161,6 +161,7 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        commitPitchEdit: vi.fn(),
         openCachedAudioBufferHold: vi.fn(() => {
             throw new Error('Unexpected audio buffer residency hold in this fixture');
         }),
