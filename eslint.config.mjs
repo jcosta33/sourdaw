@@ -233,6 +233,7 @@ export default tseslint.config(
     {
         files: ['**/*.{ts,tsx,mts,cts}'],
         rules: {
+            'import-x/no-mutable-exports': 'error',
             '@typescript-eslint/naming-convention': [
                 'error',
                 {
