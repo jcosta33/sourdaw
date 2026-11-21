@@ -20,7 +20,7 @@ export type UndoOutcome =
     /** No `inverseAction`: undoing is a no-op, so the entry is dropped. */
     | { readonly status: 'inert' }
     /** The transaction aborted; nothing was written and the entry stands. */
-    | { readonly status: 'conflict'; readonly reason?: string }
+    | { readonly status: 'conflict'; readonly reason?: string; readonly blocked?: true }
     /** The write landed but its bookkeeping failed; the stack must advance. */
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
@@ -59,6 +59,13 @@ export function executeActionGroupUndo(
     return runPreparedUndoReplay({ entries }, () => replayActionGroupUndo(entries, options));
 }
 
+function conflictOutcome(reason: string, blocked: true | undefined): UndoOutcome {
+    if (blocked === true) {
+        return { status: 'conflict', reason, blocked: true };
+    }
+    return { status: 'conflict', reason };
+}
+
 async function replayActionGroupUndo(
     entries: readonly UndoEntry[],
     options?: ActionGroupUndoOptions
@@ -86,7 +93,7 @@ async function replayActionGroupUndo(
     }
     const result = await executeAppActionBatch(actions, batchOptions);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
-        return { status: 'conflict', reason: result.reason };
+        return conflictOutcome(result.reason, result.blocked);
     }
     if (result.status === 'rejected' || result.status === 'failed') {
         throw new Error(`Grouped undo failed: ${result.reason}`);

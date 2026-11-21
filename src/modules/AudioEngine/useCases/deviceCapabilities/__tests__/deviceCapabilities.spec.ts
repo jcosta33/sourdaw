@@ -4,9 +4,11 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { classifyNoteReceivingDevice } from '../classifyNoteReceivingDevice';
 import { DRUM_KIT_DEFAULT_LEVEL_DB } from '../drumKitDefaultLevelDb';
+import { findMidiTransformDevice } from '../findMidiTransformDevice';
 import { isBuiltinSynthDevice } from '../isBuiltinSynthDevice';
 import { isBypassedNoteReceiver } from '../isBypassedNoteReceiver';
 import { isDrumDevice } from '../isDrumDevice';
+import { isMidiTransformDevice } from '../isMidiTransformDevice';
 import { readDrumKitOutputGain } from '../readDrumKitOutputGain';
 import { resolveDrumKitBy } from '../resolveDrumKitBy';
 import { resolveDrumKitOutputGain } from '../resolveDrumKitOutputGain';
@@ -39,6 +41,33 @@ describe('deviceCapabilities wrappers', () => {
     ])('answers the family of %s', (deviceType, drum, synth) => {
         expect(isDrumDevice(deviceType)).toBe(drum);
         expect(isBuiltinSynthDevice(deviceType)).toBe(synth);
+    });
+
+    it.each([
+        ['yeast', true],
+        ['Yeast', false],
+        ['builtin-synth', false],
+        ['fermenter', false],
+        ['faust-organ', false],
+        ['', false],
+    ])('answers whether %j is a MIDI-transform device', (deviceType, expected) => {
+        expect(isMidiTransformDevice(deviceType)).toBe(expected);
+    });
+
+    it('answers a device type built at run time', () => {
+        expect(isMidiTransformDevice(['ye', 'ast'].join(''))).toBe(true);
+        expect(isMidiTransformDevice(`built${'in-eq'}`)).toBe(false);
+    });
+
+    it('finds the first MIDI-transform device on a chain', () => {
+        const devices = [
+            { id: 'a', type: 'builtin-eq' },
+            { id: 'b', type: 'yeast' },
+            { id: 'c', type: 'yeast' },
+        ];
+        expect(findMidiTransformDevice(devices)).toBe(devices[1]);
+        expect(findMidiTransformDevice(devices.slice(0, 1))).toBeUndefined();
+        expect(findMidiTransformDevice([])).toBeUndefined();
     });
 
     it('resolves the first instrument and reports its bypass', () => {

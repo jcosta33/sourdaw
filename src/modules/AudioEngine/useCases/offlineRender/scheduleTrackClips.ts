@@ -42,6 +42,7 @@ import { type OfflineYeastMidiProcessor } from '../../repositories/offlineSchedu
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
+import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
@@ -655,7 +656,7 @@ export async function scheduleTrackClips({
     function projectTrackChannelBend(): ReturnType<OfflineChannelBendProjector> {
         // A Yeast track's notes are the rack's, whichever instrument voices them: the stored controllers
         // take the same exclusion, live and here.
-        const hasYeast = track.devices.some((device) => device.type === 'yeast');
+        const hasYeast = track.devices.some((device) => isMidiTransformDevice(device.type));
         if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
             return [];
         }
@@ -835,7 +836,10 @@ export async function scheduleTrackClips({
     const yeastSourceTracks = new Map<string, Track>();
     if (processYeastMidi && !isToasterChild) {
         for (const { sourceTrack } of clipsToProcess) {
-            if (sourceTrack.kind === 'midi' && sourceTrack.devices.some((device) => device.type === 'yeast')) {
+            if (
+                sourceTrack.kind === 'midi' &&
+                sourceTrack.devices.some((device) => isMidiTransformDevice(device.type))
+            ) {
                 yeastSourceTracks.set(sourceTrack.id, sourceTrack);
             }
         }
@@ -1047,7 +1051,7 @@ export async function scheduleTrackClips({
             const sourceNotes = frozenSource
                 ? []
                 : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
-            const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
+            const hasYeast = sourceTrack.devices.some((device) => isMidiTransformDevice(device.type));
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
             }
