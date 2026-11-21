@@ -25,7 +25,6 @@ import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
-import { timelineEditingStore } from '../stores/timelineEditingStore';
 import { getTimelineTrackHeightMode, getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
@@ -37,6 +36,7 @@ import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
 import { projectInlineAutomationLanes } from './projectInlineAutomationLanes';
 import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
+import { readShowHiddenTracks } from './timelineEditing/readShowHiddenTracks';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
@@ -244,7 +244,7 @@ export function buildTimelineRenderModel(
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
     const automation = readInlineAutomationSnapshot(inlineAutomation);
-    const showHiddenTracks = timelineEditingStore.value?.showHiddenTracks ?? false;
+    const showHiddenTracks = readShowHiddenTracks();
     const geometryChanged = updateRenderGeometryCache(takeLaneState, automation, trackHeightMode, showHiddenTracks);
     const transportTempo = renderAffectingTransport(transportState);
 

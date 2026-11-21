@@ -32,6 +32,19 @@ const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'off', label: 'Off' },
 ];
 
+function getHideTrackItem(track: Track, close: () => void): { label: string; action: () => void } {
+    return {
+        label: track.hidden ? 'Show Track' : 'Hide Track',
+        action: () => {
+            void executeUserAppAction({
+                type: 'hideTrack',
+                payload: { trackId: track.id, hidden: !track.hidden },
+            });
+            close();
+        },
+    };
+}
+
 type TrackContextMenuProps = {
     track: Track;
     children: ReactNode;
@@ -245,16 +258,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                   },
               ]
             : []),
-        {
-            label: track.hidden ? 'Show Track' : 'Hide Track',
-            action: () => {
-                void executeUserAppAction({
-                    type: 'hideTrack',
-                    payload: { trackId: track.id, hidden: !track.hidden },
-                });
-                close();
-            },
-        },
+        getHideTrackItem(track, close),
         {
             label: track.disabled ? 'Enable Track' : 'Disable Track',
             action: () => {
