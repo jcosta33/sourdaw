@@ -1,32 +1,37 @@
-import { describe, it, expect, vi } from 'vitest';
-
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resumeEngine } from '../resumeEngine';
 
-import type { AudioEngine } from '../../../models/AudioEngineState';
+const mocks = vi.hoisted(() => ({
+    engineResume: vi.fn<() => Promise<void>>(),
+}));
+
+vi.mock('../../../repositories/createWebAudioEngine', () => ({
+    audioEngine: {
+        resume: mocks.engineResume,
+    },
+}));
 
 describe('resumeEngine', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
     it('should call the engine resume once and return its promise', async () => {
         const pending = Promise.resolve();
-        const engineResume = vi.fn<AudioEngine['resume']>(() => pending);
-        const engine: Pick<AudioEngine, 'resume'> = { resume: engineResume };
-        const run = injectDependencies(resumeEngine, { audioEngine: engine });
+        mocks.engineResume.mockReturnValue(pending);
 
-        const returned = run();
+        const returned = resumeEngine();
 
-        expect(engineResume).toHaveBeenCalledTimes(1);
+        expect(mocks.engineResume).toHaveBeenCalledTimes(1);
         expect(returned).toBe(pending);
         await expect(returned).resolves.toBeUndefined();
     });
 
     it('should reject when the engine resume rejects', async () => {
         const failure = new Error('context refused to resume');
-        const engine: Pick<AudioEngine, 'resume'> = {
-            resume: vi.fn<AudioEngine['resume']>(() => Promise.reject(failure)),
-        };
-        const run = injectDependencies(resumeEngine, { audioEngine: engine });
+        mocks.engineResume.mockReturnValue(Promise.reject(failure));
 
-        await expect(run()).rejects.toBe(failure);
+        await expect(resumeEngine()).rejects.toBe(failure);
     });
 });
