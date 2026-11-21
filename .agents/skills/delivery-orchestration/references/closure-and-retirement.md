@@ -71,10 +71,13 @@ extra key refuses:
 ```
 
 `evidence` holds 1–8 entries whose URLs name this repository. `findings` is the total list of live
-roots, 1–100, none repeating a root or thread; the comment IDs are decimal strings and
+roots, at most 100, none repeating a root or thread; the comment IDs are decimal strings and
 `threadId` is the thread's node ID. `reviewBodies` is an array, not a map: one entry per
-`REQUEST_CHANGES` review and at least one, keyed by its node ID, whose `rootCommentIds` are
-non-empty, unique and all appear in `findings`. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
+`REQUEST_CHANGES` review, keyed by its node ID, whose `rootCommentIds` are
+non-empty, unique and all appear in `findings`. `findings` and `reviewBodies` are either both
+non-empty or both empty. The empty pair is the finding-free form for a PR that never received a
+finding: every review proof must then read zero review threads and zero `REQUEST_CHANGES` reviews,
+so any thread, whether resolved or not, or any requested-changes review refuses it. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
 bytes, without trimming or normalization (`retirementReviewBodyDigest`).
 The command checks this binding initially, before marker writes, before closing, after closing,
 and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new

@@ -1036,12 +1036,128 @@ describe('native obsolete pull-request retirement', () => {
         expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
     });
 
-    it('refuses a retirement with no confirmed finding or requested review', () => {
-        const { calls, port } = fixture({ reviewState: { threads: [], requestedReviews: [] } });
-        expect(() =>
-            retirePullRequest(pr, head, { ...record, findings: [], reviewBodies: [] }, AUTHOR_BOT_NODE_ID, port)
-        ).toThrow();
-        expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
+    describe('finding-free retirement', () => {
+        const findingFree: RetirementRecord = { ...record, findings: [], reviewBodies: [] };
+        const noReviews: RetirementReviewState = { threads: [], requestedReviews: [] };
+        const writes = (calls: string[]) => calls.filter((call) => ['comment', 'close', 'delete'].includes(call));
+        const unresolvedThread = (): RetirementReviewState => ({
+            threads: [{ ...reviewState().threads[0]!, resolved: false, replies: [] }],
+            requestedReviews: [],
+        });
+        const resolvedThread = (): RetirementReviewState => ({ threads: reviewState().threads, requestedReviews: [] });
+        const bodyOnlyReview = (): RetirementReviewState => ({
+            threads: [],
+            requestedReviews: reviewState().requestedReviews,
+        });
+
+        function providerSequence(port: RetirePullRequestPort, states: (index: number) => RetirementReviewState) {
+            const responses: number[] = [];
+            port.inspectRetirementReviewState = (number) =>
+                inspectRetirementReviewState(number, () => {
+                    responses.push(responses.length);
+                    return JSON.stringify(providerProjection(states(responses.length - 1)));
+                });
+            return responses;
+        }
+
+        it('closes a PR with no review threads or REQUEST_CHANGES reviews once, proving each phase from one response', () => {
+            const { calls, port, state } = fixture();
+            const responses = providerSequence(port, () => noReviews);
+
+            expect(retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toBe(
+                'pull-request-retired:5361'
+            );
+            expect(state().state).toBe('CLOSED');
+            expect(state().comments.map((entry) => entry.body)).toEqual([renderRetirementMarker(findingFree)]);
+            expect(writes(calls)).toEqual(['comment', 'close']);
+            expect(responses).toHaveLength(4);
+
+            expect(retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toBe(
+                'pull-request-retired:5361'
+            );
+            expect(writes(calls)).toEqual(['comment', 'close']);
+            expect(responses).toHaveLength(5);
+        });
+
+        it('keeps the canonical single-line retirement-v1 marker for an empty finding set', () => {
+            expect(renderRetirementMarker(findingFree)).toBe(`sourdaw-retirement-v1 ${canonicalJson(findingFree)}`);
+            expect(parseRetirementRecord(renderRetirementMarker(findingFree))).toEqual(findingFree);
+        });
+
+        it.each([
+            ['an unresolved review thread', unresolvedThread],
+            ['a resolved confirmed review thread', resolvedThread],
+            ['a body-only REQUEST_CHANGES review', bodyOnlyReview],
+        ] as const)('refuses an empty finding set while the PR has %s before any write', (_label, live) => {
+            const { calls, port, state } = fixture();
+            providerSequence(port, live);
+
+            expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /retirement record does not (cover the exact live review-root set|map every REQUEST_CHANGES review body)/u
+            );
+            expect(writes(calls)).toEqual([]);
+            expect(state()).toMatchObject({ state: 'OPEN', comments: [] });
+        });
+
+        it.each([
+            ['before marker writes', 1, [], 'OPEN', 0],
+            ['before closing', 2, ['comment', 'delete'], 'OPEN', 0],
+            ['after closing', 3, ['comment', 'close'], 'CLOSED', 1],
+        ] as const)(
+            'refuses a review thread that appears %s',
+            (_label, appearsAt, expectedWrites, expectedState, markers) => {
+                const { calls, port, state } = fixture();
+                providerSequence(port, (index) => (index >= appearsAt ? unresolvedThread() : noReviews));
+
+                expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                    /exact live review-root set/u
+                );
+                expect(writes(calls)).toEqual(expectedWrites);
+                expect(state().state).toBe(expectedState);
+                expect(state().comments).toHaveLength(markers);
+            }
+        );
+
+        it('refuses closed replay once a REQUEST_CHANGES review appears', () => {
+            const { calls, port } = fixture();
+            providerSequence(port, (index) => (index >= 4 ? bodyOnlyReview() : noReviews));
+            retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port);
+
+            expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /map every REQUEST_CHANGES review body/u
+            );
+            expect(writes(calls)).toEqual(['comment', 'close']);
+        });
+
+        it.each(['reviewThreads', 'reviews'] as const)(
+            'refuses an empty but truncated %s connection before any write',
+            (connection) => {
+                const { calls, port } = fixture();
+                port.inspectRetirementReviewState = (number) =>
+                    inspectRetirementReviewState(number, () => {
+                        const response = providerProjection(noReviews);
+                        response.data.repository.pullRequest[connection].pageInfo.hasNextPage = true;
+                        return JSON.stringify(response);
+                    });
+
+                expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                    /cannot be fully read in one retirement response/u
+                );
+                expect(writes(calls)).toEqual([]);
+            }
+        );
+
+        it.each([
+            ['findings without review bodies', { ...record, reviewBodies: [] }],
+            ['review bodies without findings', { ...record, findings: [] }],
+        ])('refuses %s', (_label, input) => {
+            expect(() => parseRetirementRecord(canonicalJson(input))).toThrow(
+                /findings and review bodies must both be empty or both be present/u
+            );
+            const { calls, port } = fixture();
+            expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow();
+            expect(writes(calls)).toEqual([]);
+        });
     });
 
     it('compensates a newly posted marker when the review-root set changes before close', () => {
