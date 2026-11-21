@@ -699,6 +699,12 @@ describe('TrackListView', () => {
             expect(tabStopIds()).toEqual(['a']);
         });
 
+        it('keeps the grid out of the tab order while rows exist', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b')], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.getByRole('grid', { name: 'Track list' })).not.toHaveAttribute('tabindex');
+        });
+
         it('keeps the selected row as the only tab stop while it is drawn', () => {
             vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b'), row('c')], selectedTrackId: 'b' });
             renderWithTooltip(<TrackListView />);

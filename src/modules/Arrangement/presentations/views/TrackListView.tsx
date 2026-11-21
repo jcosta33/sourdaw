@@ -81,8 +81,8 @@ function getTabStopTrackId(rows: readonly { id: string }[], selectedTrackId: str
 }
 
 /**
- * Where focus goes once the focused row is gone: the row that took its place
- * (its next neighbour), else the one before it.
+ * Where focus goes once the focused row is gone: the first row after it in the
+ * previous order that survives, else the nearest surviving row before it.
  */
 function getNeighbourRowId(
     previousIds: readonly string[],
@@ -93,8 +93,15 @@ function getNeighbourRowId(
     if (removedIndex < 0) {
         return currentIds[0] ?? null;
     }
-    return currentIds[removedIndex] ?? currentIds[removedIndex - 1] ?? null;
+    const surviving = (id: string): boolean => currentIds.includes(id);
+    const after = previousIds.slice(removedIndex + 1).find(surviving);
+    if (after !== undefined) {
+        return after;
+    }
+    return previousIds.slice(0, removedIndex).findLast(surviving) ?? null;
 }
+
+const ROW_ID_SEPARATOR = '\u0000';
 
 /**
  * Focus is adrift on the body, or still on the row's own context menu, which
@@ -208,12 +215,13 @@ export const TrackListView = ({
     const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
 
     const tabStopTrackId = getTabStopTrackId(visibleTracks, selectedTrackId);
+    const rowIdsKey = visibleTracks.map((track) => track.id).join(ROW_ID_SEPARATOR);
 
     // A row that removes itself (Delete Track, Hide Track) takes focus with it
     // and leaves it on the body, so focus moves to the neighbour that took its
     // place, else to the grid itself when no row is left.
     useLayoutEffect(() => {
-        const rowIds = visibleTracks.map((track) => track.id);
+        const rowIds = rowIdsKey === '' ? [] : rowIdsKey.split(ROW_ID_SEPARATOR);
         const previousIds = previousRowIdsRef.current;
         previousRowIdsRef.current = rowIds;
         const focusedId = focusedRowIdRef.current;
@@ -235,7 +243,7 @@ export const TrackListView = ({
                 child instanceof HTMLElement && child.getAttribute('data-track-id') === neighbourId
         );
         (neighbourRow ?? grid).focus();
-    });
+    }, [rowIdsKey]);
 
     const handleRowFocus = (event: FocusEvent<HTMLDivElement>): void => {
         // A portaled menu's focus bubbles through React to here; it is not a row.
@@ -244,6 +252,20 @@ export const TrackListView = ({
         }
         const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
         focusedRowIdRef.current = row?.getAttribute('data-track-id') ?? null;
+    };
+
+    // Focus that leaves the list for the page (or any other control) is no
+    // longer the list's to restore. Moving into the row's portaled menu keeps it.
+    const handleRowBlur = (event: FocusEvent<HTMLDivElement>): void => {
+        const grid = event.currentTarget;
+        if (!(event.target instanceof Node) || !grid.contains(event.target)) {
+            return;
+        }
+        const next = event.relatedTarget;
+        if (next instanceof Element && (grid.contains(next) || next.closest('[role="menu"]') !== null)) {
+            return;
+        }
+        focusedRowIdRef.current = null;
     };
 
     const handleDragStart = (trackId: string) => {
@@ -482,6 +504,7 @@ export const TrackListView = ({
                     aria-label="Track list"
                     tabIndex={visibleTracks.length === 0 ? -1 : undefined}
                     onFocus={handleRowFocus}
+                    onBlur={handleRowBlur}
                 >
                     {visibleTracks.map((track, index) => {
                         return (

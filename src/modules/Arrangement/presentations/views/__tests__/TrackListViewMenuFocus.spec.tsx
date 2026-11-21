@@ -173,6 +173,22 @@ describe('TrackListView focus after a header menu removes its row', () => {
         expect(document.activeElement).toBe(getRow('c'));
     });
 
+    it('leaves focus on the body when a row is removed after focus left the list for the page', () => {
+        const { rerender } = renderList(threeTracks());
+        getRow('b').focus();
+        getRow('b').blur();
+        expect(document.activeElement).toBe(document.body);
+        finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'b'));
+        expect(document.activeElement).toBe(document.body);
+    });
+
+    it('lands on the first surviving row after the removed one when its neighbour goes too', () => {
+        const { rerender } = renderList(['a', 'b', 'c', 'd', 'e'].map((id) => makeTrack(id)));
+        getRow('c').focus();
+        finishRemoval(rerender, (tracks) => tracks.filter((track) => track.id !== 'a' && track.id !== 'c'));
+        expect(document.activeElement).toBe(getRow('d'));
+    });
+
     it('leaves focus alone when a row is removed while focus rests outside the list', async () => {
         const { rerender } = renderList(threeTracks());
         getRow('b').focus();
