@@ -21,6 +21,7 @@ import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { assertRenderReadsHashedTrack } from './assertRenderReadsHashedTrack';
 import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
@@ -118,11 +119,14 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
-        // Re-hashes the live source: the render reads it, not `track`. The MIDI capture and the
-        // render call below follow synchronously, with no await between this check and the render.
-        if (!(await confirmFreezeSourceBeforeRender(trackId, hash, isCurrentFreezeTask, taskIdentity))) {
+        // Re-hashes the live source: the render reads it, not `track`. The check that follows is
+        // synchronous and the MIDI capture and render call come straight after it, so no edit can
+        // land between the last live read and the render's own.
+        const hashedTrack = await confirmFreezeSourceBeforeRender(trackId, hash, isCurrentFreezeTask, taskIdentity);
+        if (!hashedTrack) {
             return false;
         }
+        assertRenderReadsHashedTrack(hashedTrack);
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
 

@@ -33,6 +33,8 @@ import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, removeClip, setArrangementEventBus } from '../../index';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
+import { cancelFreezeTrack } from '../cancelFreezeTrack';
+import { activeFreezeTasks } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 registerSupportingServicePorts();
@@ -53,6 +55,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
 }));
+
+const { computeTrackHash: realComputeTrackHash } = await vi.importActual<
+    typeof import('../../../services/computeTrackHash')
+>('../../../services/computeTrackHash');
 
 const TRACK_ID = 'track-1';
 const LATE_CLIP_ID = 'late-clip';
@@ -135,7 +141,57 @@ function addLateClipDuringFirstDigest(kind: 'audio' | 'midi'): void {
     });
 }
 
+/**
+ * Runs `afterHash` once the `callNumber`th digest has resolved, counting from the freeze's own:
+ * 1 is that digest, 2 the first digest of the check before the render, 3 the next one.
+ */
+function runAfterDigest(callNumber: number, afterHash: () => void): void {
+    let calls = 0;
+    vi.mocked(computeTrackHash).mockImplementation(async (clips, devices) => {
+        calls += 1;
+        const hash = await realComputeTrackHash(clips, devices);
+        if (calls === callNumber) {
+            afterHash();
+        }
+        return hash;
+    });
+}
+
+/** The same content in new arrays, as a projection rebuild or a write that recreates the track would. */
+function rebuildTrackArraysWithIdenticalContent(): void {
+    const state = trackStore.value!;
+    trackStore.set({
+        ...state,
+        tracks: state.tracks.map((candidate) => ({
+            ...candidate,
+            clips: structuredClone(candidate.clips),
+            devices: structuredClone(candidate.devices),
+        })),
+    });
+}
+
+/**
+ * Runs `afterRead` as a microtask queued at the first live track read after the `callNumber`th
+ * digest resolves: that is the check's last read, so the write lands in the turns between it and
+ * the render.
+ */
+function runAfterLastLiveRead(callNumber: number, afterRead: () => void): void {
+    const readTracks = Object.getOwnPropertyDescriptor(trackStore, 'value')!.get!;
+    let armed = false;
+    runAfterDigest(callNumber, () => {
+        armed = true;
+    });
+    vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => {
+        if (armed) {
+            armed = false;
+            queueMicrotask(afterRead);
+        }
+        return readTracks.call(trackStore);
+    });
+}
+
 beforeEach(() => {
+    vi.mocked(computeTrackHash).mockImplementation(realComputeTrackHash);
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
@@ -226,3 +282,77 @@ describe.each(['audio', 'midi'] as const)(
         });
     }
 );
+
+describe('a freeze whose source check is interrupted', () => {
+    beforeEach(() => {
+        resetProject('audio');
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('refuses the take when a clip lands after the check read the track and before the render', async () => {
+        runAfterLastLiveRead(2, () => {
+            addLateClip('audio');
+        });
+        renderThenRemoveLateClip();
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        const track = findTrack();
+        expect(track.frozen).toBe(false);
+        expect(track.frozenBufferId).toBeUndefined();
+        expect(renderTrackOffline).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('does not render when the freeze is cancelled while the check hashes', async () => {
+        vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+        runAfterDigest(2, () => {
+            cancelFreezeTrack(TRACK_ID);
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(renderTrackOffline).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(findTrack().frozen).toBe(false);
+    });
+
+    it('does not render when another freeze supersedes it while the check hashes', async () => {
+        vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+        runAfterDigest(2, () => {
+            activeFreezeTasks.set(TRACK_ID, new AbortController());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        activeFreezeTasks.delete(TRACK_ID);
+        expect(renderTrackOffline).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(findTrack().frozen).toBe(false);
+    });
+
+    it('commits the take when the arrays are rebuilt with identical content while the check hashes', async () => {
+        vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+        runAfterDigest(2, rebuildTrackArraysWithIdenticalContent);
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack().frozen).toBe(true);
+        expect(renderTrackOffline).toHaveBeenCalledTimes(1);
+        expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits the take when the arrays are rebuilt with identical content while the commit-time check hashes', async () => {
+        vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+        runAfterDigest(3, rebuildTrackArraysWithIdenticalContent);
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack().frozen).toBe(true);
+        expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
+    });
+});
