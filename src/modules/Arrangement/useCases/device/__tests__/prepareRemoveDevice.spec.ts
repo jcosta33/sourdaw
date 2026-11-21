@@ -44,18 +44,28 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
     mapAllTracks: mocks.mapAllTracks,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    deactivateTrackStrip: mocks.deactivateTrackStrip,
-    clearReportedLatency: mocks.clearReportedLatency,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        deactivateTrackStrip: mocks.deactivateTrackStrip,
+        clearReportedLatency: mocks.clearReportedLatency,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+    };
+});
 
 vi.mock('../applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    unloadPluginCarryingLiveState: mocks.unloadPluginCarryingLiveState,
-}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        ...actual,
+        unloadPluginCarryingLiveState: mocks.unloadPluginCarryingLiveState,
+    };
+});
 
 vi.mock('../../projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
