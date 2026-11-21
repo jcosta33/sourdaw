@@ -1051,14 +1051,16 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.read_state_after_parameters_drain(timeout)
     }
 
-    /// [`Self::get_state_after_pending_parameters_drain`] for a caller that
-    /// waits for the control gate itself: refuses `GateBusy` instead of waiting
-    /// for a gate that is held.
-    pub fn try_get_state_after_pending_parameters_drain(
+    /// [`Self::get_state_after_pending_parameters_drain`], except that the wait
+    /// for the control gate ends, refusing `GateBusy`, once `abandoned` says
+    /// the caller no longer wants the state. The deadline and the verdict a
+    /// deadline brings are the waiting lock's own.
+    pub fn get_state_after_pending_parameters_drain_unless(
         &self,
         timeout: Duration,
+        abandoned: &dyn Fn() -> bool,
     ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
-        let _non_rt_control_guard = self.try_lock_non_rt_control()?;
+        let _non_rt_control_guard = self.lock_non_rt_control_unless(abandoned)?;
         self.read_state_after_parameters_drain(timeout)
     }
 
@@ -1298,6 +1300,16 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// verdict ([`ControlGateGuard`]), so the instance processes again even if
     /// no further control call ever comes.
     fn lock_non_rt_control(&self) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
+        self.lock_non_rt_control_unless(&|| false)
+    }
+
+    /// [`Self::lock_non_rt_control`], leaving the wait with `GateBusy` once
+    /// `abandoned` is true: the gate was busy when this waiter left, which is
+    /// no verdict on its holder.
+    fn lock_non_rt_control_unless(
+        &self,
+        abandoned: &dyn Fn() -> bool,
+    ) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
         without_stalling_async_worker(|| {
             let deadline = Instant::now() + self.control_gate_deadline;
             loop {
@@ -1309,6 +1321,12 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 // up on: waiting out a deadline of its own would only add a
                 // hang the verdict settled.
                 self.refuse_if_unresponsive()?;
+
+                if abandoned() {
+                    return Err(PluginControlRefusal::GateBusy {
+                        plugin: self.name.clone(),
+                    });
+                }
 
                 if Instant::now() >= deadline {
                     return self.give_up_on_gate();

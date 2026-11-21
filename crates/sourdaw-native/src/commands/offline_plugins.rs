@@ -40,10 +40,7 @@ use crate::commands::plugins::{
     activation_refusal_reason, construct_runtime_on_ui_thread, create_hosted_runtime,
     hold_plugin_runtime_gate, host_backend, HostBackend, PluginCommandError, VettedRegistryEntry,
 };
-use crate::host::native_bridge::{
-    HostedPluginSlot, PluginControlError, PluginControlRefusal, PluginStateError,
-    SharedHostedPlugin,
-};
+use crate::host::native_bridge::{HostedPluginSlot, PluginControlRefusal, SharedHostedPlugin};
 #[cfg(test)]
 use crate::host::plugin_folder_grants::ForbiddenRoots;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
@@ -59,7 +56,7 @@ use std::fmt;
 #[cfg(test)]
 use std::path::Path;
 use std::sync::{Arc, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[cfg(test)]
 mod tests;
@@ -68,10 +65,6 @@ mod tests;
 /// else holds it — the instance is this render's alone — so the bound only
 /// stops a wedged plugin from parking the render forever.
 const OFFLINE_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// How long a render waits on a held control gate between two looks at its
-/// cancel.
-const CONTROL_GATE_SLICE: Duration = Duration::from_millis(20);
 
 /// How many cancels for renders that have not started yet are remembered.
 ///
@@ -575,45 +568,19 @@ pub(crate) type CaptureState = fn(
 
 /// Read a live engine instance's state chunk: refused, not drained, while its
 /// parameter writes wait for the live engine — what the state save does for
-/// the same instance (`plugins::read_plugin_state_chunk`). A wait on the
-/// instance's held control gate ends when `render_control` is cancelled.
+/// the same instance (`plugins::read_plugin_state_chunk`). The wait for the
+/// instance's control gate is the state save's own, deadline and verdict
+/// included, except that it ends when `render_control` is cancelled.
 pub(crate) fn read_live_state(
     runtime: &SharedHostedPlugin,
     _state: &AppState,
     render_control: &OfflineRenderControl,
 ) -> Result<Vec<u8>, PluginCommandError> {
-    wait_for_control_gate(render_control, || {
-        runtime.try_get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
-    })
-    .map_err(PluginCommandError::StateRead)
-}
-
-/// Run `attempt` until the control gate it needs is free, in slices of
-/// [`CONTROL_GATE_SLICE`], so a cancel of the render ends the wait instead of
-/// waiting out a gate a live plugin call holds.
-///
-/// Ends on the first answer that is not a busy gate, on a cancel (the busy
-/// refusal comes back and the caller reads the cancel), or once
-/// [`OFFLINE_CONTROL_TIMEOUT`] has passed, as the timed-out refusal the
-/// uncancellable wait gave.
-fn wait_for_control_gate<Value>(
-    render_control: &OfflineRenderControl,
-    mut attempt: impl FnMut() -> Result<Value, PluginControlError<PluginStateError>>,
-) -> Result<Value, PluginControlError<PluginStateError>> {
-    let deadline = Instant::now() + OFFLINE_CONTROL_TIMEOUT;
-    loop {
-        let plugin = match attempt() {
-            Err(PluginControlError::Refused(PluginControlRefusal::GateBusy { plugin })) => plugin,
-            answer => return answer,
-        };
-        if render_control.is_cancelled() {
-            return Err(PluginControlRefusal::GateBusy { plugin }.into());
-        }
-        if Instant::now() >= deadline {
-            return Err(PluginControlRefusal::TimedOut { plugin }.into());
-        }
-        std::thread::sleep(CONTROL_GATE_SLICE);
-    }
+    runtime
+        .get_state_after_pending_parameters_drain_unless(OFFLINE_CONTROL_TIMEOUT, &|| {
+            render_control.is_cancelled()
+        })
+        .map_err(PluginCommandError::StateRead)
 }
 
 /// A test's look at every built instance just before the render.
@@ -908,17 +875,32 @@ fn capture_live_state(
     render: &InFlightRender<'_>,
 ) -> Result<Vec<u8>, OfflineRenderError> {
     if runtime.has_pending_parameter_writes() {
-        return Err(refusal(
+        return Err(refusal_unless_cancelled(
+            render,
             instance,
             OfflinePluginRefusal::PendingParameterWrites,
         ));
     }
     (seams.capture_state)(runtime, state, render.control()).map_err(|reason| {
-        if render.control().is_cancelled() {
-            return render.cancelled();
-        }
-        refusal(instance, OfflinePluginRefusal::StateUnreadable(reason))
+        refusal_unless_cancelled(
+            render,
+            instance,
+            OfflinePluginRefusal::StateUnreadable(reason),
+        )
     })
+}
+
+/// The refusal for one instance, or the cancelled refusal when the render was
+/// cancelled: a cancel is never reported as a plugin's failure.
+fn refusal_unless_cancelled(
+    render: &InFlightRender<'_>,
+    bound: &BoundHostedInstance,
+    reason: OfflinePluginRefusal,
+) -> OfflineRenderError {
+    if render.control().is_cancelled() {
+        return render.cancelled();
+    }
+    refusal(bound, reason)
 }
 
 /// Leaves every offline instance's processing state when dropped; see
@@ -983,7 +965,9 @@ fn construct_unless_cancelled(
 /// `render`, read before each state read, before each construction and again
 /// once the runtime gate is taken, and before each restore: a render cancelled
 /// at quit reads and builds nothing more on the thread waiting for it to end.
-/// A cancel also ends a state read waiting on a held control gate, and is read
+/// A cancel also ends a state read waiting on a held control gate — which, left
+/// uncancelled, waits the live instance's own gate deadline and gives the same
+/// unresponsive verdict as a state save — and is read
 /// again on the UI thread, immediately before the plugin's code is opened: a
 /// construction posted before the cancel and run after it opens nothing. The
 /// restore into the fresh instance waits on no gate — nothing else holds it —
@@ -1106,12 +1090,19 @@ pub(crate) async fn build_offline_instances<'a>(
                 ))
             })
             .map_err(|reason| {
-                refusal(
+                refusal_unless_cancelled(
+                    render,
                     instance,
                     OfflinePluginRefusal::Control(reason.into_refusal()),
                 )
             })?
-            .map_err(|reason| refusal(instance, OfflinePluginRefusal::StateNotRestored(reason)))?;
+            .map_err(|reason| {
+                refusal_unless_cancelled(
+                    render,
+                    instance,
+                    OfflinePluginRefusal::StateNotRestored(reason),
+                )
+            })?;
         if let Some(last) = built.instances.last_mut() {
             last.latency_frames = latency_frames;
         }
