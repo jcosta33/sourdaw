@@ -42,6 +42,7 @@ describe('handleArmTrack', () => {
 
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', true, {
             deferRuntimeEffect: true,
+            replay: false,
             midiInputTrackId: undefined,
             expectedMidiInputTrackId: undefined,
             midiInputOwnerId: 'owner-forward',
@@ -69,6 +70,7 @@ describe('handleArmTrack', () => {
 
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', false, {
             deferRuntimeEffect: true,
+            replay: false,
             midiInputTrackId: 't0',
             expectedMidiInputTrackId: 't1',
             midiInputOwnerId: null,

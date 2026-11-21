@@ -36,6 +36,7 @@ type TestTrack = {
     id: string;
     kind: 'audio' | 'midi' | 'vca';
     armed: boolean;
+    frozen?: boolean;
 };
 
 type TestTrackState = {
@@ -1445,6 +1446,25 @@ describe('toggleRecording', () => {
             });
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [{ id: 'track-vca', kind: 'vca', armed: true }],
+            });
+
+            toggleRecording();
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('refuses when the only armed track is frozen, since a take on it would be silent (#7239)', () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
             });
 
             toggleRecording();

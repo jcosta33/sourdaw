@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
@@ -29,6 +28,7 @@ import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry'
 
 import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
+import { hasArmedTakeTarget } from './hasArmedTakeTarget';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
@@ -762,10 +762,7 @@ export function toggleRecording(): void {
     // that cannot exist is the same defect one count earlier. The punch arm
     // above stays open — it engages no recording, and the scheduler owns the
     // window it arms.
-    const hasArmedTakeTarget =
-        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
-        false;
-    if (!hasArmedTakeTarget) {
+    if (!hasArmedTakeTarget()) {
         notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
         return;
     }

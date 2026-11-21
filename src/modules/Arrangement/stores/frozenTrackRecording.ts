@@ -1,4 +1,4 @@
-import { type Track } from './Track';
+import { type Track } from '../models/Track';
 
 export const FROZEN_TRACK_RECORDING_MESSAGE = 'Unfreeze the track to record on it.';
 

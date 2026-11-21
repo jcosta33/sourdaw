@@ -16,10 +16,11 @@ function ensureMidiInputOwnerId(action: ArmTrackAction): string | null {
 }
 
 export const handleArmTrack = createHandler<'armTrack'>({
-    execute: (action) => {
+    execute: (action, context) => {
         const midiInputOwnerId = ensureMidiInputOwnerId(action);
         const runtimeEffect = armTrack(action.payload.trackId, action.payload.armed, {
             deferRuntimeEffect: true,
+            replay: context?.executionMode === 'isolated-preview' || context?.replaysHistoryEntry === true,
             midiInputTrackId: action.payload.midiInputTrackId,
             expectedMidiInputTrackId: action.payload.expectedMidiInputTrackId,
             midiInputOwnerId,

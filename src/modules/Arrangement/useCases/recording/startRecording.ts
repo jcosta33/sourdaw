@@ -2,10 +2,10 @@ import { runWithAutomergeStorageTransaction } from '#/infra/store/storage/create
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
-import { isFrozenTrackRefusingRecording } from '../../models/FrozenTrackRecording';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { isFrozenTrackRefusingRecording } from '../../stores/frozenTrackRecording';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type Track } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';

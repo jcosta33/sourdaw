@@ -12,6 +12,7 @@ import {
     executeAppAction,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
+    undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -35,6 +36,7 @@ import { initStalenessDetection } from '../../../useCases/freezeBounce/initStale
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
+import { handleArmTrack } from '../../track/armTrack';
 
 const TRACK_ID = 'track-midi';
 
@@ -144,6 +146,41 @@ describe('recording onto a frozen track (issue #7239)', () => {
         await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
 
         expect(readTrack().armed).toBe(true);
+    });
+
+    it('still disarms a track that froze while armed', async () => {
+        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
+        freezeTrackInStore();
+
+        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } });
+
+        expect(readTrack().armed).toBe(false);
+        expect(notifications).toEqual([]);
+    });
+
+    it('re-arms through Undo of a disarm on a frozen track without refusing or warning', async () => {
+        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
+        freezeTrackInStore();
+        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } });
+        expect(readTrack().armed).toBe(false);
+
+        await undo();
+        flushAutomergeStorageWrites();
+
+        expect(readTrack().armed).toBe(true);
+        expect(notifications).toEqual([]);
+    });
+
+    it('projects arming a frozen track in an isolated preview without refusing or warning', async () => {
+        freezeTrackInStore();
+
+        const result = await handleArmTrack.execute(
+            { type: 'armTrack', payload: { trackId: TRACK_ID, armed: true, midiInputOwnerId: 'preview-owner' } },
+            { actions: [], actionIndex: 0, executionMode: 'isolated-preview' }
+        );
+
+        expect(result?.status).toBe('written');
+        expect(notifications).toEqual([]);
     });
 
     it('opens no recording clip on an armed track that is frozen', () => {

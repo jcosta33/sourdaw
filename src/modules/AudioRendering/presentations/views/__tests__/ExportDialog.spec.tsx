@@ -231,6 +231,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: vi.fn(),
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         clampDeviceParamWrite: actual.clampDeviceParamWrite,
         clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
         deriveEffectiveAudibility: actual.deriveEffectiveAudibility,

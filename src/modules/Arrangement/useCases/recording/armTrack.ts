@@ -12,6 +12,8 @@ import { refusesArm } from './refusesArm';
 
 type ArmTrackOptions = {
     deferRuntimeEffect?: boolean;
+    /** The arm restores or projects an earlier state (undo, redo, isolated preview) rather than being a fresh user arm. */
+    replay?: boolean;
     midiInputTrackId?: string | null;
     expectedMidiInputTrackId?: string | null;
     midiInputOwnerId?: string | null;
@@ -76,7 +78,7 @@ export function armTrack(
     if (!projectStateChanged && !runtimeStateChanged) {
         return false;
     }
-    if (refusesArm(track, armed)) {
+    if (refusesArm(track, { armed, replay: options.replay === true })) {
         return false;
     }
     if (projectStateChanged) {
