@@ -275,18 +275,26 @@ describe('live plugin state across an app-initiated teardown', () => {
             const retry = activate(SAVED_CHUNK);
             await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledTimes(2));
             const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+            // A failed assertion must not leave the rebuild fence holding every later case.
+            onTestFinished(async () => {
+                nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+                await rebuild;
+            });
             retryWrite.reject(new Error('chunk rejected again'));
 
             await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
             expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
-            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
-            await rebuild;
         });
 
         it('leaves a newer activation of the id unmarked when the forgotten one restores into nothing', async () => {
             const firstWrite = Promise.withResolvers<void>();
             const secondWrite = Promise.withResolvers<void>();
             mocks.setPluginState.mockReturnValueOnce(firstWrite.promise).mockReturnValueOnce(secondWrite.promise);
+            // A failed assertion must not leave the instance's lifecycle turn held for later cases.
+            onTestFinished(() => {
+                firstWrite.resolve();
+                secondWrite.resolve();
+            });
 
             const firstActivation = activate(SAVED_CHUNK);
             await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
