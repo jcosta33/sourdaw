@@ -14,8 +14,9 @@ function findRefusal(action: HideTrackAction, context: HandlerValidationContext)
     if (track === null) {
         return describeMissingTrack(trackId);
     }
-    // A project saved with a hidden master must still be able to show it.
-    if (track.kind === 'master' && hidden) {
+    // Only a fresh hide is refused: a restore carrying expectedHidden puts back state a saved project held,
+    // so a master saved hidden can still be shown, and that show can be undone and redone.
+    if (track.kind === 'master' && hidden && expectedHidden === undefined) {
         return 'The master track cannot be hidden';
     }
     return expectedHidden === undefined || track.hidden === expectedHidden

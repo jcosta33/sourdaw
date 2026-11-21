@@ -129,15 +129,29 @@ describe('handleHideTrack', () => {
             expect(mocks.hideTrack).toHaveBeenCalledWith('master', false);
         });
 
-        it('replays the stored inverse of a hidden master, which shows it again', () => {
+        it("undoes and redoes the show of a master saved hidden through describe's own actions", () => {
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [{ id: 'master', kind: 'master', hidden: true }],
             });
-            const stored = masterHideAction(false, true);
+            const forward = masterHideAction(false);
+            const description = handleHideTrack.describe(forward, { actions: [forward], actionIndex: 0 });
+            const { inverseAction, redoAction } = description;
+            if (inverseAction?.type !== 'hideTrack' || redoAction?.type !== 'hideTrack') {
+                throw new Error('Expected a guarded inverse and redo');
+            }
 
-            expect(handleHideTrack.validate?.(stored, { actions: [stored], actionIndex: 0 })).toBe(true);
-            expect(handleHideTrack.execute(stored)).toEqual({ status: 'written' });
-            expect(mocks.hideTrack).toHaveBeenCalledWith('master', false);
+            expect(handleHideTrack.execute(forward)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', false);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', hidden: false }] });
+            expect(handleHideTrack.validate?.(inverseAction, { actions: [inverseAction], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(inverseAction)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', true);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', hidden: true }] });
+            expect(handleHideTrack.validate?.(redoAction, { actions: [redoAction], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(redoAction)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', false);
         });
 
         it('validates a restore only against the state it expects', () => {
