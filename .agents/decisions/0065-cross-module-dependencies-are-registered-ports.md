@@ -44,19 +44,21 @@ the only mutable binding. The port exposes one fill function and a reader. A por
 name it already has (`configure`, `setProvider`, `set…Dependencies`), so a migration does not
 rewrite its registrar. A fill stores the
 implementation and replaces any earlier one; the existing ports that refuse a different second
-fill, as `kitSwing.ts` does, keep that check. Reading an unfilled port throws an error naming the caller, the port
-and the `src/app` registrar that fills it, because a reader that answers "nothing registered" by
+fill, as `kitSwing.ts` does, keep that check. Reading an unfilled port throws an error naming the
+port and the `src/app` registrar that fills it, and the caller when the reader takes one, because a
+reader that answers "nothing registered" by
 skipping its work turns a wiring fault into wrong audio or lost project state with no report. A
 port whose absence is a real product state declares that in its read type, for example by
 returning `null` for "no collaboration session", and every caller handles it. The fill function
 never accepts `null` to unregister.
 
 Only the composition root under `src/app/` configures ports, through registrar functions. No
-module exports a mutable binding: `import-x/no-mutable-exports` is an error. No module performs
-registration as a side effect of being evaluated. `src/app/bootstrap.ts` exports one entry
-function, and `main.tsx` calls it and the port registrars explicitly, each once, in an order that
-`main.tsx` states. A registrar's position in that order, not import order, decides what is filled
-when the first render or the first command runs.
+module exports a mutable binding; the lint rule `import-x/no-mutable-exports` is the guard that
+enforces it. No module performs registration as a side effect of being evaluated. The required end
+state is that `src/app/bootstrap.ts` exports one entry function, and `main.tsx` calls it and the
+port registrars explicitly, each once, in an order that `main.tsx` states. A registrar's position in
+that order, not import order, decides what is filled when the first render or the first command
+runs.
 
 Specs give a port its fake through the same fill function production uses, in the case or its
 setup that needs it. Vitest evaluates each spec file in a fresh module graph, so a filled port never
@@ -71,6 +73,8 @@ No dependency-injection library is added. `Container` and `inject()` keep their 
 ## Consequence
 
 A wiring fault fails loudly at its first read with the registrar to call, instead of silently
-skipping. Registration order is one list a reviewer can read in `main.tsx` and the entry function.
-Specs stop resetting ports between cases. Existing ports that already have this shape stay as they
-are; the others migrate module by module.
+skipping. Registration order becomes one list a reviewer can read in `main.tsx` and the entry
+function. Specs stop resetting ports between cases. Existing ports that already have this shape stay
+as they are; the others migrate module by module. The `import-x/no-mutable-exports` guard is turned
+on by the change that migrates the last exported binding, and a later slice replaces registration at
+import with the explicit entry-function and registrar calls in `main.tsx`.
