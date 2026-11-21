@@ -27,15 +27,17 @@ pub trait ServicedRunLoop: Send + Sync {
 struct PumpedRunLoop {
     id: RunLoopId,
     run_loop: Arc<dyn ServicedRunLoop>,
-    /// Held for the whole of one pass, and taken again by the registration's
-    /// drop.
+    /// Whether the registration has dropped. Held for the whole of one pass,
+    /// and set by the registration's drop.
     ///
     /// A pass calls into code the run loop's owner is about to release, so the
-    /// owner may not release it while one is running. Uncontended whenever the
-    /// shell's pump and the owner's teardown are the same thread, which is the
-    /// arrangement both formats' lifecycles keep; the lock is what makes the
-    /// other arrangement wait rather than free a handler mid-call.
-    pass: Mutex<()>,
+    /// owner may not release it while one is running, and a pass that copied
+    /// the set before the drop must not start once the drop has returned.
+    /// Uncontended whenever the shell's pump and the owner's teardown are the
+    /// same thread, which is the arrangement both formats' lifecycles keep; the
+    /// lock is what makes the other arrangement wait rather than free a
+    /// handler mid-call.
+    retired: Mutex<bool>,
 }
 
 /// Names one registration, so a drop removes its own and no other.
@@ -68,26 +70,37 @@ pub fn register_editor_run_loop<R: ServicedRunLoop + 'static>(
     let pumped = Arc::new(PumpedRunLoop {
         id: NEXT.fetch_add(1, Ordering::Relaxed),
         run_loop,
-        pass: Mutex::new(()),
+        retired: Mutex::new(false),
     });
     editor_run_loops().push(Arc::clone(&pumped));
     EditorRunLoopRegistration { pumped }
 }
 
 impl Drop for EditorRunLoopRegistration {
-    /// Leave the pumped set, then wait out a pass already inside this loop.
+    /// Leave the pumped set, wait out a pass already inside this loop, and
+    /// turn away any pass that copied the set before it was left.
     fn drop(&mut self) {
         let id = self.pumped.id;
         editor_run_loops().retain(|pumped| pumped.id != id);
-        let _pass = lock_pass(&self.pumped);
+        *lock_pass(&self.pumped) = true;
     }
 }
 
-fn lock_pass(pumped: &PumpedRunLoop) -> MutexGuard<'_, ()> {
+fn lock_pass(pumped: &PumpedRunLoop) -> MutexGuard<'_, bool> {
     pumped
-        .pass
+        .retired
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Service one loop, unless its registration dropped before this pass reached
+/// it.
+fn service_pumped(pumped: &PumpedRunLoop) -> usize {
+    let retired = lock_pass(pumped);
+    if *retired {
+        return 0;
+    }
+    pumped.run_loop.service_once()
 }
 
 /// One pass over every registered run loop. Returns how many callbacks ran.
@@ -98,12 +111,7 @@ fn lock_pass(pumped: &PumpedRunLoop) -> MutexGuard<'_, ()> {
 pub fn service_editor_run_loops() -> usize {
     let open: Vec<Arc<PumpedRunLoop>> = editor_run_loops().iter().map(Arc::clone).collect();
 
-    open.iter()
-        .map(|pumped| {
-            let _pass = lock_pass(pumped);
-            pumped.run_loop.service_once()
-        })
-        .sum()
+    open.iter().map(|pumped| service_pumped(pumped)).sum()
 }
 
 /// Whether a run loop is still in the pumped set. For tests that prove a
@@ -164,6 +172,25 @@ mod tests {
             "a dropped registration is not serviced again"
         );
         assert!(!is_pumped(&run_loop));
+    }
+
+    /// A pass that copied the set before a drop on another thread reaches the
+    /// loop only after the drop returned, when its owner may already have
+    /// released what the loop calls into.
+    #[test]
+    fn a_pass_that_copied_the_set_before_a_drop_calls_nothing_after_it() {
+        let counting = Arc::new(CountingRunLoop::default());
+        let registration = register_editor_run_loop(Arc::clone(&counting));
+        let copied_by_a_pass = Arc::clone(&registration.pumped);
+
+        drop(registration);
+
+        assert_eq!(service_pumped(&copied_by_a_pass), 0);
+        assert_eq!(
+            counting.passes.load(Ordering::Acquire),
+            0,
+            "a loop whose registration dropped is never called"
+        );
     }
 
     /// The drop waits out a pass that is already inside the loop, because the

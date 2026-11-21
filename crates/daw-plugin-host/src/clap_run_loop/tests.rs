@@ -18,14 +18,15 @@ enum Call {
     Fd(i32, clap_posix_fd_flags, ThreadId),
 }
 
-/// What the fake plugin does from inside its next `on_timer`, before
-/// returning.
+/// What the fake plugin does from inside its next `on_timer` or `on_fd`,
+/// before returning.
 type Reentry = Box<dyn FnOnce()>;
 
 #[derive(Default)]
 struct Recorder {
     calls: Mutex<Vec<Call>>,
     on_next_timer: Mutex<Option<Reentry>>,
+    on_next_fd: Mutex<Option<Reentry>>,
 }
 
 impl Recorder {
@@ -82,6 +83,10 @@ unsafe extern "C" fn fake_on_fd(plugin: *const clap_plugin, fd: i32, flags: clap
         .lock()
         .unwrap()
         .push(Call::Fd(fd, flags, std::thread::current().id()));
+    let reentry = recorder.on_next_fd.lock().unwrap().take();
+    if let Some(reentry) = reentry {
+        reentry();
+    }
 }
 
 static FAKE_TIMER: clap_plugin_timer_support = clap_plugin_timer_support {
@@ -480,6 +485,56 @@ fn an_unregistered_descriptor_is_not_delivered() {
     assert!(instance.unregister_fd(pipe.read));
     assert_eq!(instance.run_loop().service_descriptors(), 0);
     assert!(instance.recorder.calls().is_empty());
+}
+
+/// Two readable descriptors, polled together; the first one's callback does
+/// `reentry` with the second's number before the pass reaches it.
+fn deliveries_after_the_first_callback_does(
+    reentry: impl FnOnce(usize, i32) + 'static,
+) -> Vec<(i32, clap_posix_fd_flags)> {
+    let instance = Instance::new();
+    instance.attach();
+    let first = Pipe::open();
+    let second = Pipe::open();
+    assert!(instance.register_fd(first.read, CLAP_POSIX_FD_READ));
+    assert!(instance.register_fd(second.read, CLAP_POSIX_FD_READ));
+    first.make_readable();
+    second.make_readable();
+    let host = instance.host() as usize;
+    let second_fd = second.read;
+    *instance.recorder.on_next_fd.lock().unwrap() = Some(Box::new(move || reentry(host, second_fd)));
+
+    instance.run_loop().service_descriptors();
+    instance.recorder.fd_calls()
+}
+
+/// The poll answered for both before either was called, so the second's
+/// readiness is stale once the first's callback has unregistered it.
+#[test]
+fn a_descriptor_unregistered_from_inside_a_callback_is_not_delivered_by_the_same_pass() {
+    let delivered = deliveries_after_the_first_callback_does(|host, fd| {
+        let unregister = HOST_POSIX_FD_SUPPORT.unregister_fd.unwrap();
+        // SAFETY: the instance's live host, called back on its pump thread.
+        assert!(unsafe { unregister(host as *const clap_host, fd) });
+    });
+
+    assert_eq!(delivered.len(), 1, "only the first descriptor is delivered");
+}
+
+/// A descriptor number unregistered and registered again inside the pass is a
+/// new registration, which the poll that ran before it said nothing about.
+#[test]
+fn a_descriptor_re_registered_from_inside_a_callback_is_not_handed_the_stale_poll() {
+    let delivered = deliveries_after_the_first_callback_does(|host, fd| {
+        let unregister = HOST_POSIX_FD_SUPPORT.unregister_fd.unwrap();
+        let register = HOST_POSIX_FD_SUPPORT.register_fd.unwrap();
+        // SAFETY: the instance's live host, called back on its pump thread.
+        assert!(unsafe { unregister(host as *const clap_host, fd) });
+        // SAFETY: as above.
+        assert!(unsafe { register(host as *const clap_host, fd, CLAP_POSIX_FD_WRITE) });
+    });
+
+    assert_eq!(delivered.len(), 1, "only the first descriptor is delivered");
 }
 
 /// The run loop is what the shared pump drives: a registered instance's timer
