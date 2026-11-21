@@ -1,5 +1,6 @@
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
+
+import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '../models/NoteReceivingInstrument';
 
 /**
  * The instrument an auditioned note plays on: the first note-accepting

@@ -12,7 +12,6 @@ import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 import { isBeatInEnabledClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
@@ -21,6 +20,7 @@ import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toast
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { hasNoteExpression, normalizeNoteExpression } from '../../engine/noteExpression';
+import { resolveDrumKitBy, resolveDrumKitOutputGain } from '../../models/DrumKitSelection';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { type ScheduleCall } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
