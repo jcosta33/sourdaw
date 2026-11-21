@@ -26,7 +26,7 @@
 //! holds its runtime as an `Arc<SharedHostedPlugin>` shared with a scheduler
 //! that is going away, activated at the dead device's rate, and the dormant
 //! record `attach_dormant_plugins` re-attaches from
-//! (`state::PluginInstanceData`) carries an owned `HostedRuntime` and nothing
+//! (`state::PluginInstanceData`) carries a runtime activated at load and nothing
 //! naming the plugin binary. So there is no dormant record to write here: the
 //! runtimes are retired for reclamation the way the exit cascade retires
 //! them, and re-instantiating an instance is the load path's business, not

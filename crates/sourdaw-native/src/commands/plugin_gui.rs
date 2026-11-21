@@ -20,7 +20,7 @@ use std::fmt;
 use std::sync::{Arc, MutexGuard, PoisonError, TryLockError};
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::{PluginControlError, PluginControlRefusal};
+use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
 use crate::host::plugin_editor_asks::editor_window_host;
 use crate::host::plugin_window::{
     next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
@@ -213,28 +213,45 @@ struct OpenedEditor {
     can_resize: bool,
 }
 
+/// How long an editor call waits on the RT seam once it holds the control gate,
+/// the budget every engine-owned editor call already has.
+const EDITOR_CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The dormant instance's runtime, cloned out of the command-owned map so the
+/// editor call that follows runs with the map released and under the
+/// instance's own bounded control gate.
+fn command_owned_runtime(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+    let plugins = state
+        .plugins
+        .lock()
+        .map_err(PluginGuiError::lock("plugins"))?;
+    Ok(plugins
+        .get(instance_id)
+        .map(|instance| Arc::clone(&instance.plugin)))
+}
+
 /// Make one call into an instance's plugin, through whichever map owns it and
 /// on the shell's UI thread.
 ///
-/// The two stores are reached differently — the command-owned one by holding its
-/// mutex, the engine-owned one by claiming the runtime owner's control gate —
-/// but the thread rule is the same for both, and it is the module's: the claim
-/// is taken here, and only the call crosses.
+/// Both stores are reached the same way: the runtime owner is cloned out of
+/// its map, the map is released, and the call claims the owner's control gate.
+/// The thread rule is the module's: the claim is taken here, and only the call
+/// crosses.
 fn call_plugin_on_ui_thread<Answer: Send + 'static>(
     instance_id: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
     call: impl FnOnce(&mut (dyn AudioPlugin + 'static)) -> Answer + Send + 'static,
 ) -> Result<Answer, PluginGuiError> {
-    {
-        let mut plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginGuiError::lock("plugins"))?;
-        if let Some(instance) = plugins.get_mut(instance_id) {
-            let plugin: &mut dyn AudioPlugin = &mut instance.plugin;
-            return lend_on_ui_thread(windows_host, plugin, call).map_err(PluginGuiError::from);
-        }
+    if let Some(runtime) = command_owned_runtime(state, instance_id)? {
+        return runtime
+            .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
+                lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
+            })
+            .map_err(PluginGuiError::from);
     }
 
     let is_engine_owned = state
@@ -412,7 +429,7 @@ fn open_editor_in_new_window(
     state: &AppState,
 ) -> Result<PluginGuiInfo, PluginGuiError> {
     // 1. Get plugin name and check GUI support
-    let (plugin_name, engine_runtime) = {
+    let (plugin_name, runtime) = {
         let plugins = state
             .plugins
             .lock()
@@ -423,7 +440,12 @@ fn open_editor_in_new_window(
                     return Err(PluginGuiError::GuiUnsupported);
                 }
 
-                (instance.name.clone(), None)
+                instance
+                    .plugin
+                    .ensure_public_control_allowed()
+                    .map_err(PluginGuiError::from)?;
+
+                (instance.name.clone(), Arc::clone(&instance.plugin))
             }
             None => {
                 let engine_plugins = state
@@ -442,7 +464,7 @@ fn open_editor_in_new_window(
 
                     (
                         engine_instance.name.clone(),
-                        Some(std::sync::Arc::clone(&engine_instance.runtime)),
+                        Arc::clone(&engine_instance.runtime),
                     )
                 } else {
                     return Err(PluginGuiError::no_instance(&instance_id));
@@ -523,28 +545,12 @@ fn open_editor_in_new_window(
             handle,
         )
     };
-    let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
-        runtime
-            .with_control(std::time::Duration::from_secs(2), |plugin| {
-                lend_on_ui_thread(windows_host, plugin, move |plugin| open_editor(plugin))
-            })
-            .map_err(PluginGuiError::from)
-            .and_then(|opened| opened)
-    } else {
-        let mut plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginGuiError::lock("plugins"))?;
-        let instance = plugins
-            .get_mut(&instance_id)
-            .ok_or_else(|| PluginGuiError::no_instance(&instance_id))?;
-
-        lend_on_ui_thread(windows_host, &mut instance.plugin, move |plugin| {
-            open_editor(plugin)
+    let gui_size_result = runtime
+        .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
+            lend_on_ui_thread(windows_host, plugin, move |plugin| open_editor(plugin))
         })
         .map_err(PluginGuiError::from)
-        .and_then(|opened| opened)
-    };
+        .and_then(|opened| opened);
 
     let OpenedEditor {
         size: (width, height),
@@ -581,52 +587,40 @@ fn open_editor_in_new_window(
         )
     };
 
-    if let Some(runtime) = engine_runtime.as_ref() {
-        let publish_result = publish_engine_gui_window_with_lifecycle_checks(
-            || {
-                runtime
-                    .ensure_public_control_allowed()
-                    .map_err(PluginGuiError::from)
-            },
-            publish_window,
-        );
-        cleanup_opened_engine_gui_after_rejected_lifecycle(
-            publish_result,
-            || {
-                let _ = runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                    lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-                });
-            },
-            || {
-                if let Ok(mut windows) = state.plugin_windows.lock() {
-                    let should_remove = windows
-                        .get(&instance_id)
-                        .map(|label| label == &window_label)
-                        .unwrap_or(false);
-                    if should_remove {
-                        windows.remove(&instance_id);
-                    }
+    // A publish refused for any reason unwinds the same way: the editor is open
+    // inside the plugin and its window exists, and returning with both standing
+    // leaks a window the user cannot reach and an editor the next open is
+    // refused for.
+    let publish_result = publish_engine_gui_window_with_lifecycle_checks(
+        || {
+            runtime
+                .ensure_public_control_allowed()
+                .map_err(PluginGuiError::from)
+        },
+        publish_window,
+    );
+    cleanup_opened_engine_gui_after_rejected_lifecycle(
+        publish_result,
+        || {
+            let _ = runtime.with_unload_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
+                lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
+            });
+        },
+        || {
+            if let Ok(mut windows) = state.plugin_windows.lock() {
+                let should_remove = windows
+                    .get(&instance_id)
+                    .map(|label| label == &window_label)
+                    .unwrap_or(false);
+                if should_remove {
+                    windows.remove(&instance_id);
                 }
-            },
-            || {
-                plugin_window.destroy();
-            },
-        )?;
-    } else if let Err(error) = publish_window() {
-        // Same unwind the engine branch gets, for the same reason: the editor is
-        // open inside the plugin and its window exists, and returning with both
-        // standing leaks a window the user cannot reach and an editor the next
-        // open is refused for.
-        if let Ok(mut plugins) = state.plugins.lock() {
-            if let Some(instance) = plugins.get_mut(&instance_id) {
-                let _ = lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
-                    plugin.close_gui()
-                });
             }
-        }
-        plugin_window.destroy();
-        return Err(error);
-    }
+        },
+        || {
+            plugin_window.destroy();
+        },
+    )?;
 
     Ok(PluginGuiInfo {
         has_gui: true,
@@ -849,27 +843,17 @@ pub fn reset_plugin_gui_state_after_os_close(
 /// Close the plugin's own GUI through whichever map owns the instance.
 ///
 /// Command-owned first, then engine-owned: an instance lives in exactly one of
-/// them, and reaching the engine's runtime costs a control-lock wait that a
-/// command-owned instance must not pay.
+/// them. Either way the close runs under the instance's own control gate with
+/// the map released.
 fn close_owning_plugin_gui(
     instance_id: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) {
-    let closed_command_owned = match state.plugins.lock() {
-        Ok(mut plugins) => match plugins.get_mut(instance_id) {
-            Some(instance) => {
-                let _ = lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
-                    plugin.close_gui()
-                });
-                true
-            }
-            None => false,
-        },
-        Err(_) => false,
-    };
-
-    if closed_command_owned {
+    if let Ok(Some(runtime)) = command_owned_runtime(state, instance_id) {
+        let _ = runtime.with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
+            lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
+        });
         return;
     }
 
@@ -978,23 +962,16 @@ fn close_editor_and_window(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), PluginGuiError> {
-    let closed_command_owned = {
-        let mut plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginGuiError::lock("plugins"))?;
-        if let Some(instance) = plugins.get_mut(instance_id) {
-            lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
-                plugin.close_gui()
+    let command_owned = command_owned_runtime(state, instance_id)?;
+    if let Some(runtime) = &command_owned {
+        runtime
+            .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
+                lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
             })
             .map_err(PluginGuiError::from)?;
-            true
-        } else {
-            false
-        }
-    };
+    }
 
-    if !closed_command_owned {
+    if command_owned.is_none() {
         let is_engine_owned = {
             let engine_plugins = state
                 .engine_plugins
@@ -1094,6 +1071,26 @@ fn claim_command_owned_instances<'stores>(
     }
 }
 
+/// Close one command-owned editor, without parking the shell's UI thread on the
+/// instance's control gate, for the reason [`close_engine_owned_editor`] gives.
+fn close_command_owned_editor(
+    runtime: &SharedHostedPlugin,
+    editor_thread: &dyn PluginWindowHost,
+) -> Result<(), PluginGuiError> {
+    let close = |plugin: &mut HostedRuntime| {
+        lend_on_ui_thread(editor_thread, plugin, |plugin| plugin.close_gui())
+    };
+
+    if editor_thread.is_ui_thread() {
+        return runtime
+            .try_with_control(EDITOR_CONTROL_TIMEOUT, close)
+            .map_err(PluginGuiError::from);
+    }
+    runtime
+        .with_control(EDITOR_CONTROL_TIMEOUT, close)
+        .map_err(PluginGuiError::from)
+}
+
 /// Close one engine-owned editor, without parking the shell's UI thread on the
 /// instance's control gate.
 ///
@@ -1152,17 +1149,20 @@ pub(crate) fn close_every_plugin_gui(
         windows.instance_ids().map(str::to_string).collect()
     };
 
-    // Close all CLAP GUIs
+    // Close all CLAP GUIs. The command-owned runtimes are cloned out and the
+    // store released before any editor call, so a dormant instance that never
+    // returns holds only its own gate.
     match claim_command_owned_instances(state, editor_thread)? {
-        Some(mut plugins) => {
-            for (instance_id, instance) in plugins.iter_mut() {
-                if !instances_with_editors.contains(instance_id) {
-                    continue;
-                }
-                let _ = lend_on_ui_thread(editor_thread, &mut instance.plugin, |plugin| {
-                    plugin.close_gui()
-                });
-                report.closed_instance_ids.push(instance_id.clone());
+        Some(plugins) => {
+            let command_owned: Vec<(String, Arc<SharedHostedPlugin>)> = plugins
+                .iter()
+                .filter(|(instance_id, _)| instances_with_editors.contains(*instance_id))
+                .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.plugin)))
+                .collect();
+            drop(plugins);
+            for (instance_id, runtime) in command_owned {
+                let close_result = close_command_owned_editor(&runtime, editor_thread);
+                record_plugin_gui_close_outcome(&mut report, &instance_id, close_result);
             }
         }
         None => report.errors.push(
@@ -2844,10 +2844,8 @@ mod tests {
         holder.join().expect("the gate holder should finish");
     }
 
-    /// The same cycle through the other store. A command-owned instance's editor
-    /// is opened and closed with `plugins` held, so a worker mid-open holds it
-    /// while waiting for the shell's thread — and the exit pass runs on that
-    /// thread.
+    /// The same refusal through the other store: whatever holds `plugins`, the
+    /// exit pass runs on the shell's thread and must not park on it.
     #[test]
     fn the_exit_pass_refuses_command_owned_instances_whose_store_is_held() {
         let state = Arc::new(AppState::default());
@@ -2879,5 +2877,60 @@ mod tests {
             ["Command-owned plugin instances were busy; their editors were not closed"],
             "the skipped store must be reported"
         );
+    }
+
+    /// A dormant instance whose call never comes back out of the plugin costs
+    /// the exit pass that one editor, not the store: the pass reaches every
+    /// other command-owned editor and names the stuck one.
+    #[test]
+    fn the_exit_pass_closes_other_dormant_editors_while_one_dormant_call_is_hung() {
+        let state = Arc::new(AppState::default());
+        let (held, calls) = PluginInstanceData::dormant_fixture_holding_vendor_calls(
+            "Held Dormant",
+            std::time::Duration::from_millis(50),
+        );
+        {
+            let mut plugins = state.plugins.lock().expect("plugins lock");
+            plugins.insert("held".into(), held);
+            plugins.insert(
+                "other".into(),
+                PluginInstanceData::dormant_fixture(
+                    ClapWrapper::new_engine_owned_command_fixture("Other Dormant", vec![], true)
+                        .into(),
+                ),
+            );
+        }
+        {
+            let mut windows = state.plugin_windows.lock().expect("plugin_windows lock");
+            windows.insert("held".into(), "held-window".into());
+            windows.insert("other".into(), "other-window".into());
+        }
+        let writer_state = Arc::clone(&state);
+        let held_call = std::thread::spawn(move || {
+            crate::block_on_test(crate::commands::plugins::set_plugin_parameter(
+                daw_core::PluginInstanceId("held".to_string()),
+                3,
+                0.5,
+                &writer_state,
+            ))
+        });
+        calls
+            .entered
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the held call must reach the plugin");
+
+        let report = exit_pass_within(&state, std::time::Duration::from_secs(5))
+            .expect("the exit pass must complete");
+
+        assert_eq!(report.closed_instance_ids, ["other"]);
+        assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+        assert!(
+            report.errors[0].starts_with("held: "),
+            "the report must name the instance whose editor was left open: {}",
+            report.errors[0]
+        );
+
+        drop(calls.release);
+        assert_eq!(held_call.join().expect("the held call must return"), Ok(()));
     }
 }

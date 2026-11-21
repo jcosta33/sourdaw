@@ -194,12 +194,16 @@ fn destroy_live_plugin_instances(
         .abandoned_instances
         .extend(instances.left_in_a_busy_store);
 
-    // Command-owned instances are owned outright, so this drop *is* their
-    // teardown.
-    report.destroyed_instances += instances.command_owned.len();
-    drop(instances.command_owned);
-
-    let runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
+    // Command-owned runtimes go the same way as engine-owned ones: a dormant
+    // control call that is still inside the plugin holds a clone, and the
+    // retirement sweep is what keeps the final drop off that call's thread.
+    let mut runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
+    runtimes.extend(
+        instances
+            .command_owned
+            .into_iter()
+            .map(|instance| instance.plugin),
+    );
     let retired = retire_for_reclamation(app_state, runtimes);
     reclaim_until_waiting_budget_is_spent(app_state, editor_thread, wait);
     record_reclamation(app_state, retired, report);

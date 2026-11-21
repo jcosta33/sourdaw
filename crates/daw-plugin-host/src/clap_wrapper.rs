@@ -273,6 +273,20 @@ struct EngineOwnedCommandFixture {
     /// is a contract for the same reason teardown is, and the only way to prove
     /// it is to be told what the installing thread was holding at the time.
     notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run at the top of `set_parameter`, `get_state` and `set_state`, standing
+    /// in for the vendor code each of them reaches.
+    ///
+    /// Third-party code of unbounded duration again, so a host's lock
+    /// discipline around these calls is a contract: an observer that blocks is
+    /// how a test holds a call inside the plugin and reads what that holds up.
+    vendor_call_observer: Option<Box<dyn Fn() + Send + Sync>>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+fn observe_vendor_call(fixture: &EngineOwnedCommandFixture) {
+    if let Some(observe) = fixture.vendor_call_observer.as_ref() {
+        observe();
+    }
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -1409,6 +1423,7 @@ impl ClapWrapper {
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
                 teardown_observer: None,
                 notifier_install_observer: None,
+                vendor_call_observer: None,
             }),
         }
     }
@@ -1533,6 +1548,24 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.notifier_install_observer = Some(observe);
+        }
+    }
+
+    /// Be told — and held up, if the observer blocks — every time this
+    /// fixture's `set_parameter`, `get_state` or `set_state` runs.
+    ///
+    /// Each of those is a vendor call of unbounded duration in a real plugin,
+    /// and a fixture has no plugin to be slow; an observer that waits on a
+    /// channel is how a downstream host test keeps one inside the plugin while
+    /// it checks what else still runs.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_vendor_calls(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.vendor_call_observer = Some(observe);
         }
     }
 
@@ -3591,6 +3624,12 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn set_parameter(&mut self, param_id: u32, value: f64) {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
+            return;
+        }
+
         if self.params_ext.is_null() || self.plugin.is_null() {
             return;
         }
@@ -3727,6 +3766,7 @@ impl AudioPlugin for ClapWrapper {
     fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
             return Ok(fixture.state.clone());
         }
 
@@ -3761,6 +3801,7 @@ impl AudioPlugin for ClapWrapper {
     fn set_state(&mut self, state_data: &[u8]) -> Result<(), PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_mut() {
+            observe_vendor_call(fixture);
             fixture.state = state_data.to_vec();
             return Ok(());
         }
