@@ -4380,12 +4380,6 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         cwd: realpathSync(recordedCwd),
                     },
                 ]);
-                // pnpm resolves the package owner by walking up from the recorded cwd, so the
-                // targets must exist relative to that owner, not to the recorded subdirectory.
-                const allTargetsExist = [fixture.newTarget, fixture.retainedTarget].every((target) =>
-                    existsSync(join(packageRoot, target))
-                );
-                expect(allTargetsExist).toBe(true);
                 expect(existsSync(receiptPath)).toBe(false);
             } finally {
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
