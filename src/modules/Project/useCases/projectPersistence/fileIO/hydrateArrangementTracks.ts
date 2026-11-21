@@ -1,3 +1,5 @@
+import { settleFreezingSnapshot } from '#/utils/settleFreezingSnapshot';
+
 import {
     type ProjectClip as SerializedProjectClip,
     type ProjectTrackAlternative as SerializedProjectTrackAlternative,
@@ -76,6 +78,20 @@ function hydrateAlternative(alternative: SerializedProjectTrackAlternative): Pro
     };
 }
 
+/**
+ * A project saved mid-render has no render to resume on load, so a saved `freezing` status would
+ * show a running freeze that nothing can finish or cancel.
+ */
+function settleSavedFreeze(
+    track: HydratableProjectTrack
+): Pick<ProjectTrack, 'frozen' | 'frozenBufferId' | 'freezeState'> {
+    return settleFreezingSnapshot({
+        frozen: track.frozen ?? false,
+        frozenBufferId: track.frozenBufferId,
+        freezeState: track.freezeState ?? { status: 'unfrozen' },
+    });
+}
+
 function hydrateTrack(track: HydratableProjectTrack): ProjectTrack {
     const defaultAlternativeId = `${track.id}-alt-default`;
     const alternatives = track.alternatives?.map(hydrateAlternative) ?? [
@@ -95,9 +111,7 @@ function hydrateTrack(track: HydratableProjectTrack): ProjectTrack {
         devices: track.devices ?? [],
         sends: track.sends ?? [],
         midiFx: track.midiFx ?? [],
-        frozen: track.frozen ?? false,
-        frozenBufferId: track.frozenBufferId,
-        freezeState: track.freezeState ?? { status: 'unfrozen' },
+        ...settleSavedFreeze(track),
         parentId: track.parentId ?? null,
         collapsed: track.collapsed ?? false,
         inputMonitoring: track.inputMonitoring ?? 'auto',
