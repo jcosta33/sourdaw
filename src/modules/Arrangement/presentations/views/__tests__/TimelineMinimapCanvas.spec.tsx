@@ -7,6 +7,14 @@ import { resetResolvedTokenCache, resolveToken } from '#/utils/UI/resolveToken';
 import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
 
+type TestTimelineView = {
+    scrollX: number;
+    scrollY: number;
+    pixelsPerBeat: number;
+    autoScrollEnabled: boolean;
+    viewportWidth?: number;
+};
+
 const stores = vi.hoisted(() => ({
     trackStore: { kind: 'tracks' },
     markerStore: { kind: 'markers' },
@@ -22,7 +30,7 @@ const stores = vi.hoisted(() => ({
         ],
         selectedTrackId: null,
     },
-    view: { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
+    view: { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true } as TestTimelineView,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -130,6 +138,7 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
             return { width: text.length * 5 };
         });
         stores.markers = { markers: [], sections: [] };
+        stores.view = { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true };
         resizeObserverHarness.callback = null;
         densityObserverHarness.query = null;
         cssWidth = 200;
@@ -257,6 +266,21 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
         expect(context.strokeRect.mock.invocationCallOrder[0]).toBeGreaterThan(
             context.fillText.mock.invocationCallOrder.at(-1)!
         );
+    });
+
+    it('draws the viewport highlight over the timeline span, not the minimap width', () => {
+        cssWidth = 400;
+        stores.view = { ...stores.view, viewportWidth: 240 };
+
+        render(<TimelineMinimap height={28} />);
+
+        // 64-beat minimum span over 400 px is 6.25 px per beat. The timeline shows 240 px at
+        // 12 px/beat = 20 beats, so the highlight is 125 px wide, starting at beat 4 (25 px).
+        // strokeRect insets the 1 px border by half a pixel on each side.
+        expect(context.strokeRect).toHaveBeenCalledTimes(1);
+        const [x, , width] = context.strokeRect.mock.calls[0] ?? [];
+        expect(x).toBeCloseTo(25.5, 6);
+        expect(width).toBeCloseTo(124, 6);
     });
 
     it('resolves label color from the theme and sets the font before every measurement', () => {
