@@ -204,7 +204,6 @@ describe('reconcileProjectCommandBatchEffects exact retry against the live proje
 
     afterEach(() => {
         clearHandlerRegistry();
-        commandProjectRevisionPort.setProvider(null);
     });
 
     it('reconciles an exact retry that leaves the live document unchanged', async () => {
