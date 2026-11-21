@@ -4947,7 +4947,7 @@
     },
     "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts": {
