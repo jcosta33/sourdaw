@@ -1100,6 +1100,50 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         ]);
     });
 
+    it('prints the notes the render captured, not the live notes edited since', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+        const clips = [midiClip({ id: 'clip-a', startBeat: 0, endBeat: 4 })];
+        const notesAt = (pitch: number): MidiStoreState => ({
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: { 'clip-a': [{ id: 'n-a', pitch, startBeat: 1, duration: 1, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        midiStore.set(notesAt(72));
+        const keys = createTrack({ id: 'midi-1', name: 'Keys', kind: 'midi', devices: [synth], clips });
+        const project: OfflineRenderProjectSource = {
+            tracks: { tracks: [keys], selectedTrackId: null },
+            midi: midiStore.value,
+            transport: { ...defaultTransportState, tempo: 120 },
+            tempoMap: null,
+            timeSignatureMap: null,
+            automationLanes: [],
+            takeLanes: null,
+            gainEnvelopes: {},
+            sidechainRoutes: [],
+            vcaGroups: [],
+            grooveTemplates: null,
+            chordTrack: null,
+            yeastProcessorsByDevice: {},
+        };
+        offlineRenderCapturePorts.createMidiProjector = () => createGrooveMidiEventProjector();
+        offlinePpqEndpointProjectorState.project = halfSecondPerBeat;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = ({ defaultTempo }) => defaultTempo;
+        offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor = (_changes, anchorBeat, elapsedSeconds, tempo) =>
+            anchorBeat + (elapsedSeconds * tempo) / 60;
+        const captured = captureOfflineRenderInput({ durationBeats: 8, sampleRate: 48_000 }, { project });
+        // The musician then transposed the note in the live session.
+        midiStore.set(notesAt(76));
+
+        await renderKeys({ transport, clips, captured });
+
+        const scheduled = commands.find((command) => command.kind === 'schedule-midi');
+        expect(scheduled?.kind === 'schedule-midi' ? scheduled.notes : null).toEqual([
+            noteEvent(0.5, 72, 100, true),
+            noteEvent(1, 72, 0, false),
+        ]);
+    });
+
     it('comps a MIDI clip against the render’s own tempo map, not the live one, after a tempo change', async () => {
         const { transport, commands } = capturingTransport(FRAMES);
         // 120 BPM to beat 2 (0.5 s a beat), then 60 BPM (1 s a beat): beat 4 sits at 3 s.
