@@ -6,7 +6,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
-import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
+import { reviseExternalPluginTail, writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { activationFailureMessage } from './activationFailureMessage';
 import {
@@ -344,7 +344,11 @@ export function activateExternalPlugin({
             // What an export reserves after the last note for this instance's
             // decay; later revisions arrive over `plugin-tail-changed`. One the
             // plugin reported before this answer arrived is newer than it.
-            writeExternalPluginTail(instanceId, tailRevisionsDuringLoad.get(instanceId) ?? instance.tail_samples);
+            writeExternalPluginTail(instanceId, instance.tail_samples);
+            const heldTail = tailRevisionsDuringLoad.get(instanceId);
+            if (heldTail !== undefined) {
+                reviseExternalPluginTail(instanceId, heldTail);
+            }
             tailRevisionsDuringLoad.delete(instanceId);
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so

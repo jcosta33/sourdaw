@@ -83,6 +83,12 @@ export type PluginTailChange = {
     instance_id: string;
     /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
     tail_samples: number;
+    /**
+     * Where this figure falls in the one order the native host takes every tail
+     * it reports in, events and read answers alike: a larger sequence was read
+     * later. Below 2^53, so a JSON number carries it exactly.
+     */
+    sequence: number;
 };
 
 /**
@@ -94,6 +100,12 @@ export type PluginTailReading = {
     instance_id: string;
     /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
     tail_samples: number;
+    /**
+     * Where this figure falls in the one order the native host takes every tail
+     * it reports in, events and read answers alike: a larger sequence was read
+     * later. Below 2^53, so a JSON number carries it exactly.
+     */
+    sequence: number;
 };
 
 /**

@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
-import { readPluginTails } from '../readPluginTails';
+import { PLUGIN_TAIL_READ_DEADLINE_MS, readPluginTails } from '../readPluginTails';
 
 vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
@@ -27,8 +27,8 @@ describe('readPluginTails', () => {
 
     it('passes valid readings through, in the order the host answered', async () => {
         const readings = [
-            { instance_id: 'inst-2', tail_samples: 240_000 },
-            { instance_id: 'inst-1', tail_samples: 0 },
+            { instance_id: 'inst-2', tail_samples: 240_000, sequence: 4 },
+            { instance_id: 'inst-1', tail_samples: 0, sequence: 3 },
         ];
         vi.mocked(desktopInvoke).mockResolvedValue(readings);
 
@@ -36,22 +36,26 @@ describe('readPluginTails', () => {
     });
 
     it.each([
-        ['an instance id that is not a string', { instance_id: 7, tail_samples: 100 }],
-        ['a tail that is not a number', { instance_id: 'bad', tail_samples: '100' }],
-        ['a negative tail', { instance_id: 'bad', tail_samples: -1 }],
-        ['a fractional tail', { instance_id: 'bad', tail_samples: 1.5 }],
-        ['a missing tail', { instance_id: 'bad' }],
+        ['an instance id that is not a string', { instance_id: 7, tail_samples: 100, sequence: 1 }],
+        ['a tail that is not a number', { instance_id: 'bad', tail_samples: '100', sequence: 1 }],
+        ['a negative tail', { instance_id: 'bad', tail_samples: -1, sequence: 1 }],
+        ['a fractional tail', { instance_id: 'bad', tail_samples: 1.5, sequence: 1 }],
+        ['a missing tail', { instance_id: 'bad', sequence: 1 }],
+        ['a missing sequence', { instance_id: 'bad', tail_samples: 100 }],
+        ['a fractional sequence', { instance_id: 'bad', tail_samples: 100, sequence: 1.5 }],
+        ['a string sequence', { instance_id: 'bad', tail_samples: 100, sequence: '1' }],
+        ['a zero sequence', { instance_id: 'bad', tail_samples: 100, sequence: 0 }],
         ['null', null],
         ['a bare string', 'inst-1'],
     ])('drops %s and keeps the valid reading beside it', async (_name, malformed) => {
-        const valid = { instance_id: 'inst-1', tail_samples: 48_000 };
+        const valid = { instance_id: 'inst-1', tail_samples: 48_000, sequence: 2 };
         vi.mocked(desktopInvoke).mockResolvedValue([malformed, valid]);
 
         await expect(readPluginTails(['inst-1'])).resolves.toEqual([valid]);
     });
 
     it.each([
-        ['an object', { instance_id: 'inst-1', tail_samples: 1 }],
+        ['an object', { instance_id: 'inst-1', tail_samples: 1, sequence: 1 }],
         ['null', null],
         ['undefined', undefined],
     ])('rejects when the host answers %s instead of a list', async (_name, answer) => {
@@ -65,5 +69,50 @@ describe('readPluginTails', () => {
 
         await expect(readPluginTails(['inst-1'])).resolves.toEqual([]);
         expect(desktopInvoke).not.toHaveBeenCalled();
+    });
+
+    describe('when the host does not answer', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('answers no readings once the deadline passes, so the caller proceeds with the figures it has', async () => {
+            vi.mocked(desktopInvoke).mockReturnValue(new Promise(() => {}));
+            let outcome: unknown = 'pending';
+            void readPluginTails(['inst-1']).then((readings) => {
+                outcome = readings;
+                return readings;
+            });
+
+            await vi.advanceTimersByTimeAsync(PLUGIN_TAIL_READ_DEADLINE_MS - 1);
+            expect(outcome).toBe('pending');
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(outcome).toEqual([]);
+        });
+
+        it("answers the host's readings when they come before the deadline, leaving no timer behind", async () => {
+            const readings = [{ instance_id: 'inst-1', tail_samples: 48_000, sequence: 2 }];
+            vi.mocked(desktopInvoke).mockResolvedValue(readings);
+
+            await expect(readPluginTails(['inst-1'])).resolves.toEqual(readings);
+
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('does not surface the rejection of a call the deadline already gave up on', async () => {
+            const late = Promise.withResolvers<unknown>();
+            vi.mocked(desktopInvoke).mockReturnValue(late.promise);
+            const read = readPluginTails(['inst-1']);
+            await vi.advanceTimersByTimeAsync(PLUGIN_TAIL_READ_DEADLINE_MS);
+            await expect(read).resolves.toEqual([]);
+
+            late.reject(new Error('host finally failed'));
+            await vi.advanceTimersByTimeAsync(0);
+        });
     });
 });

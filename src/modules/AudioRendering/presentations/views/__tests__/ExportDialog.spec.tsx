@@ -1399,7 +1399,7 @@ describe('ExportDialog', () => {
 
         expect(screen.getByRole('checkbox', { name: /auto-detect/i })).toBeChecked();
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 9.25 }));
-        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalledTimes(2);
+        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalled();
     });
 
     it('sizes the render from the tail the hosted plugins report when the export starts', async () => {
@@ -1430,11 +1430,44 @@ describe('ExportDialog', () => {
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 20 }));
     });
 
-    it('repaints the detected tail label when the hosted tail store changes', () => {
-        render(<ExportDialog open={true} onClose={vi.fn()} />);
+    it('repaints the detected tail label from the hosted tail store and sizes the render from the same figure', async () => {
+        // One hosted instance at 48 kHz: the estimate follows the store the way the
+        // real detector does, so the label and the render can only agree through it.
+        const hostedRate = 48_000;
+        const { useStore: subscribeToStore } =
+            await vi.importActual<typeof import('#/infra/store/useStore')>('#/infra/store/useStore');
+        const toDetectedSeconds = () => {
+            const frames = externalPluginTailStore.value?.tailSamplesByInstanceId['inst-1'] ?? 0;
+            const seconds = frames / hostedRate;
+            return { seconds, uncappedSeconds: seconds, clamped: false };
+        };
+        mocks.getAutoDetectedTailSeconds.mockImplementation(toDetectedSeconds);
+        mocks.useStore.mockImplementation((store: TestStore<unknown>, defaultValue?: unknown) => {
+            if (Object.is(store, externalPluginTailStore)) {
+                return subscribeToStore(externalPluginTailStore);
+            }
+            return store.value ?? defaultValue;
+        });
+        externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 3 * hostedRate } });
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            expect(screen.getByText('3.00s detected')).toBeInTheDocument();
 
-        const subscribedStores = mocks.useStore.mock.calls.map(([store]) => store);
-        expect(subscribedStores).toContain(externalPluginTailStore);
+            act(() => {
+                externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 10 * hostedRate } });
+            });
+
+            expect(await screen.findByText('10.00s detected')).toBeInTheDocument();
+            expect(screen.queryByText('3.00s detected')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+            await waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledTimes(1));
+            expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 10 }));
+        } finally {
+            externalPluginTailStore.set({ tailSamplesByInstanceId: {} });
+            mocks.useStore.mockImplementation(
+                (store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue
+            );
+        }
     });
 
     it('re-reads the project snapshot for tail detection after async export preparation', async () => {

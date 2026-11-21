@@ -162,8 +162,12 @@ const AutoDetectedTailLabel = ({
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
-    // The estimate reads each hosted instance's tail from this store; subscribing
-    // is what repaints the label when a refresh revises one.
+    // The estimate reads each hosted instance's tail from this store, behind
+    // `getPluginById`, where the compiler cannot see the dependency: left to
+    // memoize, it would cache `detected` on the props and keep the load-time
+    // figure when a refresh revises one. Subscribing re-renders; this opt-out
+    // makes the re-render recompute.
+    'use no memo';
     useStore(externalPluginTailStore, defaultExternalPluginTailState);
     const detected = getAutoDetectedTailSeconds({
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,

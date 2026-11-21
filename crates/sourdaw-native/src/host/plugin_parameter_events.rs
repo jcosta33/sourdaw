@@ -816,12 +816,23 @@ mod tests {
 
         tick(&engine_plugins, &sink);
 
+        let events = sink.events();
+        assert_eq!(events.len(), 1, "one flagged instance publishes one event");
+        let (name, mut payload) = events.into_iter().next().expect("one event");
+        assert_eq!(name, crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT);
+        // The sequence is process-wide, so only that it is a taken, positive
+        // number is fixed; its order is pinned where it is taken.
+        let sequence = payload
+            .as_object_mut()
+            .and_then(|fields| fields.remove("sequence"))
+            .and_then(|sequence| sequence.as_u64());
+        assert!(
+            sequence.is_some_and(|sequence| sequence >= 1),
+            "the event must carry the sequence the frontend orders it by"
+        );
         assert_eq!(
-            sink.events(),
-            vec![(
-                crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT.to_string(),
-                serde_json::json!({ "instance_id": "inst-1", "tail_samples": 0 }),
-            )]
+            payload,
+            serde_json::json!({ "instance_id": "inst-1", "tail_samples": 0 })
         );
     }
 
