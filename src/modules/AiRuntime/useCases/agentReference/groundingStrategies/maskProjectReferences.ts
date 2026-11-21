@@ -3,6 +3,9 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { escapeRegExp } from './escapeRegExp';
 import { normalizePromptText } from './normalizePromptText';
 
+/** The glyph a masked project reference is written in, one per character; the constraint readers read it from here. */
+export const PROJECT_REFERENCE_MASK_GLYPH = '□';
+
 export const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 
 function getProjectReferenceTexts(context: ProjectContext): string[] {
@@ -92,10 +95,13 @@ export function maskProjectReferences(prompt: string, context: ProjectContext): 
         const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
             prompt.slice(end)
         );
-        return explicitEntitySuffix ? '□'.repeat(match.length) : `clip${'□'.repeat(match.length - 'clip'.length)}`;
+        if (explicitEntitySuffix) {
+            return PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length);
+        }
+        return `clip${PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length - 'clip'.length)}`;
     });
     collectProjectReferenceMaskSpans(prompt, getProjectReferenceTexts(context), spans, (match) =>
-        '□'.repeat(match.length)
+        PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length)
     );
 
     let maskedPrompt = '';
