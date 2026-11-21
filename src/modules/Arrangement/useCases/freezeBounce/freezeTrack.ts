@@ -20,8 +20,8 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
-import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { assertRenderReadsHashedTrack } from './assertRenderReadsHashedTrack';
+import { confirmFreezeCommit } from './confirmFreezeCommit';
 import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
@@ -30,7 +30,6 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
-import { refuseFreezeCommitWhileRecording } from './refuseFreezeCommitWhileRecording';
 import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
@@ -208,20 +207,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        // Decided before the source check: a running take's own provisional clip is in the track,
-        // so the check would report the track as edited instead of refusing the freeze.
-        if (refuseFreezeCommitWhileRecording(trackId)) {
-            return false;
-        }
-        await assertFreezeSourceUnchanged(trackId, hash);
-        // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
-        if (!isCurrentFreezeTask(taskIdentity)) {
-            return false;
-        }
-        if (refuseFreezeCommitWhileRecording(trackId)) {
+        if (!(await confirmFreezeCommit(trackId, hash, () => isCurrentFreezeTask(taskIdentity)))) {
             return false;
         }
 
+        // Synchronous from here to the commit write: no await can let a note land in between.
         assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();
@@ -281,11 +271,6 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         if (abortController.signal.aborted) {
             return restoreCancelledFreeze({ trackId, pendingFreeze, settled: previousFreeze, scope });
-        }
-
-        // A recording start landing during the source check ends it as an edit, not as a failure.
-        if (refuseFreezeCommitWhileRecording(trackId)) {
-            return false;
         }
 
         const errorMessage = error instanceof Error ? error.message : String(error);
