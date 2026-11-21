@@ -9,6 +9,7 @@ import {
     CLAUSE_END,
     CLAUSE_HEAD,
     DIRECTION_LIST,
+    DOES_NOT,
     FROM,
     HELD_STATE,
     KEEP,
@@ -22,6 +23,7 @@ import {
     normalizeObjectText,
     OBJECT_LIST,
     OBJECT_PREPOSITION,
+    PURPOSE_HEAD,
     SCOPE_WORD,
     STOP_VERB,
     THE,
@@ -117,6 +119,8 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         String.raw`${CLAUSE_HEAD}${OBJECT_LIST}\s+${MODAL_NEGATION}\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
+    // "add some warmth so it doesn't sound louder": a purpose's "doesn't" bounds, even through a linking verb
+    holdPattern(String.raw`${PURPOSE_HEAD}${OBJECT_LIST}\s+${DOES_NOT}\s+${DIRECTION_CLAUSE}`, DIRECTION_CONTINUATION),
     // "don't raise the level of the drums", "don't change the drums volume", "don't widen the stereo image"
     holdPattern(
         String.raw`\b${NEGATION}\s+${NOUN_VERB}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${CLAUSE_END}`,

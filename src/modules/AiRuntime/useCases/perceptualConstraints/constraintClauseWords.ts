@@ -51,7 +51,8 @@ export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
 export const MASK_GLYPH = PROJECT_REFERENCE_MASK_GLYPH;
 
 const THE_WORD = 'the';
-export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', 'that']);
+const THAT = 'that';
+export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', THAT]);
 /** The definite article alone, which a held noun list and a held state open with: "the level", "the same". */
 export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
@@ -134,7 +135,13 @@ const MODAL = words(['must', 'should', 'may', CAN, 'will']);
 /** The contractions' stems that drop a letter of their modal: "can't", "won't". */
 const SHORTENED_MODAL = words([CAN, 'won']);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
-const DOES_NEGATION = String.raw`(?:${words(['does not'])}|doesn${APOSTROPHE}?t)(?!\s+${LINKING_VERB}\b)`;
+export const DOES_NOT = String.raw`(?:${words(['does not'])}|doesn${APOSTROPHE}?t)`;
+const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
+/**
+ * The head of a purpose clause, after "so" or "so that": there "doesn't sound louder" asks for a bound
+ * ("add some warmth so it doesn't sound louder") rather than describing the sound as it is.
+ */
+export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
 /** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get". */
 export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n${APOSTROPHE}?t|${SHORTENED_MODAL}${APOSTROPHE}?t)`;
 /**
@@ -174,7 +181,7 @@ export const SUBORDINATOR = words([
     'whenever',
     'if',
     SO,
-    'so that',
+    `${SO} ${THAT}`,
     TO,
     'because',
     AS_WORD,

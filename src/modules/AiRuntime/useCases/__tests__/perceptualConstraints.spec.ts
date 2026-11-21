@@ -2123,6 +2123,27 @@ describe('reading a protection only over the words it governs', () => {
         ["the drums aren't louder", [], []],
         ["the mix wasn't louder", [], []],
         ["the vocal doesn't sound brighter", [], []],
+        // a purpose clause's "doesn't" states a bound, even through a linking verb
+        [
+            "Add some warmth so it doesn't sound louder.",
+            [measured('loudness-not-raised-v1', "it doesn't sound louder", MIX)],
+            [],
+        ],
+        [
+            "Add some warmth so the mix doesn't feel louder.",
+            [measured('loudness-not-raised-v1', "the mix doesn't feel louder", MIX)],
+            [],
+        ],
+        [
+            "Add some warmth so it doesn't seem quieter.",
+            [measured('loudness-not-lowered-v1', "it doesn't seem quieter", MIX)],
+            [],
+        ],
+        [
+            "Add some warmth so that the mix doesn't feel louder.",
+            [measured('loudness-not-raised-v1', "the mix doesn't feel louder", MIX)],
+            [],
+        ],
         [
             "the vocal shouldn't be louder",
             [measured('loudness-not-raised-v1', "the vocal shouldn't be louder", onTracks('vocal'))],

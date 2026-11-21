@@ -3,7 +3,7 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { escapeRegExp } from './escapeRegExp';
 import { normalizePromptText } from './normalizePromptText';
 
-/** The glyph a masked project reference is written in, one per character; every reader reads it from here. */
+/** The glyph a masked project reference is written in, one per character; the constraint readers read it from here. */
 export const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
 export const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
