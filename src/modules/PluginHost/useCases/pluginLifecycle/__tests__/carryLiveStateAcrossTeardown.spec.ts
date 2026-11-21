@@ -768,6 +768,34 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
         });
 
+        it('leaves the carry to a newer activation when the forgotten one rejects it', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            // Release the held restore however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldRestore.resolve());
+
+            const forgotten = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            // The newer load queues behind the forgotten activation's restore on the instance's lifecycle.
+            const newer = activate(SAVED_CHUNK);
+            heldRestore.reject(new Error(`unknown plugin instance ${INSTANCE_ID}`));
+
+            await expect(forgotten).resolves.toMatchObject({
+                status: 'failed',
+                stage: 'restore',
+                reason: expect.stringContaining('superseded'),
+            });
+            await expect(newer).resolves.toEqual({ status: 'active' });
+            expect(mocks.setPluginState.mock.calls).toEqual([
+                [INSTANCE_ID, LIVE_BYTES],
+                [INSTANCE_ID, LIVE_BYTES],
+            ]);
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+        });
+
         it('carries only the instances the unload destroyed when another fails', async () => {
             await activateBothAndEdit();
             mocks.unloadPlugin.mockResolvedValueOnce({
