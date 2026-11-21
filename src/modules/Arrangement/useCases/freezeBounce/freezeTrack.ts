@@ -27,7 +27,6 @@ import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
 import { captureFreezeMidi } from './freezeMidiSnapshot';
-import { selectFreezeSourceTracks } from './freezeSourceTracks';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
@@ -35,6 +34,7 @@ import { refuseFreezeCommit } from './refuseFreezeCommit';
 import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
+import { selectLiveFreezeSourceTracks } from './selectLiveFreezeSourceTracks';
 import { settledBeforeFreeze } from './settledBeforeFreeze';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -124,7 +124,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
 
     try {
-        const hash = await computeFreezeSourceHash(selectFreezeSourceTracks(trackId, trackStore.value?.tracks ?? []));
+        const hash = await computeFreezeSourceHash(selectLiveFreezeSourceTracks(trackId));
         // Re-hashes the live source: the render reads it, not `track`. The check that follows is
         // synchronous and the MIDI capture and render call come straight after it, so no edit can
         // land between the last live read and the render's own.

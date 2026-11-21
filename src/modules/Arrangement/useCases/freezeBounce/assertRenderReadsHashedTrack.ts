@@ -1,8 +1,8 @@
-import { type Track, trackStore } from '../../stores/trackStore';
+import { type Track } from '../../stores/trackStore';
 
 import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
-import { selectFreezeSourceTracks } from './freezeSourceTracks';
 import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
+import { selectLiveFreezeSourceTracks } from './selectLiveFreezeSourceTracks';
 
 /**
  * Synchronous, so nothing can run between it and the render's read of the live track list. Refuses
@@ -10,7 +10,7 @@ import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
  * hashing is async.
  */
 export function assertRenderReadsHashedTrack(trackId: string, hashedSources: Track[]): void {
-    const liveSources = selectFreezeSourceTracks(trackId, trackStore.value?.tracks ?? []);
+    const liveSources = selectLiveFreezeSourceTracks(trackId);
     if (!freezeSourceTracksMatch(hashedSources, liveSources)) {
         throw new Error(CHANGED_DURING_FREEZE);
     }

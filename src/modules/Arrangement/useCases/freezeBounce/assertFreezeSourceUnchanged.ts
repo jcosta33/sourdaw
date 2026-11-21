@@ -1,12 +1,12 @@
-import { type Track, trackStore } from '../../stores/trackStore';
+import { type Track } from '../../stores/trackStore';
 
 import { computeFreezeSourceHash } from './computeFreezeSourceHash';
 import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
-import { selectFreezeSourceTracks } from './freezeSourceTracks';
 import { freezeSourceTracksMatch } from './freezeSourceTracksMatch';
+import { selectLiveFreezeSourceTracks } from './selectLiveFreezeSourceTracks';
 
 function readLiveSources(trackId: string): Track[] {
-    const sources = selectFreezeSourceTracks(trackId, trackStore.value?.tracks ?? []);
+    const sources = selectLiveFreezeSourceTracks(trackId);
     if (sources.length === 0) {
         throw new Error(CHANGED_DURING_FREEZE);
     }
