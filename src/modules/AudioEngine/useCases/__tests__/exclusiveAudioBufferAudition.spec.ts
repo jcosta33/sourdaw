@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { cache, testOverrides } from '#/infra/di/internal/containerState';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type AudioEngine } from '../../models/AudioEngineState';
@@ -20,36 +19,42 @@ import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPrev
 registerDeviceEnginePorts();
 
 const fixture = vi.hoisted(() => {
-    const current: { engine: AudioEngine | null; engineKey: object; startBackend: NativeStartBackend | null } = {
+    const current: {
+        engine: AudioEngine | null;
+        engineKey: object;
+        importing: boolean;
+        startBackend: NativeStartBackend | null;
+    } = {
         engine: null,
         engineKey: {},
+        importing: true,
         startBackend: null,
     };
     return current;
 });
-// Injected use cases capture the export once, at import, as their DI key, so it
-// reads as the stable `engineKey` until a test installs its engine; direct
-// readers see the installed engine, and `installEngine` overrides the key.
 vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../repositories/createWebAudioEngine')>();
     return {
         ...actual,
         get audioEngine() {
-            return fixture.engine ?? fixture.engineKey;
+            if (fixture.engine !== null) {
+                return fixture.engine;
+            }
+            // Injected modules capture this export once at import as their DI key.
+            if (fixture.importing) {
+                return fixture.engineKey;
+            }
+            throw new Error('The real fixture engine is not installed.');
         },
     };
 });
 
 function installEngine(engine: AudioEngine): void {
     fixture.engine = engine;
-    testOverrides.set(fixture.engineKey, engine);
-    cache.clear();
 }
 
 function uninstallEngine(): void {
     fixture.engine = null;
-    testOverrides.delete(fixture.engineKey);
-    cache.clear();
 }
 vi.mock('../../repositories/engineTransport/getEngineTransportPosition', () => ({
     getEngineTransportPosition: vi.fn(),
@@ -102,6 +107,9 @@ vi.mock('../livePlayback/armNativeLiveMidiWriter', () => ({ armNativeLiveMidiWri
 vi.mock('../livePlayback/startNativeEnginePlayheadFeed', () => ({ startNativeEnginePlayheadFeed: vi.fn() }));
 vi.mock('../livePlayback/watchNativeEngineLiveness', () => ({ startNativeEngineLivenessWatch: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+
+// Imports have all evaluated by here, so the import-time key capture is over.
+fixture.importing = false;
 
 const START = {
     positionSeconds: 0,
