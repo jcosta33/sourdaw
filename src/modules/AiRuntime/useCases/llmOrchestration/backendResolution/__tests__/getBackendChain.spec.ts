@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { answeringStatus } from '../../../../stores/answeringStatus';
+import { type LlmEngineStatus } from '../../../../stores/llmStatusStore';
 import { getBackendChain } from '../getBackendChain';
 
 const mocks = vi.hoisted(() => {
     const admission = { webLlm: true };
     const preference: { value: 'auto' | 'webllm' | 'cloud' } = { value: 'auto' };
     const runtimeStatus: {
-        value: { state: 'idle' } | { state: 'ready'; backend: 'webllm' | 'cloud'; modelId: string };
-    } = { value: { state: 'idle' } };
+        value: LlmEngineStatus | null;
+        set: (status: LlmEngineStatus | null) => void;
+    } = {
+        value: { state: 'idle' },
+        set: (status) => {
+            runtimeStatus.value = status;
+        },
+    };
     return {
         admission,
         isWebGpuAvailable: vi.fn(),
@@ -47,6 +55,7 @@ describe('getBackendChain', () => {
         mocks.admission.webLlm = true;
         mocks.preference.value = 'auto';
         mocks.runtimeStatus.value = { state: 'idle' };
+        answeringStatus.clear();
         mocks.isWebGpuAvailable.mockReturnValue(false);
         mocks.isCloudAvailable.mockReturnValue(true);
         Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
@@ -98,5 +107,15 @@ describe('getBackendChain', () => {
         mocks.preference.value = 'cloud';
 
         expect(getBackendChain()).toEqual(['cloud']);
+    });
+
+    it('keeps the loaded local model installed for a route planned while a turn answers', () => {
+        mocks.isWebGpuAvailable.mockReturnValue(true);
+        mocks.runtimeStatus.value = { state: 'ready', backend: 'webllm', modelId: 'loaded-model' };
+        const turn = answeringStatus.openTurn();
+        answeringStatus.publish(turn, { state: 'generating', backend: 'webllm', modelId: 'loaded-model' });
+
+        expect(mocks.runtimeStatus.value).toMatchObject({ state: 'generating' });
+        expect(getBackendChain({ requireInstalledModel: true })).toEqual(['webllm']);
     });
 });
