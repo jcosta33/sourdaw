@@ -25,8 +25,10 @@ import {
     type Track,
 } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '#/modules/AudioEngine/stores';
 import {
     cancelExport,
+    engineSampleRateOf,
     exportStems,
     getAudioContext,
     getAutoDetectedTailSeconds,
@@ -77,6 +79,7 @@ type TailDetectionSnapshot = {
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
     hostedTailSamplesByInstanceId: Readonly<Record<string, number>>;
+    engineSampleRate: number | null;
 };
 
 const DEFAULT_EXPORT_TAIL_SECONDS = 2;
@@ -164,9 +167,11 @@ const AutoDetectedTailLabel = ({
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
     const hostedTails = useStore(externalPluginTailStore, defaultExternalPluginTailState);
+    const engineDiagnostics = useStore(engineRtDiagnosticsStore, defaultEngineRtDiagnosticsState);
     const detected = getAutoDetectedTailSeconds({
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         hostedTailSamplesByInstanceId: hostedTails.tailSamplesByInstanceId,
+        engineSampleRate: engineSampleRateOf(engineDiagnostics),
         honorMuted,
         tracks,
         soloMode,
@@ -331,6 +336,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         getAutoDetectedTailSeconds({
             tailForDeviceType: deviceTailFor,
             hostedTailSamplesByInstanceId: snapshot.hostedTailSamplesByInstanceId,
+            engineSampleRate: snapshot.engineSampleRate,
             honorMuted,
             tracks: snapshot.tracks,
             soloMode: snapshot.soloMode,
@@ -696,6 +702,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // Read after the refresh above, so the render sizes from what it just re-read.
                 hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
                     .tailSamplesByInstanceId,
+                engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
             };
             const { startBeat, durationBeats } = resolveRange(tracks);
             // Stems keep muted tracks, so they may need a longer tail than the

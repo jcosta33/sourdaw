@@ -26,6 +26,7 @@ describe('projectDeviceTails — basic projection', () => {
             devices: [makeDevice('reverb'), makeDevice('compressor')],
             tailForDeviceType: tailFn,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result).toHaveLength(2);
         expect(result[0]!.tail).toEqual({ kind: 'seconds', seconds: 3 });
@@ -37,6 +38,7 @@ describe('projectDeviceTails — basic projection', () => {
             devices: [makeDevice('reverb', { parameterValues: { mix: 0.5 }, bypassed: true })],
             tailForDeviceType: () => undefined,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result[0]!.id).toBe('d-reverb');
         expect(result[0]!.bypassed).toBe(true);
@@ -50,6 +52,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             devices: [makeDevice('reverb'), makeDevice('delay')],
             tailForDeviceType: () => undefined,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
         expect(result[1]!.automatedParameterIds).toEqual([]);
@@ -62,6 +65,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             automationLanes: [{ parameterId: 'd-reverb:mix', enabled: true }],
             tailForDeviceType: () => undefined,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result[0]!.automatedParameterIds).toContain('mix');
     });
@@ -73,6 +77,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             automationLanes: [{ parameterId: 'd-reverb:mix', enabled: false }],
             tailForDeviceType: () => undefined,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
     });
@@ -84,6 +89,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             automationLanes: [{ parameterId: 'd-other:mix' }],
             tailForDeviceType: () => undefined,
             hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
     });

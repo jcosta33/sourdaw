@@ -31,15 +31,18 @@ export type ProjectDeviceTailsInput = {
      * that subscribes to the store hands over exactly what it rendered from.
      */
     hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId;
+    /** The rate those frames are in: the running engine's, or `null` when none runs. */
+    engineSampleRate: number | null;
 };
 
 function deviceTail(
     device: DeviceChainEntry,
     tailForDeviceType: ProjectDeviceTailsInput['tailForDeviceType'],
-    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId
+    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId,
+    engineSampleRate: number | null
 ): TailDeclarationLike | undefined {
     if (isEngineHostedPluginDeviceType(device.type) && device.externalInstanceId !== undefined) {
-        return readHostedPluginTail(device.externalInstanceId, hostedTailSamplesByInstanceId);
+        return readHostedPluginTail(device.externalInstanceId, hostedTailSamplesByInstanceId, engineSampleRate);
     }
     return tailForDeviceType(device.type);
 }
@@ -69,6 +72,7 @@ export function projectDeviceTails({
     automationLanes = [],
     tailForDeviceType,
     hostedTailSamplesByInstanceId,
+    engineSampleRate,
 }: ProjectDeviceTailsInput) {
     const projected = devices.map((device) => ({
         id: device.id,
@@ -76,7 +80,7 @@ export function projectDeviceTails({
         parameterValues: device.parameterValues,
         deviceState: device.deviceState,
         bypassed: device.bypassed,
-        tail: deviceTail(device, tailForDeviceType, hostedTailSamplesByInstanceId),
+        tail: deviceTail(device, tailForDeviceType, hostedTailSamplesByInstanceId, engineSampleRate),
     }));
 
     const automatedParameterIds = projected.map(() => new Set<string>());

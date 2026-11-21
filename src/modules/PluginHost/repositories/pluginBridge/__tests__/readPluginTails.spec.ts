@@ -32,7 +32,7 @@ describe('readPluginTails', () => {
         ];
         vi.mocked(desktopInvoke).mockResolvedValue(readings);
 
-        await expect(readPluginTails(['inst-1', 'inst-2'])).resolves.toEqual(readings);
+        await expect(readPluginTails(['inst-1', 'inst-2'])).resolves.toEqual({ kind: 'answered', readings });
     });
 
     it.each([
@@ -51,7 +51,7 @@ describe('readPluginTails', () => {
         const valid = { instance_id: 'inst-1', tail_samples: 48_000, sequence: 2 };
         vi.mocked(desktopInvoke).mockResolvedValue([malformed, valid]);
 
-        await expect(readPluginTails(['inst-1'])).resolves.toEqual([valid]);
+        await expect(readPluginTails(['inst-1'])).resolves.toEqual({ kind: 'answered', readings: [valid] });
     });
 
     it.each([
@@ -64,10 +64,16 @@ describe('readPluginTails', () => {
         await expect(readPluginTails(['inst-1'])).rejects.toThrow(TypeError);
     });
 
+    it('answers an empty list from the host as an answer, not a timeout', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue([]);
+
+        await expect(readPluginTails(['inst-1'])).resolves.toEqual({ kind: 'answered', readings: [] });
+    });
+
     it('answers an empty list in a browser runtime without invoking the host', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
-        await expect(readPluginTails(['inst-1'])).resolves.toEqual([]);
+        await expect(readPluginTails(['inst-1'])).resolves.toEqual({ kind: 'answered', readings: [] });
         expect(desktopInvoke).not.toHaveBeenCalled();
     });
 
@@ -80,7 +86,7 @@ describe('readPluginTails', () => {
             vi.useRealTimers();
         });
 
-        it('answers no readings once the deadline passes, so the caller proceeds with the figures it has', async () => {
+        it('reports a timeout, distinct from an empty answer, once the deadline passes, after exactly one invoke', async () => {
             vi.mocked(desktopInvoke).mockReturnValue(new Promise(() => {}));
             let outcome: unknown = 'pending';
             void readPluginTails(['inst-1']).then((readings) => {
@@ -92,14 +98,15 @@ describe('readPluginTails', () => {
             expect(outcome).toBe('pending');
             await vi.advanceTimersByTimeAsync(1);
 
-            expect(outcome).toEqual([]);
+            expect(outcome).toEqual({ kind: 'timed-out' });
+            expect(desktopInvoke).toHaveBeenCalledTimes(1);
         });
 
         it("answers the host's readings when they come before the deadline, leaving no timer behind", async () => {
             const readings = [{ instance_id: 'inst-1', tail_samples: 48_000, sequence: 2 }];
             vi.mocked(desktopInvoke).mockResolvedValue(readings);
 
-            await expect(readPluginTails(['inst-1'])).resolves.toEqual(readings);
+            await expect(readPluginTails(['inst-1'])).resolves.toEqual({ kind: 'answered', readings });
 
             expect(vi.getTimerCount()).toBe(0);
         });
@@ -109,7 +116,7 @@ describe('readPluginTails', () => {
             vi.mocked(desktopInvoke).mockReturnValue(late.promise);
             const read = readPluginTails(['inst-1']);
             await vi.advanceTimersByTimeAsync(PLUGIN_TAIL_READ_DEADLINE_MS);
-            await expect(read).resolves.toEqual([]);
+            await expect(read).resolves.toEqual({ kind: 'timed-out' });
 
             late.reject(new Error('host finally failed'));
             await vi.advanceTimersByTimeAsync(0);

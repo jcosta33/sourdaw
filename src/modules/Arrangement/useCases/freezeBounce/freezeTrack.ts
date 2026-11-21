@@ -1,6 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
-import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { engineRtDiagnosticsStore } from '#/modules/AudioEngine/stores';
+import {
+    cacheAudioBuffer,
+    engineSampleRateOf,
+    getCompensationDelay,
+    getDeviceChainTailSeconds,
+} from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
@@ -9,6 +15,7 @@ import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -130,12 +137,21 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         // "reverb" or "delay", 4 for anything else — which no descriptor fed, so
         // it could not see the Dutch Oven or Bacteria at all, and which shrank
         // with tempo because beats are not seconds.
+        //
+        // A hosted plugin's tail moves with its preset, and a VST3 plugin never says
+        // so, so ask each loaded instance now, as an export does, and size from what
+        // it answers.
+        await refreshExternalPluginTails();
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            return false;
+        }
         const tailSeconds = getDeviceChainTailSeconds({
             devices: track.devices,
             automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
             hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
                 .tailSamplesByInstanceId,
+            engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
         }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };

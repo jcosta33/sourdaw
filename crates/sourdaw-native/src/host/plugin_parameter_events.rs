@@ -836,6 +836,44 @@ mod tests {
         );
     }
 
+    /// The sequence orders the event against a read of the same instance only if
+    /// it is taken once the instance's control path is ours: a number taken while
+    /// the tick still waits for the audio thread's seam is older than a read that
+    /// got in first. The test holds the seam, takes a marker while the tick waits,
+    /// and releases it, so the event's number has to come after the marker.
+    #[test]
+    fn a_tail_event_takes_its_sequence_once_the_control_path_is_reached() {
+        let _guard = hint_guard();
+        let wrapper = fixture_wrapper();
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_tail_dirty();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = Arc::new(RecordingEventSink::default());
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let ticking_sink = Arc::clone(&sink);
+        let ticker = std::thread::spawn(move || tick(&engine_plugins, ticking_sink.as_ref()));
+        // Well inside the 50 ms the tail leg waits for the seam.
+        std::thread::sleep(Duration::from_millis(15));
+        let marker = crate::host::tail_watcher::next_tail_sequence();
+        drop(seam);
+        ticker.join().expect("the tick finishes");
+
+        let events = sink.events();
+        let sequence = events
+            .iter()
+            .find(|(name, _)| name == crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT)
+            .and_then(|(_, payload)| payload["sequence"].as_u64())
+            .expect("the flagged tail was published with a sequence");
+        assert!(
+            sequence > marker,
+            "the event's sequence {sequence} was taken before the control path was reached ({marker} came later)"
+        );
+    }
+
     /// A tail is re-read once, when the plugin says it moved. Without the hint
     /// gate this leg would take every instance's control seam sixty times a
     /// second, which is the seam the audio thread is bypassed for.

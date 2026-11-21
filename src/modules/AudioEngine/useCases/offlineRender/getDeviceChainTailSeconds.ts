@@ -15,6 +15,7 @@ export type GetDeviceChainTailSecondsInput = {
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
     /** What each hosted instance reported; `{}` for a chain with none. */
     hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId;
+    engineSampleRate: number | null;
     automationLanes?: ReadonlyArray<{ parameterId: string; enabled?: boolean }>;
 };
 
@@ -37,9 +38,18 @@ export function getDeviceChainTailSeconds({
     devices,
     tailForDeviceType,
     hostedTailSamplesByInstanceId,
+    engineSampleRate,
     automationLanes,
 }: GetDeviceChainTailSecondsInput): ReturnType<typeof estimateRenderTailSeconds> {
     return estimateRenderTailSeconds([
-        { devices: projectDeviceTails({ devices, automationLanes, tailForDeviceType, hostedTailSamplesByInstanceId }) },
+        {
+            devices: projectDeviceTails({
+                devices,
+                automationLanes,
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId,
+                engineSampleRate,
+            }),
+        },
     ]);
 }

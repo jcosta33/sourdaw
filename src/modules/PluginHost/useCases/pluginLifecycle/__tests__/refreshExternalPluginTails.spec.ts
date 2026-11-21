@@ -15,13 +15,19 @@ import type { PluginInstance, PluginTailChange, PluginTailReading } from '../../
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn<(pluginId: string, instanceId: string) => Promise<PluginInstance>>(),
     unloadPluginRepo: vi.fn<(instanceId?: string) => Promise<unknown>>(),
-    readPluginTailsRepo: vi.fn<(instanceIds: readonly string[]) => Promise<PluginTailReading[]>>(),
+    readPluginTailsRepo: vi.fn<(instanceIds: readonly string[]) => Promise<PluginTailReading[] | 'timed-out'>>(),
     loggerWarn: vi.fn<(message: string) => void>(),
 }));
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mocks.loadPluginRepo }));
 vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadPluginRepo }));
-vi.mock('../../../repositories/pluginBridge/readPluginTails', () => ({ readPluginTails: mocks.readPluginTailsRepo }));
+// The specs answer in readings, or 'timed-out' for a host that did not answer in time.
+vi.mock('../../../repositories/pluginBridge/readPluginTails', () => ({
+    readPluginTails: async (instanceIds: readonly string[]) => {
+        const answer = await mocks.readPluginTailsRepo(instanceIds);
+        return answer === 'timed-out' ? { kind: 'timed-out' } : { kind: 'answered', readings: answer };
+    },
+}));
 vi.mock('../../../repositories/pluginBridge/onPluginTailChanged', () => ({
     onPluginTailChanged: (handler: (change: PluginTailChange) => void) => {
         nativeTailHandler = handler;
@@ -112,6 +118,16 @@ describe('refreshExternalPluginTails', () => {
 
         expect(mocks.readPluginTailsRepo).toHaveBeenNthCalledWith(2, ['inst-1']);
         expect(tailOf('inst-1')).toBe(240_000);
+    });
+
+    it('does not ask a host that timed out again and keeps every stored tail', async () => {
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        mocks.readPluginTailsRepo.mockResolvedValue('timed-out');
+
+        await refreshExternalPluginTails();
+
+        expect(mocks.readPluginTailsRepo).toHaveBeenCalledTimes(1);
+        expect(tailOf('inst-1')).toBe(96_000);
     });
 
     it('makes no retry when the host answered every instance', async () => {

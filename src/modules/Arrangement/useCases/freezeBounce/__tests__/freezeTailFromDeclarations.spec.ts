@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { engineSampleRateOf } from '#/modules/AudioEngine/useCases';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import { createTrack } from '../../../models/Track';
@@ -13,6 +16,10 @@ vi.mock('../../../services/computeTrackHash', () => ({
     computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
 }));
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    refreshExternalPluginTails: vi.fn(async () => {}),
+}));
 
 // The real tail machinery runs — that it is the *same* machinery the export
 // path evaluates is the whole claim of this file, so stubbing it would prove
@@ -21,6 +28,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
+    // The engine's rate is a diagnostics reading the spec does not stage; each case says what it is.
+    engineSampleRateOf: vi.fn((): number | null => null),
 }));
 
 const transportMock = vi.hoisted<{ value: { tempo: number } | null }>(() => ({ value: { tempo: 120 } }));
@@ -159,5 +168,52 @@ describe('freeze sizes its tail from device tail declarations', () => {
         // bolted onto `endBeat`, so a tempo map cannot distort it.
         expect(call[1]).toBe(0);
         expect(call[2]).toBe(4);
+    });
+
+    it('sizes a hosted plugin’s tail from the figure the refresh just read, not the load-time one', async () => {
+        const track = createTrack({ id: 't1', name: 'Track', kind: 'midi' });
+        track.clips = [
+            {
+                id: 'c1',
+                trackId: 't1',
+                name: 'Clip',
+                startBeat: 0,
+                endBeat: 4,
+                type: 'midi',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#fff',
+                locked: false,
+                muted: false,
+            },
+        ];
+        track.devices = [
+            {
+                id: 'd1',
+                type: 'external-plugin',
+                name: 'Reverb',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'reverb',
+                externalInstanceId: 'inst-1',
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        vi.mocked(engineSampleRateOf).mockReturnValue(48_000);
+        externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 96_000 } });
+        // The preset was switched to a longer decay after load; only the refresh sees it.
+        vi.mocked(refreshExternalPluginTails).mockImplementationOnce(async () => {
+            externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 240_000 } });
+        });
+
+        try {
+            await freezeTrack('t1');
+
+            expect(readRequestedTailSeconds()).toBeCloseTo(5, 9);
+        } finally {
+            externalPluginTailStore.set(defaultExternalPluginTailState);
+            vi.mocked(engineSampleRateOf).mockReturnValue(null);
+        }
     });
 });

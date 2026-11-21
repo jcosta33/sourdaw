@@ -11911,6 +11911,38 @@ mod tests {
         );
     }
 
+    /// The same guarantee from the read's side: a number taken while the read
+    /// still waits for the audio thread's seam is older than an event that got in
+    /// first, so the read must take its own once the control path is reached.
+    #[test]
+    fn a_tail_read_takes_its_sequence_once_the_control_path_is_reached() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let reading_runtime = Arc::clone(&runtime);
+        let reader = std::thread::spawn(move || {
+            read_tails(vec![("engine-owned-fixture".to_string(), reading_runtime)])
+        });
+        // Well inside the 50 ms the read waits for the seam.
+        std::thread::sleep(TAIL_READ_TIMEOUT / 3);
+        let marker = next_tail_sequence();
+        drop(seam);
+        let readings = reader.join().expect("the reader thread finishes");
+
+        let sequence = readings
+            .first()
+            .expect("the seam was released inside the deadline, so the read answered")
+            .sequence;
+        assert!(
+            sequence > marker,
+            "the read's sequence {sequence} was taken before the control path was reached ({marker} came later)"
+        );
+    }
+
     #[test]
     fn only_a_busy_control_path_is_an_expected_tail_refusal() {
         let refused = |refusal| PluginControlError::Refused(refusal);

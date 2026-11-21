@@ -24,13 +24,16 @@ function pause(milliseconds: number): Promise<void> {
     });
 }
 
-/** One read of the named instances, published by the rules below. Returns the ids the host answered. */
-async function readAndPublish(instanceIds: readonly string[]): Promise<Set<string>> {
+/** One read of the named instances, published by the rules below. Returns the ids the host answered, or `null` when it did not answer in time. */
+async function readAndPublish(instanceIds: readonly string[]): Promise<Set<string> | null> {
     const issued = issueExternalPluginTailRead(instanceIds);
     const answered = new Set<string>();
     try {
-        const readings = await readPluginTails(instanceIds);
-        for (const { instance_id: instanceId, tail_samples: tailSamples, sequence } of readings) {
+        const result = await readPluginTails(instanceIds);
+        if (result.kind === 'timed-out') {
+            return null;
+        }
+        for (const { instance_id: instanceId, tail_samples: tailSamples, sequence } of result.readings) {
             const issue = issued.get(instanceId);
             if (!issue) {
                 continue;
@@ -67,7 +70,8 @@ async function readAndPublish(instanceIds: readonly string[]): Promise<Set<strin
  * answer for an instance still loading is held, and the load's seed applies it.
  *
  * An instance the host could not read because its control path was busy is read
- * once more after a short pause; one still unread keeps the figure it had.
+ * once more after a short pause; one still unread keeps the figure it had. A
+ * host that does not answer within the read's deadline is not asked again.
  *
  * Never throws: a refused read leaves every stored tail as it was, because a
  * stale tail is a better answer than none.
@@ -79,6 +83,10 @@ export async function refreshExternalPluginTails(): Promise<void> {
     try {
         const instanceIds = [...loadedExternalInstances];
         const answered = await readAndPublish(instanceIds);
+        // A host that did not answer in time would only be given the same wait again.
+        if (answered === null) {
+            return;
+        }
         const unread = instanceIds.filter((instanceId) => !answered.has(instanceId));
         if (unread.length === 0) {
             return;

@@ -109,6 +109,13 @@ export type PluginTailReading = {
 };
 
 /**
+ * What `readPluginTails` came back with. A host that did not answer in time is
+ * its own outcome, not an empty answer: an empty answer means the host reached
+ * no instance, which is worth asking again, and a silent host is not.
+ */
+export type PluginTailReadResult = { kind: 'answered'; readings: PluginTailReading[] } | { kind: 'timed-out' };
+
+/**
  * Payload of `plugin-gui-closed`, pushed when the OS ended a plugin editor
  * window the app did not close itself — a title-bar click, or the cascade that
  * follows the owner window being destroyed.

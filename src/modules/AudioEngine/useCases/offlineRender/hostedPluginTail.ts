@@ -19,9 +19,7 @@
  * near-silence, under-reserving is an audible cut (the estimator's own bias).
  */
 
-import { isExistingEngineReading } from '../../models/EngineRtDiagnostics';
 import { type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
-import { engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
 
 /** Frames of tail each loaded hosted instance reported, by instance id: `externalPluginTailStore`'s value. */
 export type HostedTailSamplesByInstanceId = Readonly<Record<string, number>>;
@@ -38,11 +36,6 @@ function hostedPluginTailSeconds(input: { tailSamples: number; activationSampleR
     return tailSamples / activationSampleRate;
 }
 
-function runningEngineSampleRate(): number | null {
-    const latest = engineRtDiagnosticsStore.value?.latest ?? null;
-    return isExistingEngineReading(latest) ? latest.sampleRate : null;
-}
-
 /**
  * The tail one hosted instance declares, or `undefined` when it reported none.
  *
@@ -52,12 +45,13 @@ function runningEngineSampleRate(): number | null {
  */
 export function readHostedPluginTail(
     externalInstanceId: string,
-    tailSamplesByInstanceId: HostedTailSamplesByInstanceId
+    tailSamplesByInstanceId: HostedTailSamplesByInstanceId,
+    engineSampleRate: number | null
 ): TailDeclarationLike | undefined {
     const tailSamples = tailSamplesByInstanceId[externalInstanceId];
     if (tailSamples === undefined || !Number.isFinite(tailSamples) || tailSamples <= 0) {
         return undefined;
     }
-    const seconds = hostedPluginTailSeconds({ tailSamples, activationSampleRate: runningEngineSampleRate() });
+    const seconds = hostedPluginTailSeconds({ tailSamples, activationSampleRate: engineSampleRate });
     return seconds === null ? { kind: 'unbounded' } : { kind: 'fixed', seconds };
 }
