@@ -14,14 +14,24 @@
  * ── Device parameter automation ───────────────────────────────────────────
  *
  * The engine selection admits only chains of native built-in bodies and loaded
- * hosted effects (`nativeOfflineHostedDevice`, #4592), and their parameter
- * lanes ride `write-device-parameter` under exactly the law and the names the
- * live writer stamps them with: `nativeBuiltinAutomation` for a built-in
- * (#3776), the instance's own published law for a hosted effect, both through
- * `nativeDeviceParameterLaw`. A hosted effect sits on its strip with its
- * `externalInstanceId`, and the engine prints it through an offline instance
- * of its own, built from the live instance's state and compensated by the
- * engine against the instance's own latency. A lane naming a device on its
+ * hosted plugins (`nativeOfflineHostedDevice`, #4592, #6777), and their
+ * parameter lanes ride `write-device-parameter` under exactly the law and the
+ * names the live writer stamps them with: `nativeBuiltinAutomation` for a
+ * built-in (#3776), the instance's own published law for a hosted plugin, both
+ * through `nativeDeviceParameterLaw`. A hosted plugin sits on its strip with
+ * its `externalInstanceId`, and the engine prints it through an offline
+ * instance of its own, built from the live instance's state and compensated
+ * by the engine against the instance's own latency.
+ *
+ * ── Hosted instrument notes ───────────────────────────────────────────────
+ *
+ * A track whose note sink is a loaded hosted instrument
+ * (`nativeOfflineInstrumentSink`) sends its MIDI as `schedule-midi` against
+ * that device, projected by the live producer (`projectLiveMidiProgramme`)
+ * from the render's captured MIDI snapshot and projectors, over the whole
+ * export on the render's own timeline (frame 0 is beat 0; a region export is
+ * rendered from the top and cropped afterwards). The command rides the
+ * programme batch, after the strips exist. A lane naming a device on its
  * strip that this law will not carry — including any hosted lane when the
  * capture carries no hosted law — declines the render
  * (`nativeRefusedDeviceLane`) rather than printing a file without it.
@@ -73,6 +83,7 @@
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
@@ -89,6 +100,7 @@ import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/
 import { isNativeOfflineRenderCancelled } from '../../repositories/nativeGraph/isNativeOfflineRenderCancelled';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
+import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
@@ -109,8 +121,10 @@ import { checkCancel } from './checkCancel';
 import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
 import { nativeOfflineDeviceEntries } from './nativeOfflineDeviceEntries';
 import { type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
+import { nativeOfflineInstrumentSink } from './nativeOfflineInstrumentSink';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
+import { projectNativeOfflineMidiCommands, type NativeOfflineMidiSource } from './projectNativeOfflineMidiCommands';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectStripAutomationWrites } from './projectStripAutomationWrites';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
@@ -208,6 +222,45 @@ function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> })
             tap: send.preFader ? 'pre-fader' : 'post-fader',
             level: send.level,
         }));
+}
+
+/**
+ * The notes' source for a hosted-instrument track: the render's captured
+ * snapshot and projections when it has one, the live ones otherwise (the same
+ * fallback the automation lanes take), or `null` when the composition root
+ * configured no projection — the Web Audio render refuses that case too.
+ */
+function nativeOfflineMidiSource(
+    input: NativeOfflineRenderInput,
+    musical: Pick<NativeOfflineRenderInput, 'sampleRate' | 'defaultTempo' | 'changes' | 'projectPpqEndpoints'>
+): NativeOfflineMidiSource | null {
+    const context = input.captured?.renderContext;
+    const midi = context ? context.midi : midiStore.value;
+    const projectMidiEvents = context
+        ? context.projectMidiEvents
+        : (offlineMidiEventProjectorState.createProjector?.() ?? null);
+    const selectProbability = context
+        ? context.selectMidiEventProbability
+        : offlineMidiEventProjectorState.selectProbability;
+    if (!midi || !projectMidiEvents || !selectProbability) {
+        return null;
+    }
+    return {
+        notesByClipId: midi.notesByClipId,
+        probabilitySeed: midi.probabilitySeed,
+        defaultTempo: musical.defaultTempo,
+        sampleRate: musical.sampleRate,
+        changes: musical.changes,
+        projectPpqEndpoints: musical.projectPpqEndpoints,
+        projectMidiEvents,
+        selectProbability,
+        projectChordPitch: context
+            ? (context.projectChordPitch ?? null)
+            : (offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null),
+        resolveArticulationId: context
+            ? (context.resolveArticulationId ?? null)
+            : offlineMidiEventProjectorState.resolveArticulationId,
+    };
 }
 
 export async function renderOfflineWithNativeEngine(
@@ -391,6 +444,29 @@ export async function renderOfflineWithNativeEngine(
             commands.push(...writeCommands(target, writes));
         }
 
+        // A loaded hosted instrument is voiced by the engine: its notes ride
+        // `schedule-midi` against the device, after the strip that holds it
+        // (the strips are their own, earlier batch). A strip no audible output
+        // reaches holds no device to address, and nothing would hear it.
+        const instrument = contributingTrackIds.has(track.id)
+            ? nativeOfflineInstrumentSink(track, hostedRuntime)
+            : null;
+        if (instrument !== null) {
+            const source = nativeOfflineMidiSource(input, { sampleRate, defaultTempo, changes, projectPpqEndpoints });
+            if (source === null) {
+                return { outcome: 'declined', reason: 'the MIDI projection is not configured for the native render' };
+            }
+            commands.push(
+                ...projectNativeOfflineMidiCommands({
+                    track,
+                    hostedRuntime,
+                    source,
+                    durationSeconds: frameCount / sampleRate,
+                    compensationDelaySeconds: compensationDelay,
+                })
+            );
+        }
+
         // What the native strip has left to hold, counted down across the
         // track's clips — the same countdown the live producer runs, because
         // the two schedule the same expansion into the same ceiling.
@@ -406,11 +482,15 @@ export async function renderOfflineWithNativeEngine(
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
+            if (clip.type === 'midi' && nativeOfflineInstrumentSink(track, hostedRuntime) !== null) {
+                // Voiced through `schedule-midi` above.
+                continue;
+            }
             if (clip.type !== 'audio') {
-                // The engine selection gates instrument programme to the Web
-                // Audio path; a MIDI clip reaching here means the gate and
-                // this builder disagree, and the honest answer is the
-                // fallback, not a silent drop.
+                // The engine selection gates every other instrument's
+                // programme to the Web Audio path; a MIDI clip reaching here
+                // means the gate and this builder disagree, and the honest
+                // answer is the fallback, not a silent drop.
                 return { outcome: 'declined', reason: `MIDI clip on track "${track.name}" reached the native path` };
             }
             if (!clip.audioBufferId) {

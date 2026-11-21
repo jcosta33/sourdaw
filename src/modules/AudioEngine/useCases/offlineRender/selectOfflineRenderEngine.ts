@@ -20,14 +20,13 @@
  *   - **Device chains** — a chain renders natively only when every device on
  *     it, bypassed or not, is either a built-in the engine builds a body for
  *     (`nativeBuiltinBody`, the renderer's mirror of the engine's own
- *     registry) or a loaded hosted effect plugin, and the native render
- *     carries both families' parameter automation the way the live writer
- *     does (#3776, #4592). A loaded hosted effect prints through an offline
- *     instance the engine builds from the live one's state
+ *     registry) or a loaded hosted plugin, effect or instrument, and the
+ *     native render carries both families' parameter automation the way the
+ *     live writer does (#3776, #4592, #6777). A loaded hosted plugin prints
+ *     through an offline instance the engine builds from the live one's state
  *     (`nativeOfflineHostedDevice`, the one admission the programme shares).
- *     The exclusions: a loaded hosted *instrument*, which the offline render
- *     does not host, and a loaded hosted plugin the scan holds no kind for,
- *     both named; a device with no native body — a hosted plugin with nothing
+ *     The exclusion: a loaded hosted plugin the scan holds no kind for,
+ *     named; a device with no native body — a hosted plugin with nothing
  *     loaded (a pass-through live, kept on Web Audio as before), a Crumbs
  *     sampler (an engine-owned splice the offline mapper has no lookup for),
  *     Faust, Yeast and every Web Audio-only built-in — would be refused by
@@ -36,8 +35,12 @@
  *     routes are scheduled web-side and a native strip would print a rest;
  *     and the target of a sidechain route, because the native wire has no
  *     sidechain vocabulary and a keyed device would print unkeyed.
- *   - **MIDI programme** — instruments render web-side; a native render of a
- *     MIDI clip would be a rest that reads as a correct file.
+ *   - **MIDI programme** — a MIDI clip renders natively only when the track's
+ *     note sink (`nativeOfflineInstrumentSink`, the live law's first sink in
+ *     chain order) is a loaded hosted instrument: its notes ride
+ *     `schedule-midi` against that device. Every other instrument renders
+ *     web-side, and a native render of its clip would be a rest that reads as
+ *     a correct file.
  *   - **Clip gain envelopes** — the native wire has no envelope vocabulary
  *     (#2865), so a clip carrying one bounces through the Web Audio renderer
  *     that schedules the drawn curve.
@@ -72,6 +75,7 @@ import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 import { NATIVE_OFFLINE_RENDER_MAX_FRAMES } from './constants';
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
 import { classifyNativeOfflineHostedDevice, type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
+import { nativeOfflineInstrumentSink } from './nativeOfflineInstrumentSink';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { resolveOutputTarget } from './resolveOutputTarget';
 
@@ -146,14 +150,7 @@ export type SelectOfflineRenderEngineInput = Readonly<{
 }>;
 
 /** Why this track's chain cannot render natively, or `null` when every device on it can. */
-function hostedDeviceGateReason(
-    track: Track,
-    device: Track['devices'][number],
-    verdict: 'instrument' | 'unknown'
-): string {
-    if (verdict === 'instrument') {
-        return `track "${track.name}" carries hosted instrument "${device.name}", which the native render does not host offline`;
-    }
+function hostedDeviceGateReason(track: Track, device: Track['devices'][number]): string {
     return `track "${track.name}" carries hosted plugin "${device.name}", which the plugin scan records no kind for`;
 }
 
@@ -164,10 +161,10 @@ function deviceChainGateReason(
 ): string | null {
     for (const device of track.devices) {
         const hosted = classifyNativeOfflineHostedDevice(device, hostedRuntime);
-        if (hosted === 'instrument' || hosted === 'unknown') {
-            return hostedDeviceGateReason(track, device, hosted);
+        if (hosted === 'unknown') {
+            return hostedDeviceGateReason(track, device);
         }
-        if (hosted !== 'effect' && nativeBuiltinBody(device.type) === null) {
+        if (hosted !== 'effect' && hosted !== 'instrument' && nativeBuiltinBody(device.type) === null) {
             return `track "${track.name}" carries device "${device.type}", which the native render has no body for`;
         }
         // A Grinder whose record carries model digest words is running a real
@@ -265,6 +262,12 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
                 continue;
             }
             if (clip.type === 'midi') {
+                // A loaded hosted instrument is the one MIDI sink the native
+                // render voices: its notes ride `schedule-midi` against that
+                // device. Any other sink is voiced web-side.
+                if (nativeOfflineInstrumentSink(track, hostedRuntime) !== null) {
+                    continue;
+                }
                 return `track "${track.name}" plays MIDI programme`;
             }
             // #2865 — the native wire has no envelope vocabulary, so a bounce

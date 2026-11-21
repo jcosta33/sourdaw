@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { createGrooveMidiEventProjector, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: vi.fn(() => 0),
@@ -23,6 +25,7 @@ import {
 } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
+import { offlineMidiEventProjectorState } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
 import { renderOfflineWithNativeEngine, type NativeOfflineRenderInput } from '../renderOfflineWithNativeEngine';
@@ -714,7 +717,7 @@ function renderOneTrack(input: {
     });
 }
 
-describe('renderOfflineWithNativeEngine — a loaded hosted effect (#4592)', () => {
+describe('renderOfflineWithNativeEngine — a loaded hosted plugin (#4592, #6777)', () => {
     /** The plugin's own published ceiling, which every stamped value is held to. */
     const PUBLISHED_CEILING = 0.6;
 
@@ -847,6 +850,27 @@ describe('renderOfflineWithNativeEngine — a loaded hosted effect (#4592)', () 
         expect(commands).toEqual([]);
     });
 
+    it('stamps a loaded hosted instrument’s ride exactly as a hosted effect’s', async () => {
+        const frames = 48_000;
+        const { transport, commands } = capturingTransport(frames);
+        automationStore.set({ lanes: [mixRide] });
+
+        const result = await renderOneTrack({
+            transport,
+            frames,
+            devices: [hostedReverb],
+            hostedPluginRuntime: { ...loadedEffect, pluginKind: () => 'instrument' },
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const target = { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'plugin-1', parameterId: '7' };
+        expect(deviceWrites(commands)).toEqual([
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: 0.2, time: 0 } },
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: 0.48, time: 0.5 } },
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: PUBLISHED_CEILING, time: 0.51 } },
+        ]);
+    });
+
     it('stamps nothing for a hosted device the shared predicate does not admit, and declines its ride', async () => {
         const { transport, commands } = capturingTransport(480);
         automationStore.set({ lanes: [mixRide] });
@@ -855,11 +879,182 @@ describe('renderOfflineWithNativeEngine — a loaded hosted effect (#4592)', () 
             transport,
             frames: 480,
             devices: [hostedReverb],
-            hostedPluginRuntime: { ...loadedEffect, pluginKind: () => 'instrument' },
+            hostedPluginRuntime: { ...loadedEffect, pluginKind: () => null },
         });
 
         expect(result.outcome).toBe('declined');
         expect(deviceWrites(commands)).toEqual([]);
+    });
+});
+
+describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the track’s MIDI (#6777)', () => {
+    const synth: Device = {
+        id: 'synth-1',
+        name: 'Synth',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'synth',
+        externalInstanceId: 'instance-synth',
+    };
+    const gluten: Device = { id: 'glue-1', name: 'Gluten', type: 'gluten', bypassed: false, parameterValues: {} };
+    const loadedInstrument: NativeOfflineHostedRuntime = {
+        loadedInstanceIds: new Set(['instance-synth']),
+        onDesktopRuntime: true,
+        pluginKind: () => 'instrument',
+    };
+    const PROBABILITY_SEED = 0x5eed;
+    /** 48 kHz, 8 s: every clip below fits. */
+    const FRAMES = 48_000 * 8;
+
+    type MidiNote = MidiStoreState['notesByClipId'][string][number];
+    const notes: MidiNote[] = [
+        { id: 'n-low', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+        { id: 'n-high', pitch: 64, startBeat: 2, duration: 1, velocity: 64 },
+        { id: 'n-never', pitch: 67, startBeat: 3, duration: 0.5, velocity: 90, probability: 0 },
+    ];
+
+    function midiClip(overrides: Partial<Clip> & { id: string }): Clip {
+        return {
+            name: overrides.id,
+            trackId: 'midi-1',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#00ff00',
+            locked: false,
+            muted: false,
+            ...overrides,
+        };
+    }
+
+    beforeEach(() => {
+        vi.stubGlobal('AudioBuffer', StubAudioBuffer);
+        midiStore.set({
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: { 'clip-a': notes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        offlineMidiEventProjectorState.createProjector = () => createGrooveMidiEventProjector();
+        offlineMidiEventProjectorState.selectProbability = shouldPlayMidiEvent;
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        midiStore.set(null);
+        offlineMidiEventProjectorState.createProjector = null;
+        offlineMidiEventProjectorState.selectProbability = null;
+    });
+
+    function renderKeys(input: { transport: NativeGraphTransport; clips: Clip[]; devices?: Device[] }) {
+        const keys = createTrack({
+            id: 'midi-1',
+            name: 'Keys',
+            kind: 'midi',
+            devices: input.devices ?? [synth],
+            clips: input.clips,
+        });
+        return renderOfflineWithNativeEngine({
+            transport: input.transport,
+            sampleRate: 48_000,
+            frameCount: FRAMES,
+            durationSeconds: FRAMES / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: halfSecondPerBeat,
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks: [keys],
+            scheduledTracks: [keys],
+            contributingTrackIds: new Set(['midi-1']),
+            soloGatedByTrackId: new Map(),
+            vcaMultiplierByTrackId: new Map(),
+            hostedPluginRuntime: loadedInstrument,
+        });
+    }
+
+    const noteEvent = (time: number, note: number, velocity: number, isNoteOn: boolean) => ({
+        time,
+        note,
+        velocity,
+        channel: 0,
+        isNoteOn,
+    });
+
+    it('sends the looped clip to the instrument on the render timeline, after the strip that holds it', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+
+        // The clip starts at beat 4 (2 s) and loops a 4-beat pattern twice.
+        const result = await renderKeys({
+            transport,
+            clips: [midiClip({ id: 'clip-a', startBeat: 4, endBeat: 12, loopEnabled: true, loopLength: 4 })],
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const scheduled = commands.filter((command) => command.kind === 'schedule-midi');
+        expect(scheduled).toEqual([
+            {
+                kind: 'schedule-midi',
+                trackId: 'midi-1',
+                deviceId: 'synth-1',
+                probabilitySeed: PROBABILITY_SEED,
+                notes: [
+                    noteEvent(2, 60, 100, true),
+                    noteEvent(2.5, 60, 0, false),
+                    noteEvent(3, 64, 64, true),
+                    noteEvent(3.5, 64, 0, false),
+                    noteEvent(4, 60, 100, true),
+                    noteEvent(4.5, 60, 0, false),
+                    noteEvent(5, 64, 64, true),
+                    noteEvent(5.5, 64, 0, false),
+                ],
+            },
+        ]);
+        const kinds = commands.map((command) => command.kind);
+        expect(kinds.indexOf('schedule-midi')).toBeGreaterThan(kinds.indexOf('create-track-strip'));
+    });
+
+    it('moves every note by the strip’s latency compensation, as the audio clips and the web notes move', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+        vi.mocked(getCompensationDelay).mockReturnValueOnce(0.25);
+
+        await renderKeys({ transport, clips: [midiClip({ id: 'clip-a', startBeat: 0, endBeat: 4 })] });
+
+        const scheduled = commands.find((command) => command.kind === 'schedule-midi');
+        expect(scheduled?.kind === 'schedule-midi' ? scheduled.notes.map((entry) => entry.time) : null).toEqual([
+            0.25, 0.75, 1.25, 1.75,
+        ]);
+    });
+
+    it('sends nothing for a muted clip, and no command at all for a track with no notes', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+
+        const result = await renderKeys({
+            transport,
+            clips: [midiClip({ id: 'clip-a', muted: true })],
+        });
+
+        expect(result.outcome).toBe('rendered');
+        expect(commands.filter((command) => command.kind === 'schedule-midi')).toEqual([]);
+    });
+
+    it('declines a MIDI track whose note sink is not a loaded hosted instrument', async () => {
+        const { transport } = capturingTransport(FRAMES);
+
+        const result = await renderKeys({
+            transport,
+            devices: [gluten],
+            clips: [midiClip({ id: 'clip-a' })],
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'MIDI clip on track "Keys" reached the native path',
+        });
     });
 });
 
