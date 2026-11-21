@@ -4,7 +4,10 @@ const { getDrumKitByIndex } = vi.hoisted(() => ({
     getDrumKitByIndex: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ getDrumKitByIndex }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return { getDrumKitByIndex, resolveDrumKitBy: actual.resolveDrumKitBy };
+});
 
 import { resolveDrumKit } from '../resolveDrumKit';
 

@@ -50,34 +50,56 @@ const trackStripStub = {
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
-        () => 'root-identity'
-    ),
-}));
-vi.mock('#/modules/Arrangement/stores', () => ({
-    adjustmentLayerStore: { value: null },
-    gainEnvelopeStore: { value: null },
-    getTrackEligibility: vi.fn(),
-    markerStore: { value: null },
-    vcaGroupStore: { value: null },
-    warpStateStore: { value: null },
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        getCrdtDoc: actual.getCrdtDoc,
+        captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+            () => 'root-identity'
+        ),
+    };
+});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
+        addWarpMarker: actual.addWarpMarker,
+        readMusicalRange: actual.readMusicalRange,
+        readMusicalRangeInputs: actual.readMusicalRangeInputs,
+        clampDeviceParamWrite: actual.clampDeviceParamWrite,
+        clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
+        deriveEffectiveAudibility: actual.deriveEffectiveAudibility,
+        deriveVcaMultiplier: actual.deriveVcaMultiplier,
+        getGainEnvelopeSeries: actual.getGainEnvelopeSeries,
+        getStoredWarpState: actual.getStoredWarpState,
+        getVcaGroupsState: actual.getVcaGroupsState,
+        getWarpState: actual.getWarpState,
+        setWarpState: actual.setWarpState,
+        shouldCreateLiveTrackStrip: actual.shouldCreateLiveTrackStrip,
+        soloModeStore: actual.soloModeStore,
+        adjustmentLayerStore: { value: null },
+        gainEnvelopeStore: { value: null },
+        getTrackEligibility: vi.fn(),
+        markerStore: { value: null },
+        vcaGroupStore: { value: null },
+        warpStateStore: { value: null },
 
-    trackStore: {
-        get value() {
-            return trackStoreState.value;
+        trackStore: {
+            get value() {
+                return trackStoreState.value;
+            },
         },
-    },
-    takeLaneStore: { value: { lanes: [] } },
-    // The loop-wrap take path reads which clips are actively recording; no test
-    // here records, so the ref stays empty.
-    activeRecordingRef: { current: [] },
-    // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
-    // dependency bundle destructures these off this barrel at module scope. A
-    // factory that omits them fails the whole file at import, not at a test.
-    persistDeviceParam: vi.fn(),
-    resolveEligibleDeviceWriteTarget: vi.fn(),
-}));
+        takeLaneStore: { value: { lanes: [] } },
+        // The loop-wrap take path reads which clips are actively recording; no test
+        // here records, so the ref stays empty.
+        activeRecordingRef: { current: [] },
+        // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
+        // dependency bundle destructures these off this barrel at module scope. A
+        // factory that omits them fails the whole file at import, not at a test.
+        persistDeviceParam: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn(),
+    };
+});
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {
@@ -111,13 +133,18 @@ vi.mock('#/modules/Automation/stores', () => ({
     modulationStore: { value: null },
     automationStore: { value: null },
 }));
-vi.mock('#/modules/Automation/useCases', () => ({
-    startAutomationRecording: vi.fn(),
-    applyModulation: vi.fn(),
-    applyModulationToEngine: vi.fn(),
-    getAutomationValueAtBeat: vi.fn(() => null),
-    isRecordingAutomation: vi.fn(() => false),
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+        getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
+        startAutomationRecording: vi.fn(),
+        applyModulation: vi.fn(),
+        applyModulationToEngine: vi.fn(),
+        getAutomationValueAtBeat: vi.fn(() => null),
+        isRecordingAutomation: vi.fn(() => false),
+    };
+});
 /**
  * Punch observation points: the punch state machine opens through
  * `startRecording` and closes through `stopRecording`; both are mocked at the
@@ -157,77 +184,84 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: () => ({}),
 }));
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    ensureCachedAudioBuffersDurable: vi.fn(),
-    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
-    analyzePitchForClip: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    getEngineState: vi.fn(),
-    removeSend: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    wireSidechainRoute: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: vi.fn() },
+        ensureCachedAudioBuffersDurable: vi.fn(),
+        createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+        analyzePitchForClip: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        getEngineState: vi.fn(),
+        removeSend: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        wireSidechainRoute: vi.fn(),
 
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    getAudioContext: () => audioContextStub,
-    getCurrentTime: () => ctxTime.now,
-    scheduleClick: scheduleClickSpy,
-    getCompensationDelay: () => 0,
-    getDefaultBendRangeSemitones: () => 48,
-    getNoteExpressionDimensions: () => [],
-    getDrumKitByIndex: () => null,
-    ensureTrackStrip: () => trackStripStub,
-    getTrackStrip: () => trackStripStub,
-    applyNoteExpression: vi.fn(),
-    startNoteExpression: vi.fn(),
-    advanceNoteExpression: vi.fn(),
-    relocateNoteExpression: vi.fn(),
-    registerScheduledSource: vi.fn(),
-    scheduleFaustNote: vi.fn(),
-    audioEngine: {
-        get context() {
-            return audioContextStub;
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        getAudioContext: () => audioContextStub,
+        getCurrentTime: () => ctxTime.now,
+        scheduleClick: scheduleClickSpy,
+        getCompensationDelay: () => 0,
+        getDefaultBendRangeSemitones: () => 48,
+        getNoteExpressionDimensions: () => [],
+        getDrumKitByIndex: () => null,
+        ensureTrackStrip: () => trackStripStub,
+        getTrackStrip: () => trackStripStub,
+        applyNoteExpression: vi.fn(),
+        startNoteExpression: vi.fn(),
+        advanceNoteExpression: vi.fn(),
+        relocateNoteExpression: vi.fn(),
+        registerScheduledSource: vi.fn(),
+        scheduleFaustNote: vi.fn(),
+        audioEngine: {
+            get context() {
+                return audioContextStub;
+            },
+            setTransportInfo: vi.fn(),
         },
-        setTransportInfo: vi.fn(),
-    },
-    stopAllScheduled: vi.fn(),
-    // A continuously published recorder clock below this scheduler component seam.
-    // PCM retention itself is observed by recordingCapturePlacement.integration.
-    startAudioRecording: vi.fn<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>(
-        async (_track, _terminal, _input, admit) => {
-            const sampleZero = Math.round(ctxTime.now * audioContextStub.sampleRate);
-            admit?.(() => {
-                const frontier = Math.round(ctxTime.now * audioContextStub.sampleRate);
-                if (frontier <= sampleZero) {
-                    return { status: 'pending' };
-                }
-                return {
-                    status: 'captured',
-                    contextSeconds: sampleZero / audioContextStub.sampleRate,
-                    capturedThroughContextSeconds: frontier / audioContextStub.sampleRate,
-                };
-            });
-            return true;
-        }
-    ),
-    stopAudioRecording: vi.fn(),
-    cacheAudioBuffer: vi.fn(),
-    refreshSidechainAlignment: vi.fn(),
-    scheduleAdjustmentLayers: vi.fn(),
-    createBufferSource: vi.fn(),
-    getCachedAudioBuffer: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    // No native engine here: the cursor these seams are about follows the
-    // scheduler's own integration.
-    readNativeEnginePlayheadSeconds: (): number | null => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+        stopAllScheduled: vi.fn(),
+        // A continuously published recorder clock below this scheduler component seam.
+        // PCM retention itself is observed by recordingCapturePlacement.integration.
+        startAudioRecording: vi.fn<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>(
+            async (_track, _terminal, _input, admit) => {
+                const sampleZero = Math.round(ctxTime.now * audioContextStub.sampleRate);
+                admit?.(() => {
+                    const frontier = Math.round(ctxTime.now * audioContextStub.sampleRate);
+                    if (frontier <= sampleZero) {
+                        return { status: 'pending' };
+                    }
+                    return {
+                        status: 'captured',
+                        contextSeconds: sampleZero / audioContextStub.sampleRate,
+                        capturedThroughContextSeconds: frontier / audioContextStub.sampleRate,
+                    };
+                });
+                return true;
+            }
+        ),
+        stopAudioRecording: vi.fn(),
+        cacheAudioBuffer: vi.fn(),
+        refreshSidechainAlignment: vi.fn(),
+        scheduleAdjustmentLayers: vi.fn(),
+        createBufferSource: vi.fn(),
+        getCachedAudioBuffer: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        // No native engine here: the cursor these seams are about follows the
+        // scheduler's own integration.
+        readNativeEnginePlayheadSeconds: (): number | null => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+    };
+});
 const scheduleNoteSpy = vi.hoisted(() =>
     vi.fn<(ctx: unknown, destination: unknown, pitch: number, startTime: number, ...rest: unknown[]) => unknown>()
 );
@@ -238,7 +272,22 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleNote: scheduleNoteSpy,
     getSynthParamsFromDevices: vi.fn(),
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        compileFaustDSP: actual.compileFaustDSP,
+        createFaustNode: actual.createFaustNode,
+        forgetRetiredPluginInstances: actual.forgetRetiredPluginInstances,
+        getFaustModuleLatencyMs: actual.getFaustModuleLatencyMs,
+        isFaustModule: actual.isFaustModule,
+        markExternalPluginEngineAttached: actual.markExternalPluginEngineAttached,
+        readExternalPluginStatesBeforeEngineRetire: actual.readExternalPluginStatesBeforeEngineRetire,
+        registerBuiltinFaustDSP: actual.registerBuiltinFaustDSP,
+        setPluginBypass: actual.setPluginBypass,
+        setPluginParameter: actual.setPluginParameter,
+        isFaustInstrumentModule: () => false,
+    };
+});
 vi.mock('#/modules/Yeast/useCases', () => ({
     hydrateYeastCrdtProjection: vi.fn(),
 
