@@ -116,8 +116,10 @@ export function assertRetirementRecord(value: unknown): asserts value is Retirem
     }
     assertRetirementEvidence(root.evidence);
     const findings = array(root.findings, 'retirement findings', MAX_FINDINGS);
-    if (findings.length === 0) {
-        fail('retirement requires at least one confirmed review finding');
+    const bodies = array(root.reviewBodies, 'retirement review bodies', MAX_FINDINGS);
+    // An empty pair attests a PR that never received a finding; the live review proof must then read none.
+    if ((findings.length === 0) !== (bodies.length === 0)) {
+        fail('retirement findings and review bodies must both be empty or both be present');
     }
     const roots = new Set<string>();
     const threads = new Set<string>();
@@ -136,10 +138,6 @@ export function assertRetirementRecord(value: unknown): asserts value is Retirem
         }
         roots.add(rootId);
         threads.add(thread);
-    }
-    const bodies = array(root.reviewBodies, 'retirement review bodies', MAX_FINDINGS);
-    if (bodies.length === 0) {
-        fail('retirement requires at least one mapped REQUEST_CHANGES review');
     }
     const reviews = new Set<string>();
     for (const item of bodies) {

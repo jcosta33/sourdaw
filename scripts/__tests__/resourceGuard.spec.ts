@@ -241,6 +241,64 @@ describe('resource admission', () => {
         }
     });
 
+    it('skips a reservation its owner released while admission samples it', async () => {
+        const root = fixtureRoot('released-during-sample');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            const second = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+                activeRssSampler: () => {
+                    first.release();
+                    return undefined;
+                },
+            });
+
+            expect(readFileSync(second.reservationPath, 'utf8')).toContain(second.token);
+            second.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('stops admission when a still-registered reservation cannot be sampled', async () => {
+        const root = fixtureRoot('unsampled-registered');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            await expect(
+                enterResourceSession({
+                    root,
+                    requiredRssBytes: 1024 ** 3,
+                    availableMemoryBytes: 8 * 1024 ** 3,
+                    activeRssSampler: () => undefined,
+                })
+            ).rejects.toThrow('active validation memory could not be measured');
+            first.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('stops admission when available memory cannot be measured', async () => {
+        const root = fixtureRoot('unmeasured-available');
+        try {
+            await expect(
+                enterResourceSession({ root, requiredRssBytes: 1024 ** 3, memorySampler: () => undefined })
+            ).rejects.toThrow('available memory could not be measured');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('retains a crashed owner reservation while its child is alive', async () => {
         const root = fixtureRoot('orphan');
         try {
@@ -4292,9 +4350,13 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 writeFileSync(join(packageRoot, fixture.retainedTarget), 'export {}');
                 writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
             }
-            writeLintProbePackage(packageRoot, `guard-package-owner-${packageDirectory}`);
+            writeFileSync(
+                join(packageRoot, 'package.json'),
+                JSON.stringify({ name: `guard-package-owner-${packageDirectory}`, private: true })
+            );
             writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(recordedCwd) });
             const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const observed: { command: string; args: string[]; cwd: string | undefined }[] = [];
 
             try {
                 const code = await runGuardCli(
@@ -4302,22 +4364,22 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     {
                         cwd: recordedCwd,
                         detectLane: () => fixture.lane,
-                        runCommand: async (input) =>
-                            runIsolatedGuardedCommand({
-                                ...input,
-                                availableMemoryBytes: abundantMemoryBytes,
-                                maxRssBytes: 512 * 1024 ** 2,
-                            }),
+                        runCommand: async (input) => {
+                            observed.push({ command: input.command, args: input.args, cwd: input.cwd });
+                            return fakeResult({ code: 0 });
+                        },
                         assertModulesPreflight: () => undefined,
                     }
                 );
 
                 expect(code, label).toBe(0);
-                expect(JSON.parse(readFileSync(join(packageRoot, 'observed.json'), 'utf8'))).toEqual({
-                    cwd: realpathSync(packageRoot),
-                    args: [fixture.newTarget, fixture.retainedTarget],
-                    allTargetsExist: true,
-                });
+                expect(observed).toEqual([
+                    {
+                        command: 'pnpm',
+                        args: ['lint', fixture.newTarget, fixture.retainedTarget],
+                        cwd: realpathSync(recordedCwd),
+                    },
+                ]);
                 expect(existsSync(receiptPath)).toBe(false);
             } finally {
                 rmSync(fixture.repoRoot, { recursive: true, force: true });

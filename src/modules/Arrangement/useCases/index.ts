@@ -177,6 +177,7 @@ export { executeAddDeviceAction } from './device/executeAddDeviceAction';
 export { isExternalPluginDeviceType } from './device/externalPluginDeviceType';
 export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
+export { captureRemovedTrackPluginRelease } from './device/captureRemovedTrackPluginRelease';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';
@@ -278,6 +279,10 @@ export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
 export { setSnapValue } from './timelineEditing/setSnapValue';
 export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+export { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
+export { getTracksShownInViews } from './getTracksShownInViews';
+export { getHiddenTrackIds } from './getHiddenTrackIds';
+export { selectTrackRevealingHidden } from './toggleTrackState/selectTrackRevealingHidden';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
@@ -351,3 +356,4 @@ export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
 
 export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';
+export { changesTrackOutsideDevicePlan } from './device/changesTrackOutsideDevicePlan';

@@ -167,6 +167,14 @@ function expectNoDeletedTrackReferences(deletedTrackIds: readonly string[]): voi
     }
 }
 
+function getFixedParamRange() {
+    return { min: 0, max: 1, defaultValue: 0.5, automatable: true };
+}
+
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('removeAllTracks modulation lifecycle (#5090)', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -185,8 +193,8 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         writeModulationParam.mockClear();
         setModulationDependencies({
             updateDeviceParam: writeModulationParam,
-            getPluginParamRange: () => ({ min: 0, max: 1, defaultValue: 0.5, automatable: true }),
-            quantiseValue: ({ value }) => value,
+            getPluginParamRange: getFixedParamRange,
+            quantiseValue: quantiseIdentity,
         });
     });
 

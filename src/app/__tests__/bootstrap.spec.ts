@@ -415,6 +415,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     compileLoadPresetActions: noop,
     applyDevicePatchState: () => false,
     captureDevicePatchCommitValidation: () => null,
+    changesTrackOutsideDevicePlan: () => false,
     getPlannedDevicePatchState: () => null,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,

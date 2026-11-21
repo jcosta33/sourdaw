@@ -19,11 +19,13 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
+import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
+import { getFreezeRenderSpan } from './getFreezeRenderSpan';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -117,21 +119,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             return false;
         }
 
-        let startBeat = Infinity;
-        let endBeat = -Infinity;
-        for (const context of track.clips) {
-            if (context.startBeat < startBeat) {
-                startBeat = context.startBeat;
-            }
-            if (context.endBeat > endBeat) {
-                endBeat = context.endBeat;
-            }
-        }
-
-        if (startBeat === Infinity) {
-            startBeat = 0;
-            endBeat = 1;
-        }
+        const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
 
         // How far past the content this take has to ring, read from the same
         // device tail declarations the export path evaluates. This used to be a
@@ -201,6 +189,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         });
         if (silentBake.silentBake) {
             throw new Error(silentBake.message);
+        }
+
+        await assertFreezeSourceUnchanged(trackId, hash);
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            return false;
         }
 
         const renderedAt = Date.now();
