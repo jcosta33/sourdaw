@@ -51,9 +51,7 @@ const BRACKET_MARKS = `${OPENING_BRACKET_MARKS}${CLOSING_BRACKET_MARKS}`;
  * the drums louder)" holds the vocal's brightness as its unbracketed form does. An aside the clause goes
  * on after is read inside it instead (`readInnerAsides`).
  */
-/** The semicolon, a clause mark the never-dropped net lets a verbless part continue a protection across. */
-export const SEMICOLON = ';';
-const CLAUSE_MARKS = `,.${SEMICOLON}:!?${BRACKET_MARKS}`;
+const CLAUSE_MARKS = `,.;:!?${BRACKET_MARKS}`;
 export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
@@ -121,13 +119,7 @@ export const OPENING_DEGREE_WORD = words(PLAIN_DEGREE_WORDS);
 export const ANY = words([ANY_WORD]);
 
 const AND = 'and';
-/** The words joining one more member or clause as "and" does: "the drums wider plus the vocal brighter". */
-const AND_WORDS = [AND, 'plus', 'as well as'];
-/** The words listing an alternative as "or" does; under a negation "nor" lists as "or" does. */
-const NOR = 'nor';
-const OR_WORDS = ['or', NOR];
-/** "nor" alone, which always negates: the part it joins is a protection as the one before it is. */
-export const NOR_JOINER = words([NOR]);
+const OR = 'or';
 const BUT = 'but';
 const WHILE = 'while';
 const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
@@ -146,25 +138,25 @@ function withAmpersand(joiningWords: string): string {
     return String.raw`(?:${joiningWords}|${AMPERSAND})`;
 }
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
-export const AND_JOIN = joinedBy(withAmpersand(words(AND_WORDS)));
-/** The words joining list members: "the vocal and the drums", "louder or brighter", "wider nor louder". */
-export const LIST_JOINER = words([...AND_WORDS, ...OR_WORDS]);
+export const AND_JOIN = joinedBy(withAmpersand(words([AND])));
+/** The words joining list members: "the vocal and the drums", "louder or brighter". */
+export const LIST_JOINER = words([AND, OR]);
 /**
  * A comma, "and" or "or" joining a later direction or object to the one before it: "brighter, wider, or
  * louder", "don't make the mix wider, or the vocal brighter".
  */
 export const LIST_JOIN = joinedBy(withAmpersand(LIST_JOINER));
 /** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
-export const TERM_JOIN = joinedBy(withAmpersand(words([...AND_WORDS, BUT])));
+export const TERM_JOIN = joinedBy(withAmpersand(words([AND, BUT])));
 /** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
 export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 /** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
-const CLAUSE_BOUNDARY_WORD = words([...AND_WORDS, ...HARD_BOUNDARY_WORDS]);
+const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
 /**
  * Every word that ends a clause or joins the members of a list inside one ("or"), which neither a word
  * of an object member nor a character of a clause short of its boundary holds.
  */
-const ANY_BOUNDARY_WORD = words([...AND_WORDS, ...OR_WORDS, ...HARD_BOUNDARY_WORDS]);
+const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
 export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** Any bracket, opening or closing. */
 export const BRACKET = `[${BRACKET_MARKS}]`;

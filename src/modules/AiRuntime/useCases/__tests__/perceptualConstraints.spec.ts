@@ -2481,69 +2481,6 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
             [],
             [unread('the vocal should never get louder in the verse', NET_REASON)],
         ],
-        // "nor", "plus" and "as well as" join a second protection as "or" and "and" do
-        [
-            "don't make the drums wider nor the vocal brighter",
-            [
-                measured(
-                    'stereo-width-not-widened-v1',
-                    "don't make the drums wider nor the vocal brighter",
-                    onTracks('drums')
-                ),
-                measured(
-                    'brightness-not-raised-v1',
-                    "don't make the drums wider nor the vocal brighter",
-                    onTracks('vocal')
-                ),
-            ],
-            [],
-        ],
-        [
-            "don't make the drums wider nor louder",
-            [
-                measured('stereo-width-not-widened-v1', "don't make the drums wider nor louder", onTracks('drums')),
-                measured('loudness-not-raised-v1', "don't make the drums wider nor louder", onTracks('drums')),
-            ],
-            [],
-        ],
-        [
-            "don't make the drums wider plus the vocal brighter",
-            [
-                measured(
-                    'stereo-width-not-widened-v1',
-                    "don't make the drums wider plus the vocal brighter",
-                    onTracks('drums')
-                ),
-                measured(
-                    'brightness-not-raised-v1',
-                    "don't make the drums wider plus the vocal brighter",
-                    onTracks('vocal')
-                ),
-            ],
-            [],
-        ],
-        [
-            "don't make the drums wider as well as the vocal brighter",
-            [
-                measured(
-                    'stereo-width-not-widened-v1',
-                    "don't make the drums wider as well as the vocal brighter",
-                    onTracks('drums')
-                ),
-                measured(
-                    'brightness-not-raised-v1',
-                    "don't make the drums wider as well as the vocal brighter",
-                    onTracks('vocal')
-                ),
-            ],
-            [],
-        ],
-        // a verbless part after a semicolon may continue the protection, so it is unsupported, never dropped
-        [
-            "don't make the drums wider; the vocal brighter",
-            [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
-            [unread("don't make the drums wider; the vocal brighter", NET_REASON)],
-        ],
         // requests, descriptions and moves stay unread
         ['make it louder', [], []],
         ['I want it louder', [], []],
@@ -2562,27 +2499,47 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
             [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
             [],
         ],
-        // a verb-led part after "nor" is a protection no reader binds, so it stays in the unsupported clause
+        // "plus", "as well as" and "nor" are no joiners, so a clause holding one is recorded unsupported whole
+        [
+            "Add reverb to the guitar. Don't make the bass louder plus the vocal",
+            [],
+            [unread("Don't make the bass louder plus the vocal", NET_REASON)],
+        ],
+        [
+            "Add reverb to the guitar. Don't make the bass louder as well as the vocal",
+            [],
+            [unread("Don't make the bass louder as well as the vocal", NET_REASON)],
+        ],
+        [
+            'Add reverb to the guitar. Keep the bass level as well as the vocal',
+            [],
+            [unread('Keep the bass level as well as the vocal', NET_REASON)],
+        ],
+        [
+            "don't touch the vocal nor brighten the drums",
+            [],
+            [unread("don't touch the vocal nor brighten the drums", NET_REASON)],
+        ],
+        [
+            'never touch the drums nor make the bass louder',
+            [],
+            [unread('never touch the drums nor make the bass louder', NET_REASON)],
+        ],
         [
             'Never make the drums louder nor widen the vocal',
             [],
             [unread('Never make the drums louder nor widen the vocal', NET_REASON)],
         ],
-        [
-            "Don't make the vocal louder nor let the drums get wider",
-            [],
-            [unread("Don't make the vocal louder nor let the drums get wider", NET_REASON)],
-        ],
-        [
-            'Without making the drums louder nor widening the vocal',
-            [],
-            [unread('Without making the drums louder nor widening the vocal', NET_REASON)],
-        ],
-        [
-            "I don't want the drums louder nor the vocal to get brighter",
-            [],
-            [unread("I don't want the drums louder nor the vocal to get brighter", NET_REASON)],
-        ],
+        // a joined part led by a wider degree word is a request of its own, never the rest of the protection
+        ...['a bit', 'far', 'way', 'even', 'slightly'].map(
+            (
+                degree
+            ): [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']] => [
+                `don't make the drums wider and ${degree} louder vocals`,
+                [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
+                [],
+            ]
+        ),
         // a positive request led by a degree word is its own clause, never the rest of a protection before it
         ['Keep the drums as they are, and a bit louder on the vocal', [], []],
         ["Don't touch the bass and a lot louder drums", [], []],
