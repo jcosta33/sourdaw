@@ -51,6 +51,8 @@ const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
+#[cfg(unix)]
+use crate::editor_run_loop::{register_editor_run_loop, EditorRunLoopRegistration};
 use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
@@ -155,6 +157,14 @@ pub struct ClapWrapper {
     /// The window this plugin's editor is drawn into, for answering what the
     /// plugin asks of it. Installed and released with the resizer.
     editor_window: Option<SharedEditorWindow>,
+    /// This instance's place in the shared editor pump, which services the
+    /// timers and descriptors it registered through `clap.timer-support` and
+    /// `clap.posix-fd-support`. Taken only once construction has succeeded, so a
+    /// failed load leaves nothing behind in the pump, and given up first in
+    /// `Drop`, so no pass can call into the instance while it is torn down.
+    /// The shell pumps only on Linux, and only while an editor is open.
+    #[cfg(unix)]
+    run_loop_registration: Option<EditorRunLoopRegistration>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -1333,6 +1343,13 @@ impl ClapWrapper {
 
         eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
 
+        // Last, so every failure exit above leaves nothing in the pump.
+        // SAFETY: `plugin` is the live instance initialised above, on the loading
+        // (main) thread, and the wrapper built below gives the registration up
+        // before it destroys the instance.
+        #[cfg(unix)]
+        let run_loop_registration = Some(unsafe { join_editor_pump(&host_state, plugin) });
+
         Ok(Self {
             _library: None,
             entry: entry_ptr,
@@ -1350,6 +1367,8 @@ impl ClapWrapper {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1399,6 +1418,8 @@ impl ClapWrapper {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -3217,6 +3238,25 @@ unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
     }
 }
 
+/// Hand an instance's run loop the plugin it delivers to, then put it in the
+/// shared editor pump. Timers and descriptors the plugin registered during
+/// `init` are already in the run loop, and fire from the next pass.
+///
+/// # Safety
+/// `plugin` must be the live, initialised instance whose `host_data` is
+/// `host_state`, called on its main thread, and the returned registration must
+/// be dropped before the instance is destroyed.
+#[cfg(unix)]
+unsafe fn join_editor_pump(
+    host_state: &HostCallbackState,
+    plugin: *const clap_plugin,
+) -> EditorRunLoopRegistration {
+    // SAFETY: the live, initialised instance on its main thread, outliving the
+    // registration returned below (this fn's contract).
+    unsafe { host_state.run_loop().attach(plugin) };
+    register_editor_run_loop(Arc::clone(host_state.run_loop()))
+}
+
 /// Destroy an instance a load is abandoning before the wrapper takes ownership
 /// of it, so the entry's later `deinit` never runs with a live instance.
 ///
@@ -4056,6 +4096,13 @@ impl Drop for ClapWrapper {
             observe();
         }
 
+        // Out of the editor pump before any teardown, and waiting out a pass
+        // already inside this instance: a pass calls `on_timer` and `on_fd`,
+        // which must not overlap `destroy`. The run loop itself lives on in
+        // `host_state` until the fields drop, after `destroy`.
+        #[cfg(unix)]
+        drop(self.run_loop_registration.take());
+
         // Close GUI if it's still open
         if self.gui_open {
             self.close_gui();
@@ -4487,6 +4534,8 @@ mod tests {
             gui_open: false,
             editor_resizer: None,
             editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -5463,6 +5512,257 @@ mod tests {
 
         assert!(wrapper.is_activated());
         assert_eq!(entry_lifecycle(), ["plugin_init", "plugin_activate"]);
+    }
+
+    // ── Construction exits and the editor pump (#6736) ──────────────────
+    //
+    // Every way a load can fail once an instance exists, and the success path
+    // for contrast. Each row's fake records its lifecycle calls and the thread
+    // `destroy` ran on, and keeps a weak handle on the instance's run loop:
+    // once the load has returned an error, nothing — the pump least of all —
+    // may still hold it.
+
+    #[cfg(unix)]
+    mod construction_exits {
+        use super::*;
+        use crate::clap_run_loop::ClapRunLoop;
+        use crate::editor_run_loop::{is_pumped, ServicedRunLoop};
+        use std::sync::{Mutex, Weak};
+        use std::thread::ThreadId;
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Exit {
+            Loads,
+            InitFails,
+            PortsUnreadable,
+            RequiresRealtime,
+            RefusesOffline,
+        }
+
+        static EXIT: Mutex<Exit> = Mutex::new(Exit::Loads);
+        static RUN_LOOP: Mutex<Option<Weak<ClapRunLoop>>> = Mutex::new(None);
+        static DESTROYED_ON: Mutex<Option<ThreadId>> = Mutex::new(None);
+        /// Whether the instance was still in the editor pump when `destroy` ran.
+        static PUMPED_AT_DESTROY: Mutex<Option<bool>> = Mutex::new(None);
+
+        fn exit() -> Exit {
+            *EXIT.lock().unwrap()
+        }
+
+        /// Keep a weak handle on the run loop of the instance being initialised,
+        /// reached the way a plugin reaches its host: through `host_data`.
+        unsafe extern "C" fn observing_init(plugin: *const clap_plugin) -> bool {
+            record_lifecycle_call("plugin_init");
+            // SAFETY: `plugin` is the fake `observing_create_plugin` built, whose
+            // `plugin_data` is the live host the factory was handed.
+            let host = unsafe { (*plugin).plugin_data } as *const clap_host;
+            // SAFETY: the host the wrapper built, whose `host_data` is its pinned state.
+            let state = unsafe { (*host).host_data } as *const HostCallbackState;
+            // SAFETY: as above; the state outlives the instance.
+            let run_loop = unsafe { &*state }.run_loop();
+            run_loop.register_timer(10);
+            *RUN_LOOP.lock().unwrap() = Some(Arc::downgrade(run_loop));
+            exit() != Exit::InitFails
+        }
+
+        unsafe extern "C" fn observing_destroy(plugin: *const clap_plugin) {
+            *DESTROYED_ON.lock().unwrap() = Some(std::thread::current().id());
+            let pumped = observed_run_loop().is_some_and(|run_loop| {
+                let run_loop: Arc<dyn ServicedRunLoop> = run_loop;
+                is_pumped(&run_loop)
+            });
+            *PUMPED_AT_DESTROY.lock().unwrap() = Some(pumped);
+            // SAFETY: the instance the host is destroying, from `Box::into_raw`.
+            unsafe { recording_plugin_destroy(plugin) };
+        }
+
+        unsafe extern "C" fn hard_realtime(_plugin: *const clap_plugin) -> bool {
+            true
+        }
+
+        static HARD_REALTIME_RENDER: clap_plugin_render = clap_plugin_render {
+            has_hard_realtime_requirement: Some(hard_realtime),
+            set: Some(render_set_accepting),
+        };
+
+        unsafe extern "C" fn observing_get_extension(
+            _plugin: *const clap_plugin,
+            id: *const i8,
+        ) -> *const c_void {
+            // SAFETY: the host passes a NUL-terminated extension id.
+            let id = unsafe { CStr::from_ptr(id) };
+            match exit() {
+                Exit::PortsUnreadable if id == CLAP_EXT_AUDIO_PORTS => {
+                    &raw const UNREADABLE_AUDIO_PORTS as *const c_void
+                }
+                Exit::RequiresRealtime if id == CLAP_EXT_RENDER => {
+                    &raw const HARD_REALTIME_RENDER as *const c_void
+                }
+                Exit::RefusesOffline if id == CLAP_EXT_RENDER => {
+                    &raw const REFUSING_RENDER as *const c_void
+                }
+                _ => ptr::null(),
+            }
+        }
+
+        unsafe extern "C" fn observing_create_plugin(
+            _factory: *const clap_plugin_factory,
+            host: *const clap_host,
+            _plugin_id: *const i8,
+        ) -> *const clap_plugin {
+            Box::into_raw(Box::new(clap_plugin {
+                desc: ptr::null(),
+                plugin_data: host.cast_mut().cast(),
+                init: Some(observing_init),
+                destroy: Some(observing_destroy),
+                activate: Some(recording_plugin_activate),
+                deactivate: Some(recording_plugin_deactivate),
+                start_processing: None,
+                stop_processing: None,
+                reset: None,
+                process: None,
+                get_extension: Some(observing_get_extension),
+                on_main_thread: None,
+            }))
+        }
+
+        static OBSERVING_FACTORY: clap_plugin_factory = clap_plugin_factory {
+            get_plugin_count: None,
+            get_plugin_descriptor: None,
+            create_plugin: Some(observing_create_plugin),
+        };
+
+        unsafe extern "C" fn observing_get_factory(_factory_id: *const i8) -> *const c_void {
+            &raw const OBSERVING_FACTORY as *const c_void
+        }
+
+        static OBSERVING_ENTRY: clap_plugin_entry = clap_plugin_entry {
+            clap_version: CLAP_VERSION,
+            init: None,
+            deinit: Some(recording_entry_deinit),
+            get_factory: Some(observing_get_factory),
+        };
+
+        fn load(row: Exit, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
+            *EXIT.lock().unwrap() = row;
+            *RUN_LOOP.lock().unwrap() = None;
+            *DESTROYED_ON.lock().unwrap() = None;
+            *PUMPED_AT_DESTROY.lock().unwrap() = None;
+            clear_entry_lifecycle();
+            // SAFETY: a static fake entry with no `init` to have run, live for the process.
+            unsafe {
+                ClapWrapper::load_initialized_entry(
+                    &raw const OBSERVING_ENTRY,
+                    LIFECYCLE_PLUGIN_ID,
+                    48_000.0,
+                    mode,
+                )
+            }
+        }
+
+        fn observed_run_loop() -> Option<Arc<ClapRunLoop>> {
+            RUN_LOOP.lock().unwrap().as_ref().and_then(Weak::upgrade)
+        }
+
+        #[test]
+        fn every_failure_exit_destroys_before_deinit_on_the_loading_thread_and_leaves_no_pump_entry(
+        ) {
+            let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+            let rows: [(Exit, ProcessMode, &[&str]); 4] = [
+                (
+                    Exit::InitFails,
+                    ProcessMode::Realtime,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::PortsUnreadable,
+                    ProcessMode::Realtime,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::RequiresRealtime,
+                    ProcessMode::Offline,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::RefusesOffline,
+                    ProcessMode::Offline,
+                    &[
+                        "plugin_init",
+                        "render_set_refused",
+                        "plugin_destroy",
+                        "entry_deinit",
+                    ],
+                ),
+            ];
+
+            for (row, mode, lifecycle) in rows {
+                let error = load(row, mode).err();
+                let error = error.unwrap_or_else(|| panic!("{row:?} must not load"));
+                let expected_error = match row {
+                    Exit::InitFails => matches!(error, ClapError::PluginInitFailed),
+                    Exit::PortsUnreadable => matches!(error, ClapError::AudioPortNoInfo { .. }),
+                    Exit::RequiresRealtime => matches!(error, ClapError::RequiresRealtime { .. }),
+                    Exit::RefusesOffline => matches!(error, ClapError::OfflineRefused { .. }),
+                    Exit::Loads => false,
+                };
+                assert!(expected_error, "{row:?} failed as {error}");
+                assert_eq!(entry_lifecycle(), lifecycle, "{row:?}");
+                assert_eq!(
+                    *DESTROYED_ON.lock().unwrap(),
+                    Some(std::thread::current().id()),
+                    "{row:?} destroys on the thread that loaded it"
+                );
+                assert_eq!(
+                    *PUMPED_AT_DESTROY.lock().unwrap(),
+                    Some(false),
+                    "{row:?} never joined the pump"
+                );
+                assert!(
+                    RUN_LOOP.lock().unwrap().is_some(),
+                    "{row:?} reached init, so it had a run loop to leave behind"
+                );
+                assert!(
+                    observed_run_loop().is_none(),
+                    "{row:?} left its run loop alive — the pump still holds it"
+                );
+            }
+        }
+
+        #[test]
+        fn a_loaded_instance_is_pumped_until_its_drop_and_then_released() {
+            let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+            let wrapper = load(Exit::Loads, ProcessMode::Realtime).expect("the fake loads");
+
+            let run_loop: Arc<dyn ServicedRunLoop> =
+                observed_run_loop().expect("a live instance keeps its run loop");
+            assert!(
+                is_pumped(&run_loop),
+                "a constructed instance joins the pump"
+            );
+            drop(run_loop);
+
+            drop(wrapper);
+            assert_eq!(
+                *PUMPED_AT_DESTROY.lock().unwrap(),
+                Some(false),
+                "the instance leaves the pump before it is destroyed"
+            );
+            assert_eq!(
+                entry_lifecycle(),
+                [
+                    "plugin_init",
+                    "plugin_activate",
+                    "plugin_deactivate",
+                    "plugin_destroy",
+                    "entry_deinit",
+                ]
+            );
+            assert!(
+                observed_run_loop().is_none(),
+                "a dropped instance leaves the pump"
+            );
+        }
     }
 
     // ── Plugin-initiated host requests: editor resize + state dirty ─────
