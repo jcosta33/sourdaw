@@ -62,6 +62,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),
     activateExternalPlugin: pluginHostMocks.activateExternalPlugin,
     unloadPlugin: pluginHostMocks.unloadPlugin,
+    unloadPluginCarryingLiveState: pluginHostMocks.unloadPlugin,
 }));
 
 const presetDevice = {

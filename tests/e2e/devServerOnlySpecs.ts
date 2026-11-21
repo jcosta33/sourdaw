@@ -35,6 +35,7 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/pianoRollDockAcceptance.spec.ts',
     'tests/e2e/punchLoopTakeAcceptance.spec.ts',
     'tests/e2e/projectWorkingView.spec.ts',
+    'tests/e2e/sidechainCompressorOfflineParity.spec.ts',
     'tests/e2e/smoke.spec.ts',
     'tests/e2e/spatialPannerArrangementTestId.spec.ts',
     'tests/e2e/transientOnsetRead.spec.ts',

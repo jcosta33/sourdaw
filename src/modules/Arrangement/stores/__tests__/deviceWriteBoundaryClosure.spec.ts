@@ -1118,14 +1118,22 @@ const DEVICE_DATA_COUNTS = {
     executable: {
         // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
         'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
+        // Count provenance: measured 3 — the restore and write projectors and the
+        // projector-table type each name a detached `devices: Device[]` chain
+        // parameter. Pure projections over a passed-in chain; nothing is published.
+        'src/modules/Arrangement/models/DeviceChainProjectorByActionType.ts': 3,
         // The typed patch helpers operate on detached chains. Toaster's kit
         // snapshots declare two empty scalar footprints.
-        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 6,
-        // Count provenance: measured 5/1/2 — pure working-owner snapshots,
-        // preset reconstruction and current-owner decoding. These return values
-        // and never publish project state.
-        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 5,
+        'src/modules/Arrangement/models/DeviceChainProjectors.ts': 6,
+        // Count provenance: measured 3 — the empty working-owner parameter map,
+        // plus the two snapshot projections of owner and source devices. These
+        // return values and never publish project state.
+        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 3,
         'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        // Count provenance: measured 2 — the `Owner` type's `devices` field and
+        // the owner pushed from a track's devices, both moved unchanged out of
+        // DevicePatchWritePlan. Pure owner projection; nothing is published.
+        'src/modules/Arrangement/models/PlannedOwnerProjection.ts': 2,
         'src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts': 2,
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
