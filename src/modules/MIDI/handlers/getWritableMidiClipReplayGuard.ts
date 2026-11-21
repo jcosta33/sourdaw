@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { classifyMidiReplayProducer } from '../useCases/midiNoteTransforms/classifyMidiReplayProducer';
@@ -63,7 +63,7 @@ export function getWritableMidiClipReplayGuardForBatch(
     }
     if (liveTarget.status === 'found') {
         const { track, clip } = liveTarget;
-        if (track.kind !== 'midi' || clip.type !== 'midi' || track.frozen === true || clip.locked === true) {
+        if (track.kind !== 'midi' || clip.type !== 'midi' || isTrackFrozenOrFreezing(track) || clip.locked === true) {
             return null;
         }
         return {
@@ -84,7 +84,7 @@ export function getWritableMidiClipReplayGuardForBatch(
     const trackId = clipProducer.payload.trackId;
     const liveTrack = trackStore.value?.tracks.find((track) => track.id === trackId);
     if (liveTrack) {
-        if (liveTrack.kind !== 'midi' || liveTrack.frozen === true) {
+        if (liveTrack.kind !== 'midi' || isTrackFrozenOrFreezing(liveTrack)) {
             return null;
         }
     } else {

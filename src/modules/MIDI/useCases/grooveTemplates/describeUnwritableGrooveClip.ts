@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
 
 function findClip(clipId: string) {
     for (const track of trackStore.value?.tracks ?? []) {
@@ -27,6 +27,9 @@ export function describeUnwritableGrooveClip(clipId: string): string {
     }
     if (found.track.frozen === true) {
         return `Clip "${clipId}" is on a frozen track`;
+    }
+    if (isTrackFrozenOrFreezing(found.track)) {
+        return `Clip "${clipId}" is on a track that is still freezing`;
     }
     return `Clip "${clipId}" cannot take a groove`;
 }

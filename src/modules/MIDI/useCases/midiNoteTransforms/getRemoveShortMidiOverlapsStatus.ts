@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -23,7 +23,7 @@ export function getRemoveShortMidiOverlapsStatus(
         !state ||
         !currentNotes ||
         transportStore.value?.tempo !== input.expectedTempo ||
-        (track.frozen === true) !== input.expectedTrackFrozen ||
+        isTrackFrozenOrFreezing(track) !== input.expectedTrackFrozen ||
         (clip.locked === true) !== input.expectedClipLocked ||
         !midiNotesEqual(currentNotes, input.expectedNotes)
     ) {

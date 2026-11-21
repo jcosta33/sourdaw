@@ -56,6 +56,7 @@ export type { ClipWriteTargetResolution } from './resolveEligibleClipWriteTarget
 export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
+export { isTrackFrozenOrFreezing } from './isTrackFrozenOrFreezing';
 export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibility';
 
 // Effective-audibility read model (mute ∪ solo): projects the authoritative live
