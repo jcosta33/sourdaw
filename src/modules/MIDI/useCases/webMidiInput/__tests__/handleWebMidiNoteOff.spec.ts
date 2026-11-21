@@ -73,6 +73,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         getCompensationDelay: () => 0,
         getDefaultBendRangeSemitones: () => 48,
         findMidiTransformDevice: actual.findMidiTransformDevice,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
         getFactoryDrumKitByIndex: () => null,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isMidiTransformDevice: actual.isMidiTransformDevice,

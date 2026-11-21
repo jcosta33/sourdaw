@@ -5,6 +5,9 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 import { classifyNoteReceivingDevice } from '../classifyNoteReceivingDevice';
 import { DRUM_KIT_DEFAULT_LEVEL_DB } from '../drumKitDefaultLevelDb';
 import { findMidiTransformDevice } from '../findMidiTransformDevice';
+import { findPadOutputHost } from '../findPadOutputHost';
+import { hasPadOutputHost } from '../hasPadOutputHost';
+import { hostsPadOutputs } from '../hostsPadOutputs';
 import { isBuiltinSynthDevice } from '../isBuiltinSynthDevice';
 import { isBypassedNoteReceiver } from '../isBypassedNoteReceiver';
 import { isDrumDevice } from '../isDrumDevice';
@@ -52,6 +55,42 @@ describe('deviceCapabilities wrappers', () => {
         ['', false],
     ])('answers whether %j is a MIDI-transform device', (deviceType, expected) => {
         expect(isMidiTransformDevice(deviceType)).toBe(expected);
+    });
+
+    it.each([
+        ['toaster', true],
+        ['yeast', false],
+        ['builtin-drum-kit', false],
+        ['builtin-drum-machine-808', false],
+        ['fermenter', false],
+        ['builtin-eq', false],
+        ['faust-organ', false],
+        ['not-a-device', false],
+        ['', false],
+        ['toaster-x', false],
+        ['Toaster', false],
+        ['constructor', false],
+        ['__proto__', false],
+    ])('answers whether %j hosts pad outputs', (deviceType, expected) => {
+        expect(hostsPadOutputs(deviceType)).toBe(expected);
+    });
+
+    it('finds the pad-output host, not the first device, on a chain', () => {
+        const eq = { id: 'a', type: 'builtin-eq' };
+        const toaster = { id: 'b', type: 'toaster' };
+        const yeast = { id: 'c', type: 'yeast' };
+        expect(findPadOutputHost([eq, toaster, yeast])).toBe(toaster);
+        expect(hasPadOutputHost([eq, toaster, yeast])).toBe(true);
+    });
+
+    it('finds no pad-output host on a chain without one', () => {
+        const devices = [
+            { id: 'a', type: 'yeast' },
+            { id: 'b', type: 'builtin-drum-kit' },
+        ];
+        expect(findPadOutputHost(devices)).toBeUndefined();
+        expect(hasPadOutputHost(devices)).toBe(false);
+        expect(hasPadOutputHost([])).toBe(false);
     });
 
     it('answers a device type built at run time', () => {
