@@ -11,8 +11,8 @@ function isClipOnFrozenTrack(clipId: string): boolean {
 
 /**
  * A frozen track keeps playing its frozen buffer, so a note edit would be silent
- * and the freeze would never go stale. Mirrors the piano roll's refusal
- * (`getWritableMidiClipReplayGuard`). Returns true when the edit must not run
+ * and the freeze would never go stale. Matches the action-route guard
+ * `getWritableMidiClipReplayGuard`. Returns true when the edit must not run
  * and has warned the user.
  */
 export function refuseInlineMidiEditOnFrozenTrack(clipId: string): boolean {

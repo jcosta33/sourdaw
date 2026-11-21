@@ -11,15 +11,15 @@ type CommitInlineMidiNoteMoveInput = {
 };
 
 export function commitInlineMidiNoteMove(input: CommitInlineMidiNoteMoveInput): boolean {
-    if (refuseInlineMidiEditOnFrozenTrack(input.clipId)) {
-        return false;
-    }
     const previousNotes = getNotesForClip(input.clipId);
     const targetNote = previousNotes.find((note) => note.id === input.noteId);
     if (!targetNote) {
         return false;
     }
     if (targetNote.pitch === input.pitch && targetNote.startBeat === input.startBeat) {
+        return false;
+    }
+    if (refuseInlineMidiEditOnFrozenTrack(input.clipId)) {
         return false;
     }
 

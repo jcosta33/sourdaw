@@ -100,6 +100,55 @@ describe('inline MIDI note commits on a frozen track', () => {
         });
     });
 
+    describe('when a frozen track sits beside an unfrozen track', () => {
+        const CLIP_2_NOTES: Note[] = [{ id: 'm1', pitch: 55, startBeat: 0, duration: 0.5, velocity: 100 }];
+
+        beforeEach(() => {
+            mocks.tracks = [
+                { id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] },
+                { id: 'track-2', frozen: false, clips: [{ id: 'clip-2' }] },
+            ];
+            mocks.notesByClipId = new Map([
+                ['clip-1', ORIGINAL_NOTES],
+                ['clip-2', CLIP_2_NOTES],
+            ]);
+        });
+
+        it('creates, moves and deletes notes on the unfrozen clip without warning', () => {
+            const created = commitInlineMidiNoteCreate({
+                clipId: 'clip-2',
+                pitch: 67,
+                startBeat: 3,
+                duration: 0.5,
+                velocity: 100,
+            });
+            expect(created).toBe(true);
+            expect(mocks.notesByClipId.get('clip-2')).toHaveLength(2);
+
+            const moved = commitInlineMidiNoteMove({ clipId: 'clip-2', noteId: 'm1', pitch: 72, startBeat: 4 });
+            expect(moved).toBe(true);
+            expect(mocks.notesByClipId.get('clip-2')?.[0]).toMatchObject({ id: 'm1', pitch: 72, startBeat: 4 });
+
+            const deleted = commitInlineMidiNoteDelete({ clipId: 'clip-2', noteId: 'm1' });
+            expect(deleted).toBe(true);
+            expect(mocks.notesByClipId.get('clip-2')).toHaveLength(1);
+
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
+        });
+    });
+
+    describe('a move to the same position on a frozen track', () => {
+        it('is a silent no-op without a warning', () => {
+            seedClip(true);
+
+            const committed = commitInlineMidiNoteMove({ clipId: 'clip-1', noteId: 'n1', pitch: 60, startBeat: 1 });
+
+            expect(committed).toBe(false);
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+    });
+
     describe('when the track is not frozen', () => {
         beforeEach(() => {
             seedClip(false);
