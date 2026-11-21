@@ -20,6 +20,8 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
