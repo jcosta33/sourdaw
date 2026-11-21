@@ -16,17 +16,25 @@
 //! visits every engine-owned instance and lets each answer whether it was the
 //! one that flagged.
 //!
-//! The watcher is a dedicated non-RT thread that performs the deactivate /
-//! reactivate / re-query through the `SharedHostedPlugin` control seam, emits
-//! `plugin-latency-changed` to the webview and aims the graph's compensation at
-//! the new figure.
+//! The watcher is a dedicated non-RT thread that claims the instance through the
+//! `SharedHostedPlugin` control seam and lends the deactivate / reactivate /
+//! re-query to the shell's UI thread, emits `plugin-latency-changed` to the
+//! webview and aims the graph's compensation at the new figure. The restart
+//! crosses because both formats bind it there: CLAP marks `activate` and
+//! `deactivate` `[main-thread]`, and VST3 binds `setActive` to the UI thread.
+//! The claim stays on the watcher, the rule `host/ui_thread.rs` keeps the carry
+//! acyclic by. With no UI thread registered the restart is refused and reported,
+//! never run here and never parked.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::LatencyChange;
+use crate::host::native_bridge::{LatencyChange, SharedHostedPlugin};
+use crate::host::plugin_host_requests::registered_ui_thread;
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
 use daw_plugin_host::take_pending_latency_requery_signal;
+use daw_plugin_host::HostedRuntime;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -53,6 +61,9 @@ const SWEEP_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
 /// only how long a `[thread-safe]` restart may wait for its re-query — a
 /// plugin that asked to restart is owed a latency correction, not a deadline.
 const IDLE_HINT_POLL: Duration = Duration::from_millis(100);
+
+/// Why a flagged latency restart was not run: there is no thread it may run on.
+const NO_UI_THREAD: &str = "no UI thread is registered to run its latency restart on";
 
 /// Payload of `plugin-latency-changed`. snake_case on the wire, matching the
 /// other plugin DTOs (`PluginInstance`).
@@ -172,22 +183,42 @@ fn publish_compensation(engine: &Engine, instance_id: &str, compensation: Latenc
     }
 }
 
+/// Run the latency restart and re-query of `plugin` on `ui`, and report what it
+/// answered. The caller holds the instance's control claim on its own thread;
+/// only the plugin call crosses, so the UI thread never waits on a gate.
+fn requery_on_ui_thread(
+    ui: &dyn UiThread,
+    plugin: &mut HostedRuntime,
+) -> Result<Option<LatencyChange>, String> {
+    lend_on_ui_thread(ui, plugin, SharedHostedPlugin::refresh_latency_change)?
+}
+
 /// Re-query one woken instance, and report what it answered.
 ///
-/// The channel wake's body: the poll deactivates and reactivates through the
-/// control seam, a real change becomes the `plugin-latency-changed` event, and
+/// The channel wake's body: the poll deactivates and reactivates on the UI
+/// thread under the watcher's control claim, a real change becomes the `plugin-latency-changed` event, and
 /// the graph's compensation is aimed at the fresh figure. The event precedes
 /// the compensation because the frontend's own latency read is what a user
 /// waits on, and the graph command is a push onto a ring the audio thread
 /// drains on its own schedule anyway.
+///
+/// With no UI thread the restart is refused rather than run on this thread: the
+/// refusal is reported like any failed re-query, the instance's flag stays
+/// standing, and nothing is queued to try again.
 fn serve_channel_wake(
     instance_id: &str,
-    runtime: &crate::host::native_bridge::SharedHostedPlugin,
+    runtime: &SharedHostedPlugin,
+    ui: Option<&dyn UiThread>,
     engine_plugins: &EnginePlugins,
     engine: &Engine,
     events: &dyn EventSink,
 ) {
-    let refreshed = runtime.poll_latency_change(CONTROL_TIMEOUT);
+    let refreshed = match ui {
+        Some(ui) => {
+            runtime.with_control(CONTROL_TIMEOUT, |plugin| requery_on_ui_thread(ui, plugin))
+        }
+        None => Err(NO_UI_THREAD.to_string()),
+    };
     if let Some(payload) = latency_change_payload(instance_id, &refreshed) {
         events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
     }
@@ -211,16 +242,32 @@ fn serve_channel_wake(
 /// the same retry rule the drain tick's own hint legs follow. The event and
 /// the compensation are the channel wake's own, through the same payload and
 /// compensation rules, so one ask cannot be answered two ways.
+///
+/// With no UI thread the sweep is refused and reported once, and the hint is
+/// not raised again: no later sweep could do better, and re-raising would spin
+/// the watcher on an ask it can never carry.
 fn service_pending_restarts(
+    ui: Option<&dyn UiThread>,
     engine_plugins: &EnginePlugins,
     engine: &Engine,
     events: &dyn EventSink,
 ) {
-    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "latency requery") {
-        let refreshed = runtime.try_with_control(
-            SWEEP_CONTROL_TIMEOUT,
-            crate::host::native_bridge::SharedHostedPlugin::refresh_latency_change,
+    let Some(ui) = ui else {
+        eprintln!(
+            "[Plugin] a plugin asked for a latency restart, but {NO_UI_THREAD}; \
+             it is not carried until the plugin asks again"
         );
+        return;
+    };
+    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "latency requery") {
+        // The hint names no instance, so most visits find nothing flagged; only
+        // a flagged one is worth holding its claim across a UI-thread hop.
+        let refreshed = runtime.try_with_control(SWEEP_CONTROL_TIMEOUT, |plugin| {
+            if !plugin.has_pending_latency_change() {
+                return Ok(None);
+            }
+            requery_on_ui_thread(ui, plugin)
+        });
 
         match &refreshed {
             Ok(_) => {
@@ -290,11 +337,20 @@ fn serve_wakes_and_hints(
                     // Unloaded between the plugin's callback and this wake.
                     continue;
                 };
-                serve_channel_wake(&instance_id, &runtime, engine_plugins, engine, events);
+                let ui = registered_ui_thread();
+                serve_channel_wake(
+                    &instance_id,
+                    &runtime,
+                    ui.as_deref(),
+                    engine_plugins,
+                    engine,
+                    events,
+                );
             }
             Err(RecvTimeoutError::Timeout) => {
                 if take_pending_latency_requery_signal() {
-                    service_pending_restarts(engine_plugins, engine, events);
+                    let ui = registered_ui_thread();
+                    service_pending_restarts(ui.as_deref(), engine_plugins, engine, events);
                 }
             }
             Err(RecvTimeoutError::Disconnected) => break,
@@ -538,7 +594,12 @@ mod tests {
             daw_engine::engine_handle_for_command_capture(8).unwrap();
         let engine: Engine = Arc::new(Mutex::new(Some(handle)));
 
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
 
         assert_eq!(
             sink.events.lock().expect("event log").as_slice(),
@@ -577,10 +638,20 @@ mod tests {
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));
 
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
         assert_eq!(sink.events.lock().expect("event log").len(), 1);
 
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
         assert_eq!(
             sink.events.lock().expect("event log").len(),
             1,
@@ -596,7 +667,12 @@ mod tests {
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));
 
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
 
         assert!(sink.events.lock().expect("event log").is_empty());
     }
@@ -614,7 +690,12 @@ mod tests {
         let engine: Engine = Arc::new(Mutex::new(None));
         take_pending_latency_requery_signal();
 
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
 
         assert!(
             !take_pending_latency_requery_signal(),
@@ -635,11 +716,179 @@ mod tests {
 
         // Non-RT control holds the instance's gate for the whole visit.
         let _control_guard = runtime.try_claim_control().expect("a free control gate");
-        service_pending_restarts(&engine_plugins, &engine, &sink);
+        service_pending_restarts(
+            Some(&InlineUiThread::default()),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
 
         assert!(
             take_pending_latency_requery_signal(),
             "a live instance whose flag is still standing re-raises the hint"
+        );
+    }
+
+    // ── The restart runs on the UI thread (#6640) ──────────────────────────
+
+    /// A UI thread that is never the caller's, and runs what it is handed
+    /// inline while counting it.
+    #[derive(Default)]
+    struct InlineUiThread {
+        lent: std::sync::atomic::AtomicUsize,
+    }
+
+    impl InlineUiThread {
+        fn lent(&self) -> usize {
+            self.lent.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl UiThread for InlineUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), String> {
+            self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.run();
+            Ok(())
+        }
+    }
+
+    fn latency_events(sink: &RecordingEventSink) -> usize {
+        sink.events
+            .lock()
+            .expect("event log")
+            .iter()
+            .filter(|(event, _)| event == PLUGIN_LATENCY_CHANGED_EVENT)
+            .count()
+    }
+
+    #[test]
+    fn a_channel_wake_runs_the_latency_restart_on_the_registered_ui_thread() {
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        let ui = InlineUiThread::default();
+
+        serve_channel_wake(
+            "inst-1",
+            &runtime,
+            Some(&ui),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
+
+        assert_eq!(ui.lent(), 1, "the restart is lent to the UI thread");
+        assert_eq!(latency_events(&sink), 1, "the restart ran and was reported");
+    }
+
+    #[test]
+    fn a_sweep_runs_the_latency_restart_on_the_registered_ui_thread() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let (engine_plugins, _runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        let ui = InlineUiThread::default();
+
+        service_pending_restarts(Some(&ui), &engine_plugins, &engine, &sink);
+
+        assert_eq!(ui.lent(), 1, "the restart is lent to the UI thread");
+        assert_eq!(latency_events(&sink), 1, "the restart ran and was reported");
+    }
+
+    /// An instance with nothing flagged is not lent: holding its claim across a
+    /// UI-thread hop would keep the audio thread off it for nothing.
+    #[test]
+    fn a_sweep_lends_only_the_flagged_instance_to_the_ui_thread() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let (engine_plugins, _flagged) = sweep_fixture(441, true);
+        let (unflagged_plugins, _unflagged) = sweep_fixture(0, false);
+        let mut unflagged = unflagged_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("inst-1")
+            .expect("the fixture holds its instance");
+        unflagged.engine_plugin_id = 12;
+        engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .insert("inst-2".to_string(), unflagged);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        let ui = InlineUiThread::default();
+
+        service_pending_restarts(Some(&ui), &engine_plugins, &engine, &sink);
+
+        assert_eq!(ui.lent(), 1, "only the flagged instance crosses");
+        assert_eq!(latency_events(&sink), 1, "and its change is reported");
+    }
+
+    /// With no UI thread the restart is refused, not run on the watcher: the
+    /// flag the plugin raised is still standing for a later wake to carry.
+    #[test]
+    fn a_channel_wake_with_no_ui_thread_runs_nothing_and_keeps_the_flag() {
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+
+        serve_channel_wake("inst-1", &runtime, None, &engine_plugins, &engine, &sink);
+        assert_eq!(
+            latency_events(&sink),
+            0,
+            "nothing ran, so nothing is reported"
+        );
+
+        let ui = InlineUiThread::default();
+        serve_channel_wake(
+            "inst-1",
+            &runtime,
+            Some(&ui),
+            &engine_plugins,
+            &engine,
+            &sink,
+        );
+        assert_eq!(
+            latency_events(&sink),
+            1,
+            "the refused restart's flag was left for the next wake"
+        );
+    }
+
+    /// The sweep refuses the same way, and does not raise the hint again: no
+    /// later sweep has a thread to run it on either, so re-raising would spin.
+    #[test]
+    fn a_sweep_with_no_ui_thread_runs_nothing_and_does_not_reraise_the_hint() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let (engine_plugins, _runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        take_pending_latency_requery_signal();
+
+        service_pending_restarts(None, &engine_plugins, &engine, &sink);
+
+        assert_eq!(
+            latency_events(&sink),
+            0,
+            "nothing ran, so nothing is reported"
+        );
+        assert!(
+            !take_pending_latency_requery_signal(),
+            "an ask no thread can carry must not keep the watcher spinning"
+        );
+
+        let ui = InlineUiThread::default();
+        service_pending_restarts(Some(&ui), &engine_plugins, &engine, &sink);
+        assert_eq!(ui.lent(), 1, "a later sweep lends the restart");
+        assert_eq!(
+            latency_events(&sink),
+            1,
+            "the refused sweep ran nothing and left the flag for the next one"
         );
     }
 }
