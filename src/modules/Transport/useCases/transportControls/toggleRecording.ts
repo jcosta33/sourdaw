@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { isFrozenTrackRefusingRecording } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
@@ -505,8 +506,9 @@ async function beginActualRecording(
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
-    const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
+    const audioTracks = (getTrackStoreState()?.tracks ?? []).filter(
+        (track) => track.armed && track.kind === 'audio' && !isFrozenTrackRefusingRecording(track)
+    );
     let clips: ReturnType<typeof startRecording> = [];
 
     const captureClocks = createManualCaptureClocks(ctx, transportHold);

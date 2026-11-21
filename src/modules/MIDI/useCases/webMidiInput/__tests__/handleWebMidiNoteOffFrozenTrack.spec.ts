@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
+
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 import type { RecordingMidiAdmission } from '#/modules/Arrangement/stores';
@@ -133,6 +135,7 @@ const admission: RecordingMidiAdmission = {
 
 describe('handleWebMidiNoteOff on an armed track that is frozen (issue #7239)', () => {
     beforeEach(() => {
+        activeRecordingRef.current = [];
         activeNotes.clear();
         channelToNote.clear();
         get_track_strip.mockReset();
@@ -158,13 +161,24 @@ describe('handleWebMidiNoteOff on an armed track that is frozen (issue #7239)', 
         expect(append).not.toHaveBeenCalled();
     });
 
-    it('appends nothing for an admitted take note when the track froze after the note-on', async () => {
+    it('keeps an admitted note in the take that was open when the track froze', async () => {
         const append = vi.fn<AppendRecordedMidiNote>();
+        activeRecordingRef.current = ['clip-1'];
         recording_admission.get.mockReturnValue(admission);
         holdAdmittedNote(admission.id);
 
         await handleWebMidiNoteOff._factory(make_dependencies(true, append))(0, 60, 0);
 
-        expect(append).not.toHaveBeenCalled();
+        expect(append).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'clip-1' }));
+    });
+
+    it('keeps a played note in the take that was open when the track froze', async () => {
+        const append = vi.fn<AppendRecordedMidiNote>();
+        activeRecordingRef.current = ['clip-1'];
+        holdNote();
+
+        await handleWebMidiNoteOff._factory(make_dependencies(true, append))(0, 60, 0);
+
+        expect(append).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'clip-1' }));
     });
 });

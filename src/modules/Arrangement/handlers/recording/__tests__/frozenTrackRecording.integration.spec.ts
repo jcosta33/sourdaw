@@ -1,18 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
-import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
-    undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -22,12 +20,6 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
-import {
-    type ConfirmPayload,
-    type NotifyPayload,
-    type PromptPayload,
-    setNotificationEventBus,
-} from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -36,18 +28,8 @@ import { initStalenessDetection } from '../../../useCases/freezeBounce/initStale
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
-import { handleArmTrack } from '../../track/armTrack';
 
 const TRACK_ID = 'track-midi';
-
-type NotificationEvents = {
-    'ui.notify': NotifyPayload;
-    'ui.confirm': ConfirmPayload;
-    'ui.prompt': PromptPayload;
-};
-
-let notifications: NotifyPayload[] = [];
-let unsubscribeFromNotifications: () => void = () => undefined;
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -94,12 +76,6 @@ describe('recording onto a frozen track (issue #7239)', () => {
         registerProjectSlotProjections();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        const notificationEventBus = createEventBus<NotificationEvents>();
-        notifications = [];
-        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
-            notifications.push(notification);
-        });
-        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -114,7 +90,6 @@ describe('recording onto a frozen track (issue #7239)', () => {
     });
 
     afterEach(() => {
-        unsubscribeFromNotifications();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -125,62 +100,12 @@ describe('recording onto a frozen track (issue #7239)', () => {
         removeCrdtDoc('root');
     });
 
-    it('refuses to arm a frozen track and arms it again once it is unfrozen', async () => {
+    it('still lets a frozen track be armed, so unfreezing needs no second arm', async () => {
         freezeTrackInStore();
 
-        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
-
-        expect(readTrack().armed).toBe(false);
-        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
-        expect(notifications.map((notification) => notification.message)).toEqual([
-            'Unfreeze the track to record on it.',
-        ]);
-
-        updateTrack(TRACK_ID, (track) => ({
-            ...track,
-            frozen: false,
-            frozenBufferId: undefined,
-            freezeState: { status: 'unfrozen' },
-        }));
-        flushAutomergeStorageWrites();
         await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
 
         expect(readTrack().armed).toBe(true);
-    });
-
-    it('still disarms a track that froze while armed', async () => {
-        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
-        freezeTrackInStore();
-
-        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } });
-
-        expect(readTrack().armed).toBe(false);
-        expect(notifications).toEqual([]);
-    });
-
-    it('re-arms through Undo of a disarm on a frozen track without refusing or warning', async () => {
-        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: true } });
-        freezeTrackInStore();
-        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } });
-        expect(readTrack().armed).toBe(false);
-
-        await undo();
-        flushAutomergeStorageWrites();
-
-        expect(readTrack().armed).toBe(true);
-        expect(notifications).toEqual([]);
-    });
-
-    it('projects arming a frozen track in an isolated preview without refusing or warning', async () => {
-        freezeTrackInStore();
-
-        const result = await handleArmTrack.execute(
-            { type: 'armTrack', payload: { trackId: TRACK_ID, armed: true, midiInputOwnerId: 'preview-owner' } },
-            { actions: [], actionIndex: 0, executionMode: 'isolated-preview' }
-        );
-
-        expect(result?.status).toBe('written');
-        expect(notifications).toEqual([]);
     });
 
     it('opens no recording clip on an armed track that is frozen', () => {

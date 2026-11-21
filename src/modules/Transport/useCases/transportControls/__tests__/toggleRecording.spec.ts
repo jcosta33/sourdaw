@@ -1474,6 +1474,27 @@ describe('toggleRecording', () => {
             expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         });
 
+        it('starts hardware capture only for the armed audio track that is not frozen (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 'track-frozen', kind: 'audio', armed: true, frozen: true },
+                    { id: 'track-live', kind: 'audio', armed: true },
+                ],
+            });
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+            expect(mocks.startAudioRecording.mock.calls[0]?.[0]).toBe('track-live');
+        });
+
         it('admits recording with a single armed MIDI track — takes are not audio-only', async () => {
             vi.mocked(getTransportState).mockReturnValue({
                 ...defaultTransportState,
