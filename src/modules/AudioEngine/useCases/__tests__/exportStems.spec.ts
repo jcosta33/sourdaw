@@ -942,13 +942,25 @@ describe('exportStems', () => {
             expect(scheduleCountFor('kick')).toBe(1);
         });
 
-        it('does no sidechain work at all for a project with no routes', async () => {
+        it('wires no keys for a project with no routes but still prepares the unkeyed compressor worklet', async () => {
             offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
             primeStemRender();
 
             await exportStems(4);
 
             expect(offlineRenderMocks.connectOfflineSidechainRoutes).not.toHaveBeenCalled();
+            // Only 'bass' hosts a sidechain compressor, so only its stem prepares the worklet.
+            expect(offlineRenderMocks.prepareOfflineSidechainCompressor).toHaveBeenCalledTimes(1);
+        });
+
+        it('prepares no sidechain worklet when no stem hosts a sidechain compressor', async () => {
+            const tracks = keyedPair();
+            tracks[1]!.devices = [];
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(tracks));
+            primeStemRender();
+
+            await exportStems(4);
+
             expect(offlineRenderMocks.prepareOfflineSidechainCompressor).not.toHaveBeenCalled();
         });
 

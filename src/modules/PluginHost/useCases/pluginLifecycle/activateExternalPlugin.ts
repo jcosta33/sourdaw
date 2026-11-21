@@ -25,7 +25,7 @@ import {
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
-import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { pendingKeyedUnloadGenerations, pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { PENDING_UNLOAD_WAIT_TIMEOUT_MS } from './pendingUnloadWaitTimeout';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
@@ -165,13 +165,28 @@ function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnlo
  * Activate once the queued unload of the same instance settles, so the
  * activation reflects the instance the unload leaves. An unload still pending
  * at the deadline keeps the instance and its pending entry; a later activation
- * waits again.
+ * waits again. A later unload of the instance or a runtime rebuild admitted
+ * during the wait decided the instance's fate instead, so the waiter does not
+ * reload: reloading would leave a plugin loaded that nothing in the project
+ * holds (Remove, Undo, Redo).
  */
 async function activateAfterPendingUnload(
     input: ActivateExternalPluginInput,
     pendingUnload: Promise<void>
 ): Promise<ExternalPluginActivationResult> {
+    const unloadGeneration = pendingKeyedUnloadGenerations.get(input.instanceId);
+    const activationEpoch = externalPluginActivationEpoch.current;
     if ((await waitForPendingUnload(pendingUnload)) === 'settled') {
+        if (
+            pendingKeyedUnloadGenerations.get(input.instanceId) !== unloadGeneration ||
+            externalPluginActivationEpoch.current !== activationEpoch
+        ) {
+            return {
+                status: 'failed',
+                stage: 'load',
+                reason: 'External plugin activation was superseded by a later unload',
+            };
+        }
         return activateExternalPlugin(input);
     }
     const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;

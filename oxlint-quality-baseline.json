@@ -4599,7 +4599,7 @@
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/readNamedTracks.ts": {
         "typescript/no-non-null-assertion": {
-            "count": 3
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/lastCommitContinuation/retargetCommittedRecipe.ts": {
@@ -5895,11 +5895,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/models/DeviceChainActionProjection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/models/DeviceParameter.ts": {
         "typescript/no-non-null-assertion": {
             "count": 1
@@ -5907,7 +5902,7 @@
     },
     "src/modules/Arrangement/models/DevicePatchWritePlan.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/Arrangement/models/InlineMidiGeometry.ts": {
@@ -8642,16 +8637,16 @@
     },
     "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": {
         "eslint/complexity": {
-            "count": 4
+            "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 5
+            "count": 3
         },
         "eslint/max-params": {
             "count": 5
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-positional-boolean-flags": {
             "count": 1
@@ -8669,11 +8664,6 @@
     },
     "src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts": {
         "eslint/max-params": {
-            "count": 1
-        }
-    },
-    "src/modules/AudioEngine/repositories/devices/dynamics/__tests__/createSidechainCompressorFallback.spec.ts": {
-        "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
         }
     },
@@ -9887,11 +9877,6 @@
     },
     "src/modules/AudioEngine/useCases/offlineRender/renderWithTimeout.ts": {
         "sourdaw-craft/no-silent-catch": {
-            "count": 1
-        }
-    },
-    "src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixPlan.ts": {
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
@@ -14751,14 +14736,6 @@
             "count": 4
         }
     },
-    "src/modules/MIDI/useCases/grooveTemplates/projectGrooveTemplateState.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "typescript/switch-exhaustiveness-check": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts": {
         "eslint/complexity": {
             "count": 1
@@ -18802,7 +18779,7 @@
             "count": 2
         },
         "sourdaw-craft/no-silent-catch": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/WorkspaceShell/presentations/views/Transport/WindowControls.tsx": {
