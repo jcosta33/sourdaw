@@ -2,7 +2,7 @@ import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 
 import { type ModulatorMapping } from '../../models/Modulator';
 
-import { getModulationDependencies } from './getModulationDependencies';
+import { modulationDependenciesPort } from './modulationDependencies';
 import { modulationParamSlew } from './modulationSlewState';
 import { resolveModulationBinding } from './resolveModulationBinding';
 
@@ -18,16 +18,6 @@ import { resolveModulationBinding } from './resolveModulationBinding';
  * several removed mappings target it.
  */
 export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): void {
-    // If the engine seam has not been wired (e.g. before app bootstrap, or in a
-    // unit test that never calls `setModulationDependencies`), there is no engine
-    // to revert and nothing was ever written; removal is then a pure store edit.
-    let deps: ReturnType<typeof getModulationDependencies>;
-    try {
-        deps = getModulationDependencies();
-    } catch {
-        return;
-    }
-
     const reverted = new Set<string>();
     for (const mapping of mappings) {
         const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
@@ -46,6 +36,8 @@ export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): voi
         // Drop the slew slot so a future re-add of this destination seeds fresh
         // at its new target rather than ramping from this now-stale value.
         modulationParamSlew.delete(key);
-        deps.updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, mapping.targetParamId, binding.baseValue);
+        modulationDependenciesPort
+            .read()
+            .updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, mapping.targetParamId, binding.baseValue);
     }
 }

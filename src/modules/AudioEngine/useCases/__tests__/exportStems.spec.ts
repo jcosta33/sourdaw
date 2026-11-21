@@ -964,6 +964,143 @@ describe('exportStems', () => {
             expect(offlineRenderMocks.prepareOfflineSidechainCompressor).not.toHaveBeenCalled();
         });
 
+        describe('a key that is itself sidechain-keyed', () => {
+            const audioTrack = (id: string, devices: unknown[] = []) => ({
+                id,
+                kind: 'audio',
+                disabled: false,
+                muted: false,
+                devices,
+                freezeState: { status: 'unfrozen' },
+            });
+            const compressor = (id: string) => ({ id, type: 'builtin-sidechain-compressor', bypassed: false });
+
+            const stripIds = (input: { trackStripsById: Map<string, unknown> } | undefined) =>
+                Array.from(input?.trackStripsById.keys() ?? []).toSorted();
+
+            const wiringFor = (stemTrackId: string, ownerTrackId: string) =>
+                offlineRenderMocks.connectOfflineSidechainRoutes.mock.calls
+                    .map(
+                        (call) =>
+                            call[0] as {
+                                routes: { sourceTrackId: string; targetTrackId: string }[];
+                                trackStripsById: Map<string, unknown>;
+                            }
+                    )
+                    .find(
+                        (input) =>
+                            input.trackStripsById.has(stemTrackId) &&
+                            input.routes.some((route) => route.targetTrackId === ownerTrackId)
+                    );
+
+            it('builds the key’s own key and wires every hop, so A ducks on the ducked B', async () => {
+                // A is keyed by B, B is keyed by C: live and mixdown duck B on C first.
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([
+                        audioTrack('a', [compressor('comp-a')]),
+                        audioTrack('b', [compressor('comp-b')]),
+                        audioTrack('c'),
+                    ])
+                );
+                offlineRenderMocks.sidechainStore.value = {
+                    routes: [
+                        { sourceTrackId: 'b', targetTrackId: 'a', targetDeviceId: 'comp-a' },
+                        { sourceTrackId: 'c', targetTrackId: 'b', targetDeviceId: 'comp-b' },
+                    ],
+                };
+                primeStemRender();
+
+                await exportStems(4);
+
+                const stemA = wiringFor('a', 'a');
+                expect(stripIds(stemA)).toEqual(['a', 'b', 'c']);
+                expect(
+                    stemA?.routes.map((route) => `${route.sourceTrackId}>${route.targetTrackId}`).toSorted()
+                ).toEqual(['b>a', 'c>b']);
+                // Neither key is summed into stem A: only A reaches the destination.
+                for (const keyId of ['b', 'c']) {
+                    const keyStrip = stemA?.trackStripsById.get(keyId) as {
+                        outputNode: { connect: ReturnType<typeof vi.fn> };
+                    };
+                    expect(keyStrip.outputNode.connect).not.toHaveBeenCalled();
+                }
+            });
+
+            it('leaves the stem of the middle track keyed by C alone, as before', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([
+                        audioTrack('a', [compressor('comp-a')]),
+                        audioTrack('b', [compressor('comp-b')]),
+                        audioTrack('c'),
+                    ])
+                );
+                offlineRenderMocks.sidechainStore.value = {
+                    routes: [
+                        { sourceTrackId: 'b', targetTrackId: 'a', targetDeviceId: 'comp-a' },
+                        { sourceTrackId: 'c', targetTrackId: 'b', targetDeviceId: 'comp-b' },
+                    ],
+                };
+                primeStemRender();
+
+                await exportStems(4);
+
+                const stemB = offlineRenderMocks.connectOfflineSidechainRoutes.mock.calls
+                    .map((call) => call[0] as { routes: unknown[]; trackStripsById: Map<string, unknown> })
+                    .find((input) => !input.trackStripsById.has('a') && input.trackStripsById.has('b'));
+                expect(stripIds(stemB)).toEqual(['b', 'c']);
+                expect(stemB?.routes).toHaveLength(1);
+            });
+
+            it('terminates on a keying cycle and builds each track once', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([
+                        audioTrack('a', [compressor('comp-a')]),
+                        audioTrack('b', [compressor('comp-b')]),
+                    ])
+                );
+                offlineRenderMocks.sidechainStore.value = {
+                    routes: [
+                        { sourceTrackId: 'b', targetTrackId: 'a', targetDeviceId: 'comp-a' },
+                        { sourceTrackId: 'a', targetTrackId: 'b', targetDeviceId: 'comp-b' },
+                    ],
+                };
+                primeStemRender();
+
+                await exportStems(4);
+
+                const stemA = wiringFor('a', 'a');
+                expect(stripIds(stemA)).toEqual(['a', 'b']);
+                expect(stemA?.routes).toHaveLength(2);
+                // 'b' is scheduled as its own stem and once as stem A's key; 'a' once as its own stem
+                // and once as stem B's key. Never a third time from the cycle.
+                expect(scheduleCountFor('a')).toBe(2);
+                expect(scheduleCountFor('b')).toBe(2);
+            });
+
+            it('ignores a bypassed compressor on a key, so its own key is not built', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([
+                        audioTrack('a', [compressor('comp-a')]),
+                        audioTrack('b', [{ ...compressor('comp-b'), bypassed: true }]),
+                        audioTrack('c'),
+                    ])
+                );
+                offlineRenderMocks.sidechainStore.value = {
+                    routes: [
+                        { sourceTrackId: 'b', targetTrackId: 'a', targetDeviceId: 'comp-a' },
+                        { sourceTrackId: 'c', targetTrackId: 'b', targetDeviceId: 'comp-b' },
+                    ],
+                };
+                primeStemRender();
+
+                await exportStems(4);
+
+                const stemA = wiringFor('a', 'a');
+                expect(stripIds(stemA)).toEqual(['a', 'b']);
+                expect(stemA?.routes).toHaveLength(1);
+            });
+        });
+
         it('drops a route whose key source is missing from the project', async () => {
             offlineRenderMocks.sidechainStore.value = {
                 routes: [{ sourceTrackId: 'ghost', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],

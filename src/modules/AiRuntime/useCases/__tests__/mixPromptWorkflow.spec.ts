@@ -61,6 +61,16 @@ import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
 
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
 
@@ -1095,8 +1105,8 @@ describe('mix prompt workflow', () => {
                 tempo: 120,
             });
             setAutomationRecordingDependencies({
-                getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
-                getCompensationDelay: () => 0,
+                getAudioContext: getZeroLatencyContext,
+                getCompensationDelay: getZeroCompensationDelay,
             });
             startAutomationRecording();
             await sendChatMessage(PROMPT);

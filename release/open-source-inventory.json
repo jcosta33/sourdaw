@@ -1683,6 +1683,7 @@
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
                 "src/modules/Toaster/repositories/toasterPresets.ts",
+                "src/modules/WorkspaceShell/models/DevicePanelByDeviceType.ts",
                 "src/utils/builtinDeviceTypes.ts"
             ],
             "sources": [
@@ -2811,6 +2812,7 @@
                 "src/modules/AudioEngine/models/NoteInputKindByDeviceType.ts",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
+                "src/modules/WorkspaceShell/models/DevicePanelByDeviceType.ts",
                 "src/utils/builtinDeviceTypes.ts"
             ]
         },

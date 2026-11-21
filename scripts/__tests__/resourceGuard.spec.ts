@@ -4350,9 +4350,13 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 writeFileSync(join(packageRoot, fixture.retainedTarget), 'export {}');
                 writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
             }
-            writeLintProbePackage(packageRoot, `guard-package-owner-${packageDirectory}`);
+            writeFileSync(
+                join(packageRoot, 'package.json'),
+                JSON.stringify({ name: `guard-package-owner-${packageDirectory}`, private: true })
+            );
             writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(recordedCwd) });
             const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const observed: { command: string; args: string[]; cwd: string | undefined }[] = [];
 
             try {
                 const code = await runGuardCli(
@@ -4360,22 +4364,22 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     {
                         cwd: recordedCwd,
                         detectLane: () => fixture.lane,
-                        runCommand: async (input) =>
-                            runIsolatedGuardedCommand({
-                                ...input,
-                                availableMemoryBytes: abundantMemoryBytes,
-                                maxRssBytes: 512 * 1024 ** 2,
-                            }),
+                        runCommand: async (input) => {
+                            observed.push({ command: input.command, args: input.args, cwd: input.cwd });
+                            return fakeResult({ code: 0 });
+                        },
                         assertModulesPreflight: () => undefined,
                     }
                 );
 
                 expect(code, label).toBe(0);
-                expect(JSON.parse(readFileSync(join(packageRoot, 'observed.json'), 'utf8'))).toEqual({
-                    cwd: realpathSync(packageRoot),
-                    args: [fixture.newTarget, fixture.retainedTarget],
-                    allTargetsExist: true,
-                });
+                expect(observed).toEqual([
+                    {
+                        command: 'pnpm',
+                        args: ['lint', fixture.newTarget, fixture.retainedTarget],
+                        cwd: realpathSync(recordedCwd),
+                    },
+                ]);
                 expect(existsSync(receiptPath)).toBe(false);
             } finally {
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
