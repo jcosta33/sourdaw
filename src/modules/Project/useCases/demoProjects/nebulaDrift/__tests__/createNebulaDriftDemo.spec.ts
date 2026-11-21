@@ -129,4 +129,9 @@ describe('createNebulaDriftDemo', () => {
         // launch overlay waits for the Levain bank to finish staging.
         expect(demoSource).not.toContain('await waitForDevices()');
     });
+
+    it("states Auto Makeup on in the master 'Ceiling' limiter", () => {
+        const ceiling = demoSource.match(/addDev\(masterTrack,\s*'builtin-limiter',\s*'Ceiling',\s*\{([^}]*)\}\)/);
+        expect(ceiling?.[1]).toMatch(/'lim-auto-makeup':\s*1\b/);
+    });
 });

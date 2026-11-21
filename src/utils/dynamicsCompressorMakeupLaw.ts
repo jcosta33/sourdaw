@@ -17,9 +17,9 @@
  * `KAtSlope` branches on those rounded slopes, and doing it in double
  * precision can pick a different `k`.
  *
- * The audio path never evaluates this: the built-in compressor cancels the
- * gain by measuring it on a twin node (`applyCompressorAutoMakeup`), so it
- * follows automation on every render quantum. This port is what the panel
+ * The audio path never evaluates this: the built-in compressor and limiter
+ * cancel the gain by measuring it on a twin node (`applyAutoMakeupSwitch`),
+ * so it follows automation on every render quantum. This port is what the panel
  * draws and what the measurement specs predict against.
  */
 
@@ -136,8 +136,9 @@ export function dynamicsCompressorStaticOutputDb(curve: DynamicsCompressorStatic
 }
 
 /**
- * The Auto Makeup value a compressor stored before the switch existed is read
- * as: on, because every such compressor sounded with Chromium's hidden gain.
+ * The Auto Makeup value a compressor or limiter stored before the switch
+ * existed is read as: on, because every such device sounded with Chromium's
+ * hidden gain.
  */
 export const COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE = 1;
 
