@@ -273,8 +273,9 @@ struct EngineOwnedCommandFixture {
     /// is a contract for the same reason teardown is, and the only way to prove
     /// it is to be told what the installing thread was holding at the time.
     notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
-    /// Run at the top of `set_parameter`, `get_state` and `set_state`, standing
-    /// in for the vendor code each of them reaches.
+    /// Run at the top of `set_parameter`, `get_parameters`, `get_state`,
+    /// `set_state`, `open_gui` and `close_gui`, standing in for the vendor code
+    /// each of them reaches.
     ///
     /// Third-party code of unbounded duration again, so a host's lock
     /// discipline around these calls is a contract: an observer that blocks is
@@ -1552,7 +1553,8 @@ impl ClapWrapper {
     }
 
     /// Be told — and held up, if the observer blocks — every time this
-    /// fixture's `set_parameter`, `get_state` or `set_state` runs.
+    /// fixture's `set_parameter`, `get_parameters`, `get_state`, `set_state`,
+    /// `open_gui` or `close_gui` runs.
     ///
     /// Each of those is a vendor call of unbounded duration in a real plugin,
     /// and a fixture has no plugin to be slow; an observer that waits on a
@@ -1956,6 +1958,7 @@ impl ClapWrapper {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
+            observe_vendor_call(fixture);
             if !fixture.has_gui {
                 return Err(ClapError::GuiUnsupported);
             }
@@ -2537,6 +2540,7 @@ impl ClapWrapper {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
+            observe_vendor_call(fixture);
             self.gui_open = false;
             return;
         }
@@ -3683,6 +3687,7 @@ impl AudioPlugin for ClapWrapper {
     fn get_parameters(&self) -> Vec<PluginParameter> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
             return fixture.parameters.clone();
         }
 

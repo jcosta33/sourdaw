@@ -2933,4 +2933,140 @@ mod tests {
         drop(calls.release);
         assert_eq!(held_call.join().expect("the held call must return"), Ok(()));
     }
+
+    /// A dormant instance with an editor whose every vendor call waits inside
+    /// the plugin, an ordinary dormant instance beside it, and the held
+    /// instance's editor window recorded.
+    fn state_with_a_held_dormant_editor() -> (Arc<AppState>, crate::state::HeldVendorCalls) {
+        let state = Arc::new(AppState::default());
+        let (held, calls) = PluginInstanceData::dormant_fixture_holding_vendor_calls(
+            "Held Dormant",
+            std::time::Duration::from_millis(50),
+        );
+        {
+            let mut plugins = state.plugins.lock().expect("plugins lock");
+            plugins.insert("held".into(), held);
+            plugins.insert(
+                "other".into(),
+                PluginInstanceData::dormant_fixture(
+                    ClapWrapper::new_engine_owned_command_fixture("Other Dormant", vec![7], false)
+                        .into(),
+                ),
+            );
+        }
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert("held".into(), "held-window".into());
+        (state, calls)
+    }
+
+    /// What the other dormant instance answered a parameter write and a state
+    /// read with, or `None` if it did not answer in time.
+    type OtherInstanceAnswer = Option<(Result<(), String>, Result<Vec<u8>, String>)>;
+
+    /// While `editor_call` is held inside the dormant plugin, whether the map
+    /// was free and whether a command on the other dormant instance answered.
+    /// The held call is released before anything is asserted, so a failure
+    /// reports instead of leaving the call parked.
+    fn editor_call_held_inside_the_plugin<Answer: Send + 'static>(
+        state: &Arc<AppState>,
+        calls: crate::state::HeldVendorCalls,
+        editor_call: impl FnOnce(&AppState) -> Answer + Send + 'static,
+    ) -> (bool, OtherInstanceAnswer, Answer) {
+        let bound = std::time::Duration::from_secs(5);
+        let caller_state = Arc::clone(state);
+        let held_call = std::thread::spawn(move || editor_call(&caller_state));
+        calls
+            .entered
+            .recv_timeout(bound)
+            .expect("the held editor call must reach the plugin");
+
+        let map_was_free = state.plugins.try_lock().is_ok();
+        let other_state = Arc::clone(state);
+        let (answered, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = answered.send((
+                crate::block_on_test(crate::commands::plugins::set_plugin_parameter(
+                    daw_core::PluginInstanceId("other".to_string()),
+                    1,
+                    0.25,
+                    &other_state,
+                )),
+                crate::commands::plugins::read_plugin_state_chunk("other", &other_state)
+                    .map_err(|error| error.to_string()),
+            ));
+        });
+        let other_answer = answer.recv_timeout(bound).ok();
+
+        drop(calls.release);
+        let held_answer = held_call.join().expect("the held editor call must return");
+        (map_was_free, other_answer, held_answer)
+    }
+
+    fn assert_only_the_held_instance_was_held(
+        map_was_free: bool,
+        other_answer: OtherInstanceAnswer,
+    ) {
+        assert!(
+            map_was_free,
+            "an editor call on a dormant instance must not run under the plugin map lock"
+        );
+        assert_eq!(
+            other_answer,
+            Some((Ok(()), Ok(vec![7]))),
+            "a command on another dormant instance must not wait for the held editor call"
+        );
+    }
+
+    /// The exit pass's own close of a dormant editor runs off the map: while
+    /// that close is inside the plugin, every other command still answers.
+    #[test]
+    fn the_exit_pass_closes_a_dormant_editor_with_the_plugin_map_released() {
+        let (state, calls) = state_with_a_held_dormant_editor();
+        let (map_was_free, other_answer, report) =
+            editor_call_held_inside_the_plugin(&state, calls, |state| {
+                close_every_plugin_gui(None, state).map_err(|error| error.to_string())
+            });
+
+        assert_only_the_held_instance_was_held(map_was_free, other_answer);
+        let report = report.expect("the exit pass must complete");
+        assert_eq!(report.closed_instance_ids, ["held"]);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    #[test]
+    fn closing_a_dormant_editor_runs_with_the_plugin_map_released() {
+        let (state, calls) = state_with_a_held_dormant_editor();
+        let (map_was_free, other_answer, closed) =
+            editor_call_held_inside_the_plugin(&state, calls, |state| {
+                close_editor_and_window("held", &NoWindowHost, state)
+                    .map_err(|error| error.to_string())
+            });
+
+        assert_only_the_held_instance_was_held(map_was_free, other_answer);
+        assert_eq!(closed, Ok(()));
+    }
+
+    #[test]
+    fn opening_a_dormant_editor_runs_with_the_plugin_map_released() {
+        let (state, calls) = state_with_a_held_dormant_editor();
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .remove("held");
+        let windows = Arc::new(DedicatedUiWindowHost::start());
+        let opening_windows = Arc::clone(&windows);
+        let (map_was_free, other_answer, opened) =
+            editor_call_held_inside_the_plugin(&state, calls, move |state| {
+                open_editor_in_new_window("held".to_string(), opening_windows.as_ref(), state)
+                    .map(|info| info.is_open)
+                    .map_err(|error| error.to_string())
+            });
+
+        assert_only_the_held_instance_was_held(map_was_free, other_answer);
+        assert_eq!(opened, Ok(true));
+    }
 }

@@ -96,9 +96,13 @@ impl PluginInstanceData {
         record
     }
 
-    /// A dormant record whose plugin holds every `set_parameter`, `get_state`
-    /// and `set_state` inside itself until the test lets go, with its control
-    /// gate's deadline shortened to `gate_deadline`.
+    /// A dormant record with an editor whose plugin holds every vendor call the
+    /// fixture observes — parameter and state reads and writes, editor open and
+    /// close — inside itself until the test lets go, with its control gate's
+    /// deadline shortened to `gate_deadline`.
+    ///
+    /// The record is written without asking the plugin anything, since asking
+    /// would be a held call.
     #[cfg(test)]
     pub(crate) fn dormant_fixture_holding_vendor_calls(
         name: &str,
@@ -111,7 +115,7 @@ impl PluginInstanceData {
         let observed_teardowns = Arc::clone(&teardown_threads);
 
         let mut wrapper =
-            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(name, Vec::new(), false);
+            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(name, Vec::new(), true);
         wrapper.observe_engine_owned_command_fixture_vendor_calls(Box::new(move || {
             let _ = entered_tx.send(());
             // Returns once the test drops `release`, and at once ever after.
@@ -124,7 +128,14 @@ impl PluginInstanceData {
         let owner =
             SharedHostedPlugin::new(wrapper.into()).with_control_gate_deadline(gate_deadline);
         (
-            Self::dormant_fixture_in(owner),
+            Self {
+                name: name.to_string(),
+                parameters: Vec::new(),
+                has_gui: true,
+                chain_kind: DeviceKind::Effect,
+                load_resolution: VettedRegistryEntry::fixture(),
+                plugin: Arc::new(owner),
+            },
             HeldVendorCalls {
                 entered,
                 release,

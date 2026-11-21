@@ -13458,6 +13458,16 @@ mod tests {
     }
 
     #[test]
+    fn a_dormant_parameter_read_left_inside_the_plugin_holds_only_its_own_instance() {
+        let read = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
+            read_plugin_parameters(PluginInstanceId("held".to_string()), state)
+                .map(|parameters| parameters.len())
+                .map_err(|error| error.to_string())
+        });
+        assert_eq!(read, Ok(0));
+    }
+
+    #[test]
     fn a_dormant_state_read_left_inside_the_plugin_holds_only_its_own_instance() {
         let read = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
             read_plugin_state_chunk("held", state).map_err(|error| error.to_string())
