@@ -402,6 +402,25 @@ describe('persistPromptActionConfirmation', () => {
         expect(mocks.recordError).not.toHaveBeenCalled();
     });
 
+    // Red when the lines and positions a re-preview recomposes from never reach the retained proposal (#7142).
+    it('hands the re-preview sources to the retained proposal', () => {
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
+        const input = createInput();
+        input.plannedRunLines = ['- Reading "Warm": warm'];
+        input.keptDirectionActionIndexes = [0];
+        input.workflowCapabilityId = 'drum-routing';
+
+        persistPromptActionConfirmation(input);
+
+        expect(mocks.proposeConfirmation.mock.calls[0]?.[0]).toEqual(
+            expect.objectContaining({
+                plannedRunLines: ['- Reading "Warm": warm'],
+                keptDirectionActionIndexes: [0],
+                workflowCapabilityId: 'drum-routing',
+            })
+        );
+    });
+
     // Red when the stored proposal carries no semantic diff, or one whose recoveries ignore the registry.
     it('stores a semantic diff keyed by the envelope group ids with registry-derived recoveries', () => {
         mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });

@@ -1,7 +1,7 @@
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
-import { refuseInlineMidiEditOnFrozenTrack } from './refuseInlineMidiEditOnFrozenTrack';
+import { refuseInlineMidiNoteEdit } from './refuseInlineMidiNoteEdit';
 
 type CommitInlineMidiNoteDeleteInput = {
     clipId: string;
@@ -9,7 +9,7 @@ type CommitInlineMidiNoteDeleteInput = {
 };
 
 export function commitInlineMidiNoteDelete(input: CommitInlineMidiNoteDeleteInput): boolean {
-    if (refuseInlineMidiEditOnFrozenTrack(input.clipId)) {
+    if (refuseInlineMidiNoteEdit(input.clipId)) {
         return false;
     }
     const previousNotes = getNotesForClip(input.clipId);

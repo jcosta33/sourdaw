@@ -59,12 +59,6 @@ const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
     reason: 'External plugin activation was superseded by a runtime teardown',
 };
 
-const SUPERSEDED_RETRY: ExternalPluginActivationResult = {
-    status: 'failed',
-    stage: 'restore',
-    reason: 'External plugin activation was superseded by a runtime graph rebuild',
-};
-
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
     externalPluginActivationStore.update((state) => {
         const current = state ?? defaultExternalPluginActivationState;
@@ -239,18 +233,16 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
-            // A rebuild fence can give up on this task, so its answer may land in
-            // a later generation that reuses the instance ID.
-            function isCurrentRetry(): boolean {
-                return (
-                    activationEpoch === externalPluginActivationEpoch.current &&
-                    externalPluginActivationTasks.get(instanceId) === restoreTask
-                );
+            // Every teardown that destroys or replaces the instance drops this task with it. A rebuild
+            // or session retirement ends the graph generation but waits on this retry with the
+            // instance still loaded, so its outcome still describes the instance the rebuild reads.
+            function retryHoldsInstance(): boolean {
+                return externalPluginActivationTasks.get(instanceId) === restoreTask;
             }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (!isCurrentRetry()) {
-                        return SUPERSEDED_RETRY;
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     setActivationStatus(instanceId, 'active');
                     // The saved chunk is in the plugin again, so what it reports
@@ -259,8 +251,8 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
-                    if (!isCurrentRetry()) {
-                        return SUPERSEDED_RETRY;
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     const reason = String(error);
                     setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, reason));
@@ -319,6 +311,13 @@ export function activateExternalPlugin({
             externalPluginActivationTasks.get(instanceId) === activationTask &&
             loadedExternalInstances.has(instanceId)
         );
+    }
+
+    // The project chunk's restore settles on the instance whatever the epoch: a rebuild or session
+    // retirement waits on this activation with the instance still loaded and reads its marker,
+    // while every teardown that destroys or replaces the instance drops this task with it.
+    function activationHoldsInstance(): boolean {
+        return externalPluginActivationTasks.get(instanceId) === activationTask;
     }
 
     let restoredCarry: CarriedExternalPluginState | undefined;
@@ -390,11 +389,7 @@ export function activateExternalPlugin({
         if (carried !== undefined) {
             const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, isCurrentActivation);
             if (carriedRestore === 'superseded') {
-                return {
-                    status: 'failed',
-                    stage: 'restore',
-                    reason: 'External plugin activation was superseded by a runtime teardown',
-                };
+                return SUPERSEDED_RESTORE;
             }
             if (carriedRestore === 'restored') {
                 restoredCarry = carried;
@@ -407,10 +402,7 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
-            // A rebuild fence can give up on this activation while its restore
-            // is still out, and a later generation can hold the instance ID by
-            // the time it answers.
-            if (!isCurrentActivation()) {
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // The saved chunk is in the plugin again, so what it reports over
@@ -418,7 +410,9 @@ export function activateExternalPlugin({
             clearExternalPluginRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
-            if (!isCurrentActivation()) {
+            // A teardown that overtook the load owns the instance now, and a newer activation may hold
+            // the same id: this restore's outcome is no longer this instance's state.
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // Restore failure must not reload: the instance is loaded, so keep the

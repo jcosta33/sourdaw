@@ -24,16 +24,23 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
-/// An instance the command layer owns outright, because no engine was running
-/// when it was loaded.
+/// An instance the command layer owns, because no engine was running when it
+/// was loaded.
 ///
-/// The runtime is held as the concrete `HostedRuntime` the loader built rather
-/// than behind `dyn AudioPlugin`: the engine takes this very value when it
-/// starts (`commands::plugins::attach_dormant_plugins`), and the shared runtime
-/// owner it is handed to is generic over the backend, so a trait object could
-/// never be attached at all. Every editor call still reaches the plugin through
-/// `AudioPlugin`, whose `HostedRuntime` implementation delegates to the backend
-/// this instance actually is.
+/// The runtime sits in the same shared owner an engine-attached instance has,
+/// for its control gate: every vendor call on a dormant instance clones this
+/// `Arc` out of `AppState::plugins`, lets go of the map, and makes the call
+/// under the owner's bounded per-instance gate. A call that hangs therefore
+/// holds only its own instance — never the map — and a call queued behind it
+/// refuses as unresponsive at the gate's deadline, exactly as it would on an
+/// attached instance. No audio thread ever reaches this owner; only its gate
+/// and lifecycle are in use.
+///
+/// The engine attach (`commands::plugins::attach_dormant_plugins`) unwraps the
+/// owner back to the concrete `HostedRuntime` and registers that, which it can
+/// only do once no dormant call still holds a clone: an instance some call is
+/// still inside stays dormant for the next batch, so the attach can never hand
+/// the engine a plugin another thread is calling.
 ///
 /// `name`, `parameters` and `has_gui` mirror `EnginePluginInstanceData`: they
 /// are what the load read off the plugin, and the attach registers the instance
@@ -42,7 +49,7 @@ use std::time::Duration;
 /// resolved, and carried through the attach so the strip splice matches what
 /// the load already decided.
 pub struct PluginInstanceData {
-    pub plugin: HostedRuntime,
+    pub plugin: Arc<SharedHostedPlugin>,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
@@ -63,15 +70,91 @@ impl PluginInstanceData {
     /// resolves.
     #[cfg(test)]
     pub fn dormant_fixture(plugin: HostedRuntime) -> Self {
-        Self {
-            name: plugin.get_name().to_string(),
-            parameters: plugin.get_parameters(),
-            has_gui: plugin.has_gui(),
+        Self::dormant_fixture_in(SharedHostedPlugin::new(plugin))
+    }
+
+    /// The same record around an owner the test already built, so it can
+    /// shorten the owner's control-gate deadline first.
+    #[cfg(test)]
+    pub fn dormant_fixture_in(owner: SharedHostedPlugin) -> Self {
+        let mut record = Self {
+            name: owner.name().to_string(),
+            parameters: Vec::new(),
+            has_gui: false,
             chain_kind: DeviceKind::Effect,
             load_resolution: VettedRegistryEntry::fixture(),
-            plugin,
-        }
+            plugin: Arc::new(owner),
+        };
+        let (parameters, has_gui) = record
+            .plugin
+            .with_control(Duration::from_secs(2), |plugin| {
+                Ok::<_, std::convert::Infallible>((plugin.get_parameters(), plugin.has_gui()))
+            })
+            .expect("a fixture owner nothing else holds must admit control");
+        record.parameters = parameters;
+        record.has_gui = has_gui;
+        record
     }
+
+    /// A dormant record with an editor whose plugin holds every vendor call the
+    /// fixture observes — parameter and state reads and writes, editor open and
+    /// close — inside itself until the test lets go, with its control gate's
+    /// deadline shortened to `gate_deadline`.
+    ///
+    /// The record is written without asking the plugin anything, since asking
+    /// would be a held call.
+    #[cfg(test)]
+    pub(crate) fn dormant_fixture_holding_vendor_calls(
+        name: &str,
+        gate_deadline: Duration,
+    ) -> (Self, HeldVendorCalls) {
+        let (entered_tx, entered) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let teardown_threads = Arc::new(Mutex::new(Vec::new()));
+        let observed_teardowns = Arc::clone(&teardown_threads);
+
+        let mut wrapper =
+            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(name, Vec::new(), true);
+        wrapper.observe_engine_owned_command_fixture_vendor_calls(Box::new(move || {
+            let _ = entered_tx.send(());
+            // Returns once the test drops `release`, and at once ever after.
+            let _ = locked_or_poisoned(&release_rx).recv();
+        }));
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            locked_or_poisoned(&observed_teardowns).push(std::thread::current().id());
+        }));
+
+        let owner =
+            SharedHostedPlugin::new(wrapper.into()).with_control_gate_deadline(gate_deadline);
+        (
+            Self {
+                name: name.to_string(),
+                parameters: Vec::new(),
+                has_gui: true,
+                chain_kind: DeviceKind::Effect,
+                load_resolution: VettedRegistryEntry::fixture(),
+                plugin: Arc::new(owner),
+            },
+            HeldVendorCalls {
+                entered,
+                release,
+                teardown_threads,
+            },
+        )
+    }
+}
+
+/// The test's side of [`PluginInstanceData::dormant_fixture_holding_vendor_calls`].
+#[cfg(test)]
+pub(crate) struct HeldVendorCalls {
+    /// One message each time a held call has entered the plugin.
+    pub entered: std::sync::mpsc::Receiver<()>,
+    /// Dropping this lets every held call return, and every later one run
+    /// straight through.
+    pub release: std::sync::mpsc::Sender<()>,
+    /// The thread the plugin's teardown ran on, once it has.
+    pub teardown_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
 }
 
 pub struct EnginePluginInstanceData {
@@ -756,8 +839,9 @@ impl Default for AppState {
 /// Every live plugin instance taken out of the stores, for a caller that is
 /// about to tear them down.
 pub struct LivePluginInstances {
-    /// Instances the command layer owns outright. Dropping one is its whole
-    /// teardown, because nothing else holds it.
+    /// Instances the command layer owns. A dormant control call may still hold
+    /// a clone of one's runtime, so the caller retires them for reclamation
+    /// rather than dropping them.
     pub command_owned: Vec<PluginInstanceData>,
     /// Engine-owned instances. Their runtimes are shared — the scheduler and
     /// the watcher threads hold clones — so dropping one runs the plugin's
@@ -790,10 +874,12 @@ pub(crate) fn locked_or_poisoned<Value>(lock: &Mutex<Value>) -> MutexGuard<'_, V
 /// UI thread.
 ///
 /// `None` means the store was busy and the caller must do without it. Only the
-/// UI thread refuses: a worker may hold one of these across an editor call it
-/// needs the UI thread to run (`commands::plugin_gui`), so the UI thread waiting
-/// here waits for itself. Every other caller is a worker, and a worker waiting
-/// closes no cycle.
+/// UI thread refuses. No path holds the command-owned store across a plugin
+/// call — every dormant call clones its runtime out first — but a holder that
+/// ever did would be waiting on this very thread for its editor call, and the
+/// refusal keeps that from becoming a wait the shell only leaves through its
+/// force-exit. Every other caller is a worker, and a worker waiting closes no
+/// cycle.
 ///
 /// A poisoned store is still handed over, for the reason
 /// [`locked_or_poisoned`] gives: teardown is exactly what must survive a panic
@@ -1055,11 +1141,11 @@ impl AppState {
     /// the retirement vec.
     ///
     /// `ui` is here because this pass runs on the shell's UI thread at exit, and
-    /// the command-owned store is held across editor calls that need that very
-    /// thread. Waiting for it there is a deadlock the shell only leaves through
-    /// its force-exit, which kills every plugin mid-flight — so the store is
-    /// claimed without parking, and a store that will not open is reported
-    /// instead of waited for.
+    /// a store holder waiting on that thread would be a deadlock the shell only
+    /// leaves through its force-exit, which kills every plugin mid-flight — so
+    /// the command-owned store is claimed without parking (see
+    /// `claimed_unless_the_ui_thread_would_park`), and a store that will not
+    /// open is reported instead of waited for.
     ///
     /// The engine-owned store is taken outright: nothing holds it across an
     /// editor call, so no holder of it is waiting on the thread this pass runs
@@ -1084,6 +1170,9 @@ impl AppState {
             };
         };
 
+        for instance in plugins.values() {
+            instance.plugin.begin_unload();
+        }
         LivePluginInstances {
             command_owned: take_store_values(&mut plugins),
             engine_owned,

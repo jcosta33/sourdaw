@@ -1,6 +1,10 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
+import {
+    AppActionBlockedError,
+    AppActionCommittedError,
+    AppActionConflictError,
+} from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { isActionEntry } from '../models/UndoEntry';
 import { nextUndoUnit, undoEntryLabel } from '../models/UndoUnit';
@@ -50,7 +54,7 @@ function commitRedoTransition(
 type RedoOutcome =
     | { readonly status: 'applied'; readonly committed: boolean }
     | { readonly status: 'not-applied' }
-    | { readonly status: 'conflict' }
+    | { readonly status: 'conflict'; readonly blocked?: true }
     | { readonly status: 'committed'; readonly committed: boolean; readonly error: AppActionCommittedError };
 
 /**
@@ -106,6 +110,13 @@ function recordCommittedGroupActions(entries: readonly UndoEntry[], committedAct
     }
 }
 
+function conflictedRedo(blocked: true | undefined): RedoOutcome {
+    if (blocked === true) {
+        return { status: 'conflict', blocked: true };
+    }
+    return { status: 'conflict' };
+}
+
 function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
     return runPreparedUndoReplay({ entries }, () => replayActionGroupRedo(entries));
 }
@@ -131,7 +142,7 @@ async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<Red
     };
     const result = await executeAppActionBatch(actions, options);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
-        return { status: 'conflict' };
+        return conflictedRedo(result.blocked);
     }
     if (result.status === 'rejected' || result.status === 'failed') {
         throw new Error(`Grouped redo failed: ${result.reason}`);
@@ -189,6 +200,9 @@ async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
     try {
         await executeAppAction(entry.redoAction ?? entry.action, options);
     } catch (error) {
+        if (error instanceof AppActionBlockedError) {
+            return { status: 'conflict', blocked: true };
+        }
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
@@ -350,6 +364,37 @@ async function stepOverConflictedRedoOrSettle({
     return completeRedo(outcome, onCommitted);
 }
 
+type ConflictedRedoInput = StepOverRedoInput & {
+    /** Names the refused unit to the user. */
+    readonly label: string;
+    readonly blocked: boolean;
+    readonly stepOverConflicts: boolean;
+};
+
+/**
+ * A head whose redo refused. Nothing was written, so the entry stays at the head of `future`
+ * and remains redoable. A blocked refusal (a transient state the handler already reported)
+ * steps onto nothing; a diverged document is reported here and #2878 steps onto the unit
+ * behind it when the gate admits that replay.
+ */
+function settleConflictedRedo({
+    label,
+    blocked,
+    stepOverConflicts,
+    ...input
+}: ConflictedRedoInput): Promise<RedoResult> | RedoResult {
+    if (blocked) {
+        settleWithoutRedo(input);
+        return { headConsumed: false };
+    }
+    notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
+    if (!stepOverConflicts) {
+        settleWithoutRedo(input);
+        return { headConsumed: false };
+    }
+    return stepOverConflictedRedoOrSettle(input);
+}
+
 async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<RedoResult> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
@@ -382,16 +427,13 @@ async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
             if (groupEntries.every(isActionEntry)) {
                 const outcome = await executeActionGroupRedo(groupEntries);
                 if (outcome.status === 'conflict') {
-                    const label = undoEntryLabel(entry);
-                    notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
-                    if (!stepOverConflicts) {
-                        settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                        return { headConsumed: false };
-                    }
-                    return stepOverConflictedRedoOrSettle({
+                    return settleConflictedRedo({
                         initialFuture: state.future,
                         futureAtConflict: future,
                         conflictedEntries: groupEntries,
+                        label: undoEntryLabel(entry),
+                        blocked: outcome.blocked === true,
+                        stepOverConflicts,
                         onCommitted,
                     });
                 }
@@ -405,19 +447,13 @@ async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
         const outcome = await executeRedo(entry);
 
         if (outcome.status === 'conflict') {
-            const label = undoEntryLabel(entry);
-            notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
-            // Nothing was written, so the entry stays at the head of `future`
-            // and remains redoable; #2878 steps onto the unit behind it when
-            // the gate admits that replay.
-            if (!stepOverConflicts) {
-                settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                return { headConsumed: false };
-            }
-            return stepOverConflictedRedoOrSettle({
+            return settleConflictedRedo({
                 initialFuture: state.future,
                 futureAtConflict: future,
                 conflictedEntries: [entry],
+                label: undoEntryLabel(entry),
+                blocked: outcome.blocked === true,
+                stepOverConflicts,
                 onCommitted,
             });
         }

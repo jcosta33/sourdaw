@@ -16,6 +16,7 @@ import {
 
 import { composeRePreviewedCard } from './agentRequestOrchestration/composeRePreviewedCard';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { readRePreviewedPlannedLines } from './agentRequestOrchestration/readRePreviewedPlannedLines';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
@@ -366,6 +367,9 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     }
     return {
         status: 'prepared' as const,
+        keptDirectionActionIndexes: includedActionIndexes.flatMap((originalIndex, index) =>
+            confirmation.approvalSnapshot.keptDirectionActionIndexes?.includes(originalIndex) ? [index] : []
+        ),
         confirmation,
         parsedOriginal,
         originalCommandIds,
@@ -424,6 +428,13 @@ function persistReproposalConfirmation(
         // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
         measuredPreview: card.measuredPreview,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
+        // A brief card is one action, so only the whole proposal keeps the lines.
+        plannedRunLines: readRePreviewedPlannedLines(confirmation, selectsSubset),
+        // The offered readings stay bound to the original revision's goals, so a re-preview offers none to choose;
+        // the lines above list them without promising a choice.
+        briefReadings: undefined,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
+        workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
@@ -537,6 +548,7 @@ export async function reproposePendingChatActions(
     const card = composeRePreviewedCard({
         confirmation,
         actions: prepared.actions,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
         context,
         commandBatch: refreshed.commandBatch,
         envelope: parsedRefreshed.envelope,

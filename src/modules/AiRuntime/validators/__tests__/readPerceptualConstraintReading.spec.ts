@@ -29,6 +29,18 @@ describe('reading a stored perceptual constraint reading', () => {
     });
 
     it.each([
+        'stereo-width-not-widened-v1',
+        'stereo-width-not-narrowed-v1',
+        'brightness-not-raised-v1',
+        'brightness-not-lowered-v1',
+        'dynamics-not-raised-v1',
+        'dynamics-not-reduced-v1',
+    ])('reads a stored %s bound exactly as it was written', (constraintId) => {
+        const stored = { constraints: [lowEnd, { ...notRaised, constraintId }], unsupported: [] };
+        expect(readPerceptualConstraintReading(structuredClone(stored))).toEqual(stored);
+    });
+
+    it.each([
         ['an unknown protection kind', { ...notRaised, protection: { kind: 'advisory' } }],
         [
             'a measured protection on an exclusion id, which would let its excluded edit through',
