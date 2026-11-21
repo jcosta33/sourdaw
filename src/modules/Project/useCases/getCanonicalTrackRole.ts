@@ -383,8 +383,9 @@ function authoredRole(input: RoleInput): CanonicalTrackRoleProjection | null {
 }
 
 function storedVoices(device: Device): Array<{ pitch: number; family: CanonicalTrackRole | null }> | null {
-    if (device.type === 'toaster') {
-        const metadata = storedDrumVoices.read('getCanonicalTrackRole').voicesOf(device.deviceState);
+    const voiceReader = storedDrumVoices.read('getCanonicalTrackRole');
+    if (voiceReader.storesVoices(device.type)) {
+        const metadata = voiceReader.voicesOf(device.deviceState);
         return metadata.status === 'known' ? metadata.voices : null;
     }
     if (!isDrumDevice(device.type)) {

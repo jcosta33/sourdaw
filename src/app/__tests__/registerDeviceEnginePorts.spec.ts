@@ -383,6 +383,7 @@ describe('registerDeviceEnginePorts after registration', () => {
 
         expect(project.storedDrumVoices.read('spec').voicesOf).toBe(toaster.getStoredDrumVoiceMetadata);
         expect(project.storedDrumVoices.read('spec').voicesOf(undefined)).toEqual({ status: 'unknown' });
+        expect(project.storedDrumVoices.read('spec').storesVoices).toBe(toaster.storesToasterVoices);
     });
 
     it("sounds notes through Synth's own built-in synth and drum synth voices", () => {
@@ -526,7 +527,11 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(() => project.templateDeviceContent.configure({ ...content, defaultPadNames: () => [] })).toThrow(
             /templateDeviceContent\.configure: .*differs/
         );
-        expect(() => project.storedDrumVoices.configure({ voicesOf: () => ({ status: 'unknown' }) })).toThrow(
+        const registeredVoices = project.storedDrumVoices.read('spec');
+        expect(() =>
+            project.storedDrumVoices.configure({ ...registeredVoices, voicesOf: () => ({ status: 'unknown' }) })
+        ).toThrow(/storedDrumVoices\.configure: .*differs/);
+        expect(() => project.storedDrumVoices.configure({ ...registeredVoices, storesVoices: () => false })).toThrow(
             /storedDrumVoices\.configure: .*differs/
         );
 
