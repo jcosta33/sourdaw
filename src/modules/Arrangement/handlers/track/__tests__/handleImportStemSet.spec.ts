@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,

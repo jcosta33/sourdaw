@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioEngine, sendNativeLiveMidiControl } from '#/modules/AudioEngine/useCases';
+import { audioEngine, resolveStoredControllerHosting, sendNativeLiveMidiControl } from '#/modules/AudioEngine/useCases';
 
 import { CC_ALL_SOUND_OFF, CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
 import { releaseAllActiveNotes } from '../../repositories/webMidi/releaseAllActiveNotes';
@@ -66,7 +66,7 @@ export function panicLiveNotes({ notifyOutputs = true }: PanicLiveNotesInput = {
 function silenceGrandBouleBodies(): void {
     for (const track of trackStore.value?.tracks ?? []) {
         for (const device of track.devices) {
-            if (device.type !== 'grand-boule') {
+            if (resolveStoredControllerHosting(device.type)?.moves !== 'pedal-positions') {
                 continue;
             }
             silenceWebAudioGrandBoule(track.id, device.id);

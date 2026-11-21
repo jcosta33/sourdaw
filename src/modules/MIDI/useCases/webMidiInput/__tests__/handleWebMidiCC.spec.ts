@@ -46,6 +46,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
         resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
         builtinSynthVoice: { read: vi.fn() },
         writeNativeBuiltinParameters: vi.fn(),
         soundsNativeNotes: vi.fn(() => false),

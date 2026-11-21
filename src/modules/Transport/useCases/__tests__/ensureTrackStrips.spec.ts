@@ -100,6 +100,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,

@@ -24,17 +24,22 @@ vi.mock('../../../repositories/webMidi/releaseAllActiveNotes', () => ({
 vi.mock('../../../repositories/webMidi/sendPanicToMidiOutputs', () => ({
     sendPanicToMidiOutputs: send_panic_to_midi_outputs,
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: track_store,
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: {
-        context: { currentTime: 7 },
-        getTrackStrip: get_track_strip,
-    },
-    sendNativeLiveMidiControl: send_native_live_midi_control,
-    sendNativeLiveMidiNote: send_native_live_midi_note,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        audioEngine: {
+            context: { currentTime: 7 },
+            getTrackStrip: get_track_strip,
+        },
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        sendNativeLiveMidiControl: send_native_live_midi_control,
+        sendNativeLiveMidiNote: send_native_live_midi_note,
+    };
+});
 
 const { panicLiveNotes } = await import('../panicLiveNotes');
 
