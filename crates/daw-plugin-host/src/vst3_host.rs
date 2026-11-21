@@ -517,12 +517,19 @@ impl Vst3HostState {
     /// only when `observed`: a read-only parameter is a readout, and treating a
     /// meter's every movement as an edit would mark the project dirty on every
     /// block it moves.
+    ///
+    /// A non-finite value is refused, as `performEdit` refuses one: it is no
+    /// value the controller can hold, and the renderer rejects a whole batch
+    /// that carries one, gesture ends with it.
     pub fn record_processor_output(&self, param_id: ParamID, value: ParamValue, observed: bool) {
+        if !value.is_finite() {
+            return;
+        }
         self.controller_updates.record(param_id, value);
         signal_pending_parameter_flush();
         if observed {
             self.parameter_events
-                .push(PluginParameterEvent::value(param_id, value));
+                .push_processor_report(PluginParameterEvent::value(param_id, value));
         }
     }
 
@@ -1262,6 +1269,59 @@ mod tests {
         queue.settle(7, 0.25);
 
         assert_eq!(waiting(&queue), [(7, 0.8)], "the newer edit is not lost");
+    }
+
+    #[test]
+    fn a_non_finite_processor_value_reaches_neither_the_controller_nor_the_observers() {
+        let state = Vst3HostState::default();
+
+        for poison in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            state.record_processor_output(4, poison, true);
+        }
+
+        let mut updates = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        assert_eq!(state.drain_controller_updates(&mut updates), 0);
+        assert!(observed_events(&state).is_empty());
+    }
+
+    /// The editor's thread and the audio thread report at the same time, each
+    /// into its own lane: every event arrives, none overwritten.
+    #[test]
+    fn the_edit_handler_and_the_processor_report_concurrently_without_losing_an_event() {
+        const EACH: u32 = 400;
+        let state = std::sync::Arc::new(Vst3HostState::default());
+        let editor = std::sync::Arc::clone(&state);
+        let processor = std::sync::Arc::clone(&state);
+
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                for index in 0..EACH {
+                    editor.record_parameter_edit(1, f64::from(index));
+                }
+            });
+            scope.spawn(move || {
+                for index in 0..EACH {
+                    processor.record_processor_output(2, f64::from(index), true);
+                }
+            });
+        });
+
+        assert_eq!(
+            state.parameter_event_queue().take_dropped(),
+            0,
+            "both lanes hold a full run"
+        );
+        let events = observed_events(&state);
+        let lane = |param_id: u32| -> Vec<f64> {
+            events
+                .iter()
+                .filter(|event| event.param_id == param_id)
+                .map(|event| event.value)
+                .collect()
+        };
+        let expected: Vec<f64> = (0..EACH).map(f64::from).collect();
+        assert_eq!(lane(1), expected, "every edit, in order");
+        assert_eq!(lane(2), expected, "every processor report, in order");
     }
 
     thread_local! {

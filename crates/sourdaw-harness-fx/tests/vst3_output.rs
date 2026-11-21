@@ -18,8 +18,8 @@ use daw_plugin_host::{
     HostedPluginRuntime, PluginParameterEvent, ProcessMode, Vst3Wrapper,
 };
 use sourdaw_harness_fx::{
-    DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE, METER_PARAM_ID, MODULATED_PARAM_ID,
-    VST3_EMITTER_CLASS_ID,
+    DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE, METER_PARAM_ID,
+    MODULATED_PARAM_ID, VST3_EMITTER_CLASS_ID,
 };
 use std::sync::Mutex;
 use support::InstalledPlugin;
@@ -144,6 +144,40 @@ fn the_controller_learns_the_processors_output_on_the_control_path() {
         controller_value(&wrapper, DRIVE_PARAM_ID),
         0.0,
         "the echo of a host write is not handed back to the controller"
+    );
+}
+
+/// The zero-sample flush that lands a write on an idle instance is a process
+/// call like any other: the processor is handed both output lists, what it
+/// reports reaches the controller on the control path and the observers
+/// without the echo, and the note it writes is captured.
+#[test]
+fn an_idle_flush_hands_the_processor_its_output_lists_and_forwards_what_it_reports() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-idle-flush");
+    let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
+    observed(&wrapper);
+
+    wrapper.set_parameter(DRIVE_PARAM_ID, 0.6);
+
+    assert_eq!(
+        observed(&wrapper),
+        [PluginParameterEvent::value(MODULATED_PARAM_ID, 0.3)],
+        "observers hear the processor's own move, and not the echo of the write"
+    );
+    assert!(wrapper.flush_parameters_off_audio_thread());
+    assert_eq!(controller_value(&wrapper, MODULATED_PARAM_ID), 0.3);
+
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    assert_eq!(
+        captured
+            .iter()
+            .map(|captured| (captured.note, captured.is_note_on))
+            .collect::<Vec<_>>(),
+        [(DRIVE_MARKER_PITCH as u8, true)],
+        "the flush's note reaches the capture"
     );
 }
 

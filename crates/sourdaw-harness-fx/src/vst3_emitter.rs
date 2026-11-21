@@ -45,6 +45,10 @@ const PARAMS: [ParamID; 3] = [DRIVE_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID
 pub const EMITTED_TRANSPOSE: i16 = 12;
 /// How many frames after its cause an emitted note lands.
 pub const EMITTED_DELAY_FRAMES: int32 = 1;
+/// The pitch of the note-on the processor emits, at frame 0, on every call
+/// that writes `Drive`, so a call with no input notes still says whether it was
+/// handed an output event list.
+pub const DRIVE_MARKER_PITCH: i16 = 1;
 
 const MIDI_CHANNELS: int32 = 16;
 
@@ -177,6 +181,24 @@ unsafe fn pass_audio(data: &ProcessData) -> f32 {
             .fold(peak, |peak, sample| peak.max(sample.abs()));
     }
     peak
+}
+
+/// Emit the note-on that marks a `Drive` write.
+///
+/// # Safety
+/// `data` must be the live `ProcessData` of the current call.
+unsafe fn emit_drive_marker(data: &ProcessData) {
+    // SAFETY: the output list is live for this call, or null.
+    let Some(outputs) = (unsafe { ComRef::from_raw(data.outputEvents) }) else {
+        return;
+    };
+    // SAFETY: `Event` is plain C data; zero is valid for every arm.
+    let mut event: Event = unsafe { std::mem::zeroed() };
+    event.r#type = EventTypes_::kNoteOnEvent as u16;
+    event.__field0.noteOn.pitch = DRIVE_MARKER_PITCH;
+    event.__field0.noteOn.velocity = 1.0;
+    // SAFETY: a live list; `event` is a local the host copies.
+    unsafe { outputs.addEvent(&mut event) };
 }
 
 /// Emit every note of the input list an octave up and a frame later.
@@ -390,6 +412,10 @@ impl IAudioProcessorTrait for Emitter {
             unsafe { report(changes, METER_PARAM_ID, f64::from(peak.min(1.0))) };
         }
 
+        if written.is_some() {
+            // SAFETY: the current call's live `ProcessData`.
+            unsafe { emit_drive_marker(data) };
+        }
         // SAFETY: the current call's live `ProcessData`.
         unsafe { emit_notes(data) };
         kResultOk
