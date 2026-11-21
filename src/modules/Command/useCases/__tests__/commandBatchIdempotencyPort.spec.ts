@@ -8,6 +8,8 @@ const repository = {
     lookup,
     claim: vi.fn(() => Promise.resolve({ status: 'claimed' as const })),
     complete: vi.fn(() => Promise.resolve()),
+    tryAcquireRecoveryLease: vi.fn(() => Promise.resolve(true)),
+    release: vi.fn(() => Promise.resolve()),
 };
 
 // Vitest gives each spec file a fresh module graph, so the cases below run in
@@ -35,11 +37,24 @@ describe('commandBatchIdempotencyPort', () => {
 
         await expect(commandBatchIdempotencyPort.lookup(key)).resolves.toEqual({ status: 'missing' });
         expect(lookup).toHaveBeenCalledWith(key);
-        await expect(commandBatchIdempotencyPort.claim(key)).resolves.toEqual({ status: 'claimed' });
-        expect(repository.claim).toHaveBeenCalledWith(key);
+        const reclaim = { ...key, reclaimPending: true };
+        await expect(commandBatchIdempotencyPort.claim(reclaim)).resolves.toEqual({ status: 'claimed' });
+        expect(repository.claim).toHaveBeenCalledWith(reclaim);
         const receipt = { ...key, serializedReceipt: '{}' };
         await commandBatchIdempotencyPort.complete(receipt);
         expect(repository.complete).toHaveBeenCalledWith(receipt);
+        await expect(commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).resolves.toBe(true);
+        expect(repository.tryAcquireRecoveryLease).toHaveBeenCalledWith(key);
+        const released = commandBatchIdempotencyPort.release(key);
+        expect(released).not.toBeNull();
+        await released;
+        expect(repository.release).toHaveBeenCalledWith(key);
+    });
+
+    it('answers null for the optional methods a repository lacks', () => {
+        commandBatchIdempotencyPort.setRepository({ lookup, claim: repository.claim, complete: repository.complete });
+
+        expect(commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toBeNull();
         expect(commandBatchIdempotencyPort.release(key)).toBeNull();
     });
 

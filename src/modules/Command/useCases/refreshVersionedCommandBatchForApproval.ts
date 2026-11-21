@@ -39,7 +39,7 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
     if (!commandProjectRevisionPort.isConfigured()) {
         return {
             status: 'rejected' as const,
-            reason: 'Command batch project divergence classification is unavailable',
+            reason: 'Command batch project revision is unavailable',
         };
     }
     const envelope = parsed.envelope;
