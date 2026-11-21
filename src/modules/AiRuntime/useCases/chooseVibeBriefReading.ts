@@ -36,6 +36,7 @@ import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './vibeRun/briefReadingRefusals';
 import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
+import { postReadingRefusal } from './vibeRun/postReadingRefusal';
 import { readChosenReadingDrift } from './vibeRun/readChosenReadingDrift';
 
 type ChooseVibeBriefReadingInput = {
@@ -143,12 +144,15 @@ export async function chooseVibeBriefReading(
     }
     const admission = admitChoice(confirmation, input.readingId);
     if (admission.status === 'refused') {
+        postReadingRefusal({ confirmation, readingId: input.readingId, reason: admission.reason });
         return admission;
     }
     const { reading, offer, run, interactionMode, mixIntent } = admission;
     const claimed = claimReadingPlanWork(run.runId);
     if (claimed.status !== 'claimed') {
-        return refuse(`The reading could not be planned: ${claimed.status}.`);
+        const reason = `The reading could not be planned: ${claimed.status}.`;
+        postReadingRefusal({ confirmation, readingId: reading.id, reason });
+        return refuse(reason);
     }
     const lease = claimed.lease;
     const controller = new AbortController();

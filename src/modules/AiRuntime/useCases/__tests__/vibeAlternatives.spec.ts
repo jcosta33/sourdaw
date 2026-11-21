@@ -851,6 +851,30 @@ describe('a choice that no longer applies', () => {
         };
     }
 
+    /** The card and run are as they were, and the refusal is told once, with its reason, in one new assistant message. */
+    function expectRefusalOnlyTold(card: Confirmation, before: ReturnType<typeof snapshotOf>, outcome: unknown) {
+        if (
+            typeof outcome !== 'object' ||
+            outcome === null ||
+            !('reason' in outcome) ||
+            typeof outcome.reason !== 'string'
+        ) {
+            throw new TypeError('Expected a refusal carrying its reason');
+        }
+        const after = snapshotOf(card);
+        expect(after.card).toEqual(before.card);
+        expect(after.run).toEqual(before.run);
+        const earlier = before.messages ?? [];
+        expect(after.messages).toEqual([
+            ...earlier,
+            expect.objectContaining({
+                role: 'assistant',
+                error: outcome.reason,
+                content: expect.stringContaining(outcome.reason),
+            }),
+        ]);
+    }
+
     it('refuses a second choice on the card the first choice superseded, leaving the replacement alone', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         await chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') });
@@ -880,7 +904,7 @@ describe('a choice that no longer applies', () => {
             status: 'refused',
             reason: expect.stringMatching(/production brief changed/u),
         });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
@@ -891,7 +915,7 @@ describe('a choice that no longer applies', () => {
         const outcome = await chooseVibeBriefReading({ confirmationId: card.id, readingId: 'reading-9' });
 
         expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/offers no reading/u) });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
@@ -908,16 +932,20 @@ describe('a choice that no longer applies', () => {
         });
 
         expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/catalogue changed/u) });
-        expect(snapshotOf(card)).toEqual(before);
+        expectRefusalOnlyTold(card, before, outcome);
     });
 
     it('refuses a choice once the run has ended, and a card that does not exist', async () => {
         const { card } = await ask(mixIntentWith(THREE_READINGS));
         agentRunLifecycle.transitionPhase({ runId: card.runId, phase: 'cancelled' });
+        const before = snapshotOf(card);
 
-        await expect(
-            chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') })
-        ).resolves.toMatchObject({ status: 'refused', reason: expect.stringMatching(/run .* has ended/u) });
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+        expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringMatching(/run .* has ended/u) });
+        expectRefusalOnlyTold(card, before, outcome);
         await expect(
             chooseVibeBriefReading({ confirmationId: 'no-such-card', readingId: 'reading-1' })
         ).resolves.toEqual({ status: 'missing' });
@@ -936,7 +964,7 @@ describe('a choice that no longer applies', () => {
                 readingId: readingIdOf(card, READING),
             });
 
-            expect(snapshotOf(card)).toEqual(before);
+            expectRefusalOnlyTold(card, before, outcome);
             expect(getPendingActionConfirmation(card.id)?.status).toBe('proposed');
             expect(agentRunLifecycle.get(card.runId)?.phase).toBe(before.run?.phase);
             expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBe(renders);
@@ -983,6 +1011,21 @@ describe('a choice that no longer applies', () => {
             await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
                 status: 'refused',
                 reason: expect.stringMatching(new RegExp(`"${removedName}".*no longer in the project`, 'u')),
+            });
+        });
+
+        it('refuses a choice once the project changed without moving the brief or any track the plan names', async () => {
+            const { card } = await ask(mixIntentWith(THREE_READINGS));
+            const plan = readingsOf(card).find((reading) => reading.name === READING)?.plan;
+            const targetId = plan?.batches[0]?.targetIds[0];
+            if (targetId === undefined) {
+                throw new TypeError('Expected the reading to plan a track');
+            }
+            await executeAppAction({ type: 'setTrackColor', payload: { trackId: targetId, color: '#ff5500' } });
+
+            await expect(chooseLeavingUntouched(card)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringMatching(/project changed since this card was made/u),
             });
         });
 
