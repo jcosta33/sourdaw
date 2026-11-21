@@ -211,6 +211,17 @@ function seedTwoLanesOnOneDevice(device: SeedDevice): void {
     };
 }
 
+function getEqLowGainRange(deviceType: string, paramId: string) {
+    if (deviceType === 'builtin-eq' && paramId === 'eq-low-gain') {
+        return { min: 0, max: 1000, defaultValue: 0, automatable: true };
+    }
+    return null;
+}
+
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('applyAutomation', () => {
     beforeEach(() => {
         schedulerSession.generation += 1;
@@ -944,13 +955,8 @@ describe('applyAutomation', () => {
             });
             setModulationDependencies({
                 updateDeviceParam,
-                getPluginParamRange: (deviceType, paramId) => {
-                    if (deviceType === 'builtin-eq' && paramId === 'eq-low-gain') {
-                        return { min: 0, max: 1000, defaultValue: 0, automatable: true };
-                    }
-                    return null;
-                },
-                quantiseValue: ({ value }) => value,
+                getPluginParamRange: getEqLowGainRange,
+                quantiseValue: quantiseIdentity,
             });
         }
 

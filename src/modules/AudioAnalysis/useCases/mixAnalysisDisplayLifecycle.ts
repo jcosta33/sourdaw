@@ -54,24 +54,27 @@ export type MixAnalysisDisplayLifecycle = {
     fail: (input: FailMixAnalysisDisplayInput) => void;
 };
 
-const fallback_lifecycle: MixAnalysisDisplayLifecycle = {
-    begin: () => null,
-    complete: () => {},
-    fail: () => {},
-};
+let registeredLifecycle: MixAnalysisDisplayLifecycle | null = null;
 
-let configured_lifecycle = fallback_lifecycle;
+function registered(member: keyof MixAnalysisDisplayLifecycle): MixAnalysisDisplayLifecycle {
+    if (registeredLifecycle === null) {
+        throw new Error(
+            `mixAnalysisDisplayLifecycle.${member}: the mix analysis display lifecycle is not registered; call setMixAnalysisDisplayLifecycle() from #/app/bootstrap (bootstrap does this)`
+        );
+    }
+    return registeredLifecycle;
+}
 
 export const mixAnalysisDisplayLifecycle: MixAnalysisDisplayLifecycle = {
-    begin: () => configured_lifecycle.begin(),
+    begin: () => registered('begin').begin(),
     complete: (input) => {
-        configured_lifecycle.complete(input);
+        registered('complete').complete(input);
     },
     fail: (input) => {
-        configured_lifecycle.fail(input);
+        registered('fail').fail(input);
     },
 };
 
 export function setMixAnalysisDisplayLifecyclePort(lifecycle: MixAnalysisDisplayLifecycle): void {
-    configured_lifecycle = lifecycle;
+    registeredLifecycle = lifecycle;
 }

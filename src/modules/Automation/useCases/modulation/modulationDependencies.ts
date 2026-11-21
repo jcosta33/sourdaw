@@ -35,8 +35,25 @@ export type ModulationDependencies = {
     quantiseValue: (input: { deviceType: string; paramId: string; value: number }) => number;
 };
 
-export let dependencies: ModulationDependencies | null = null;
+let registeredDependencies: ModulationDependencies | null = null;
 
+/** Stores the implementation; a later fill replaces an earlier one. */
 export function setModulationDependencies(deps: ModulationDependencies): void {
-    dependencies = deps;
+    registeredDependencies = deps;
 }
+
+/**
+ * The registered writers. Reading before registration throws rather than
+ * skipping the modulation: a skipped write leaves every modulated parameter
+ * unmodulated with no report.
+ */
+export const modulationDependenciesPort = {
+    read(): ModulationDependencies {
+        if (registeredDependencies === null) {
+            throw new Error(
+                'modulationDependenciesPort.read: modulation dependencies are not registered; call setModulationDependencies() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return registeredDependencies;
+    },
+};

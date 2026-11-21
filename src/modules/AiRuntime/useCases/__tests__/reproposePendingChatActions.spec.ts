@@ -123,6 +123,7 @@ const subsetBatch = buildBatch('batch-subset', CURRENT_REVISION, [0, 2]);
 
 const AGENT_APPROVAL = {
     schemaVersion: 1 as const,
+    explicitApprovalRequired: true,
     actionHashes: ['hash-kick', 'hash-snare', 'hash-hat'],
     sourceRevision: ORIGINAL_REVISION,
     targetFingerprints: {},

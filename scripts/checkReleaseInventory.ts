@@ -39,6 +39,7 @@ import {
     LICENCE_PROJECTED_SNAPSHOT_PATHS,
     licenceSnapshotError,
 } from './releaseInventoryLicenceSnapshots.ts';
+import { rustStringLiterals, stringLiterals } from './releaseInventoryStringLiterals.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -2817,57 +2818,10 @@ function isExternalUrl(value: string): boolean {
     }
 }
 
-function stringLiterals(contents: string): string[] {
-    const values: string[] = [];
-    for (let index = 0; index < contents.length; index += 1) {
-        const character = contents[index]!;
-        const next = contents[index + 1];
-        if (character === '/' && next === '/') {
-            index = contents.indexOf('\n', index + 2);
-            if (index === -1) {
-                break;
-            }
-            continue;
-        }
-        if (character === '/' && next === '*') {
-            const end = contents.indexOf('*/', index + 2);
-            if (end === -1) {
-                break;
-            }
-            index = end + 1;
-            continue;
-        }
-        if (character === '#') {
-            index = contents.indexOf('\n', index + 1);
-            if (index === -1) {
-                break;
-            }
-            continue;
-        }
-        if (character !== "'" && character !== '"' && character !== '`') {
-            continue;
-        }
-
-        let value = '';
-        for (index += 1; index < contents.length; index += 1) {
-            const stringCharacter = contents[index]!;
-            if (stringCharacter === '\\' && index + 1 < contents.length) {
-                value += stringCharacter + contents[index + 1]!;
-                index += 1;
-            } else if (stringCharacter === character) {
-                values.push(value);
-                break;
-            } else {
-                value += stringCharacter;
-            }
-        }
-    }
-    return values;
-}
-
-function externalReferences(contents: string): Array<Omit<ExternalReference, 'file'>> {
+function externalReferences(path: string, contents: string): Array<Omit<ExternalReference, 'file'>> {
     const references: Array<Omit<ExternalReference, 'file'>> = [];
-    for (const literal of stringLiterals(contents)) {
+    const literals = extname(path) === '.rs' ? rustStringLiterals(contents) : stringLiterals(contents);
+    for (const literal of literals) {
         const body = literal.replaceAll('\\/', '/');
         const canonical = canonicalizeTemplate(body);
         const urls = canonical.value.match(/(?:https?|wss?):\/\/[^\s'"`<>\\)]+|(?:stun|turn):[^\s'"`<>\\)]+/g) ?? [];
@@ -3180,7 +3134,7 @@ export function loadRepositorySnapshot(
         const contents = readText(path);
         return contents === undefined
             ? []
-            : externalReferences(contents).map((reference) => ({ file: path, ...reference }));
+            : externalReferences(path, contents).map((reference) => ({ file: path, ...reference }));
     });
     const snapshotPaths = sortedUnique([
         ...REQUIRED_SNAPSHOT_PATHS.filter(isSafeTrackedPath),

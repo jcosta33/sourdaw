@@ -43,7 +43,7 @@ use sha2::{Digest, Sha256};
 use super::filesystem::grant_registry::{self, GrantMode};
 use super::filesystem::{
     ensure_file_ipc_size, ipc_temp_dir, replace_file_atomically, resolve_existing_file_path,
-    resolve_writable_file_path,
+    resolve_writable_file_path, FileRefusal,
 };
 
 /// Prefix every handle id carries, so a caller cannot pass a path where a
@@ -88,8 +88,8 @@ pub enum AgentAssetSagaError {
     ReadStagedAsset(std::io::Error),
     WriteDestination(std::io::Error),
     StagedDigestMismatch,
-    /// A refusal from the shared filesystem helpers, which still report text.
-    Filesystem(String),
+    /// A refusal from the shared filesystem helpers.
+    Filesystem(FileRefusal),
 }
 
 impl std::fmt::Display for AgentAssetSagaError {
@@ -122,7 +122,7 @@ impl std::fmt::Display for AgentAssetSagaError {
             Self::StagedDigestMismatch => {
                 f.write_str("Staged bytes did not match the expected digest")
             }
-            Self::Filesystem(message) => f.write_str(message),
+            Self::Filesystem(refusal) => refusal.fmt(f),
         }
     }
 }
@@ -141,11 +141,11 @@ impl std::error::Error for AgentAssetSagaError {
             | Self::OpenStagedAsset(error)
             | Self::ReadStagedAsset(error)
             | Self::WriteDestination(error) => Some(error),
+            Self::Filesystem(refusal) => Some(refusal),
             Self::UnknownHandleMode(_)
             | Self::MalformedHandleId
             | Self::MalformedSha256
-            | Self::StagedDigestMismatch
-            | Self::Filesystem(_) => None,
+            | Self::StagedDigestMismatch => None,
         }
     }
 }
@@ -563,22 +563,25 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
 /// no longer admits what it names.
 enum HandleRefusal {
     Unknown,
-    AccessDenied(String),
+    ReadOnly,
+    NoLongerGranted,
 }
 
 impl HandleRefusal {
     fn failure(&self) -> AgentAssetFailureKind {
         match self {
             Self::Unknown => AgentAssetFailureKind::HandleUnknown,
-            Self::AccessDenied(_) => AgentAssetFailureKind::AccessDenied,
+            Self::ReadOnly | Self::NoLongerGranted => AgentAssetFailureKind::AccessDenied,
         }
     }
 
     fn message(self) -> String {
         match self {
-            Self::Unknown => "No asset handle with that id".to_string(),
-            Self::AccessDenied(message) => message,
+            Self::Unknown => "No asset handle with that id",
+            Self::ReadOnly => "Asset handle is read-only",
+            Self::NoLongerGranted => "Asset handle is no longer granted",
         }
+        .to_string()
     }
 }
 
@@ -595,14 +598,10 @@ fn resolve_handle(handle_id: &str, mode: AssetHandleMode) -> Result<PathBuf, Han
         .ok_or(HandleRefusal::Unknown)?;
 
     if mode == AssetHandleMode::ReadWrite && handle.mode == AssetHandleMode::Read {
-        return Err(HandleRefusal::AccessDenied(
-            "Asset handle is read-only".to_string(),
-        ));
+        return Err(HandleRefusal::ReadOnly);
     }
     if !grant_registry::admits(&handle.canonical, mode.grant_mode()) {
-        return Err(HandleRefusal::AccessDenied(
-            "Asset handle is no longer granted".to_string(),
-        ));
+        return Err(HandleRefusal::NoLongerGranted);
     }
     Ok(handle.canonical)
 }
@@ -687,7 +686,7 @@ fn register_handle(
                 OPERATION_REGISTER_HANDLE,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::NotNeeded,
-                message,
+                message.to_string(),
             ));
         }
     };
@@ -1121,7 +1120,7 @@ fn finalize_claimed_saga(
                 AgentAssetSagaState::Failed,
                 AgentAssetFailureKind::AccessDenied,
                 AgentAssetCompensation::Available,
-                message,
+                message.to_string(),
             );
         }
     };
@@ -1150,7 +1149,7 @@ fn finalize_claimed_saga(
             AgentAssetSagaState::Failed,
             failure,
             AgentAssetCompensation::Available,
-            message,
+            message.to_string(),
         );
     }
 
@@ -1345,6 +1344,30 @@ fn sweep_orphaned_stages(
 mod tests {
     use super::*;
     use crate::commands::filesystem::grant_registry::{with_grants_for_test, FileGrant};
+
+    #[test]
+    fn handle_refusals_keep_their_text_and_failure_kind() {
+        for (refusal, failure, message) in [
+            (
+                HandleRefusal::Unknown,
+                AgentAssetFailureKind::HandleUnknown,
+                "No asset handle with that id",
+            ),
+            (
+                HandleRefusal::ReadOnly,
+                AgentAssetFailureKind::AccessDenied,
+                "Asset handle is read-only",
+            ),
+            (
+                HandleRefusal::NoLongerGranted,
+                AgentAssetFailureKind::AccessDenied,
+                "Asset handle is no longer granted",
+            ),
+        ] {
+            assert_eq!(refusal.failure(), failure);
+            assert_eq!(refusal.message(), message);
+        }
+    }
 
     /// A directory outside every built-in root, so what admits a path in a test
     /// is the grant the test installed and nothing the developer's machine
@@ -1624,8 +1647,10 @@ mod tests {
                 "Staged bytes did not match the expected digest",
             ),
             (
-                AgentAssetSagaError::Filesystem("File exceeds the IPC limit".to_string()),
-                "File exceeds the IPC limit",
+                AgentAssetSagaError::Filesystem(FileRefusal::PayloadTooLarge {
+                    command: "agent_asset_import".to_string(),
+                }),
+                "agent_asset_import payload exceeds 1073741824-byte IPC limit",
             ),
         ] {
             assert_eq!(error.to_string(), text);

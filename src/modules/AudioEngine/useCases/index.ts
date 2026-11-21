@@ -32,6 +32,7 @@ export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
 export { readDrumKitOutputGain } from './deviceCapabilities/readDrumKitOutputGain';
 export { resolveDrumKitBy } from './deviceCapabilities/resolveDrumKitBy';
 export { resolveDrumKitOutputGain } from './deviceCapabilities/resolveDrumKitOutputGain';
+export { resolveLiveNoteControls } from './deviceCapabilities/resolveLiveNoteControls';
 export { resolveNoteReceivingInstrument } from './deviceCapabilities/resolveNoteReceivingInstrument';
 
 export { playAuditionNote } from './audition';

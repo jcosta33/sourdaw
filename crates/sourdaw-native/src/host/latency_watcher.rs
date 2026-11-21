@@ -22,11 +22,11 @@
 //! the new figure.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::LatencyChange;
+use crate::host::native_bridge::{LatencyChange, PluginControlError};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
-use daw_plugin_host::take_pending_latency_requery_signal;
+use daw_plugin_host::{take_pending_latency_requery_signal, PluginError};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -99,7 +99,7 @@ pub fn notify_latency_change(instance_id: &str) {
 /// latency, which would corrupt compensation on every track using the plugin).
 pub fn latency_change_payload(
     instance_id: &str,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, PluginControlError<PluginError>>,
 ) -> Option<PluginLatencyChanged> {
     match refreshed {
         Ok(Some(change)) => Some(PluginLatencyChanged {
@@ -126,7 +126,7 @@ pub fn latency_change_payload(
 /// one failed re-query is one diagnostic.
 pub fn latency_compensation(
     engine_plugin_id: Option<usize>,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, PluginControlError<PluginError>>,
 ) -> Option<LatencyCompensation> {
     let Ok(Some(change)) = refreshed else {
         return None;
@@ -306,11 +306,22 @@ fn serve_wakes_and_hints(
 mod tests {
     use super::*;
 
-    fn changed(latency_ms: f64, latency_frames: usize) -> Result<Option<LatencyChange>, String> {
+    fn changed(
+        latency_ms: f64,
+        latency_frames: usize,
+    ) -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
         Ok(Some(LatencyChange {
             latency_ms,
             latency_frames,
         }))
+    }
+
+    fn timed_out() -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
+        Err(PluginControlError::Refused(
+            crate::host::native_bridge::PluginControlRefusal::TimedOut {
+                plugin: "fixture".to_string(),
+            },
+        ))
     }
 
     #[test]
@@ -334,7 +345,7 @@ mod tests {
     #[test]
     fn a_failed_requery_emits_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_change_payload("inst-1", &Err("control path timed out".to_string())),
+            latency_change_payload("inst-1", &timed_out()),
             None,
             "a failed re-query must not publish a latency the plugin never reported"
         );
@@ -359,7 +370,7 @@ mod tests {
     #[test]
     fn a_failed_requery_compensates_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_compensation(Some(7), &Err("control path timed out".to_string())),
+            latency_compensation(Some(7), &timed_out()),
             None,
             "a failed re-query must not aim a delay line at a latency the plugin never reported"
         );

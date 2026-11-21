@@ -140,6 +140,7 @@ function createInputFor(shape: CommandShape): Parameters<typeof persistPromptAct
         commandBatch,
         agentApproval: {
             schemaVersion: 1,
+            explicitApprovalRequired: true,
             actionHashes: ['action-hash-set-kick-gain'],
             sourceRevision: 'revision-confirmation',
             targetFingerprints: { 'track-kick': 'fingerprint-kick' },
