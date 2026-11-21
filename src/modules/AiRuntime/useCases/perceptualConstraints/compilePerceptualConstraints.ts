@@ -44,6 +44,7 @@ import {
     STOP_VERB,
     TERM_JOIN,
     THE,
+    TO,
     WORD_CHARACTER,
 } from './constraintClauseWords';
 import {
@@ -70,7 +71,7 @@ type ClauseMatch = { clause: string; object: string | null; start: number; end: 
 
 const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>${SAME_CLAUSE_CHARACTER}+?))?`;
 const LOW_END_PROHIBITION = new RegExp(
-    String.raw`\b(?:${NEGATION}|${NO}\s+${CHANGE_NOUN}\s+to)\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
+    String.raw`\b(?:${NEGATION}|${NO}\s+${CHANGE_NOUN}\s+${TO})\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
     'dgiu'
 );
 const LOW_END_PRESERVATION = new RegExp(

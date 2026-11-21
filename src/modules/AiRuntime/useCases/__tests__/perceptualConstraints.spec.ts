@@ -1919,6 +1919,19 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             ],
             [],
         ],
+        // a comma before the "and" joins the later object as every list joins its members
+        [
+            "don't make the mix louder, and the vocal quieter",
+            [
+                measured('loudness-not-raised-v1', "don't make the mix louder, and the vocal quieter", MIX),
+                measured(
+                    'loudness-not-lowered-v1',
+                    "don't make the mix louder, and the vocal quieter",
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
         [
             "don't make the vocal louder and quieter",
             [measured('loudness-held-v1', "don't make the vocal louder and quieter", onTracks('vocal'))],
@@ -2113,6 +2126,54 @@ describe('reading only governed protections and whole object names', () => {
                 [],
             ]
         ),
+        // a bracket opens an aside: the protection before it reads as before the same clause unbracketed
+        ...[
+            'keep the vocal bright (and make the drums louder)',
+            'keep the vocal bright [and make the drums louder]',
+            'keep the vocal bright (and make the drums louder',
+            'keep the vocal bright (also make the drums louder)',
+        ].map(
+            (
+                prompt
+            ): [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']] => [
+                prompt,
+                [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+                [],
+            ]
+        ),
+        [
+            'keep the mix wide (and make the drums louder)',
+            [measured('stereo-width-held-v1', 'keep the mix wide', MIX)],
+            [],
+        ],
+        [
+            'keep the drums punchy (and make the drums louder)',
+            [],
+            [unread('keep the drums punchy', unmeasured('punchy'))],
+        ],
+        // an opening bracket with "or" after it continues the list as a separator does
+        [
+            'keep the mix from getting louder (or brighter)',
+            [
+                measured('loudness-not-raised-v1', 'keep the mix from getting louder (or brighter', MIX),
+                measured('brightness-not-raised-v1', 'keep the mix from getting louder (or brighter', MIX),
+            ],
+            [],
+        ],
+        [
+            "don't make it brighter [or louder]",
+            [
+                measured('brightness-not-raised-v1', "don't make it brighter [or louder", MIX),
+                measured('loudness-not-raised-v1', "don't make it brighter [or louder", MIX),
+            ],
+            [],
+        ],
+        // no clause ends in its bracket
+        [
+            "don't make it louder (and add reverb)",
+            [measured('loudness-not-raised-v1', "don't make it louder", MIX)],
+            [],
+        ],
         ['stop the bass from getting muddy', [], [unread('stop the bass from getting muddy', unmeasured('muddy'))]],
         [
             'prevent the vocal from sounding thin',

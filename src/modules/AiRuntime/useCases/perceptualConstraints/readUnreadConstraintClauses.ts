@@ -6,6 +6,7 @@ import {
     CLAUSE_PUNCTUATION,
     CLAUSE_SEPARATOR,
     CLAUSE_SUBJECT,
+    COMPARED_DIRECTION,
     DEGREE_WORD,
     DETERMINER,
     FROM,
@@ -39,7 +40,7 @@ const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, '
  * What a keep or leave holding what it names governs: a measured noun or a comparison it keeps ("keep
  * the drums quieter than the vocal"), never a way a quality moves.
  */
-const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${DIRECTION}\s+than\b)`, 'giu');
+const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${COMPARED_DIRECTION})`, 'giu');
 /**
  * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
  * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
@@ -82,7 +83,7 @@ const PREVENTED_MOVE = new RegExp(
  * getting wider") sits before it.
  */
 const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT})${WORD_END}`, 'iu');
-const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
+const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
 /**
  * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and"
  * or "or" is a boundary whose next clause may share a protection.

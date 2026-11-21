@@ -1,7 +1,7 @@
 import {
     AND_JOIN,
-    AND_WORD,
     ANY,
+    AT,
     CAUSING_VERB,
     CLAUSE_END,
     CLAUSE_HEAD,
@@ -76,9 +76,9 @@ const NOUN_IN_LIST = new RegExp(
     'dgiu'
 );
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
-/** A later object under the same negation: "don't make the mix louder and the vocal quieter". */
+/** A later object under the same negation, joined as every list is: "don't make the mix louder, and the vocal quieter". */
 const DIRECTION_CONTINUATION = new RegExp(
-    String.raw`\s+${AND_WORD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
+    String.raw`${AND_JOIN}(?!${ANY}\b)${OBJECT_LIST}\s+${DIRECTION_CLAUSE}`,
     'dyiu'
 );
 /**
@@ -129,7 +129,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
     ),
     // "keep the Keys at the same level"
     holdPattern(
-        String.raw`${NOT_PERMITTED}\b${KEEP}\s+${OBJECT_LIST}\s+at\s+${THE_SAME}\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`,
+        String.raw`${NOT_PERMITTED}\b${KEEP}\s+${OBJECT_LIST}\s+${AT}\s+${THE_SAME}\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`,
         null
     ),
 ];

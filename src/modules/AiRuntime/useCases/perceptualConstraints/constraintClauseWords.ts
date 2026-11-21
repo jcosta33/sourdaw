@@ -31,7 +31,8 @@ export const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = ne
     ['guitars', 'guitar'],
     ['keys', 'keys'],
 ]);
-const MIX_PRONOUN_WORDS = ['it', 'everything', 'anything'];
+const IT = 'it';
+const MIX_PRONOUN_WORDS = [IT, 'everything', 'anything'];
 /** The pronouns that hold the mix while the request names no track or role before them. */
 export const MIX_PRONOUNS: ReadonlySet<string> = new Set(MIX_PRONOUN_WORDS);
 export const MIX_PRONOUN = words(MIX_PRONOUN_WORDS);
@@ -40,8 +41,15 @@ export const ROLE_WORD = words(Array.from(ROLE_WORDS.keys()));
 /** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
 export const SCOPE_WORD = words([...ROLE_WORDS.keys(), ...MIX_WORDS]);
 
-/** The marks that end a clause, one character class each way: a mark, and any character but one. */
-const CLAUSE_MARKS = ',.;:!?';
+/** The brackets opening an aside, which a joining word after one may continue a list across. */
+const OPENING_BRACKET_MARKS = String.raw`(\[`;
+const OPENING_BRACKET = `[${OPENING_BRACKET_MARKS}]`;
+/**
+ * The marks that end a clause, one character class each way: a mark, and any character but one. A bracket,
+ * opening or closing, ends the clause before it, so no word holds one: "keep the vocal bright (and make
+ * the drums louder)" holds the vocal's brightness as its unbracketed form does.
+ */
+const CLAUSE_MARKS = String.raw`,.;:!?${OPENING_BRACKET_MARKS})\]`;
 export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
@@ -93,16 +101,15 @@ const OR = 'or';
 const BUT = 'but';
 const WHILE = 'while';
 const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
-/** The one word joining nouns and continued objects under one verb: "the level and the width". */
-export const AND_WORD = AND;
 /**
  * The one way a later member joins the one before it, for every list a clause reads: a comma, with or
- * without one of the joining words after it, a clause separator with one of them after it, or one of
- * those words alone: "the level, and the width", "louder—or brighter". A separator with no joining word
- * after it still ends the clause ("the punch—make the vocal brighter").
+ * without one of the joining words after it, a clause separator or an opening bracket with one of them
+ * after it, or one of those words alone: "the level, and the width", "louder—or brighter", "louder (or
+ * brighter)". A separator or bracket with no joining word after it still ends the clause ("the
+ * punch—make the vocal brighter").
  */
 function joinedBy(joiningWords: string): string {
-    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s*${CLAUSE_SEPARATOR}\s*${joiningWords}\s+|\s+${joiningWords}\s+)`;
+    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s*(?:${CLAUSE_SEPARATOR}|${OPENING_BRACKET})\s*${joiningWords}\s+|\s+${joiningWords}\s+)`;
 }
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
 export const AND_JOIN = joinedBy(words([AND]));
@@ -122,7 +129,12 @@ export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_S
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
 export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
-export const OBJECT_PREPOSITION = words(['of', 'on', 'in']);
+const ON_WORD = 'on';
+export const OBJECT_PREPOSITION = words(['of', ON_WORD, 'in']);
+/** "on" alone, which a keep continuing a move may carry: "keep on widening". */
+const ON = words([ON_WORD]);
+/** "at", which a level is kept at: "keep the Keys at the same level". */
+export const AT = words(['at']);
 /** The low end, by either name, its words spaced or hyphenated: "the low end", "the bottom-end". */
 export const LOW_END = words(['low end', 'bottom end'], HYPHEN_OR_SPACE);
 
@@ -144,8 +156,9 @@ export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', '
 const AS_WORD = 'as';
 /** "as", which a kept term ("as dynamic") and a kept state ("as it is") stand behind. */
 export const AS = words([AS_WORD]);
-/** The states a kept object stays in: "intact", "as it is". */
-const UNCHANGED_STATE = String.raw`(?:${words(['unchanged', 'intact'])}|${AS}\s+(?:it\s+)?is)`;
+const IS = 'is';
+/** The states a kept object stays in: "intact", "as it is", "as is". */
+const UNCHANGED_STATE = words(['unchanged', 'intact', `${AS_WORD} ${IT} ${IS}`, `${AS_WORD} ${IS}`]);
 /** The states only a left object stays in, beside those: "leave the low end alone". */
 const LEFT_ONLY_STATE = words(['alone', 'untouched']);
 /** Every state a left or kept object stays in: "leave the low end alone", "keep the low end intact". */
@@ -153,7 +166,7 @@ export const LEFT_STATE = String.raw`(?:${LEFT_ONLY_STATE}|${UNCHANGED_STATE})`;
 /** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
 export const THE_SAME = String.raw`${THE}\s+same`;
 /** The states a kept measured noun stays in: "keep the level the same", "where it is". */
-export const HELD_STATE = String.raw`(?:${THE_SAME}|${words(['where it is'])}|${UNCHANGED_STATE})`;
+export const HELD_STATE = String.raw`(?:${THE_SAME}|${words([`where ${IT} ${IS}`])}|${UNCHANGED_STATE})`;
 
 /**
  * What joins a contraction's two halves, each listed contraction written to the builder as two words
@@ -162,29 +175,34 @@ export const HELD_STATE = String.raw`(?:${THE_SAME}|${words(['where it is'])}|${
  */
 const CONTRACTION = `${APOSTROPHE}?`;
 const WITHOUT = 'without';
-export const NEGATION = String.raw`(?:${words(['do not', 'never', WITHOUT])}|${words(['don t'], CONTRACTION)})`;
+const NOT = 'not';
+export const NEGATION = String.raw`(?:${words([`do ${NOT}`, 'never', WITHOUT])}|${words(['don t'], CONTRACTION)})`;
 const CAN = 'can';
 const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
 const MODAL = words(MODAL_WORDS);
 /** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
 const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
-export const DOES_NOT = String.raw`(?:${words(['does not'])}|${words(['doesn t'], CONTRACTION)})`;
+export const DOES_NOT = String.raw`(?:${words([`does ${NOT}`])}|${words(['doesn t'], CONTRACTION)})`;
 const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
 /**
  * The head of a purpose clause, after "so" or "so that": there "doesn't sound louder" asks for a bound
  * ("add some warmth so it doesn't sound louder") rather than describing the sound as it is.
  */
 export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
-/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get". */
-export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL_CONTRACTION})`;
+/**
+ * Each modal followed by "not", and "cannot", the one modal written as one word with it: "must not", "cannot".
+ */
+const MODAL_NOT = words([...MODAL_WORDS.map((modal) => `${modal} ${NOT}`), `${CAN}${NOT}`]);
+/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get", "cannot be". */
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION})`;
 /**
  * A modal negation states a clause, and so does "doesn't get"; a plain copula negation ("isn't",
  * "aren't", "wasn't") describes the sound as it is, so it is none.
  */
 export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION})`;
 const NO_WORD = 'no';
-const BARE_NEGATION = words([NO_WORD, 'not']);
+const BARE_NEGATION = words([NO_WORD, NOT]);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
 export const NO = words([NO_WORD]);
 /**
@@ -201,11 +219,13 @@ export const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${S
 const HAVE_WORDS = ['has', 'have'];
 const NEED_WORDS = ['needs', 'need'];
 const WANT_WORDS = ['wants', 'want'];
-const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', ...HAVE_WORDS, 'had', 'do', 'does', 'did'];
+const AUXILIARY_WORDS = [IS, 'are', 'was', 'were', 'been', ...HAVE_WORDS, 'had', 'do', 'does', 'did'];
 const PREDICATE_VERB_WORDS = [...NEED_WORDS, ...WANT_WORDS, 'gets', 'got'];
 const FROM_WORD = 'from';
-const TO = 'to';
-const COMPLEMENT_WORDS = [TO, FROM_WORD];
+const TO_WORD = 'to';
+const COMPLEMENT_WORDS = [TO_WORD, FROM_WORD];
+/** "to" alone, which "no changes" names what it protects after: "no changes to the low end". */
+export const TO = words([TO_WORD]);
 /** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
 export const FROM = words([FROM_WORD]);
 /** The verbs a negation permits a later verb through: "don't have to", "don't want to", "don't bother keeping". */
@@ -219,7 +239,7 @@ const PERMITTED_PERSON = words(['you']);
 /** The negations naming nobody, which a permission verb follows: "nobody needs to keep …". */
 const NOBODY = words(['nobody', 'no one']);
 /** A permission a negation leads to the permitted verb through: "feel you need to", "bother to", "have to". */
-const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${PERMISSION_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${words([TO])})?`;
+const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${PERMISSION_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${TO})?`;
 /**
  * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
  * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
@@ -252,7 +272,7 @@ export const SUBORDINATOR = words([
     'if',
     SO,
     `${SO} ${THAT}`,
-    TO,
+    TO_WORD,
     'because',
     AS_WORD,
     WHILE,
@@ -283,6 +303,10 @@ export const OBJECT_MEMBERS = String.raw`${OBJECT_MEMBER}(?:${MEMBER_JOIN}${OBJE
 export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
 export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
+/** "than", which a comparison names its other scope after. */
+const THAN = words(['than']);
+/** A direction compared with another scope: "louder than the vocal", "quieter than the vocal". */
+export const COMPARED_DIRECTION = String.raw`${DIRECTION}\s+${THAN}\b`;
 /** Comparatives one clause applies to one object: "brighter and louder", "brighter, wider, or louder". */
 export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN}(?:${ANY}\s+)?${DIRECTION})*)`;
 
@@ -291,6 +315,6 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN
  * making the drums wider", "keep the vocal getting brighter". It asks for more of the move, and never
  * reaches past a separator into the next clause's move.
  */
-const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:on${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
+const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
 export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
