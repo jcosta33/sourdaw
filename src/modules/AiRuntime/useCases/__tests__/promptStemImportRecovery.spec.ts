@@ -530,7 +530,6 @@ describe('prompt stem import recovery', () => {
 
     afterEach(() => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearHandlerRegistry();
         flushAutomergeStorageWrites();

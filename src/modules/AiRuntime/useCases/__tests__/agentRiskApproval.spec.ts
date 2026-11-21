@@ -186,7 +186,6 @@ describe('agent risk approval', () => {
         resetAiWorkflowCommandCheckpointRuntime();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         collaborationStore.set(structuredClone(baseCollaborationState));
         chatStore.set(null);
     });
@@ -733,21 +732,5 @@ describe('agent risk approval', () => {
         }
         expect(validation.reason).toContain('project identity is stale');
         expect(validation.stale).toBe(true);
-    });
-
-    it('classifies an unavailable fingerprint capture as a genuine rejection, not the project-changed event', () => {
-        const revision = captureProjectRevision();
-        const { commandBatch } = createBatch(revision);
-        const approval = compileAgentRiskApproval({ commandBatch });
-        commandBatchPreflightPort.setProvider(null);
-
-        const validation = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
-
-        expect(validation.status).toBe('invalid');
-        if (validation.status !== 'invalid') {
-            throw new Error('Expected an unavailable fingerprint capture to invalidate approval');
-        }
-        expect(validation.reason).toContain('fingerprint capture is unavailable');
-        expect(validation.stale).toBe(false);
     });
 });

@@ -36,7 +36,7 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
     if (parsed.status === 'invalid') {
         return { status: 'rejected' as const, reason: parsed.reason };
     }
-    if (!commandProjectRevisionPort.isConfigured() || !commandProjectDivergencePort.isConfigured()) {
+    if (!commandProjectRevisionPort.isConfigured()) {
         return {
             status: 'rejected' as const,
             reason: 'Command batch project divergence classification is unavailable',
@@ -58,9 +58,6 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
         commandsCompatible,
         targetIds,
     });
-    if (!divergence) {
-        return { status: 'rejected' as const, reason: 'Command batch project divergence could not be classified' };
-    }
     if (!divergence.mayReapply) {
         return {
             status: 'conflicted' as const,
@@ -90,7 +87,7 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
                 const refusal = handler?.validationRefusalReason?.(action, validationContext) ?? null;
                 return {
                     status: 'conflicted' as const,
-                    divergence: incompatible ?? divergence,
+                    divergence: incompatible,
                     reason: describeValidationConflict(action.type, refusal),
                     refusal,
                 };

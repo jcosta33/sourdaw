@@ -478,12 +478,10 @@ describe('command preview save and content authority', () => {
     afterEach(() => {
         flushAutomergeStorageWrites();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
+        automergeRepository.reset();
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandProjectRevisionPort.setProvider(null);
-        automergeRepository.reset();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });

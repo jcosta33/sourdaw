@@ -4358,9 +4358,6 @@
     "src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts": {
@@ -12287,7 +12284,7 @@
             "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 2
@@ -12301,7 +12298,7 @@
             "count": 1
         },
         "eslint/max-depth": {
-            "count": 9
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 1

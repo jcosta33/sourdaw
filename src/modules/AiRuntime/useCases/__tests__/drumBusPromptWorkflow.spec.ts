@@ -25,6 +25,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectDivergencePort,
     commandProjectRevisionPort,
     commandTrackDefaultsPort,
     configureCommandBatchIdempotency,
@@ -37,6 +38,7 @@ import {
 import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
+    inspectAgentProjectDivergence,
     projectRevisionMatchesLiveIgnoringSaveWrites,
     captureUnownedProjectMutations,
     createCrdtDoc,
@@ -71,6 +73,7 @@ import { getProjectContext } from '../getProjectContext';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
+import { AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON } from './aiWorkflowCommandPreflightFixture';
 import { advertisedAnswerSchema, readLocalPromptTool } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
@@ -1271,6 +1274,7 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         configureCommandBatchIdempotency({ canExecute: () => true });
@@ -1324,7 +1328,6 @@ describe('drum bus prompt workflow', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
-        commandBatchPreflightPort.setProvider(null);
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(null);
         audioEngineUseCases.configureRuntimeGraphTopologyValidator(null);
         audioEngineUseCases.audioEngine.setUseCaseDeviceCollaborators(null);
@@ -1853,7 +1856,7 @@ describe('drum bus prompt workflow', () => {
         if (result.status !== 'invalidated') {
             throw new Error(`Expected invalidated confirmation, received ${result.status}`);
         }
-        expect(result.reason).toContain('project changed');
+        expect(result.reason).toBe(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
@@ -4319,7 +4322,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(captureProjectRevision()).not.toBe(approvedRevision);
         expect(JSON.stringify(getCrdtDoc('root'))).toContain('device-bass-comp-a-collaborator');
@@ -4334,9 +4338,7 @@ describe('drum bus prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it.each(['webllm', 'cloud'] as const)(
@@ -4600,7 +4602,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
@@ -4610,9 +4613,7 @@ describe('drum bus prompt workflow', () => {
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        expect(terminalMessage?.content).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
@@ -4814,7 +4815,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
@@ -4823,9 +4825,7 @@ describe('drum bus prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {

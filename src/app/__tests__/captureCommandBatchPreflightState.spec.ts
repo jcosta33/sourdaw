@@ -559,20 +559,16 @@ describe('captureCommandBatchPreflightState', () => {
             runId: 'run-projection-only',
         });
 
-        try {
-            const result = await executeVersionedCommandBatchEnvelope({
-                authority: batch.authority,
-                serialized: batch.serialized,
-            });
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
 
-            expect(result).toMatchObject({
-                status: 'rejected',
-                reason: 'Command batch target does not exist: track-projection-only',
-                actions: [],
-            });
-        } finally {
-            commandBatchPreflightPort.setProvider(null);
-        }
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Command batch target does not exist: track-projection-only',
+            actions: [],
+        });
     });
 
     it('does not let a stored arrangement copy establish authority for a target the live project lost', () => {
