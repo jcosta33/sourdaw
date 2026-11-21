@@ -2396,6 +2396,23 @@ describe('reading only governed protections and whole object names', () => {
                 ),
             ],
         ],
+        // a "but" after a clause naming every part of its scope carves an object out of it
+        [
+            "don't make anything wider but the vocal",
+            [],
+            [unread("don't make anything wider but the vocal", exceptionReason('but the vocal'))],
+        ],
+        [
+            "don't change the brightness of everything but the vocal",
+            [],
+            [unread("don't change the brightness of everything but the vocal", exceptionReason('but the vocal'))],
+        ],
+        // a "but" before a clause of its own, its object taking a predicate, carves nothing out
+        [
+            'keep everything bright but the vocal is too loud',
+            [measured('brightness-held-v1', 'keep everything bright', MIX)],
+            [],
+        ],
         // a permission naming another scope states that scope's change, never an exception to the hold
         [
             'keep the vocal bright, the drums can be louder',
@@ -2538,6 +2555,34 @@ describe('reading only governed protections and whole object names', () => {
         "don't bother keeping the mix from getting wider",
         "don't bother to keep the mix from getting wider",
         "you don't really need to keep the vocal bright",
+        // a release gives up the keep, stop or prevent it names, so it permits what that names too
+        'stop keeping the mix from getting wider',
+        'quit keeping the mix from getting wider',
+        'you can stop keeping the mix from getting wider',
+        'forget about keeping the mix from getting wider',
+        'forget keeping the mix from getting wider',
+        'skip keeping the mix from getting wider',
+        'cease keeping the mix from getting wider',
+        'disregard keeping the mix from getting wider',
+        'cancel keeping the mix from getting wider',
+        'undo keeping the mix from getting wider',
+        'remove the constraint keeping the mix from getting wider',
+        'no longer keep the mix from getting wider',
+        'you no longer need to keep the mix from getting wider',
+        'you no longer need to keep the mix wide',
+        'no more keeping the mix from getting wider',
+        'I no longer care about keeping the mix from getting wider',
+        'stop worrying about keeping the mix from getting wider',
+        "don't worry about keeping the vocal from getting brighter",
+        'no point in keeping the mix from getting wider',
+        'no need for keeping the mix from getting wider',
+        "don't try keeping the mix from getting wider",
+        "I'm done keeping the mix from getting wider",
+        'instead of keeping the mix from getting brighter, make it brighter',
+        'stop preventing the vocal from getting brighter',
+        'you can stop preventing the vocal from getting brighter',
+        'stop stopping the mix from getting wider',
+        'stop keeping the vocal bright',
     ])('reads nothing from the permission "%s"', (prompt) => {
         expect(compilePerceptualConstraints(prompt, grammarContext('Keys'))).toEqual({
             constraints: [],
@@ -2566,6 +2611,9 @@ describe('reading only governed protections and whole object names', () => {
         ['stop the vocal from looking louder', 'loudness-not-raised-v1', onTracks('vocal')],
         ['prevent the mix from coming across wider', 'stereo-width-not-widened-v1', MIX],
         ['keep the drums from ending up less dynamic', 'dynamics-not-reduced-v1', onTracks('drums')],
+        ['keep the mix from feeling louder', 'loudness-not-raised-v1', MIX],
+        ['keep the mix from seeming wider', 'stereo-width-not-widened-v1', MIX],
+        ['keep the mix from becoming brighter', 'brightness-not-raised-v1', MIX],
     ] satisfies [string, MeasuredPerceptualConstraint['constraintId'], PerceptualConstraintScope][])(
         'bounds "%s"',
         (prompt, constraintId, scope) => {

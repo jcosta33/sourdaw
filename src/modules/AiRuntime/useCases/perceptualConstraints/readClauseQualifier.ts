@@ -1,13 +1,21 @@
 import { type PerceptualConstraintScope } from '../../models/PerceptualConstraint';
 
-import { EXCEPTION_AFTER, EXCEPTION_BEFORE, EXCEPTION_EDGE_MARKS, OBJECT_ONLY_ASIDE } from './constraintClauseWords';
+import {
+    EXCEPTED_OBJECT_GROUPS,
+    EXCEPTION_AFTER,
+    EXCEPTION_BEFORE,
+    EXCEPTION_EDGE_MARKS,
+    OBJECT_ONLY_ASIDE,
+    SPARING_EXCEPTION,
+    UNIVERSAL_OBJECT,
+} from './constraintClauseWords';
 import { type ConsumedSpan } from './readUnreadConstraintClauses';
 
 const TRAILING_OBJECT_ASIDE = new RegExp(String.raw`^\s*${OBJECT_ONLY_ASIDE}`, 'iu');
 const TRAILING_EXCEPTION = new RegExp(String.raw`^${EXCEPTION_AFTER}`, 'diu');
 const LEADING_EXCEPTION = new RegExp(EXCEPTION_BEFORE, 'diu');
-/** The groups an exception's object is captured under, one per form (`EXCEPTION_AFTER`). */
-const EXCEPTED_OBJECT_GROUPS = ['listed', 'conditioned', 'refused', 'permitted', 'excepted'];
+const TRAILING_SPARING = new RegExp(String.raw`^${SPARING_EXCEPTION}`, 'diu');
+const NAMES_EVERY_PART = new RegExp(UNIVERSAL_OBJECT, 'iu');
 
 /** What a constraint's clause goes on to qualify it by, the span it is quoted with, and why it is unread. */
 export type ClauseQualifier = { start: number; end: number; reason: string };
@@ -50,6 +58,20 @@ function exceptsWithinScope(
     return scope.kind === 'mix' || exceptedTrackIds.some((trackId) => scope.trackIds.includes(trackId));
 }
 
+/**
+ * The exception right after a clause: an exception, a condition, a refusal, a permission or an object
+ * left out, or a "but" carving an object out of a clause naming every part of its scope ("don't make
+ * anything wider but the vocal").
+ */
+function readTrailingException(masked: string, span: ConsumedSpan): RegExpExecArray | null {
+    const after = masked.slice(span.end);
+    const exception = TRAILING_EXCEPTION.exec(after);
+    if (exception !== null || !NAMES_EVERY_PART.test(masked.slice(span.start, span.end))) {
+        return exception;
+    }
+    return TRAILING_SPARING.exec(after);
+}
+
 /** An exception's own words, without the marks that set it off from its clause. */
 function trimExceptionMarks(exception: string): string {
     return exception.replaceAll(EXCEPTION_EDGE_MARKS, '').trim();
@@ -82,7 +104,7 @@ export function readClauseQualifier(
             reason: `“${quoted}” names an object beside the one its clause holds, so no single scope can be measured.`,
         };
     }
-    const trailing = TRAILING_EXCEPTION.exec(after);
+    const trailing = readTrailingException(masked, span);
     const exception = trailing !== null && exceptsWithinScope(trailing, span.end, text, scope) ? trailing : null;
     const leading = exception === null ? LEADING_EXCEPTION.exec(masked.slice(0, span.start)) : null;
     const before = leading !== null && exceptsWithinScope(leading, 0, text, scope) ? leading : null;

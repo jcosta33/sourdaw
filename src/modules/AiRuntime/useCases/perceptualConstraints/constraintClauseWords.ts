@@ -32,7 +32,9 @@ export const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = ne
     ['keys', 'keys'],
 ]);
 const IT = 'it';
-const MIX_PRONOUN_WORDS = [IT, 'everything', 'anything'];
+/** The pronouns naming the whole mix by every part of it, which a "but" may carve a part out of. */
+const UNIVERSAL_PRONOUN_WORDS = ['everything', 'anything'];
+const MIX_PRONOUN_WORDS = [IT, ...UNIVERSAL_PRONOUN_WORDS];
 /** The pronouns that hold the mix while the request names no track or role before them. */
 export const MIX_PRONOUNS: ReadonlySet<string> = new Set(MIX_PRONOUN_WORDS);
 export const MIX_PRONOUN = words(MIX_PRONOUN_WORDS);
@@ -166,7 +168,14 @@ export const KEEP = words(['keep', 'keeping']);
 const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintaining', 'retain', 'retaining']);
 export const KEEP_VERBS = String.raw`(?:${KEEP}|${PRESERVING_VERB})`;
 export const LEAVE_VERB = words(['leave', 'leaving']);
-export const STOP_VERB = words(['stop', 'stopping', 'prevent', 'preventing']);
+const STOPPING_WORD = words(['stop', 'stopping', 'prevent', 'preventing']);
+/** The verbs a "stop" gives up rather than prevents through: "stop keeping …", "stop worrying about …". */
+const RELEASED_VERB = String.raw`(?:${KEEP_VERBS}|${STOPPING_WORD}|${LEAVE_VERB}|${words(['worrying about', 'caring about', 'trying'])})`;
+/**
+ * A stop or prevent, never one releasing another keep or stop ("stop keeping the mix from getting
+ * wider", "stop preventing …"), which the release reads instead.
+ */
+export const STOP_VERB = String.raw`${STOPPING_WORD}(?!\s+${RELEASED_VERB}${WORD_END})`;
 /** "avoid making it louder" governs what follows as a negation does. */
 export const AVOID_VERB = words(['avoid', 'avoiding']);
 /** The verbs a subject becomes a level through on its own: "the mix must not get louder". */
@@ -290,7 +299,15 @@ export const TO = words([TO_WORD]);
 /** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
 export const FROM = words([FROM_WORD]);
 /** The verbs a negation permits a later verb through: "don't have to", "don't want to", "don't bother keeping". */
-const PERMISSION_VERB = words([...HAVE_WORDS, ...NEED_WORDS, ...WANT_WORDS, 'bother']);
+const PERMISSION_VERB = words([
+    ...HAVE_WORDS,
+    ...NEED_WORDS,
+    ...WANT_WORDS,
+    'bother',
+    'try',
+    'worry about',
+    'care about',
+]);
 /** The adverbs a negation may carry before what it governs: "don't really need to", "don't even have to". */
 const PERMISSION_ADVERB = words(['really', 'even', 'ever', 'actually']);
 /** "feel", which leads a permission verb as a negation's own verb: "don't feel you need to …". */
@@ -299,17 +316,56 @@ const FEEL = words(['feel']);
 const PERMITTED_PERSON = words(['you']);
 /** The negations naming nobody, which a permission verb follows: "nobody needs to keep …". */
 const NOBODY = words(['nobody', 'no one']);
+/**
+ * "no longer", which ends what was asked for as a negation does, before a permission verb or not: "no
+ * longer keep …", "you no longer need to keep …".
+ */
+const NO_LONGER = words(['no longer']);
 /** A permission a negation leads to the permitted verb through: "feel you need to", "bother to", "have to". */
 const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${PERMISSION_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${TO})?`;
 /**
+ * The words releasing a keep, stop or prevent the request gives up rather than asks for: "stop keeping
+ * …", "forget about keeping …", "no more keeping …", "I'm done keeping …", "instead of keeping …",
+ * "remove the constraint keeping …", "stop preventing …".
+ */
+const RELEASE_LEAD = words([
+    'stop',
+    'quit',
+    'cease',
+    'skip',
+    'forget',
+    'forget about',
+    'disregard',
+    'cancel',
+    'undo',
+    'give up',
+    'give up on',
+    'no more',
+    'done',
+    'finished',
+    'stop worrying about',
+    'quit worrying about',
+    'no point',
+    'no point in',
+    'no need for',
+    'instead of',
+    'rather than',
+    'remove the constraint',
+    'remove the rule',
+    'drop the constraint',
+    'lift the constraint',
+]);
+/**
  * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
  * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
- * want to keep …", "don't bother keeping …", "nobody needs to keep …"), past any adverb ("you don't
- * really need to stop …"), which permits what a keep, stop, prevent or leave names, so neither a
- * reader nor the net reads a protection there. A negation governing an earlier verb ("without
- * changing the tempo keep the vocal bright") permits nothing.
+ * want to keep …", "don't bother keeping …", "don't worry about keeping …", "nobody needs to keep …",
+ * "you no longer need to keep …"), past any adverb ("you don't really need to stop …"), and not where
+ * a release gives the verb up ("stop keeping …", "forget about preventing …"). Either permits what a
+ * keep, stop, prevent or leave names, so neither a reader nor the net reads a protection there. A
+ * negation governing an earlier verb ("without changing the tempo keep the vocal bright") permits
+ * nothing.
  */
-export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)`;
+export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)(?<!\b${RELEASE_LEAD}\s+)`;
 /**
  * The one leading words a move clause names its move through: "sound louder", "getting any wider",
  * "going brighter". The verb is never part of the object, so "sound louder" is a louder clause.
@@ -427,9 +483,30 @@ const ONLY = words(['only']);
  * What an exception word, a condition or a refusal excepts, its object captured under the group named:
  * a stretch of time or place ("in the chorus") or an object, "only" before it ("only the drums").
  */
-function exceptedPart(group: string): string {
-    return String.raw`(?:${EXCEPTION_PREPOSITION}${WORD_END}|(?:${ONLY}\s+)?(?<${group}>${OBJECT_MEMBERS})${EXCEPTED_OBJECT_END})`;
+const LISTED_GROUP = 'listed';
+const CONDITIONED_GROUP = 'conditioned';
+const REFUSED_GROUP = 'refused';
+const PERMITTED_GROUP = 'permitted';
+const EXCEPTED_GROUP = 'excepted';
+const SPARED_GROUP = 'spared';
+/** The groups an exception's object is captured under, one per form of `EXCEPTION_AFTER` and `SPARING_EXCEPTION`. */
+export const EXCEPTED_OBJECT_GROUPS = [
+    LISTED_GROUP,
+    CONDITIONED_GROUP,
+    REFUSED_GROUP,
+    PERMITTED_GROUP,
+    EXCEPTED_GROUP,
+    SPARED_GROUP,
+];
+function exceptedPart(group: string, objectEnd: string = EXCEPTED_OBJECT_END): string {
+    return String.raw`(?:${EXCEPTION_PREPOSITION}${WORD_END}|(?:${ONLY}\s+)?(?<${group}>${OBJECT_MEMBERS})${objectEnd})`;
 }
+/**
+ * Where an object a "but" carves out ends: a stretch it is carved out in or the end of the clause, never
+ * a predicate, which makes it the subject of a clause of its own ("keep everything bright but the vocal
+ * is too loud").
+ */
+const SPARED_OBJECT_END = String.raw`(?=\s+${EXCEPTION_PREPOSITION}${WORD_END}|${CLAUSE_END})`;
 /** The marks an exception after a protection may stand behind: a comma, a colon, a separator or a bracket. */
 const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})?\s*`;
 /**
@@ -438,7 +515,7 @@ const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUS
  */
 const EXCEPTION_TAIL = String.raw`(?:(?!\b${CLAUSE_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})*`;
 /** An object a permission names, "only" before or after it: "only the drums", "drums only". */
-const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<permitted>${OBJECT_MEMBERS})(?:\s+${ONLY})?`;
+const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<${PERMITTED_GROUP}>${OBJECT_MEMBERS})(?:\s+${ONLY})?`;
 /**
  * An exception right after a protection, to the end of its clause and any closing bracket: an exception
  * word before an object ("(except the vocal)", ", excluding the drums"), a stretch of time or place
@@ -451,7 +528,15 @@ const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<permitted>${OBJECT_MEMBERS
  * drums can be louder"). A refused quality ("but not harsh", "but not too bright") and a condition naming
  * no object ("unless I say otherwise") match no exception.
  */
-export const EXCEPTION_AFTER = String.raw`${EXCEPTION_MARK}(?:${EXCEPTION_LEAD}(?:\s+${exceptedPart('listed')}|${WORD_END})|${CONDITION_LEAD}\s+${exceptedPart('conditioned')}|(?:${words([BUT])}\s+)?${words([NOT])}\s+${exceptedPart('refused')}|(?:${words([BUT])}\s+)?${PERMITTED_OBJECT}\s+${PERMISSION_MODAL}${WORD_END}|(?<excepted>${OBJECT_MEMBERS})\s+${EXCEPTED_STATE}${CLAUSE_END})${EXCEPTION_TAIL}[${CLOSING_BRACKET_MARKS}]?`;
+export const EXCEPTION_AFTER = String.raw`${EXCEPTION_MARK}(?:${EXCEPTION_LEAD}(?:\s+${exceptedPart(LISTED_GROUP)}|${WORD_END})|${CONDITION_LEAD}\s+${exceptedPart(CONDITIONED_GROUP)}|(?:${words([BUT])}\s+)?${words([NOT])}\s+${exceptedPart(REFUSED_GROUP)}|(?:${words([BUT])}\s+)?${PERMITTED_OBJECT}\s+${PERMISSION_MODAL}${WORD_END}|(?<${EXCEPTED_GROUP}>${OBJECT_MEMBERS})\s+${EXCEPTED_STATE}${CLAUSE_END})${EXCEPTION_TAIL}[${CLOSING_BRACKET_MARKS}]?`;
+/**
+ * A "but" carving an object out of a clause naming every part of its scope, right after that clause:
+ * "don't make anything wider but the vocal", "the brightness of everything but the vocal". The object
+ * is captured as `spared`; only a clause the universal object below names reads it.
+ */
+export const SPARING_EXCEPTION = String.raw`${EXCEPTION_MARK}${words([BUT])}\s+${exceptedPart(SPARED_GROUP, SPARED_OBJECT_END)}${EXCEPTION_TAIL}[${CLOSING_BRACKET_MARKS}]?`;
+/** The words naming every part of a scope, which a "but" may carve an object out of: "everything", "every track". */
+export const UNIVERSAL_OBJECT = String.raw`\b${words([...UNIVERSAL_PRONOUN_WORDS, 'all', 'every'])}${WORD_END}`;
 /** The marks setting an exception off from its clause, which its quotation leaves out: ", except the vocal" quotes "except the vocal". */
 export const EXCEPTION_EDGE_MARKS = new RegExp(
     String.raw`^(?:\s*[,;:${BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})+|(?:[,;:${BRACKET_MARKS}]|${CLAUSE_SEPARATOR})+\s*$`,
@@ -461,7 +546,7 @@ export const EXCEPTION_EDGE_MARKS = new RegExp(
  * An exception or condition opening the clause right before a protection, its object captured as after
  * one: "except for the vocal, keep the mix …", "except in the chorus, keep the vocal bright".
  */
-export const EXCEPTION_BEFORE = String.raw`\b(?:${EXCEPTION_LEAD}(?:\s+${exceptedPart('listed')}|${WORD_END})|${CONDITION_LEAD}\s+${exceptedPart('conditioned')})${SAME_CLAUSE_CHARACTER}*(?:[,;:]|${CLAUSE_SEPARATOR})?\s*$`;
+export const EXCEPTION_BEFORE = String.raw`\b(?:${EXCEPTION_LEAD}(?:\s+${exceptedPart(LISTED_GROUP)}|${WORD_END})|${CONDITION_LEAD}\s+${exceptedPart(CONDITIONED_GROUP)})${SAME_CLAUSE_CHARACTER}*(?:[,;:]|${CLAUSE_SEPARATOR})?\s*$`;
 /** What separates the members of an object list, in the text and in the reading of its members. */
 export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
 /** "than", which a comparison names its other scope after. */
