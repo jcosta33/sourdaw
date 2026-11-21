@@ -72,12 +72,10 @@ function clampScrollY(
         automationStore.value?.lanes ?? [],
         timelineEditingStore.value
     );
-    const totalHeight = getTimelineContentHeight(
-        tracks,
-        automationRows,
-        getTimelineTrackHeightScale(),
-        trackHeightPreview
-    );
+    const totalHeight = getTimelineContentHeight(tracks, automationRows, getTimelineTrackHeightScale(), {
+        trackHeightPreview,
+        showHiddenTracks: timelineEditingStore.value?.showHiddenTracks ?? false,
+    });
     const maxY = Math.max(0, totalHeight - viewportHeight);
     return Math.max(0, Math.min(maxY, scrollY));
 }

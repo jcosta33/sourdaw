@@ -143,7 +143,7 @@ fn shutdown_with_wait(
             report.closed_editors = gui_report.closed_instance_ids;
             report.editors_that_refused = gui_report.errors;
         }
-        Err(error) => report.editor_close_error = Some(error),
+        Err(error) => report.editor_close_error = Some(error.to_string()),
     }
 
     // Deliberately after the close pass and outside the match: a close that
@@ -397,8 +397,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("test host creates no windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err("test host creates no windows".to_string().into())
         }
 
         fn destroy_window(&self, label: &str) {
@@ -950,7 +951,7 @@ mod tests {
         fn run_on_ui_thread(
             &self,
             task: &Arc<crate::host::ui_thread::UiThreadTask>,
-        ) -> Result<(), String> {
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             let _ = self.hop_requested.lock().expect("hop_requested").send(());
             let gate = self.hop_gate.lock().expect("hop_gate").take();
             if let Some(gate) = gate {
@@ -978,8 +979,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("test host creates no windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err("test host creates no windows".to_string().into())
         }
 
         fn destroy_window(&self, _label: &str) {}
