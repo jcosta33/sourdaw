@@ -11,6 +11,11 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 import { issueCommandApprovalBinding } from '../issueCommandApprovalBinding';
 
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from './registerInMemoryCommandBatchIdempotency';
+
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
 function compileCommitBatch(
@@ -37,7 +42,7 @@ function compileCommitBatch(
         autoCommit,
         autoCommitApproval: resolvedAutoCommitApproval,
         baseRevision: 'revision-1',
-        batchId: 'batch-approval-boundary',
+        batchId: `batch-approval-boundary-${String(gain)}`,
         commands: [JSON.stringify(command)],
         intent: 'Set vocal gain',
         mode: 'commit',
@@ -63,6 +68,8 @@ function setupCommitBoundary() {
             validate: () => true,
         } satisfies ActionHandler<SetTrackGainAction>,
     });
+    resetUnwiredProjectCommandBatchLedger();
+    registerInMemoryCommandBatchIdempotency();
     commandProjectRevisionPort.setProvider(() => 'revision-1');
     commandBatchPreflightPort.setProvider(() => ({
         audioGraphValid: true,
@@ -112,10 +119,7 @@ describe('command approval boundary', () => {
         expect(execute).toHaveBeenCalledOnce();
 
         const repeated = await executeVersionedCommandBatchEnvelope({ ...batch, approvalBinding });
-        expect(repeated).toMatchObject({
-            status: 'rejected',
-            reason: 'Command approval binding was already consumed',
-        });
+        expect(repeated.status).toBe('idempotent-replay');
         expect(execute).toHaveBeenCalledOnce();
     });
 

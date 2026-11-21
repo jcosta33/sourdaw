@@ -17,7 +17,7 @@ export const commandBatchExecutionAuthorityPort = {
     canExecute(): boolean {
         if (registeredProvider === null) {
             throw new Error(
-                'commandBatchExecutionAuthorityPort.canExecute: the execution authority is not registered; call configureCommandBatchIdempotency() from #/app/bootstrap'
+                'commandBatchExecutionAuthorityPort.canExecute: the execution authority is not registered; call commandBatchExecutionAuthorityPort.setProvider() from #/app/bootstrap'
             );
         }
         return registeredProvider();

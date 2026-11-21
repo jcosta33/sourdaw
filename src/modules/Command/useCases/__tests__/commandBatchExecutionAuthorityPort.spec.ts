@@ -8,7 +8,7 @@ const canExecute = () => true;
 // order: the unfilled read first, then the fill.
 describe('commandBatchExecutionAuthorityPort', () => {
     it('throws on a read before registration, naming the registrar', () => {
-        expect(() => commandBatchExecutionAuthorityPort.canExecute()).toThrow('configureCommandBatchIdempotency');
+        expect(() => commandBatchExecutionAuthorityPort.canExecute()).toThrow('#/app/bootstrap');
     });
 
     it('serves the registered provider', () => {

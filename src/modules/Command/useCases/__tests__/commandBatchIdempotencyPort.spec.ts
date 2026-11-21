@@ -16,24 +16,17 @@ const repository = {
 // order: the unfilled reads first, then the fill.
 describe('commandBatchIdempotencyPort', () => {
     it('throws on each read before registration, naming the registrar', () => {
-        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow('configureCommandBatchIdempotency');
-        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow('configureCommandBatchIdempotency');
-        expect(() => commandBatchIdempotencyPort.release(key)).toThrow('configureCommandBatchIdempotency');
+        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow('#/app/bootstrap');
+        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow('#/app/bootstrap');
+        expect(() => commandBatchIdempotencyPort.release(key)).toThrow('#/app/bootstrap');
         expect(() => commandBatchIdempotencyPort.complete({ ...key, serializedReceipt: '{}' })).toThrow(
-            'configureCommandBatchIdempotency'
+            '#/app/bootstrap'
         );
-        expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow(
-            'configureCommandBatchIdempotency'
-        );
-    });
-
-    it('reports no repository before registration', () => {
-        expect(commandBatchIdempotencyPort.isConfigured()).toBe(false);
+        expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow('#/app/bootstrap');
     });
 
     it('serves the registered repository', async () => {
         commandBatchIdempotencyPort.setRepository(repository);
-        expect(commandBatchIdempotencyPort.isConfigured()).toBe(true);
 
         await expect(commandBatchIdempotencyPort.lookup(key)).resolves.toEqual({ status: 'missing' });
         expect(lookup).toHaveBeenCalledWith(key);

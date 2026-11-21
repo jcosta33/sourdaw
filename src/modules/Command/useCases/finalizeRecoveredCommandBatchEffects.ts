@@ -90,7 +90,7 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
     /** Caller-owned proof that its retained external effects still match the pending receipt. */
     validateRecoveredEffects?: () => string | null;
 }): Promise<FinalizeResult> {
-    if (!commandBatchIdempotencyPort.isConfigured() || !commandProjectRevisionPort.isConfigured()) {
+    if (!commandProjectRevisionPort.isConfigured()) {
         return {
             status: 'failed',
             disposition: 'retryable',

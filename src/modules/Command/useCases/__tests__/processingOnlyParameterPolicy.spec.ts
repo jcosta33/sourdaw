@@ -51,6 +51,10 @@ import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandE
 import { undo } from '../undo';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from './registerInMemoryCommandBatchIdempotency';
 
 const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
 
@@ -225,6 +229,8 @@ function registerProductionHandlers(): void {
 describe('processing-only parameter policy', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        resetUnwiredProjectCommandBatchLedger();
+        registerInMemoryCommandBatchIdempotency();
         // The project stores are CRDT-backed and no document is wired here, so
         // the seeded project lives only in the optimistic pending write this
         // fixture makes. jsdom's animation frame is a 16ms timer: were it to fire

@@ -27,6 +27,7 @@ import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchRece
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
+import { registerInMemoryCommandBatchIdempotency } from './registerInMemoryCommandBatchIdempotency';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;
@@ -37,6 +38,10 @@ type RemoveRenderedProjectSectionsAction = Extract<AppAction, { type: 'removeRen
 
 const GAIN_COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
+// A durable batch writes the project edit, then journals its receipt in project truth.
+const PROJECT_COMMIT_AND_JOURNAL_MUTATIONS = 2;
+const JOURNALED_RECEIPT_HEADS_WARNING =
+    'Resulting project heads are omitted because the verified receipt is itself journaled in project truth.';
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
@@ -313,6 +318,7 @@ describe('verified batch receipt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearHandlerRegistry();
+        registerInMemoryCommandBatchIdempotency();
         mutationCount = 0;
         rejectObservedRevisionCapture = false;
         protectedFingerprintChanged = false;
@@ -394,8 +400,8 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed');
-        expect(mutationCount).toBe(1);
-        expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
             schemaVersion: 2,
             contentHash,
@@ -407,10 +413,7 @@ describe('verified batch receipt', () => {
                 normalizedRevision: revision(0),
                 documents: [{ docId: 'root', heads: ['head-0'] }],
             },
-            resulting: {
-                normalizedRevision: revision(1),
-                documents: [{ docId: 'root', heads: ['head-1'] }],
-            },
+            resulting: null,
             commandOutcomes: [
                 {
                     commandId: GAIN_COMMAND_ID,
@@ -429,7 +432,7 @@ describe('verified batch receipt', () => {
             ],
             affectedIds: ['track-guitar', 'track-vocal'],
             createdBindings: [],
-            warnings: [],
+            warnings: [JOURNALED_RECEIPT_HEADS_WARNING],
             errors: [],
             links: { render: [], analysis: [] },
             compensation: {
@@ -440,7 +443,7 @@ describe('verified batch receipt', () => {
                 batchId: 'batch-receipt',
                 summary: 'Balance vocal and guitar',
             },
-            modelSummary: 'Committed 2 commands atomically; 2 targets changed; compensation is available.',
+            modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });
 
@@ -559,7 +562,7 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed-with-warning');
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
         const receipt = receiptFrom(result);
         expect(receipt).toMatchObject({
             outcome: 'partially-committed',
@@ -567,6 +570,7 @@ describe('verified batch receipt', () => {
             commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
             warnings: [
                 'setTrackPan post-commit effect failed: audio graph update failed; runtime reconciliation failed: audio graph update failed',
+                JOURNALED_RECEIPT_HEADS_WARNING,
             ],
             errors: [],
             pendingEffects: [
@@ -579,7 +583,7 @@ describe('verified batch receipt', () => {
                     state: 'pending',
                 },
             ],
-            resulting: { normalizedRevision: revision(1) },
+            resulting: null,
             modelSummary: 'Committed 2 commands atomically, but at least one non-atomic follow-up effect failed.',
         });
 
@@ -957,12 +961,12 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed-with-warning');
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'committed-with-warning',
             atomicity: 'atomic',
-            warnings: ['history observer unavailable'],
+            warnings: ['history observer unavailable', JOURNALED_RECEIPT_HEADS_WARNING],
             compensation: { available: false, commandIds: [] },
             modelSummary: 'Committed 2 commands atomically; reporting completed with warnings.',
         });
@@ -1024,7 +1028,10 @@ describe('verified batch receipt', () => {
         expect(result.status).toBe('committed');
         expect(receiptFrom(result)).toMatchObject({
             resulting: null,
-            warnings: ['Resulting project revision could not be captured: revision observer unavailable'],
+            warnings: [
+                'Resulting project revision could not be captured: revision observer unavailable',
+                JOURNALED_RECEIPT_HEADS_WARNING,
+            ],
             modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });
@@ -1042,8 +1049,11 @@ describe('verified batch receipt', () => {
         expect(result.status).toBe('committed');
         expect(receiptFrom(result)).toMatchObject({
             observedBase: null,
-            resulting: { normalizedRevision: revision(1) },
-            warnings: ['Observed base revision could not be captured: base revision observer unavailable'],
+            resulting: null,
+            warnings: [
+                'Observed base revision could not be captured: base revision observer unavailable',
+                JOURNALED_RECEIPT_HEADS_WARNING,
+            ],
         });
     });
 
@@ -1098,8 +1108,8 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed');
-        expect(mutationCount).toBe(1);
-        expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(gainStorage.get()).toEqual({ value: 0.8 });
         expect(panStorage.get()).toEqual({ value: -0.2 });
         expect(undoHistoryStore.value?.past.slice(historyCountBefore)).toMatchObject([
@@ -1112,7 +1122,10 @@ describe('verified batch receipt', () => {
             observedBase: { normalizedRevision: revision(0) },
             resulting: null,
             commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
-            warnings: ['Resulting project revision is unavailable: revision provider is not configured'],
+            warnings: [
+                'Resulting project revision is unavailable: revision provider is not configured',
+                JOURNALED_RECEIPT_HEADS_WARNING,
+            ],
             modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });

@@ -31,6 +31,7 @@ import { type previewVersionedCommandBatchEnvelope } from '../previewVersionedCo
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
+import { registerInMemoryCommandBatchIdempotency } from './registerInMemoryCommandBatchIdempotency';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
@@ -561,6 +562,7 @@ describe('command execution outcome vocabulary', () => {
         beforeEach(() => {
             vi.clearAllMocks();
             clearHandlerRegistry();
+            registerInMemoryCommandBatchIdempotency();
             projectDocument = { trackGain: { value: 1 } };
             projectRevision = BASE_REVISION;
             configureAutomergeStoragePort({

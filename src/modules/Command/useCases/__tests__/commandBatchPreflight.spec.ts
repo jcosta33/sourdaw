@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -14,6 +14,7 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
+import { registerInMemoryCommandBatchIdempotency } from './registerInMemoryCommandBatchIdempotency';
 
 function applyTransactionalMutation(
     document: Record<string, unknown>,
@@ -45,6 +46,8 @@ function expectNonAppliedReceipt(
 }
 
 describe('command batch preflight', () => {
+    beforeEach(registerInMemoryCommandBatchIdempotency);
+
     afterEach(() => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);

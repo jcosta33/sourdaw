@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
@@ -16,6 +16,10 @@ import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCom
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from './registerInMemoryCommandBatchIdempotency';
 
 /**
  * The linear amplitude a fixture action states. Level commands accept decibel
@@ -148,6 +152,11 @@ function splitBatchReceipt(result: Awaited<ReturnType<typeof executeVersionedCom
 }
 
 describe('command batch contract', () => {
+    beforeEach(() => {
+        resetUnwiredProjectCommandBatchLedger();
+        registerInMemoryCommandBatchIdempotency();
+    });
+
     afterEach(() => {
         clearHandlerRegistry();
         commandProjectRevisionPort.setProvider(null);
