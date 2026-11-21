@@ -76,6 +76,8 @@ type ObjectResolution =
 type ClauseMatch = { clause: string; object: string | null; start: number; end: number };
 
 const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>${SAME_CLAUSE_CHARACTER}+?))?`;
+/** Both low end patterns require the low end's own words, so a request naming none holds no low end clause. */
+const LOW_END_WORD = new RegExp(LOW_END, 'iu');
 const LOW_END_PROHIBITION = new RegExp(
     String.raw`\b(?:${NEGATION}|${NO}\s+${CHANGE_NOUN}\s+${TO})\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
     'dgiu'
@@ -107,6 +109,8 @@ const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
 const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|${AS})\s+)?`;
 /** A keep, stop or prevent, which names after "from" the move it prevents: "keep the mix from …". */
 const PREVENTING_VERB = String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})`;
+/** Every kept quality and kept move opens on a keep, preserve, stop or prevent verb, so a request with none holds no keep. */
+const KEEP_OR_STOP_WORD = new RegExp(String.raw`${KEEP_VERBS}|${STOP_VERB}`, 'iu');
 /**
  * What a keep, stop or prevent names before "from" when the quality it prevents is no measured one: an
  * object list, or any other words of its own clause ("them", "every track", "all of it"). Such a quality
@@ -310,6 +314,9 @@ function maskClauses(masked: string, clauses: readonly ConsumedSpan[]): string {
 
 function readLowEndConstraints(reader: RequestReader): ConsumedSpan[] {
     const { masked, prompt, context, constraints } = reader;
+    if (!LOW_END_WORD.test(masked)) {
+        return [];
+    }
     const clauses = [
         ...readClauses(LOW_END_PROHIBITION, masked, prompt),
         ...readClauses(LOW_END_PRESERVATION, masked, prompt),
@@ -352,7 +359,7 @@ type QualityPattern = {
  * A later object with its own term continues the keep ("keep the vocal warm and the drums bright"),
  * while one with a direction asks for a move and continues nothing ("and the mix wider").
  */
-function readQualityPattern(): QualityPattern {
+function buildQualityPattern(): QualityPattern {
     const catalog = getMixRecipeCatalog();
     const entries = [
         ...catalog.descriptors.flatMap((descriptor) =>
@@ -384,6 +391,14 @@ function readQualityPattern(): QualityPattern {
         return entries.find((entry) => entry.term.replaceAll('-', ' ') === normalized)?.descriptor;
     };
     return { terms, pattern, prevented, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
+}
+
+let qualityPattern: QualityPattern | undefined;
+
+/** The kept-quality patterns, built from the catalog's terms the first time a request needs them. */
+function readQualityPattern(): QualityPattern {
+    qualityPattern ??= buildQualityPattern();
+    return qualityPattern;
 }
 
 function pushUnmeasuredQuality(reader: RequestReader, clause: ReadClause, term: string) {
@@ -578,6 +593,9 @@ function pushKeepPart(
 function readKeepConstraints(unread: string, reader: RequestReader, quality: QualityPattern): ConsumedSpan[] {
     const { prompt } = reader;
     const { pattern, prevented, continuation, termPattern, descriptorOf } = quality;
+    if (!KEEP_OR_STOP_WORD.test(unread)) {
+        return [];
+    }
     const text: KeepText = { unread, prompt, continuation, termPattern };
     const spans: ConsumedSpan[] = [];
     for (const opening of readKeepOpenings(text, { pattern, prevented })) {

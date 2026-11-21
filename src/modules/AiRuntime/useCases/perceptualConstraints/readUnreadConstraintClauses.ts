@@ -39,6 +39,8 @@ export type ConsumedSpan = { start: number; end: number };
 /** A clause the net recorded unsupported, with the span of the request it quotes. */
 export type UnreadClause = { unsupported: UnsupportedPerceptualConstraint; span: ConsumedSpan };
 
+/** A clause is recorded only for a measured word a protection governs, so a request naming none reads nothing. */
+const ANY_MEASURED_WORD = new RegExp(String.raw`${MEASURED_WORD}|${MEASURED_NOUN}|${COMPARED_DIRECTION}`, 'iu');
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
 /**
  * What a keep or leave holding what it names governs: a measured noun or a comparison it keeps ("keep
@@ -68,11 +70,20 @@ const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATI
  * opens nothing. A keep is read with the quality terms the kept-quality reader holds (`heldTerms`), so
  * the net and that reader agree on which keep holds ("keep the vocal bright getting louder").
  */
-function protectiveClause(heldTerms: string): RegExp {
+function buildProtectiveClause(heldTerms: string): RegExp {
     return new RegExp(
         String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_PERMITTED}(?<holding>${holdingKeep(heldTerms)}|${LEAVE_VERB})|${NOT_PERMITTED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
         'iu'
     );
+}
+
+const PROTECTIVE_CLAUSES = new Map<string, RegExp>();
+
+/** The protective pattern for one set of held terms, built once. It is never stateful: it is only `exec`ed unanchored and non-global. */
+function protectiveClause(heldTerms: string): RegExp {
+    const built = PROTECTIVE_CLAUSES.get(heldTerms) ?? buildProtectiveClause(heldTerms);
+    PROTECTIVE_CLAUSES.set(heldTerms, built);
+    return built;
 }
 /**
  * A keep naming the move it prevents ("keep the mix from getting louder", "from going brighter", "from
@@ -247,6 +258,9 @@ export function readUnreadConstraintClauses(
     consumed: readonly ConsumedSpan[],
     heldTerms: string
 ): UnreadClause[] {
+    if (!ANY_MEASURED_WORD.test(masked)) {
+        return [];
+    }
     const unread: (UnsupportedPerceptualConstraint & ConsumedSpan)[] = [];
     const request: NetRequest = { masked, consumed, protective: protectiveClause(heldTerms) };
     let chain: Chain | null = null;

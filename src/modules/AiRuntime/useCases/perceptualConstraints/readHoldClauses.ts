@@ -298,8 +298,17 @@ function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldCl
     };
 }
 
+/**
+ * Every hold pattern, the unreadable fallback included, requires a direction, a quality verb or a held
+ * noun, so a request naming none holds nothing and never pays to compile the patterns.
+ */
+const HOLD_WORD = new RegExp(String.raw`${DIRECTION}|${QUALITY_VERB}|${HOLD_NOUN_WORD}|${LOUDNESS_NOUN_WORD}`, 'iu');
+
 /** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
 export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
+    if (!HOLD_WORD.test(masked)) {
+        return [];
+    }
     const readable = HOLD_PATTERNS.flatMap(({ pattern, continuation }) =>
         Array.from(masked.matchAll(pattern), (match) =>
             readHoldMatch(withContinuations(match, continuation, masked), prompt)

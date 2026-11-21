@@ -442,7 +442,7 @@ function objectWord(excluded: string): string {
 const MATCHES_NOTHING = '(?!)';
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
 function objectMember(word: string): string {
-    return String.raw`(?:${DETERMINER}\s+${word}(?:\s+${word}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
+    return String.raw`(?:${DETERMINER}(?:\s+${word}){1,3}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
 }
 export const OBJECT_MEMBER = objectMember(objectWord(MATCHES_NOTHING));
 /** An object list's members join as directions do, by a comma, "and" or "or", or by an ampersand. */
