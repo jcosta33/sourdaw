@@ -1,5 +1,5 @@
-import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 

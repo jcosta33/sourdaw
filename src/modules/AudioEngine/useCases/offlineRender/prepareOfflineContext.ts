@@ -1,7 +1,7 @@
-import { acceptsSidechainInput } from '../deviceCapabilities/acceptsSidechainInput';
 import { SIDECHAIN_PROCESSOR_UNAVAILABLE_WARNING } from '../../repositories/devices/dynamics/createOfflineSidechainCompressor';
 import { prepareOfflineSidechainCompressor } from '../../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
 import { prepareOfflineBitcrusherRate } from '../../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
+import { acceptsSidechainInput } from '../deviceCapabilities/acceptsSidechainInput';
 
 /**
  * Device types whose offline construction needs a worklet module that no device

@@ -32,7 +32,6 @@ export { isBypassedNoteReceiver } from './deviceCapabilities/isBypassedNoteRecei
 export { findMidiTransformDevice } from './deviceCapabilities/findMidiTransformDevice';
 export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
 export { getSidechainTargetCapability } from './deviceCapabilities/getSidechainTargetCapability';
-export type { SidechainTargetCapability } from './deviceCapabilities/getSidechainTargetCapability';
 export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
