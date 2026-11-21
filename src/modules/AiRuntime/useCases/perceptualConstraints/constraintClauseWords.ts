@@ -310,7 +310,7 @@ export const NEGATION = String.raw`(?:${words([`do ${NOT}`, NEVER, WITHOUT])}|${
 /** "without" alone, which may name the subject of the move it rules out: "without the mix getting louder". */
 export const WITHOUT_WORD = words([WITHOUT]);
 /** "would not", which a wish is refused through as "do not" refuses one: "I wouldn't want the drums louder". */
-const WOULD_NOT = String.raw`(?:${words([`would ${NOT}`])}|${words(['wouldn t'], CONTRACTION)})${STRESSED}`;
+export const WOULD_NOT = String.raw`(?:${words([`would ${NOT}`])}|${words(['wouldn t'], CONTRACTION)})${STRESSED}`;
 const CAN = 'can';
 const WILL = 'will';
 const MODAL_WORDS = ['must', 'should', 'may', CAN, WILL];
@@ -359,10 +359,19 @@ export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTIO
  */
 export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION}|${SUBJECT_NEVER})`;
 /**
- * A "will" negation before a making verb, which predicts what something does rather than asking for a
- * bound: "this won't make it louder" describes the change.
+ * The subjects whose "won't make" predicts an effect: "it", or a determiner before at most one word
+ * naming the change ("this", "this EQ", "the change"). A person ("you", "I") is none, since what a person
+ * won't make is a request or a promise.
  */
-export const PREDICTED_EFFECT = String.raw`(?:${words([`${WILL} ${NOT}`, `${WILL} ${NEVER}`])}|${words(['won t'], CONTRACTION)})${STRESSED}\s+${MAKING_VERB}${WORD_END}`;
+const EFFECT_SUBJECT = String.raw`(?:${words([IT])}|${DETERMINER}(?:\s+${WORD_CHARACTER}+)?)`;
+/** The leads that make what a subject won't do a wish or a promise: "I hope this won't make it louder". */
+const HOPING_LEAD = String.raw`${words(['hope', 'hoping', 'promise', 'trust', 'swear'])}(?:\s+${words([THAT])})?`;
+/**
+ * A "will" negation before a making verb, after a subject naming the change and no hope or promise before
+ * it, which predicts what that change does rather than asking for a bound: "this won't make it louder"
+ * describes the change, while "you won't make it louder" and "I hope this won't make it louder" protect.
+ */
+export const PREDICTED_EFFECT = String.raw`(?<=(?<!\b${HOPING_LEAD}\s+)\b${EFFECT_SUBJECT}\s+)(?:${words([`${WILL} ${NOT}`, `${WILL} ${NEVER}`])}|${words(['won t'], CONTRACTION)})${STRESSED}\s+${MAKING_VERB}${WORD_END}`;
 /** A copula's own negation, which describes the sound as it is: "the vocal isn't louder". */
 const COPULA_NEGATION = String.raw`(?:${words([`${IS} ${NOT}`, `are ${NOT}`])}|${words(['isn t', 'aren t'], CONTRACTION)})${STRESSED}`;
 /**

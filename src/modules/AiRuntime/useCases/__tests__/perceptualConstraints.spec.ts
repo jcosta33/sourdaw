@@ -2417,6 +2417,20 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
         // a "will" negation before a making verb predicts an effect and states nothing
         ["this won't make it louder", [], []],
         ["this won't make the drums wider", [], []],
+        ["this EQ won't make it louder", [], []],
+        // addressed to the agent, or hoped or promised, what won't be made is a protection the net records
+        ["You won't make it louder, ok?", [], [unread("You won't make it louder", NET_REASON)]],
+        ["I hope you won't make it louder", [], [unread("I hope you won't make it louder", NET_REASON)]],
+        ["Promise you won't make it louder", [], [unread("Promise you won't make it louder", NET_REASON)]],
+        ["You won't make the drums wider, will you?", [], [unread("You won't make the drums wider", NET_REASON)]],
+        ['You will not make the drums wider', [], [unread('You will not make the drums wider', NET_REASON)]],
+        ["I hope this won't make it louder", [], [unread("I hope this won't make it louder", NET_REASON)]],
+        // a wish refused through "would not" whose tail no reader reads is recorded unsupported
+        [
+            "I wouldn't want the drums louder in the chorus",
+            [],
+            [unread("I wouldn't want the drums louder in the chorus", NET_REASON)],
+        ],
         // a stressing adverb beside a modal's or a subject's "never" keeps the subject's scope
         [
             'the drums should really never get wider',

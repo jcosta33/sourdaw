@@ -39,8 +39,8 @@ import {
     STOP_VERB,
     SUBORDINATOR,
     WANT_LEAD,
-    WANT_NEGATION,
     WITHOUT_WORD,
+    WOULD_NOT,
 } from './constraintClauseWords';
 import {
     DIRECTION,
@@ -85,13 +85,14 @@ const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${CHANGING
  * A negation or modal directly before what it governs; a modal names its subject too. A third-person
  * "doesn't" opens nothing here: beside a move it describes the sound or states a purpose ("so it
  * doesn't get lost"), and the bound it states alone ("the mix doesn't get louder") a reader consumes. A
- * "will" negation before a making verb predicts an effect ("this won't make it louder") and opens nothing.
- * A wish is refused through "would not" too ("I wouldn't want the drums louder in the chorus"), a bare
+ * "will" negation before a making verb, after a subject naming the change, predicts an effect ("this won't
+ * make it louder") and opens nothing. A wish "do not" refuses is a governed verb above; one refused through
+ * "would not" opens here ("I wouldn't want the drums louder in the chorus"), a bare
  * "not" refuses a direction ("just not any louder"), "make sure" makes a copula negation a request ("make
  * sure the vocal isn't louder in the chorus"), and "without" may name the subject of the move it rules
  * out ("without the mix getting louder in the chorus").
  */
-const NEGATED_GOVERNOR = String.raw`(?:(?:(?!${PREDICTED_EFFECT})(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}|${WANT_NEGATION}\s+${WANT_LEAD}|${REFUSING_NOT}\s+(?:${ANY}\s+)?${DIRECTION}|${ASSURING_LEAD}\s+${OBJECT_MEMBERS}\s+${ASSURED_NEGATION}|${WITHOUT_WORD}\s+${OBJECT_MEMBERS}\s+${MOVE_LEAD_VERB})`;
+const NEGATED_GOVERNOR = String.raw`(?:(?:(?!${PREDICTED_EFFECT})(?<modal>${MODAL_VERB_NEGATION})|${NEGATION}|${AVOID_VERB})\s+${GOVERNED_VERB}|${WOULD_NOT}\s+${WANT_LEAD}|${REFUSING_NOT}\s+(?:${ANY}\s+)?${DIRECTION}|${ASSURING_LEAD}\s+${OBJECT_MEMBERS}\s+${ASSURED_NEGATION}|${WITHOUT_WORD}\s+${OBJECT_MEMBERS}\s+${MOVE_LEAD_VERB})`;
 /**
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
  * it governs the quality through, or a direction ("mustn't get louder"); a keep-type verb continuing
