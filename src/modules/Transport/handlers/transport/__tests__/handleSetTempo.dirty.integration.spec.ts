@@ -79,8 +79,6 @@ describe('setTempo project dirty integration', () => {
 
     afterEach(() => {
         disposeDirtyTracking?.();
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearUndoHistory();
         clearHandlerRegistry();

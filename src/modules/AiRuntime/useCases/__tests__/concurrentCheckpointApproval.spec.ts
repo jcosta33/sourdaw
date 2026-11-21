@@ -209,7 +209,6 @@ describe('confirmation after concurrent command checkpoints', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         resetAiWorkflowCommandPreflightFixture();
-        commandBatchPreviewPort.setRecoveryProvider(null);
         clearHandlerRegistry();
         clearUndoHistory();
         clearAiHistory();

@@ -141,7 +141,6 @@ describe('chat composer without a model backend', () => {
 
     afterEach(() => {
         stopGenerating();
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearPendingActionConfirmations();
         clearAiHistory();
