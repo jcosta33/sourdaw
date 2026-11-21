@@ -14,9 +14,9 @@ use crate::clap_wrapper::ClapWrapper;
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport,
-    HostedPluginRuntime, LatencyChangeNotifier, PluginError, PluginHostRequestNotifier,
-    ProcessingGate,
+    AudioPlugin, EditorWindowAsks, EditorWindowResizer, HostMidiEvent, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
+    PluginHostRequestNotifier, ProcessingGate, SharedEditorWindow,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -133,6 +133,22 @@ impl AudioPlugin for HostedRuntime {
 
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
+    }
+
+    fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        delegate!(self, backend => backend.set_editor_window(window))
+    }
+
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        delegate!(self, backend => backend.editor_window_with_pending_asks())
+    }
+
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        delegate!(self, backend => backend.take_editor_window_asks())
+    }
+
+    fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        delegate!(self, backend => backend.answer_editor_window_asks(asks))
     }
 
     fn take_state_dirty(&mut self) -> bool {

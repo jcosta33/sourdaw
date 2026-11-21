@@ -54,7 +54,36 @@ impl EventSink for NoopEventSink {
 /// for these events and a body that kept producing into a dead channel would
 /// burn the remote budget for nothing.
 pub trait EventStream<Event>: Send + Sync {
-    fn send(&self, event: Event) -> Result<(), String>;
+    fn send(&self, event: Event) -> Result<(), EventStreamError>;
+}
+
+/// Why a stream refused an event.
+#[derive(Debug)]
+pub enum EventStreamError {
+    /// The event could not become the payload the shell carries.
+    NotSerializable(serde_json::Error),
+    /// The shell's channel refused the event, for the shell's own reason.
+    Closed(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl std::fmt::Display for EventStreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotSerializable(error) => {
+                write!(f, "Response event did not serialize: {error}")
+            }
+            Self::Closed(reason) => write!(f, "Response channel closed: {reason}"),
+        }
+    }
+}
+
+impl std::error::Error for EventStreamError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NotSerializable(error) => Some(error),
+            Self::Closed(reason) => Some(reason.as_ref()),
+        }
+    }
 }
 
 /// Collecting stream used by tests to assert what a body produced.
@@ -81,7 +110,7 @@ impl<Event> RecordingEventStream<Event> {
 }
 
 impl<Event: Send> EventStream<Event> for RecordingEventStream<Event> {
-    fn send(&self, event: Event) -> Result<(), String> {
+    fn send(&self, event: Event) -> Result<(), EventStreamError> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

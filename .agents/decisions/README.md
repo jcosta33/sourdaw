@@ -77,6 +77,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0061](0061-plugin-folders-are-granted-by-a-native-folder-pick.md)                | Plugin folders beyond the platform defaults are granted only by a native folder pick in the main process, stored natively, re-validated on every use and revocable — **resolves the grant-mechanism and revocation open questions in 0004**                     |
 | [0062](0062-web-audio-engine-composes-concern-units.md)                           | The web audio engine composes concern units behind a repository seam; `internals` is the only spec route to unit state and consumers inject the engine                                                                                                          |
 | [0063](0063-per-device-behaviour-lives-in-exhaustive-tables.md)                   | Per-device behaviour lives in exhaustive tables over the built-in device vocabulary, owned by the module that owns the behaviour; the vocabulary alone stays in `src/utils`                                                                                     |
+| [0065](0065-cross-module-dependencies-are-registered-ports.md)                    | A dependency the tier order forbids importing must arrive as a registered port that throws when unfilled; only explicit `src/app` calls may fill it, and no module may export a mutable binding (migration pending)                                             |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

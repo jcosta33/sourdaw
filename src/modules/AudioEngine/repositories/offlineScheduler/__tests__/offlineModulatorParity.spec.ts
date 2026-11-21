@@ -66,17 +66,25 @@ function makeLfoPlan(): OfflineModulatorParamPlan {
     };
 }
 
+const updateDeviceParam = vi.fn();
+
+function getFilterParamRange(deviceType: string, paramId: string) {
+    if (deviceType === 'builtin-filter' && paramId === FILTER_PARAM) {
+        return { min: 20, max: 20_000, defaultValue: 1000, automatable: true };
+    }
+    return null;
+}
+
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('offline render carries modulator movement a lane cannot', () => {
     beforeEach(() => {
         setModulationDependencies({
-            updateDeviceParam: vi.fn(),
-            getPluginParamRange: (deviceType: string, paramId: string) => {
-                if (deviceType === 'builtin-filter' && paramId === FILTER_PARAM) {
-                    return { min: 20, max: 20_000, defaultValue: 1000, automatable: true };
-                }
-                return null;
-            },
-            quantiseValue: ({ value }) => value,
+            updateDeviceParam,
+            getPluginParamRange: getFilterParamRange,
+            quantiseValue: quantiseIdentity,
         });
     });
 

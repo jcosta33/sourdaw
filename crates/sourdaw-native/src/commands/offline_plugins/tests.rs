@@ -235,14 +235,12 @@ impl RecordingUiThread {
         let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
         let (announce, announced) = mpsc::channel();
         let tasks_run = Arc::new(AtomicUsize::new(0));
-        let counted = Arc::clone(&tasks_run);
         let thread = thread::spawn(move || {
             announce
                 .send(thread::current().id())
                 .expect("the UI thread announces itself");
             while let Ok(task) = queued.recv() {
                 task.run();
-                counted.fetch_add(1, Ordering::SeqCst);
             }
         });
         let thread_id = announced.recv().expect("the UI thread starts");
@@ -280,15 +278,82 @@ impl UiThread for RecordingUiThread {
     ) -> Result<(), crate::host::ui_thread::UiThreadError> {
         let (done, waited) = mpsc::sync_channel(1);
         let queued = Arc::clone(task);
+        let counted = Arc::clone(&self.tasks_run);
         self.work
             .send(UiThreadTask::new(move || {
                 queued.run();
+                // Counted before the answer: the caller reads the count as soon
+                // as it is answered.
+                counted.fetch_add(1, Ordering::SeqCst);
                 let _ = done.send(());
             }))
             .map_err(|_| "the UI thread is gone".to_string())?;
         waited
             .recv()
             .map_err(|_| "the UI thread never answered".to_string().into())
+    }
+}
+
+/// Every count below is read straight after the call that ran the task
+/// returns, so a task has to be counted before its caller is answered.
+///
+/// The window between the answer and a late count is a few instructions, so
+/// the loop runs with half the cores kept busy: preempting the UI thread inside
+/// it is what a loaded CI runner does. The other half, and the time bound, are
+/// for the tests of this process running beside it, several of which hold
+/// wall-clock deadlines.
+#[test]
+fn a_ui_thread_task_is_counted_before_its_caller_is_answered() {
+    const ROUND_TRIPS: usize = 20_000;
+    const LOAD_BOUND: std::time::Duration = std::time::Duration::from_millis(500);
+    let cores = thread::available_parallelism().map_or(2, usize::from);
+    let _load = SpinLoad::start((cores / 2).max(1));
+    let ui = RecordingUiThread::start();
+    let started = std::time::Instant::now();
+
+    for expected in 1..=ROUND_TRIPS {
+        if started.elapsed() > LOAD_BOUND {
+            break;
+        }
+        ui.run_on_ui_thread(&UiThreadTask::new(|| {}))
+            .expect("the UI thread runs the task");
+        assert_eq!(
+            ui.tasks_run(),
+            expected,
+            "an answered task must already be counted"
+        );
+    }
+}
+
+/// Threads that keep cores busy until dropped, on every path out of a test.
+struct SpinLoad {
+    spinning: Arc<std::sync::atomic::AtomicBool>,
+    spinners: Vec<thread::JoinHandle<()>>,
+}
+
+impl SpinLoad {
+    fn start(threads: usize) -> Self {
+        let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let spinners = (0..threads)
+            .map(|_| {
+                let spinning = Arc::clone(&spinning);
+                thread::spawn(move || {
+                    while spinning.load(Ordering::Relaxed) {
+                        std::hint::spin_loop();
+                    }
+                })
+            })
+            .collect();
+        Self { spinning, spinners }
+    }
+}
+
+impl Drop for SpinLoad {
+    fn drop(&mut self) {
+        self.spinning.store(false, Ordering::Relaxed);
+        for spinner in self.spinners.drain(..) {
+            let _ = spinner.join();
+        }
     }
 }
 
@@ -492,6 +557,7 @@ fn render(
         state,
         seams,
     ))
+    .map_err(|refusal| refusal.to_string())
     .map(|bytes| {
         let (frames, _) = bytes.as_chunks::<8>();
         frames
@@ -1174,6 +1240,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
             state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     let outcome = thread::scope(|scope| {
@@ -1414,6 +1481,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
             &state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     for sample_rate in [7_999.0, 384_001.0, f64::NAN, f64::INFINITY] {

@@ -2,7 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type ModulatorMapping } from '../../models/Modulator';
 
-import { getModulationDependencies } from './getModulationDependencies';
+import { modulationDependenciesPort } from './modulationDependencies';
 
 type ResolveModulationBindingOutput = {
     baseValue: number;
@@ -24,7 +24,7 @@ export function resolveModulationBinding(mapping: ModulatorMapping): ResolveModu
     if (!device) {
         return null;
     }
-    const paramDef = getModulationDependencies().getPluginParamRange(device.type, mapping.targetParamId);
+    const paramDef = modulationDependenciesPort.read().getPluginParamRange(device.type, mapping.targetParamId);
     if (!paramDef) {
         return null;
     }

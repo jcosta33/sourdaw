@@ -9,7 +9,10 @@ import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { timelineEditingStore } from '#/modules/Arrangement/stores';
 import {
+    getTracksShownInViews,
     saveMixerSnapshot,
     recallMixerSnapshot,
     getMixerSnapshots,
@@ -64,7 +67,8 @@ const STRIP_WIDTH_CLASS: Record<ChannelStripWidth, string> = {
 };
 export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const channelTracks = getMixerChannelTracks(tracks);
+    const showHiddenTracks = useStoreSelector(timelineEditingStore, (state) => state?.showHiddenTracks ?? false);
+    const channelTracks = getMixerChannelTracks(getTracksShownInViews(tracks, showHiddenTracks));
     const masterTrack = tracks.find((track) => track.kind === 'master');
     const tabStopIndex = getMixerTabStopIndex(channelTracks, masterTrack, selectedTrackId);
     const { channelStripWidth } = useWorkspaceState();

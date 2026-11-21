@@ -10814,11 +10814,6 @@
             "count": 2
         }
     },
-    "src/modules/Automation/useCases/modulation/revertMappingsToBase.ts": {
-        "sourdaw-craft/no-silent-catch": {
-            "count": 1
-        }
-    },
     "src/modules/Automation/useCases/modulation/updateMapping.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 2
@@ -14495,9 +14490,6 @@
         }
     },
     "src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 1
         }

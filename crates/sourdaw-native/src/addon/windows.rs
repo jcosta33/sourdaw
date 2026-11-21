@@ -38,7 +38,9 @@ use crate::host::plugin_window::{
     apply_editor_size_on_ui_thread, native_handle_from_bytes, PluginEditorWindow,
     PluginWindowError, PluginWindowHost,
 };
-use crate::host::ui_thread::{PostedUiThread, UiThread, UiThreadError, UiThreadTask};
+use crate::host::ui_thread::{
+    call_on_ui_thread, PostedUiThread, UiThread, UiThreadError, UiThreadTask,
+};
 
 /// How long one JS round trip may take before the operation fails.
 ///
@@ -303,25 +305,80 @@ fn fire(target: &EditorWindowLabelFn, label: &str) {
     let _ = target.call(label.to_string(), ThreadsafeFunctionCallMode::NonBlocking);
 }
 
+/// Why a round trip to the JS window host failed.
+#[derive(Debug)]
+enum JsWindowHostError {
+    /// The callback could not be queued on the JS thread.
+    Unreachable(Status),
+    ExistenceProbeTimedOut,
+    CreateTimedOut,
+    NoHandleNorError,
+    /// The handle bytes the shell returned are not a native handle.
+    Handle(PluginWindowError),
+    /// The shell's own reason, text this crate does not generate.
+    Refused(String),
+    ResizeRefused(Error),
+}
+
+impl std::fmt::Display for JsWindowHostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(status) => write!(f, "Window host is unreachable: {status}"),
+            Self::ExistenceProbeTimedOut => {
+                f.write_str("Window host did not answer the existence probe in time")
+            }
+            Self::CreateTimedOut => {
+                f.write_str("Window host did not create the editor window in time")
+            }
+            Self::NoHandleNorError => {
+                f.write_str("Window host returned neither a handle nor an error")
+            }
+            Self::Handle(error) => error.fmt(f),
+            Self::Refused(reason) => f.write_str(reason),
+            Self::ResizeRefused(error) => write!(f, "Window host refused the resize: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for JsWindowHostError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Handle(error) => Some(error),
+            Self::ResizeRefused(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<JsWindowHostError> for PluginWindowError {
+    fn from(error: JsWindowHostError) -> Self {
+        match error {
+            JsWindowHostError::Handle(error) => error,
+            other => Self::Shell(other.to_string()),
+        }
+    }
+}
+
 fn window_exists_over_js(
     callbacks: &JsWindowCallbacks,
     label: &str,
-) -> std::result::Result<bool, String> {
+) -> std::result::Result<bool, JsWindowHostError> {
     let (sender, receiver) = mpsc::channel();
     let status = callbacks.exists.call_with_return_value(
         label.to_string(),
         ThreadsafeFunctionCallMode::NonBlocking,
         move |answer, _env| {
-            let _ = sender.send(answer.map_err(|error| error.reason.clone()));
+            let _ = sender
+                .send(answer.map_err(|error| JsWindowHostError::Refused(error.reason.clone())));
             Ok(())
         },
     );
     if status != Status::Ok {
-        return Err(format!("Window host is unreachable: {status}"));
+        return Err(JsWindowHostError::Unreachable(status));
     }
     receiver
         .recv_timeout(WINDOW_HOST_DEADLINE)
-        .map_err(|_| "Window host did not answer the existence probe in time".to_string())?
+        .map_err(|_| JsWindowHostError::ExistenceProbeTimedOut)?
 }
 
 /// What a created editor window is: where to draw, and at what scale.
@@ -333,7 +390,7 @@ struct CreatedWindow {
 fn create_over_js(
     callbacks: &JsWindowCallbacks,
     request: CreateEditorWindowRequest,
-) -> std::result::Result<CreatedWindow, String> {
+) -> std::result::Result<CreatedWindow, JsWindowHostError> {
     let label = request.label.clone();
     let (sender, receiver) = mpsc::channel();
     let status = callbacks.create.call_with_return_value(
@@ -344,25 +401,23 @@ fn create_over_js(
             // `Buffer` references JS-owned memory and must not cross threads.
             let answer = match response {
                 Ok(response) => match (response.error, response.handle) {
-                    (Some(error), _) => Err(error),
+                    (Some(error), _) => Err(JsWindowHostError::Refused(error)),
                     (None, Some(handle)) => native_handle_from_bytes(&handle)
                         .map(|handle| CreatedWindow {
                             handle,
                             scale_factor: response.scale_factor,
                         })
-                        .map_err(|error| error.to_string()),
-                    (None, None) => {
-                        Err("Window host returned neither a handle nor an error".to_string())
-                    }
+                        .map_err(JsWindowHostError::Handle),
+                    (None, None) => Err(JsWindowHostError::NoHandleNorError),
                 },
-                Err(error) => Err(error.reason.clone()),
+                Err(error) => Err(JsWindowHostError::Refused(error.reason.clone())),
             };
             let _ = sender.send(answer);
             Ok(())
         },
     );
     if status != Status::Ok {
-        return Err(format!("Window host is unreachable: {status}"));
+        return Err(JsWindowHostError::Unreachable(status));
     }
     receiver.recv_timeout(WINDOW_HOST_DEADLINE).map_err(|_| {
         // The create call may still be queued behind whatever has the main
@@ -372,7 +427,7 @@ fn create_over_js(
         // surviving hidden, unclosable, with the label occupied until the app
         // restarts.
         fire(&callbacks.destroy, &label);
-        "Window host did not create the editor window in time".to_string()
+        JsWindowHostError::CreateTimedOut
     })?
 }
 
@@ -443,10 +498,10 @@ fn apply_editor_window_size(
     ui: &JsUiThread,
     set_size: &EditorWindowSizeCallback,
     request: EditorWindowSizeRequest,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<(), JsWindowHostError> {
     let env = ui.env();
     env.run_in_scope(|| set_size.borrow_back(&env)?.call(request))
-        .map_err(|error| format!("Window host refused the resize: {error}"))
+        .map_err(JsWindowHostError::ResizeRefused)
 }
 
 impl PluginEditorWindow for JsEditorWindow {
@@ -501,5 +556,17 @@ impl PluginEditorWindow for JsEditorWindow {
 
     fn destroy(&self) {
         fire(&self.callbacks.destroy, &self.label);
+    }
+
+    fn show(&self) {
+        fire(&self.callbacks.show, &self.label);
+    }
+
+    fn hide(&self) {
+        fire(&self.callbacks.hide, &self.label);
+    }
+
+    fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> std::result::Result<(), String> {
+        call_on_ui_thread(self.ui.as_ref(), work).map_err(|error| error.to_string())
     }
 }
