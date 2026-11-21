@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
     removeTrack: vi.fn(),
+    captureRemovedTrackPluginRelease: vi.fn<(trackIds: readonly string[]) => () => Promise<void>>(),
+    releaseReplacedPlugins: vi.fn<() => Promise<void>>(),
     cacheAudioBuffer: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     info: vi.fn(),
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
+    captureRemovedTrackPluginRelease: mocks.captureRemovedTrackPluginRelease,
     getTrackStoreState: mocks.getTrackStoreState,
     removeTrack: mocks.removeTrack,
 }));
@@ -51,6 +54,8 @@ describe('handleStemSeparate', () => {
         vi.clearAllMocks();
         mocks.isStemSeparationAvailable.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.releaseReplacedPlugins.mockResolvedValue(undefined);
+        mocks.captureRemovedTrackPluginRelease.mockReturnValue(mocks.releaseReplacedPlugins);
     });
 
     it('rejects before processing when no model is admitted', async () => {
@@ -228,6 +233,44 @@ describe('handleStemSeparate', () => {
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: vocalsBuffer });
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'stem-buffer' }));
+    });
+
+    it('releases a replaced stem track hosted plugins once the re-run commits', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'src',
+                    clips: [
+                        { id: 'c1', name: 'Vocals', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't-old', name: 'Vocals — vocals', clips: [] },
+                { id: 't-old-2', name: 'Vocals — vocals', clips: [] },
+            ],
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue({});
+        mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
+        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
+        mocks.addTrack.mockReturnValue({ id: 't-new' });
+        mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+
+        const result = await handleStemSeparate.execute({
+            type: 'stemSeparate',
+            payload: { clipId: 'c1', stems: ['vocals'] },
+        });
+
+        expect(mocks.captureRemovedTrackPluginRelease).toHaveBeenCalledWith(['t-old', 't-old-2']);
+        expect(mocks.captureRemovedTrackPluginRelease.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.removeTrack.mock.invocationCallOrder[0] ?? 0
+        );
+        expect(mocks.releaseReplacedPlugins).not.toHaveBeenCalled();
+        if (!result || result.status !== 'written') {
+            throw new Error('expected a written result');
+        }
+        await result.afterCommit?.();
+        expect(mocks.releaseReplacedPlugins).toHaveBeenCalledTimes(1);
+        await result.afterAmbiguousCommit?.();
+        expect(mocks.releaseReplacedPlugins).toHaveBeenCalledTimes(2);
     });
 
     it('logs warning if separation throws', async () => {
