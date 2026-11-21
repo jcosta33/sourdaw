@@ -263,7 +263,7 @@ describe('live plugin state across an app-initiated teardown', () => {
         });
 
         // A rebuild ends the generation, then waits on the retry before it unloads and clears anything.
-        it('writes no restore failure for a restore retry a graph rebuild is waiting on', async () => {
+        it('marks a restore retry a graph rebuild is waiting on so the rebuild carries no defaults', async () => {
             mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
             await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
             externalPluginRestoreFailures.clear();
@@ -283,7 +283,33 @@ describe('live plugin state across an app-initiated teardown', () => {
             retryWrite.reject(new Error('chunk rejected again'));
 
             await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
-            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(true);
+            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await rebuild;
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+        });
+
+        it('marks a first-load restore a graph rebuild is waiting on so the rebuild carries no defaults', async () => {
+            const firstWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(firstWrite.promise);
+            const nativeUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(nativeUnload.promise);
+
+            const activation = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+            // A failed assertion must not leave the rebuild fence holding every later case.
+            onTestFinished(async () => {
+                nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+                await rebuild;
+            });
+            firstWrite.reject(new Error('chunk rejected'));
+
+            await expect(activation).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(true);
+            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await rebuild;
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
         });
 
         it('leaves a newer activation of the id unmarked when the forgotten one restores into nothing', async () => {

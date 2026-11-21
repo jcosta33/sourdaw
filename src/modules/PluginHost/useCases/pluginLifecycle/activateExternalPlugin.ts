@@ -232,17 +232,15 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
-            // A rebuild ends the graph generation before it waits on this retry; an engine retire
-            // forgets the instance, and its task with it, without ending the generation.
-            function isCurrentRestore(): boolean {
-                return (
-                    activationEpoch === externalPluginActivationEpoch.current &&
-                    externalPluginActivationTasks.get(instanceId) === restoreTask
-                );
+            // Every teardown that destroys or replaces the instance drops this task with it. A rebuild
+            // or session retirement ends the graph generation but waits on this retry with the
+            // instance still loaded, so its outcome still describes the instance the rebuild reads.
+            function retryHoldsInstance(): boolean {
+                return externalPluginActivationTasks.get(instanceId) === restoreTask;
             }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (!isCurrentRestore()) {
+                    if (!retryHoldsInstance()) {
                         return SUPERSEDED_RESTORE;
                     }
                     setActivationStatus(instanceId, 'active');
@@ -252,7 +250,7 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
-                    if (!isCurrentRestore()) {
+                    if (!retryHoldsInstance()) {
                         return SUPERSEDED_RESTORE;
                     }
                     const reason = String(error);
@@ -312,6 +310,13 @@ export function activateExternalPlugin({
             externalPluginActivationTasks.get(instanceId) === activationTask &&
             loadedExternalInstances.has(instanceId)
         );
+    }
+
+    // The project chunk's restore settles on the instance whatever the epoch: a rebuild or session
+    // retirement waits on this activation with the instance still loaded and reads its marker,
+    // while every teardown that destroys or replaces the instance drops this task with it.
+    function activationHoldsInstance(): boolean {
+        return externalPluginActivationTasks.get(instanceId) === activationTask;
     }
 
     let restoredCarry: CarriedExternalPluginState | undefined;
@@ -396,7 +401,7 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
-            if (!isCurrentActivation()) {
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // The saved chunk is in the plugin again, so what it reports over
@@ -406,7 +411,7 @@ export function activateExternalPlugin({
         } catch (error) {
             // A teardown that overtook the load owns the instance now, and a newer activation may hold
             // the same id: this restore's outcome is no longer this instance's state.
-            if (!isCurrentActivation()) {
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // Restore failure must not reload: the instance is loaded, so keep the
