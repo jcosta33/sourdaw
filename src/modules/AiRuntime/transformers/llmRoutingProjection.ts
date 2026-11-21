@@ -7,19 +7,27 @@ import { findDeviceTarget, findSupportedSidechainDevices, findTrack } from './ll
 
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type RoutingProjectionLookup = {
-    readonly [Type in RuntimeActionType]: (context: ProjectContext, action: ActionOf<Type>) => ProjectContext;
+    readonly [Type in RuntimeActionType]: (
+        context: ProjectContext,
+        action: ActionOf<Type>,
+        acceptsSidechainInput: (deviceType: string) => boolean
+    ) => ProjectContext;
 };
 
 function unchangedContext(context: ProjectContext): ProjectContext {
     return context;
 }
 
-function projectAddSidechainRoute(context: ProjectContext, action: ActionOf<'addSidechainRoute'>): ProjectContext {
+function projectAddSidechainRoute(
+    context: ProjectContext,
+    action: ActionOf<'addSidechainRoute'>,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
     const target = findTrack(context, action.payload.targetTrackId);
     if (!target) {
         return context;
     }
-    const targetDevice = findSupportedSidechainDevices(target).find(
+    const targetDevice = findSupportedSidechainDevices(target, acceptsSidechainInput).find(
         (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
     );
     if (!targetDevice) {
@@ -410,14 +418,19 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
 
 function lookupRoutingProjection<Type extends RuntimeActionType>(
     context: ProjectContext,
-    action: ActionOf<Type>
+    action: ActionOf<Type>,
+    acceptsSidechainInput: (deviceType: string) => boolean
 ): ProjectContext {
     if (!Object.hasOwn(routingProjectionByActionType, action.type)) {
         return unchangedContext(context);
     }
-    return routingProjectionByActionType[action.type](context, action);
+    return routingProjectionByActionType[action.type](context, action, acceptsSidechainInput);
 }
 
-export function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
-    return lookupRoutingProjection(context, action);
+export function applyAcceptedRoutingAction(
+    context: ProjectContext,
+    action: RuntimeAction,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
+    return lookupRoutingProjection(context, action, acceptsSidechainInput);
 }
