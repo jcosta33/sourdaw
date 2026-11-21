@@ -45,9 +45,18 @@ const HIDE_ASKED: u8 = 2;
 /// The closed slot's "not closed", and its two reports, ordered so that
 /// `fetch_max` keeps the stronger one: an editor reported destroyed stays
 /// destroyed whatever a second report says.
-const NOT_CLOSED: u8 = 0;
-const CLOSED_ALIVE: u8 = 1;
-const CLOSED_DESTROYED: u8 = 2;
+const NOT_CLOSED: u64 = 0;
+const CLOSED_ALIVE: u64 = 1;
+const CLOSED_DESTROYED: u64 = 2;
+/// The low bits of a packed `closed` report that hold the report itself.
+const CLOSED_REPORT_BITS: u32 = 2;
+
+/// A `closed` report and the editor generation it was made against, in one
+/// word: the generation above the report, so `fetch_max` keeps the newest
+/// editor's report and, within one editor, destroyed over merely closed.
+fn pack_editor_closed(generation: u64, report: u64) -> u64 {
+    (generation << CLOSED_REPORT_BITS) | report
+}
 
 /// One editor size held in a single atomic, so the plugin's own callback can
 /// state both dimensions without a lock and without tearing them apart.
@@ -111,8 +120,14 @@ pub struct HostCallbackState {
     main_thread_callback_pending: AtomicBool,
     /// The newest show or hide the plugin asked of its editor window.
     editor_visibility_ask: AtomicU8,
-    /// Whether the plugin reported its editor gone, and whether destroyed.
-    editor_closed_ask: AtomicU8,
+    /// Whether the plugin reported its editor gone, and whether destroyed,
+    /// packed by [`pack_editor_closed`] with the editor generation the report
+    /// was made against. Zero means nothing is pending.
+    editor_closed_ask: AtomicU64,
+    /// Counts the editor windows installed on this instance. A `closed` report
+    /// carries the count it read, so one made against an editor that has since
+    /// been replaced cannot tear down its successor.
+    editor_generation: AtomicU64,
     /// Whether the plugin reported new resize constraints not yet re-read.
     editor_resize_hints_changed: AtomicBool,
     /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty
@@ -288,6 +303,7 @@ impl HostCallbackState {
         // preemption spanning an entire editor lifecycle, and its outcome is one
         // wrong resize the plugin can ask again for.
         self.pending_editor_resize.store(0, Ordering::Release);
+        self.editor_generation.fetch_add(1, Ordering::AcqRel);
         self.editor_resize_available.store(true, Ordering::Release);
     }
 
@@ -353,13 +369,23 @@ impl HostCallbackState {
 
     /// Record that the plugin's editor ended on its own. CLAP marks
     /// `gui.closed` `[thread-safe]`, so this is atomics and the hint only.
+    ///
+    /// The generation is read first: a plugin thread that reads it, then
+    /// stalls across the host closing this editor and opening the next, stores
+    /// a report the take recognises as the old editor's.
     pub fn mark_editor_closed(&self, was_destroyed: bool) {
-        let reported = if was_destroyed {
+        let generation = self.editor_generation.load(Ordering::Acquire);
+        self.record_editor_closed(generation, was_destroyed);
+    }
+
+    fn record_editor_closed(&self, generation: u64, was_destroyed: bool) {
+        let report = if was_destroyed {
             CLOSED_DESTROYED
         } else {
             CLOSED_ALIVE
         };
-        self.editor_closed_ask.fetch_max(reported, Ordering::AcqRel);
+        self.editor_closed_ask
+            .fetch_max(pack_editor_closed(generation, report), Ordering::AcqRel);
         signal_pending_editor_resize();
     }
 
@@ -395,7 +421,14 @@ impl HostCallbackState {
             HIDE_ASKED => Some(EditorVisibility::Hide),
             _ => None,
         };
-        let closed = match self.editor_closed_ask.swap(NOT_CLOSED, Ordering::AcqRel) {
+        let current = self.editor_generation.load(Ordering::Acquire);
+        let packed = self.editor_closed_ask.swap(NOT_CLOSED, Ordering::AcqRel);
+        let report = if packed >> CLOSED_REPORT_BITS == current {
+            packed & ((1 << CLOSED_REPORT_BITS) - 1)
+        } else {
+            NOT_CLOSED
+        };
+        let closed = match report {
             CLOSED_DESTROYED => Some(EditorClosed {
                 was_destroyed: true,
             }),
@@ -1552,6 +1585,34 @@ mod tests {
         state.discard_editor_window_asks();
 
         assert!(state.take_editor_window_asks().is_empty());
+    }
+
+    /// A plugin thread that read the generation while one editor was open and
+    /// stored its `closed` only after the host had closed that editor and
+    /// opened the next — past the open's discard — reports about the old one.
+    #[test]
+    fn a_closed_report_made_against_a_replaced_editor_does_not_close_its_successor() {
+        let _guard = resize_signal_guard();
+        let state = HostCallbackState::default();
+        state.set_editor_resize_available(true);
+        let read_while_first_was_open = state.editor_generation.load(Ordering::Acquire);
+        state.set_editor_resize_available(false);
+        state.discard_editor_window_asks();
+        state.set_editor_resize_available(true);
+
+        state.record_editor_closed(read_while_first_was_open, true);
+
+        assert_eq!(state.take_editor_window_asks().closed, None);
+
+        state.mark_editor_closed(true);
+
+        assert_eq!(
+            state.take_editor_window_asks().closed,
+            Some(EditorClosed {
+                was_destroyed: true
+            }),
+            "a report made against the open editor still closes it"
+        );
     }
 
     #[test]
