@@ -1352,20 +1352,29 @@ mod tests {
     const SLOW_DRAINS: usize = 8;
 
     /// A UI thread whose posted work takes [`SLOW_POSTED_WORK`] on each of
-    /// its first [`SLOW_DRAINS`] drains, counting every drain.
+    /// its first [`SLOW_DRAINS`] drains, recording how long every drain really
+    /// took: a sleep has a floor and no ceiling, so the test judges the wait
+    /// against these measurements, never against the sleep it asked for.
     #[derive(Default)]
     struct SlowPostedWork {
-        drains: std::sync::atomic::AtomicUsize,
+        drain_durations: std::sync::Mutex<Vec<Duration>>,
     }
 
     impl UiThread for SlowPostedWork {
         fn run_posted_releases(&self) {
+            let started = Instant::now();
             let drain = self
-                .drains
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                .drain_durations
+                .lock()
+                .expect("the drain log is not poisoned")
+                .len();
             if drain < SLOW_DRAINS {
                 thread::sleep(SLOW_POSTED_WORK);
             }
+            self.drain_durations
+                .lock()
+                .expect("the drain log is not poisoned")
+                .push(started.elapsed());
         }
     }
 
@@ -1381,12 +1390,15 @@ mod tests {
         let render = InFlightRender::begin(&state, None).expect("a render is admitted");
         let ui = SlowPostedWork::default();
 
-        let started = Instant::now();
         let left_running = stop_offline_renders(&state, &ui, &mut |poll| poll);
-        let stopped_in = started.elapsed();
 
         assert_eq!(left_running, 1, "the held render is reported");
-        let drains = ui.drains.load(std::sync::atomic::Ordering::SeqCst);
+        let drain_durations = ui
+            .drain_durations
+            .lock()
+            .expect("the drain log is not poisoned")
+            .clone();
+        let drains = drain_durations.len();
         let drains_inside_the_budget = OFFLINE_RENDER_STOP_BUDGET
             .as_millis()
             .div_ceil(SLOW_POSTED_WORK.as_millis()) as usize;
@@ -1394,9 +1406,11 @@ mod tests {
             drains <= drains_inside_the_budget,
             "the wait stopped draining once the budget was spent: {drains} drains"
         );
+        let spent_before_the_last_drain: Duration =
+            drain_durations.iter().take(drains.saturating_sub(1)).sum();
         assert!(
-            stopped_in < OFFLINE_RENDER_STOP_BUDGET + SLOW_POSTED_WORK,
-            "the wait returned within its budget plus one drain: {stopped_in:?}"
+            spent_before_the_last_drain < OFFLINE_RENDER_STOP_BUDGET,
+            "a drain started only while budget remained: {drain_durations:?}"
         );
         drop(render);
     }
