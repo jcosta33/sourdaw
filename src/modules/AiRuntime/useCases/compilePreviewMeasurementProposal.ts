@@ -125,6 +125,19 @@ function groundRetainedCommands(input: CompilePreviewMeasurementProposalInput, r
     });
 }
 
+/**
+ * One compilation's commands keyed by their producer call as well, so several compilations joined
+ * into one retained set keep distinct keys and each dependency still names its own producer's command:
+ * a proposal adopting the joined set grounds the dependency graph the separate compilations had.
+ */
+function rekeyedCommands(compilation: RetainedCommandSet): RetainedCommand[] {
+    return compilation.commands.map((command) => ({
+        ...command,
+        key: `${compilation.callId}:${command.key}`,
+        dependencyKeys: command.dependencyKeys.map((key) => `${compilation.callId}:${key}`),
+    }));
+}
+
 /** Ground, validate and state-guard the retained commands exactly as an adopting proposal will. */
 function admitRetainedCommands(input: CompilePreviewMeasurementProposalInput, retained: RetainedCommandSet) {
     const bridged = groundRetainedCommands(input, retained);
@@ -228,7 +241,7 @@ export function compilePreviewMeasurementProposal(
         retained = {
             callId: input.callId,
             revision: input.revision,
-            commands: input.source.retained.flatMap((compilation) => compilation.commands),
+            commands: input.source.retained.flatMap(rekeyedCommands),
         };
     } else if ('recipe' in input.source) {
         retained = input.source.recipe;
