@@ -188,7 +188,7 @@ fn legato_dynamic_id(name: &str) -> u8 {
 /// Why the bank store refused a step. `Display` is the text the renderer
 /// receives.
 #[derive(Debug)]
-enum LevainBankError {
+pub(crate) enum LevainBankError {
     EmptyBankKey,
     EmptyInstrumentId {
         bank_key: String,
@@ -701,19 +701,7 @@ impl LevainBankStore {
     /// whichever control thread took the batch, so a publication would be
     /// invisible to the next build as often as not. The `Arc` cache above is
     /// what makes a second build of the same bank cheap instead.
-    ///
-    /// Answers text because `commands::graph` wraps it into
-    /// `GraphRefusal::LevainBank(String)`.
-    pub fn build_instance(
-        &mut self,
-        bank_key: &str,
-        sample_rate: f32,
-    ) -> Result<LevainInstance, String> {
-        self.build_loaded_instance(bank_key, sample_rate)
-            .map_err(|error| error.to_string())
-    }
-
-    fn build_loaded_instance(
+    pub(crate) fn build_instance(
         &mut self,
         bank_key: &str,
         sample_rate: f32,
@@ -1416,7 +1404,7 @@ mod tests {
     fn build_refusal_at(store: &mut LevainBankStore, rate: f32, why: &str) -> String {
         match store.build_instance(BANK, rate) {
             Ok(_) => panic!("{why}"),
-            Err(refusal) => refusal,
+            Err(refusal) => refusal.to_string(),
         }
     }
 
