@@ -31,6 +31,7 @@ export async function createHipHopTrapTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Vocal Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 4,
                     'comp-attack': 5,

@@ -15,8 +15,10 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - A shell adds a command by adding a body here and a wrapper there. The wrapper unwraps transport
   and calls the body; it never holds behaviour, and no command may exist in one shell only.
 - A shell's quit path calls `shutdown::shutdown` and never reassembles the cascade. Its steps and
-  their order are a contract: a shell that inlines them can silently drop one, and the sweep must
-  follow the editor close because closing an editor is what retires a runtime.
+  their order are a contract: a shell that inlines them can silently drop one. Offline renders are
+  cancelled and waited for first, because every later step tears down what a render may still be
+  touching, and the sweep must follow the editor close because closing an editor is what retires
+  a runtime.
 - A threadsafe function registered for the life of the process must be weak. A referenced one pins
   the Node event loop, so a shell can never drain it and quit, and anything held by a thread that
   does not stop has no other release path.

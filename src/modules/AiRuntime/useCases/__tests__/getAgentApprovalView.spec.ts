@@ -53,6 +53,7 @@ const REMOVE_ACTION = { type: 'removeTrack', payload: { trackId: 'track-snare' }
 
 const AGENT_APPROVAL = {
     schemaVersion: 1 as const,
+    explicitApprovalRequired: true,
     actionHashes: ['action-hash-gain', 'action-hash-remove'],
     sourceRevision: REVISION,
     targetFingerprints: { 'track-kick': 'fingerprint-kick' },

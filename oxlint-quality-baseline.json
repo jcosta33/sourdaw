@@ -3705,9 +3705,6 @@
     "src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/agentReference/levenshteinDistance.ts": {
@@ -4326,14 +4323,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/chooseVibeBriefReading.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts": {
         "eslint/complexity": {
             "count": 2
@@ -4781,14 +4770,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts": {
-        "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-params": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/planAgentRun.ts": {
         "eslint/complexity": {
             "count": 4
@@ -5087,7 +5068,7 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/vibeRun/readVibeBatchValueReply.ts": {
@@ -5997,11 +5978,6 @@
     },
     "src/modules/Arrangement/models/ScratchPadSection.ts": {
         "eslint/max-params": {
-            "count": 1
-        }
-    },
-    "src/modules/Arrangement/models/StoredDeviceParameterMigration.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
             "count": 1
         }
     },
@@ -7545,11 +7521,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/folder/createFolder.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 7
@@ -7607,11 +7578,6 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
-    "src/modules/Arrangement/useCases/freezeBounce/cancelFreezeTrack.ts": {
-        "typescript/no-non-null-assertion": {
             "count": 1
         }
     },
@@ -12293,9 +12259,6 @@
         "eslint/complexity": {
             "count": 1
         },
-        "eslint/max-depth": {
-            "count": 1
-        },
         "typescript/no-non-null-assertion": {
             "count": 4
         }
@@ -14499,9 +14462,6 @@
         }
     },
     "src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 1
         }

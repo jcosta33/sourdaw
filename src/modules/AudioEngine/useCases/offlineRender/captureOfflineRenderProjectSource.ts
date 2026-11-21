@@ -4,6 +4,8 @@ import { chordTrackStore, grooveTemplateStore, midiStore } from '#/modules/MIDI/
 import { sidechainStore } from '#/modules/Routing/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
+import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
+
 import { offlineRenderCapturePorts } from './offlineRenderCapturePorts';
 import { type OfflineRenderProjectSource, type OfflineYeastProcessor } from './OfflineRenderSource';
 
@@ -42,7 +44,7 @@ function readYeastRacks(tracks: DocumentReadModels['tracks']): Record<string, Of
     const racks: Record<string, OfflineYeastProcessor[]> = {};
     for (const track of tracks?.tracks ?? []) {
         for (const device of track.devices) {
-            if (device.type === 'yeast') {
+            if (isMidiTransformDevice(device.type)) {
                 const rack = offlineRenderCapturePorts.yeastRacks?.readRack(device.id) ?? [];
                 racks[device.id] = rack.map((processor) => structuredClone(processor));
             }
