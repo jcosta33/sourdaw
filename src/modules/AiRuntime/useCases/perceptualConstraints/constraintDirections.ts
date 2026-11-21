@@ -4,6 +4,9 @@ import { normalizePhrase } from './normalizePhrase';
 
 export type MeasuredConstraintId = MeasuredPerceptualConstraint['constraintId'];
 
+/** The end of a whole word: no letter or digit follows. */
+export const WORD_END = String.raw`(?![\p{L}\p{N}])`;
+
 type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
 type Movement = 'up' | 'down';
 
@@ -81,10 +84,11 @@ const NOUN_QUALIFIER: Readonly<Record<string, string>> = { image: 'stereo', fiel
  * The verbs a held noun takes in any family, each also read with "-ing": those moving its metric one
  * way ("don't raise the width") and those holding it ("don't change the level").
  */
+const CHANGE = 'change';
 const NOUN_VERBS: Readonly<Record<Movement | 'either', readonly string[]>> = {
     up: ['raise', 'increase', 'boost', 'push', 'turn up'],
     down: ['lower', 'reduce', 'decrease', 'turn down'],
-    either: ['change', 'alter', 'touch'],
+    either: [CHANGE, 'alter', 'touch'],
 };
 
 const FAMILIES: readonly QualityFamily[] = ['loudness', 'width', 'brightness', 'dynamics'];
@@ -143,9 +147,9 @@ const COMPARATIVE_PHRASES = phraseEntries(COMPARATIVES, (word) => [word]).map((e
 const VERB_PHRASES = phraseEntries(QUALITY_VERBS, withIngForm).map((entry) => entry.phrase);
 
 /** One comparative ("louder", "less dynamic") or a family's either-way pair ("wider or narrower"). */
-export const DIRECTION = String.raw`(?:${alternation(COMPARATIVE_PHRASES)})(?![\p{L}\p{N}])`;
+export const DIRECTION = String.raw`(?:${alternation(COMPARATIVE_PHRASES)})${WORD_END}`;
 /** A verb moving one family with no held noun ("widen", "squashing"), or its either-way pair. */
-export const QUALITY_VERB = String.raw`(?<direction>(?:${alternation(VERB_PHRASES)})(?![\p{L}\p{N}]))`;
+export const QUALITY_VERB = String.raw`(?<direction>(?:${alternation(VERB_PHRASES)})${WORD_END})`;
 /** Every single comparative word, which an object member never holds. */
 export const COMPARATIVE_WORDS = `(?:${alternation(COMPARATIVE_PHRASES.filter((phrase) => !phrase.includes(' ')))})`;
 
@@ -168,6 +172,8 @@ export const FAMILY_OF_NOUN: ReadonlyMap<string, QualityFamily> = new Map(
 /** A verb a held noun takes, moving its metric or holding it: "raise", "turning up", "change". */
 export const NOUN_VERB = String.raw`(?<verb>${alternation(NOUN_VERB_PHRASES)})`;
 /** The verbs holding a held noun's metric either way: "don't change the level", "touching the width". */
+/** The hold verb "change" as a noun, in either number: "no changes to the low end". */
+export const CHANGE_NOUN = String.raw`${CHANGE}s?`;
 const HOLDING_NOUN_VERB = String.raw`(?:${alternation(NOUN_VERBS.either.flatMap(withIngForm))})`;
 /** The verbs only the low end is held by beside those: "don't affect the low end", "don't mess with". */
 const LOW_END_ONLY_VERBS = ['affect', 'mess with'];

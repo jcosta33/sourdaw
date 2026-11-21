@@ -6,7 +6,7 @@ import { METRIC_HOLD_TOLERANCES } from '../metricHoldTolerances';
  * `hold` keeps a metric within its tolerance either way; a bound lets it move freely one way and by at
  * most its tolerance the other, so "don't make it louder" admits a quieter preview.
  */
-export type InvariantRelation = 'hold' | 'no-increase' | 'no-decrease';
+type InvariantRelation = 'hold' | 'no-increase' | 'no-decrease';
 
 type InvariantMetric = {
     metricId: ObjectiveMetricId;

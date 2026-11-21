@@ -1,7 +1,7 @@
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 
-import { COMPARATIVE_WORDS, DIRECTION, NOUN_VERB_ING } from './constraintDirections';
+import { COMPARATIVE_WORDS, DIRECTION, NOUN_VERB_ING, WORD_END } from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
 
 /**
@@ -45,6 +45,13 @@ export const ROLE_WORD = words(Array.from(ROLE_WORDS.keys()));
 /** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
 export const SCOPE_WORD = words([...ROLE_WORDS.keys(), ...MIX_WORDS]);
 
+/** The marks that end a clause, one character class each way: a mark, and any character but one. */
+const CLAUSE_MARKS = ',.;:!?';
+export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
+export const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
+/** A character of a word: neither whitespace nor a clause mark. */
+export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
+
 /** The glyph a masked track name or quotation is read as, one per character. */
 export const MASK_GLYPH = '□';
 
@@ -85,9 +92,9 @@ export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
 const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
 /** Every word a clause may open or end at. */
 export const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
-export const CLAUSE_END = String.raw`(?=\s*(?:$|[,.;:!?]|\b${CLAUSE_BOUNDARY_WORD}\b))`;
+export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
 /** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
-export const CLAUSE_HEAD = String.raw`(?<=^|[,.;:!?]\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
+export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
 export const OBJECT_PREPOSITION = words(['of', 'on', 'in']);
 
@@ -106,8 +113,14 @@ export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
 
+/** "as", which a kept term ("as dynamic") and a kept state ("as it is") stand behind. */
+export const AS = words(['as']);
 /** The states a kept object stays in: "intact", "as it is". */
-export const UNCHANGED_STATE = String.raw`(?:unchanged|intact|as\s+(?:it\s+)?is)`;
+const UNCHANGED_STATE = String.raw`(?:${words(['unchanged', 'intact'])}|${AS}\s+(?:it\s+)?is)`;
+/** The states only a left object stays in, beside those: "leave the low end alone". */
+const LEFT_ONLY_STATE = words(['alone', 'untouched']);
+/** Every state a left or kept object stays in: "leave the low end alone", "keep the low end intact". */
+export const LEFT_STATE = String.raw`(?:${LEFT_ONLY_STATE}|${UNCHANGED_STATE})`;
 /** The states a kept measured noun stays in: "keep the level the same", "where it is". */
 /** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
 export const THE_SAME = String.raw`${THE}\s+same`;
@@ -143,13 +156,14 @@ const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS,
  */
 export const PREDICATE_WORD = String.raw`(?:${MODAL}|${LINKING_VERB}|${PLAIN_PREDICATE_WORD})`;
 
+/** Unlike WORD_END, an apostrophe also continues the word, so "don't" is never read as "don". */
 const WHOLE_WORD_END = String.raw`(?![\p{L}\p{N}'’])`;
 const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|${PREDICATE_WORD}|${ANY_NEGATION})`;
 /**
  * A word an object member may hold: never a boundary, a direction, a negation or a predicate word, so a
  * member never runs into the next clause ("The vocal is louder and the drums must not …").
  */
-const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END})[^\s,.;:!?]+`;
+const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END})${WORD_CHARACTER}+`;
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
 export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
 const MEMBER_JOIN = String.raw`(?:\s*,\s*(?:${AND}\s+)?|\s+${LIST_JOINER}\s+|\s*&\s*)`;
@@ -169,6 +183,6 @@ export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:\s+${LIST_J
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
  * making the drums wider", "keep the vocal getting brighter". It asks for more of the move.
  */
-const CONTINUED_MOVE = String.raw`\s+(?:on\s+)?(?:${OBJECT_MEMBERS}\s+)?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b[^,.;:!?]*?${DIRECTION})`;
+const CONTINUED_MOVE = String.raw`\s+(?:on\s+)?(?:${OBJECT_MEMBERS}\s+)?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${NOT_CLAUSE_PUNCTUATION}*?${DIRECTION})`;
 /** A keep-type verb that holds what follows, never one continuing a move. */
-export const HOLDING_KEEP = String.raw`${KEEP_VERBS}(?![\p{L}\p{N}])(?!${CONTINUED_MOVE})`;
+export const HOLDING_KEEP = String.raw`${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;

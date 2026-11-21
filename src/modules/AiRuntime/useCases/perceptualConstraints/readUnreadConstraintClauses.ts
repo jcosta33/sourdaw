@@ -3,6 +3,7 @@ import { type UnsupportedPerceptualConstraint } from '../../models/PerceptualCon
 import {
     AVOID_VERB,
     CAUSING_VERB,
+    CLAUSE_PUNCTUATION,
     DEGREE_WORD,
     DETERMINER,
     HARD_BOUNDARY_WORD,
@@ -21,12 +22,11 @@ import {
     SCOPE_WORD,
     STOP_VERB,
 } from './constraintClauseWords';
-import { DIRECTION, MEASURED_WORD, NOUN_VERB_HEAD } from './constraintDirections';
+import { DIRECTION, MEASURED_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
 
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
 
-const WORD_END = String.raw`(?![\p{L}\p{N}])`;
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
 /**
  * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
@@ -52,7 +52,10 @@ const PROTECTIVE = new RegExp(
 );
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
 /** Hard clause boundaries; an "and" or "or" is a boundary whose next clause may share a protection. */
-const BOUNDARY = new RegExp(String.raw`[,.;:!?]|\b${HARD_BOUNDARY_WORD}\b|\b(?<joiner>${LIST_JOINER})\b`, 'giu');
+const BOUNDARY = new RegExp(
+    String.raw`${CLAUSE_PUNCTUATION}|\b${HARD_BOUNDARY_WORD}\b|\b(?<joiner>${LIST_JOINER})\b`,
+    'giu'
+);
 /** The words a joined clause may open with and still continue the protection before it. */
 const CONTINUES = new RegExp(
     String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${DEGREE_WORD})${WORD_END}|${MASK_GLYPH}|${SCOPE_WORD}\b|${DIRECTION})`,

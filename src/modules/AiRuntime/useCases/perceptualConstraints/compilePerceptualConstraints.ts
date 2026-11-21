@@ -14,16 +14,19 @@ import { maskTrackReferences } from '../maskTrackReferences';
 
 import {
     AND_JOIN,
+    AS,
     CLAUSE_END,
     HOLDING_KEEP,
     KEEP_VERBS,
     LEAVE_VERB,
+    LEFT_STATE,
     LINKING_VERB,
     MASK_GLYPH,
     MIX_PRONOUNS,
     MIX_WORDS,
     NEGATION,
     NO,
+    NOT_CLAUSE_PUNCTUATION,
     normalizeObjectText,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
@@ -32,9 +35,16 @@ import {
     ROLE_WORDS,
     TERM_JOINER,
     THE,
-    UNCHANGED_STATE,
+    WORD_CHARACTER,
 } from './constraintClauseWords';
-import { FAMILY_IDS, LOW_END_HOLDING_VERB, type MeasuredConstraintId, QUALITY_OF } from './constraintDirections';
+import {
+    CHANGE_NOUN,
+    FAMILY_IDS,
+    LOW_END_HOLDING_VERB,
+    type MeasuredConstraintId,
+    QUALITY_OF,
+    WORD_END,
+} from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { type ConsumedSpan, readUnreadConstraintClauses } from './readUnreadConstraintClauses';
@@ -47,18 +57,17 @@ type ObjectResolution =
 type ClauseMatch = { clause: string; object: string | null; start: number; end: number };
 
 const LOW_END = String.raw`(?:low|bottom)[\s-]+end`;
-const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>[^,.;:!?]+?))?`;
+const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>${NOT_CLAUSE_PUNCTUATION}+?))?`;
 const LOW_END_PROHIBITION = new RegExp(
-    String.raw`\b(?:${NEGATION}|${NO}\s+changes?\s+to)\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
-    'giu'
+    String.raw`\b(?:${NEGATION}|${NO}\s+${CHANGE_NOUN}\s+to)\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
+    'dgiu'
 );
-const LOW_END_LEFT = String.raw`(?:alone|untouched|${UNCHANGED_STATE})`;
 const LOW_END_PRESERVATION = new RegExp(
-    String.raw`\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+${THE}\s+${LOW_END}${OBJECT_TAIL}\s+${LOW_END_LEFT}${CLAUSE_END}`,
-    'giu'
+    String.raw`\b(?:${LEAVE_VERB}|${KEEP_VERBS})\s+${THE}\s+${LOW_END}${OBJECT_TAIL}\s+${LEFT_STATE}${CLAUSE_END}`,
+    'dgiu'
 );
 /** At most four words, so a quality later in the request never reads as this clause's object. */
-const QUALITY_OBJECT = String.raw`(?<object>(?:[^\s,.;:!?]+\s+){0,3}?[^\s,.;:!?]+)`;
+const QUALITY_OBJECT = String.raw`(?<object>(?:${WORD_CHARACTER}+\s+){0,3}?${WORD_CHARACTER}+)`;
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
 /** A quality no recipe produces but a crest factor measures, read beside the catalog's terms. */
@@ -70,7 +79,7 @@ const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
     [DYNAMIC_TERM, FAMILY_IDS.dynamics.held],
 ]);
 /** A kept term may stand behind a linking verb or "as": "keep the vocal sounding bright", "as dynamic". */
-const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|as)\s+)?`;
+const TERM_LEAD = String.raw`(?:(?:${LINKING_VERB}|${AS})\s+)?`;
 const TERM_FOLLOWS = String.raw`(?:\s*,\s*(?:${TERM_JOINER}\s+)?|\s+${TERM_JOINER}\s+)`;
 
 function nameVariants(name: string): string[] {
@@ -142,12 +151,8 @@ function readClauses(pattern: RegExp, masked: string, prompt: string): ClauseMat
     return Array.from(masked.matchAll(pattern), (match) => {
         const end = match.index + match[0].length;
         const clause = prompt.slice(match.index, end).trim();
-        const objectText = match.groups?.object;
-        if (objectText === undefined) {
-            return { clause, object: null, start: match.index, end };
-        }
-        const objectStart = match.index + match[0].lastIndexOf(objectText);
-        const object = prompt.slice(objectStart, objectStart + objectText.length);
+        const span = match.indices?.groups?.object;
+        const object = span === undefined ? null : prompt.slice(span[0], span[1]);
         return { clause, object, start: match.index, end };
     });
 }
@@ -291,15 +296,15 @@ function readQualityPattern(): QualityPattern {
                 .join(String.raw`[\s-]+`)
         )
         .join('|');
-    const term = String.raw`(?:${terms})(?![\p{L}\p{N}])`;
-    const more = String.raw`(?<more>(?:${TERM_FOLLOWS}(?:as\s+)?${term})+${CLAUSE_END})?`;
+    const term = String.raw`(?:${terms})${WORD_END}`;
+    const more = String.raw`(?<more>(?:${TERM_FOLLOWS}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
         String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
-        'giu'
+        'dgiu'
     );
     const continuation = new RegExp(
         String.raw`${AND_JOIN}(?<object>${OBJECT_MEMBER})\s+${TERM_LEAD}(?<term>${term})${more}${CLAUSE_END}`,
-        'yiu'
+        'dyiu'
     );
     const descriptorOf = (candidate: string): string | undefined => {
         const normalized = normalizePhrase(candidate.replaceAll('-', ' '));
@@ -336,13 +341,12 @@ type QualityPart = { start: number; object: string; terms: string[] };
 
 /** A kept quality's object and terms, read from the prompt by the match's own offsets. */
 function readQualityPart(match: RegExpExecArray, prompt: string, termPattern: RegExp): QualityPart {
-    const objectText = match.groups?.object ?? '';
-    const objectStart = match.index + match[0].indexOf(objectText);
+    const span = match.indices?.groups?.object;
     const terms = [
         match.groups?.term ?? '',
         ...Array.from((match.groups?.more ?? '').matchAll(termPattern), (entry) => entry[0]),
     ];
-    return { start: match.index, object: prompt.slice(objectStart, objectStart + objectText.length), terms };
+    return { start: match.index, object: span === undefined ? '' : prompt.slice(span[0], span[1]), terms };
 }
 
 /** The match and every later object a continuation adds under its keep, with where the last one ends. */

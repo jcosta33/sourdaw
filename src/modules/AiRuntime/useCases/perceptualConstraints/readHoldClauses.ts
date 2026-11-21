@@ -18,6 +18,7 @@ import {
     MASK_GLYPH,
     MODAL_NEGATION,
     NEGATION,
+    NOT_CLAUSE_PUNCTUATION,
     normalizeObjectText,
     OBJECT_LIST,
     OBJECT_PREPOSITION,
@@ -94,7 +95,7 @@ type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
  * Not after a negation earlier in the same clause ("you don't have to keep …", "there's no need to
  * prevent …"), which may permit the move a keep, stop or prevent … from names, so no bound is read.
  */
-const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)[^,.;:!?])`;
+const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${NOT_CLAUSE_PUNCTUATION})`;
 const NOT_AFTER_CLAUSE_NEGATION = String.raw`(?<!\b${ANY_NEGATION}\b${IN_CLAUSE_CHARACTER}*)`;
 /** "keep the mix from getting louder"; a negation right before it permits the move instead. */
 const KEPT_FROM = String.raw`${NOT_AFTER_CLAUSE_NEGATION}(?<permitted>\b${NEGATION}\s+)?\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`;
@@ -209,19 +210,14 @@ function nounObjects(match: RegExpExecArray, nouns: readonly RegExpExecArray[], 
  * Each noun's family, and the part's one object: the "of" tail or an object standing before a noun.
  * Two different objects in one part hold no single scope, so the part is unreadable.
  */
-function readNounPart(
-    match: RegExpExecArray,
-    verb: string | undefined,
-    prompt: string,
-    clause: () => string
-): HoldPart {
+function readNounPart(match: RegExpExecArray, verb: string | undefined, prompt: string, clause: string): HoldPart {
     const nouns = nounsOf(match);
     const [object = null, ...others] = nounObjects(match, nouns, prompt);
     return {
         start: match.index,
         constraintIds: nounConstraintIds(nouns, verb),
         object,
-        unreadable: others.length > 0 ? `“${clause()}” names more than one scope for one hold.` : null,
+        unreadable: others.length > 0 ? `“${clause}” names more than one scope for one hold.` : null,
     };
 }
 
@@ -237,7 +233,7 @@ function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
     return direction === undefined ? [FAMILY_IDS.loudness.held] : directionConstraintIds(direction);
 }
 
-function readPart(match: RegExpExecArray, verb: string | undefined, prompt: string, clause: () => string): HoldPart {
+function readPart(match: RegExpExecArray, verb: string | undefined, prompt: string, clause: string): HoldPart {
     if (match.groups?.nouns !== undefined) {
         return readNounPart(match, verb, prompt, clause);
     }
@@ -278,7 +274,7 @@ function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): Hol
     const verb = first === undefined ? undefined : verbOf(first);
     const parts: HoldPart[] = [];
     for (const match of matches) {
-        const part = readPart(match, verb, prompt, () => clause);
+        const part = readPart(match, verb, prompt, clause);
         const inherited = parts.at(-1);
         parts.push(part.object === null && inherited !== undefined ? { ...part, object: inherited.object } : part);
     }

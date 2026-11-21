@@ -2051,6 +2051,15 @@ describe('reading only governed protections and whole object names', () => {
     });
 });
 
+function lowEndUntouched(clause: string): PerceptualConstraintReading['constraints'][number] {
+    return {
+        constraintId: 'low-end-untouched-v1',
+        clause,
+        scope: MIX,
+        protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
+    };
+}
+
 describe('reading a protection only over the words it governs', () => {
     it.each([
         // "don't be" opens nothing on its own, while a protection it heads still records
@@ -2133,6 +2142,12 @@ describe('reading a protection only over the words it governs', () => {
         ['keep the vocal getting brighter', [], []],
         ['keep on widening', [], []],
         ['keep on widening the mix', [], []],
+        // "avoid" governs what follows as a negation does, so the net records what no reader reads
+        ['avoid making the mix louder', [], [unread('avoid making the mix louder', NET_REASON)]],
+        ['avoiding making the drums any wider', [], [unread('avoiding making the drums any wider', NET_REASON)]],
+        // the low end's own hold verbs
+        ["don't mess with the low end", [lowEndUntouched("don't mess with the low end")], []],
+        ['without messing with the low end', [lowEndUntouched('without messing with the low end')], []],
         // a brightness noun in free text opens the net as every held noun does
         ['no brightness change', [], [unread('no brightness change', NET_REASON)]],
         [
