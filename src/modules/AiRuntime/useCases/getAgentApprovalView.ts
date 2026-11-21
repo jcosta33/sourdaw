@@ -19,6 +19,7 @@ import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from './objectiveMetr
 import { readVibeBatchSkipAvailability } from './readVibeBatchSkipAvailability';
 import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailability';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
+import { describeBriefReadingPlan } from './vibeRun/describeBriefReadingPlan';
 import { describeRecipeValueSource } from './vibeRun/describeRecipeValueSource';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -155,7 +156,7 @@ export type AgentApprovalView = {
     /** Whether this card may be skipped while its run goes on: only a pending vibe-run batch after the brief. */
     skip: { available: boolean; reason: string | null };
     /** The readings an ambiguous brief card lets the user choose between; empty on every other card and once none can be chosen. */
-    readings: readonly { id: string; name: string; descriptors: readonly string[] }[];
+    readings: readonly { id: string; name: string; descriptors: readonly string[]; planLines: readonly string[] }[];
     consequences: NonNullable<ApprovalSnapshot['agentApproval']>['consequences'] | null;
     budgets: NonNullable<ApprovalSnapshot['commandBatch']>['authority']['budgets'] | null;
     cost: ProviderRouteView['cost'];
@@ -568,7 +569,12 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         freshness,
         rePreview: getRePreviewAvailability(confirmation, freshness),
         skip: readVibeBatchSkipAvailability(confirmation),
-        readings: readVibeBriefReadingAvailability(confirmation).readings,
+        readings: readVibeBriefReadingAvailability(confirmation).readings.map((reading) => ({
+            id: reading.id,
+            name: reading.name,
+            descriptors: reading.descriptors,
+            planLines: describeBriefReadingPlan(reading.plan),
+        })),
         consequences: agentApproval?.consequences ?? null,
         budgets: commandBatch?.authority.budgets ?? null,
         cost: routeView?.cost ?? [],

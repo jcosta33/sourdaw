@@ -116,8 +116,29 @@ export type TimeOperationDependencies = {
     prepareTimelineMapStateRestore: (plan: unknown) => PreparedTimeOperation;
 };
 
-export let timeOperationDependencies: TimeOperationDependencies | null = null;
+let registeredDependencies: TimeOperationDependencies | null = null;
 
-export function setTimeOperationDependencies(deps: TimeOperationDependencies | null): void {
-    timeOperationDependencies = deps;
+/**
+ * Arrangement may not import the automation, MIDI or tempo-map owners, so the
+ * composition root (`#/app/bootstrap`) fills this once at boot, before any
+ * command can run.
+ */
+export function setTimeOperationDependencies(deps: TimeOperationDependencies): void {
+    registeredDependencies = deps;
 }
+
+export const timeOperationDependencies = {
+    /**
+     * Reading before registration throws rather than skipping: an unfilled
+     * reader would reject every saved restore plan or edit time without the
+     * automation, MIDI and tempo-map owners.
+     */
+    read(caller: string): TimeOperationDependencies {
+        if (registeredDependencies === null) {
+            throw new Error(
+                `${caller}: time operation dependencies are not registered; call setTimeOperationDependencies() from #/app/bootstrap (bootstrap does this)`
+            );
+        }
+        return registeredDependencies;
+    },
+};

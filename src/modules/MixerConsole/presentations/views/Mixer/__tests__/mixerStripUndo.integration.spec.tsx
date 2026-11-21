@@ -269,6 +269,14 @@ vi.mock('#/modules/Knead/useCases', async () => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hostsStoredControllers: actual.hostsStoredControllers,
+        readStoredControllerDefault: actual.readStoredControllerDefault,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,

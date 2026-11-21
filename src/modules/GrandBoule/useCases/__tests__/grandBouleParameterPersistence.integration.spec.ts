@@ -161,6 +161,11 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         openCachedAudioBufferHold: vi.fn(() => {
             throw new Error('Unexpected audio buffer residency hold in this fixture');
         }),

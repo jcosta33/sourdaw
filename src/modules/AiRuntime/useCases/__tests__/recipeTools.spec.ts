@@ -802,17 +802,18 @@ describe('recipe.expand', () => {
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
 
-    // The last column is the writes each expansion keeps. A placed Compressor starts at threshold -20,
-    // ratio 4, attack 10, release 100, knee 6 and makeup 0, and a placed Noise Gate at threshold -40,
-    // attack 0.001, hold 0.01 and release 0.1 (their declared defaults), so a midpoint equal to one of
-    // those is not rewritten.
+    // The last column is the writes each expansion keeps. A placed Compressor starts at Auto Makeup off,
+    // threshold -20, ratio 4, attack 10, release 100, knee 6 and makeup 0, and a placed Noise Gate at
+    // threshold -40, attack 0.001, hold 0.01 and release 0.1 (their declared defaults), so a midpoint
+    // equal to one of those is not rewritten. Every compressor recipe turns Auto Makeup on (ADR 0064).
     it.each([
         [
             'vocal',
             'vocal-controlled',
             'builtin-compressor',
-            [-20, 4, 8.5, 90],
+            [1, -20, 4, 8.5, 90],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-attack', 8.5],
                 ['comp-release', 90],
             ],
@@ -833,8 +834,9 @@ describe('recipe.expand', () => {
             'bass',
             'bass-controlled',
             'builtin-compressor',
-            [-20, 5, 14, 120],
+            [1, -20, 5, 14, 120],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-ratio', 5],
                 ['comp-attack', 14],
                 ['comp-release', 120],
@@ -844,8 +846,9 @@ describe('recipe.expand', () => {
             'guitar',
             'guitar-controlled',
             'builtin-compressor',
-            [-18, 4, 10, 90],
+            [1, -18, 4, 10, 90],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-threshold', -18],
                 ['comp-release', 90],
             ],
@@ -854,8 +857,9 @@ describe('recipe.expand', () => {
             'keys',
             'keys-controlled',
             'builtin-compressor',
-            [-18, 4, 10, 90],
+            [1, -18, 4, 10, 90],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-threshold', -18],
                 ['comp-release', 90],
             ],
@@ -864,8 +868,9 @@ describe('recipe.expand', () => {
             'bus',
             'bus-controlled',
             'builtin-compressor',
-            [-14, 2.5, 25, 200, 8],
+            [1, -14, 2.5, 25, 200, 8],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-threshold', -14],
                 ['comp-ratio', 2.5],
                 ['comp-attack', 25],
@@ -877,8 +882,9 @@ describe('recipe.expand', () => {
             'master',
             'master-controlled',
             'builtin-compressor',
-            [-10, 2.5, 27.5, 200, 8],
+            [1, -10, 2.5, 27.5, 200, 8],
             [
+                ['comp-auto-makeup', 1],
                 ['comp-threshold', -10],
                 ['comp-ratio', 2.5],
                 ['comp-attack', 27.5],
@@ -1105,7 +1111,9 @@ describe('recipe.expand', () => {
             await runRecipeExpansion('loop-expand-edit', { recipeId: 'bus-punchy', targetId: 'drum-bus-1' })
         );
 
+        // Auto Makeup on, then the step's four static-curve and timing windows.
         expect(data.commands.map((command) => command.name)).toEqual([
+            'setDeviceParameter',
             'setDeviceParameter',
             'setDeviceParameter',
             'setDeviceParameter',
@@ -1116,7 +1124,9 @@ describe('recipe.expand', () => {
             'device-comp-live',
             'device-comp-live',
             'device-comp-live',
+            'device-comp-live',
         ]);
+        expect(data.commands[0]?.arguments).toMatchObject({ paramId: 'comp-auto-makeup', value: 1 });
         expect(data.values.find((entry) => entry.paramId === 'comp-ratio')).toMatchObject({ value: 3 });
     });
 

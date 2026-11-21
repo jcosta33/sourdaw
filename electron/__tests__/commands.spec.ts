@@ -5,7 +5,7 @@
  * A list of names copied into TypeScript is only as good as the check that it
  * still matches the thing it mirrors. So the registered surface is not taken
  * from `electron/commands.ts` at its word: it is re-derived from the addon's
- * own `#[napi]` items in `crates/sourdaw-native/src/addon/mod.rs`. A command
+ * own `#[napi]` items in every file under `crates/sourdaw-native/src/addon/`. A command
  * added, removed or renamed on the Rust side fails here rather than at the
  * moment a musician invokes it.
  *
@@ -34,14 +34,29 @@ const matches = (source: string, pattern: RegExp): string[] =>
 
 const sorted = (names: readonly string[]): string[] => [...new Set(names)].sort();
 
+/** The directory every file the Node addon publishes `#[napi]` items from lives in. */
+const ADDON_SOURCE_DIRECTORY = 'crates/sourdaw-native/src/addon';
+
+/**
+ * Every Rust source under the addon directory, concatenated: a `#[napi]` item
+ * is published from whichever file defines it, so reading `mod.rs` alone
+ * would let an item in any other file escape the partition.
+ */
+const readAddonSources = (directory: string = ADDON_SOURCE_DIRECTORY): string =>
+    readdirSync(directory, { withFileTypes: true })
+        .toSorted((left, right) => left.name.localeCompare(right.name))
+        .flatMap((entry) => {
+            const path = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                return [readAddonSources(path)];
+            }
+            return entry.name.endsWith('.rs') ? [read(path)] : [];
+        })
+        .join('\n');
+
 /** Every method the Node addon publishes, from its `#[napi]` items. */
 const addonMethods = (): string[] =>
-    sorted(
-        matches(
-            read('crates/sourdaw-native/src/addon/mod.rs'),
-            /#\[napi[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)/gu
-        )
-    );
+    sorted(matches(readAddonSources(), /#\[napi[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)/gu));
 
 /**
  * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
@@ -60,11 +75,16 @@ const addonMethods = (): string[] =>
  * `stop_plugin_scan_helpers` is the scan utility's own terminate path, called
  * by `scanWorker.ts` as that process is told to exit, so the renderer has no
  * reason to reach it.
+ *
+ * `gpu_memory_budget` (`addon/gpu.rs`) is a property of the machine the main
+ * process reads for itself (`readGpuMemoryBudget` in `electron/native.ts`),
+ * outside the command router; the renderer never asks for it.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'with_runtime_scope_v1',
     'runtime_scope_info_v1',
     'apply_plugin_gui_scale',
+    'gpu_memory_budget',
     'new',
     'notify_plugin_window_closed',
     'register_plugin_window_host',
@@ -308,7 +328,7 @@ type AddonSignature = {
 };
 
 const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
-    const source = read('crates/sourdaw-native/src/addon/mod.rs');
+    const source = readAddonSources();
     const signatures = new Map<string, AddonSignature>();
     const declaration = /#\[napi[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)\s*\(/gu;
 

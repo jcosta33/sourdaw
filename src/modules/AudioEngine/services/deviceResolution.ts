@@ -1,6 +1,6 @@
 import { dbToGain } from '#/utils/audioLevelLaw';
 
-import { FLANGER_MIN_DELAY_SECONDS } from '../models/DeviceParamLaws';
+import { COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, FLANGER_MIN_DELAY_SECONDS } from '../models/DeviceParamLaws';
 import { resolveDrumKitBy } from '../models/DrumKitSelection';
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
 import { type OfflineCurveWriteTargets } from '../models/OfflineCurveWriteTargets';
@@ -66,12 +66,31 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-eq:eq-high-gain': [{ nodeIndex: 2, property: 'gain' }],
     'builtin-eq:eq-high-freq': [{ nodeIndex: 2, property: 'frequency' }],
     'builtin-eq:eq-high-q': [{ nodeIndex: 2, property: 'Q' }],
-    'builtin-compressor:comp-threshold': [{ nodeIndex: 0, property: 'threshold' }],
-    'builtin-compressor:comp-ratio': [{ nodeIndex: 0, property: 'ratio' }],
+    // With Auto Makeup off, the twin that measures Chromium's hidden makeup
+    // (`applyAutoMakeupSwitch`) takes the same schedule, so its
+    // cancellation follows the automated curve quantum by quantum. With it on
+    // there is no twin and only the compressor resolves.
+    'builtin-compressor:comp-threshold': [
+        { nodeIndex: 0, property: 'threshold' },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'threshold' },
+    ],
+    'builtin-compressor:comp-ratio': [
+        { nodeIndex: 0, property: 'ratio' },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'ratio' },
+    ],
     // Descriptor times are milliseconds; the compressor's are seconds.
-    'builtin-compressor:comp-attack': [{ nodeIndex: 0, property: 'attack', scale: 1 / 1000 }],
-    'builtin-compressor:comp-release': [{ nodeIndex: 0, property: 'release', scale: 1 / 1000 }],
-    'builtin-compressor:comp-knee': [{ nodeIndex: 0, property: 'knee' }],
+    'builtin-compressor:comp-attack': [
+        { nodeIndex: 0, property: 'attack', scale: 1 / 1000 },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'attack', scale: 1 / 1000 },
+    ],
+    'builtin-compressor:comp-release': [
+        { nodeIndex: 0, property: 'release', scale: 1 / 1000 },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'release', scale: 1 / 1000 },
+    ],
+    'builtin-compressor:comp-knee': [
+        { nodeIndex: 0, property: 'knee' },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'knee' },
+    ],
     // Makeup is a dB knob over a linear gain node — the applier's dB→linear law.
     'builtin-compressor:comp-makeup': [{ nodeIndex: 1, property: 'gain', convert: dbToGain }],
     // Sidechain compressor. Offline builds the worklet, whose parameters live in
@@ -105,8 +124,16 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
         { nodeIndex: 1, property: 'gain', scale: -1, offset: 1 },
     ],
     'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain', convert: dbToGain }],
-    'builtin-limiter:lim-threshold': [{ nodeName: 'comp', property: 'threshold' }],
-    'builtin-limiter:lim-release': [{ nodeName: 'comp', property: 'release', scale: 1 / 1000 }],
+    // The limiter's Auto Makeup twin follows the same schedule as the
+    // compressor's does, for the two parameters that reach its node.
+    'builtin-limiter:lim-threshold': [
+        { nodeName: 'comp', property: 'threshold' },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'threshold' },
+    ],
+    'builtin-limiter:lim-release': [
+        { nodeName: 'comp', property: 'release', scale: 1 / 1000 },
+        { nodeName: COMPRESSOR_AUTO_MAKEUP_TWIN_NODE, property: 'release', scale: 1 / 1000 },
+    ],
     // lim-ceiling is deliberately absent: the advertised cap lives in the
     // clipper's WaveShaper curve, so it has no AudioParam. It resolves through
     // `resolveDeviceCurveWriteTargets` below instead, which rebuilds that curve

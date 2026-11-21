@@ -47,6 +47,11 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         captureOfflineRenderProjectSource: vi.fn(() => {
             throw new Error('Unexpected selection render capture in this fixture');
         }),

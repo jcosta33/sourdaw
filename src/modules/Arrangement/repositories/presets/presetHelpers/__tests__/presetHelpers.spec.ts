@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { getPluginById } from '../../../../models/DeviceParameter';
+import { FACTORY_PRESETS } from '../../factoryPresets';
 import { autopan } from '../autopan';
 import { bitcrusher } from '../bitcrusher';
 import { chorus } from '../chorus';
@@ -89,6 +90,20 @@ describe('presetHelpers', () => {
 
         expect(release).toBeGreaterThanOrEqual(declared!.minValue);
         expect(release).toBeLessThanOrEqual(declared!.maxValue);
+    });
+
+    it('states Auto Makeup on in a limiter preset that does not name it, and lets a caller override it', () => {
+        expect(limiter('Ceiling', {}).parameterValues['lim-auto-makeup']).toBe(1);
+        expect(limiter('Ceiling', { 'lim-auto-makeup': 0 }).parameterValues['lim-auto-makeup']).toBe(0);
+    });
+
+    it('states Auto Makeup on in every factory preset limiter, Brick Wall included', () => {
+        const limiters = FACTORY_PRESETS.flatMap((preset) =>
+            preset.devices.filter((device) => device.type === 'builtin-limiter')
+        );
+
+        expect(limiters.map((device) => device.name)).toContain('Brick Wall');
+        expect(limiters.map((device) => device.parameterValues['lim-auto-makeup'])).toEqual(limiters.map(() => 1));
     });
 
     it('phaser should create a phaser preset with overrides', () => {

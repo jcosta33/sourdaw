@@ -32,7 +32,11 @@ import {
     type Device,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setSoloMode } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    setSoloMode,
+    setVcaRuntimeProjectionDependencies,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -181,6 +185,7 @@ function publishEngineChain(deviceIds: readonly string[]): void {
 }
 
 beforeEach(() => {
+    setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain: vi.fn() });
     offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
     offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
     offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => value;

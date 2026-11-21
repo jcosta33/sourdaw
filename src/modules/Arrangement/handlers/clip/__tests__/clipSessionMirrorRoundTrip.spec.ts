@@ -86,9 +86,10 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 import { isRecord } from '#/utils/structuralEquality';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, placeTakeOnClipMedia } from '../../../models/TakeLane';
-import { createTrack, type Clip } from '../../../models/Track';
+import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
@@ -96,12 +97,16 @@ import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { captureTrackRemovalSnapshot } from '../../../useCases/captureTrackRemovalSnapshot';
 import { projectClipReplayPrefix } from '../../../useCases/clipEditing/projectClipReplayPrefix';
 import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { resolveTakeMedia } from '../../../useCases/resolveTakeMedia';
 import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+import { getPlannedTrackState } from '../../getPlannedTrackState';
+import { handleSetTrackColor } from '../../track/handleSetTrackColor';
+import { handleHideTrack } from '../../track/hideTrack';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDrawClip } from '../handleDrawClip';
@@ -2304,6 +2309,27 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
         );
 
+        it('undoes a height edit to the clamped height a stored out-of-range height was shown with', async () => {
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', height: 500 })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            reloadSavedProject();
+            expect(trackNamed(TRACK_ID).height).toBe(300);
+
+            expect(
+                await runAsAgent([{ type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } }])
+            ).toMatchObject({ status: 'committed' });
+            expect(trackNamed(TRACK_ID).height).toBe(120);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackNamed(TRACK_ID).height).toBe(300);
+
+            await redo();
+            expect(trackNamed(TRACK_ID).height).toBe(120);
+        });
+
         it('restores the exact prior heights of a zoom that clamped some tracks, across reloads', async () => {
             expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: 20 } }])).toMatchObject({
                 status: 'committed',
@@ -2563,6 +2589,191 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
             await redo();
             expect(heights()).toEqual(forward);
+        });
+
+        it('undoes and redoes a batch whose zoom before a created track never touched it, with no conflict', async () => {
+            const result = await runAsAgent([
+                { type: 'zoomTracksVertical', payload: { delta: 20 } },
+                { type: 'addTrack', payload: { id: 'track-created', kind: 'audio', name: 'Created' } },
+                { type: 'zoomTracksVertical', payload: { delta: 20 } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(heights()['track-created']).toBe(100);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(heights()['track-created']).toBeUndefined();
+            expect(undoStore.value?.past ?? []).toEqual([]);
+
+            await redo();
+            expect(heights()['track-created']).toBe(100);
+            expect(undoStore.value?.future ?? []).toEqual([]);
+        });
+
+        /** The ids execution mints for a duplicate: the plan derives its own, so they are not compared. */
+        function withoutMintedIds(track: Track) {
+            return {
+                ...track,
+                devices: track.devices.map((device) => ({ ...device, id: '', externalInstanceId: undefined })),
+                alternatives: track.alternatives.map((alt) => ({
+                    ...alt,
+                    id: '',
+                    clips: alt.clips.map((clip) => ({ ...clip, id: '' })),
+                })),
+                activeAlternativeId: track.alternatives.findIndex((alt) => alt.id === track.activeAlternativeId),
+                clips: track.clips.map((clip) => ({ ...clip, id: '' })),
+            };
+        }
+
+        function planCreated(creator: AppAction, trackId: string): Track {
+            const planned = getPlannedTrackState(
+                { actions: [creator, { type: 'selectTrack', payload: { trackId } }], actionIndex: 1 },
+                trackId
+            );
+            if (planned === null) {
+                throw new Error(`Expected a planned track ${trackId}`);
+            }
+            return planned;
+        }
+
+        it.each([
+            [{ type: 'addTrack', payload: { id: 'created', kind: 'audio', name: 'Created' } }],
+            [{ type: 'addTrack', payload: { id: 'created', kind: 'midi', name: 'Created' } }],
+            [{ type: 'addTrack', payload: { id: 'created', kind: 'audio', name: 'Created', color: '#123456' } }],
+            [{ type: 'createBus', payload: { busId: 'created', name: 'Created', initialGain: 0.5 } }],
+            [{ type: 'createFolder', payload: { folderTrackId: 'created', name: 'Created' } }],
+        ] as const)('plans the track %j creates exactly as it executes it', async (creator) => {
+            const action = structuredClone(creator);
+            const planned = planCreated(action, 'created');
+
+            expect(await runAsAgent([action], creator.type !== 'createFolder')).toMatchObject({ status: 'committed' });
+
+            expect(planned).toEqual(trackNamed('created'));
+        });
+
+        it('plans the track a restoreTrack restores exactly as it executes it', async () => {
+            const snapshot = captureTrackRemovalSnapshot(SHORT_ID);
+            if (snapshot === null) {
+                throw new Error('Expected a removal snapshot');
+            }
+            expect(await runAsAgent([{ type: 'removeTrack', payload: { trackId: SHORT_ID } }])).toMatchObject({
+                status: 'committed',
+            });
+            const restore = { type: 'restoreTrack', payload: snapshot } as const;
+            const planned = planCreated(restore, SHORT_ID);
+
+            expect(await runAsAgent([structuredClone(restore)], false)).toMatchObject({ status: 'committed' });
+
+            expect(planned).toEqual(trackNamed(SHORT_ID));
+        });
+
+        it('plans the palette color a created track executes, so a color edit guarded by it validates in its batch', async () => {
+            const add = { type: 'addTrack', payload: { id: 'created', kind: 'audio', name: 'Created' } } as const;
+            const executedAdd = structuredClone(add);
+            planCreated(executedAdd, 'created');
+            expect(await runAsAgent([executedAdd])).toMatchObject({ status: 'committed' });
+            const palette = trackNamed('created').color;
+            const guarded = {
+                type: 'setTrackColor',
+                payload: { trackId: 'created', color: '#00ff00', expectedColor: palette },
+            } as const;
+
+            expect(handleSetTrackColor.validate?.(guarded, { actions: [executedAdd, guarded], actionIndex: 1 })).toBe(
+                true
+            );
+            expect(
+                handleSetTrackColor.validate?.(
+                    { ...guarded, payload: { ...guarded.payload, expectedColor: '#000000' } },
+                    { actions: [executedAdd, guarded], actionIndex: 1 }
+                )
+            ).toBe(false);
+        });
+
+        function withSourceDisplayState(track: Track): Track {
+            if (track.id !== TRACK_ID) {
+                return track;
+            }
+            return {
+                ...track,
+                hidden: true,
+                height: 200,
+                muted: true,
+                devices: [
+                    {
+                        id: 'source-device',
+                        name: 'Synth',
+                        type: 'builtin-synth',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+                clips: [ClipDummy.create({ id: 'source-clip', trackId: TRACK_ID })],
+            };
+        }
+
+        describe('a duplicate of a track with display state', () => {
+            beforeEach(() => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map(withSourceDisplayState),
+                });
+                flushAutomergeStorageWrites();
+            });
+
+            it('plans the copy the duplicate executes, field by field', async () => {
+                const duplicate = {
+                    type: 'duplicateTrack',
+                    payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' },
+                } as const;
+                const planned = getPlannedTrackState(
+                    {
+                        actions: [duplicate, { type: 'selectTrack', payload: { trackId: 'track-copy' } }],
+                        actionIndex: 1,
+                    },
+                    'track-copy'
+                );
+
+                expect(await runAsAgent([structuredClone(duplicate)])).toMatchObject({ status: 'committed' });
+
+                const executed = trackNamed('track-copy');
+                expect(executed).toMatchObject({ hidden: false, height: 80, muted: false });
+                expect(withoutMintedIds(planned!)).toEqual(withoutMintedIds(executed));
+                expect(planned!.clips.map((clip) => clip.trackId)).toEqual(['track-copy']);
+                const plannedIds = [
+                    ...planned!.devices.map((device) => device.id),
+                    ...planned!.alternatives.map((alt) => alt.id),
+                    ...planned!.clips.map((clip) => clip.id),
+                ];
+                const sourceIds = [
+                    ...trackNamed(TRACK_ID).devices.map((device) => device.id),
+                    ...trackNamed(TRACK_ID).alternatives.map((alt) => alt.id),
+                    ...trackNamed(TRACK_ID).clips.map((clip) => clip.id),
+                ];
+                expect(plannedIds.filter((id) => sourceIds.includes(id))).toEqual([]);
+            });
+
+            // createHandler marks a handler with no `validate` as a singleton batch action, and duplicateTrack declares
+            // none (src/utils/createHandler.ts), so the batch is described, as a replay reads it, not executed.
+            it('describes a show of the duplicate as the shown copy the duplicate executes, so its redo has no false conflict', () => {
+                const show = { type: 'hideTrack', payload: { trackId: 'track-copy', hidden: false } } as const;
+                const actions: AppAction[] = [
+                    { type: 'duplicateTrack', payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' } },
+                    show,
+                ];
+
+                const described = handleHideTrack.describe(show, { actions, actionIndex: 1 });
+
+                expect(described).toMatchObject({
+                    inverseAction: {
+                        type: 'hideTrack',
+                        payload: { trackId: 'track-copy', hidden: false, expectedHidden: false },
+                    },
+                    redoAction: {
+                        type: 'hideTrack',
+                        payload: { trackId: 'track-copy', hidden: false, expectedHidden: false },
+                    },
+                });
+            });
         });
 
         it.each([
