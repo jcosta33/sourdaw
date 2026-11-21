@@ -5,7 +5,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { matchesRuntimeDeviceChainTopology } from '../matchesRuntimeDeviceChainTopology';
 
-import type { AudioEngine, TrackChannelStrip } from '../../models/AudioEngineState';
+import type { AudioEngine, BuiltinDeviceNode, TrackChannelStrip } from '../../models/AudioEngineState';
 import type { RuntimeGraphDeltaNode } from '../../models/RuntimeGraphDelta';
 
 function isGainNode(node: AudioNode): node is GainNode {
@@ -28,7 +28,7 @@ function createGainNode(): GainNode {
     return node;
 }
 
-function createStripWithoutDevices(trackId: string): TrackChannelStrip {
+function createStrip(trackId: string, deviceNodes: BuiltinDeviceNode[]): TrackChannelStrip {
     const panNode = asAudioNode(createMockAudioNode('stereo-panner'));
     const analyserNode = asAudioNode(createMockAudioNode('analyser'));
     if (!isStereoPannerNode(panNode) || !isAnalyserNode(analyserNode)) {
@@ -49,17 +49,30 @@ function createStripWithoutDevices(trackId: string): TrackChannelStrip {
         nativeCarried: false,
         soloGated: false,
         soloed: false,
-        deviceNodes: [],
+        deviceNodes,
         midiFxNodes: [],
         meterBuffer: new Float32Array(128),
     };
+}
+
+function createDeviceNode(deviceId: string, type: string, parameterIds: readonly string[]): BuiltinDeviceNode {
+    const node = createGainNode();
+    return { deviceId, type, parameterIds, nodes: [node], inputNode: node, outputNode: node };
+}
+
+function createEngineWithStrips(strips: readonly TrackChannelStrip[]) {
+    const engineGetTrackStrip = vi.fn<AudioEngine['getTrackStrip']>((trackId) =>
+        strips.find((strip) => strip.trackId === trackId)
+    );
+    const engine: Pick<AudioEngine, 'getTrackStrip'> = { getTrackStrip: engineGetTrackStrip };
+    return { engine, engineGetTrackStrip };
 }
 
 const expected: RuntimeGraphDeltaNode = { id: 'track-1', kind: 'audio', devices: [] };
 
 describe('matchesRuntimeDeviceChainTopology', () => {
     it('should match when the strip the engine returns for the id has the expected topology', () => {
-        const engineGetTrackStrip = vi.fn<AudioEngine['getTrackStrip']>(() => createStripWithoutDevices('track-1'));
+        const engineGetTrackStrip = vi.fn<AudioEngine['getTrackStrip']>(() => createStrip('track-1', []));
         const engine: Pick<AudioEngine, 'getTrackStrip'> = { getTrackStrip: engineGetTrackStrip };
         const run = injectDependencies(matchesRuntimeDeviceChainTopology, { audioEngine: engine });
 
@@ -75,5 +88,29 @@ describe('matchesRuntimeDeviceChainTopology', () => {
         const run = injectDependencies(matchesRuntimeDeviceChainTopology, { audioEngine: engine });
 
         expect(run(expected)).toBe(false);
+    });
+
+    it('should read the strip of the expected node id and compare its device chain', () => {
+        const expectedWithDevice: RuntimeGraphDeltaNode = {
+            id: 'track-7',
+            kind: 'audio',
+            devices: [{ id: 'device-a', type: 'reverb', parameterIds: ['mix', 'size'] }],
+        };
+        const matching = createStrip('track-7', [createDeviceNode('device-a', 'reverb', ['mix', 'size'])]);
+        const differing = createStrip('track-7', [createDeviceNode('device-b', 'reverb', ['mix', 'size'])]);
+        const other = createStrip('track-1', []);
+
+        const matched = createEngineWithStrips([other, matching]);
+        const runMatched = injectDependencies(matchesRuntimeDeviceChainTopology, { audioEngine: matched.engine });
+        expect(runMatched(expectedWithDevice)).toBe(true);
+        expect(matched.engineGetTrackStrip).toHaveBeenCalledTimes(1);
+        expect(matched.engineGetTrackStrip).toHaveBeenCalledWith('track-7');
+
+        const mismatched = createEngineWithStrips([other, differing]);
+        const runMismatched = injectDependencies(matchesRuntimeDeviceChainTopology, {
+            audioEngine: mismatched.engine,
+        });
+        expect(runMismatched(expectedWithDevice)).toBe(false);
+        expect(mismatched.engineGetTrackStrip).toHaveBeenCalledWith('track-7');
     });
 });

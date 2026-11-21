@@ -8,16 +8,14 @@ import type { AudioEngine } from '../../models/AudioEngineState';
 import type { RuntimeGraphDeltaResult } from '../../models/RuntimeGraphDelta';
 
 describe('applyRuntimeGraphDelta', () => {
-    it('should hand the delta to the engine and return the engine result unchanged', () => {
-        const rejected: RuntimeGraphDeltaResult = {
-            acceptance: 'rejected',
-            application: 'not-applied',
-            reason: 'stale project revision',
-        };
+    it.each([
+        [{ nodes: ['track-1'] }, 'stale project revision'],
+        [{ nodes: ['track-2', 'bus-a'] }, 'topology mismatch'],
+    ])('should hand the delta %j to the engine and return the engine result unchanged', (delta, reason) => {
+        const rejected: RuntimeGraphDeltaResult = { acceptance: 'rejected', application: 'not-applied', reason };
         const engineApply = vi.fn<AudioEngine['applyRuntimeGraphDelta']>(() => rejected);
         const engine: Pick<AudioEngine, 'applyRuntimeGraphDelta'> = { applyRuntimeGraphDelta: engineApply };
         const run = injectDependencies(applyRuntimeGraphDelta, { audioEngine: engine });
-        const delta = { nodes: ['track-1'] };
 
         const result = run(delta);
 

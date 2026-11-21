@@ -8,18 +8,16 @@ import type { AudioEngine } from '../../models/AudioEngineState';
 import type { RuntimeGraphDeltaResult } from '../../models/RuntimeGraphDelta';
 
 describe('initializeTrackStripFromSnapshot', () => {
-    it('should hand the snapshot to the engine and return the engine result unchanged', () => {
-        const rejected: RuntimeGraphDeltaResult = {
-            acceptance: 'rejected',
-            application: 'not-applied',
-            reason: 'snapshot does not match the live strip',
-        };
+    it.each([
+        [{ trackId: 'track-1' }, 'snapshot does not match the live strip'],
+        [{ trackId: 'track-2' }, 'strip already exists'],
+    ])('should hand the snapshot %j to the engine and return the engine result unchanged', (snapshot, reason) => {
+        const rejected: RuntimeGraphDeltaResult = { acceptance: 'rejected', application: 'not-applied', reason };
         const engineInitialize = vi.fn<AudioEngine['initializeTrackStripFromSnapshot']>(() => rejected);
         const engine: Pick<AudioEngine, 'initializeTrackStripFromSnapshot'> = {
             initializeTrackStripFromSnapshot: engineInitialize,
         };
         const run = injectDependencies(initializeTrackStripFromSnapshot, { audioEngine: engine });
-        const snapshot = { trackId: 'track-1' };
 
         const result = run(snapshot);
 
