@@ -51,6 +51,16 @@ import { undo } from '../undo';
  * entry, and every older entry behind it, in the session history a project reload restores (#6501).
  */
 
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
+
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const PROJECT_ID = 'automation-session-undo-project';
 const TRACK_ID = 'track-vocal';
@@ -231,7 +241,11 @@ describe('automation undo entries in the history a project reload restores', () 
         registerProduction();
         const context = new AudioContext({ sampleRate: 48_000 });
         Object.defineProperties(context, { baseLatency: { value: 0 }, outputLatency: { value: 0 } });
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        recordingContext = context;
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
     });
 
     afterEach(() => {

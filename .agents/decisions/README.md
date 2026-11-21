@@ -78,6 +78,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0062](0062-web-audio-engine-composes-concern-units.md)                           | The web audio engine composes concern units behind a repository seam; `internals` is the only spec route to unit state and consumers inject the engine                                                                                                          |
 | [0063](0063-per-device-behaviour-lives-in-exhaustive-tables.md)                   | Per-device behaviour lives in exhaustive tables over the built-in device vocabulary, owned by the module that owns the behaviour; the vocabulary alone stays in `src/utils`                                                                                     |
 | [0064](0064-compressor-auto-makeup-is-an-explicit-switch.md)                      | The built-in compressor's browser makeup gain is an explicit Auto Makeup switch: new devices start off, stored devices without it read as on, and off cancels the gain by measuring it on a twin node                                                           |
+| [0065](0065-cross-module-dependencies-are-registered-ports.md)                    | A dependency the tier order forbids importing must arrive as a registered port that throws when unfilled; only explicit `src/app` calls may fill it, and no module may export a mutable binding (migration pending)                                             |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

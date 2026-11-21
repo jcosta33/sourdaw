@@ -1,73 +1,41 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { mixAnalysisDisplayLifecycle, setMixAnalysisDisplayLifecyclePort } from '../mixAnalysisDisplayLifecycle';
 
-const noopPort = {
-    begin: () => null,
-    complete: () => {},
-    fail: () => {},
+const registered = {
+    begin: vi.fn((): number | null => 42),
+    complete: vi.fn(),
+    fail: vi.fn(),
 };
 
 describe('mixAnalysisDisplayLifecycle', () => {
-    afterEach(() => {
-        setMixAnalysisDisplayLifecyclePort(noopPort);
+    it('refuses every member before a lifecycle is registered, naming the member and the registrar', () => {
+        expect(() => mixAnalysisDisplayLifecycle.begin()).toThrow(
+            /setMixAnalysisDisplayLifecycle\(\) from #\/app\/bootstrap/
+        );
+        expect(() => mixAnalysisDisplayLifecycle.complete({ token: 1, result: {} as never })).toThrow(
+            /^mixAnalysisDisplayLifecycle\.complete: /
+        );
+        expect(() => mixAnalysisDisplayLifecycle.fail({ token: 1 })).toThrow(/^mixAnalysisDisplayLifecycle\.fail: /);
     });
 
-    describe('default noop port', () => {
-        it('begin returns null', () => {
-            expect(mixAnalysisDisplayLifecycle.begin()).toBeNull();
-        });
+    it('delegates every member to the registered lifecycle', () => {
+        setMixAnalysisDisplayLifecyclePort(registered);
+        const result = { timestamp: 1, overallLevel: { peakDb: 0, rmsDb: -3 } } as never;
 
-        it('complete and fail do not throw', () => {
-            expect(() => mixAnalysisDisplayLifecycle.complete({ token: 1, result: {} as never })).not.toThrow();
-            expect(() => mixAnalysisDisplayLifecycle.fail({ token: 1 })).not.toThrow();
-        });
+        expect(mixAnalysisDisplayLifecycle.begin()).toBe(42);
+        mixAnalysisDisplayLifecycle.complete({ token: 7, result });
+        mixAnalysisDisplayLifecycle.fail({ token: 99 });
+
+        expect(registered.complete).toHaveBeenCalledExactlyOnceWith({ token: 7, result });
+        expect(registered.fail).toHaveBeenCalledExactlyOnceWith({ token: 99 });
     });
 
-    describe('swapped port', () => {
-        it('begin delegates to the swapped implementation and returns its token', () => {
-            const beginFn = vi.fn(() => 42);
-            setMixAnalysisDisplayLifecyclePort({
-                begin: beginFn,
-                complete: () => {},
-                fail: () => {},
-            });
+    it('replaces the registered lifecycle on a second fill', () => {
+        const replacement = { begin: vi.fn((): number | null => 7), complete: vi.fn(), fail: vi.fn() };
+        setMixAnalysisDisplayLifecyclePort(replacement);
 
-            const token = mixAnalysisDisplayLifecycle.begin();
-
-            expect(beginFn).toHaveBeenCalledTimes(1);
-            expect(token).toBe(42);
-        });
-
-        it('complete delegates with token and result', () => {
-            const completeFn = vi.fn();
-            setMixAnalysisDisplayLifecyclePort({ begin: () => null, complete: completeFn, fail: () => {} });
-
-            const result = { timestamp: 1, overallLevel: { peakDb: 0, rmsDb: -3 } } as never;
-            mixAnalysisDisplayLifecycle.complete({ token: 7, result });
-
-            expect(completeFn).toHaveBeenCalledWith({ token: 7, result });
-        });
-
-        it('fail delegates with token', () => {
-            const failFn = vi.fn();
-            setMixAnalysisDisplayLifecyclePort({ begin: () => null, complete: () => {}, fail: failFn });
-
-            mixAnalysisDisplayLifecycle.fail({ token: 99 });
-
-            expect(failFn).toHaveBeenCalledWith({ token: 99 });
-        });
-
-        it('second swap replaces the first', () => {
-            const first = vi.fn(() => 1);
-            const second = vi.fn(() => 2);
-            setMixAnalysisDisplayLifecyclePort({ begin: first, complete: () => {}, fail: () => {} });
-            setMixAnalysisDisplayLifecyclePort({ begin: second, complete: () => {}, fail: () => {} });
-
-            const token = mixAnalysisDisplayLifecycle.begin();
-
-            expect(first).not.toHaveBeenCalled();
-            expect(token).toBe(2);
-        });
+        expect(mixAnalysisDisplayLifecycle.begin()).toBe(7);
+        expect(registered.begin).toHaveBeenCalledTimes(1);
     });
 });

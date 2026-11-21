@@ -469,6 +469,16 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
  * use-case-private type, so it is reached through `Parameters<>` rather than a
  * re-export.
  */
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as unknown as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const stubArrangementEventBus: Parameters<typeof setArrangementEventBus>[0] = {
     emit: () => Promise.resolve(),
 };
@@ -687,8 +697,8 @@ let reportedCursorBeat = 0;
  */
 function armGainAutomation(mode: 'write' | 'touch'): void {
     setAutomationRecordingDependencies({
-        getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as unknown as AudioContext,
-        getCompensationDelay: () => 0,
+        getAudioContext: getZeroLatencyContext,
+        getCompensationDelay: getZeroCompensationDelay,
     });
     reportedCursorBeat = 0;
     setGestureClockSource({
