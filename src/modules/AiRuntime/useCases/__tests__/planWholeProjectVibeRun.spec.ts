@@ -794,6 +794,34 @@ describe('planWholeProjectVibeRun batches', () => {
         expect(hasContradictoryMetricGoals(goals.goals)).toBe(false);
     });
 
+    // Red when hasContradictoryMetricGoals stops reporting: the bus case above would stay green on a
+    // predicate that always answers false, so this pins a pair the catalogue knows contradicts.
+    it('pools the goals of warm and tight vocals as contradictory', () => {
+        const context = projectContext([contextTrack('t-vocal', 'Lead', 'lead vocal')]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['warm', 'tight'],
+            recipes: [catalogRecipe('vocal-warm'), catalogRecipe('vocal-tight')],
+            measurements: [],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the vocal to plan one batch.');
+        }
+        expect(batch.targets.map((target) => target.recipeIds)).toEqual([['vocal-warm', 'vocal-tight']]);
+        const goals = readVibeBatchRecipeGoals({
+            batch,
+            catalog: getMixRecipeCatalog(),
+            range: { startBeat: 0, endBeat: 16, sectionId: null },
+        });
+        if (goals.status === 'refused') {
+            throw new TypeError(goals.reason);
+        }
+        expect(hasContradictoryMetricGoals(goals.goals)).toBe(true);
+    });
+
     it('reports a role no requested character has a measurable recipe for instead of planning an empty batch', () => {
         const result = plan({
             tracks: [contextTrack('t-kick', 'Kick', 'kick'), contextTrack('t-lead', 'Lead', 'lead vocal')],

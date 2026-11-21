@@ -123,11 +123,8 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip when a fast peak limiter already sits ahead of this point.',
             'Skip on brushed or very soft playing, where the body is all there is.',
         ],
-        metrics: [
-            { metric: 'rms', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
-        source: 'An attack of 20 ms or longer lets the initial strike through untouched and clamps only the decay behind it, so makeup gain raises the strike relative to the body. Peak-to-average therefore widens even though the average level rises.',
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
+        source: 'An attack of 20 ms or longer lets the initial strike through untouched and clamps only the decay behind it, so makeup gain raises the strike relative to the body. Peak-to-average therefore widens.',
     },
     {
         id: 'drums-wide',
