@@ -196,6 +196,11 @@ export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
 export const WANTING_VERB = words(['want', 'wanting']);
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
+/**
+ * The linking verbs that describe how a subject sounds as it is: after a subject's "never" they state
+ * no bound ("the vocal never sounds louder"), as "doesn't sound brighter" states none.
+ */
+const DESCRIBING_VERB = words(['sound', 'sounds', 'feel', 'feels', 'seem', 'seems']);
 /** The verbs a quality changes into a level through beside "get" and "become": "from going brighter". */
 const CHANGING_VERB = words([
     'goes',
@@ -267,8 +272,11 @@ const MODAL = words(MODAL_WORDS);
 export const OPENING_NEGATION = String.raw`(?<!\b${MODAL}\s+)${NEGATION}`;
 /** A modal with "never" after it, which states a bound as "must not" does: "the drums should never get wider". */
 const MODAL_NEVER = words(MODAL_WORDS.map((modal) => `${modal} ${NEVER}`));
-/** A subject's own "never", which states a bound on that subject: "the drums never get wider". */
-const SUBJECT_NEVER = words([NEVER]);
+/**
+ * A subject's own "never", which states a bound on that subject ("the drums never get wider"), unless a
+ * describing verb follows it: "the vocal never sounds louder" describes the vocal as it is.
+ */
+const SUBJECT_NEVER = String.raw`${words([NEVER])}(?!\s+${DESCRIBING_VERB}${WORD_END})`;
 /** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
 const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */

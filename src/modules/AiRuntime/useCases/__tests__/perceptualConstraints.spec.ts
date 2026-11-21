@@ -2154,6 +2154,9 @@ describe('reading a subject before "never", graded comparatives and a comma befo
         ],
         ['Cello should never get wider', [], [unread('Cello should never get wider', NET_REASON)]],
         ['the drums should never widen', [], [unread('the drums should never widen', NET_REASON)]],
+        // a subject's "never" before a describing verb describes the sound as it is and states no bound
+        ['the vocal never sounds louder, make it louder', [], []],
+        ['it never feels wider, make it wider', [], []],
         // with no subject, or "it", "never" still holds the mix
         ['never get wider', [measured('stereo-width-not-widened-v1', 'never get wider', MIX)], []],
         ['it should never get louder', [measured('loudness-not-raised-v1', 'it should never get louder', MIX)], []],
@@ -2176,6 +2179,17 @@ describe('reading a subject before "never", graded comparatives and a comma befo
             "I don't want the drums louder",
             [measured('loudness-not-raised-v1', "don't want the drums louder", onTracks('drums'))],
             [],
+        ],
+        [
+            "I don't want the drums to get louder",
+            [measured('loudness-not-raised-v1', "don't want the drums to get louder", onTracks('drums'))],
+            [],
+        ],
+        // a wanted level no reader reads is still a protection the net records
+        [
+            "I don't want the drums louder in the chorus",
+            [],
+            [unread("I don't want the drums louder in the chorus", NET_REASON)],
         ],
         // "too" and "much" name no threshold a fixed tolerance states, so they are unsupported, never dropped
         ["don't make it too loud", [], [unread("don't make it too loud", NET_REASON)]],
