@@ -1,5 +1,6 @@
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
+import { type HostedTailSamplesByInstanceId } from './hostedPluginTail';
 import { projectDeviceTails } from './projectDeviceTails';
 
 export type GetDeviceChainTailSecondsInput = {
@@ -12,6 +13,8 @@ export type GetDeviceChainTailSecondsInput = {
         externalInstanceId?: string;
     }>;
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
+    /** What each hosted instance reported; `{}` for a chain with none. */
+    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId;
     automationLanes?: ReadonlyArray<{ parameterId: string; enabled?: boolean }>;
 };
 
@@ -33,9 +36,10 @@ export type GetDeviceChainTailSecondsInput = {
 export function getDeviceChainTailSeconds({
     devices,
     tailForDeviceType,
+    hostedTailSamplesByInstanceId,
     automationLanes,
 }: GetDeviceChainTailSecondsInput): ReturnType<typeof estimateRenderTailSeconds> {
     return estimateRenderTailSeconds([
-        { devices: projectDeviceTails({ devices, automationLanes, tailForDeviceType }) },
+        { devices: projectDeviceTails({ devices, automationLanes, tailForDeviceType, hostedTailSamplesByInstanceId }) },
     ]);
 }

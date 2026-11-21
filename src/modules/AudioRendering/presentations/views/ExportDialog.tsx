@@ -76,6 +76,7 @@ type TailDetectionSnapshot = {
     tracks: readonly Track[];
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
+    hostedTailSamplesByInstanceId: Readonly<Record<string, number>>;
 };
 
 const DEFAULT_EXPORT_TAIL_SECONDS = 2;
@@ -162,15 +163,10 @@ const AutoDetectedTailLabel = ({
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
-    // The estimate reads each hosted instance's tail from this store, behind
-    // `getPluginById`, where the compiler cannot see the dependency: left to
-    // memoize, it would cache `detected` on the props and keep the load-time
-    // figure when a refresh revises one. Subscribing re-renders; this opt-out
-    // makes the re-render recompute.
-    'use no memo';
-    useStore(externalPluginTailStore, defaultExternalPluginTailState);
+    const hostedTails = useStore(externalPluginTailStore, defaultExternalPluginTailState);
     const detected = getAutoDetectedTailSeconds({
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        hostedTailSamplesByInstanceId: hostedTails.tailSamplesByInstanceId,
         honorMuted,
         tracks,
         soloMode,
@@ -334,6 +330,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const detectTail = (honorMuted: boolean, snapshot: TailDetectionSnapshot) =>
         getAutoDetectedTailSeconds({
             tailForDeviceType: deviceTailFor,
+            hostedTailSamplesByInstanceId: snapshot.hostedTailSamplesByInstanceId,
             honorMuted,
             tracks: snapshot.tracks,
             soloMode: snapshot.soloMode,
@@ -696,6 +693,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 tracks,
                 soloMode: soloModeStore.value?.soloMode ?? defaultSoloModeState.soloMode,
                 automationLanes: automationStore.value?.lanes ?? [],
+                // Read after the refresh above, so the render sizes from what it just re-read.
+                hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
+                    .tailSamplesByInstanceId,
             };
             const { startBeat, durationBeats } = resolveRange(tracks);
             // Stems keep muted tracks, so they may need a longer tail than the

@@ -53,7 +53,12 @@ function instanceReportsTail(instanceId: string, tailSamples: number): void {
 }
 
 function detect(devices: Track['devices']) {
-    return getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true, tracks: [hostedTrack(devices)] });
+    return getAutoDetectedTailSeconds({
+        tailForDeviceType,
+        hostedTailSamplesByInstanceId: externalPluginTailStore.value?.tailSamplesByInstanceId ?? {},
+        honorMuted: true,
+        tracks: [hostedTrack(devices)],
+    });
 }
 
 describe('the export tail of a hosted plugin', () => {
@@ -110,6 +115,20 @@ describe('the export tail of a hosted plugin', () => {
         instanceReportsTail('other-instance', 480_000);
 
         expect(detect([hostedReverb]).seconds).toBe(0);
+    });
+
+    it('reads the snapshot it is handed and never the live store', () => {
+        engineRunningAt(48_000);
+        instanceReportsTail('inst-1', 480_000);
+
+        const detected = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            honorMuted: true,
+            tracks: [hostedTrack([hostedReverb])],
+        });
+
+        expect(detected.seconds).toBe(0);
     });
 
     it('reserves nothing for a bypassed hosted device', () => {

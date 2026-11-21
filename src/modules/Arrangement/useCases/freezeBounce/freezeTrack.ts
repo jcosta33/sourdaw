@@ -8,6 +8,7 @@ import {
     captureProjectRootIdentity,
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -133,6 +134,8 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             devices: track.devices,
             automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+            hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
+                .tailSamplesByInstanceId,
         }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };

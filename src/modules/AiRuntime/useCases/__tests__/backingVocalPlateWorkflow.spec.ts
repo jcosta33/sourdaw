@@ -921,6 +921,7 @@ function getExpectedPlateTailSeconds(): number {
             },
         ],
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        hostedTailSamplesByInstanceId: {},
     }).seconds;
 }
 

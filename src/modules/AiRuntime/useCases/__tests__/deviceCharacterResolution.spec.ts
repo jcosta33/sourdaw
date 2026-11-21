@@ -154,6 +154,7 @@ function declaredTailSeconds(deviceType: string): number {
             },
         ],
         tailForDeviceType: (type) => getPluginById(type)?.tail,
+        hostedTailSamplesByInstanceId: {},
     }).seconds;
 }
 

@@ -121,6 +121,8 @@ function getPlateRenderTailSeconds(plateDeviceType: string): number | null {
             },
         ],
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        // A planned built-in plate: no hosted instance contributes.
+        hostedTailSamplesByInstanceId: {},
     });
     return Number.isFinite(estimate.seconds) && estimate.seconds > 0 ? estimate.seconds : null;
 }

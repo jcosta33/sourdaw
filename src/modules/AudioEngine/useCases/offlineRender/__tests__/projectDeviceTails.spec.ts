@@ -25,6 +25,7 @@ describe('projectDeviceTails — basic projection', () => {
         const result = projectDeviceTails({
             devices: [makeDevice('reverb'), makeDevice('compressor')],
             tailForDeviceType: tailFn,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result).toHaveLength(2);
         expect(result[0]!.tail).toEqual({ kind: 'seconds', seconds: 3 });
@@ -35,6 +36,7 @@ describe('projectDeviceTails — basic projection', () => {
         const result = projectDeviceTails({
             devices: [makeDevice('reverb', { parameterValues: { mix: 0.5 }, bypassed: true })],
             tailForDeviceType: () => undefined,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result[0]!.id).toBe('d-reverb');
         expect(result[0]!.bypassed).toBe(true);
@@ -47,6 +49,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
         const result = projectDeviceTails({
             devices: [makeDevice('reverb'), makeDevice('delay')],
             tailForDeviceType: () => undefined,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
         expect(result[1]!.automatedParameterIds).toEqual([]);
@@ -58,6 +61,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             devices: [makeDevice('reverb')],
             automationLanes: [{ parameterId: 'd-reverb:mix', enabled: true }],
             tailForDeviceType: () => undefined,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result[0]!.automatedParameterIds).toContain('mix');
     });
@@ -68,6 +72,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             devices: [makeDevice('reverb')],
             automationLanes: [{ parameterId: 'd-reverb:mix', enabled: false }],
             tailForDeviceType: () => undefined,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
     });
@@ -78,6 +83,7 @@ describe('projectDeviceTails — automatedParameterIds', () => {
             devices: [makeDevice('reverb')],
             automationLanes: [{ parameterId: 'd-other:mix' }],
             tailForDeviceType: () => undefined,
+            hostedTailSamplesByInstanceId: {},
         });
         expect(result[0]!.automatedParameterIds).toEqual([]);
     });

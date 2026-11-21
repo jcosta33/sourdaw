@@ -1399,7 +1399,7 @@ describe('ExportDialog', () => {
 
         expect(screen.getByRole('checkbox', { name: /auto-detect/i })).toBeChecked();
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 9.25 }));
-        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalled();
+        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalledTimes(2);
     });
 
     it('sizes the render from the tail the hosted plugins report when the export starts', async () => {
@@ -1436,8 +1436,9 @@ describe('ExportDialog', () => {
         const hostedRate = 48_000;
         const { useStore: subscribeToStore } =
             await vi.importActual<typeof import('#/infra/store/useStore')>('#/infra/store/useStore');
-        const toDetectedSeconds = () => {
-            const frames = externalPluginTailStore.value?.tailSamplesByInstanceId['inst-1'] ?? 0;
+        // Follows only the snapshot the dialog hands over, as the real detector does.
+        const toDetectedSeconds = (input: { hostedTailSamplesByInstanceId: Readonly<Record<string, number>> }) => {
+            const frames = input.hostedTailSamplesByInstanceId['inst-1'] ?? 0;
             const seconds = frames / hostedRate;
             return { seconds, uncappedSeconds: seconds, clamped: false };
         };
