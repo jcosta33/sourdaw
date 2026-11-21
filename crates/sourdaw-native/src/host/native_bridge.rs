@@ -1048,6 +1048,24 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         timeout: Duration,
     ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.read_state_after_parameters_drain(timeout)
+    }
+
+    /// [`Self::get_state_after_pending_parameters_drain`] for a caller that
+    /// waits for the control gate itself: refuses `GateBusy` instead of waiting
+    /// for a gate that is held.
+    pub fn try_get_state_after_pending_parameters_drain(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
+        let _non_rt_control_guard = self.try_lock_non_rt_control()?;
+        self.read_state_after_parameters_drain(timeout)
+    }
+
+    fn read_state_after_parameters_drain(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
