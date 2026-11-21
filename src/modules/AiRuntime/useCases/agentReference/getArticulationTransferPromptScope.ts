@@ -1,3 +1,4 @@
+import { voicesPerNoteArticulation } from '#/modules/AudioEngine/useCases';
 import { getNotesForClip, resolveMidiNoteArticulationId } from '#/modules/MIDI/useCases';
 
 import {
@@ -76,7 +77,9 @@ export function getArticulationTransferPromptScope(
         if (track.frozen === true || sourceClip.locked === true || targetClip.locked === true) {
             return { status: 'invalid', reason: `MF-03 chorus pair is frozen or locked on track ${track.id}` };
         }
-        const articulationDevices = track.devices.filter((device) => !device.bypassed && device.type === 'levain');
+        const articulationDevices = track.devices.filter(
+            (device) => !device.bypassed && voicesPerNoteArticulation(device.type)
+        );
         if (track.devices.length !== 1 || articulationDevices.length !== 1) {
             return {
                 status: 'invalid',

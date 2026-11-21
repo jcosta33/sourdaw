@@ -43,6 +43,7 @@ export { resolveDrumKitOutputGain } from './deviceCapabilities/resolveDrumKitOut
 export { resolveLiveNoteControls } from './deviceCapabilities/resolveLiveNoteControls';
 export { resolveStoredControllerHosting } from './deviceCapabilities/resolveStoredControllerHosting';
 export { resolveNoteReceivingInstrument } from './deviceCapabilities/resolveNoteReceivingInstrument';
+export { voicesPerNoteArticulation } from './deviceCapabilities/voicesPerNoteArticulation';
 
 export { playAuditionNote } from './audition';
 export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
