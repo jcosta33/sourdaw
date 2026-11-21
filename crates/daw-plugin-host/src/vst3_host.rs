@@ -419,6 +419,11 @@ impl Vst3HostState {
         self.state_dirty.swap(false, Ordering::AcqRel)
     }
 
+    /// Whether a latency change is pending, without consuming it.
+    pub fn is_latency_dirty(&self) -> bool {
+        self.latency_dirty.load(Ordering::Acquire)
+    }
+
     pub fn take_latency_dirty(&self) -> bool {
         self.latency_dirty.swap(false, Ordering::AcqRel)
     }

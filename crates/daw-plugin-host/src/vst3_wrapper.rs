@@ -1465,6 +1465,12 @@ impl Vst3Wrapper {
         }
     }
 
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only; the plugin is not called.
+    pub fn has_pending_latency_change(&self) -> bool {
+        self.instance.host.state.is_latency_dirty()
+    }
+
     /// The per-instance host state the plugin's callbacks write into.
     pub fn host_state(&self) -> Arc<Vst3HostState> {
         Arc::clone(&self.instance.host.state)

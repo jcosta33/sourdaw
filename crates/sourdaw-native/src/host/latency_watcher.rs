@@ -260,7 +260,12 @@ fn service_pending_restarts(
         return;
     };
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "latency requery") {
+        // The hint names no instance, so most visits find nothing flagged; only
+        // a flagged one is worth holding its claim across a UI-thread hop.
         let refreshed = runtime.try_with_control(SWEEP_CONTROL_TIMEOUT, |plugin| {
+            if !plugin.has_pending_latency_change() {
+                return Ok(None);
+            }
             requery_on_ui_thread(ui, plugin)
         });
 
@@ -795,6 +800,33 @@ mod tests {
 
         assert_eq!(ui.lent(), 1, "the restart is lent to the UI thread");
         assert_eq!(latency_events(&sink), 1, "the restart ran and was reported");
+    }
+
+    /// An instance with nothing flagged is not lent: holding its claim across a
+    /// UI-thread hop would keep the audio thread off it for nothing.
+    #[test]
+    fn a_sweep_lends_only_the_flagged_instance_to_the_ui_thread() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let (engine_plugins, _flagged) = sweep_fixture(441, true);
+        let (unflagged_plugins, _unflagged) = sweep_fixture(0, false);
+        let mut unflagged = unflagged_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("inst-1")
+            .expect("the fixture holds its instance");
+        unflagged.engine_plugin_id = 12;
+        engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .insert("inst-2".to_string(), unflagged);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        let ui = InlineUiThread::default();
+
+        service_pending_restarts(Some(&ui), &engine_plugins, &engine, &sink);
+
+        assert_eq!(ui.lent(), 1, "only the flagged instance crosses");
+        assert_eq!(latency_events(&sink), 1, "and its change is reported");
     }
 
     /// With no UI thread the restart is refused, not run on the watcher: the

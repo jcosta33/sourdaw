@@ -3302,6 +3302,12 @@ impl ClapWrapper {
         Ok(self.latency_samples())
     }
 
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only; the plugin is not called.
+    pub fn has_pending_latency_change(&self) -> bool {
+        self.host_state.is_latency_dirty()
+    }
+
     /// If the plugin flagged a latency change (via `clap_host_latency.changed()`
     /// or `request_restart()`), reactivate and re-read latency, returning
     /// `Some(new_samples)`. Returns `Ok(None)` when nothing changed. The flag is
