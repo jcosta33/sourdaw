@@ -502,7 +502,8 @@ fn deliveries_after_the_first_callback_does(
     second.make_readable();
     let host = instance.host() as usize;
     let second_fd = second.read;
-    *instance.recorder.on_next_fd.lock().unwrap() = Some(Box::new(move || reentry(host, second_fd)));
+    *instance.recorder.on_next_fd.lock().unwrap() =
+        Some(Box::new(move || reentry(host, second_fd)));
 
     instance.run_loop().service_descriptors();
     instance.recorder.fd_calls()
