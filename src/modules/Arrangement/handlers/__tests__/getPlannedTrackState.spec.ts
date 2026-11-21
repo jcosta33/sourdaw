@@ -72,7 +72,7 @@ describe('getPlannedTrackState', () => {
         expect(plan([remove, restore, remove], 'gone')).toBeNull();
     });
 
-    it('keeps a duplicate at the height its source held before an edit that follows the duplicate', () => {
+    it('keeps a duplicate at the default height a new track has, whatever its source held or an edit after the duplicate gives the source', () => {
         trackStore.set({
             ...defaultTrackState,
             tracks: [{ ...createTrack({ id: 'source', name: 'Source', kind: 'audio', gain: 0.5 }), height: 120 }],
@@ -86,7 +86,7 @@ describe('getPlannedTrackState', () => {
             'copy'
         );
 
-        expect(planned?.height).toBe(120);
+        expect(planned?.height).toBe(80);
     });
 
     it('plans no copy of a source that does not exist', () => {
@@ -140,8 +140,81 @@ describe('getPlannedTrackState', () => {
                 ],
                 'copy'
             )?.height
-        ).toBe(150);
+        ).toBe(80);
         expect(plan([{ type: 'duplicateTrack', payload: { trackId: 'source' } }], 'copy')).toBeNull();
+    });
+
+    it('plans a duplicate of a hidden, tall source as the shown, default-height copy the duplicate executes', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...createTrack({ id: 'source', name: 'Source', kind: 'audio', gain: 0.5 }),
+                    hidden: true,
+                    collapsed: true,
+                    height: 200,
+                    muted: true,
+                    pan: -0.25,
+                    notes: 'kept',
+                },
+            ],
+        });
+
+        const planned = plan(
+            [{ type: 'duplicateTrack', payload: { trackId: 'source', targetTrackId: 'copy' } }],
+            'copy'
+        );
+
+        expect(planned).toMatchObject({
+            id: 'copy',
+            name: 'Source (copy)',
+            kind: 'audio',
+            hidden: false,
+            collapsed: false,
+            height: 80,
+            muted: false,
+            gain: 0.5,
+            pan: -0.25,
+            notes: 'kept',
+        });
+    });
+
+    it('plans no copy of a master track', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: 'master', name: 'Master', kind: 'master' })],
+        });
+
+        expect(
+            plan([{ type: 'duplicateTrack', payload: { trackId: 'master', targetTrackId: 'copy' } }], 'copy')
+        ).toBeNull();
+    });
+
+    it('plans a created track only through the actions after its creator, not the project-wide edits before it', () => {
+        const zoom = { type: 'zoomTracksVertical', payload: { delta: 20 } } as const;
+        const add = { type: 'addTrack', payload: { id: 'new', kind: 'audio', name: 'New' } } as const;
+
+        expect(plan([zoom, add], 'new')?.height).toBe(80);
+        expect(plan([zoom, add, zoom], 'new')?.height).toBe(100);
+    });
+
+    it('plans a created folder and a restored track only through the actions after their creator', () => {
+        const zoom = { type: 'zoomTracksVertical', payload: { delta: 20 } } as const;
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 'gone', name: 'Gone', kind: 'audio', gain: 0.5 }), height: 120 }],
+        });
+        const snapshot = captureTrackRemovalSnapshot('gone');
+        trackStore.set(defaultTrackState);
+        if (!snapshot) {
+            throw new Error('Expected a removal snapshot');
+        }
+
+        expect(
+            plan([zoom, { type: 'createFolder', payload: { name: 'F', folderTrackId: 'folder' } }, zoom], 'folder')
+                ?.height
+        ).toBe(100);
+        expect(plan([zoom, { type: 'restoreTrack', payload: snapshot }, zoom], 'gone')?.height).toBe(140);
     });
 
     it('plans a track an earlier addTrack creates, under its name and gain', () => {

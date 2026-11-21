@@ -1,5 +1,6 @@
 import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { applyDuplicatedTrackFields } from '../models/DuplicatedTrackFields';
 import { createTrack, type Track } from '../models/Track';
 import { decodeTrackSnapshot } from '../stores/trackStore';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
@@ -60,14 +61,15 @@ function planAddedTrack(
             outputId: action.payload.outputId,
             withoutDefaultDevice: action.payload.withoutDefaultDevice,
         }),
-        context
+        context,
+        actionIndex + 1
     );
 }
 
 function planCreatedBus(
     action: ActionOf<'createBus'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.busId !== trackId) {
@@ -80,14 +82,15 @@ function planCreatedBus(
             kind: 'bus',
             gain: action.payload.initialGain ?? 0.8,
         }),
-        context
+        context,
+        actionIndex + 1
     );
 }
 
 function planCreatedFolder(
     action: ActionOf<'createFolder'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.folderTrackId !== trackId) {
@@ -95,7 +98,8 @@ function planCreatedFolder(
     }
     return projectTrackThroughPriorBatchActions(
         createPlannedTrack({ id: trackId, name: action.payload.name, kind: 'folder', gain: 0.8 }),
-        context
+        context,
+        actionIndex + 1
     );
 }
 
@@ -110,23 +114,38 @@ function planDuplicatedTrack(
     }
     // The copy starts as the source stands when the duplicate runs, so the source is read through the actions before it.
     const source = getPlannedTrackState({ ...context, actionIndex }, action.payload.trackId);
-    if (source === null) {
+    if (source === null || source.kind === 'master') {
         return null;
     }
-    return projectTrackThroughPriorBatchActions({ ...structuredClone(source), id: trackId }, context);
+    // The executed copy is a new track of the source's kind that takes only the fields duplicateTrack copies.
+    const copy = applyDuplicatedTrackFields(
+        createPlannedTrack({
+            id: trackId,
+            name: `${source.name} (copy)`,
+            kind: source.kind,
+            gain: 0.8,
+        }),
+        source,
+        {
+            devices: structuredClone(source.devices),
+            alternatives: structuredClone(source.alternatives),
+            activeAlternativeId: source.activeAlternativeId,
+        }
+    );
+    return projectTrackThroughPriorBatchActions(copy, context, actionIndex + 1);
 }
 
 function planRestoredTrack(
     action: ActionOf<'restoreTrack'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.trackId !== trackId) {
         return null;
     }
     const restored = decodeTrackSnapshot(action.payload.trackSnapshot);
-    return restored === null ? null : projectTrackThroughPriorBatchActions(restored, context);
+    return restored === null ? null : projectTrackThroughPriorBatchActions(restored, context, actionIndex + 1);
 }
 
 // Every action type states whether it creates the planned track: a new action does not compile until it does.

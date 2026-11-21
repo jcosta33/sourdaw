@@ -102,6 +102,8 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { resolveTakeMedia } from '../../../useCases/resolveTakeMedia';
 import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+import { getPlannedTrackState } from '../../getPlannedTrackState';
+import { handleHideTrack } from '../../track/hideTrack';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDrawClip } from '../handleDrawClip';
@@ -2563,6 +2565,98 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
             await redo();
             expect(heights()).toEqual(forward);
+        });
+
+        it('undoes and redoes a batch whose zoom before a created track never touched it, with no conflict', async () => {
+            const result = await runAsAgent([
+                { type: 'zoomTracksVertical', payload: { delta: 20 } },
+                { type: 'addTrack', payload: { id: 'track-created', kind: 'audio', name: 'Created' } },
+                { type: 'zoomTracksVertical', payload: { delta: 20 } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(heights()['track-created']).toBe(100);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(heights()['track-created']).toBeUndefined();
+            expect(undoStore.value?.past ?? []).toEqual([]);
+
+            await redo();
+            expect(heights()['track-created']).toBe(100);
+            expect(undoStore.value?.future ?? []).toEqual([]);
+        });
+
+        describe('a duplicate of a track with display state', () => {
+            beforeEach(() => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) =>
+                        track.id === TRACK_ID ? { ...track, hidden: true, height: 200, muted: true } : track
+                    ),
+                });
+                flushAutomergeStorageWrites();
+            });
+
+            it('plans the copy the duplicate executes, field by field', async () => {
+                const duplicate = {
+                    type: 'duplicateTrack',
+                    payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' },
+                } as const;
+                const planned = getPlannedTrackState(
+                    {
+                        actions: [duplicate, { type: 'selectTrack', payload: { trackId: 'track-copy' } }],
+                        actionIndex: 1,
+                    },
+                    'track-copy'
+                );
+
+                expect(await runAsAgent([structuredClone(duplicate)])).toMatchObject({ status: 'committed' });
+
+                const executed = trackNamed('track-copy');
+                expect(executed).toMatchObject({ hidden: false, height: 80, muted: false });
+                const { devices: plannedDevices, ...plannedFields } = planned!;
+                const { devices: executedDevices, ...executedFields } = executed;
+                const {
+                    alternatives: plannedAlternatives,
+                    activeAlternativeId: plannedActive,
+                    ...plannedRest
+                } = plannedFields;
+                const {
+                    alternatives: executedAlternatives,
+                    activeAlternativeId: executedActive,
+                    ...executedRest
+                } = executedFields;
+                expect(plannedRest).toEqual(executedRest);
+                expect(plannedDevices.map((device) => device.type)).toEqual(
+                    executedDevices.map((device) => device.type)
+                );
+                expect(plannedAlternatives.map((alt) => alt.name)).toEqual(executedAlternatives.map((alt) => alt.name));
+                expect(plannedAlternatives.findIndex((alt) => alt.id === plannedActive)).toBe(
+                    executedAlternatives.findIndex((alt) => alt.id === executedActive)
+                );
+            });
+
+            // duplicateTrack must run as a singleton batch, so the batch is described, as a replay reads it, not executed.
+            it('describes a show of the duplicate as the shown copy the duplicate executes, so its redo has no false conflict', () => {
+                const show = { type: 'hideTrack', payload: { trackId: 'track-copy', hidden: false } } as const;
+                const actions: AppAction[] = [
+                    { type: 'duplicateTrack', payload: { trackId: TRACK_ID, targetTrackId: 'track-copy' } },
+                    show,
+                ];
+
+                const described = handleHideTrack.describe(show, { actions, actionIndex: 1 });
+
+                expect(described).toMatchObject({
+                    inverseAction: {
+                        type: 'hideTrack',
+                        payload: { trackId: 'track-copy', hidden: false, expectedHidden: false },
+                    },
+                    redoAction: {
+                        type: 'hideTrack',
+                        payload: { trackId: 'track-copy', hidden: false, expectedHidden: false },
+                    },
+                });
+            });
         });
 
         it.each([
