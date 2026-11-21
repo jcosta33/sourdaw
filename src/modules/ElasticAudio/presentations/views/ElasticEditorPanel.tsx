@@ -92,6 +92,10 @@ const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
 ];
 
 const VIRTUALIZE_THRESHOLD = 200;
+// Chromium (Skia) refuses a 2D canvas wider or taller than this many backing pixels; the canvas then stays blank.
+const MAX_CANVAS_DIMENSION = 32767;
+// Chromium's 2D canvas area limit (16384 x 16384 backing pixels).
+const MAX_CANVAS_AREA = 268435456;
 const EMPTY_WARP_STATE: WarpStateView = { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 
 export const ElasticEditorPanel = (): ReactElement => {
@@ -634,7 +638,6 @@ function drawWaveform(args: DrawArgs): void {
     if (!ctx) {
         return;
     }
-    const dpr = window.devicePixelRatio || 1;
     // The clip's own length sets the extent, so the canvas keeps its size when Detect adds markers:
     // growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
@@ -644,6 +647,7 @@ function drawWaveform(args: DrawArgs): void {
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
     const height = Math.max(120, container.clientHeight);
+    const dpr = backingPixelRatio(window.devicePixelRatio || 1, width, height);
     const backingWidth = Math.floor(width * dpr);
     const backingHeight = Math.floor(height * dpr);
     const background = resolveToken('--color-bg-overlay', '#151515');
@@ -762,6 +766,15 @@ function drawWaveform(args: DrawArgs): void {
         markers: structuredClone(warpState.markers),
         strokeStyle: ctx.strokeStyle,
     };
+}
+
+function backingPixelRatio(devicePixelRatio: number, width: number, height: number): number {
+    return Math.min(
+        devicePixelRatio,
+        MAX_CANVAS_DIMENSION / width,
+        MAX_CANVAS_DIMENSION / height,
+        Math.sqrt(MAX_CANVAS_AREA / (width * height))
+    );
 }
 
 function strokeBeatGrid(

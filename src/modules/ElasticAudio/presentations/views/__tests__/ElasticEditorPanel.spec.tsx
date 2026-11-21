@@ -608,6 +608,27 @@ describe('ElasticEditorPanel', () => {
             expect(canvas.width).toBe(widthBeforeDetect);
         });
 
+        it('keeps the backing store within the canvas limits for a long clip at a high pixel ratio', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Missing fixture clip');
+            }
+            clip.endBeat = 800;
+            vi.stubGlobal('devicePixelRatio', 2);
+            const drawing = observeDrawing();
+            render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const cssWidth = (800 + 8) * 40;
+
+            expect(canvas.width).toBeGreaterThan(0);
+            expect(canvas.width).toBeLessThanOrEqual(32767);
+            expect(canvas.height).toBeLessThanOrEqual(32767);
+            expect(canvas.width * canvas.height).toBeLessThanOrEqual(268435456);
+            expect(canvas.style.width).toBe(`${cssWidth}px`);
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, cssWidth, 120);
+        });
+
         it.each(['width', 'height', 'context reset', 'context restored'])(
             'restores pixels after an external %s even when visual inputs are unchanged',
             (reset) => {
