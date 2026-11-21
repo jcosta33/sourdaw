@@ -10,8 +10,6 @@ type StoredDrumVoicesReader = {
      * when the state carries no readable voice record.
      */
     voicesOf: (deviceState: unknown) => StoredDrumVoices;
-    /** True for a device type whose stored state carries the voice record `voicesOf` reads. */
-    storesVoices: (deviceType: string) => boolean;
 };
 
 let registeredReader: StoredDrumVoicesReader | null = null;
@@ -32,7 +30,7 @@ export const storedDrumVoices = {
             registeredReader = reader;
             return;
         }
-        if (registeredReader.voicesOf !== reader.voicesOf || registeredReader.storesVoices !== reader.storesVoices) {
+        if (registeredReader.voicesOf !== reader.voicesOf) {
             throw new Error('storedDrumVoices.configure: the voice reader differs from the registered one');
         }
     },

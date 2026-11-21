@@ -12,6 +12,5 @@ export { reconcileToasterKitsFromProject } from './reconcileToasterKitsFromProje
 export { getToasterPresets } from './toasterQueries';
 export { setToasterGrooveAssignmentExecutor } from './setToasterGrooveAssignmentExecutor';
 export { getStoredDrumVoiceMetadata } from './getStoredDrumVoiceMetadata';
-export { storesToasterVoices } from './storesToasterVoices';
 export { captureOfflineToaster } from './captureOfflineToaster';
 export { resetToasterForProject } from './resetToasterForProject';

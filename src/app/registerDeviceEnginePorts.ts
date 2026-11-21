@@ -33,7 +33,7 @@ import {
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
-import { getDefaultPadNames, getStoredDrumVoiceMetadata, storesToasterVoices } from '#/modules/Toaster/useCases';
+import { getDefaultPadNames, getStoredDrumVoiceMetadata } from '#/modules/Toaster/useCases';
 import {
     deviceRuntimeParameterWriters,
     kitSwing,
@@ -123,7 +123,7 @@ function buildProductionPorts(): DeviceEnginePorts {
             stringSectionState: createLevainTemplateDeviceState,
             defaultPadNames: getDefaultPadNames,
         },
-        storedDrumVoices: { voicesOf: getStoredDrumVoiceMetadata, storesVoices: storesToasterVoices },
+        storedDrumVoices: { voicesOf: getStoredDrumVoiceMetadata },
         builtinSynthVoice: {
             scheduleNote,
             scheduleNoteOffline,
