@@ -29,6 +29,8 @@ export async function planBriefVibeRun(input: {
     admit: MeasurementAdmitter | undefined;
     priorReceipts: readonly ApplicationToolReceipt[];
     onProgress: ((progress: MeasurementUnitProgress) => void) | undefined;
+    /** The plan a chosen reading retained; a live preparation that differs plans nothing. */
+    expectedPlanDigest?: string;
 }): Promise<PlannedBriefVibeRun> {
     if (
         input.runId === undefined ||
@@ -58,6 +60,7 @@ export async function planBriefVibeRun(input: {
         admit: input.admit,
         priorReceipts: input.priorReceipts,
         onProgress: input.onProgress,
+        expectedPlanDigest: input.expectedPlanDigest,
     });
     if (planned.status === 'none') {
         return {};
