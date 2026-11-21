@@ -14,6 +14,7 @@ const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'read_plugin_tails',
     'render_graph_offline',
     'retire_native_engine',
     'scan_plugins',
