@@ -73,7 +73,7 @@ export function readChosenReadingDrift(input: {
         mixIntent,
         runId: run.runId,
         priorReceipts: run.plan?.applicationToolReceipts ?? [],
-        reading: offer.constraintReading,
+        reading: reading.plan.constraintReading,
     });
     if (changedPlan !== null) {
         return drifted(changedPlan);

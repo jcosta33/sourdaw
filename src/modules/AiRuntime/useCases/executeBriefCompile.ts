@@ -3,7 +3,7 @@ import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/m
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type BriefCompileResult } from '../models/BriefCompileResult';
-import { type PlannedBriefMixAlternative } from '../models/BriefReading';
+import { type BriefMixAlternative } from '../models/BriefReading';
 import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
@@ -159,7 +159,7 @@ function readRequestHardConstraints(reading: PerceptualConstraintReading): Brief
 }
 
 type ReadingPreparation =
-    { status: 'prepared'; alternatives: PlannedBriefMixAlternative[] } | { status: 'refused'; reason: string };
+    { status: 'prepared'; alternatives: BriefMixAlternative[] } | { status: 'refused'; reason: string };
 
 function refuseReading(alternative: CatalogBriefMixAlternative, why: string): ReadingPreparation {
     return {
@@ -193,7 +193,7 @@ function prepareReadings(input: {
         };
     }
     const priorReceipts = run.plan?.applicationToolReceipts ?? [];
-    const planned: PlannedBriefMixAlternative[] = [];
+    const planned: BriefMixAlternative[] = [];
     for (const alternative of input.alternatives) {
         const mixIntent = readBriefMixIntent({
             catalogId: input.catalogId,
@@ -227,6 +227,7 @@ function prepareReadings(input: {
                         .flatMap((batch) => batch.targetIds)
                         .map((trackId) => [trackId, readVibeTrackName(input.context, trackId)])
                 ),
+                constraintReading: input.reading,
             },
         });
     }
@@ -393,7 +394,7 @@ export function executeBriefCompile(input: {
         },
     };
     if (alternatives.length > 0) {
-        result.mixReadings = { alternatives: readings.alternatives, constraintReading };
+        result.mixAlternatives = readings.alternatives;
     }
     return result;
 }

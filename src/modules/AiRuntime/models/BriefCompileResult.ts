@@ -1,6 +1,6 @@
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type BriefMixIntent } from './BriefMixIntent';
-import { type BriefMixReadings } from './BriefReading';
+import { type BriefMixAlternative } from './BriefReading';
 import { type ProjectContextProductionBrief } from './ProjectContext';
 import { type RetainedCommand } from './RetainedCompilation';
 
@@ -13,5 +13,5 @@ export type BriefCompileResult = {
     composedBrief: ProjectContextProductionBrief | null;
     mixIntent: BriefMixIntent | null;
     /** The named readings the request admits, kept apart so the two-key mix intent and its digest never change. */
-    mixReadings?: BriefMixReadings;
+    mixAlternatives?: readonly BriefMixAlternative[];
 };

@@ -5,7 +5,7 @@ import { type ProjectContextProductionBrief } from './ProjectContext';
 import { type ScheduledVibeRunBatch } from './VibeRunPlan';
 
 /** One reading the provider offered of an ambiguous brief request: a name and the characters it stands for. */
-export type BriefMixAlternative = {
+export type RequestedBriefMixAlternative = {
     name: string;
     requestedDescriptors: readonly string[];
 };
@@ -20,16 +20,15 @@ export type BriefReadingPlan = {
     planDigest: string;
     /** The planned tracks' names as the card was made, so a track removed since is still named. */
     trackNames: Readonly<Record<string, string>>;
+    /**
+     * The request's constraints as read when the reading was offered; choosing it prepares the plan
+     * against them, as a scheduled batch is held to its recorded constraints.
+     */
+    constraintReading: PerceptualConstraintReading;
 };
 
 /** A reading offered with the plan it stands for. */
-export type PlannedBriefMixAlternative = BriefMixAlternative & { plan: BriefReadingPlan };
-
-/** The readings a request admits, with the constraints they were prepared against. */
-export type BriefMixReadings = {
-    alternatives: readonly PlannedBriefMixAlternative[];
-    constraintReading: PerceptualConstraintReading;
-};
+export type BriefMixAlternative = RequestedBriefMixAlternative & { plan: BriefReadingPlan };
 
 /** A reading as the brief card carries it, with an id unique within that card. */
 export type BriefReading = {
@@ -47,11 +46,6 @@ export type BriefReadingOffer = {
     readings: readonly BriefReading[];
     /** The whole next brief the card writes, which each reading's plan is read against. */
     brief: ProjectContextProductionBrief;
-    /**
-     * The request's constraints as read when the readings were offered; a chosen reading is prepared
-     * against them, as a scheduled batch is held to its recorded constraints.
-     */
-    constraintReading: PerceptualConstraintReading;
     /**
      * What the card's own planning recorded on the run plan beside the metric state, kept so the chosen
      * reading's plan is recorded as the directly planned brief's would be.

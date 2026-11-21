@@ -1,6 +1,6 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
 import { type BriefMixIntent } from './BriefMixIntent';
-import { type BriefMixReadings } from './BriefReading';
+import { type BriefMixAlternative } from './BriefReading';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type MetricRecipeSource } from './MetricGoalAdmission';
 import { type ProjectContextProductionBrief } from './ProjectContext';
@@ -66,6 +66,6 @@ export type RetainedCompilation = RetainedCommandSet &
               brief: ProjectContextProductionBrief;
               mixIntent: BriefMixIntent;
               /** The named readings an ambiguous request admits; absent when the request has one reading. */
-              mixReadings?: BriefMixReadings;
+              mixAlternatives?: readonly BriefMixAlternative[];
           }
     );
