@@ -115,17 +115,30 @@ describe('trackStrategy', () => {
             });
         });
 
-        it.each([
-            ['hideTrack', { trackId: 'track-vox', hidden: true }],
-            ['zoomTracksVertical', { delta: -20 }],
-        ])('leaves %s to no provider route while it is withdrawn from agent commands', (name, args) => {
-            expect(bridge(name, args)).toBeNull();
+        it('bridges hide and show to their payloads', () => {
+            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toEqual({
+                type: 'hideTrack',
+                payload: { trackId: 'track-vox', hidden: true },
+            });
+            expect(bridge('hideTrack', { trackId: 'track-drums-folder', hidden: false })).toEqual({
+                type: 'hideTrack',
+                payload: { trackId: 'track-drums-folder', hidden: false },
+            });
+        });
+
+        it('leaves zoomTracksVertical to no provider route while it is withdrawn from agent commands', () => {
+            expect(bridge('zoomTracksVertical', { delta: -20 })).toBeNull();
         });
 
         const FOLD_REASON = 'Expected an available folder trackId and boolean folded value';
+        const HIDE_REASON = 'Expected an available trackId and boolean hidden value';
         const HEIGHT_REASON = 'Expected an available trackId and a height from 30 through 300';
 
         it.each([
+            ['hideTrack', { trackId: 'ghost', hidden: true }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox', hidden: 'yes' }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox' }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox', hidden: true, expectedHidden: false }, HIDE_REASON],
             ['foldTrack', { trackId: 'track-vox', folded: true }, FOLD_REASON],
             ['foldTrack', { trackId: 'ghost', folded: true }, FOLD_REASON],
             ['foldTrack', { trackId: 'track-drums-folder', folded: 'yes' }, FOLD_REASON],

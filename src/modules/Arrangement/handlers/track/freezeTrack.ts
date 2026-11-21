@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureFreezeStateSnapshot } from '../../useCases/freezeBounce/freezeStateSnapshot';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
+import { readSettledFreezeState } from '../../useCases/freezeBounce/readSettledFreezeState';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -53,7 +54,9 @@ export const handleFreezeTrack = createHandler<'freezeTrack'>({
         if (!track || !freezeId) {
             return { label: 'Freeze track', inverseAction: null };
         }
-        const previous = captureFreezeStateSnapshot(track);
+        // A freeze started over a running one sees `freezing` live; undoing to that would leave the
+        // track freezing with nothing rendering, so the state the running freeze will exit to stands in.
+        const previous = readSettledFreezeState(track);
         // Seeded with the identity this run will mint so the guard is meaningful even if
         // the render never completes; `execute()` replaces it with the settled take.
         const settled: MutableFreezeStateSnapshot = {

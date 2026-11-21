@@ -14,7 +14,9 @@
 //! frame count produce bit-identical output.
 
 use crate::float_mode::FlushDenormals;
-use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+use crate::midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
+};
 use crate::scheduler::{
     graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
     GraphCommand, GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
@@ -194,6 +196,14 @@ impl OfflineRenderer {
     /// whole rather than partially dropped.
     pub fn timeline_diagnostics(&self) -> TimelineRtDiagnosticsSnapshot {
         self.scheduler.timeline().diagnostics()
+    }
+
+    /// The MIDI refusal counters: a scheduled-note batch the store refused and
+    /// a note the block's event buffer could not hold are counted here and
+    /// nowhere else, so a caller that prints without reading them prints the
+    /// dropped notes as rests.
+    pub fn midi_diagnostics(&self) -> ActiveMidiRtDiagnosticsSnapshot {
+        self.scheduler.midi_rt_diagnostics()
     }
 
     /// The progress echo the live engine publishes per callback, read
