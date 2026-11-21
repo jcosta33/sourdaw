@@ -2726,6 +2726,36 @@ describe('generateToolPlanningOutcome', () => {
             expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
         });
 
+        // Red when an admission refusal before the local engine loaded settles the turn to ready with no engine.
+        it('restores the previous status when admission refuses a local attempt before the engine loaded', async () => {
+            const previous = { state: 'idle' };
+            mocks.llmStatus.value = previous;
+            mocks.isWebLlmLoaded.mockReturnValue(false);
+            mocks.backendChain.value = ['webllm'];
+            const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({
+                status: 'rejected' as const,
+                reason: 'The turn budget is exhausted.',
+            }));
+
+            await expect(
+                generateToolPlanningOutcome(
+                    'system',
+                    'mute the first track',
+                    toolSchemas,
+                    undefined,
+                    'mute the first track',
+                    undefined,
+                    undefined,
+                    onProviderAttempt
+                )
+            ).resolves.toEqual({ status: 'rejected', reason: 'The turn budget is exhausted.' });
+
+            expect(onProviderAttempt).toHaveBeenCalledOnce();
+            expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
+            expect(mocks.llmStatusSet).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'ready' }));
+        });
+
         describe('across two overlapping turns', () => {
             const hostedAnswering = {
                 state: 'generating',
