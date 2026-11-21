@@ -5510,7 +5510,9 @@ pub async fn register_timeline_sample(
     };
     let frames = pcm_frame_count(pcm.len(), channels).map_err(|refusal| refusal.to_string())?;
     let mut samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
-    samples.admit_legacy_material(&sample_id, pcm.len())?;
+    samples
+        .admit_legacy_material(&sample_id, pcm.len())
+        .map_err(|refusal| refusal.to_string())?;
     let bytes_per_frame = 4 * channels;
     // Collected straight into the shared channels every clip over this material
     // will hold, so registration allocates each one exactly once.

@@ -38,6 +38,9 @@ import {
 import { shellPort, type SupersedePullRequestPort, type SupersededPullRequest } from './supersedePullRequestGh.ts';
 
 export type RetirementReviewState = {
+    authorNodeId: string | null;
+    reviewCount: number;
+    openChildPullRequestCount: number;
     threads: {
         threadId: string;
         rootCommentId: string;
@@ -48,7 +51,7 @@ export type RetirementReviewState = {
     requestedReviews: { reviewId: string; body: string; head: string }[];
 };
 export type RetirePullRequestPort = SupersedePullRequestPort & {
-    inspectRetirementReviewState: (number: number) => RetirementReviewState;
+    inspectRetirementReviewState: (number: number, headRefName: string) => RetirementReviewState;
     isAncestor: (commit: string, head: string) => boolean;
 };
 
@@ -80,6 +83,12 @@ function assertReviewProof(
     state: RetirementReviewState,
     isAncestor: RetirePullRequestPort['isAncestor']
 ): void {
+    if (state.authorNodeId !== AUTHOR_BOT_NODE_ID) {
+        fail(`PR #${record.pr} was not opened by the author App ${AUTHOR_BOT_NODE_ID}`);
+    }
+    if (state.openChildPullRequestCount !== 0) {
+        fail(`PR #${record.pr} cannot retire while another open PR targets its head branch`);
+    }
     const roots = new Map(record.findings.map((finding) => [finding.rootCommentId, finding]));
     if (
         state.threads.length !== roots.size ||
@@ -93,6 +102,9 @@ function assertReviewProof(
         assertConfirmedRoot(record, rootId, finding, thread, isAncestor);
     }
     assertReviewBodies(record, state);
+    if (record.findings.length === 0 && state.reviewCount !== 0) {
+        fail(`PR #${record.pr} has a review, so a finding-free retirement cannot attest its history`);
+    }
 }
 
 function assertConfirmedRoot(
@@ -223,7 +235,7 @@ export function retirePullRequest(
     ) {
         fail(`PR #${number} does not match the retirement record`);
     }
-    assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
+    assertReviewProof(record, port.inspectRetirementReviewState(number, before.headRefName), port.isAncestor);
     const marker = { body: renderRetirementMarker(record), label: 'retirement-v1 marker' };
     if (before.state === PR_STATE.CLOSED) {
         if (!before.closedAt) {
@@ -237,7 +249,12 @@ export function retirePullRequest(
             fail(`PR #${number} is ${before.state.toLowerCase()}`);
         }
         closePullRequestWithMarkers(number, head, before, [marker], port, {
-            beforeMarkers: () => assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor),
+            beforeMarkers: () =>
+                assertReviewProof(
+                    record,
+                    port.inspectRetirementReviewState(number, before.headRefName),
+                    port.isAncestor
+                ),
             beforeClose: (ids) => {
                 const current = port.inspect(number);
                 if (
@@ -255,7 +272,11 @@ export function retirePullRequest(
                 if (closureMarkerIds(current, number, [marker])[0] !== ids[0]) {
                     fail(`PR #${number} retirement marker identity changed before close`);
                 }
-                assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
+                assertReviewProof(
+                    record,
+                    port.inspectRetirementReviewState(number, before.headRefName),
+                    port.isAncestor
+                );
             },
             afterClose: (verified, ids, receipt) => {
                 if (
@@ -277,7 +298,11 @@ export function retirePullRequest(
                     fail(`PR #${number} retirement close was not verified`);
                 }
                 assertCompletedClosureWithMarkers(verified, number, head, record.base, [marker]);
-                assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
+                assertReviewProof(
+                    record,
+                    port.inspectRetirementReviewState(number, before.headRefName),
+                    port.isAncestor
+                );
             },
         });
     }
@@ -385,8 +410,8 @@ function retirementShellPort(session: Parameters<typeof shellPort>[0]): RetirePu
     const primaryRoot = resolvePrimaryRoot();
     return {
         ...shellPort(session, primaryRoot),
-        inspectRetirementReviewState: (number) =>
-            inspectRetirementReviewState(number, (args) =>
+        inspectRetirementReviewState: (number, headRefName) =>
+            inspectRetirementReviewState(number, headRefName, (args) =>
                 spawnCapture('gh', args, { cwd: primaryRoot, env: session.env })
             ),
         isAncestor: (commit, head) =>
@@ -431,7 +456,19 @@ function completeConnection(value: unknown, label: string): unknown[] {
     return connection.nodes;
 }
 
-function readReviewProjection(number: number, gh: ReadGh): { threads: unknown[]; reviews: unknown[] } {
+function totalCount(value: unknown, label: string): number {
+    const connection = projectionObject(value, label);
+    if (
+        typeof connection.totalCount !== 'number' ||
+        !Number.isSafeInteger(connection.totalCount) ||
+        connection.totalCount < 0
+    ) {
+        fail(`${label} has no valid total count`);
+    }
+    return connection.totalCount;
+}
+
+function readReviewProjection(number: number, headRefName: string, gh: ReadGh) {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');
     if (!owner || !name) {
         fail('invalid repository');
@@ -440,7 +477,9 @@ function readReviewProjection(number: number, gh: ReadGh): { threads: unknown[];
         'reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId body author{__typename ... on Bot{id}} pullRequestReview{id}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}}';
     const reviews =
         'reviews(first:100,states:[CHANGES_REQUESTED]){nodes{id state body commit{oid}} pageInfo{hasNextPage}}';
-    const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){number ${threads} ${reviews}}}}`;
+    const identity = 'author{__typename ... on Bot{id}} headRefName allReviews:reviews(first:1){totalCount}';
+    const children = 'openChildren:pullRequests(states:[OPEN],baseRefName:$headRef,first:1){totalCount}';
+    const query = `query($owner:String!,$name:String!,$number:Int!,$headRef:String!){repository(owner:$owner,name:$name){nameWithOwner ${children} pullRequest(number:$number){number ${identity} ${threads} ${reviews}}}}`;
     const parsed = projectionObject(
         JSON.parse(
             gh([
@@ -454,6 +493,8 @@ function readReviewProjection(number: number, gh: ReadGh): { threads: unknown[];
                 `name=${name}`,
                 '-F',
                 `number=${number}`,
+                '-f',
+                `headRef=${headRefName}`,
             ])
         ),
         'retirement response'
@@ -467,7 +508,13 @@ function readReviewProjection(number: number, gh: ReadGh): { threads: unknown[];
     if (repository.nameWithOwner !== REQUIRED_REPOSITORY || pullRequest.number !== number) {
         fail(`cannot inspect retirement reviews for PR #${number}`);
     }
+    if (pullRequest.headRefName !== headRefName) {
+        fail(`PR #${number} head branch moved during retirement review inspection`);
+    }
     return {
+        author: pullRequest.author,
+        reviewCount: totalCount(pullRequest.allReviews, 'retirement review history'),
+        openChildPullRequestCount: totalCount(repository.openChildren, 'retirement open child pull requests'),
         threads: completeConnection(pullRequest.reviewThreads, 'retirement review threads'),
         reviews: completeConnection(pullRequest.reviews, 'retirement requested reviews'),
     };
@@ -503,23 +550,23 @@ function readRetirementReply(value: unknown): RetirementReviewState['threads'][n
     return {
         id: String(readCommentDatabaseId(reply.databaseId, 'retirement review reply')),
         body: reply.body,
-        authorNodeId: retirementReplyActor(reply.author),
+        authorNodeId: retirementBotActor(reply.author, 'retirement reply'),
     };
 }
 
-function retirementReplyActor(value: unknown): string | null {
+function retirementBotActor(value: unknown, label: string): string | null {
     if (value === null) {
         return null;
     }
-    const author = projectionObject(value, 'retirement reply actor');
+    const author = projectionObject(value, `${label} actor`);
     if (typeof author.__typename !== 'string' || author.__typename === '') {
-        fail('retirement reply actor type is invalid');
+        fail(`${label} actor type is invalid`);
     }
     if (author.__typename !== 'Bot') {
         return null;
     }
     if (typeof author.id !== 'string' || author.id === '') {
-        fail('retirement reply Bot identity is invalid');
+        fail(`${label} Bot identity is invalid`);
     }
     return author.id;
 }
@@ -550,9 +597,12 @@ function readRetirementThread(value: unknown): RetirementReviewState['threads'][
 }
 
 // The read-side projection is kept separate from the existing mutation port. No untrusted record supplies a query.
-export function inspectRetirementReviewState(number: number, gh: ReadGh): RetirementReviewState {
-    const projection = readReviewProjection(number, gh);
+export function inspectRetirementReviewState(number: number, headRefName: string, gh: ReadGh): RetirementReviewState {
+    const projection = readReviewProjection(number, headRefName, gh);
     return {
+        authorNodeId: retirementBotActor(projection.author, 'retirement pull request'),
+        reviewCount: projection.reviewCount,
+        openChildPullRequestCount: projection.openChildPullRequestCount,
         threads: projection.threads.map(readRetirementThread),
         requestedReviews: projection.reviews.map(readRequestedReview),
     };

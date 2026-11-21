@@ -4,6 +4,8 @@ import { isRecord } from '#/utils/structuralEquality';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 
+import { retiredClipIds } from './retiredClipIdsByActionType';
+
 import type { AppAction } from '#/utils/handlerContract';
 import type { ClipSnapshot } from '../../events/arrangementClipSnapshots';
 import type { ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
@@ -115,18 +117,7 @@ export function readClipSplitIdentityIds(
     const root = getCrdtDoc('root');
     const localIdentities = new WeakSet<object>();
     if (root) {
-        const retiredClipIds = new Set(
-            priorActions.flatMap((action) => {
-                if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
-                    return [action.payload.clipId];
-                }
-                if (action.type === 'restoreClipSplitState' && !action.payload.replacement.rightClip) {
-                    return [action.payload.rightClipId];
-                }
-                return [];
-            })
-        );
-        const retainedRoot = committedIdentityMaterialAfterPrefix(root, retiredClipIds);
+        const retainedRoot = committedIdentityMaterialAfterPrefix(root, new Set(priorActions.flatMap(retiredClipIds)));
         const gain = retainedRoot.gainEnvelopes;
         const envelopes = isRecord(gain) && isRecord(gain.envelopes) ? gain.envelopes : {};
         for (const envelope of Object.values(envelopes)) {
