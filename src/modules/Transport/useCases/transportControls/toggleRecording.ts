@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isFrozenTrackRefusingRecording } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
@@ -29,9 +28,10 @@ import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry'
 
 import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
-import { hasArmedTakeTarget } from './hasArmedTakeTarget';
-import { noTakeTargetMessage } from './noTakeTargetMessage';
+import { readTakeTargetAudioTracks } from './readTakeTargetAudioTracks';
 import { recordingLifecycle } from './recordingLifecycle';
+import { refusesWithoutTakeTarget } from './refusesWithoutTakeTarget';
+import { releaseTakelessRecordingStart } from './releaseTakelessRecordingStart';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
 import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
@@ -507,9 +507,7 @@ async function beginActualRecording(
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const audioTracks = (getTrackStoreState()?.tracks ?? []).filter(
-        (track) => track.armed && track.kind === 'audio' && !isFrozenTrackRefusingRecording(track)
-    );
+    const audioTracks = readTakeTargetAudioTracks();
     let clips: ReturnType<typeof startRecording> = [];
 
     const captureClocks = createManualCaptureClocks(ctx, transportHold);
@@ -599,6 +597,9 @@ async function beginActualRecording(
     admissionTempo = admitted.tempo;
     admissionChanges = admitted.changes;
     clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    if (clips.length === 0) {
+        return releaseTakelessRecordingStart(detachReaders);
+    }
     bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });
     return true;
@@ -765,8 +766,7 @@ export function toggleRecording(): void {
     // that cannot exist is the same defect one count earlier. The punch arm
     // above stays open — it engages no recording, and the scheduler owns the
     // window it arms.
-    if (!hasArmedTakeTarget()) {
-        notifyUser(noTakeTargetMessage(), 'warning');
+    if (refusesWithoutTakeTarget()) {
         return;
     }
 

@@ -48,6 +48,7 @@ import { commitRecoveredAudioRecording } from '../transportControls/commitRecove
 import { createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
+import { isTakeTargetTrack } from '../transportControls/isTakeTargetTrack';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
@@ -1315,7 +1316,9 @@ export function startPlayheadScheduler(
             updateTransportState({ isRecording: true });
 
             captureClocks.register();
-            const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
+            // Only tracks `startRecording` opened a take on capture: a frozen
+            // armed track is no take target, so it never asks for the input.
+            const armedTracks = trackStore.value?.tracks.filter(isTakeTargetTrack) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {
                     const recClip = clips.find((context) => context.trackId === track.id);

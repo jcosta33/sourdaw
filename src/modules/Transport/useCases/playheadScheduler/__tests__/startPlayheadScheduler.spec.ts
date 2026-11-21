@@ -2024,6 +2024,34 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 
+    // A frozen armed audio track beside the track that opens the punch is no
+    // take target, so it must not ask for the input: an input failure there
+    // would report the whole punch as discarded.
+    it('captures no input for a frozen armed audio track beside an unfrozen armed MIDI punch', async () => {
+        trackStoreState.value = {
+            tracks: [
+                recordingTrack({ id: 'midi-1', armed: true, kind: 'midi', clips: [] }),
+                recordingTrack({ id: 'audio-frozen', armed: true, kind: 'audio', frozen: true, clips: [] }),
+            ],
+        };
+        transportStoreState.value = playingState({
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'midi-1', id: 'clip-midi-1', startBeat: 0 }]);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => {
+            expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
+            expect(schedulerSession.tickInFlight).toBe(false);
+        });
+
+        expect(audioEngineMocks.startAudioRecording).not.toHaveBeenCalled();
+    });
+
     // The punched clip is anchored on the punch point, so a note played on the
     // punch downbeat has no room to move earlier unless the clip carries a media
     // lead-in. midiOffsetBeats supplies it: the media origin sits at

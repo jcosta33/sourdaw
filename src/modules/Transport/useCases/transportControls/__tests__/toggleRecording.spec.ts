@@ -437,6 +437,35 @@ describe('toggleRecording', () => {
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalled());
     });
 
+    it('does not engage a recording when the only armed track froze during the count-in (#7239)', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-midi', kind: 'midi', armed: true }] });
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 0,
+        });
+
+        toggleRecording();
+        // The track freezes while the count-in runs, so no take can open on it.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
+        });
+        elapse(2000);
+
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning')
+        );
+        expect(mocks.startRecording).toHaveBeenCalledOnce();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
     it('should count a compound meter in its own beat unit rather than in quarter notes', async () => {
         // 6/8 at 120 BPM: six eighth notes span three quarter notes, so the bar
         // lasts 1.5 s and each click is 0.25 s apart. Reading the numerator as a
