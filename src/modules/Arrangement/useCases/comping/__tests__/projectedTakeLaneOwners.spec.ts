@@ -7,6 +7,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { preparedClipSplits } from '../../clipEditing/preparedClipSplit';
 import { projectedTakeLaneOwners } from '../projectedTakeLaneOwners';
 import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
 import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
@@ -108,6 +109,102 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
             [peerRegion],
         ]);
         expect(mocks.state.value).toEqual(live);
+    });
+
+    describe('each prefix action type projects its own owners', () => {
+        const reKeyTransition = undoSplit.payload.reKeyedTakeLanes?.[0];
+        if (!reKeyTransition) {
+            throw new Error('Expected the re-key fixture');
+        }
+        const liveOriginalLane = () => ({
+            ...createTakeLane('track'),
+            id: 'source-lane',
+            takes: [{ ...originalTake, selected: false }],
+        });
+        const splitApplied = { id: 'source-lane', trackId: 'track', takes: [reKeyedTake], activeCompRegions: [] };
+
+        it.each([
+            ['removeClip', { type: 'removeClip', payload: { clipId: 'split-right' } }],
+            ['discardDuplicatedClip', { type: 'discardDuplicatedClip', payload: { clipId: 'split-right' } }],
+        ] satisfies [string, AppAction][])('retires the owners of the clip a %s removes', (_type, action) => {
+            expect(projectedTakeLaneOwners([action]).map((lane) => lane.id)).toEqual(['peer-lane']);
+        });
+
+        it('re-keys the owners of a prepared split', () => {
+            const action = {
+                type: 'splitClip',
+                payload: { clipId: source.id, beat: 2, rightClipId: 'split-right' },
+            } satisfies AppAction;
+            preparedClipSplits.set(action, {
+                adjustedMediaSplit: 2,
+                previous: undoSplit.payload.expected,
+                next: undoSplit.payload.replacement,
+                rightClipId: 'split-right',
+                targetNoteIds: [],
+                takeReKeyTransitions: [reKeyTransition],
+            });
+
+            expect(projectedTakeLaneOwners([action], [liveOriginalLane()])).toEqual([splitApplied]);
+        });
+
+        it('leaves owners alone for a split that was never prepared', () => {
+            const action = {
+                type: 'splitClip',
+                payload: { clipId: source.id, beat: 2, rightClipId: 'split-right' },
+            } satisfies AppAction;
+
+            expect(projectedTakeLaneOwners([action], [liveOriginalLane()])).toEqual([
+                { ...liveOriginalLane(), activeCompRegions: [] },
+            ]);
+        });
+
+        it('re-keys owners when a split state is restored with its right clip', () => {
+            const action = {
+                ...undoSplit,
+                payload: {
+                    ...undoSplit.payload,
+                    replacement: {
+                        ...undoSplit.payload.replacement,
+                        rightClip: { ...source, id: 'split-right', startBeat: 2 },
+                    },
+                },
+            } satisfies AppAction;
+
+            expect(projectedTakeLaneOwners([action], [liveOriginalLane()])).toEqual([splitApplied]);
+        });
+
+        it('restores the lane a removed clip retired', () => {
+            const retired = { ...createTakeLane('gone-track'), id: 'gone-lane', takes: [peerTake] };
+            const action = {
+                type: 'restoreClip',
+                payload: {
+                    clipId: peerTake.clipId,
+                    trackId: 'gone-track',
+                    clipSnapshot: ClipDummy.create({ id: peerTake.clipId, trackId: 'gone-track' }),
+                    ripplePlan: null,
+                    midiNotesSnapshot: null,
+                    midiCcSnapshot: null,
+                    midiPitchBendSnapshot: null,
+                    retiredTakeLanes: [{ laneIndex: 0, lane: retired, retiredTakeIds: [peerTake.id] }],
+                },
+            } satisfies AppAction;
+
+            expect(projectedTakeLaneOwners([action], []).map((lane) => lane.id)).toEqual(['gone-lane']);
+        });
+
+        it('leaves owners alone for an action name that is only inherited, read from untrusted JSON', () => {
+            const parsed: AppAction = JSON.parse('{"type":"constructor","payload":{"clipId":"split-right"}}');
+            const lanes = [liveOriginalLane()];
+
+            expect(projectedTakeLaneOwners([parsed], lanes)).toEqual(lanes);
+        });
+
+        it('leaves owners alone for an action outside the clip lifecycle', () => {
+            const action = { type: 'renameClip', payload: { clipId: source.id, name: 'Other' } } satisfies AppAction;
+            const lanes = [liveOriginalLane()];
+
+            expect(projectedTakeLaneOwners([action], lanes)).toEqual(lanes);
+        });
     });
 
     afterEach(() => {
