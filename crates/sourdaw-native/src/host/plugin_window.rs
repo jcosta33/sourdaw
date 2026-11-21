@@ -272,6 +272,21 @@ pub trait PluginEditorWindow: Send + Sync {
 
     /// Destroy the window. Used on every failure path after creation.
     fn destroy(&self);
+
+    /// Make the window visible without taking focus from the DAW.
+    fn show(&self);
+
+    /// Hide the window, leaving the editor parented into it.
+    fn hide(&self);
+
+    /// Run `work` on the thread this window lives on, and return once it has
+    /// run — in place when the caller already is that thread. `Err` means it
+    /// did not run and never will.
+    ///
+    /// Here because the asks a plugin makes of its window arrive long after the
+    /// command that opened it returned, and answering them calls into the
+    /// editor, which both formats bind to this thread.
+    fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
 }
 
 /// Apply one editor resize on the UI thread, and return only once it has been
@@ -401,8 +416,11 @@ pub mod testing {
         /// Behind a mutex because a bare `Sender` is not `Sync`, and the tests
         /// that drive a race from more than one thread share one `&Host`
         /// across them.
-        work: Mutex<mpsc::Sender<Arc<UiThreadTask>>>,
+        work: Arc<Mutex<mpsc::Sender<Arc<UiThreadTask>>>>,
         pub thread_id: ThreadId,
+        /// Every show, hide, destroy and resizability call a window of this
+        /// shell received, in order, with the thread it arrived on.
+        window_calls: Arc<Mutex<Vec<(&'static str, ThreadId)>>>,
         thread: Mutex<Option<JoinHandle<()>>>,
         editor_resizable: Arc<Mutex<Option<bool>>>,
         /// The labels this shell still holds windows for, which is the whole of
@@ -452,6 +470,11 @@ pub mod testing {
             *self.editor_resizable.lock().expect("resizable record")
         }
 
+        /// The window calls this shell's editor windows received, in order.
+        pub fn window_calls(&self) -> Vec<(&'static str, ThreadId)> {
+            self.window_calls.lock().expect("window call log").clone()
+        }
+
         pub fn start() -> Self {
             let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
             let (announce, announced) = mpsc::channel();
@@ -474,8 +497,9 @@ pub mod testing {
             });
             let thread_id = announced.recv().expect("the fake UI thread must start");
             Self {
-                work: Mutex::new(work),
+                work: Arc::new(Mutex::new(work)),
                 thread_id,
+                window_calls: Arc::new(Mutex::new(Vec::new())),
                 thread: Mutex::new(Some(thread)),
                 editor_resizable: Arc::new(Mutex::new(None)),
                 held_windows: Mutex::new(std::collections::HashSet::new()),
@@ -536,20 +560,27 @@ pub mod testing {
             &self,
             task: &Arc<UiThreadTask>,
         ) -> Result<(), crate::host::ui_thread::UiThreadError> {
-            let (done, waited) = mpsc::sync_channel(1);
-            let queued = Arc::clone(task);
-            self.work
-                .lock()
-                .expect("ui work queue")
-                .send(UiThreadTask::new(move || {
-                    queued.run();
-                    let _ = done.send(());
-                }))
-                .map_err(|_| "the fake UI thread is gone".to_string())?;
-            waited
-                .recv()
-                .map_err(|_| "the fake UI thread never answered".to_string().into())
+            post_and_wait(&self.work, task).map_err(Into::into)
         }
+    }
+
+    /// Run one task on the dedicated thread and wait for it.
+    fn post_and_wait(
+        work: &Mutex<mpsc::Sender<Arc<UiThreadTask>>>,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), String> {
+        let (done, waited) = mpsc::sync_channel(1);
+        let queued = Arc::clone(task);
+        work.lock()
+            .expect("ui work queue")
+            .send(UiThreadTask::new(move || {
+                queued.run();
+                let _ = done.send(());
+            }))
+            .map_err(|_| "the fake UI thread is gone".to_string())?;
+        waited
+            .recv()
+            .map_err(|_| "the fake UI thread never answered".to_string())
     }
 
     /// A window with no platform behind it: enough for an editor to be opened
@@ -557,6 +588,18 @@ pub mod testing {
     /// about.
     pub struct BareEditorWindow {
         resizable: Arc<Mutex<Option<bool>>>,
+        calls: Arc<Mutex<Vec<(&'static str, ThreadId)>>>,
+        work: Arc<Mutex<mpsc::Sender<Arc<UiThreadTask>>>>,
+        thread_id: ThreadId,
+    }
+
+    impl BareEditorWindow {
+        fn record(&self, call: &'static str) {
+            self.calls
+                .lock()
+                .expect("window call log")
+                .push((call, thread::current().id()));
+        }
     }
 
     impl PluginEditorWindow for BareEditorWindow {
@@ -569,12 +612,31 @@ pub mod testing {
         fn set_size(&self, _width: u32, _height: u32) {}
 
         fn set_resizable(&self, resizable: bool) {
+            self.record("set_resizable");
             *self.resizable.lock().expect("resizable record") = Some(resizable);
         }
 
         fn show_and_focus(&self) {}
 
-        fn destroy(&self) {}
+        fn destroy(&self) {
+            self.record("destroy");
+        }
+
+        fn show(&self) {
+            self.record("show");
+        }
+
+        fn hide(&self) {
+            self.record("hide");
+        }
+
+        fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            if thread::current().id() == self.thread_id {
+                work();
+                return Ok(());
+            }
+            post_and_wait(&self.work, &UiThreadTask::new(work))
+        }
     }
 
     impl PluginWindowHost for DedicatedUiWindowHost {
@@ -598,6 +660,9 @@ pub mod testing {
                 .insert(label.to_string());
             Ok(Box::new(BareEditorWindow {
                 resizable: Arc::clone(&self.editor_resizable),
+                calls: Arc::clone(&self.window_calls),
+                work: Arc::clone(&self.work),
+                thread_id: self.thread_id,
             }))
         }
 

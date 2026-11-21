@@ -18,9 +18,10 @@ export function getTimelineContentHeight(
     tracks: readonly Track[],
     automationRows?: ReadonlyMap<string, readonly unknown[]>,
     trackHeightScale = 1,
-    trackHeightPreview?: TimelineTrackHeightPreview | null
+    view: { trackHeightPreview?: TimelineTrackHeightPreview | null; showHiddenTracks?: boolean } = {}
 ): number {
-    return getVisibleTimelineTracks(tracks).reduce(
+    const { trackHeightPreview, showHiddenTracks = false } = view;
+    return getVisibleTimelineTracks(tracks, showHiddenTracks).reduce(
         (sum, track) =>
             sum +
             getAutomationSubLaneTop(
