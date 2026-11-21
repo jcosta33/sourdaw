@@ -81,7 +81,6 @@ type PlanStemSidechainInput<TTrack extends StemSidechainTrack> = {
 
 type PlanStemSidechainOutput<TTrack extends StemSidechainTrack> = {
     routes: StemSidechainRoute[];
-    targetDevices: Set<object>;
     keySourceTracks: TTrack[];
 };
 
@@ -91,7 +90,6 @@ function planStemSidechain<TTrack extends StemSidechainTrack>({
     allTracks,
 }: PlanStemSidechainInput<TTrack>): PlanStemSidechainOutput<TTrack> {
     const stemRoutes: StemSidechainRoute[] = [];
-    const targetDevices = new Set<object>();
     const keySourceTracks: TTrack[] = [];
     const seenKeySourceIds = new Set<string>();
 
@@ -114,7 +112,6 @@ function planStemSidechain<TTrack extends StemSidechainTrack>({
         }
 
         stemRoutes.push(route);
-        targetDevices.add(targetDevice);
         // A track can key a compressor on itself; it is already in the stem, so
         // it needs no second strip.
         if (!stemTrackIds.has(sourceTrack.id) && !seenKeySourceIds.has(sourceTrack.id)) {
@@ -123,7 +120,7 @@ function planStemSidechain<TTrack extends StemSidechainTrack>({
         }
     }
 
-    return { routes: stemRoutes, targetDevices, keySourceTracks };
+    return { routes: stemRoutes, keySourceTracks };
 }
 
 export const exportStems: ExportStemsFn = async function exportStems(
@@ -295,7 +292,6 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 await prepareOfflineContext({
                     offlineCtx,
                     tracks: groupedTracks,
-                    sidechainTargetDevices: stemSidechain.targetDevices,
                     onWarning,
                 });
                 for (const groupedTrack of groupedTracks) {

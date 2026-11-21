@@ -8667,11 +8667,6 @@
             "count": 1
         }
     },
-    "src/modules/AudioEngine/repositories/devices/dynamics/__tests__/createSidechainCompressorFallback.spec.ts": {
-        "sourdaw-craft/no-spread-clone-array-method": {
-            "count": 1
-        }
-    },
     "src/modules/AudioEngine/repositories/devices/modulation/applyChorusParams.ts": {
         "eslint/complexity": {
             "count": 1
@@ -9882,11 +9877,6 @@
     },
     "src/modules/AudioEngine/useCases/offlineRender/renderWithTimeout.ts": {
         "sourdaw-craft/no-silent-catch": {
-            "count": 1
-        }
-    },
-    "src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixPlan.ts": {
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
