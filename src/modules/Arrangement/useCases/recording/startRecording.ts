@@ -2,6 +2,7 @@ import { runWithAutomergeStorageTransaction } from '#/infra/store/storage/create
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
+import { isFrozenTrackRefusingRecording } from '../../models/FrozenTrackRecording';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
@@ -53,7 +54,7 @@ function stageRecording(
 
     const recordBeat = atBeat ?? transportState.playheadPosition;
     const armedTracks = trackState.tracks.filter(
-        (time) => time.armed && getTrackEligibility(time.kind).acceptsRecording
+        (time) => time.armed && getTrackEligibility(time.kind).acceptsRecording && !isFrozenTrackRefusingRecording(time)
     );
     const newClips: Clip[] = [];
 
