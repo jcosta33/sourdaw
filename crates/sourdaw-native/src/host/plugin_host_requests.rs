@@ -38,12 +38,12 @@
 //! the restart it asks for is carried back to the UI thread from here, because
 //! every lifecycle call in it is one the format makes there.
 //!
-//! It serves engine-owned instances only, which is where the wake is installed.
-//! An instance the native engine never took records a state change nothing
-//! reads, and its `request_resize` is refused outright rather than accepted and
-//! dropped. That mode processes no audio at all — it is what a session runs in
-//! when the engine failed to start — so an edit made in it has no take to be
-//! saved with.
+//! This watcher serves engine-owned instances only, which is where the wake is
+//! installed. An instance the native engine never took records a state change
+//! nothing reads. That mode processes no audio at all — it is what a session
+//! runs in when the engine failed to start — so an edit made in it has no take
+//! to be saved with. Its editor asks are another matter: the editor drain visits
+//! the command-owned store too, so its resize, show and hide are answered.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};

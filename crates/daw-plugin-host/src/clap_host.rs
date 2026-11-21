@@ -132,10 +132,9 @@ pub struct HostCallbackState {
     editor_resize_hints_changed: AtomicBool,
     /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty
     /// and parameter-rescan — which a plugin raises where allocating is
-    /// ordinary. Its install also gates the `[thread-safe]` asks' acceptance:
-    /// it happens exactly when the native engine takes the instance, which is
-    /// exactly the set the drain thread serves, so an instance with no install
-    /// is one whose recorded ask nothing would ever carry.
+    /// ordinary. It is installed when the native engine takes the instance;
+    /// the `[thread-safe]` editor asks do not wait on it, because the editor
+    /// drain serves an instance the engine has not taken as well.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
     /// The timers and descriptors this instance registered through
     /// `clap.timer-support` and `clap.posix-fd-support`. Shared with the

@@ -2492,10 +2492,6 @@ impl ClapWrapper {
 
     /// Install the wake fired for this host's `[main-thread]` asks, answered off
     /// the calling thread. First install wins; a second call reports `false`.
-    ///
-    /// The install also gates the `[thread-safe]` asks' acceptance — the drain
-    /// thread that answers them serves exactly the instances the native engine
-    /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(observe) = self
@@ -5834,18 +5830,19 @@ mod tests {
         );
     }
 
-    /// An instance the host never installed a wake on — one the native engine
-    /// did not take, whose asks nothing would ever carry to the control path —
-    /// must refuse the resize rather than accept it and drop it. A refused
-    /// plugin lays itself out at the size it has; an accepted one waits forever
-    /// for a window that never changes.
+    /// An instance the host never installed a wake on — one loaded before the
+    /// native engine ran — still has its editor drain, so a resize its window
+    /// can take is accepted and applied rather than refused.
     #[test]
-    fn an_editor_resize_is_refused_while_no_wake_carries_it_to_the_control_path() {
+    fn an_editor_resize_is_applied_with_a_window_and_no_wake_installed() {
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut wrapper = stub_wrapper(stub_plugin_ptr());
         wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
 
-        assert!(!wrapper.host_state.request_editor_resize(1024, 768));
-        assert_eq!(wrapper.apply_pending_editor_resize(), None);
+        assert!(wrapper.host_state.request_editor_resize(1024, 768));
+        assert_eq!(wrapper.apply_pending_editor_resize(), Some((1024, 768)));
     }
 
     /// An edit inside the plugin's own editor has to cross from the callback
