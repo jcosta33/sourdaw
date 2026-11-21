@@ -1,5 +1,5 @@
 import { activeRecordingRef, trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { getAudioContext, isMidiTransformDevice } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { valuesEqual } from '#/utils/structuralEquality';
@@ -36,7 +36,7 @@ const PROGRAMME_FIELDS = [
 type TrackState = typeof trackStore.value;
 
 function hasYeast(track: NonNullable<TrackState>['tracks'][number]) {
-    return track.kind === 'midi' && track.devices.some((device) => device.type === 'yeast');
+    return track.kind === 'midi' && track.devices.some((device) => isMidiTransformDevice(device.type));
 }
 
 /**
@@ -91,7 +91,7 @@ function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
     const yeastClipIds = prepared.tracks.filter(hasYeast).flatMap((track) => track.clips.map((clip) => clip.id));
     const racks = (trackState?.tracks ?? []).flatMap((track) =>
         track.devices
-            .filter((device) => device.type === 'yeast')
+            .filter((device) => isMidiTransformDevice(device.type))
             .map((device) => ({ id: device.id, processors: structuredClone(readRackProcessors(device.id)) }))
     );
     const tracksCurrent = witnessProjection(
