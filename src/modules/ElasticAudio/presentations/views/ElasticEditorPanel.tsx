@@ -26,6 +26,8 @@ import {
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -116,6 +118,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const transientSensitivity = preferences.elasticTransientSensitivity;
     const isAudioClip = clip !== null && clip.type === 'audio';
 
+    const tempo = useStore(transportStore, defaultTransportState).tempo;
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
     const [detectionStatus, setDetectionStatus] = useState('');
     const detectRequest = useRef(0);
@@ -133,6 +136,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const previousDrawingRef = useRef<WaveformDrawing | null>(null);
+    const scrolledToWindowRef = useRef<string | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const didDragRef = useRef(false);
 
@@ -168,6 +172,7 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const beatWidth = Math.max(1, 40 * zoom);
     const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
+    const audioOffsetSeconds = clip ? resolveAudioSourceOffsetSeconds(clip, tempo) : 0;
 
     useEffect(() => {
         const args: DrawArgs = {
@@ -178,6 +183,10 @@ export const ElasticEditorPanel = (): ReactElement => {
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
             clipLengthBeats,
+            tempo,
+            audioOffsetSeconds,
+            scrollKey: `${clipId ?? ''}:${clip?.audioBufferId ?? ''}:${audioOffsetSeconds}`,
+            scrolledToWindowRef,
             viewScrollLeft,
         };
         // Paint in the next frame, so a marker commit's task never also pays for the canvas;
@@ -198,7 +207,17 @@ export const ElasticEditorPanel = (): ReactElement => {
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };
-    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId, clipLengthBeats]);
+    }, [
+        clipId,
+        zoom,
+        warpState,
+        beatWidth,
+        viewScrollLeft,
+        clip?.audioBufferId,
+        clipLengthBeats,
+        tempo,
+        audioOffsetSeconds,
+    ]);
 
     if (clipId === null || !isAudioClip) {
         return (
@@ -579,6 +598,10 @@ type DrawArgs = {
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
     clipLengthBeats: number;
+    tempo: number;
+    audioOffsetSeconds: number;
+    scrollKey: string;
+    scrolledToWindowRef: { current: string | null };
     viewScrollLeft: number;
 };
 
@@ -593,6 +616,8 @@ type WaveformDrawing = {
     dpr: number;
     beatWidth: number;
     scrollLeft: number;
+    windowStartX: number;
+    windowEndX: number;
     background: string;
     cssWidth: string;
     cssHeight: string;
@@ -627,6 +652,10 @@ function drawWaveform(args: DrawArgs): void {
         warpState,
         clipAudioBufferId,
         clipLengthBeats,
+        tempo,
+        audioOffsetSeconds,
+        scrollKey,
+        scrolledToWindowRef,
         viewScrollLeft,
     } = args;
     const canvas = canvasRef.current;
@@ -638,11 +667,19 @@ function drawWaveform(args: DrawArgs): void {
     if (!ctx) {
         return;
     }
-    // The clip's own length sets the extent, so the canvas keeps its size when Detect adds markers:
-    // growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
+    // Warp markers are source-content beats: seconds from the file start at the project tempo, the
+    // frame handleDetectTransients writes and splitClipSatellites keeps. The waveform is drawn in that
+    // same frame (x = file beat * beatWidth), so a marker sits on the transient it marks.
+    const sourceSeconds = clipAudioBufferId ? (audioBufferCache.get(clipAudioBufferId)?.duration ?? 0) : 0;
+    const sourceBeats = (sourceSeconds * tempo) / 60;
+    const windowStartBeats = (audioOffsetSeconds * tempo) / 60;
+    const windowEndBeats = windowStartBeats + clipLengthBeats;
+    // The source and the audible window set the extent, so the canvas keeps its size when Detect adds
+    // markers: growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
         64,
-        clipLengthBeats + 8,
+        sourceBeats + 8,
+        windowEndBeats + 8,
         warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
@@ -651,9 +688,12 @@ function drawWaveform(args: DrawArgs): void {
     const backingWidth = Math.floor(width * dpr);
     const backingHeight = Math.floor(height * dpr);
     const background = resolveToken('--color-bg-overlay', '#151515');
+    const windowStartX = windowStartBeats * beatWidth;
+    const windowEndX = windowEndBeats * beatWidth;
+    const sourceBins = Math.max(1, Math.floor(sourceBeats * beatWidth));
     // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
     // removing a source invalidates its waveform cache. A new peak identity must redraw.
-    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width)) : null;
+    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, sourceBins) : null;
     const previous = previousDrawingRef.current;
     if (
         previous &&
@@ -667,6 +707,8 @@ function drawWaveform(args: DrawArgs): void {
         previous.dpr === dpr &&
         previous.beatWidth === beatWidth &&
         previous.scrollLeft === viewScrollLeft &&
+        previous.windowStartX === windowStartX &&
+        previous.windowEndX === windowEndX &&
         previous.background === background &&
         canvas.width === backingWidth &&
         canvas.height === backingHeight &&
@@ -689,6 +731,10 @@ function drawWaveform(args: DrawArgs): void {
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (scrolledToWindowRef.current !== scrollKey) {
+        scrolledToWindowRef.current = scrollKey;
+        container.scrollLeft = windowStartX;
+    }
 
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
@@ -715,6 +761,15 @@ function drawWaveform(args: DrawArgs): void {
             ctx.closePath();
             ctx.fill();
         }
+    }
+
+    // Source outside the clip's audible window stays visible, dimmed.
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    if (windowStartX > 0) {
+        ctx.fillRect(0, 0, Math.min(windowStartX, width), height);
+    }
+    if (windowEndX < width) {
+        ctx.fillRect(Math.max(0, windowEndX), 0, width - Math.max(0, windowEndX), height);
     }
 
     const grid = { width, height, beatWidth };
@@ -760,6 +815,8 @@ function drawWaveform(args: DrawArgs): void {
         dpr,
         beatWidth,
         scrollLeft: viewScrollLeft,
+        windowStartX,
+        windowEndX,
         background,
         cssWidth: canvas.style.width,
         cssHeight: canvas.style.height,
