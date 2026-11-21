@@ -235,14 +235,12 @@ impl RecordingUiThread {
         let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
         let (announce, announced) = mpsc::channel();
         let tasks_run = Arc::new(AtomicUsize::new(0));
-        let counted = Arc::clone(&tasks_run);
         let thread = thread::spawn(move || {
             announce
                 .send(thread::current().id())
                 .expect("the UI thread announces itself");
             while let Ok(task) = queued.recv() {
                 task.run();
-                counted.fetch_add(1, Ordering::SeqCst);
             }
         });
         let thread_id = announced.recv().expect("the UI thread starts");
@@ -277,9 +275,13 @@ impl UiThread for RecordingUiThread {
     fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
         let (done, waited) = mpsc::sync_channel(1);
         let queued = Arc::clone(task);
+        let counted = Arc::clone(&self.tasks_run);
         self.work
             .send(UiThreadTask::new(move || {
                 queued.run();
+                // Counted before the answer: the caller reads the count as soon
+                // as it is answered.
+                counted.fetch_add(1, Ordering::SeqCst);
                 let _ = done.send(());
             }))
             .map_err(|_| "the UI thread is gone".to_string())?;
@@ -287,6 +289,46 @@ impl UiThread for RecordingUiThread {
             .recv()
             .map_err(|_| "the UI thread never answered".to_string())
     }
+}
+
+/// Every count below is read straight after the call that ran the task
+/// returns, so a task has to be counted before its caller is answered.
+///
+/// The window between the answer and a late count is a few instructions, so
+/// the loop runs with every core kept busy: preempting the UI thread inside it
+/// is what a loaded CI runner does.
+#[test]
+fn a_ui_thread_task_is_counted_before_its_caller_is_answered() {
+    let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let cores = thread::available_parallelism().map_or(4, usize::from);
+    let spinners: Vec<_> = (0..cores)
+        .map(|_| {
+            let spinning = Arc::clone(&spinning);
+            thread::spawn(move || {
+                while spinning.load(Ordering::Relaxed) {
+                    std::hint::spin_loop();
+                }
+            })
+        })
+        .collect();
+    let ui = RecordingUiThread::start();
+    let mut late_counts = 0;
+    for expected in 1..=20_000 {
+        ui.run_on_ui_thread(&UiThreadTask::new(|| {}))
+            .expect("the UI thread runs the task");
+        if ui.tasks_run() != expected {
+            late_counts += 1;
+            while ui.tasks_run() != expected {
+                thread::yield_now();
+            }
+        }
+    }
+    spinning.store(false, Ordering::Relaxed);
+    for spinner in spinners {
+        spinner.join().expect("a spinner stops");
+    }
+
+    assert_eq!(late_counts, 0, "an answered task must already be counted");
 }
 
 // ── The live instance ───────────────────────────────────────────────────
