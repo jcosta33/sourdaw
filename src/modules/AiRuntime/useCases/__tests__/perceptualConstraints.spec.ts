@@ -2053,6 +2053,20 @@ describe('reading only governed protections and whole object names', () => {
         "there's no need to keep the level of the vocal",
         "you don't have to keep the Keys at the same level",
         "there's no need to leave the low end untouched",
+        // every permission verb, past adverbs and a named person, and "nobody" or "no one"
+        "you don't want to stop the mix from getting wider",
+        "you don't really need to stop the mix from getting wider",
+        "don't feel you need to stop the mix from getting wider",
+        "I don't want to keep the mix from getting wider",
+        "you don't really need to keep the mix from getting wider",
+        'nobody needs to keep the mix from getting wider',
+        'no one needs to keep the mix from getting wider',
+        "you don't even have to keep the mix from getting wider",
+        "you don't ever need to keep the mix from getting wider",
+        "I don't need you to keep the mix from getting wider",
+        "don't bother keeping the mix from getting wider",
+        "don't bother to keep the mix from getting wider",
+        "you don't really need to keep the vocal bright",
     ])('reads nothing from the permission "%s"', (prompt) => {
         expect(compilePerceptualConstraints(prompt, grammarContext('Keys'))).toEqual({
             constraints: [],
@@ -2070,7 +2084,18 @@ describe('reading only governed protections and whole object names', () => {
         ["I don't care about the reverb, keep the vocal bright", [VOCAL_BRIGHT], []],
         ["don't over-compress keep the vocal bright", [VOCAL_BRIGHT], []],
         ["don't over-compress, keep the vocal bright", [VOCAL_BRIGHT], []],
-        ['no fx please keep the vocal bright and the mix from getting wider', [VOCAL_BRIGHT], []],
+        [
+            'no fx please keep the vocal bright and the mix from getting wider',
+            [
+                measured(
+                    'brightness-held-v1',
+                    'keep the vocal bright and the mix from getting wider',
+                    onTracks('vocal')
+                ),
+                measured('stereo-width-not-widened-v1', 'keep the vocal bright and the mix from getting wider', MIX),
+            ],
+            [],
+        ],
         // a kept move after an unrelated negation is the bound the same clause states alone
         [
             'never mind the drums keep the mix from getting wider',
@@ -2088,6 +2113,58 @@ describe('reading only governed protections and whole object names', () => {
             expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints, unsupported });
         }
     );
+
+    // One keep chains kept moves and kept qualities in either order, each part read under it.
+    type ChainPart = [MeasuredPerceptualConstraint['constraintId'], PerceptualConstraintScope];
+    it.each([
+        [
+            'keep the mix from getting wider and the drums from getting louder',
+            [
+                ['stereo-width-not-widened-v1', MIX],
+                ['loudness-not-raised-v1', onTracks('drums')],
+            ],
+        ],
+        [
+            'keep the vocal from getting louder and the drums from getting quieter',
+            [
+                ['loudness-not-raised-v1', onTracks('vocal')],
+                ['loudness-not-lowered-v1', onTracks('drums')],
+            ],
+        ],
+        [
+            'keep the vocal from getting louder, from getting brighter',
+            [
+                ['loudness-not-raised-v1', onTracks('vocal')],
+                ['brightness-not-raised-v1', onTracks('vocal')],
+            ],
+        ],
+        [
+            'keep the mix from getting wider and the vocal bright',
+            [
+                ['stereo-width-not-widened-v1', MIX],
+                ['brightness-held-v1', onTracks('vocal')],
+            ],
+        ],
+        [
+            'keep the vocal from getting brighter and the mix wide',
+            [
+                ['brightness-not-raised-v1', onTracks('vocal')],
+                ['stereo-width-held-v1', MIX],
+            ],
+        ],
+        [
+            'keep the vocal bright and the mix from getting wider',
+            [
+                ['brightness-held-v1', onTracks('vocal')],
+                ['stereo-width-not-widened-v1', MIX],
+            ],
+        ],
+    ] satisfies [string, ChainPart[]][])('reads every part of the chain "%s"', (prompt, parts) => {
+        expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({
+            constraints: parts.map(([constraintId, scope]) => measured(constraintId, prompt, scope)),
+            unsupported: [],
+        });
+    });
 });
 
 function lowEndUntouched(clause: string): PerceptualConstraintReading['constraints'][number] {

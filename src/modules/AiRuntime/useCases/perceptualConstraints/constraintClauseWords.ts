@@ -169,23 +169,39 @@ const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION
 /** A character of the same clause short of its boundary words. */
 export const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})`;
 
-const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'do', 'does', 'did'];
-const PREDICATE_VERB_WORDS = ['needs', 'need', 'wants', 'want', 'gets', 'got'];
+const HAVE_WORDS = ['has', 'have'];
+const NEED_WORDS = ['needs', 'need'];
+const WANT_WORDS = ['wants', 'want'];
+const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', ...HAVE_WORDS, 'had', 'do', 'does', 'did'];
+const PREDICATE_VERB_WORDS = [...NEED_WORDS, ...WANT_WORDS, 'gets', 'got'];
 const FROM_WORD = 'from';
 const TO = 'to';
 const COMPLEMENT_WORDS = [TO, FROM_WORD];
 /** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
 export const FROM = words([FROM_WORD]);
-/** What a negation leads a permitted verb through: "you don't have to keep …", "no need to prevent …". */
-const PERMISSION_LEAD = words([`have ${TO}`, `need ${TO}`]);
+/** The verbs a negation permits a later verb through: "don't have to", "don't want to", "don't bother keeping". */
+const PERMISSION_VERB = words([...HAVE_WORDS, ...NEED_WORDS, ...WANT_WORDS, 'bother']);
+/** The adverbs a negation may carry before what it governs: "don't really need to", "don't even have to". */
+const PERMISSION_ADVERB = words(['really', 'even', 'ever', 'actually']);
+/** "feel", which leads a permission verb as a negation's own verb: "don't feel you need to …". */
+const FEEL = words(['feel']);
+/** The one person a permission may name: "I don't need you to keep …". */
+const PERMITTED_PERSON = words(['you']);
+/** The negations naming nobody, which a permission verb follows: "nobody needs to keep …". */
+const NOBODY = words(['nobody', 'no one']);
+/** A permission a negation leads to the permitted verb through: "feel you need to", "bother to", "have to". */
+const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${PERMISSION_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${words([TO])})?`;
 /**
  * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
- * …") or through a permission ("you don't have to keep …", "there's no need to prevent …"), which
- * permits what a keep, stop, prevent or leave names, so neither a reader nor the net reads a
- * protection there. A negation governing an earlier verb ("without changing the tempo keep the vocal
- * bright") permits nothing.
+ * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
+ * want to keep …", "don't bother keeping …", "nobody needs to keep …"), past any adverb ("you don't
+ * really need to stop …"), which permits what a keep, stop, prevent or leave names, so neither a
+ * reader nor the net reads a protection there. A negation governing an earlier verb ("without
+ * changing the tempo keep the vocal bright") permits nothing.
  */
-export const NOT_PERMITTED = String.raw`(?<!\b${ANY_NEGATION}(?:\s+${PERMISSION_LEAD})?\s+)`;
+export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)`;
+/** The one leading words a move clause names its move through: "sound louder", "getting any wider". */
+export const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
 /**
  * The words opening a predicate or its complement, which an object member never holds, so "the vocal

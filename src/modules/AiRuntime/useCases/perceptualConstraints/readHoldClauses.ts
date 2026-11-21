@@ -2,18 +2,16 @@ import {
     AND_JOIN,
     AND_WORD,
     ANY,
-    BECOMING_VERB,
     CAUSING_VERB,
     CLAUSE_END,
     CLAUSE_HEAD,
+    DIRECTION_LEAD,
     DIRECTION_LIST,
     DOES_NOT,
-    FROM,
     HELD_STATE,
     IN_CLAUSE_CHARACTER,
     KEEP,
     KEEP_VERBS,
-    LINKING_VERB,
     LIST_JOINER,
     MASK_GLYPH,
     MODAL_NEGATION,
@@ -24,7 +22,6 @@ import {
     OBJECT_PREPOSITION,
     PURPOSE_HEAD,
     SCOPE_WORD,
-    STOP_VERB,
     THE,
     THE_SAME,
 } from './constraintClauseWords';
@@ -59,7 +56,6 @@ export type HoldClause = { clause: string; start: number; end: number; parts: Ho
 
 const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
 /** "sound louder" is a louder clause: the linking or becoming verb is never part of the object. */
-const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
 const HOLD_SUFFIX = String.raw`(?:\s+${HELD_STATE})?`;
 const QUALIFIED = String.raw`(?:${HELD_NOUN_QUALIFIER}\s+)?`;
 /** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
@@ -92,16 +88,6 @@ const NOUN_CONTINUATION = new RegExp(
 );
 
 type HoldPattern = { pattern: RegExp; continuation: RegExp | null };
-
-/**
- * "keep the mix from getting louder"; a negation governing the keep or stop permits the move instead.
- * It is read after the kept qualities, so a kept quality before it keeps its own object ("keep the
- * vocal bright and the mix from getting wider" never reads "the vocal bright" as an object here).
- */
-const KEPT_FROM = new RegExp(
-    String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
-    'dgiu'
-);
 
 function holdPattern(source: string, continuation: RegExp | null): HoldPattern {
     return { pattern: new RegExp(source, 'dgiu'), continuation };
@@ -293,17 +279,8 @@ function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldCl
     };
 }
 
-/**
- * The holds read before the kept qualities, or the kept and stopped moves ("keep the mix from getting
- * louder") read after them, on the text the qualities left.
- */
-export type HoldStage = 'before-qualities' | 'kept-moves';
-
-/** Every measured-hold clause of its stage in the order it appears, never two over one span, a readable one first. */
-export function readHoldClauses(masked: string, prompt: string, stage: HoldStage): HoldClause[] {
-    if (stage === 'kept-moves') {
-        return Array.from(masked.matchAll(KEPT_FROM), (match) => readHoldMatch([match], prompt));
-    }
+/** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
+export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
     const readable = HOLD_PATTERNS.flatMap(({ pattern, continuation }) =>
         Array.from(masked.matchAll(pattern), (match) =>
             readHoldMatch(withContinuations(match, continuation, masked), prompt)

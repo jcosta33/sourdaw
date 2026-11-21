@@ -15,8 +15,11 @@ import {
     AND_JOIN,
     AS,
     CLAUSE_END,
+    DIRECTION_LEAD,
+    DIRECTION_LIST,
     FROM,
     HOLDING_KEEP,
+    KEEP,
     KEEP_VERBS,
     LEAVE_VERB,
     LEFT_STATE,
@@ -29,12 +32,14 @@ import {
     NO,
     normalizeObjectText,
     NOT_PERMITTED,
+    OBJECT_LIST,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
     OBJECT_PREPOSITION,
     ROLE_WORD,
     ROLE_WORDS,
     SAME_CLAUSE_CHARACTER,
+    STOP_VERB,
     TERM_JOINER,
     THE,
     WORD_CHARACTER,
@@ -42,6 +47,7 @@ import {
 import {
     CHANGE_NOUN,
     DIRECTION,
+    directionConstraintIds,
     FAMILY_IDS,
     LOW_END_HOLDING_VERB,
     type MeasuredConstraintId,
@@ -363,24 +369,71 @@ function readQualityPart(match: RegExpExecArray, prompt: string, termPattern: Re
     return { start: match.index, object: span === undefined ? '' : prompt.slice(span[0], span[1]), terms };
 }
 
-/** The match and every later object a continuation adds under its keep, with where the last one ends. */
-function readQualityParts(
-    match: RegExpExecArray,
-    unread: string,
-    prompt: string,
-    { continuation, termPattern }: Pick<QualityPattern, 'continuation' | 'termPattern'>
-): { parts: QualityPart[]; end: number } {
-    const parts = [readQualityPart(match, prompt, termPattern)];
-    let end = match.index + match[0].length;
-    continuation.lastIndex = end;
-    let next = continuation.exec(unread);
-    while (next !== null) {
-        parts.push(readQualityPart(next, prompt, termPattern));
-        end = next.index + next[0].length;
-        continuation.lastIndex = end;
-        next = continuation.exec(unread);
+/** A kept move's object, read from the prompt, or the object of the part it continues. */
+type MovePart = { start: number; object: string | null; constraintIds: MeasuredConstraintId[] };
+
+type KeepPart = { kind: 'quality'; part: QualityPart } | { kind: 'move'; part: MovePart };
+
+/** "keep the mix from getting louder": a keep, stop or prevent naming the move it prevents. */
+const KEPT_MOVE = new RegExp(
+    String.raw`${NOT_PERMITTED}\b(?:${KEEP}|${STOP_VERB})\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    'dgiu'
+);
+/** A later move under the same keep, its object its own or the one before: "and the drums from getting louder", ", from getting brighter". */
+const KEPT_MOVE_CONTINUATION = new RegExp(
+    String.raw`${AND_JOIN}(?:${OBJECT_LIST}\s+)?${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${CLAUSE_END}`,
+    'dyiu'
+);
+
+/** The move's own object, or, for "…, from getting brighter", the object of the part it continues. */
+function moveObjectOf(match: RegExpExecArray, prompt: string, before: KeepPart | undefined): string | null {
+    const span = match.indices?.groups?.object;
+    if (span !== undefined) {
+        return prompt.slice(span[0], span[1]);
     }
-    return { parts, end };
+    return before?.part.object ?? null;
+}
+
+function readMovePart(match: RegExpExecArray, prompt: string, before: KeepPart | undefined): KeepPart {
+    const object = moveObjectOf(match, prompt, before);
+    const constraintIds = directionConstraintIds(match.groups?.direction ?? '');
+    return { kind: 'move', part: { start: match.index, object, constraintIds } };
+}
+
+/** A keep part and where it ends in the text. */
+type ReadKeepPart = { part: KeepPart; end: number };
+
+/** The text a keep chain is read from: the unread masked text, the prompt, and the quality continuation. */
+type KeepText = { unread: string; prompt: string } & Pick<QualityPattern, 'continuation' | 'termPattern'>;
+
+/** The part a continuation adds after `last` under the same keep: a kept quality, or a kept move. */
+function readNextKeepPart(text: KeepText, last: ReadKeepPart): ReadKeepPart | null {
+    const { unread, prompt, continuation, termPattern } = text;
+    continuation.lastIndex = last.end;
+    const quality = continuation.exec(unread);
+    if (quality !== null) {
+        const part: KeepPart = { kind: 'quality', part: readQualityPart(quality, prompt, termPattern) };
+        return { part, end: quality.index + quality[0].length };
+    }
+    KEPT_MOVE_CONTINUATION.lastIndex = last.end;
+    const move = KEPT_MOVE_CONTINUATION.exec(unread);
+    if (move !== null) {
+        return { part: readMovePart(move, prompt, last.part), end: move.index + move[0].length };
+    }
+    return null;
+}
+
+/** The opening part and every later quality or move a continuation adds under its keep, with where the last one ends. */
+function readKeepParts(first: ReadKeepPart, text: KeepText): { parts: KeepPart[]; end: number } {
+    const parts = [first.part];
+    let last = first;
+    let next = readNextKeepPart(text, last);
+    while (next !== null) {
+        parts.push(next.part);
+        last = next;
+        next = readNextKeepPart(text, last);
+    }
+    return { parts, end: last.end };
 }
 
 /** One kept term of a quality clause, with the clause it is quoted by and the part holding its object. */
@@ -409,22 +462,63 @@ function pushQualityTerm(
 }
 
 /**
- * `unread` is the masked text with the hold clauses blanked, so no quality is read twice; a pronoun's
+ * Each keep's opening part in reading order: a kept quality, or a kept move where no quality opens at
+ * the same keep, so "keep the vocal bright and the mix from getting wider" opens on the quality and
+ * never reads "the vocal bright and the mix" as a kept move's object.
+ */
+function readKeepOpenings({ unread, prompt, termPattern }: KeepText, qualityOpening: RegExp): ReadKeepPart[] {
+    const qualities = Array.from(unread.matchAll(qualityOpening), (match) => ({
+        part: { kind: 'quality', part: readQualityPart(match, prompt, termPattern) } satisfies KeepPart,
+        end: match.index + match[0].length,
+    }));
+    const moves = Array.from(unread.matchAll(KEPT_MOVE), (match) => ({
+        part: readMovePart(match, prompt, undefined),
+        end: match.index + match[0].length,
+    }));
+    return [...qualities, ...moves].toSorted((left, right) => left.part.part.start - right.part.part.start);
+}
+
+function pushKeepPart(
+    reader: RequestReader,
+    clause: string,
+    keep: KeepPart,
+    descriptorOf: QualityPattern['descriptorOf']
+) {
+    if (keep.kind === 'move') {
+        pushMeasuredHolds(reader, clause, { ...keep.part, unreadable: null });
+        return;
+    }
+    const { part } = keep;
+    // "keep the lo-fi vibe" states a quality with no object to hold it on.
+    if (normalizeObjectText(part.object).length === 0) {
+        return;
+    }
+    for (const term of part.terms) {
+        pushQualityTerm(reader, { term, clause, part }, descriptorOf);
+    }
+}
+
+/**
+ * Kept qualities and kept moves, each keep with every part it chains into ("keep the vocal bright and
+ * the mix from getting wider", "keep the mix from getting wider and the drums from getting louder").
+ * `unread` is the masked text with the hold clauses blanked, so nothing is read twice; a pronoun's
  * scope is still judged against the whole masked request. Returns the spans it read.
  */
-function readQualityConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
+function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
     const { prompt } = reader;
     const { pattern, continuation, termPattern, descriptorOf } = readQualityPattern();
+    const text: KeepText = { unread, prompt, continuation, termPattern };
     const spans: ConsumedSpan[] = [];
-    for (const match of unread.matchAll(pattern)) {
-        const { parts, end } = readQualityParts(match, unread, prompt, { continuation, termPattern });
-        spans.push({ start: match.index, end });
-        const clause = prompt.slice(match.index, end).trim();
-        // "keep the lo-fi vibe" states a quality with no object to hold it on.
-        for (const part of parts.filter((entry) => normalizeObjectText(entry.object).length > 0)) {
-            for (const term of part.terms) {
-                pushQualityTerm(reader, { term, clause, part }, descriptorOf);
-            }
+    for (const opening of readKeepOpenings(text, pattern)) {
+        const start = opening.part.part.start;
+        if (spans.some((span) => start < span.end)) {
+            continue;
+        }
+        const { parts, end } = readKeepParts(opening, text);
+        spans.push({ start, end });
+        const clause = prompt.slice(start, end).trim();
+        for (const part of parts) {
+            pushKeepPart(reader, clause, part, descriptorOf);
         }
     }
     return spans;
@@ -448,16 +542,10 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     const reader: RequestReader = { masked, prompt, context, reading };
     const lowEnd = readLowEndConstraints(masked, prompt, context, reading);
-    const holds = readHoldClauses(masked, prompt, 'before-qualities');
+    const holds = readHoldClauses(masked, prompt);
     pushHoldClauses(reader, holds);
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    const unheld = maskClauses(masked, holds);
-    const qualities = readQualityConstraints(unheld, reader);
-    // "keep the vocal bright and the mix from getting wider" keeps its quality, never an object "the vocal bright".
-    const keptMoves = readHoldClauses(maskClauses(unheld, qualities), prompt, 'kept-moves');
-    pushHoldClauses(reader, keptMoves);
-    reading.unsupported.push(
-        ...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...qualities, ...keptMoves])
-    );
+    const keeps = readKeepConstraints(maskClauses(masked, holds), reader);
+    reading.unsupported.push(...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...keeps]));
     return unionPerceptualConstraintReadings(reading);
 }
