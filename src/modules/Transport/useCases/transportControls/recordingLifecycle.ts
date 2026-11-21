@@ -105,10 +105,32 @@ const commitsInFlight = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
+let watchingOverdubLanding = false;
+
+/**
+ * MIDI owns the landing registry and has no change signal, so a published landing is
+ * watched through its own settle wait and republished once it settles.
+ */
+function watchOverdubLanding(): void {
+    if (watchingOverdubLanding) {
+        return;
+    }
+    watchingOverdubLanding = true;
+    void waitForOverdubLanding().then(() => {
+        watchingOverdubLanding = false;
+        publishRecordingStartState();
+    });
+}
+
 /** Mirrors what is starting or closing into the runtime store handlers read. */
 function publishRecordingStartState(): void {
+    const landing = isOverdubLanding();
+    if (landing) {
+        watchOverdubLanding();
+    }
     recordingStartStore.set(
-        pendingRecordingStartToken !== null ||
+        landing ||
+            pendingRecordingStartToken !== null ||
             countInTimerId !== null ||
             closingStops.size > 0 ||
             commitsInFlight.size > 0
@@ -186,7 +208,6 @@ async function waitForClosing(): Promise<void> {
         for (const settled of closing) {
             closingStops.delete(settled);
         }
-        publishRecordingStartState();
     }
 }
 
