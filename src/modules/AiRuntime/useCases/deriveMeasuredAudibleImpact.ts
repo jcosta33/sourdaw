@@ -6,6 +6,9 @@ export const AUDIBLE_CLAIM_TOO_LARGE_REASON = 'The measurement moved more figure
 
 export const NO_MEASURED_CHANGE_REASON = 'The measured preview moved no figure, so the plan claims no audible change.';
 
+export const NO_COMPARED_FIGURE_REASON =
+    'The measured preview could compare no figure, so the plan claims no audible change.';
+
 export const UNDISPLAYED_MEASUREMENT_REASON =
     'The proofs measured figures the approval card does not show, so the plan does not list them.';
 
@@ -28,7 +31,10 @@ export function deriveMeasuredAudibleImpact(input: DeriveMeasuredAudibleImpactIn
         return null;
     }
     if (measurement.metrics.length === 0) {
-        return { status: 'not-claimed', reason: NO_MEASURED_CHANGE_REASON };
+        return {
+            status: 'not-claimed',
+            reason: measurement.comparedFigure ? NO_MEASURED_CHANGE_REASON : NO_COMPARED_FIGURE_REASON,
+        };
     }
     // Never truncated: a list that leaves figures out would claim less than the card shows as moved.
     if (measurement.metrics.length > MAX_AUDIBLE_CLAIM_METRICS) {

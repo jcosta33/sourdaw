@@ -681,20 +681,29 @@ describe('the plan’s audible claim', () => {
                 deltas: { rms: compared('dBFS', 0), truePeak: compared('dBTP', 0) },
             }),
         ],
-        [
-            'every entry is incomparable',
-            vocalTarget({
-                deltas: {
-                    rms: { status: 'incomparable', reason: 'The rms is not comparable here.' },
-                    truePeak: { status: 'incomparable', reason: 'The true peak is not comparable here.' },
-                },
-            }),
-        ],
     ])('says the measured preview moved no figure when %s', (_name, target) => {
         proposeCard({ gain: 0.7, preview: previewOf([target]) });
         expect(audible()).toEqual({
             status: 'not-claimed',
             reason: 'The measured preview moved no figure, so the plan claims no audible change.',
+        });
+    });
+
+    it('says the measured preview could compare no figure when every entry is incomparable', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([
+                vocalTarget({
+                    deltas: {
+                        rms: { status: 'incomparable', reason: 'The rms is not comparable here.' },
+                        truePeak: { status: 'incomparable', reason: 'The true peak is not comparable here.' },
+                    },
+                }),
+            ]),
+        });
+        expect(audible()).toEqual({
+            status: 'not-claimed',
+            reason: 'The measured preview could compare no figure, so the plan claims no audible change.',
         });
     });
 
@@ -858,13 +867,6 @@ describe('the plan’s audible claim', () => {
         expect(audible().status).toBe('measured');
         proposeCard({ gain: 0.6, withoutGoalState: true });
         expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
-    });
-
-    it('writes nothing for a card with no goal state and no claim when the plan already claims none', () => {
-        proposeCard({ gain: 0.7, withoutGoalState: true });
-        const before = agentRunLifecycle.get(RUN_ID)?.plan;
-        proposeCard({ gain: 0.6, withoutGoalState: true });
-        expect(agentRunLifecycle.get(RUN_ID)?.plan).toEqual(before);
     });
 
     it('claims the new measurement after a re-preview, and nothing once a later re-preview carries none', () => {

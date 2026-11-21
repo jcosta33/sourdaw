@@ -15,7 +15,7 @@ import { createStemImportConfirmationResourceLease } from '../agentReference/cre
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
-import { NO_AUDIBLE_CLAIM_REASON, UNDISPLAYED_MEASUREMENT_REASON } from '../deriveMeasuredAudibleImpact';
+import { UNDISPLAYED_MEASUREMENT_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readMetricCreativeAuthorityIds } from '../readMetricCreativeAuthorityIds';
@@ -128,20 +128,12 @@ function deriveCardClaim(
     return deriveAudibleImpact(evidence);
 }
 
-type RunPlan = NonNullable<NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan']>;
-
-function planClaimsNothing(plan: RunPlan): boolean {
-    const { audible } = plan.expectedImpact;
-    return audible.status === 'not-claimed' && audible.reason === NO_AUDIBLE_CLAIM_REASON;
-}
-
 /**
  * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
  * this exact batch: the predictions of its frozen goals with their verification against the bound
- * measurement, or the measured figures of a goalless plan. A card with neither goal state nor claim
- * writes nothing only when the plan already carries the plain no-claim reason. A re-preview with no
- * goals writes no plan before it persists, so the plan may still hold the earlier batch's claim, and
- * this write is the one that resets it.
+ * measurement, or the measured figures of a goalless plan. Every persisted card rewrites the plan's
+ * claim from this batch's own evidence, so a re-preview with no goals, which writes no plan before it
+ * persists, never keeps the earlier batch's claim, and the plan's revision stays current.
  */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
@@ -161,9 +153,6 @@ function recordConfirmationMetricGoalPlan(
         proofPreviews: state?.proofs.map((proof) => proof.preview) ?? [],
     };
     const claim = deriveCardClaim(evidence, input.measuredPreview !== undefined && measuredPreview === undefined);
-    if (metricGoalState === undefined && claim === null && planClaimsNothing(run.plan)) {
-        return;
-    }
     agentRunLifecycle.recordPlan({
         runId: input.runId,
         summary: run.plan.summary,
