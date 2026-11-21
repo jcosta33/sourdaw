@@ -5,7 +5,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { executeAppAction, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -655,21 +655,115 @@ describe('the plan’s audible claim', () => {
         expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak']);
     });
 
-    it('claims nothing when every compared metric held', () => {
+    it.each([
+        [
+            'every compared metric held',
+            vocalTarget({
+                preview: {
+                    rms: entry('dBFS', -20.123456789),
+                    truePeak: entry('dBTP', -3.25),
+                    crestFactor: entry('dB', 9.5),
+                },
+                deltas: { rms: compared('dBFS', 0), truePeak: compared('dBTP', 0) },
+            }),
+        ],
+        [
+            'every entry is incomparable',
+            vocalTarget({
+                deltas: {
+                    rms: { status: 'incomparable', reason: 'The rms is not comparable here.' },
+                    truePeak: { status: 'incomparable', reason: 'The true peak is not comparable here.' },
+                },
+            }),
+        ],
+    ])('says the measured preview moved no figure when %s', (_name, target) => {
+        proposeCard({ gain: 0.7, preview: previewOf([target]) });
+        expect(audible()).toEqual({
+            status: 'not-claimed',
+            reason: 'The measured preview moved no figure, so the plan claims no audible change.',
+        });
+    });
+
+    it('says the measured preview moved no figure when only the metric-goal proofs measured the batch', () => {
+        proposeCard({
+            gain: 0.7,
+            proofPreviews: [previewOf([vocalTarget({ deltas: { rms: compared('dBFS', 0) } })])],
+        });
+        expect(audible()).toEqual({
+            status: 'not-claimed',
+            reason: 'The measured preview moved no figure, so the plan claims no audible change.',
+        });
+    });
+
+    it('does not claim a figure whose baseline fails the unit projection while the preview passes', () => {
         proposeCard({
             gain: 0.7,
             preview: previewOf([
                 vocalTarget({
-                    preview: {
-                        rms: entry('dBFS', -20.123456789),
-                        truePeak: entry('dBTP', -3.25),
-                        crestFactor: entry('dB', 9.5),
+                    baseline: { rms: entry('LUFS', -20), truePeak: entry('dBTP', -3), crestFactor: entry('dB', 9) },
+                    preview: { rms: entry('dBFS', -17), truePeak: entry('dBTP', -2), crestFactor: entry('dB', 8) },
+                    deltas: {
+                        rms: compared('dBFS', 3),
+                        truePeak: compared('dBTP', 1),
+                        crestFactor: compared('dB', -1),
                     },
-                    deltas: { rms: compared('dBFS', 0), truePeak: compared('dBTP', 0) },
                 }),
             ]),
         });
+        const claim = audible();
+        if (claim.status !== 'measured') {
+            throw new Error('The metrics whose baseline matches are still claimed.');
+        }
+        expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak', 'crestFactor']);
+    });
+
+    describe('a card whose own preview did not bind the persisted batch', () => {
+        const proofOfMovedRms = [previewOf([vocalTarget()])];
+
+        it('does not list the figures of proofs the card does not display', () => {
+            proposeCard({
+                gain: 0.7,
+                preview: (bound) => ({ ...previewOf([vocalTarget()])(bound), batchContentHash: 'another-batch' }),
+                proofPreviews: proofOfMovedRms,
+            });
+            expect(audible()).toEqual({
+                status: 'not-claimed',
+                reason: 'The proofs measured figures the approval card does not show, so the plan does not list them.',
+            });
+        });
+
+        it('claims nothing more than the plain no-claim reason when no proof is bound either', () => {
+            proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]), foreignHash: true });
+            expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+        });
+
+        it('still claims from the proofs of a card that was offered no preview at all', () => {
+            proposeCard({ gain: 0.7, proofPreviews: proofOfMovedRms });
+            expect(audible().status).toBe('measured');
+        });
+    });
+
+    describe('the plan revision across the claim writes', () => {
+        it.each([
+            ['a claim', { preview: previewOf([vocalTarget()]) }],
+            ['a goal state and no claim', { proofPreviews: [] }],
+            ['no goal state and no claim', {}],
+        ])('is the revision of the card persisted with %s', async (_name, measurement) => {
+            const planned = captureProjectRevision();
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: 'vocal', name: 'Renamed Vocal' } });
+            const revision = captureProjectRevision();
+            expect(revision).not.toBe(planned);
+            proposeCard({ gain: 0.7, ...measurement });
+            expect(agentRunLifecycle.get(RUN_ID)?.plan?.revision).toBe(revision);
+        });
+    });
+
+    it('replaces the no-figure-moved reason with the plain no-claim reason on a later unmeasured card', () => {
+        proposeCard({ gain: 0.7, preview: previewOf([vocalTarget({ deltas: { rms: compared('dBFS', 0) } })]) });
         expect(audible().status).toBe('not-claimed');
+        expect(audible()).not.toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+        proposeCard({ gain: 0.6 });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
     });
 
     it('carries only not-claimed for a card with no measured preview', () => {
@@ -866,6 +960,17 @@ describe('the plan’s audible claim', () => {
             expect(audible()).toEqual({ status: 'not-claimed', reason: AUDIBLE_CLAIM_TOO_LARGE_REASON });
             proposeCard({ gain: 0.6 });
             expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+        });
+
+        it('says only that the figures are too many to list, since a vibe-run batch card shows none', () => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS + 1))],
+            });
+            expect(audible()).toEqual({
+                status: 'not-claimed',
+                reason: 'The measurement moved more figures than a plan can list.',
+            });
         });
 
         it('claims nothing past the limit, says why, and keeps the run across a write and reload', () => {

@@ -15,7 +15,7 @@ import { createStemImportConfirmationResourceLease } from '../agentReference/cre
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
-import { NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
+import { UNDISPLAYED_MEASUREMENT_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readMetricCreativeAuthorityIds } from '../readMetricCreativeAuthorityIds';
@@ -104,11 +104,24 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
     });
 }
 
+function deriveWithoutProofs(
+    evidence: Parameters<typeof deriveAudibleImpact>[0]
+): ReturnType<typeof deriveAudibleImpact> {
+    const claim = deriveAudibleImpact({ ...evidence, proofPreviews: [] });
+    if (claim !== null) {
+        return claim;
+    }
+    if (deriveAudibleImpact(evidence) === null) {
+        return null;
+    }
+    return { status: 'not-claimed', reason: UNDISPLAYED_MEASUREMENT_REASON };
+}
+
 /**
  * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
  * this exact batch: the predictions of its frozen goals with their verification against the bound
- * measurement, or the measured figures of a goalless plan. A plan whose earlier claim the new card
- * does not repeat is rewritten too, so the claim never outlives its measurement.
+ * measurement, or the measured figures of a goalless plan. A card with neither goal state nor claim
+ * writes nothing: the plan it opened with already carries no claim of an earlier batch.
  */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
@@ -120,20 +133,17 @@ function recordConfirmationMetricGoalPlan(
     }
     const { metricGoalState, measuredPreview } = confirmation.approvalSnapshot;
     const state = metricGoalStateCodec(metricGoalState);
-    const claim = deriveAudibleImpact({
+    const evidence = {
         state,
         commandBatch: input.commandBatch,
         envelope: input.parsedCommandBatch.envelope,
         snapshotPreview: measuredPreview,
         proofPreviews: state?.proofs.map((proof) => proof.preview) ?? [],
-    });
-    const audible = run.plan.expectedImpact.audible;
-    if (
-        metricGoalState === undefined &&
-        claim === null &&
-        audible.status === 'not-claimed' &&
-        audible.reason === NO_AUDIBLE_CLAIM_REASON
-    ) {
+    };
+    // A preview the card was offered but could not keep shows no figure, so proofs may not supply them.
+    const cardDroppedPreview = input.measuredPreview !== undefined && measuredPreview === undefined;
+    const claim = cardDroppedPreview ? deriveWithoutProofs(evidence) : deriveAudibleImpact(evidence);
+    if (metricGoalState === undefined && claim === null) {
         return;
     }
     agentRunLifecycle.recordPlan({
