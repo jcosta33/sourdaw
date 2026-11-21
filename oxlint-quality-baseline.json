@@ -7293,13 +7293,7 @@
     },
     "src/modules/Arrangement/useCases/comping/compRegionInterval.ts": {
         "eslint/complexity": {
-            "count": 4
-        },
-        "eslint/max-params": {
-            "count": 1
-        },
-        "typescript/no-non-null-assertion": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/Arrangement/useCases/comping/compRegionIntervalValidation.ts": {
@@ -7351,7 +7345,7 @@
     },
     "src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         },
         "typescript/no-non-null-assertion": {
             "count": 2
@@ -8659,11 +8653,6 @@
             "count": 1
         }
     },
-    "src/modules/AudioEngine/repositories/devices/dynamics/__tests__/createSidechainCompressorFallback.spec.ts": {
-        "sourdaw-craft/no-spread-clone-array-method": {
-            "count": 1
-        }
-    },
     "src/modules/AudioEngine/repositories/devices/modulation/applyChorusParams.ts": {
         "eslint/complexity": {
             "count": 1
@@ -9874,11 +9863,6 @@
     },
     "src/modules/AudioEngine/useCases/offlineRender/renderWithTimeout.ts": {
         "sourdaw-craft/no-silent-catch": {
-            "count": 1
-        }
-    },
-    "src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixPlan.ts": {
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
@@ -18259,7 +18243,7 @@
             "count": 1
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 16
+            "count": 14
         },
         "typescript/no-non-null-assertion": {
             "count": 3

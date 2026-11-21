@@ -127,23 +127,27 @@ impl SourdawNative {
     /// have somewhere to push.
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Result<Self> {
-        reason(RuntimeScope::select(None))?;
+        reason(RuntimeScope::select(None).map_err(|error| error.to_string()))?;
         reason(Self::build(on_event))
     }
 
     /// Main-process-only selection. A legacy constructor cannot accept this contract.
     #[napi(factory)]
     pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
-        reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
+        reason(
+            RuntimeScope::select(Some(std::path::Path::new(&root)))
+                .map_err(|error| error.to_string()),
+        )?;
         reason(Self::build(on_event))
     }
 
     #[napi]
     pub fn runtime_scope_info_v1(&self) -> Result<Value> {
-        let path = |relative| reason(RuntimeScope::path(relative));
+        let path =
+            |relative| reason(RuntimeScope::path(relative).map_err(|error| error.to_string()));
         Ok(serde_json::json!({
             "version": 1,
-            "root": reason(RuntimeScope::root())?,
+            "root": reason(RuntimeScope::root().map_err(|error| error.to_string()))?,
             "data": path("native/data")?,
             "private": path("native/data/private")?,
             "cache": path("native/cache")?,
@@ -163,10 +167,14 @@ impl SourdawNative {
         // has nothing to correct the caller's spelling against.
         commands::filesystem::ensure_private_state_directory();
         let export_files = commands::filesystem::private_state_directory()
+            .map_err(|error| error.to_string())
             .and_then(|directory| {
                 directory.ok_or_else(|| "Private export state is unavailable".to_string())
             })
-            .and_then(|directory| commands::filesystem::ExportFileRegistry::open(&directory))
+            .and_then(|directory| {
+                commands::filesystem::ExportFileRegistry::open(&directory)
+                    .map_err(|error| error.to_string())
+            })
             .map(Mutex::new);
 
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
@@ -301,7 +309,7 @@ impl SourdawNative {
             Ok(registry) => registry
                 .lock()
                 .map_err(|_| "Export registry lock poisoned".to_string())
-                .and_then(|mut registry| registry.abort_all()),
+                .and_then(|mut registry| registry.abort_all().map_err(|error| error.to_string())),
             Err(_) => Ok(()), // No transaction feature owns files; ordinary shutdown still runs.
         };
         let report = self.singletons.shutdown(Some(windows.as_ref()));
@@ -497,7 +505,11 @@ impl SourdawNative {
         let mut registry = registry
             .lock()
             .map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
-        reason(registry.begin(path, self.singletons.app_state.session_generation()))
+        reason(
+            registry
+                .begin(path, self.singletons.app_state.session_generation())
+                .map_err(|error| error.to_string()),
+        )
     }
 
     #[napi]
@@ -509,11 +521,15 @@ impl SourdawNative {
         let mut registry = registry
             .lock()
             .map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
-        reason(registry.append(
-            &token,
-            &data,
-            self.singletons.app_state.session_generation(),
-        ))
+        reason(
+            registry
+                .append(
+                    &token,
+                    &data,
+                    self.singletons.app_state.session_generation(),
+                )
+                .map_err(|error| error.to_string()),
+        )
     }
 
     #[napi]
@@ -525,7 +541,11 @@ impl SourdawNative {
         let mut registry = registry
             .lock()
             .map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
-        reason(registry.seal(&token, self.singletons.app_state.session_generation()))
+        reason(
+            registry
+                .seal(&token, self.singletons.app_state.session_generation())
+                .map_err(|error| error.to_string()),
+        )
     }
 
     #[napi]
@@ -537,7 +557,11 @@ impl SourdawNative {
         let mut registry = registry
             .lock()
             .map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
-        reason(registry.commit(&tokens, self.singletons.app_state.session_generation()))
+        reason(
+            registry
+                .commit(&tokens, self.singletons.app_state.session_generation())
+                .map_err(|error| error.to_string()),
+        )
     }
 
     #[napi]
@@ -549,7 +573,7 @@ impl SourdawNative {
         let mut registry = registry
             .lock()
             .map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
-        reason(registry.abort(&tokens))
+        reason(registry.abort(&tokens).map_err(|error| error.to_string()))
     }
 
     #[napi]

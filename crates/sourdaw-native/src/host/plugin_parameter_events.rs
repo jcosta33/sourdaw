@@ -275,7 +275,7 @@ fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
 
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "parameter flush") {
         let reached = runtime.try_with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
-            Ok(plugin.flush_parameters_off_audio_thread())
+            Ok::<_, std::convert::Infallible>(plugin.flush_parameters_off_audio_thread())
         });
 
         match reached {
@@ -293,7 +293,11 @@ fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
 /// control path busy right now — the audio thread is inside a block, and the next
 /// tick finds it free — and an instance unloading or retired, which would refuse
 /// every retry and turn the hint into a tick-forever spin.
-fn retry_unanswered_flush(runtime: &SharedHostedPlugin, instance_id: &str, error: &str) {
+fn retry_unanswered_flush(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    error: &dyn std::fmt::Display,
+) {
     if runtime.ensure_public_control_allowed().is_err() {
         return;
     }
@@ -568,7 +572,7 @@ mod tests {
                 .with_control(Duration::from_secs(5), |_plugin| {
                     holding.send(()).expect("the test is still listening");
                     released.recv().expect("the test releases the gate");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("a live fixture accepts control");
         });
@@ -755,7 +759,7 @@ mod tests {
                 .with_control(Duration::from_secs(5), |_plugin| {
                     holding.send(()).expect("the test is still listening");
                     released.recv().expect("the test releases the gate");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("a live fixture accepts control");
         });
