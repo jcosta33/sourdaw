@@ -81,6 +81,8 @@ describe('handleCreateBus', () => {
                 name: 'Reverb Bus',
                 kind: 'bus',
                 gain: 1,
+                color: expect.any(String),
+                initialAlternativeId: expect.any(String),
             },
         });
         expect(action.payload).toEqual({
@@ -127,6 +129,8 @@ describe('handleCreateBus', () => {
                 id: busId,
                 name: 'Drum Bus',
                 kind: 'bus',
+                color: expect.any(String),
+                initialAlternativeId: expect.any(String),
             },
         });
         expect(description).toEqual({

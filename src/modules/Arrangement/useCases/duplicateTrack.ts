@@ -3,6 +3,7 @@ import { duplicateClipAutomationBatch } from '#/modules/Automation/useCases';
 import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { applyDuplicatedTrackFields } from '../models/DuplicatedTrackFields';
 import { type Clip, type Track } from '../models/Track';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { getTrackById } from '../repositories/track/getTrackById';
@@ -110,29 +111,21 @@ export function duplicateTrack(trackId: string, options: DuplicateTrackOptions =
         }
 
         // 4. Update track with copied devices, sends, and alternatives
-        updateTrack(newTrack.id, (time) => ({
-            ...time,
-            gain: source.gain,
-            pan: source.pan,
-            color: source.color,
-            devices: source.devices.map((data) => ({
-                ...data,
-                id: `dev-dup-${crypto.randomUUID()}`,
-                // A duplicated native plugin must not share the source's live host
-                // instance: it gets its own id, minted inside this write so undo and
-                // collaborators see it, while the copied externalStateChunk lets the
-                // instance activated after commit hydrate to the same sound (PH-3).
-                externalInstanceId: copyExternalInstanceId(data),
-            })),
-            sends: [...source.sends],
-            alternatives: newAlternatives,
-            activeAlternativeId: newActiveAlternativeId,
-            clips: newAlternatives.find((alt) => alt.id === newActiveAlternativeId)?.clips ?? [],
-            vcaGroupId: source.vcaGroupId,
-            outputId: source.outputId,
-            followChordTrack: source.followChordTrack,
-            notes: source.notes,
-        }));
+        updateTrack(newTrack.id, (time) =>
+            applyDuplicatedTrackFields(time, source, {
+                devices: source.devices.map((data) => ({
+                    ...data,
+                    id: `dev-dup-${crypto.randomUUID()}`,
+                    // A duplicated native plugin must not share the source's live host
+                    // instance: it gets its own id, minted inside this write so undo and
+                    // collaborators see it, while the copied externalStateChunk lets the
+                    // instance activated after commit hydrate to the same sound (PH-3).
+                    externalInstanceId: copyExternalInstanceId(data),
+                })),
+                alternatives: newAlternatives,
+                activeAlternativeId: newActiveAlternativeId,
+            })
+        );
 
         if (midiClipCopies.length > 0) {
             rollbacks.push(duplicateMidiClipData({ copies: midiClipCopies }));

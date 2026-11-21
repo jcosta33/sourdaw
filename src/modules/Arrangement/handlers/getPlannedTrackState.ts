@@ -1,38 +1,15 @@
 import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { createTrack, type Track } from '../models/Track';
+import { type Track } from '../models/Track';
 import { decodeTrackSnapshot } from '../stores/trackStore';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 import { planDefaultTrackName } from './planDefaultTrackName';
+import { createPlannedDuplicate, createPlannedTrack } from './plannedTrackConstruction';
 import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPriorBatchActions';
+import { ensureStableCreationInputs, pinCreationIdentity } from './track/pinTrackCreationInputs';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
-
-function createPlannedTrack(input: {
-    id: string;
-    name: string;
-    kind: 'audio' | 'midi' | 'bus' | 'folder';
-    gain: number;
-    initialDeviceId?: string;
-    parentId?: string;
-    outputId?: string;
-    withoutDefaultDevice?: boolean;
-}): Track {
-    const alternativeId = `planned-alternative-${input.id}`;
-    return createTrack({
-        id: input.id,
-        name: input.name,
-        kind: input.kind,
-        gain: input.gain,
-        color: '#000000',
-        initialAlternativeId: alternativeId,
-        initialDeviceId: input.initialDeviceId,
-        parentId: input.parentId,
-        outputId: input.outputId,
-        withoutDefaultDevice: input.withoutDefaultDevice,
-    });
-}
 
 function noPlannedTrack(): null {
     return null;
@@ -47,6 +24,8 @@ function planAddedTrack(
     if (action.payload.id !== trackId || action.payload.kind === 'master') {
         return null;
     }
+    ensureStableCreationInputs(action);
+    const identity = pinCreationIdentity(action.payload);
     return projectTrackThroughPriorBatchActions(
         createPlannedTrack({
             id: trackId,
@@ -55,47 +34,59 @@ function planAddedTrack(
                 planDefaultTrackName(action.payload.kind, { actions: context.actions, actionIndex }),
             kind: action.payload.kind,
             gain: 0.8,
+            ...identity,
             initialDeviceId: action.payload.initialDeviceId,
             parentId: action.payload.parentId,
             outputId: action.payload.outputId,
             withoutDefaultDevice: action.payload.withoutDefaultDevice,
         }),
-        context
+        context,
+        actionIndex + 1
     );
 }
 
 function planCreatedBus(
     action: ActionOf<'createBus'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.busId !== trackId) {
         return null;
     }
+    const identity = pinCreationIdentity(action.payload);
     return projectTrackThroughPriorBatchActions(
         createPlannedTrack({
             id: trackId,
             name: action.payload.name,
             kind: 'bus',
             gain: action.payload.initialGain ?? 0.8,
+            ...identity,
         }),
-        context
+        context,
+        actionIndex + 1
     );
 }
 
 function planCreatedFolder(
     action: ActionOf<'createFolder'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.folderTrackId !== trackId) {
         return null;
     }
     return projectTrackThroughPriorBatchActions(
-        createPlannedTrack({ id: trackId, name: action.payload.name, kind: 'folder', gain: 0.8 }),
-        context
+        createPlannedTrack({
+            id: trackId,
+            name: action.payload.name,
+            kind: 'folder',
+            gain: 0.8,
+            ...pinCreationIdentity(action.payload),
+        }),
+        context,
+        actionIndex + 1
     );
 }
 
@@ -113,20 +104,21 @@ function planDuplicatedTrack(
     if (source === null) {
         return null;
     }
-    return projectTrackThroughPriorBatchActions({ ...structuredClone(source), id: trackId }, context);
+    const copy = createPlannedDuplicate(source, trackId);
+    return copy === null ? null : projectTrackThroughPriorBatchActions(copy, context, actionIndex + 1);
 }
 
 function planRestoredTrack(
     action: ActionOf<'restoreTrack'>,
     context: HandlerValidationContext,
-    _actionIndex: number,
+    actionIndex: number,
     trackId: string
 ): Track | null {
     if (action.payload.trackId !== trackId) {
         return null;
     }
     const restored = decodeTrackSnapshot(action.payload.trackSnapshot);
-    return restored === null ? null : projectTrackThroughPriorBatchActions(restored, context);
+    return restored === null ? null : projectTrackThroughPriorBatchActions(restored, context, actionIndex + 1);
 }
 
 // Every action type states whether it creates the planned track: a new action does not compile until it does.
