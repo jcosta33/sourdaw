@@ -1118,4 +1118,123 @@ mod tests {
             "the acknowledged session leaves room for a new editor: {reopened:?}"
         );
     }
+
+    /// A window whose thread refuses its first hop, as a shell mid-teardown does,
+    /// and carries every later one out.
+    struct WindowRefusingItsFirstHop {
+        inner: Arc<dyn PluginEditorWindow>,
+        refused: AtomicBool,
+    }
+
+    impl PluginEditorWindow for WindowRefusingItsFirstHop {
+        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+            self.inner.native_handle_ptr()
+        }
+
+        fn set_size(&self, width: u32, height: u32) {
+            self.inner.set_size(width, height);
+        }
+
+        fn set_resizable(&self, resizable: bool) {
+            self.inner.set_resizable(resizable);
+        }
+
+        fn show_and_focus(&self) {
+            self.inner.show_and_focus();
+        }
+
+        fn destroy(&self) {
+            self.inner.destroy();
+        }
+
+        fn show(&self) {
+            self.inner.show();
+        }
+
+        fn hide(&self) {
+            self.inner.hide();
+        }
+
+        fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            if !self.refused.swap(true, Ordering::SeqCst) {
+                return Err("the shell's thread is not taking work".to_string());
+            }
+            self.inner.run_on_ui_thread(work)
+        }
+    }
+
+    /// A hop the window's thread refused never ran, so the plugin's ask is still
+    /// owed an answer: the next tick makes it, rather than leaving a dead window
+    /// standing and the editor impossible to reopen.
+    #[test]
+    fn an_ask_whose_hop_the_window_thread_refused_is_answered_on_the_next_tick() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let window: Arc<dyn PluginEditorWindow> = Arc::new(WindowRefusingItsFirstHop {
+            inner: Arc::from(
+                shell
+                    .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                    .expect("the shell opens a window"),
+            ),
+            refused: AtomicBool::new(false),
+        });
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(true);
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(
+            shell.window_calls(),
+            Vec::new(),
+            "a refused hop answers nothing"
+        );
+        assert!(
+            take_pending_editor_resize_signal(),
+            "the unanswered ask raises the hint again for the next tick"
+        );
+        daw_plugin_host::signal_pending_editor_resize();
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+    }
+
+    /// A plugin that ended its editor and asked for nothing else is answered by
+    /// the acknowledgement alone: the window is torn down.
+    #[test]
+    fn a_closed_ask_with_no_other_asks_tears_the_editor_down() {
+        let _guard = hint_guard();
+        let shell = DedicatedUiWindowHost::start();
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), true);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        let window: Arc<dyn PluginEditorWindow> = Arc::from(
+            shell
+                .create_editor_window("plugin-editor-inst-1", "Drain Fixture", "inst-1")
+                .expect("the shell opens a window"),
+        );
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        wrapper.set_editor_window(editor_window_host(&window));
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture opens its editor");
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_editor_closed(false);
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+
+        tick(&engine_plugins, &RecordingEventSink::default());
+
+        assert_eq!(shell.window_calls(), vec![("destroy", shell.thread_id)]);
+    }
 }

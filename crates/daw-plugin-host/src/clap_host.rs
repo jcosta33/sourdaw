@@ -351,6 +351,14 @@ impl HostCallbackState {
         let _ = self.take_editor_window_asks();
     }
 
+    /// Whether the plugin has asked anything of its editor window that no one
+    /// has taken yet. Reads without clearing.
+    pub fn has_pending_editor_window_asks(&self) -> bool {
+        self.editor_visibility_ask.load(Ordering::Acquire) != NO_VISIBILITY_ASK
+            || self.editor_closed_ask.load(Ordering::Acquire) != NOT_CLOSED
+            || self.editor_resize_hints_changed.load(Ordering::Acquire)
+    }
+
     /// Read and clear everything the plugin asked of its editor window.
     pub fn take_editor_window_asks(&self) -> EditorWindowAsks {
         let visibility = match self
@@ -1326,6 +1334,50 @@ mod tests {
                 resize_hints_changed: true,
             },
             "every ask is recorded, the newest visibility winning"
+        );
+    }
+
+    /// One callback's wake must not be borrowed from another's, so each is
+    /// called alone against a cleared hint.
+    #[test]
+    fn each_editor_window_callback_raises_the_wake_on_its_own() {
+        fn raises_the_hint(call: impl FnOnce()) -> bool {
+            take_pending_editor_resize_signal();
+            call();
+            take_pending_editor_resize_signal()
+        }
+
+        let _guard = resize_signal_guard();
+        let (state, _requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+        let host_ptr = &host as *const clap_host;
+
+        assert!(
+            // SAFETY: `host` is a live local descriptor whose `host_data`
+            // points at a `state` that outlives each call.
+            raises_the_hint(|| {
+                // SAFETY: as above.
+                let _accepted = unsafe { host_gui_request_show(host_ptr) };
+            }),
+            "request_show did not raise the editor hint"
+        );
+        assert!(
+            // SAFETY: as above.
+            raises_the_hint(|| {
+                // SAFETY: as above.
+                let _accepted = unsafe { host_gui_request_hide(host_ptr) };
+            }),
+            "request_hide did not raise the editor hint"
+        );
+        assert!(
+            // SAFETY: as above.
+            raises_the_hint(|| unsafe { host_gui_closed(host_ptr, false) }),
+            "closed did not raise the editor hint"
+        );
+        assert!(
+            // SAFETY: as above.
+            raises_the_hint(|| unsafe { host_gui_resize_hints_changed(host_ptr) }),
+            "resize_hints_changed did not raise the editor hint"
         );
     }
 

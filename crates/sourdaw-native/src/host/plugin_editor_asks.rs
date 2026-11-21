@@ -5,11 +5,12 @@
 //! CLAP marks every one of those callbacks `[thread-safe]`, so the backend only
 //! records them and raises the editor hint the parameter-event drain already
 //! wakes on for `request_resize`. That drain tick calls
-//! [`answer_pending_editor_window_asks`], which takes each instance's asks
-//! under the control seam and carries the answer to the thread that owns the
-//! editor's window: every answer calls into the editor, and both formats bind
-//! the editor to that thread. The claim is taken here and only the call
-//! crosses, the order every other editor path keeps.
+//! [`answer_pending_editor_window_asks`], which finds each instance's window
+//! under the control seam and carries the take and the answer to the thread that
+//! owns it: every answer calls into the editor, and both formats bind the editor
+//! to that thread. The control claim stays here and only the call crosses, the
+//! order every other editor path keeps. The asks are taken on the window's
+//! thread, so a hop that never ran leaves them recorded for the retry.
 
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_window::PluginEditorWindow;
@@ -109,18 +110,13 @@ pub fn answer_pending_editor_window_asks(engine_plugins: &EnginePlugins) {
 
 fn answer_instance_asks(runtime: &SharedHostedPlugin) -> Result<(), String> {
     runtime.try_with_control(ASK_CONTROL_TIMEOUT, |plugin| {
-        let Some((asks, window)) = plugin.take_editor_window_asks() else {
+        let Some(window) = plugin.editor_window_with_pending_asks() else {
             return Ok(());
         };
-        let window_thread = EditorWindowThread(window);
-        if let Err(error) = lend_on_ui_thread(&window_thread, plugin, move |plugin| {
-            plugin.answer_editor_window_asks(asks);
-        }) {
-            // Taken but never answered, and the window's thread is the only one
-            // that may: the asks are lost with the hop, so say so once rather
-            // than retry against a shell that is not answering.
-            eprintln!("[Plugin] editor window asks were not answered: {error}");
-        }
-        Ok(())
+        lend_on_ui_thread(&EditorWindowThread(window), plugin, |plugin| {
+            if let Some((asks, _window)) = plugin.take_editor_window_asks() {
+                plugin.answer_editor_window_asks(asks);
+            }
+        })
     })
 }

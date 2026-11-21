@@ -251,3 +251,18 @@ fn a_short_block_after_a_long_one_is_never_below_the_minimum_activation_promised
         recorded.smallest_block_frames
     );
 }
+
+#[test]
+fn a_reactivation_for_latency_promises_a_minimum_of_one_frame() {
+    let plugin = InstalledPlugin::create("clap-min-frames-reactivated");
+    let mut wrapper = plugin.clap(CLAP_PLUGIN_ID, ProcessMode::Realtime).unwrap();
+
+    wrapper
+        .reactivate_for_latency()
+        .expect("the fixture reactivates");
+    render_silence(&mut wrapper, 5);
+
+    let recorded = clap_recorded_state(&wrapper);
+    assert_eq!(recorded.declared_min_frames, 1);
+    assert_eq!(recorded.smallest_block_frames, 5);
+}

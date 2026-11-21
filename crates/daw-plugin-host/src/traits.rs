@@ -511,6 +511,16 @@ pub trait AudioPlugin: Send + Sync {
     /// anything of its window has nothing to route.
     fn set_editor_window(&mut self, _window: SharedEditorWindow) {}
 
+    /// The window to answer the plugin's pending editor-window asks through,
+    /// without taking them. **Control path only**; it makes no plugin call.
+    ///
+    /// `None` when nothing is pending or no window is installed. Lets a caller
+    /// learn where the asks go before it commits to the hop that takes them, so
+    /// a hop that fails leaves them recorded.
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        None
+    }
+
     /// Take what the plugin asked of its editor window, with the window to
     /// answer it through. **Control path only**; it makes no plugin call.
     ///

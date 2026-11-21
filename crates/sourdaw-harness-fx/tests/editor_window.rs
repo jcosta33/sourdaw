@@ -245,3 +245,20 @@ fn a_hide_or_show_is_refused_while_no_window_is_installed() {
     assert!(wrapper.take_editor_window_asks().is_none());
     assert_eq!(record.calls, [GuiCall::Create, GuiCall::Show]);
 }
+
+#[test]
+fn asks_a_previous_editor_made_are_dropped_when_the_next_one_opens() {
+    let plugin = InstalledPlugin::create("editor-stale-asks");
+    let mut wrapper = editor_instance(&plugin);
+    let window = Arc::new(RecordingWindow::default());
+    open_into(&mut wrapper, &window);
+    command(&mut wrapper, GuiCommand::RequestHide);
+    wrapper.close_gui();
+
+    open_into(&mut wrapper, &window);
+
+    assert!(
+        wrapper.take_editor_window_asks().is_none(),
+        "a hide the closed editor asked must not land on the editor opened after it"
+    );
+}
