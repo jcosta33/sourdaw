@@ -99,17 +99,11 @@ export const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
 const ANY_WORD = 'any';
 const SO = 'so';
-/**
- * The degree words a comparative or a measured word may carry: "any louder", "too bright", "much louder",
- * "a lot louder", "far louder". No fixed tolerance says how far any but "any" reaches.
- */
+/** The degree words a comparative or a measured word may carry: "any louder", "too bright", "much louder". */
+const PLAIN_DEGREE_WORDS = [ANY_WORD, 'more', 'less', 'too', 'much', SO];
+/** The degree words a protection's own clause reads: the plain ones and "a lot louder", "far louder". */
 export const DEGREE_WORD = words([
-    ANY_WORD,
-    'more',
-    'less',
-    'too',
-    'much',
-    SO,
+    ...PLAIN_DEGREE_WORDS,
     'a lot',
     'a little',
     'a bit',
@@ -118,6 +112,11 @@ export const DEGREE_WORD = words([
     'slightly',
     'even',
 ]);
+/**
+ * The degree words that open a joined clause the net continues a protection into. "a bit louder on the
+ * vocal" after "keep the drums as they are" is a request of its own, so only the plain ones continue.
+ */
+export const OPENING_DEGREE_WORD = words(PLAIN_DEGREE_WORDS);
 /** "any" alone, which a comparative may carry ("any wider") and an object never opens with. */
 export const ANY = words([ANY_WORD]);
 
@@ -125,7 +124,10 @@ const AND = 'and';
 /** The words joining one more member or clause as "and" does: "the drums wider plus the vocal brighter". */
 const AND_WORDS = [AND, 'plus', 'as well as'];
 /** The words listing an alternative as "or" does; under a negation "nor" lists as "or" does. */
-const OR_WORDS = ['or', 'nor'];
+const NOR = 'nor';
+const OR_WORDS = ['or', NOR];
+/** "nor" alone, which always negates: the part it joins is a protection as the one before it is. */
+export const NOR_JOINER = words([NOR]);
 const BUT = 'but';
 const WHILE = 'while';
 const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];

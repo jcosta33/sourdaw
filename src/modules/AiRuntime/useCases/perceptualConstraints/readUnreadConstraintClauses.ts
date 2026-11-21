@@ -14,6 +14,7 @@ import {
     CLAUSE_SUBJECT,
     COMPARED_DIRECTION,
     DEGREE_WORD,
+    OPENING_DEGREE_WORD,
     DETERMINER,
     FROM,
     HARD_BOUNDARY_WORD,
@@ -21,6 +22,7 @@ import {
     LEAVE_VERB,
     LINKING_VERB,
     LIST_JOINER,
+    NOR_JOINER,
     MASK_GLYPH,
     MIX_PRONOUN,
     MODAL_VERB_NEGATION,
@@ -147,9 +149,10 @@ const BOUNDARY = new RegExp(
     String.raw`(?<joiner>(?:,\s*)?\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND}|${SEMICOLON})|${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
     'giu'
 );
+const NOR_BOUNDARY = new RegExp(String.raw`\b${NOR_JOINER}\b`, 'iu');
 /** The words a joined clause may open with and still continue the protection before it. */
 const CONTINUES = new RegExp(
-    String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${DEGREE_WORD})${WORD_END}|${MASK_GLYPH}|${SCOPE_WORD}\b|${DIRECTION})`,
+    String.raw`^\s*(?:(?:${DETERMINER}|${POSSESSIVE_DETERMINER}|${MIX_PRONOUN}|${OPENING_DEGREE_WORD})${WORD_END}|${MASK_GLYPH}|${SCOPE_WORD}\b|${DIRECTION})`,
     'iu'
 );
 /**
@@ -159,7 +162,7 @@ const CONTINUES = new RegExp(
  * A verb of its own ("don't make it harsh - brighten the vocal") opens a clause of its own.
  */
 const DANGLING_REST = new RegExp(
-    String.raw`^\s*(?:${FROM}|${BECOMING_VERB}|${LINKING_VERB}|(?:${DEGREE_WORD}\s+)?${DIRECTION})${WORD_END}`,
+    String.raw`^\s*(?:${FROM}|${BECOMING_VERB}|${LINKING_VERB}|(?:${OPENING_DEGREE_WORD}\s+)?${DIRECTION})${WORD_END}`,
     'iu'
 );
 /** A joined clause whose object takes a verb of its own states its own clause: "and the vocal needs …". */
@@ -172,26 +175,33 @@ const COMPARATIVE_REASON =
 const UNREAD_REASON =
     'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
 
-/** A segment between boundaries: whether a joining word or a separator opens it. */
-type Segment = { start: number; end: number; joined: boolean; separated: boolean };
+/** A segment between boundaries: whether a joining word ("nor" negating) or a separator opens it. */
+type Segment = { start: number; end: number; joined: boolean; separated: boolean; negated: boolean };
 
 function segmentsOf(masked: string): Segment[] {
     const segments: Segment[] = [];
     let start = 0;
     let joined = false;
     let separated = false;
+    let negated = false;
     for (const boundary of masked.matchAll(BOUNDARY)) {
-        segments.push({ start, end: boundary.index, joined, separated });
+        segments.push({ start, end: boundary.index, joined, separated, negated });
         start = boundary.index + boundary[0].length;
         joined = boundary.groups?.joiner !== undefined;
         separated = boundary.groups?.separator !== undefined;
+        negated = joined && NOR_BOUNDARY.test(boundary[0]);
     }
-    segments.push({ start, end: masked.length, joined, separated });
+    segments.push({ start, end: masked.length, joined, separated, negated });
     return segments;
 }
 
 function continuesChain(text: string): boolean {
     return CONTINUES.test(text) && !OWN_PREDICATE.test(text);
+}
+
+/** A joined segment continues a chain; "nor" always negates, so the part after it does whatever it opens with. */
+function joinsChain(segment: Segment, text: string): boolean {
+    return segment.joined && (segment.negated || continuesChain(text));
 }
 
 /**
@@ -256,7 +266,7 @@ function overlapsConsumed(governed: Governed, consumed: readonly ConsumedSpan[])
 function chainStep(segment: Segment, chain: Chain | null, request: NetRequest): ChainStep | null {
     const text = request.masked.slice(segment.start, segment.end);
     const end = segment.start + governedEnd(text, 0);
-    if (chain?.continuable === true && segment.joined && continuesChain(text)) {
+    if (chain?.continuable === true && joinsChain(segment, text)) {
         return { chain, governed: { start: segment.start, end, holds: chain.holds } };
     }
     if (chain !== null && !chain.continuable && (segment.separated || segment.joined) && DANGLING_REST.test(text)) {
@@ -307,11 +317,12 @@ export function readUnreadConstraintClauses(
             continue;
         }
         const missed = governedWords(masked, step.governed).some((index) => !isConsumed(index, consumed));
-        if (!missed) {
+        const { start } = step.chain;
+        const widensEntry = segment.negated && unread.at(-1)?.start === start;
+        if (!missed && !widensEntry) {
             continue;
         }
         // A chain is one clause: a later missed segment of it widens the entry rather than adding one.
-        const { start } = step.chain;
         if (unread.at(-1)?.start === start) {
             unread.pop();
         }

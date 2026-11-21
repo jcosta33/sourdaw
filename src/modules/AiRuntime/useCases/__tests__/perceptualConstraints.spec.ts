@@ -2562,6 +2562,32 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
             [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
             [],
         ],
+        // a verb-led part after "nor" is a protection no reader binds, so it stays in the unsupported clause
+        [
+            'Never make the drums louder nor widen the vocal',
+            [],
+            [unread('Never make the drums louder nor widen the vocal', NET_REASON)],
+        ],
+        [
+            "Don't make the vocal louder nor let the drums get wider",
+            [],
+            [unread("Don't make the vocal louder nor let the drums get wider", NET_REASON)],
+        ],
+        [
+            'Without making the drums louder nor widening the vocal',
+            [],
+            [unread('Without making the drums louder nor widening the vocal', NET_REASON)],
+        ],
+        [
+            "I don't want the drums louder nor the vocal to get brighter",
+            [],
+            [unread("I don't want the drums louder nor the vocal to get brighter", NET_REASON)],
+        ],
+        // a positive request led by a degree word is its own clause, never the rest of a protection before it
+        ['Keep the drums as they are, and a bit louder on the vocal', [], []],
+        ["Don't touch the bass and a lot louder drums", [], []],
+        ['Leave the bass alone and a bit louder drums', [], []],
+        ["Don't touch the drums, and way louder vocals", [], []],
     ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
         'reads "%s"',
         (prompt, constraints, unsupported) => {
