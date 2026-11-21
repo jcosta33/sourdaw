@@ -209,6 +209,24 @@ function projectFact(
     }
     throw new Error('Unknown project fact');
 }
+/** A switch reads as its state, a ranged parameter as its window and unit, and an empty unit says nothing. */
+function authoredWindowText(
+    descriptor: { type: string; unit: string },
+    window: { minimum: number; maximum: number }
+): string {
+    if (descriptor.type === 'boolean') {
+        if (window.minimum === window.maximum) {
+            return window.minimum === 0 ? 'off' : 'on';
+        }
+        return 'on or off';
+    }
+    const range = `${formatAnswerNumber(window.minimum)}–${formatAnswerNumber(window.maximum)}`;
+    if (descriptor.unit === '') {
+        return range;
+    }
+    return `${range} ${quoteSourceData(descriptor.unit)}`;
+}
+
 function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): string {
     const descriptors = getAgentBuiltinDeviceFactoryManifest(recipe.steps.map((step) => step.deviceType));
     const windows = recipe.steps.flatMap((step) =>
@@ -223,9 +241,7 @@ function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): s
             ) {
                 return [];
             }
-            return [
-                `${quoteSourceData(descriptor.name)} ${formatAnswerNumber(parameter.minimum)}–${formatAnswerNumber(parameter.maximum)} ${quoteSourceData(descriptor.unit)}`,
-            ];
+            return [`${quoteSourceData(descriptor.name)} ${authoredWindowText(descriptor, parameter)}`];
         })
     );
     const character =
