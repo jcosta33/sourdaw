@@ -109,12 +109,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return false;
     }
-    const previousFreeze = claimPreFreezeSnapshot(
-        trackId,
-        captureFreezeStateSnapshot(track),
-        activeFreezeTasks.has(trackId)
-    );
-    const renderedMidi = captureFreezeMidi(track.clips);
+    const previousFreeze = claimPreFreezeSnapshot(trackId, captureFreezeStateSnapshot(track));
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -162,6 +157,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+        // Read synchronously before the render call: the render reads the MIDI store when it starts,
+        // after the digest's await, so an earlier capture could miss rows written while hashing.
+        // Read synchronously before the render call: the render reads the MIDI store when it starts,
+        // after the digest's await, so an earlier capture could miss rows written while hashing.
+        const renderedMidi = captureFreezeMidi(track.clips);
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
             tailSeconds,
             onScheduled: (tally) => {

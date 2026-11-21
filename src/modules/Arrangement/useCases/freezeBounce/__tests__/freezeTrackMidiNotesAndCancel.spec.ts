@@ -477,3 +477,51 @@ describe('a freeze whose controller rows change during the render', () => {
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 });
+
+describe('a freeze whose notes change while the digest is pending', () => {
+    it('refuses the take when a note the render read is gone by the commit', async () => {
+        const realHash = (
+            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                '../../../services/computeTrackHash'
+            )
+        ).computeTrackHash;
+        const original = midiStore.value!.notesByClipId[CLIP_ID]!;
+        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+            const hash = await realHash(clips, devices);
+            const state = midiStore.value!;
+            midiStore.set({
+                ...state,
+                notesByClipId: {
+                    [CLIP_ID]: [
+                        ...original,
+                        { id: 'hash-window-note', pitch: 72, startBeat: 1, duration: 1, velocity: 80 },
+                    ],
+                },
+            });
+            return hash;
+        });
+
+        const entered = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        let notesTheRenderRead: string[] = [];
+        vi.mocked(renderTrackOffline).mockImplementationOnce(async (_track, _start, _end, options) => {
+            // The real render reads the MIDI store when it starts, after the digest.
+            notesTheRenderRead = (midiStore.value?.notesByClipId[CLIP_ID] ?? []).map((note) => note.id);
+            options?.onScheduled?.({ scheduledNotes: 1, scheduledBuffers: [], withheldDeviceTypes: [] });
+            entered.resolve();
+            await resume.promise;
+            return renderedBuffer();
+        });
+
+        const freezing = executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+        await entered.promise;
+        expect(notesTheRenderRead).toEqual(['first-note', 'hash-window-note']);
+        midiStore.set({ ...midiStore.value!, notesByClipId: { [CLIP_ID]: original } });
+        resume.resolve();
+        await freezing;
+
+        expect(findTrack().frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+});
