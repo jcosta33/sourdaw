@@ -5,6 +5,7 @@
 //! dialog just returned; it is withheld from the renderer. Listing and revoking
 //! are safe to expose: one reads, and the other only narrows authority.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -30,15 +31,12 @@ fn grant_dto(status: GrantStatus) -> PluginFolderGrant {
 pub async fn grant_plugin_folder(path: String) -> Result<String, String> {
     on_blocking_pool(move || {
         let location = store_location()?;
-        plugin_folder_grants::grant_at(
-            &location,
-            &ForbiddenRoots::production()?,
-            Path::new(path.trim()),
-        )
-        .map(|granted| granted.display().to_string())
-        .map_err(|refusal| refusal.to_string())
+        plugin_folder_grants::grant_at(&location, &forbidden_roots()?, Path::new(path.trim()))
+            .map(|granted| granted.display().to_string())
+            .map_err(PluginFolderCommandError::Refused)
     })
     .await
+    .map_err(|error| error.to_string())
 }
 
 /// Every granted folder, in grant order, each with the reason it is unavailable
@@ -48,13 +46,14 @@ pub async fn get_plugin_folder_grants() -> Result<Vec<PluginFolderGrant>, String
     on_blocking_pool(|| {
         let location = store_location()?;
         Ok(
-            plugin_folder_grants::list_at(&location, &ForbiddenRoots::production()?)
+            plugin_folder_grants::list_at(&location, &forbidden_roots()?)
                 .into_iter()
                 .map(grant_dto)
                 .collect(),
         )
     })
     .await
+    .map_err(|error| error.to_string())
 }
 
 /// Remove the grant stored for exactly `path`. A folder that is not granted is
@@ -63,24 +62,60 @@ pub async fn revoke_plugin_folder_grant(path: String) -> Result<(), String> {
     on_blocking_pool(move || {
         let location = store_location()?;
         plugin_folder_grants::revoke_at(&location, &PathBuf::from(path))
-            .map_err(|refusal| refusal.to_string())
+            .map_err(PluginFolderCommandError::Refused)
     })
     .await
+    .map_err(|error| error.to_string())
 }
 
-fn store_location() -> Result<PathBuf, String> {
+/// Why a plugin folder command refused. `Display` is the text the renderer
+/// receives, byte-identical to the text it replaced (ADR 0059).
+#[derive(Debug)]
+enum PluginFolderCommandError {
+    Refused(PluginFolderRefusal),
+    /// The forbidden roots could not be read, in the grant store's own words.
+    ForbiddenRoots(String),
+    Task(tokio::task::JoinError),
+}
+
+impl fmt::Display for PluginFolderCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Refused(refusal) => write!(f, "{refusal}"),
+            Self::ForbiddenRoots(reason) => f.write_str(reason),
+            Self::Task(error) => write!(f, "Plugin folder task failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for PluginFolderCommandError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Refused(refusal) => Some(refusal),
+            Self::ForbiddenRoots(_) => None,
+            Self::Task(error) => Some(error),
+        }
+    }
+}
+
+fn store_location() -> Result<PathBuf, PluginFolderCommandError> {
     plugin_folder_grants::production_store_location().ok_or_else(|| {
-        PluginFolderRefusal::StoreUnavailable("no application data directory".to_string())
-            .to_string()
+        PluginFolderCommandError::Refused(PluginFolderRefusal::StoreUnavailable(
+            "no application data directory".to_string(),
+        ))
     })
+}
+
+fn forbidden_roots() -> Result<ForbiddenRoots, PluginFolderCommandError> {
+    ForbiddenRoots::production().map_err(PluginFolderCommandError::ForbiddenRoots)
 }
 
 async fn on_blocking_pool<T: Send + 'static>(
-    body: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+    body: impl FnOnce() -> Result<T, PluginFolderCommandError> + Send + 'static,
+) -> Result<T, PluginFolderCommandError> {
     tokio::task::spawn_blocking(body)
         .await
-        .map_err(|error| format!("Plugin folder task failed: {error}"))?
+        .map_err(PluginFolderCommandError::Task)?
 }
 
 #[cfg(test)]

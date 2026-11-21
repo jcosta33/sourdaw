@@ -241,6 +241,64 @@ describe('resource admission', () => {
         }
     });
 
+    it('skips a reservation its owner released while admission samples it', async () => {
+        const root = fixtureRoot('released-during-sample');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            const second = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+                activeRssSampler: () => {
+                    first.release();
+                    return undefined;
+                },
+            });
+
+            expect(readFileSync(second.reservationPath, 'utf8')).toContain(second.token);
+            second.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('stops admission when a still-registered reservation cannot be sampled', async () => {
+        const root = fixtureRoot('unsampled-registered');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            await expect(
+                enterResourceSession({
+                    root,
+                    requiredRssBytes: 1024 ** 3,
+                    availableMemoryBytes: 8 * 1024 ** 3,
+                    activeRssSampler: () => undefined,
+                })
+            ).rejects.toThrow('active validation memory could not be measured');
+            first.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('stops admission when available memory cannot be measured', async () => {
+        const root = fixtureRoot('unmeasured-available');
+        try {
+            await expect(
+                enterResourceSession({ root, requiredRssBytes: 1024 ** 3, memorySampler: () => undefined })
+            ).rejects.toThrow('available memory could not be measured');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('retains a crashed owner reservation while its child is alive', async () => {
         const root = fixtureRoot('orphan');
         try {

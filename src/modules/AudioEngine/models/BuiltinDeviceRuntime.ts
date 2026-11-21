@@ -72,7 +72,7 @@ export const SIDECHAIN_COMPRESSOR_RUNTIME_STRATEGY: BuiltinDeviceRuntimeStrategy
         source: 'AudioEngine.deviceNodeFactory',
         availability: 'conditional',
         condition:
-            'Uses the two-input worklet only after offline sidechain preparation; otherwise falls back to compressor.',
+            'Uses the two-input worklet only after offline sidechain preparation; otherwise renders its Makeup gain alone.',
     },
 };
 
