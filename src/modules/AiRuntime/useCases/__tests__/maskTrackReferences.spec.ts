@@ -126,6 +126,30 @@ describe('maskTrackReferences', () => {
             'make the ######## brighter',
         ],
         [
+            'a track name ending in its own bracket, the bracket with it',
+            context({ tracks: [track('di', 'Bass (DI)'), track('bass-di', 'Bass DI')] }),
+            'make Bass (DI) brighter than Bass DI)',
+            'make ######### brighter than #######)',
+        ],
+        [
+            'a track name ending in a full stop, the sentence break standing',
+            context({ tracks: [track('lead', 'Lead.')] }),
+            'keep the Lead. Do not make it louder',
+            'keep the ####. Do not make it louder',
+        ],
+        [
+            'a track name ending in a question mark, the mark standing',
+            context({ tracks: [track('pad', 'Pad?')] }),
+            'is the Pad? make it warmer',
+            'is the ###? make it warmer',
+        ],
+        [
+            'a track name ending in a bracket it never opened, the bracket standing',
+            context({ tracks: [track('keys', 'Keys)')] }),
+            'make (the Keys) warmer',
+            'make (the ####) warmer',
+        ],
+        [
             'quoted text, as before',
             context(),
             'name it "Dark Room" and make it brighter',

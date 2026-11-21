@@ -1,0 +1,412 @@
+import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
+import { PROJECT_REFERENCE_MASK_GLYPH } from '../agentReference/groundingStrategies/maskProjectReferences';
+
+import {
+    APOSTROPHE,
+    COMPARATIVE_WORDS,
+    DIRECTION,
+    NOUN_VERB_ING,
+    WHOLE_WORD_END,
+    WORD_END,
+} from './constraintDirections';
+import { normalizePhrase } from './normalizePhrase';
+import { HYPHEN_OR_SPACE, words } from './words';
+
+/**
+ * The clause words every constraint reader shares, each vocabulary stated here once: scope words,
+ * determiners, clause boundaries, negations, the verbs a clause turns on, and the object grammar.
+ */
+
+export const MIX_WORDS = new Set(['mix', 'whole mix', 'song', 'whole song', 'project', 'master', 'master bus']);
+export const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = new Map([
+    ['vocal', 'vocal'],
+    ['vocals', 'vocal'],
+    ['lead vocal', 'vocal'],
+    ['lead vocals', 'vocal'],
+    ['vox', 'vocal'],
+    ['drum', 'drums'],
+    ['drums', 'drums'],
+    ['bass', 'bass'],
+    ['guitar', 'guitar'],
+    ['guitars', 'guitar'],
+    ['keys', 'keys'],
+]);
+const IT = 'it';
+const MIX_PRONOUN_WORDS = [IT, 'everything', 'anything'];
+/** The pronouns that hold the mix while the request names no track or role before them. */
+export const MIX_PRONOUNS: ReadonlySet<string> = new Set(MIX_PRONOUN_WORDS);
+export const MIX_PRONOUN = words(MIX_PRONOUN_WORDS);
+/** The role words alone: what makes a later "it" name no single scope. */
+export const ROLE_WORD = words(Array.from(ROLE_WORDS.keys()));
+/** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
+export const SCOPE_WORD = words([...ROLE_WORDS.keys(), ...MIX_WORDS]);
+
+/** The brackets opening an aside, which a joining word after one may continue a list across. */
+const OPENING_BRACKET_MARKS = String.raw`(\[`;
+const OPENING_BRACKET = `[${OPENING_BRACKET_MARKS}]`;
+const CLOSING_BRACKET_MARKS = String.raw`)\]`;
+const BRACKET_MARKS = `${OPENING_BRACKET_MARKS}${CLOSING_BRACKET_MARKS}`;
+/**
+ * The marks that end a clause, one character class each way: a mark, and any character but one. A bracket,
+ * opening or closing, ends the clause before it, so no word holds one: "keep the vocal bright (and make
+ * the drums louder)" holds the vocal's brightness as its unbracketed form does. An aside the clause goes
+ * on after is read inside it instead (`readInnerAsides`).
+ */
+const CLAUSE_MARKS = `,.;:!?${BRACKET_MARKS}`;
+export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
+const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
+/** A character of a word: neither whitespace nor a clause mark. */
+export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
+/** The mark joining two object members as "and" does, spaced or not: "the vocal & the drums", "vocal&drums". */
+const AMPERSAND = '&';
+/** The marks separating clauses only as a token of their own, since each may join words: "lo-fi", "3–4 dB". */
+const TOKEN_SEPARATOR_MARKS = String.raw`\-–${AMPERSAND}/`;
+/** An em dash, which joins no word, so it separates clauses spaced or not: "the punch—make the vocal brighter". */
+const EM_DASH = '—';
+/**
+ * What separates two clauses without a clause mark: a dash, ampersand or slash standing as a token of its
+ * own ("keep the vocal bright - make the drums wider"), an em dash wherever it stands, or a line break.
+ * It is never a word of either.
+ */
+export const CLAUSE_SEPARATOR = String.raw`(?:(?<!\S)[${TOKEN_SEPARATOR_MARKS}${EM_DASH}]+(?!\S)|${EM_DASH}|[\n\r])`;
+/** A character of the same clause: no clause mark and no separator. */
+export const SAME_CLAUSE_CHARACTER = String.raw`(?:(?!${CLAUSE_SEPARATOR})${NOT_CLAUSE_PUNCTUATION})`;
+/** Whitespace within one line. */
+const SAME_CLAUSE_SPACE = String.raw`(?:(?!${CLAUSE_SEPARATOR})\s)+`;
+
+/** The glyph a masked track name or quotation is read as, one per character. */
+export const MASK_GLYPH = PROJECT_REFERENCE_MASK_GLYPH;
+
+const THE_WORD = 'the';
+const THAT = 'that';
+export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', THAT]);
+/** The definite article alone, which a held noun list and a held state open with: "the level", "the same". */
+export const THE = words([THE_WORD]);
+/** The possessives a continued clause may open with: "and its width". */
+export const POSSESSIVE_DETERMINER = words(['its', 'their']);
+const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
+/** A quotation mark or an apostrophe, which an object's name is read without. */
+const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
+
+/**
+ * An object's name as a track's name is matched against: its brackets kept, since they are part of a
+ * name, so "Bass DI" never names Bass (DI). `normalizeObjectText` reads its words without them.
+ */
+export function normalizeObjectName(text: string): string {
+    return normalizePhrase(text.replaceAll(QUOTE_MARK, '')).replace(LEADING_DETERMINER, '');
+}
+
+const ANY_WORD = 'any';
+const SO = 'so';
+/** The degree words a comparative or a measured word may carry: "any louder", "too bright". */
+export const DEGREE_WORD = words([ANY_WORD, 'more', 'less', 'too', SO]);
+/** "any" alone, which a comparative may carry ("any wider") and an object never opens with. */
+export const ANY = words([ANY_WORD]);
+
+const AND = 'and';
+const OR = 'or';
+const BUT = 'but';
+const WHILE = 'while';
+const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
+/**
+ * The one way a later member joins the one before it, for every list a clause reads: a comma, with or
+ * without one of the joining words after it, a clause separator or an opening bracket with one of them
+ * after it, or one of those words alone: "the level, and the width", "louder—or brighter", "louder (or
+ * brighter)". A separator or bracket with no joining word after it still ends the clause ("the
+ * punch—make the vocal brighter").
+ */
+function joinedBy(joiningWords: string): string {
+    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s*(?:${CLAUSE_SEPARATOR}|${OPENING_BRACKET})\s*${joiningWords}\s+|\s+${joiningWords}\s+)`;
+}
+/** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
+export const AND_JOIN = joinedBy(words([AND]));
+/** The words joining list members: "the vocal and the drums", "louder or brighter". */
+export const LIST_JOINER = words([AND, OR]);
+/** A comma, "and" or "or" joining a later direction to the one before it: "brighter, wider, or louder". */
+const LIST_JOIN = joinedBy(LIST_JOINER);
+/** A comma, "and" or "but" joining a later kept term to the one before it: "keep the vocal bright but dynamic". */
+export const TERM_JOIN = joinedBy(words([AND, BUT]));
+/** The words that end a clause whatever follows them; "and" and "or" may instead continue a list. */
+export const HARD_BOUNDARY_WORD = words(HARD_BOUNDARY_WORDS);
+/** The words a readable clause ends at: "or" is not one, since it lists inside a clause. */
+const CLAUSE_BOUNDARY_WORD = words([AND, ...HARD_BOUNDARY_WORDS]);
+/** Every word a clause may open or end at. */
+const ANY_BOUNDARY_WORD = words([AND, OR, ...HARD_BOUNDARY_WORDS]);
+export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|${CLAUSE_SEPARATOR}|\b${CLAUSE_BOUNDARY_WORD}\b))`;
+/** Any bracket, opening or closing. */
+export const BRACKET = `[${BRACKET_MARKS}]`;
+/**
+ * A closed aside the clause goes on after: "keep the level (of the vocal) the same", never "… bright
+ * (please)". One holding a word that ends a clause whatever follows is none, since read inside its
+ * clause that word would end it: "don't make the (please) vocal louder".
+ */
+export const INNER_ASIDE = String.raw`${OPENING_BRACKET}(?:(?!\b${HARD_BOUNDARY_WORD}\b)[^${BRACKET_MARKS}])*[${CLOSING_BRACKET_MARKS}](?!${CLAUSE_END})`;
+
+/** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
+export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
+/** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
+const ON_WORD = 'on';
+export const OBJECT_PREPOSITION = words(['of', ON_WORD, 'in']);
+/**
+ * The bracket opening an aside that goes on naming the object before it, closed or not: "keep the
+ * brightness (of the vocal)", "don't touch the low end (of the bass".
+ */
+export const OBJECT_ASIDE_OPENING = String.raw`${OPENING_BRACKET}(?=\s*${OBJECT_PREPOSITION}\b)`;
+/** "on" alone, which a keep continuing a move may carry: "keep on widening". */
+const ON = words([ON_WORD]);
+/** "at", which a level is kept at: "keep the Keys at the same level". */
+export const AT = words(['at']);
+/** The low end, by either name, its words spaced or hyphenated: "the low end", "the bottom-end". */
+export const LOW_END = words(['low end', 'bottom end'], HYPHEN_OR_SPACE);
+
+export const KEEP = words(['keep', 'keeping']);
+const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintaining', 'retain', 'retaining']);
+export const KEEP_VERBS = String.raw`(?:${KEEP}|${PRESERVING_VERB})`;
+export const LEAVE_VERB = words(['leave', 'leaving']);
+export const STOP_VERB = words(['stop', 'stopping', 'prevent', 'preventing']);
+/** "avoid making it louder" governs what follows as a negation does. */
+export const AVOID_VERB = words(['avoid', 'avoiding']);
+/** The verbs a subject becomes a level through on its own: "the mix must not get louder". */
+export const BECOMING_VERB = words(['get', 'getting', 'become', 'becoming']);
+/** The verbs that make a quality become a level ("don't make it louder"), beside those a held noun takes. */
+const MAKING_VERB = words(['make', 'making', 'let', 'letting']);
+export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
+/** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
+export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
+
+const AS_WORD = 'as';
+/** "as", which a kept term ("as dynamic") and a kept state ("as it is") stand behind. */
+export const AS = words([AS_WORD]);
+const IS = 'is';
+/** The states a kept object stays in: "intact", "as it is", "as is". */
+const UNCHANGED_STATE = words(['unchanged', 'intact', `${AS_WORD} ${IT} ${IS}`, `${AS_WORD} ${IS}`]);
+/** The states only a left object stays in, beside those: "leave the low end alone". */
+const LEFT_ONLY_STATE = words(['alone', 'untouched']);
+/** Every state a left or kept object stays in: "leave the low end alone", "keep the low end intact". */
+export const LEFT_STATE = String.raw`(?:${LEFT_ONLY_STATE}|${UNCHANGED_STATE})`;
+/** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
+export const THE_SAME = String.raw`${THE}\s+same`;
+/** The states a kept measured noun stays in: "keep the level the same", "where it is". */
+export const HELD_STATE = String.raw`(?:${THE_SAME}|${words([`where ${IT} ${IS}`])}|${UNCHANGED_STATE})`;
+
+/**
+ * What joins a contraction's two halves, each listed contraction written to the builder as two words
+ * ("don t"): an apostrophe, typed, typeset or left out, so "don't", "don’t" and "dont" are one word. The
+ * one contraction no list names is `NEGATED_CONTRACTION`, any word ending in "n't".
+ */
+const CONTRACTION = `${APOSTROPHE}?`;
+const WITHOUT = 'without';
+const NOT = 'not';
+export const NEGATION = String.raw`(?:${words([`do ${NOT}`, 'never', WITHOUT])}|${words(['don t'], CONTRACTION)})`;
+const CAN = 'can';
+const MODAL_WORDS = ['must', 'should', 'may', CAN, 'will'];
+const MODAL = words(MODAL_WORDS);
+/** Each modal's contracted negation, and those dropping a letter of their modal: "mustn't", "can't", "won't". */
+const MODAL_CONTRACTION = words([...MODAL_WORDS.map((modal) => `${modal}n t`), `${CAN} t`, 'won t'], CONTRACTION);
+/** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
+export const DOES_NOT = String.raw`(?:${words([`does ${NOT}`])}|${words(['doesn t'], CONTRACTION)})`;
+const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
+/**
+ * The head of a purpose clause, after "so" or "so that": there "doesn't sound louder" asks for a bound
+ * ("add some warmth so it doesn't sound louder") rather than describing the sound as it is.
+ */
+export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
+/**
+ * Each modal followed by "not", and "cannot", the one modal written as one word with it: "must not", "cannot".
+ */
+const MODAL_NOT = words([...MODAL_WORDS.map((modal) => `${modal} ${NOT}`), `${CAN}${NOT}`]);
+/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get", "cannot be". */
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL_NOT}|${MODAL_CONTRACTION})`;
+/**
+ * A modal negation states a clause, and so does "doesn't get"; a plain copula negation ("isn't",
+ * "aren't", "wasn't") describes the sound as it is, so it is none.
+ */
+export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION})`;
+const NO_WORD = 'no';
+const BARE_NEGATION = words([NO_WORD, NOT]);
+/** "no" alone, before what it negates: "no louder", "no changes to the low end". */
+export const NO = words([NO_WORD]);
+/**
+ * Any negated contraction ("isn't", "wouldn't"): an open-ended form the builder, which lists closed
+ * words, cannot state, so it is written here once. Its apostrophe is required, since left out it would
+ * read every word ending in "nt" ("want", "event") as a negation.
+ */
+const NEGATED_CONTRACTION = String.raw`\p{L}+n${APOSTROPHE}t`;
+/** Any negation at all, which a keep or stop right after it permits: "don't keep …", "no need to keep …". */
+const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
+/** A character of the same clause short of its boundary words. */
+export const IN_CLAUSE_CHARACTER = String.raw`(?:(?!\b${ANY_BOUNDARY_WORD}\b)${SAME_CLAUSE_CHARACTER})`;
+
+const HAVE_WORDS = ['has', 'have'];
+const NEED_WORDS = ['needs', 'need'];
+const WANT_WORDS = ['wants', 'want'];
+const AUXILIARY_WORDS = [IS, 'are', 'was', 'were', 'been', ...HAVE_WORDS, 'had', 'do', 'does', 'did'];
+const PREDICATE_VERB_WORDS = [...NEED_WORDS, ...WANT_WORDS, 'gets', 'got'];
+const FROM_WORD = 'from';
+const TO_WORD = 'to';
+const COMPLEMENT_WORDS = [TO_WORD, FROM_WORD];
+/** "to" alone, which "no changes" names what it protects after: "no changes to the low end". */
+export const TO = words([TO_WORD]);
+/** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
+export const FROM = words([FROM_WORD]);
+/** The verbs a negation permits a later verb through: "don't have to", "don't want to", "don't bother keeping". */
+const PERMISSION_VERB = words([...HAVE_WORDS, ...NEED_WORDS, ...WANT_WORDS, 'bother']);
+/** The adverbs a negation may carry before what it governs: "don't really need to", "don't even have to". */
+const PERMISSION_ADVERB = words(['really', 'even', 'ever', 'actually']);
+/** "feel", which leads a permission verb as a negation's own verb: "don't feel you need to …". */
+const FEEL = words(['feel']);
+/** The one person a permission may name: "I don't need you to keep …". */
+const PERMITTED_PERSON = words(['you']);
+/** The negations naming nobody, which a permission verb follows: "nobody needs to keep …". */
+const NOBODY = words(['nobody', 'no one']);
+/** A permission a negation leads to the permitted verb through: "feel you need to", "bother to", "have to". */
+const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${PERMISSION_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${TO})?`;
+/**
+ * Not where a negation governs the verb that follows: directly before it ("don't keep …", "don't stop
+ * …") or through a permission ("you don't have to keep …", "there's no need to prevent …", "I don't
+ * want to keep …", "don't bother keeping …", "nobody needs to keep …"), past any adverb ("you don't
+ * really need to stop …"), which permits what a keep, stop, prevent or leave names, so neither a
+ * reader nor the net reads a protection there. A negation governing an earlier verb ("without
+ * changing the tempo keep the vocal bright") permits nothing.
+ */
+export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)`;
+/**
+ * The one leading words a move clause names its move through: "sound louder", "getting any wider". The
+ * linking or becoming verb is never part of the object, so "sound louder" is a louder clause.
+ */
+export const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
+const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
+/**
+ * The words opening a predicate or its complement, which an object member never holds, so "the vocal
+ * needs to be brighter" names "the vocal" and the words after it are a clause of its own.
+ */
+export const PREDICATE_WORD = String.raw`(?:${MODAL}|${LINKING_VERB}|${PLAIN_PREDICATE_WORD})`;
+/**
+ * The words opening a subordinate clause or a means: what follows one is the request's own move or
+ * condition ("prevent clipping when I make the vocal louder", "stop it getting lost by making it
+ * louder"), never what an earlier protection governs.
+ */
+export const SUBORDINATOR = words([
+    'by',
+    'when',
+    'whenever',
+    'if',
+    SO,
+    `${SO} ${THAT}`,
+    TO_WORD,
+    'because',
+    AS_WORD,
+    WHILE,
+    'until',
+    'before',
+    'after',
+    WITHOUT,
+]);
+/** The subject pronouns read as opening a clause of their own, whatever verb follows: "I make it louder". */
+export const CLAUSE_SUBJECT = words(['i', 'you', 'we', 'they', 'he', 'she']);
+
+const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|${PREDICATE_WORD}|${ANY_NEGATION})`;
+/**
+ * A word an object member may hold: never a boundary, a direction, a negation or a predicate word, so a
+ * member never runs into the next clause ("The vocal is louder and the drums must not …").
+ */
+const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
+/** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
+export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
+/** An object list's members join as directions do, by a comma, "and" or "or", or by an ampersand. */
+const MEMBER_JOIN = String.raw`(?:${LIST_JOIN}|\s*${AMPERSAND}\s*)`;
+/**
+ * A list of objects. A conjunction continues it only before another member, so "the vocal and the
+ * drums" is one list while "the vocal and brighten the drums" ends at "and"; "or" lists as "and" does,
+ * since a clause naming either member holds both ("don't raise the level of the vocal or the drums").
+ */
+export const OBJECT_MEMBERS = String.raw`${OBJECT_MEMBER}(?:${MEMBER_JOIN}${OBJECT_MEMBER})*`;
+export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
+/**
+ * An aside naming nothing but an object, closed or not, which a clause before it never holds as its own
+ * object: "don't touch the low end (vocal)", "don't make it louder (the vocal)".
+ */
+export const OBJECT_ONLY_ASIDE = String.raw`${OPENING_BRACKET}\s*${OBJECT_MEMBERS}\s*(?:[${CLOSING_BRACKET_MARKS}]|${CLAUSE_END})`;
+/**
+ * The words opening an exception to what a protection names: "except the vocal", "apart from the drums",
+ * "unless the chorus needs it".
+ */
+const EXCEPTION_LEAD = words([
+    'except',
+    'except for',
+    'excepting',
+    'excluding',
+    'not including',
+    'apart from',
+    'aside from',
+    'other than',
+    'besides',
+    `${BUT} ${NOT}`,
+    'save for',
+    'barring',
+    'unless',
+    'with the exception of',
+]);
+/** The words a permission an exception grants opens with: "the vocal may rise", "but the vocal can". */
+const PERMISSION_MODAL = words([
+    'may',
+    CAN,
+    'could',
+    'might',
+    'should',
+    `${IS} allowed to`,
+    'are allowed to',
+    `${IS} free to`,
+    'are free to',
+]);
+/** The states an excepted object is left in: "the vocal aside", "vocal excepted". */
+const EXCEPTED_STATE = words([
+    'aside',
+    'excepted',
+    'excluded',
+    'exempt',
+    'exempted',
+    'apart',
+    'left out',
+    'not included',
+]);
+/** "only", which narrows the object an exception permits: "drums only may change", "only the drums can". */
+const ONLY = words(['only']);
+/** The marks an exception after a protection may stand behind: a comma, a colon, a separator or a bracket. */
+const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})?\s*`;
+/** An object a permission names, "only" before or after it: "only the drums", "drums only". */
+const PERMITTED_OBJECT = String.raw`(?:${ONLY}\s+)?(?<permitted>${OBJECT_MEMBERS})(?:\s+${ONLY})?`;
+/**
+ * An exception right after a protection, to the end of its clause and any closing bracket: an exception
+ * word ("(except the vocal)", ", excluding the drums"), an object refused ("(not the vocal)"), a permission on an object ("(the vocal may rise)",
+ * "(but the vocal can)", "(drums only may change)") or an object left out ("— the vocal aside", ", vocal
+ * excepted"). A protection excepting part of its scope holds no measured bound over that whole scope.
+ * The object a refusal, a permission or a leaving-out names is captured as `refused`, `permitted` or
+ * `excepted`, so a reader can tell an exception from a statement about another scope ("keep the vocal
+ * bright, the drums can be louder") or a refused quality ("keep the vocal bright, not harsh").
+ */
+export const EXCEPTION_AFTER = String.raw`${EXCEPTION_MARK}(?:${EXCEPTION_LEAD}${WORD_END}|${words([NOT])}\s+(?<refused>${OBJECT_MEMBERS})${CLAUSE_END}|(?:${words([BUT])}\s+)?${PERMITTED_OBJECT}\s+${PERMISSION_MODAL}${WORD_END}|(?<excepted>${OBJECT_MEMBERS})\s+${EXCEPTED_STATE}${CLAUSE_END})${SAME_CLAUSE_CHARACTER}*[${CLOSING_BRACKET_MARKS}]?`;
+/** The marks setting an exception off from its clause, which its quotation leaves out: ", except the vocal" quotes "except the vocal". */
+export const EXCEPTION_EDGE_MARKS = new RegExp(
+    String.raw`^(?:\s*[,;:${BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})+|(?:[,;:${BRACKET_MARKS}]|${CLAUSE_SEPARATOR})+\s*$`,
+    'gu'
+);
+/** An exception opening the clause right before a protection: "except for the vocal, keep the mix …". */
+export const EXCEPTION_BEFORE = String.raw`\b${EXCEPTION_LEAD}${WORD_END}${SAME_CLAUSE_CHARACTER}*(?:[,;:]|${CLAUSE_SEPARATOR})?\s*$`;
+/** What separates the members of an object list, in the text and in the reading of its members. */
+export const OBJECT_MEMBER_SEPARATOR = new RegExp(MEMBER_JOIN, 'u');
+/** "than", which a comparison names its other scope after. */
+const THAN = words(['than']);
+/** A direction compared with another scope: "louder than the vocal", "quieter than the vocal". */
+export const COMPARED_DIRECTION = String.raw`${DIRECTION}\s+${THAN}\b`;
+/** Comparatives one clause applies to one object: "brighter and louder", "brighter, wider, or louder". */
+export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN}(?:${ANY}\s+)?${DIRECTION})*)`;
+
+/**
+ * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
+ * making the drums wider", "keep the vocal getting brighter". It asks for more of the move, and never
+ * reaches past a separator into the next clause's move.
+ */
+const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE})?(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
+/** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
+export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
