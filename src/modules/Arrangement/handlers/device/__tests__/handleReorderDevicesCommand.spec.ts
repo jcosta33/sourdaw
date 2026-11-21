@@ -35,9 +35,9 @@ const supersededReorderDelta: DeviceChainRuntimeDeltaSuperseded = {
 function seedAudioTrack(): void {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });
     track.devices = [
-        // The track store's projection reads a stored compressor's Auto Makeup switch, so a compressor
-        // the store holds always names it; a fixture without it would gain it on the first projection
-        // and stop matching the topology its own reorder recorded.
+        // The track store's projection reads a stored compressor's and limiter's Auto Makeup switch, so
+        // a compressor or limiter the store holds always names it; a fixture without it would gain it
+        // on the first projection and stop matching the topology its own reorder recorded.
         {
             id: 'device-1',
             name: 'Compressor',
@@ -46,7 +46,13 @@ function seedAudioTrack(): void {
             parameterValues: { 'comp-auto-makeup': 1 },
         },
         { id: 'device-2', name: 'EQ', type: 'builtin-eq', bypassed: false, parameterValues: { frequency: 1000 } },
-        { id: 'device-3', name: 'Limiter', type: 'builtin-limiter', bypassed: false, parameterValues: {} },
+        {
+            id: 'device-3',
+            name: 'Limiter',
+            type: 'builtin-limiter',
+            bypassed: false,
+            parameterValues: { 'lim-auto-makeup': 1 },
+        },
     ];
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     flushAutomergeStorageWrites();
@@ -117,7 +123,7 @@ describe('handleReorderDevices Command path', () => {
                 devices: [
                     { id: 'device-1', type: 'builtin-compressor', parameterIds: ['comp-auto-makeup'] },
                     { id: 'device-2', type: 'builtin-eq', parameterIds: ['frequency'] },
-                    { id: 'device-3', type: 'builtin-limiter', parameterIds: [] },
+                    { id: 'device-3', type: 'builtin-limiter', parameterIds: ['lim-auto-makeup'] },
                 ],
             },
             expectedProjectRevision: expect.any(String),

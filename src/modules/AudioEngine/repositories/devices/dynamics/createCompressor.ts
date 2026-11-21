@@ -8,7 +8,7 @@ import { releaseCompressorAutoMakeup } from './releaseCompressorAutoMakeup';
  * `DynamicsCompressorNode` → auto-makeup trim → user makeup.
  *
  * The trim is unity unless the built-in compressor's Auto Makeup switch is
- * off, when `applyCompressorAutoMakeup` drives it to cancel the gain Chromium
+ * off, when `applyAutoMakeupSwitch` drives it to cancel the gain Chromium
  * adds inside the node. At unity it passes every sample unchanged.
  */
 export function createCompressor(ctx: BaseAudioContext): OfflineDeviceNode {
