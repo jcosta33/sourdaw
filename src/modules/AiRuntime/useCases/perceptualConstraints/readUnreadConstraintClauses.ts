@@ -4,6 +4,7 @@ import {
     AVOID_VERB,
     BECOMING_VERB,
     CAUSING_VERB,
+    CLAUSE_JOINING_AMPERSAND,
     CLAUSE_PUNCTUATION,
     CLAUSE_SEPARATOR,
     CLAUSE_SUBJECT,
@@ -12,7 +13,7 @@ import {
     DETERMINER,
     FROM,
     HARD_BOUNDARY_WORD,
-    HOLDING_KEEP,
+    holdingKeep,
     LEAVE_VERB,
     LINKING_VERB,
     LIST_JOINER,
@@ -64,12 +65,15 @@ const NEGATED_GOVERNOR = String.raw`(?:(?<modal>${MODAL_VERB_NEGATION})|${NEGATI
  * keep, leave, stop or prevent a negation governs is permitted, not protective ("don't stop the mix
  * getting wider", "there's no need to leave the width alone"). A negation of
  * anything else ("don't forget to make the bass wider", "no reverb") governs no measured word, so it
- * opens nothing.
+ * opens nothing. A keep is read with the quality terms the kept-quality reader holds (`heldTerms`), so
+ * the net and that reader agree on which keep holds ("keep the vocal bright getting louder").
  */
-const PROTECTIVE = new RegExp(
-    String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_PERMITTED}(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_PERMITTED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
-    'iu'
-);
+function protectiveClause(heldTerms: string): RegExp {
+    return new RegExp(
+        String.raw`\b(?:${NEGATED_GOVERNOR}|${NOT_PERMITTED}(?<holding>${holdingKeep(heldTerms)}|${LEAVE_VERB})|${NOT_PERMITTED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
+        'iu'
+    );
+}
 /**
  * A keep naming the move it prevents ("keep the mix from getting louder", "from going brighter", "from
  * sounding wider", "from widening") bounds that move, so it governs ways a quality moves as a negation
@@ -90,10 +94,10 @@ const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT
 const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
 /**
  * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and",
- * a spaced ampersand writing one, or an "or" is a boundary whose next clause may share a protection.
+ * an ampersand writing one, or an "or" is a boundary whose next clause may share a protection.
  */
 const BOUNDARY = new RegExp(
-    String.raw`${CLAUSE_PUNCTUATION}|(?<joiner>\b${LIST_JOINER}\b|${SPACED_AMPERSAND})|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
+    String.raw`${CLAUSE_PUNCTUATION}|(?<joiner>\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND})|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
     'giu'
 );
 /** The words a joined clause may open with and still continue the protection before it. */
@@ -108,7 +112,7 @@ const CONTINUES = new RegExp(
  * A verb of its own ("don't make it harsh - brighten the vocal") opens a clause of its own.
  */
 const DANGLING_REST = new RegExp(
-    String.raw`^\s*(?:${FROM}|${BECOMING_VERB}|${LINKING_VERB}|(?:${DEGREE_WORD}\s+)?${DIRECTION})`,
+    String.raw`^\s*(?:${FROM}|${BECOMING_VERB}|${LINKING_VERB}|(?:${DEGREE_WORD}\s+)?${DIRECTION})${WORD_END}`,
     'iu'
 );
 /** A joined clause whose object takes a verb of its own states its own clause: "and the vocal needs …". */
@@ -158,8 +162,8 @@ type Chain = { start: number; holds: boolean; continuable: boolean };
 
 type ChainStep = { chain: Chain; governed: Governed };
 
-/** The masked request the net reads and the spans its readers consumed. */
-type NetRequest = { masked: string; consumed: readonly ConsumedSpan[] };
+/** The masked request the net reads, the spans its readers consumed and what makes a clause protective. */
+type NetRequest = { masked: string; consumed: readonly ConsumedSpan[]; protective: RegExp };
 
 function governedEnd(text: string, from: number): number {
     const end = GOVERNED_END.exec(text.slice(from));
@@ -172,8 +176,8 @@ function governedEnd(text: string, from: number): number {
  * before it, to the governed end. A measured word stated before an unrelated protection ("brighten the
  * vocal without making it harsh") is the request, never a protected quality.
  */
-function readProtection(segment: Segment, text: string): Governed | null {
-    const protection = PROTECTIVE.exec(text);
+function readProtection(segment: Segment, text: string, protective: RegExp): Governed | null {
+    const protection = protective.exec(text);
     if (protection === null) {
         return null;
     }
@@ -212,7 +216,7 @@ function chainStep(segment: Segment, chain: Chain | null, request: NetRequest): 
         const governed = { start: segment.start, end, holds: false };
         return { chain: { ...chain, holds: false, continuable: true }, governed };
     }
-    const governed = readProtection(segment, text);
+    const governed = readProtection(segment, text, request.protective);
     if (governed === null) {
         return null;
     }
@@ -235,17 +239,19 @@ function unreadClause(masked: string, prompt: string, start: number, end: number
  * louder and the vocal much quieter"), that names a measured quality no reader consumed is recorded
  * unsupported with its words, so no protective clause the readers miss is silently dropped. It reads
  * the masked request, so a track name or a quotation never opens or fills one. Each entry carries the
- * span it quotes.
+ * span it quotes. `heldTerms` is the pattern of quality terms the kept-quality reader holds.
  */
 export function readUnreadConstraintClauses(
     masked: string,
     prompt: string,
-    consumed: readonly ConsumedSpan[]
+    consumed: readonly ConsumedSpan[],
+    heldTerms: string
 ): UnreadClause[] {
     const unread: (UnsupportedPerceptualConstraint & ConsumedSpan)[] = [];
+    const request: NetRequest = { masked, consumed, protective: protectiveClause(heldTerms) };
     let chain: Chain | null = null;
     for (const segment of segmentsOf(masked)) {
-        const step = chainStep(segment, chain, { masked, consumed });
+        const step = chainStep(segment, chain, request);
         chain = step?.chain ?? null;
         if (step === null) {
             continue;

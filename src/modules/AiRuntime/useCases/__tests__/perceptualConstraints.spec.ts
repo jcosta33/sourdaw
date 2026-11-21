@@ -2600,6 +2600,82 @@ describe('reading only governed protections and whole object names', () => {
             [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
             [],
         ],
+        // a continued move's object is what moves, so an object holding a kept quality is that quality kept
+        [
+            'keep the vocal bright getting louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright making it louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright getting the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright making the drums louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright boosting the highs',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'keep the vocal bright turning the vocal up',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'so yeah keep the vocal bright like getting louder',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['keep the mix wide widening the guitar', [measured('stereo-width-held-v1', 'keep the mix wide', MIX)], []],
+        [
+            'make the drums louder um keep the drums wide widening the guitar',
+            [measured('stereo-width-held-v1', 'keep the drums wide', onTracks('drums'))],
+            [],
+        ],
+        // a word list closes on a word end, so a longer word holding one is not that word
+        ["don't make it harsh - better vocals and the drums louder", [], []],
+        [
+            "don't make the long neverland string pad louder",
+            [],
+            [
+                unread(
+                    "don't make the long neverland string pad louder",
+                    '“the long neverland string pad” names no track or mix whose loudness can be measured.'
+                ),
+            ],
+        ],
+        [
+            'keep everything wide but the vocal as isolated as possible',
+            [measured('stereo-width-held-v1', 'keep everything wide', MIX)],
+            [],
+        ],
+        // an ampersand before a verb opening a clause joins that clause as "and" does, spaced or not
+        [
+            'keep the vocal bright&stop making the mix wider',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
+        [
+            'keep the drums dynamic &stop making the mix wider',
+            [measured('dynamics-held-v1', 'keep the drums dynamic', onTracks('drums'))],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
+        [
+            'keep the mix wide&stop making the mix wider',
+            [measured('stereo-width-held-v1', 'keep the mix wide', MIX)],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
+        ['keep the vocal&stop making the mix wider', [], [unread('stop making the mix wider', NET_REASON)]],
         // a finite verb after a kept quality opens a clause of its own; only a gerund continues the keep's move
         [
             'keep the vocal bright make the drums louder',

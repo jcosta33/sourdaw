@@ -9,7 +9,6 @@ import {
     WHOLE_WORD_END,
     WORD_END,
 } from './constraintDirections';
-import { normalizePhrase } from './normalizePhrase';
 import { HYPHEN_OR_SPACE, words } from './words';
 
 /**
@@ -91,17 +90,10 @@ export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', THAT]);
 export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
 export const POSSESSIVE_DETERMINER = words(['its', 'their']);
-const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
+/** The determiner an object's name is read without: "the vocal" names the vocal. */
+export const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
 /** A quotation mark or an apostrophe, which an object's name is read without. */
-const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
-
-/**
- * An object's name as a track's name is matched against: its brackets kept, since they are part of a
- * name, so "Bass DI" never names Bass (DI). `normalizeObjectText` reads its words without them.
- */
-export function normalizeObjectName(text: string): string {
-    return normalizePhrase(text.replaceAll(QUOTE_MARK, '')).replace(LEADING_DETERMINER, '');
-}
+export const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
 const ANY_WORD = 'any';
 const SO = 'so';
@@ -443,9 +435,16 @@ const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|
  * A word an object member may hold: never a boundary, a direction, a negation or a predicate word, so a
  * member never runs into the next clause ("The vocal is louder and the drums must not …").
  */
-const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
+function objectWord(excluded: string): string {
+    return String.raw`(?!(?:${NON_OBJECT_WORD}|${excluded})${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
+}
+/** What matches no word, for an object member that excludes nothing beyond what every member excludes. */
+const MATCHES_NOTHING = '(?!)';
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
-export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
+function objectMember(word: string): string {
+    return String.raw`(?:${DETERMINER}\s+${word}(?:\s+${word}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
+}
+export const OBJECT_MEMBER = objectMember(objectWord(MATCHES_NOTHING));
 /** An object list's members join as directions do, by a comma, "and" or "or", or by an ampersand. */
 const MEMBER_JOIN = String.raw`(?:${LIST_JOIN}|\s*${AMPERSAND}\s*)`;
 /**
@@ -453,7 +452,10 @@ const MEMBER_JOIN = String.raw`(?:${LIST_JOIN}|\s*${AMPERSAND}\s*)`;
  * drums" is one list while "the vocal and brighten the drums" ends at "and"; "or" lists as "and" does,
  * since a clause naming either member holds both ("don't raise the level of the vocal or the drums").
  */
-export const OBJECT_MEMBERS = String.raw`${OBJECT_MEMBER}(?:${MEMBER_JOIN}${OBJECT_MEMBER})*`;
+function objectMembers(member: string): string {
+    return String.raw`${member}(?:${MEMBER_JOIN}${member})*`;
+}
+export const OBJECT_MEMBERS = objectMembers(OBJECT_MEMBER);
 export const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBERS})`;
 /**
  * An aside naming nothing but an object, closed or not, which a clause before it never holds as its own
@@ -544,7 +546,7 @@ function exceptedPart(group: string, objectEnd: string = EXCEPTED_OBJECT_END): s
  * predicate, which makes it the subject of a clause of its own ("keep everything bright but the vocal
  * is too loud").
  */
-const SPARED_OBJECT_END = String.raw`(?=\s+(?:${EXCEPTION_PREPOSITION}${WORD_END}|${HELD_STATE}|${LEFT_STATE})|${CLAUSE_END})`;
+const SPARED_OBJECT_END = String.raw`(?=\s+(?:${EXCEPTION_PREPOSITION}|${HELD_STATE}|${LEFT_STATE})${WORD_END}|${CLAUSE_END})`;
 /** The marks an exception after a protection may stand behind: a comma, a colon, a separator or a bracket. */
 const EXCEPTION_MARK = String.raw`(?:\s*[,;:${OPENING_BRACKET_MARKS}]|\s*${CLAUSE_SEPARATOR})?\s*`;
 /**
@@ -593,14 +595,31 @@ export const COMPARED_DIRECTION = String.raw`${DIRECTION}\s+${THAN}\b`;
 /** Comparatives one clause applies to one object: "brighter and louder", "brighter, wider, or louder". */
 export const DIRECTION_LIST = String.raw`(?<direction>${DIRECTION}(?:${LIST_JOIN}(?:${ANY}\s+)?${DIRECTION})*)`;
 
+/** The verbs that open a clause of their own, which a continued move's object never holds. */
+const CLAUSE_OPENING_VERB = String.raw`(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPING_WORD}|${AVOID_VERB})`;
+/**
+ * An ampersand, spaced or not, before a verb opening a clause of its own, which joins that clause as
+ * "and" does: "keep the vocal bright&stop making the mix wider".
+ */
+export const CLAUSE_JOINING_AMPERSAND = String.raw`\s*${AMPERSAND}\s*(?=${CLAUSE_OPENING_VERB}${WORD_END})`;
 /**
  * A keep continuing a move rather than holding: "keep widening the mix", "keep on widening", "keep
  * making the drums wider", "keep the vocal getting brighter". It asks for more of the move through a
- * gerund, and never reaches past a separator into the next clause's move. A finite verb after the
- * keep's object ("keep the vocal bright make the drums louder") opens a clause of its own, and so does
- * a gerund after a keep, release, stop or avoid the object would end in ("keep the vocal bright stop
- * turning it down", "keep the vocal bright keep making it wider").
+ * gerund, and never reaches past a separator into the next clause's move. Its object is the thing that
+ * moves, so it holds no verb opening a clause of its own and no quality the keep holds (`heldTerm`):
+ * "keep the vocal bright getting louder", "keep the vocal bright stop turning it down" and "keep the
+ * vocal bright keep making it wider" keep a quality, and the gerund opens a clause of its own. A finite
+ * verb after the keep's object ("keep the vocal bright make the drums louder") continues nothing.
  */
-const CONTINUED_MOVE = String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${OBJECT_MEMBERS}${SAME_CLAUSE_SPACE}(?<!\b(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPING_WORD}|${AVOID_VERB})\s+))?(?=${GERUND})(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
-/** A keep-type verb that holds what follows, never one continuing a move or one a negation permits. */
-export const HOLDING_KEEP = String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${CONTINUED_MOVE})`;
+function continuedMove(heldTerm: string): string {
+    const object = objectMembers(objectMember(objectWord(String.raw`(?:${CLAUSE_OPENING_VERB}|${heldTerm})`)));
+    return String.raw`${SAME_CLAUSE_SPACE}(?:${ON}${SAME_CLAUSE_SPACE})?(?:${object}${SAME_CLAUSE_SPACE})?(?=${GERUND})(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b${SAME_CLAUSE_CHARACTER}*?${DIRECTION})`;
+}
+/**
+ * A keep-type verb that holds what follows, never one continuing a move or one a negation permits. The
+ * kept-quality reader and the net pass the one pattern of terms it holds, so a keep naming one is
+ * never read as a move.
+ */
+export function holdingKeep(heldTerm: string): string {
+    return String.raw`${NOT_PERMITTED}${KEEP_VERBS}${WORD_END}(?!${continuedMove(heldTerm)})`;
+}

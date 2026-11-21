@@ -17,7 +17,6 @@ import {
     MASK_GLYPH,
     MODAL_NEGATION,
     NEGATION,
-    normalizeObjectName,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_MEMBERS,
@@ -41,7 +40,9 @@ import {
     QUALITY_VERB,
     SPLIT_VERB_HEAD,
     SPLIT_VERB_PARTICLE,
+    WORD_END,
 } from './constraintDirections';
+import { normalizeObjectName } from './normalizeObjectName';
 import { nounConstraintId } from './nounConstraintId';
 
 /**
@@ -150,7 +151,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
  * A character of a fallback object: it never crosses a conjunction, a negation or a "please" into the
  * next clause. Those and punctuation are every boundary a readable clause opens or ends at.
  */
-const IN_CLAUSE = String.raw`(?:(?!\b${NEGATION})${IN_CLAUSE_CHARACTER})`;
+const IN_CLAUSE = String.raw`(?:(?!\b${NEGATION}${WORD_END})${IN_CLAUSE_CHARACTER})`;
 /**
  * A direction clause whose object is no list the reader can read ("don't make the cello part
  * louder"): recorded unsupported rather than held on a guessed scope or dropped.

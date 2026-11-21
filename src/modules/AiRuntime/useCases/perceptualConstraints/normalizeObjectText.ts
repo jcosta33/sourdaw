@@ -1,4 +1,5 @@
-import { BRACKET, normalizeObjectName } from './constraintClauseWords';
+import { BRACKET } from './constraintClauseWords';
+import { normalizeObjectName } from './normalizeObjectName';
 
 const BRACKETS = new RegExp(BRACKET, 'gu');
 

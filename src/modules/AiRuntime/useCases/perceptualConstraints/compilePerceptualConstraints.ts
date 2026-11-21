@@ -18,7 +18,7 @@ import {
     DIRECTION_LEAD,
     DIRECTION_LIST,
     FROM,
-    HOLDING_KEEP,
+    holdingKeep,
     IN_CLAUSE_CHARACTER,
     KEEP,
     KEEP_VERBS,
@@ -31,7 +31,6 @@ import {
     MIX_WORDS,
     NEGATION,
     NO,
-    normalizeObjectName,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_MEMBER,
@@ -58,6 +57,7 @@ import {
     QUALITY_OF,
     WORD_END,
 } from './constraintDirections';
+import { normalizeObjectName } from './normalizeObjectName';
 import { normalizeObjectText } from './normalizeObjectText';
 import { normalizePhrase } from './normalizePhrase';
 import { readAcrossBrackets } from './readAcrossBrackets';
@@ -335,6 +335,8 @@ function readLowEndConstraints(reader: RequestReader): ConsumedSpan[] {
 }
 
 type QualityPattern = {
+    /** The pattern of the terms a kept quality holds, which the net reads its keeps with too. */
+    terms: string;
     pattern: RegExp;
     prevented: RegExp;
     continuation: RegExp;
@@ -364,7 +366,7 @@ function readQualityPattern(): QualityPattern {
     const term = String.raw`${terms}${WORD_END}`;
     const more = String.raw`(?<more>(?:${TERM_JOIN}(?:${AS}\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
-        String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
+        String.raw`\b${holdingKeep(terms)}\s+${QUALITY_OBJECT}\s+${TERM_LEAD}(?<term>${term})${more}`,
         'dgiu'
     );
     // The words of the move stand between "from" and the quality: "from getting muddy", "from losing the punch".
@@ -380,7 +382,7 @@ function readQualityPattern(): QualityPattern {
         const normalized = normalizePhrase(candidate.replaceAll('-', ' '));
         return entries.find((entry) => entry.term.replaceAll('-', ' ') === normalized)?.descriptor;
     };
-    return { pattern, prevented, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
+    return { terms, pattern, prevented, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
 }
 
 function pushUnmeasuredQuality(reader: RequestReader, clause: ReadClause, term: string) {
@@ -572,9 +574,9 @@ function pushKeepPart(
  * `unread` is the masked text with the hold clauses blanked, so nothing is read twice; a pronoun's
  * scope is still judged against the whole masked request. Returns the spans it read.
  */
-function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
+function readKeepConstraints(unread: string, reader: RequestReader, quality: QualityPattern): ConsumedSpan[] {
     const { prompt } = reader;
-    const { pattern, prevented, continuation, termPattern, descriptorOf } = readQualityPattern();
+    const { pattern, prevented, continuation, termPattern, descriptorOf } = quality;
     const text: KeepText = { unread, prompt, continuation, termPattern };
     const spans: ConsumedSpan[] = [];
     for (const opening of readKeepOpenings(text, { pattern, prevented })) {
@@ -630,9 +632,10 @@ function readMaskedRequest(masked: string, prompt: string, context: ProjectConte
     const holds = readHoldClauses(masked, prompt);
     pushHoldClauses(reader, holds);
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    const keeps = readKeepConstraints(maskClauses(masked, holds), reader);
+    const quality = readQualityPattern();
+    const keeps = readKeepConstraints(maskClauses(masked, holds), reader, quality);
     const consumed = [...lowEnd, ...holds, ...keeps];
-    const unread = readUnreadConstraintClauses(masked, prompt, consumed);
+    const unread = readUnreadConstraintClauses(masked, prompt, consumed, quality.terms);
     const unsupported = [
         ...reader.unsupported.filter(({ span }) => !isQuotedWithin(span, unread)),
         ...unread.map(({ unsupported: entry, span }) => ({ entry, span })),
