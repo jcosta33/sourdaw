@@ -3052,7 +3052,7 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'hideTrack',
         intentPhrases: ['hide', 'unhide'],
-        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        targetRules: [{ argument: 'trackId', capability: 'hideable-track', allowBatchLocal: false }],
         valueRules: [
             {
                 argument: 'hidden',

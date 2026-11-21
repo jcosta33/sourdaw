@@ -7,6 +7,10 @@ import {
     type ExecutableAppActionTargetRule,
 } from './sharedDescriptorParts';
 
+const existingHideableTrackTargetRules = [
+    { argument: 'trackId', capability: 'hideable-track', allowBatchLocal: false },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
 const existingFolderTargetRules = [
     { argument: 'trackId', capability: 'folder-track', allowBatchLocal: false },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
@@ -18,7 +22,7 @@ export const trackDisplayDescriptors = [
         risk: 'bounded-reversible',
         description: "Hide a track's row from the arrangement and mixer, or show it again; a hidden track still plays.",
         intentPhrases: ['hide', 'unhide'],
-        targetRules: existingTrackTargetRules,
+        targetRules: existingHideableTrackTargetRules,
         valueRules: [
             {
                 argument: 'hidden',

@@ -8,6 +8,7 @@ export type AgentReferenceCapability =
     | 'armable-track'
     | 'duplicable-track'
     | 'removable-track'
+    | 'hideable-track'
     | 'routable-source'
     | 'bus'
     | 'output'
@@ -37,6 +38,7 @@ function isNotVca(kind: string): boolean {
 const trackKindRules: ReadonlyMap<string, (kind: string) => boolean> = new Map([
     ['track', () => true],
     ['removable-track', (kind: string) => kind !== 'master'],
+    ['hideable-track', (kind: string) => kind !== 'master'],
     ['folder-track', (kind: string) => kind === 'folder'],
     ['armable-track', isNotVca],
     ['device-host-track', isNotVca],

@@ -14,6 +14,9 @@ function findRefusal(action: HideTrackAction, context: HandlerValidationContext)
     if (track === null) {
         return describeMissingTrack(trackId);
     }
+    if (track.kind === 'master') {
+        return 'The master track cannot be hidden';
+    }
     return expectedHidden === undefined || track.hidden === expectedHidden
         ? null
         : `Track "${trackId}" was shown or hidden after the edit this restores`;

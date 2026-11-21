@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleHideTrack } from '../hideTrack';
 
 const mocks = vi.hoisted(() => ({
     hideTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; hidden: boolean; devices?: never[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<() => { tracks: { id: string; hidden: boolean; kind?: string; devices?: never[] }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/hideTrack', () => ({
@@ -94,6 +97,21 @@ describe('handleHideTrack', () => {
             expect(handleHideTrack.validationRefusalReason?.(action, context(action))).toBe(
                 'Track "t1" does not exist'
             );
+        });
+
+        it.each([true, false])('refuses to hide or show the master track (hidden %s), writing nothing', (hidden) => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: false }],
+            });
+            const action: Extract<AppAction, { type: 'hideTrack' }> = {
+                type: 'hideTrack',
+                payload: { trackId: 'master', hidden },
+            };
+            const batch = { actions: [action], actionIndex: 0 };
+
+            expect(handleHideTrack.validate?.(action, batch)).toBe(false);
+            expect(handleHideTrack.validationRefusalReason?.(action, batch)).toBe('The master track cannot be hidden');
+            expect(mocks.hideTrack).not.toHaveBeenCalled();
         });
 
         it('validates a restore only against the state it expects', () => {
