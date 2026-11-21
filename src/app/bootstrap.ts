@@ -34,7 +34,6 @@ import {
     initTimelineViewReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
-    setOfflineRenderDependencies,
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
     getDeviceContractVersionForCommand,
@@ -363,13 +362,6 @@ configureOfflineYeastMidiProcessing({
         holdsLegacyRack: holdsLegacyYeastRack,
         firstDeviceInProjectOrder: () => yeastDeviceIdsInProjectOrder()[0] ?? null,
     },
-});
-setOfflineRenderDependencies({
-    projectPpqEndpoints,
-    createMidiEventProjector: createGrooveMidiEventProjector,
-    createYeastMidiProcessor: createOfflineYeastProcessor,
-    selectMidiEventProbability: shouldPlayMidiEvent,
-    createChordPitchProjector,
 });
 setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });

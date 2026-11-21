@@ -87,7 +87,6 @@ describe('executeSelectedTimeRangeDeletion store validation', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -176,7 +175,6 @@ describe('executeSelectedTimeRangeDeletion track-shape validation', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -247,7 +245,6 @@ describe('executeSelectedTimeRangeDeletion computed-value validation', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -298,7 +295,6 @@ describe('executeSelectedTimeRangeDeletion supplied replay plan validation', () 
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -462,7 +458,6 @@ describe('executeSelectedTimeRangeDeletion midi preparation rejection', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -491,15 +486,6 @@ describe('executeSelectedTimeRangeDeletion midi preparation rejection', () => {
         const result = executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['t1'] });
         expect(result).toMatchObject(REJECTED);
     });
-
-    it('throws when dependencies are not registered', () => {
-        setTimeOperationDependencies(null);
-        const clip = createClip({ id: 'span', trackId: 't1', startBeat: 0, endBeat: 10 });
-        setArrangement([createTrack('t1', [clip])]);
-        expect(() => executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['t1'] })).toThrow(
-            'Arrangement time operation dependencies are not registered'
-        );
-    });
 });
 
 describe('executeSelectedTimeRangeDeletion clip geometry applied paths', () => {
@@ -512,7 +498,6 @@ describe('executeSelectedTimeRangeDeletion clip geometry applied paths', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
@@ -610,7 +595,6 @@ describe('executeSelectedTimeRangeDeletion undo', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 

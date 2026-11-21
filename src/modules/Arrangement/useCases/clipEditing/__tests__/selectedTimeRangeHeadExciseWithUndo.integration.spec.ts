@@ -212,7 +212,6 @@ describe.each(SEED_VARIANTS)(
             clearUndoHistory();
             resetActionReplayAuthority();
             clearHandlerRegistry();
-            setTimeOperationDependencies(null);
             trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
             takeLaneStore.set({ lanes: [] });
             midiStore.set(EMPTY_MIDI);

@@ -26,7 +26,7 @@
 //! holds its runtime as an `Arc<SharedHostedPlugin>` shared with a scheduler
 //! that is going away, activated at the dead device's rate, and the dormant
 //! record `attach_dormant_plugins` re-attaches from
-//! (`state::PluginInstanceData`) carries an owned `HostedRuntime` and nothing
+//! (`state::PluginInstanceData`) carries a runtime activated at load and nothing
 //! naming the plugin binary. So there is no dormant record to write here: the
 //! runtimes are retired for reclamation the way the exit cascade retires
 //! them, and re-instantiating an instance is the load path's business, not
@@ -267,7 +267,8 @@ fn take_engine_owned_plugins(state: &AppState) -> Vec<(String, EnginePluginInsta
 ///
 /// Runs on the records [`drain_the_lost_engine`] already took, with the gate,
 /// the registry and every state lock released, because each call below reaches
-/// third-party code behind a per-instance control wait of unbounded length.
+/// third-party code behind a per-instance control wait that runs to its gate
+/// deadline when a hung call holds the instance.
 ///
 /// The editor close comes first, for the reason `shutdown.rs` states as its
 /// own step ordering: the final drop of a retired runtime runs the format's

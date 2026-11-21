@@ -31,6 +31,7 @@ export { registerReleasedStripReportSink } from './pluginLifecycle/registerRelea
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { editExternalPluginParameter } from './pluginLifecycle/editExternalPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
+export { refreshExternalPluginTails } from './pluginLifecycle/refreshExternalPluginTails';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { readExternalPluginStateForCapture } from './pluginLifecycle/readExternalPluginStateForCapture';
