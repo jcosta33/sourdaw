@@ -188,8 +188,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['lint', 4864 * 1024 ** 2],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
-    // The focused batch that touched seven spec files at once peaked at 4423 MiB.
-    ['test:run', 6144 * 1024 ** 2],
+    // The agent campaign harness and acceptance corpora specs run together peaked at 6794 MiB.
+    ['test:run', 7680 * 1024 ** 2],
     // A focused single-crate cargo:test filter peaked at about 4710 MiB under the guard.
     ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
