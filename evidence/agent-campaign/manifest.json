@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "3d9024b4f780bc3857ab20797c4d6725573d665f3fa18d527e912c998c3a1f98"
+                    "digest": "1c9a0cc4448f14322f662e33a3602cbfa8f54b65b0ab3efaead0d6d45b660202"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
