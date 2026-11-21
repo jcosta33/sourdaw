@@ -36,12 +36,7 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
-        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
-        isMidiTransformDevice: actual.isMidiTransformDevice,
-        resolveDrumKitBy: actual.resolveDrumKitBy,
-        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
-        resolveLiveNoteControls: actual.resolveLiveNoteControls,
-        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        ...actual,
         builtinSynthVoice: { read: vi.fn() },
         audioEngine: {
             context: audio_clock,
