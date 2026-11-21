@@ -6424,7 +6424,9 @@ fn render_offline_ops(
     // Ahead of the batch: its splices name these ids, and the graph refuses an
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
-        plugins.register(&mut renderer)?;
+        plugins
+            .register(&mut renderer)
+            .map_err(|error| error.to_string())?;
     }
     for op in ops {
         renderer.push(op).map_err(|error| error.to_string())?;
@@ -6437,10 +6439,12 @@ fn render_offline_ops(
     let rendered = renderer.render_controlled(frames, render.control());
     drop(leaving_processing);
     let Ok(rendered) = rendered else {
-        return Err(render.cancelled());
+        return Err(render.cancelled().to_string());
     };
     if let Some(plugins) = plugins {
-        plugins.ensure_every_block_processed()?;
+        plugins
+            .ensure_every_block_processed()
+            .map_err(|error| error.to_string())?;
     }
 
     // Belt and braces under refuse-don't-drop: `map_batch` refuses anything
@@ -6564,7 +6568,7 @@ pub(crate) async fn render_graph_offline_with(
         ));
     }
 
-    let render = InFlightRender::begin(state, render_id)?;
+    let render = InFlightRender::begin(state, render_id).map_err(|error| error.to_string())?;
     let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
@@ -6594,13 +6598,15 @@ pub(crate) async fn render_graph_offline_with(
     };
     // A render cancelled before it starts builds no plugin instance.
     if render.control().is_cancelled() {
-        return Err(render.cancelled());
+        return Err(render.cancelled().to_string());
     }
     #[cfg(test)]
     if let Some(after_mapping) = &seams.after_mapping {
         after_mapping(state);
     }
-    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
+    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams)
+        .await
+        .map_err(|error| error.to_string())?;
     let (left, right) =
         render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
     drop(plugins);
