@@ -45,6 +45,7 @@ const reviewId = 'PRR_requested';
 const threadId = 'PRRT_1';
 const repairId = '1002';
 const confirmationId = '1003';
+const headRefName = 'agent/4944/nightly-secret-scan-bacteria-fingerprint';
 const repair: ReviewRepairRecord = {
     format: 'repair-v1',
     pr,
@@ -93,6 +94,9 @@ function comment(id: string, body: string, authorNodeId: string): IssueComment {
 
 function reviewState(): RetirementReviewState {
     return {
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        reviewCount: 1,
+        openChildPullRequestCount: 0,
         threads: [
             {
                 threadId,
@@ -113,13 +117,24 @@ function reviewState(): RetirementReviewState {
     };
 }
 
-function providerProjection(state: RetirementReviewState = reviewState()) {
+function providerActor(authorNodeId: string | null): { __typename: string; id?: string } {
+    if (authorNodeId === null) {
+        return { __typename: 'User' };
+    }
+    return { __typename: 'Bot', id: authorNodeId };
+}
+
+function providerProjection(state: RetirementReviewState = reviewState(), ref = headRefName) {
     return {
         data: {
             repository: {
                 nameWithOwner: 'jcosta33/sourdaw',
+                openChildren: { totalCount: state.openChildPullRequestCount },
                 pullRequest: {
                     number: pr,
+                    author: providerActor(state.authorNodeId),
+                    headRefName: ref,
+                    allReviews: { totalCount: state.reviewCount },
                     reviewThreads: {
                         nodes: state.threads.map((thread) => ({
                             id: thread.threadId,
@@ -182,7 +197,7 @@ function fixture(options: FixtureOptions = {}) {
         number: pr,
         state,
         head: currentHead,
-        headRefName: 'agent/4944/nightly-secret-scan-bacteria-fingerprint',
+        headRefName,
         headRepository: options.headRepository === undefined ? 'jcosta33/sourdaw' : options.headRepository,
         repository: 'jcosta33/sourdaw',
         base: options.base ?? 'main',
@@ -294,7 +309,7 @@ function nativeClosureFixture(root: string, moveAtCommentRead?: number, closeErr
         const query = args.find((arg) => arg.startsWith('query=')) ?? '';
         if (query.includes('reviewThreads(first:100)')) {
             events.push('reviews');
-            return JSON.stringify(providerProjection());
+            return JSON.stringify(providerProjection(reviewState(), 'fix/retire'));
         }
         if (query.includes('headRefOid')) {
             const preceding = events.at(-1);
@@ -378,7 +393,8 @@ function nativeClosureFixture(root: string, moveAtCommentRead?: number, closeErr
     const native = shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture);
     const port: RetirePullRequestPort = {
         ...native,
-        inspectRetirementReviewState: () => inspectRetirementReviewState(pr, (args) => capture('gh', args)),
+        inspectRetirementReviewState: (_number, ref) =>
+            inspectRetirementReviewState(pr, ref, (args) => capture('gh', args)),
         isAncestor: (commit, target) => commit === target,
         log: (message) => events.push(message),
     };
@@ -540,7 +556,7 @@ describe('native obsolete pull-request retirement', () => {
         second.threads[0]!.resolved = false;
         let providerCalls = 0;
         current.port.inspectRetirementReviewState = () =>
-            inspectRetirementReviewState(pr, () => {
+            inspectRetirementReviewState(pr, headRefName, () => {
                 providerCalls += 1;
                 if (providerCalls % 2 === 1) {
                     return JSON.stringify(providerProjection(first));
@@ -556,7 +572,7 @@ describe('native obsolete pull-request retirement', () => {
     it('reads both complete authority connections from one provider response', () => {
         const calls: string[][] = [];
         expect(
-            inspectRetirementReviewState(pr, (args) => {
+            inspectRetirementReviewState(pr, headRefName, (args) => {
                 calls.push(args);
                 return JSON.stringify(providerProjection());
             })
@@ -579,7 +595,7 @@ describe('native obsolete pull-request retirement', () => {
         });
         const current = fixture();
         current.port.inspectRetirementReviewState = () =>
-            inspectRetirementReviewState(pr, () => JSON.stringify(response));
+            inspectRetirementReviewState(pr, headRefName, () => JSON.stringify(response));
         expect(retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port)).toBe('pull-request-retired:5361');
         expect(current.state().state).toBe('CLOSED');
     });
@@ -716,7 +732,7 @@ describe('native obsolete pull-request retirement', () => {
         const current = fixture();
         let providerCalls = 0;
         current.port.inspectRetirementReviewState = () =>
-            inspectRetirementReviewState(pr, () => {
+            inspectRetirementReviewState(pr, headRefName, () => {
                 providerCalls += 1;
                 return JSON.stringify(response);
             });
@@ -729,7 +745,7 @@ describe('native obsolete pull-request retirement', () => {
         const current = fixture();
         let providerCalls = 0;
         current.port.inspectRetirementReviewState = () =>
-            inspectRetirementReviewState(pr, () => {
+            inspectRetirementReviewState(pr, headRefName, () => {
                 providerCalls += 1;
                 return '{invalid';
             });
@@ -1038,22 +1054,32 @@ describe('native obsolete pull-request retirement', () => {
 
     describe('finding-free retirement', () => {
         const findingFree: RetirementRecord = { ...record, findings: [], reviewBodies: [] };
-        const noReviews: RetirementReviewState = { threads: [], requestedReviews: [] };
+        const noReviews: RetirementReviewState = {
+            ...reviewState(),
+            reviewCount: 0,
+            threads: [],
+            requestedReviews: [],
+        };
         const writes = (calls: string[]) => calls.filter((call) => ['comment', 'close', 'delete'].includes(call));
         const unresolvedThread = (): RetirementReviewState => ({
+            ...reviewState(),
             threads: [{ ...reviewState().threads[0]!, resolved: false, replies: [] }],
             requestedReviews: [],
         });
-        const resolvedThread = (): RetirementReviewState => ({ threads: reviewState().threads, requestedReviews: [] });
-        const bodyOnlyReview = (): RetirementReviewState => ({
+        const resolvedThread = (): RetirementReviewState => ({ ...reviewState(), requestedReviews: [] });
+        const bodyOnlyReview = (): RetirementReviewState => ({ ...reviewState(), threads: [] });
+        const ownerRequestedReview = (): RetirementReviewState => ({
+            ...reviewState(),
             threads: [],
-            requestedReviews: reviewState().requestedReviews,
+            requestedReviews: [{ reviewId: 'PRR_owner', body: 'Owner asks for changes.', head }],
         });
+        // COMMENTED, DISMISSED, APPROVED and PENDING reviews appear only in the unfiltered review count.
+        const unfilteredReview = (): RetirementReviewState => ({ ...noReviews, reviewCount: 1 });
 
         function providerSequence(port: RetirePullRequestPort, states: (index: number) => RetirementReviewState) {
             const responses: number[] = [];
-            port.inspectRetirementReviewState = (number) =>
-                inspectRetirementReviewState(number, () => {
+            port.inspectRetirementReviewState = (number, ref) =>
+                inspectRetirementReviewState(number, ref, () => {
                     responses.push(responses.length);
                     return JSON.stringify(providerProjection(states(responses.length - 1)));
                 });
@@ -1088,6 +1114,7 @@ describe('native obsolete pull-request retirement', () => {
             ['an unresolved review thread', unresolvedThread],
             ['a resolved confirmed review thread', resolvedThread],
             ['a body-only REQUEST_CHANGES review', bodyOnlyReview],
+            ['a REQUEST_CHANGES review from a non-reviewer actor', ownerRequestedReview],
         ] as const)('refuses an empty finding set while the PR has %s before any write', (_label, live) => {
             const { calls, port, state } = fixture();
             providerSequence(port, live);
@@ -1099,19 +1126,46 @@ describe('native obsolete pull-request retirement', () => {
             expect(state()).toMatchObject({ state: 'OPEN', comments: [] });
         });
 
-        it.each([
+        it.each(['COMMENTED', 'DISMISSED'])(
+            'refuses an empty finding set while the PR has a %s review before any write',
+            (reviewKind) => {
+                const { calls, port } = fixture();
+                const queries: string[] = [];
+                port.inspectRetirementReviewState = (number, ref) =>
+                    inspectRetirementReviewState(number, ref, (args) => {
+                        queries.push(args.find((arg) => arg.startsWith('query=')) ?? '');
+                        return JSON.stringify(providerProjection(unfilteredReview()));
+                    });
+
+                expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                    /has a review, so a finding-free retirement cannot attest its history/u
+                );
+                expect(writes(calls)).toEqual([]);
+                expect(queries).toHaveLength(1);
+                expect(queries[0], reviewKind).toContain('allReviews:reviews(first:1){totalCount}');
+            }
+        );
+
+        const appearances = [
+            ['a review thread', unresolvedThread, /exact live review-root set/u],
+            ['an unfiltered review', unfilteredReview, /has a review/u],
+        ] as const;
+        const phases = [
             ['before marker writes', 1, [], 'OPEN', 0],
             ['before closing', 2, ['comment', 'delete'], 'OPEN', 0],
             ['after closing', 3, ['comment', 'close'], 'CLOSED', 1],
-        ] as const)(
-            'refuses a review thread that appears %s',
-            (_label, appearsAt, expectedWrites, expectedState, markers) => {
+        ] as const;
+        it.each(
+            appearances.flatMap(([label, live, message]) =>
+                phases.map(([phase, ...outcome]) => [label, phase, live, message, ...outcome] as const)
+            )
+        )(
+            'refuses %s that appears %s',
+            (_label, _phase, live, message, appearsAt, expectedWrites, expectedState, markers) => {
                 const { calls, port, state } = fixture();
-                providerSequence(port, (index) => (index >= appearsAt ? unresolvedThread() : noReviews));
+                providerSequence(port, (index) => (index >= appearsAt ? live() : noReviews));
 
-                expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
-                    /exact live review-root set/u
-                );
+                expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(message);
                 expect(writes(calls)).toEqual(expectedWrites);
                 expect(state().state).toBe(expectedState);
                 expect(state().comments).toHaveLength(markers);
@@ -1133,8 +1187,8 @@ describe('native obsolete pull-request retirement', () => {
             'refuses an empty but truncated %s connection before any write',
             (connection) => {
                 const { calls, port } = fixture();
-                port.inspectRetirementReviewState = (number) =>
-                    inspectRetirementReviewState(number, () => {
+                port.inspectRetirementReviewState = (number, ref) =>
+                    inspectRetirementReviewState(number, ref, () => {
                         const response = providerProjection(noReviews);
                         response.data.repository.pullRequest[connection].pageInfo.hasNextPage = true;
                         return JSON.stringify(response);
@@ -1156,6 +1210,150 @@ describe('native obsolete pull-request retirement', () => {
             );
             const { calls, port } = fixture();
             expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow();
+            expect(writes(calls)).toEqual([]);
+        });
+    });
+
+    describe('retirement ownership', () => {
+        const findingFree: RetirementRecord = { ...record, findings: [], reviewBodies: [] };
+        const noReviews: RetirementReviewState = {
+            ...reviewState(),
+            reviewCount: 0,
+            threads: [],
+            requestedReviews: [],
+        };
+        const forms = [
+            ['with findings', record, reviewState],
+            ['finding-free', findingFree, () => noReviews],
+        ] as const;
+        const writes = (calls: string[]) => calls.filter((call) => ['comment', 'close', 'delete'].includes(call));
+        const fromProvider = (port: RetirePullRequestPort, live: (index: number) => RetirementReviewState) => {
+            let index = 0;
+            port.inspectRetirementReviewState = (number, ref) =>
+                inspectRetirementReviewState(number, ref, () => JSON.stringify(providerProjection(live(index++))));
+        };
+
+        it.each(
+            forms.flatMap(([form, input, live]) =>
+                (
+                    [
+                        ['the reviewer App', REVIEWER_BOT_NODE_ID],
+                        ['a user', null],
+                    ] as const
+                ).map(([opener, authorNodeId]) => [form, opener, input, live, authorNodeId] as const)
+            )
+        )(
+            'refuses a %s retirement of a PR opened by %s before any write',
+            (_form, _opener, input, live, authorNodeId) => {
+                const { calls, port, state } = fixture();
+                fromProvider(port, () => ({ ...live(), authorNodeId }));
+
+                expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                    /was not opened by the author App/u
+                );
+                expect(writes(calls)).toEqual([]);
+                expect(state()).toMatchObject({ state: 'OPEN', comments: [] });
+            }
+        );
+
+        it.each(forms)('refuses a %s retirement whose PR author changes before close', (_form, input, live) => {
+            const { calls, port, state } = fixture();
+            fromProvider(port, (index) => ({ ...live(), authorNodeId: index >= 2 ? null : AUTHOR_BOT_NODE_ID }));
+
+            expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /was not opened by the author App/u
+            );
+            expect(writes(calls)).toEqual(['comment', 'delete']);
+            expect(state()).toMatchObject({ state: 'OPEN', comments: [] });
+        });
+
+        it.each(forms)(
+            'refuses a %s retirement while another open PR targets its head branch',
+            (_form, input, live) => {
+                const { calls, port } = fixture();
+                const queries: string[][] = [];
+                port.inspectRetirementReviewState = (number, ref) =>
+                    inspectRetirementReviewState(number, ref, (args) => {
+                        queries.push(args);
+                        return JSON.stringify(providerProjection({ ...live(), openChildPullRequestCount: 1 }));
+                    });
+
+                expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                    /cannot retire while another open PR targets its head branch/u
+                );
+                expect(writes(calls)).toEqual([]);
+                expect(queries).toHaveLength(1);
+                expect(queries[0]).toContain(`headRef=${headRefName}`);
+                expect(queries[0]!.find((arg) => arg.startsWith('query='))).toContain(
+                    'openChildren:pullRequests(states:[OPEN],baseRefName:$headRef,first:1){totalCount}'
+                );
+            }
+        );
+
+        it('refuses a review response bound to a different head branch', () => {
+            const { calls, port } = fixture();
+            port.inspectRetirementReviewState = (number) =>
+                inspectRetirementReviewState(number, headRefName, () =>
+                    JSON.stringify(providerProjection(noReviews, 'other/branch'))
+                );
+
+            expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /head branch moved during retirement review inspection/u
+            );
+            expect(writes(calls)).toEqual([]);
+        });
+
+        it.each([
+            [
+                'review history',
+                (response: ReturnType<typeof providerProjection>) => {
+                    Object.assign(response.data.repository.pullRequest, { allReviews: { totalCount: -1 } });
+                },
+            ],
+            [
+                'open child pull requests',
+                (response: ReturnType<typeof providerProjection>) => {
+                    Object.assign(response.data.repository, { openChildren: {} });
+                },
+            ],
+        ])('refuses an invalid %s count before any write', (_label, damage) => {
+            const { calls, port } = fixture();
+            port.inspectRetirementReviewState = (number, ref) =>
+                inspectRetirementReviewState(number, ref, () => {
+                    const response = providerProjection(noReviews);
+                    damage(response);
+                    return JSON.stringify(response);
+                });
+
+            expect(() => retirePullRequest(pr, head, findingFree, AUTHOR_BOT_NODE_ID, port)).toThrow(
+                /has no valid total count/u
+            );
+            expect(writes(calls)).toEqual([]);
+        });
+
+        it.each(
+            forms.flatMap(([form, input, live]) =>
+                (
+                    [
+                        [
+                            'merged',
+                            { state: 'MERGED', merged: true, closedAt: '2026-10-24T00:00:00Z' },
+                            /does not match the retirement record/u,
+                        ],
+                        [
+                            'closed without a retirement marker',
+                            { state: 'CLOSED', closedAt: '2026-10-24T00:00:00Z' },
+                            /marker/u,
+                        ],
+                    ] as const
+                ).map(([condition, overlay, message]) => [form, condition, input, live, overlay, message] as const)
+            )
+        )('refuses a %s retirement of a %s PR without writing', (_form, _condition, input, live, overlay, message) => {
+            const { calls, port } = fixture({ reviewState: live() });
+            const inspect = port.inspect;
+            port.inspect = (number) => ({ ...inspect(number), ...overlay });
+
+            expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow(message);
             expect(writes(calls)).toEqual([]);
         });
     });
@@ -1398,6 +1596,6 @@ describe('native obsolete pull-request retirement', () => {
                     },
                 },
             });
-        expect(() => inspectRetirementReviewState(pr, gh)).toThrow();
+        expect(() => inspectRetirementReviewState(pr, headRefName, gh)).toThrow();
     });
 });
