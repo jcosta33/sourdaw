@@ -19,6 +19,7 @@ import { expandMixRecipe } from '../expandMixRecipe';
 import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
+import { toScheduledVibeRunBatch } from '../vibeRun/toScheduledVibeRunBatch';
 
 registerDeviceEnginePorts();
 
@@ -781,7 +782,7 @@ describe('planWholeProjectVibeRun batches', () => {
         }
         expect(batch.targets.map((target) => target.recipeIds)).toEqual([['bus-warm', 'bus-tight']]);
         const goals = readVibeBatchRecipeGoals({
-            batch,
+            batch: toScheduledVibeRunBatch(batch),
             catalog,
             range: { startBeat: 0, endBeat: 16, sectionId: null },
         });
@@ -812,7 +813,7 @@ describe('planWholeProjectVibeRun batches', () => {
         }
         expect(batch.targets.map((target) => target.recipeIds)).toEqual([['vocal-warm', 'vocal-tight']]);
         const goals = readVibeBatchRecipeGoals({
-            batch,
+            batch: toScheduledVibeRunBatch(batch),
             catalog: getMixRecipeCatalog(),
             range: { startBeat: 0, endBeat: 16, sectionId: null },
         });
