@@ -1051,7 +1051,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     throw createToolPlanningAbortError();
                 }
                 if (isTerminalModelRejection || isAdmissionRejection) {
-                    settleReady(backend);
+                    // Admission can refuse before the local engine loads; a model rejection implies it loaded.
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: error.message };
                 }
                 lastError = readChainAttemptFailure(error, normalizedAttemptError);

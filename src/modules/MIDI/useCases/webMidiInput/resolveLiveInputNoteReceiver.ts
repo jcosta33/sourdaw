@@ -1,4 +1,4 @@
-import { resolveNoteReceivingInstrument } from '#/modules/AudioEngine/useCases';
+import { findPadOutputHost, resolveNoteReceivingInstrument } from '#/modules/AudioEngine/useCases';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 
 /**
@@ -12,7 +12,7 @@ export function resolveLiveInputNoteReceiver<TDevice extends { type: string }>(
     routesToToasterPad: boolean
 ): ReturnType<typeof resolveNoteReceivingInstrument<TDevice>> {
     if (routesToToasterPad) {
-        const toaster = devices.find((device) => device.type === 'toaster');
+        const toaster = findPadOutputHost(devices);
         return toaster ? { device: toaster, kind: 'toaster' } : null;
     }
     return resolveNoteReceivingInstrument(devices, isFaustInstrumentModule);

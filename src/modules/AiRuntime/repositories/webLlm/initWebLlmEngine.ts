@@ -418,7 +418,12 @@ function raceWorkerEngineCreation<Engine>(input: {
 
 function installWorkerRetirement(worker: Worker, engine: WebLlmEngine): void {
     function retire(event: Event): void {
-        retireWebLlmEngine(engine, createWorkerFailure(event));
+        const wasCurrent = engineState.engine === engine;
+        const failure = createWorkerFailure(event);
+        retireWebLlmEngine(engine, failure);
+        if (wasCurrent) {
+            answeringStatus.publishEngineStatus(describeLoadFailure(failure));
+        }
     }
     worker.addEventListener('error', retire, { once: true });
     worker.addEventListener('messageerror', retire, { once: true });

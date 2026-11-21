@@ -41,6 +41,9 @@ const { updateDeviceParam, persistDeviceParam } = mocks;
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         openCachedAudioBufferHold: vi.fn(() => {
