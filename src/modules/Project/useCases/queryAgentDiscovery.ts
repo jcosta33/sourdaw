@@ -68,9 +68,6 @@ function collectSamples(filters: AgentDiscoveryFilters | undefined): Collection 
 
 function collectCapabilities(): Collection {
     const catalog = agentCapabilityDiscoveryPort.read();
-    if (catalog === null) {
-        return { status: 'unavailable', reason: 'capability-provider-unregistered' };
-    }
     return {
         status: 'candidates',
         candidates: catalog.entries.map((entry): DiscoveryCandidate => ({

@@ -18,19 +18,21 @@ type CrumbsEventEmitter = {
  * injected — `setCrumbsEventBus` at the composition root — and the traversal
  * lives in the app seam that subscribes.
  *
- * Unset means silent, deliberately: before the composition root wires it, the
- * only Crumbs writes are panel gestures on a device with no strip yet, which
- * is the same silence `resolveCrumbsPadControls` already returns.
+ * Emitting before the composition root wires it throws rather than going
+ * silent: a dropped signal would leave the strip on the previous mode while
+ * the panel and the document show the new one.
  */
-let crumbsEventBus: CrumbsEventEmitter | null = null;
+let registeredCrumbsEventBus: CrumbsEventEmitter | null = null;
 
 export function setCrumbsEventBus(event_bus: CrumbsEventEmitter): void {
-    crumbsEventBus = event_bus;
+    registeredCrumbsEventBus = event_bus;
 }
 
 export function emitCrumbsModeChanged(payload: CrumbsModeChangedPayload): void {
-    if (!crumbsEventBus) {
-        return;
+    if (registeredCrumbsEventBus === null) {
+        throw new Error(
+            'emitCrumbsModeChanged: the Crumbs event emitter is not registered; call setCrumbsEventBus() from #/app/bootstrap (bootstrap does this)'
+        );
     }
-    void crumbsEventBus.emit('crumbs.modeChanged', payload);
+    void registeredCrumbsEventBus.emit('crumbs.modeChanged', payload);
 }
