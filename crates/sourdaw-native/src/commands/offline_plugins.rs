@@ -53,7 +53,6 @@ use daw_engine::midi::note_store::MidiNoteStore;
 use daw_engine::offline::{OfflineCommandError, OfflineRenderControl, OfflineRenderer};
 use daw_engine::pdc::CompensationDelay;
 use daw_engine::scheduler::{GraphCommand, HOSTED_PLUGIN_RESERVE};
-use daw_plugin_host::clap_wrapper::ClapError;
 use daw_plugin_host::{AudioPlugin, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -969,9 +968,7 @@ fn construct_unless_cancelled(
        + 'static {
     move |backend, path, descriptor_id, sample_rate, mode| {
         if render_control.is_cancelled() {
-            return Err(PluginError::Clap(ClapError::OfflineRefused {
-                name: descriptor_id.to_string(),
-            }));
+            return Err(PluginError::ConstructionWithdrawn);
         }
         construct(backend, path, descriptor_id, sample_rate, mode)
     }
