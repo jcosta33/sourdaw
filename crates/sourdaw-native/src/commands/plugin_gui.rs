@@ -1482,6 +1482,7 @@ mod tests {
                 opens: Some((640, 480)),
                 calls: Vec::new(),
                 can_resize,
+                editor_window: None,
             };
 
             let opened = open_editor_reporting_resizability(
@@ -1500,6 +1501,62 @@ mod tests {
                 "the opened editor must report the plugin's own answer"
             );
         }
+    }
+
+    /// A host window that counts the destroys asked of it.
+    #[derive(Default)]
+    struct DestroyCountingWindow {
+        destroys: std::sync::atomic::AtomicUsize,
+    }
+
+    impl daw_plugin_host::EditorWindowHost for DestroyCountingWindow {
+        fn show(&self) {}
+        fn hide(&self) {}
+        fn set_resizable(&self, _resizable: bool) {}
+        fn destroy(&self) {
+            self.destroys
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            work();
+            Ok(())
+        }
+    }
+
+    /// The open is the only place a plugin learns where its show, hide, closed
+    /// and new-hints asks are answered. A plugin opened without that window
+    /// keeps asking into nothing, and every one of those callbacks goes dead.
+    #[test]
+    fn an_opened_editor_is_handed_the_window_its_asks_are_answered_in() {
+        let window = Arc::new(DestroyCountingWindow::default());
+        let mut plugin = RecordingPlugin {
+            opens: Some((640, 480)),
+            calls: Vec::new(),
+            can_resize: false,
+            editor_window: None,
+        };
+
+        open_editor_reporting_resizability(
+            &mut plugin,
+            HostWindow {
+                resize: Arc::new(|_, _| {}),
+                window: Arc::clone(&window) as SharedEditorWindow,
+                scale_factor: 1.0,
+            },
+            std::ptr::null_mut::<std::ffi::c_void>() as usize,
+        )
+        .expect("the recording plugin's editor should open");
+
+        plugin
+            .editor_window
+            .as_ref()
+            .expect("the open must hand the plugin its host window")
+            .destroy();
+        assert_eq!(
+            window.destroys.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the window handed over must be the editor's own host window"
+        );
     }
 
     /// The close half. `close_gui` is what reaches VST3 `removed` and CLAP
@@ -2547,6 +2604,8 @@ mod tests {
         /// What this plugin answers when asked whether its editor accepts a
         /// host-chosen size.
         can_resize: bool,
+        /// The window the open handed it, where its later asks are answered.
+        editor_window: Option<SharedEditorWindow>,
     }
 
     impl AudioPlugin for RecordingPlugin {
@@ -2574,6 +2633,10 @@ mod tests {
             self.calls.push("window");
         }
 
+        fn set_editor_window(&mut self, window: SharedEditorWindow) {
+            self.editor_window = Some(window);
+        }
+
         fn open_gui(&mut self, _: *mut std::ffi::c_void) -> Result<(u32, u32), PluginError> {
             self.calls.push("open");
             self.opens.ok_or_else(|| {
@@ -2598,6 +2661,7 @@ mod tests {
             opens: None,
             calls: Vec::new(),
             can_resize: false,
+            editor_window: None,
         };
 
         let opened = open_editor_or_release_host_window(
@@ -2618,6 +2682,7 @@ mod tests {
             opens: Some((640, 480)),
             calls: Vec::new(),
             can_resize: false,
+            editor_window: None,
         };
 
         let opened = open_editor_or_release_host_window(
