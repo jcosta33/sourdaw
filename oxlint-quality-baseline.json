@@ -4778,14 +4778,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts": {
-        "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-params": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/planAgentRun.ts": {
         "eslint/complexity": {
             "count": 4
