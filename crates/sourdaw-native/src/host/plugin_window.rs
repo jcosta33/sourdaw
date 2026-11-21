@@ -22,6 +22,43 @@ use raw_window_handle::RawWindowHandle;
 
 use crate::host::ui_thread::UiThread;
 
+/// Why an editor window could not be created or addressed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginWindowError {
+    /// The window handle is of a windowing system no plugin GUI is hosted on.
+    UnsupportedPlatform,
+    /// A shell delivered a native handle of the wrong width.
+    HandleLength { expected: usize, actual: usize },
+    /// The host has no window server to create a window on.
+    NoWindowServer,
+    /// The shell's own reason, text this crate does not generate.
+    Shell(String),
+}
+
+impl std::fmt::Display for PluginWindowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedPlatform => f.write_str("Unsupported platform for plugin GUI"),
+            Self::HandleLength { expected, actual } => write!(
+                f,
+                "Native window handle must be {} bytes, got {}",
+                expected, actual
+            ),
+            Self::NoWindowServer => f.write_str("This host cannot create plugin editor windows"),
+            Self::Shell(reason) => f.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for PluginWindowError {}
+
+/// A shell implementation's reason for refusing a window.
+impl From<String> for PluginWindowError {
+    fn from(reason: String) -> Self {
+        Self::Shell(reason)
+    }
+}
+
 /// Label the shell gives the DAW's own window.
 ///
 /// Shared with the shell because editor ownership is decided against it: the
@@ -147,13 +184,13 @@ pub fn plugin_editor_needs_always_on_top(parented: bool) -> bool {
 /// One cast per windowing system, and the set is closed: a platform this does
 /// not name cannot host an embedded editor at all, and saying so is better than
 /// handing the plugin a pointer of the wrong kind.
-pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, String> {
+pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, PluginWindowError> {
     match handle {
         RawWindowHandle::AppKit(h) => Ok(h.ns_view.as_ptr()),
         #[cfg(target_os = "windows")]
         RawWindowHandle::Win32(h) => Ok(h.hwnd.get() as *mut c_void),
         RawWindowHandle::Xlib(h) => Ok(h.window as *mut c_void),
-        _ => Err("Unsupported platform for plugin GUI".to_string()),
+        _ => Err(PluginWindowError::UnsupportedPlatform),
     }
 }
 
@@ -165,14 +202,14 @@ pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, 
 /// read of exactly one pointer. Any other length is a corrupt handle and is
 /// refused: handing the CLAP GUI extension a truncated pointer is a crash
 /// inside the plugin, not an error here.
-pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
-    let array: [u8; size_of::<usize>()] = bytes.try_into().map_err(|_| {
-        format!(
-            "Native window handle must be {} bytes, got {}",
-            size_of::<usize>(),
-            bytes.len()
-        )
-    })?;
+pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, PluginWindowError> {
+    let array: [u8; size_of::<usize>()] =
+        bytes
+            .try_into()
+            .map_err(|_| PluginWindowError::HandleLength {
+                expected: size_of::<usize>(),
+                actual: bytes.len(),
+            })?;
     Ok(usize::from_ne_bytes(array))
 }
 
@@ -187,7 +224,7 @@ pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
 /// tolerates being asked to size a window the platform has already ended.
 pub trait PluginEditorWindow: Send + Sync {
     /// The native handle to hand the plugin, already cast for this platform.
-    fn native_handle_ptr(&self) -> Result<*mut c_void, String>;
+    fn native_handle_ptr(&self) -> Result<*mut c_void, PluginWindowError>;
 
     /// Resize to the plugin's preferred editor size, in logical units.
     ///
@@ -235,6 +272,21 @@ pub trait PluginEditorWindow: Send + Sync {
 
     /// Destroy the window. Used on every failure path after creation.
     fn destroy(&self);
+
+    /// Make the window visible without taking focus from the DAW.
+    fn show(&self);
+
+    /// Hide the window, leaving the editor parented into it.
+    fn hide(&self);
+
+    /// Run `work` on the thread this window lives on, and return once it has
+    /// run — in place when the caller already is that thread. `Err` means it
+    /// did not run and never will.
+    ///
+    /// Here because the asks a plugin makes of its window arrive long after the
+    /// command that opened it returned, and answering them calls into the
+    /// editor, which both formats bind to this thread.
+    fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
 }
 
 /// Apply one editor resize on the UI thread, and return only once it has been
@@ -294,7 +346,7 @@ pub trait PluginWindowHost: UiThread {
         label: &str,
         title: &str,
         instance_id: &str,
-    ) -> Result<Box<dyn PluginEditorWindow>, String>;
+    ) -> Result<Box<dyn PluginEditorWindow>, PluginWindowError>;
 
     /// Destroy the window with this label, if it still exists.
     fn destroy_window(&self, label: &str);
@@ -327,8 +379,8 @@ impl PluginWindowHost for NoWindowHost {
         _label: &str,
         _title: &str,
         _instance_id: &str,
-    ) -> Result<Box<dyn PluginEditorWindow>, String> {
-        Err("This host cannot create plugin editor windows".to_string())
+    ) -> Result<Box<dyn PluginEditorWindow>, PluginWindowError> {
+        Err(PluginWindowError::NoWindowServer)
     }
 
     fn destroy_window(&self, _label: &str) {}
@@ -364,8 +416,11 @@ pub mod testing {
         /// Behind a mutex because a bare `Sender` is not `Sync`, and the tests
         /// that drive a race from more than one thread share one `&Host`
         /// across them.
-        work: Mutex<mpsc::Sender<Arc<UiThreadTask>>>,
+        work: Arc<Mutex<mpsc::Sender<Arc<UiThreadTask>>>>,
         pub thread_id: ThreadId,
+        /// Every show, hide, destroy and resizability call a window of this
+        /// shell received, in order, with the thread it arrived on.
+        window_calls: Arc<Mutex<Vec<(&'static str, ThreadId)>>>,
         thread: Mutex<Option<JoinHandle<()>>>,
         editor_resizable: Arc<Mutex<Option<bool>>>,
         /// The labels this shell still holds windows for, which is the whole of
@@ -415,6 +470,11 @@ pub mod testing {
             *self.editor_resizable.lock().expect("resizable record")
         }
 
+        /// The window calls this shell's editor windows received, in order.
+        pub fn window_calls(&self) -> Vec<(&'static str, ThreadId)> {
+            self.window_calls.lock().expect("window call log").clone()
+        }
+
         pub fn start() -> Self {
             let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
             let (announce, announced) = mpsc::channel();
@@ -437,8 +497,9 @@ pub mod testing {
             });
             let thread_id = announced.recv().expect("the fake UI thread must start");
             Self {
-                work: Mutex::new(work),
+                work: Arc::new(Mutex::new(work)),
                 thread_id,
+                window_calls: Arc::new(Mutex::new(Vec::new())),
                 thread: Mutex::new(Some(thread)),
                 editor_resizable: Arc::new(Mutex::new(None)),
                 held_windows: Mutex::new(std::collections::HashSet::new()),
@@ -495,21 +556,31 @@ pub mod testing {
             thread::current().id() == self.thread_id
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
-            let (done, waited) = mpsc::sync_channel(1);
-            let queued = Arc::clone(task);
-            self.work
-                .lock()
-                .expect("ui work queue")
-                .send(UiThreadTask::new(move || {
-                    queued.run();
-                    let _ = done.send(());
-                }))
-                .map_err(|_| "the fake UI thread is gone".to_string())?;
-            waited
-                .recv()
-                .map_err(|_| "the fake UI thread never answered".to_string())
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
+            post_and_wait(&self.work, task).map_err(Into::into)
         }
+    }
+
+    /// Run one task on the dedicated thread and wait for it.
+    fn post_and_wait(
+        work: &Mutex<mpsc::Sender<Arc<UiThreadTask>>>,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), String> {
+        let (done, waited) = mpsc::sync_channel(1);
+        let queued = Arc::clone(task);
+        work.lock()
+            .expect("ui work queue")
+            .send(UiThreadTask::new(move || {
+                queued.run();
+                let _ = done.send(());
+            }))
+            .map_err(|_| "the fake UI thread is gone".to_string())?;
+        waited
+            .recv()
+            .map_err(|_| "the fake UI thread never answered".to_string())
     }
 
     /// A window with no platform behind it: enough for an editor to be opened
@@ -517,22 +588,55 @@ pub mod testing {
     /// about.
     pub struct BareEditorWindow {
         resizable: Arc<Mutex<Option<bool>>>,
+        calls: Arc<Mutex<Vec<(&'static str, ThreadId)>>>,
+        work: Arc<Mutex<mpsc::Sender<Arc<UiThreadTask>>>>,
+        thread_id: ThreadId,
+    }
+
+    impl BareEditorWindow {
+        fn record(&self, call: &'static str) {
+            self.calls
+                .lock()
+                .expect("window call log")
+                .push((call, thread::current().id()));
+        }
     }
 
     impl PluginEditorWindow for BareEditorWindow {
-        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+        fn native_handle_ptr(
+            &self,
+        ) -> Result<*mut std::ffi::c_void, crate::host::plugin_window::PluginWindowError> {
             Ok(std::ptr::null_mut())
         }
 
         fn set_size(&self, _width: u32, _height: u32) {}
 
         fn set_resizable(&self, resizable: bool) {
+            self.record("set_resizable");
             *self.resizable.lock().expect("resizable record") = Some(resizable);
         }
 
         fn show_and_focus(&self) {}
 
-        fn destroy(&self) {}
+        fn destroy(&self) {
+            self.record("destroy");
+        }
+
+        fn show(&self) {
+            self.record("show");
+        }
+
+        fn hide(&self) {
+            self.record("hide");
+        }
+
+        fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+            if thread::current().id() == self.thread_id {
+                work();
+                return Ok(());
+            }
+            post_and_wait(&self.work, &UiThreadTask::new(work))
+        }
     }
 
     impl PluginWindowHost for DedicatedUiWindowHost {
@@ -548,13 +652,17 @@ pub mod testing {
             label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
             self.held_windows
                 .lock()
                 .expect("held windows")
                 .insert(label.to_string());
             Ok(Box::new(BareEditorWindow {
                 resizable: Arc::clone(&self.editor_resizable),
+                calls: Arc::clone(&self.window_calls),
+                work: Arc::clone(&self.work),
+                thread_id: self.thread_id,
             }))
         }
 
@@ -736,7 +844,30 @@ mod tests {
     /// plugin is a crash in the plugin — refusal is the only safe answer.
     #[test]
     fn a_wrong_sized_handle_buffer_is_refused() {
-        assert!(native_handle_from_bytes(&[1, 2, 3, 4]).is_err());
+        assert_eq!(
+            native_handle_from_bytes(&[1, 2, 3, 4]),
+            Err(PluginWindowError::HandleLength {
+                expected: size_of::<usize>(),
+                actual: 4
+            })
+        );
+        assert_eq!(
+            native_handle_from_bytes(&[1, 2, 3, 4])
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Native window handle must be {} bytes, got 4",
+                size_of::<usize>()
+            )
+        );
+        assert_eq!(
+            PluginWindowError::UnsupportedPlatform.to_string(),
+            "Unsupported platform for plugin GUI"
+        );
+        assert_eq!(
+            PluginWindowError::NoWindowServer.to_string(),
+            "This host cannot create plugin editor windows"
+        );
         assert!(native_handle_from_bytes(&[0; 16]).is_err());
         assert!(native_handle_from_bytes(&[]).is_err());
     }

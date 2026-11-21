@@ -10,6 +10,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
 import { toggleInlineAutomation } from '../../../useCases/timelineEditing/toggleInlineAutomation';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
@@ -458,6 +459,27 @@ describe('TimelineSurface', () => {
         expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
     });
 
+    it('skips a hidden selected track for the canvas floor unless hidden tracks are shown', () => {
+        zoomHandlers.trackStoreRef.current?.set({
+            tracks: [
+                makeTrack({ id: 'selected', kind: 'midi', height: 96, hidden: true }),
+                makeTrack({ id: 'other', kind: 'midi', height: 64 }),
+            ],
+            selectedTrackId: 'selected',
+        });
+        try {
+            const { container, unmount } = renderWithTooltip(<TimelineSurface />);
+            expect(container.firstChild).toHaveStyle({ minHeight: '64px' });
+            unmount();
+
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+            const shown = renderWithTooltip(<TimelineSurface />);
+            expect(shown.container.firstChild).toHaveStyle({ minHeight: '96px' });
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
     it('updates the canvas floor and paints scaled rows while transport is paused', async () => {
         const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
         const selectedTrack = makeTrack({ id: 'selected', kind: 'midi', height: 96 });
@@ -510,7 +532,7 @@ const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
 
 // Use the production Track factory so reactive subscribers receive the complete
 // project shape, including the device chain read by Yeast.
-const makeTrack = (overrides: Partial<Pick<Track, 'id' | 'kind' | 'height' | 'clips'>> = {}): Track => {
+const makeTrack = (overrides: Partial<Pick<Track, 'id' | 'kind' | 'height' | 'clips' | 'hidden'>> = {}): Track => {
     const id = overrides.id ?? 't1';
     const kind = overrides.kind ?? 'midi';
     return {

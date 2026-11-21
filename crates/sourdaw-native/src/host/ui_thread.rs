@@ -37,9 +37,46 @@
 //! control gate's own deadline is sized for a hung plugin, far beyond the
 //! shell's force-exit deadline, so it cannot be the one to yield.
 
+use std::fmt;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
+
+/// Why a call carried to the UI thread did not run there, or ran without
+/// answering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiThreadError {
+    /// The UI thread did not take the call before the caller's deadline, and
+    /// the call was withdrawn unrun.
+    NotRunInTime,
+    /// The UI thread ran the call but its answer never came back.
+    Unanswered,
+    /// The shell's own reason, text this crate does not generate.
+    Shell(String),
+}
+
+impl fmt::Display for UiThreadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotRunInTime => {
+                f.write_str("The shell's UI thread did not run the editor call in time")
+            }
+            Self::Unanswered => {
+                f.write_str("The shell's UI thread ran the editor call without answering")
+            }
+            Self::Shell(reason) => f.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for UiThreadError {}
+
+/// A shell implementation's reason for not reaching its UI thread.
+impl From<String> for UiThreadError {
+    fn from(reason: String) -> Self {
+        Self::Shell(reason)
+    }
+}
 
 /// One closure waiting for its turn on the UI thread.
 ///
@@ -127,7 +164,7 @@ pub trait UiThread: Send + Sync {
     /// note on why the deadline is what breaks the reverse cycle — and
     /// [`UiThreadTask::withdraw`] is how it gives up without racing a task that
     /// started in the same instant.
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), UiThreadError> {
         task.run();
         Ok(())
     }
@@ -208,8 +245,8 @@ impl PostedUiThread {
     pub fn post_and_wait(
         &self,
         task: &Arc<UiThreadTask>,
-        wake: impl FnOnce() -> Result<(), String>,
-    ) -> Result<(), String> {
+        wake: impl FnOnce() -> Result<(), UiThreadError>,
+    ) -> Result<(), UiThreadError> {
         let (ran, waited) = mpsc::sync_channel(1);
         let inner = Arc::clone(task);
         let work = move || {
@@ -232,10 +269,7 @@ impl PostedUiThread {
             return Ok(());
         }
 
-        self.give_up(
-            &posted,
-            "The shell's UI thread did not run the editor call in time".to_string(),
-        )
+        self.give_up(&posted, UiThreadError::NotRunInTime)
     }
 
     /// Take the work back, and report `reason` only if there was work to take.
@@ -243,7 +277,11 @@ impl PostedUiThread {
     /// A pump that ran the task and only then reported a failure — or that
     /// reached it a moment after the deadline — did the work, and the caller's
     /// answer is the truth about the work rather than about the wait.
-    fn give_up(&self, posted: &Arc<UiThreadTask>, reason: String) -> Result<(), String> {
+    fn give_up(
+        &self,
+        posted: &Arc<UiThreadTask>,
+        reason: UiThreadError,
+    ) -> Result<(), UiThreadError> {
         self.lock().retain(|pending| !Arc::ptr_eq(pending, posted));
         if posted.withdraw() {
             return Err(reason);
@@ -268,7 +306,7 @@ impl PostedUiThread {
 pub fn call_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     ui: &Ui,
     work: impl FnOnce() -> Produced + Send + 'static,
-) -> Result<Produced, String> {
+) -> Result<Produced, UiThreadError> {
     call_marked_on_ui_thread(ui, UiThreadTask::new, work)
 }
 
@@ -276,7 +314,7 @@ fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     ui: &Ui,
     make_task: fn(Box<dyn FnOnce() + Send>) -> Arc<UiThreadTask>,
     work: impl FnOnce() -> Produced + Send + 'static,
-) -> Result<Produced, String> {
+) -> Result<Produced, UiThreadError> {
     if ui.is_ui_thread() {
         return Ok(work());
     }
@@ -287,9 +325,7 @@ fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     }));
     ui.run_on_ui_thread(&task)?;
 
-    answered
-        .try_recv()
-        .map_err(|_| "The shell's UI thread ran the editor call without answering".to_string())
+    answered.try_recv().map_err(|_| UiThreadError::Unanswered)
 }
 
 /// Drop `value` on the UI thread, or hand it back with the reason it could not
@@ -302,7 +338,7 @@ fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
 /// caller's thread, which would run the very teardown this exists to move. Here
 /// the value waits in a slot the closure only empties, so a hop that never ran
 /// leaves the value where the caller can take it back and try again later.
-pub fn release_on_ui_thread<Ui, Value>(ui: &Ui, value: Value) -> Result<(), (Value, String)>
+pub fn release_on_ui_thread<Ui, Value>(ui: &Ui, value: Value) -> Result<(), (Value, UiThreadError)>
 where
     Ui: UiThread + ?Sized,
     Value: Send + 'static,
@@ -379,7 +415,7 @@ pub fn lend_on_ui_thread<Ui, Target, Produced>(
     ui: &Ui,
     target: &mut Target,
     call: impl FnOnce(&mut Target) -> Produced + Send + 'static,
-) -> Result<Produced, String>
+) -> Result<Produced, UiThreadError>
 where
     Ui: UiThread + ?Sized,
     Target: ?Sized + 'static,
@@ -443,12 +479,14 @@ mod tests {
             thread::current().id() == self.thread_id
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), UiThreadError> {
             // A real shell's loop cannot answer this either — it would be
             // waiting for the turn the caller is holding — but it would hang
             // rather than say so, and a hang proves nothing about what broke.
             if self.is_ui_thread() {
-                return Err("a task posted from the UI thread waits for its own turn".to_string());
+                return Err(UiThreadError::Shell(
+                    "a task posted from the UI thread waits for its own turn".to_string(),
+                ));
             }
             let (done, waited) = mpsc::sync_channel(1);
             let queued = Arc::clone(task);
@@ -460,7 +498,7 @@ mod tests {
                 .map_err(|_| "the UI thread is gone".to_string())?;
             waited
                 .recv()
-                .map_err(|_| "the UI thread never answered".to_string())
+                .map_err(|_| UiThreadError::Shell("the UI thread never answered".to_string()))
         }
     }
 
@@ -680,7 +718,7 @@ mod tests {
 
         let answer = ui.post_and_wait(&task, || {
             ui.drain();
-            Err("the shell's loop is gone".to_string())
+            Err(UiThreadError::Shell("the shell's loop is gone".to_string()))
         });
 
         assert!(ran.load(Ordering::Acquire), "the pump ran the work");
@@ -698,9 +736,15 @@ mod tests {
         let ui = PostedUiThread::new(Duration::from_secs(5));
         let (task, ran) = marked_when_run();
 
-        let answer = ui.post_and_wait(&task, || Err("the shell's loop is gone".to_string()));
+        let answer = ui.post_and_wait(&task, || {
+            Err(UiThreadError::Shell("the shell's loop is gone".to_string()))
+        });
 
-        assert_eq!(answer, Err("the shell's loop is gone".to_string()));
+        assert_eq!(
+            answer,
+            Err(UiThreadError::Shell("the shell's loop is gone".to_string()))
+        );
+        assert_eq!(answer.unwrap_err().to_string(), "the shell's loop is gone");
         ui.drain();
         assert!(
             !ran.load(Ordering::Acquire),
@@ -746,8 +790,8 @@ mod tests {
             fn is_ui_thread(&self) -> bool {
                 false
             }
-            fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
-                Err("the shell's loop is gone".to_string())
+            fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), UiThreadError> {
+                Err(UiThreadError::Shell("the shell's loop is gone".to_string()))
             }
         }
         let dropped_on = Arc::new(Mutex::new(Vec::new()));
@@ -756,7 +800,11 @@ mod tests {
             release_on_ui_thread(&Refusing, DropRecorder(Arc::clone(&dropped_on)))
                 .expect_err("a refused hop cannot have released anything");
 
-        assert_eq!(reason, "the shell's loop is gone");
+        assert_eq!(
+            reason,
+            UiThreadError::Shell("the shell's loop is gone".to_string())
+        );
+        assert_eq!(reason.to_string(), "the shell's loop is gone");
         assert!(
             dropped_on.lock().expect("drop log").is_empty(),
             "the value must come back whole, not be dropped on the way"

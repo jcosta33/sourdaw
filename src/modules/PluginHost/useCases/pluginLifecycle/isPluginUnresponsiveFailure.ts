@@ -1,7 +1,7 @@
 /**
  * The start of every refusal the native host gives for an instance it found
  * unresponsive: a vendor call that never returned held the instance's control
- * gate past its deadline (`unresponsive_control_error` in
+ * gate past its deadline (`PluginControlRefusal::Unresponsive` in
  * `crates/sourdaw-native/src/host/native_bridge.rs`, the one producer). The
  * desktop bridge wraps a native error's message in its own text, so the marker
  * is looked for inside the reason rather than at its start.

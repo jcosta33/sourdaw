@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import { readDrumKitOutputGain } from '../models/DrumKitSelection';
+import { type LiveNoteControls, resolveLiveNoteControls } from '../models/LiveNoteControlsByDeviceType';
 import { isBypassedNoteReceiver } from '../models/NoteReceivingInstrument';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
@@ -81,6 +82,35 @@ export function playAuditionNote(
     return stop;
 }
 
+/**
+ * Sound one preview note on a worklet instrument's node: the receiver's own, or
+ * the first node of its type when the receiver's is not built. Returns the
+ * release, or null when that node is not ready.
+ */
+function startWorkletSynthAudition(
+    target: Readonly<{
+        strip: ReturnType<typeof audioEngine.ensureTrackStrip>;
+        receivingDevice: AuditionDevice;
+        liveNoteControls: LiveNoteControls;
+    }>,
+    pitch: number,
+    velocity: number
+): (() => void) | null {
+    const { strip, receivingDevice, liveNoteControls } = target;
+    const { controlsKey } = liveNoteControls;
+    const dn = strip.deviceNodes.find(
+        (data) => data.deviceId === receivingDevice.id || data.type === receivingDevice.type
+    );
+    const controls = dn?.[controlsKey];
+    if (!dn || !controls?.ready) {
+        return null;
+    }
+    controls.noteOn(pitch, liveNoteControls.scaleVelocity(velocity));
+    return () => {
+        dn[controlsKey]?.noteOff(pitch);
+    };
+}
+
 function startAuditionNote(trackId: string, pitch: number, velocity: number): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
@@ -153,16 +183,21 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
         };
     }
 
-    if (receivingDevice?.type === 'fermenter') {
-        const fermenterDevice = receivingDevice;
-        const dn = strip.deviceNodes.find((data) => data.deviceId === fermenterDevice.id || data.type === 'fermenter');
-        if (dn?.fermenterControls?.ready) {
-            dn.fermenterControls.noteOn(pitch, velocity);
-            return () => {
-                dn.fermenterControls?.noteOff(pitch);
-            };
+    const liveNoteControls = receivingDevice ? resolveLiveNoteControls(receivingDevice.type) : null;
+    if (receivingDevice && liveNoteControls) {
+        const stopWorkletNote = startWorkletSynthAudition(
+            { strip, receivingDevice, liveNoteControls },
+            pitch,
+            velocity
+        );
+        if (stopWorkletNote) {
+            return stopWorkletNote;
         }
-        return () => {};
+        // A Levain whose node is not ready yet previews on the built-in synth
+        // below; every other worklet instrument previews nothing until ready.
+        if (liveNoteControls.controlsKey !== 'levainControls') {
+            return () => {};
+        }
     }
 
     if (receiver?.kind === 'toaster') {
@@ -187,45 +222,6 @@ function startAuditionNote(trackId: string, pitch: number, velocity: number): ()
             dn.toasterControls.noteOn(pad, velocity ?? 100, pitch);
             return () => {
                 dn.toasterControls?.noteOff(pad);
-            };
-        }
-        return () => {};
-    }
-
-    if (receivingDevice?.type === 'grand-boule') {
-        const grandBouleDevice = receivingDevice;
-        const dn = strip.deviceNodes.find(
-            (data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule'
-        );
-        if (dn?.grandBouleControls?.ready) {
-            dn.grandBouleControls.noteOn(pitch, velocity / 127);
-            return () => {
-                dn.grandBouleControls?.noteOff(pitch);
-            };
-        }
-        return () => {};
-    }
-
-    if (receivingDevice?.type === 'levain') {
-        const levainDevice = receivingDevice;
-        const dn = strip.deviceNodes.find((data) => data.deviceId === levainDevice.id || data.type === 'levain');
-        if (dn?.levainControls?.ready) {
-            dn.levainControls.noteOn(pitch, velocity);
-            return () => {
-                dn.levainControls?.noteOff(pitch);
-            };
-        }
-    }
-
-    if (receivingDevice?.type === 'builtin-crumbs') {
-        const crumbsDevice = receivingDevice;
-        const dn = strip.deviceNodes.find(
-            (data) => data.deviceId === crumbsDevice.id || data.type === 'builtin-crumbs'
-        );
-        if (dn?.crumbsControls?.ready) {
-            dn.crumbsControls.noteOn(pitch, velocity);
-            return () => {
-                dn.crumbsControls?.noteOff(pitch);
             };
         }
         return () => {};
