@@ -9,12 +9,8 @@ import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatc
 
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
-export type UpdateDeviceParamFn = (
-    ...args: Parameters<typeof updateDeviceParam>
-) => ReturnType<typeof updateDeviceParam>;
-export type UpdateDevicePatchFn = (
-    ...args: Parameters<typeof updateDevicePatch>
-) => ReturnType<typeof updateDevicePatch>;
+export type UpdateDeviceParamFn = typeof updateDeviceParam;
+export type UpdateDevicePatchFn = typeof updateDevicePatch;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
 export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWriteTarget;
 

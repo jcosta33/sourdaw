@@ -23,7 +23,7 @@ export type GlutenBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher: RafBatcher<GlutenBatchEntry> = createRafBatcher<GlutenBatchEntry>();
 
 export type BridgeDeps = {
-    updateDeviceParam: (...args: Parameters<typeof updateDeviceParam>) => ReturnType<typeof updateDeviceParam>;
+    updateDeviceParam: typeof updateDeviceParam;
     persistDeviceParam: typeof persistDeviceParam;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
     executeUserAppAction: typeof executeUserAppAction;

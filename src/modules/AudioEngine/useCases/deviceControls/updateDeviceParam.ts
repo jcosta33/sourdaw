@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
@@ -32,22 +31,19 @@ import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
  * engine-named door of a built-in whose controls are not `parameterValues`
  * entries share one send path.
  */
-export const updateDeviceParam = inject({ audioEngine })(
-    ({ audioEngine }) =>
-        function updateDeviceParam(
-            trackId: string,
-            deviceId: string,
-            paramId: string,
-            value: number,
-            runtimeOwner?: symbol
-        ): void {
-            const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
-            withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner, () => {
-                audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
-            });
-            const body = nativeBuiltinWriteTarget(trackId, deviceId);
-            if (body) {
-                writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });
-            }
-        }
-);
+export function updateDeviceParam(
+    trackId: string,
+    deviceId: string,
+    paramId: string,
+    value: number,
+    runtimeOwner?: symbol
+): void {
+    const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
+    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner, () => {
+        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
+    });
+    const body = nativeBuiltinWriteTarget(trackId, deviceId);
+    if (body) {
+        writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });
+    }
+}
