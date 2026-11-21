@@ -147,4 +147,39 @@ describe('track colour and pan edits inside one batch', () => {
         await redo();
         expect(storedTrack('t-existing')?.pan).toBe(-0.5);
     });
+
+    it('undoes and redoes a pan request beyond full scale at the value the writer stored', async () => {
+        const result = await executeAppActionBatch(
+            [{ type: 'setTrackPan', payload: { trackId: 't-existing', pan: 80, expectedPan: 0 } }],
+            GROUP
+        );
+
+        expect(result.status).toBe('committed');
+        expect(storedTrack('t-existing')?.pan).toBe(50);
+
+        await undo();
+        expect(storedTrack('t-existing')?.pan).toBe(0);
+
+        await redo();
+        expect(storedTrack('t-existing')?.pan).toBe(50);
+    });
+
+    it('plans a later pan edit of the same track from the clamped value', async () => {
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setTrackPan', payload: { trackId: 't-existing', pan: 80, expectedPan: 0 } },
+                { type: 'setTrackPan', payload: { trackId: 't-existing', pan: -20, expectedPan: 50 } },
+            ],
+            GROUP
+        );
+
+        expect(result.status).toBe('committed');
+        expect(storedTrack('t-existing')?.pan).toBe(-20);
+
+        await undo();
+        expect(storedTrack('t-existing')?.pan).toBe(0);
+
+        await redo();
+        expect(storedTrack('t-existing')?.pan).toBe(-20);
+    });
 });
