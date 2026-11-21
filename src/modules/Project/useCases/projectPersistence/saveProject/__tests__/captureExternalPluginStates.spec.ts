@@ -36,6 +36,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+// The real predicate, read from its defining file so the Arrangement barrel's module graph stays unloaded.
+vi.mock('#/modules/Arrangement/useCases', async () => ({
+    isExternalPluginDeviceType: (await import('#/modules/Arrangement/useCases/device/externalPluginDeviceType'))
+        .isExternalPluginDeviceType,
+}));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
