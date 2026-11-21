@@ -1243,6 +1243,19 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         expect(commands.filter((command) => command.kind === 'schedule-midi')).toEqual([]);
     });
 
+    it('declines a hosted instrument track when no MIDI projection is configured, sending no notes', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+        offlineMidiEventProjectorState.createProjector = null;
+
+        const result = await renderKeys({ transport, clips: [midiClip({ id: 'clip-a' })] });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'the MIDI projection is not configured for the native render',
+        });
+        expect(commands.some((command) => command.kind === 'schedule-midi')).toBe(false);
+    });
+
     it('declines a MIDI track whose note sink is not a loaded hosted instrument', async () => {
         const { transport } = capturingTransport(FRAMES);
 
