@@ -29,22 +29,18 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { updateTrack } from '../../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, setArrangementEventBus } from '../../index';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
-import { cancelFreezeTrack } from '../cancelFreezeTrack';
-import { freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
-import { unfreezeTrack } from '../unfreezeTrack';
 
 registerSupportingServicePorts();
 
 // The freeze, its commit and the note handlers are the real ones over a real CRDT document; only
-// the offline render, which owns the audio, is replaced, and its await is held open so an edit,
-// a cancel or a second freeze can land inside the window.
+// the offline render, which owns the audio, is replaced, and its await is held open so an edit
+// can land inside the window.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
@@ -99,20 +95,6 @@ function holdNextRender(): HeldRender {
     return { entered: entered.promise, release: () => resume.resolve() };
 }
 
-type RejectableRender = { entered: Promise<void>; fail: () => void };
-
-/** The next render stays pending until `fail` rejects it. */
-function holdNextRenderThenReject(): RejectableRender {
-    const entered = Promise.withResolvers<void>();
-    const resume = Promise.withResolvers<void>();
-    vi.mocked(renderTrackOffline).mockImplementationOnce(async () => {
-        entered.resolve();
-        await resume.promise;
-        throw new Error('Render exploded');
-    });
-    return { entered: entered.promise, fail: () => resume.resolve() };
-}
-
 /** Freezes the track, runs `duringRender` while the render is awaiting, then lets the render succeed. */
 async function freezeWhile(duringRender: () => void | Promise<void>): Promise<void> {
     const render = holdNextRender();
@@ -131,20 +113,13 @@ function addNotesAction() {
     };
 }
 
-function expectSettledUnfrozen(): void {
-    const track = findTrack();
-    expect(track.frozen).toBe(false);
-    expect(track.freezeState.status).toBe('unfrozen');
-    expect(track.frozenBufferId).toBeUndefined();
-}
-
 beforeEach(async () => {
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
     vi.mocked(computeTrackHash).mockClear();
     configureAutomergeStoragePort(null);
-    resetCrdtProjectAuthority('freeze midi notes and cancel test');
+    resetCrdtProjectAuthority('freeze midi rows changed during render test');
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
@@ -257,182 +232,6 @@ describe('a freeze whose MIDI notes change during the render', () => {
     });
 });
 
-describe('a cancelled freeze', () => {
-    it('settles the track when it is cancelled while the digest is pending', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
-        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-            const hash = await realHash(clips, devices);
-            cancelFreezeTrack(TRACK_ID);
-            return hash;
-        });
-
-        // Called directly, not as the action: the action's own transaction would mask whether the
-        // freeze settles the track itself.
-        await freezeTrack(TRACK_ID);
-
-        expectSettledUnfrozen();
-        expect(renderTrackOffline).not.toHaveBeenCalled();
-        await executeAppAction(addNotesAction());
-        expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
-    });
-
-    it('settles the track when it is cancelled while the render is pending', async () => {
-        const render = holdNextRender();
-        const freezing = freezeTrack(TRACK_ID);
-        await render.entered;
-        expect(findTrack().freezeState.status).toBe('freezing');
-        cancelFreezeTrack(TRACK_ID);
-        render.release();
-        await freezing;
-
-        expectSettledUnfrozen();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        await executeAppAction(addNotesAction());
-        expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
-    });
-
-    it('leaves a freeze that superseded it in charge of the track', async () => {
-        const first = holdNextRender();
-        const firstFreeze = freezeTrack(TRACK_ID);
-        await first.entered;
-
-        const second = holdNextRender();
-        const secondFreeze = freezeTrack(TRACK_ID);
-        await second.entered;
-
-        first.release();
-        await firstFreeze;
-        expect(findTrack().freezeState.status).toBe('freezing');
-        expect(findTrack().frozen).toBe(false);
-
-        second.release();
-        await secondFreeze;
-        expect(findTrack().frozen).toBe(true);
-        expect(findTrack().freezeState.status).toBe('frozen');
-    });
-
-    it('returns the track to its original state when a freeze that superseded another is cancelled', async () => {
-        const first = holdNextRender();
-        const firstFreeze = freezeTrack(TRACK_ID);
-        await first.entered;
-
-        const second = holdNextRender();
-        const secondFreeze = freezeTrack(TRACK_ID);
-        await second.entered;
-        cancelFreezeTrack(TRACK_ID);
-
-        first.release();
-        second.release();
-        await Promise.all([firstFreeze, secondFreeze]);
-
-        expectSettledUnfrozen();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        await executeAppAction(addNotesAction());
-        expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
-    });
-});
-
-describe('a cancelled freeze that settles after a later freeze moved the track on', () => {
-    it('keeps the error state of a later freeze that failed', async () => {
-        const first = holdNextRender();
-        // Called directly: as an action its restore would land in a transaction that is rolled back.
-        const firstFreeze = freezeTrack(TRACK_ID);
-        await first.entered;
-        cancelFreezeTrack(TRACK_ID);
-        flushAutomergeStorageWrites();
-
-        const second = holdNextRenderThenReject();
-        // As the action: the failure diagnostic is only admitted for a freeze that ran inside one.
-        const secondFreeze = executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
-        await second.entered;
-        second.fail();
-        await secondFreeze;
-        expect(findTrack().freezeState.status).toBe('error');
-
-        first.release();
-        await firstFreeze;
-
-        expect(findTrack().freezeState.status).toBe('error');
-        expect(findTrack().frozen).toBe(false);
-    });
-
-    it('stays unfrozen after a later freeze committed and was unfrozen', async () => {
-        // The cancelled freeze's own earlier state is a stale take, which a late restore would bring back.
-        updateTrack(TRACK_ID, (time) => ({
-            ...time,
-            frozen: true,
-            frozenBufferId: 'old-take',
-            freezeState: { status: 'stale', freezeId: 'old-freeze', frozenBufferId: 'old-take' },
-        }));
-        flushAutomergeStorageWrites();
-        const first = holdNextRender();
-        const firstFreeze = freezeTrack(TRACK_ID);
-        await first.entered;
-        cancelFreezeTrack(TRACK_ID);
-        flushAutomergeStorageWrites();
-
-        const second = holdNextRender();
-        const secondFreeze = freezeTrack(TRACK_ID);
-        await second.entered;
-        second.release();
-        await secondFreeze;
-        expect(findTrack().frozen).toBe(true);
-        unfreezeTrack(TRACK_ID);
-        expectSettledUnfrozen();
-
-        first.release();
-        await firstFreeze;
-
-        expectSettledUnfrozen();
-    });
-
-    it.each([
-        ['the superseded freeze first', true],
-        ['the cancelled later freeze first', false],
-    ])('ends unfrozen when both are cancelled and %s settles', async (_name, firstSettlesFirst) => {
-        const first = holdNextRender();
-        const firstFreeze = freezeTrack(TRACK_ID);
-        await first.entered;
-        cancelFreezeTrack(TRACK_ID);
-
-        const second = holdNextRender();
-        const secondFreeze = freezeTrack(TRACK_ID);
-        await second.entered;
-        cancelFreezeTrack(TRACK_ID);
-
-        if (firstSettlesFirst) {
-            first.release();
-            await firstFreeze;
-            second.release();
-            await secondFreeze;
-        } else {
-            second.release();
-            await secondFreeze;
-            first.release();
-            await firstFreeze;
-        }
-
-        expectSettledUnfrozen();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-    });
-
-    it('settles unfrozen when the render rejects after the cancel', async () => {
-        const render = holdNextRenderThenReject();
-        const freezing = freezeTrack(TRACK_ID);
-        await render.entered;
-        cancelFreezeTrack(TRACK_ID);
-        render.fail();
-        await freezing;
-
-        expectSettledUnfrozen();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-    });
-});
-
 describe('a freeze whose controller rows change during the render', () => {
     const CC_ROW = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
     const BEND_ROW = { id: 'bend-1', value: 0, beat: 0, channel: 0 };
@@ -520,6 +319,50 @@ describe('a freeze whose notes change while the digest is pending', () => {
         resume.resolve();
         await freezing;
 
+        expect(findTrack().frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+});
+
+describe('a row written after the source check resolves', () => {
+    it('refuses the take when a CC row lands between the source check and the commit', async () => {
+        const realHash = (
+            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
+                '../../../services/computeTrackHash'
+            )
+        ).computeTrackHash;
+        let hashCalls = 0;
+        let sourceCheckResolved = false;
+        vi.mocked(computeTrackHash).mockImplementation(async (clips, devices) => {
+            hashCalls += 1;
+            const hash = await realHash(clips, devices);
+            // The first digest is the freeze's own, the second is the source check's last call.
+            sourceCheckResolved = hashCalls === 2;
+            return hash;
+        });
+        // The first project read after the source check resolves is the current-task check that
+        // precedes the commit; a row written there lands after every await of the freeze.
+        const readProject = Object.getOwnPropertyDescriptor(projectStore, 'value')!.get!;
+        const projectRead = vi.spyOn(projectStore, 'value', 'get').mockImplementation(() => {
+            if (sourceCheckResolved) {
+                sourceCheckResolved = false;
+                midiStore.set({
+                    ...midiStore.value!,
+                    ccByClipId: { [CLIP_ID]: [{ id: 'late-cc', controller: 1, value: 5, beat: 0, channel: 0 }] },
+                });
+            }
+            return readProject.call(projectStore);
+        });
+
+        try {
+            await freezeWhile(() => undefined);
+        } finally {
+            projectRead.mockRestore();
+            vi.mocked(computeTrackHash).mockImplementation(realHash);
+        }
+
+        expect(midiStore.value?.ccByClipId[CLIP_ID]?.map((row) => row.id)).toEqual(['late-cc']);
         expect(findTrack().frozen).toBe(false);
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
