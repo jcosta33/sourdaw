@@ -14,10 +14,10 @@ Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Invariants & Traps
 
-- `commitPitchEdit` modifies track clip audio references atomically via injected pitch handlers (`getPitchHandlers`) to maintain DDD boundaries without cyclic imports.
+- `commitPitchEdit` renders through AudioEngine's `commitPitchEdit`, imported from the AudioEngine `useCases` barrel (no injection), and writes the clip's `fileId` and `audioBufferId` together inside the action's transaction scope. Its undo inverse restores both, including the absence of a buffer id.
 - Note blob pitch shifts and formant preservation calculations must clamp within valid frequency and sample index bounds.
 - Analyzed pitch contours are cached per clip audio asset to prevent redundant pitch analysis passes.
-- `getPitchHandlers` exposes `commitPitchEdit` and `restoreClipFileId` across aggregate boundaries without direct circular dependencies (ADR 0011).
+- `getPitchHandlers` is the Knead-owned handler map for `commitPitchEdit` and its `restoreClipFileId` inverse; the composition root registers both together, and Command never imports them (ADR 0011).
 
 ## Verification
 
