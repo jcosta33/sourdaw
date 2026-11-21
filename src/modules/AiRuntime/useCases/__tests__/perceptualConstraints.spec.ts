@@ -2173,7 +2173,8 @@ describe('reading a protection only over the words it governs', () => {
         ['Leave the vocal alone and the drums louder', [], []],
         ['Leave the vocal alone and the drums a little louder', [], []],
         ['Keep the mix balanced when you make the vocal louder', [], []],
-        // a quality after a held chain continues the keep, never read as a move
+        // a quality after a held chain continues the keep, never read as a move; both entries quote the
+        // whole clause on purpose, since one keep states both qualities, each read in its own family
         [
             'keep the vocal bright and the drums warm',
             [measured('brightness-held-v1', 'keep the vocal bright and the drums warm', onTracks('vocal'))],
@@ -2184,6 +2185,40 @@ describe('reading a protection only over the words it governs', () => {
                 ),
             ],
         ],
+        // a held chain runs through every segment it joins, and still governs no direction there
+        [
+            'keep the vocal bright and the mix wide and the drums louder',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright and the mix wide', onTracks('vocal')),
+                measured('stereo-width-held-v1', 'keep the vocal bright and the mix wide', MIX),
+            ],
+            [],
+        ],
+        // a held chain governs a measured noun it chains into, so one no reader consumes is recorded
+        [
+            'keep the vocal bright and the stereo image of the drums',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [unread('keep the vocal bright and the stereo image of the drums', NET_REASON)],
+        ],
+        // a protection's governed words end at a subordinator or a subject of its own clause: past it
+        // stands the request's own move or condition
+        ['Stop the vocal from getting buried by making it louder.', [], []],
+        ['Prevent masking by making the vocal louder.', [], []],
+        ['Prevent the vocal from getting lost by making it brighter.', [], []],
+        ['Stop it from getting lost by making the vocal louder.', [], []],
+        ['Prevent clipping when I make the vocal louder.', [], []],
+        ['Stop the vocal from clipping when it gets louder.', [], []],
+        ['Stop the drums sounding harsh when I make them brighter.', [], []],
+        ['Stop the bass from getting boomy when I make it louder.', [], []],
+        ['Stop the vocal from getting lost when the drums get louder.', [], []],
+        ['Make the vocal louder to stop the guitars from masking it when they get louder.', [], []],
+        ['Prevent the clipping you get making the vocal louder.', [], []],
+        // a third-person "doesn't" beside a move describes the sound or states a purpose
+        ["The vocal doesn't get louder in the chorus, raise it.", [], []],
+        ["Make the vocal louder so it doesn't get lost in the mix and the drums wider.", [], []],
+        // a joined segment continues only a protection that governed a measured word
+        ['Make the vocal brighter without making it harsh and the drums louder.', [], []],
+        ["Don't touch the vocal and the drums louder please.", [], []],
         // a keep naming the move it prevents bounds that move, so a joined direction stays in its net
         [
             'keep the mix from getting louder and the vocal quieter',

@@ -74,7 +74,8 @@ export const ANY = words([ANY_WORD]);
 const AND = 'and';
 const OR = 'or';
 const BUT = 'but';
-const HARD_BOUNDARY_WORDS = [BUT, 'while', SO, 'then', 'please'];
+const WHILE = 'while';
+const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
 /** The one word joining nouns and continued objects under one verb: "the level and the width". */
 export const AND_WORD = AND;
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
@@ -112,8 +113,9 @@ export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
 
+const AS_WORD = 'as';
 /** "as", which a kept term ("as dynamic") and a kept state ("as it is") stand behind. */
-export const AS = words(['as']);
+export const AS = words([AS_WORD]);
 /** The states a kept object stays in: "intact", "as it is". */
 const UNCHANGED_STATE = String.raw`(?:${words(['unchanged', 'intact'])}|${AS}\s+(?:it\s+)?is)`;
 /** The states only a left object stays in, beside those: "leave the low end alone". */
@@ -125,18 +127,21 @@ export const THE_SAME = String.raw`${THE}\s+same`;
 /** The states a kept measured noun stays in: "keep the level the same", "where it is". */
 export const HELD_STATE = String.raw`(?:${THE_SAME}|where\s+it\s+is|${UNCHANGED_STATE})`;
 
-export const NEGATION = String.raw`(?:${words(['do not', 'never', 'without'])}|don${APOSTROPHE}?t)`;
+const WITHOUT = 'without';
+export const NEGATION = String.raw`(?:${words(['do not', 'never', WITHOUT])}|don${APOSTROPHE}?t)`;
 const CAN = 'can';
 const MODAL = words(['must', 'should', 'may', CAN, 'will']);
 /** The contractions' stems that drop a letter of their modal: "can't", "won't". */
 const SHORTENED_MODAL = words([CAN, 'won']);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
 const DOES_NEGATION = String.raw`(?:${words(['does not'])}|doesn${APOSTROPHE}?t)(?!\s+${LINKING_VERB}\b)`;
+/** A modal verb's own negation: "shouldn't be", "mustn't get", "can't be", "won't get". */
+export const MODAL_VERB_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n${APOSTROPHE}?t|${SHORTENED_MODAL}${APOSTROPHE}?t)`;
 /**
- * A modal negation states a clause ("shouldn't be", "mustn't get", "can't be", "won't get"); a plain
- * copula negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
+ * A modal negation states a clause, and so does "doesn't get"; a plain copula negation ("isn't",
+ * "aren't", "wasn't") describes the sound as it is, so it is none.
  */
-export const MODAL_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n${APOSTROPHE}?t|${SHORTENED_MODAL}${APOSTROPHE}?t|${DOES_NEGATION})`;
+export const MODAL_NEGATION = String.raw`(?:${MODAL_VERB_NEGATION}|${DOES_NEGATION})`;
 const NO_WORD = 'no';
 const BARE_NEGATION = words([NO_WORD, 'not']);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
@@ -148,7 +153,8 @@ export const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_N
 const AUXILIARY_WORDS = ['is', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'do', 'does', 'did'];
 const PREDICATE_VERB_WORDS = ['needs', 'need', 'wants', 'want', 'gets', 'got'];
 const FROM_WORD = 'from';
-const COMPLEMENT_WORDS = ['to', FROM_WORD];
+const TO = 'to';
+const COMPLEMENT_WORDS = [TO, FROM_WORD];
 /** "from" alone, which a keep, stop or prevent names its move after: "keep the mix from getting louder". */
 export const FROM = words([FROM_WORD]);
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
@@ -157,6 +163,29 @@ const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS,
  * needs to be brighter" names "the vocal" and the words after it are a clause of its own.
  */
 export const PREDICATE_WORD = String.raw`(?:${MODAL}|${LINKING_VERB}|${PLAIN_PREDICATE_WORD})`;
+/**
+ * The words opening a subordinate clause or a means: what follows one is the request's own move or
+ * condition ("prevent clipping when I make the vocal louder", "stop it getting lost by making it
+ * louder"), never what an earlier protection governs.
+ */
+export const SUBORDINATOR = words([
+    'by',
+    'when',
+    'whenever',
+    'if',
+    SO,
+    'so that',
+    TO,
+    'because',
+    AS_WORD,
+    WHILE,
+    'until',
+    'before',
+    'after',
+    WITHOUT,
+]);
+/** A subject opening a clause of its own, whose verb no earlier protection governs: "I make it louder". */
+export const CLAUSE_SUBJECT = words(['i', 'you', 'we', 'they', 'he', 'she']);
 
 const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|${PREDICATE_WORD}|${ANY_NEGATION})`;
 /**

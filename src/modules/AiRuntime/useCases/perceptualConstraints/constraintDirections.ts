@@ -189,7 +189,7 @@ const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
 /** A held noun as free text names it, in either number behind any qualifier it needs: "the stereo field". */
 export const MEASURED_NOUN = String.raw`${words(FREE_TEXT_NOUNS)}s?`;
 /** A word naming a way a measured quality moves: a quality verb or a direction. */
-export const MOVE_WORD = String.raw`(?:${words(VERB_PHRASES)}|${DIRECTION})`;
+export const MOVE_WORD = String.raw`(?:${words(VERB_PHRASES)}${WORD_END}|${DIRECTION})`;
 /**
  * Any word naming a measured quality or a way it moves, as free text names it. A plain adjective
  * ("bright", "wide") is none: elsewhere it mostly describes a sound.
