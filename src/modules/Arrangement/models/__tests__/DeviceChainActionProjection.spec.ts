@@ -4,12 +4,14 @@ import { type AppAction } from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { projectDeviceChainAction } from '../DeviceChainActionProjection';
-import { projectsDeviceChainByActionType } from '../ProjectsDeviceChainByActionType';
+import { deviceChainProjectorByActionType } from '../DeviceChainProjectorByActionType';
 import { createTrack, type Device } from '../Track';
 
-describe('projectsDeviceChainByActionType', () => {
-    it('is true for exactly the device-chain actions', () => {
-        const projectingEntries = Object.entries(projectsDeviceChainByActionType).filter(([, projects]) => projects);
+describe('projectDeviceChainAction', () => {
+    it('has a projector for exactly the device-chain actions', () => {
+        const projectingEntries = Object.entries(deviceChainProjectorByActionType).filter(
+            ([, project]) => project !== null
+        );
         const projecting = projectingEntries.map(([type]) => type).sort();
         expect(projecting).toEqual(
             [
@@ -45,6 +47,75 @@ describe('projectsDeviceChainByActionType', () => {
                 []
             )
         ).toBeNull();
+    });
+
+    describe('projects each remaining device-chain action', () => {
+        const a: Device = { id: 'a', name: 'A', type: 'a-type', bypassed: false, parameterValues: { gain: 0.5 } };
+        const b: Device = { id: 'b', name: 'B', type: 'b-type', bypassed: false, parameterValues: {} };
+        const chain = [a, b];
+        const state = { version: 1, data: { x: 1 } };
+        const expectedBefore = { id: 't', kind: 'midi' as const, devices: [] };
+        const cases: { label: string; action: AppAction; expected: Device[] | null }[] = [
+            {
+                label: 'addDevice appends after the last device',
+                action: { type: 'addDevice', payload: { trackId: 't', deviceType: 'new-type', deviceId: 'c' } },
+                expected: [a, b, { id: 'c', name: 'new-type', type: 'new-type', bypassed: false, parameterValues: {} }],
+            },
+            {
+                label: 'reorderDevices moves the device to the target index',
+                action: {
+                    type: 'reorderDevices',
+                    payload: { trackId: 't', deviceId: 'a', targetIndex: 1, expectedBefore },
+                },
+                expected: [b, a],
+            },
+            {
+                label: 'restorePresetDeviceChain replaces the chain',
+                action: {
+                    type: 'restorePresetDeviceChain',
+                    payload: { trackId: 't', expectedBefore, expectedFrozen: false, replacementDevices: [b] },
+                },
+                expected: [b],
+            },
+            {
+                label: 'restoreDevice inserts the snapshot at its index',
+                action: {
+                    type: 'restoreDevice',
+                    payload: { trackId: 't', deviceIndex: 1, deviceSnapshot: { ...b, id: 'r' } },
+                },
+                expected: [a, { ...b, id: 'r' }, b],
+            },
+            {
+                label: 'setDeviceParameter writes the value',
+                action: { type: 'setDeviceParameter', payload: { deviceId: 'a', paramId: 'gain', value: 0.9 } },
+                expected: [{ ...a, parameterValues: { gain: 0.9 } }, b],
+            },
+            {
+                label: 'setDeviceState writes the state',
+                action: { type: 'setDeviceState', payload: { deviceId: 'b', state } },
+                expected: [a, { ...b, deviceState: state }],
+            },
+            {
+                label: 'setGlutenFactoryPreset takes the default and projects nothing',
+                action: {
+                    type: 'setGlutenFactoryPreset',
+                    payload: {
+                        trackId: 't',
+                        deviceId: 'a',
+                        deviceIds: ['a', 'b'],
+                        presetId: 'p',
+                        before: {},
+                        after: {},
+                    },
+                },
+                expected: null,
+            },
+        ];
+        it.each(cases)('$label', ({ action, expected }) => {
+            const original = structuredClone(chain);
+            expect(projectDeviceChainAction('t', chain, action, [])).toEqual(expected);
+            expect(chain).toEqual(original);
+        });
     });
 
     it('projects a Fermenter patch while preserving unrelated device and parameter state', () => {

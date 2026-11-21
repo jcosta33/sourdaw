@@ -65,11 +65,18 @@ function bindRow(ids: Map<string, string>, recorded: string, actual: string): vo
     ids.set(recorded, actual);
 }
 
+function isMapAction(action: AppAction): action is MapAction {
+    return action.type === 'editTempoMap' || action.type === 'restoreTempoMapEdit';
+}
+
 export async function replayTempoMapMacroAction(
-    action: MapAction,
+    action: AppAction,
     ids: Map<string, string>,
     options: ExecuteAppActionOptions
 ): Promise<void> {
+    if (!isMapAction(action)) {
+        throw new AppActionConflictError(action.type, 'Not a tempo map macro action');
+    }
     const intent = readIntent(action, ids);
     const observation: { rows?: readonly TempoMapRow[] | null } = {};
     await executeAppAction(

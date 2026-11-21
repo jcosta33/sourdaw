@@ -1161,7 +1161,8 @@ pub async fn load_sample(
     file_path: String,
     state: &CrumbsState,
 ) -> Result<SampleLoadResult, String> {
-    let file_path = filesystem::resolve_existing_file_path(&file_path)?;
+    let file_path =
+        filesystem::resolve_existing_file_path(&file_path).map_err(|e| e.to_string())?;
     let file_path = file_path.to_string_lossy().to_string();
 
     // Decode the audio file.
@@ -1257,7 +1258,9 @@ pub async fn crumbs_pad_audition_on(
     let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
         return Err("Native engine not running".to_string());
     };
-    ends.command_tx.start_pad_audition(note, velocity)
+    ends.command_tx
+        .start_pad_audition(note, velocity)
+        .map_err(|error| error.to_string())
 }
 
 /// Release the audition if the attached slot still owns its receipt.

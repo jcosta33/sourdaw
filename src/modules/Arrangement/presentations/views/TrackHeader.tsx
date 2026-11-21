@@ -39,6 +39,7 @@ import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVari
 import { useTrackMuteToggle } from '../hooks/useTrackMuteToggle';
 
 import { TrackContextMenu } from './TrackContextMenu';
+import { getHiddenTrackRowClass, HiddenTrackBadge } from './TrackHeader/HiddenTrackBadge';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
 import { InputSelector } from './TrackHeader/InputSelector';
 import { LevainLoadingSpinner } from './TrackHeader/LevainLoadingSpinner';
@@ -108,6 +109,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     className={cn(
                         'relative shrink-0 border-b border-border-soft px-1 py-0',
                         isSelected ? 'bg-surface-overlay' : '',
+                        getHiddenTrackRowClass(track.hidden),
                         isDrumMachine
                             ? 'bg-surface-panel hover:bg-surface-base'
                             : 'bg-surface-tray hover:bg-surface-base'
@@ -145,7 +147,12 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             />
                         </>
                     }
-                    endSlot={freezeErrorContent}
+                    endSlot={
+                        <>
+                            <HiddenTrackBadge hidden={track.hidden} />
+                            {freezeErrorContent}
+                        </>
+                    }
                     style={{
                         height: trackHeight,
                         boxShadow: isSelected
@@ -209,6 +216,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     'relative flex shrink-0 flex-col border-b border-border-soft cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'border-l-2 border-l-white/5' : '',
                     isSelected ? 'bg-surface-base' : 'hover:bg-surface-panel',
+                    getHiddenTrackRowClass(track.hidden),
                     isStale ? 'bg-state-warning/10 border-state-warning/20' : ''
                 )}
                 style={{
@@ -238,6 +246,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     <LevainLoadingSpinner track={track} />
 
                     <InlineTrackName track={track} />
+
+                    <HiddenTrackBadge hidden={track.hidden} />
 
                     {freezeStateContent}
 

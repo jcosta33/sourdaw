@@ -59,6 +59,16 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../DistortionLayout';
 
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
+
 function requireRegisteredLayout(type: string, missingMessage: string) {
     const layout = resolveDeviceLayout(type);
     if (!layout) {
@@ -311,7 +321,11 @@ describe('actual registered Distortion curve through real project and history', 
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         const context = new AudioContext();
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        recordingContext = context;
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
         reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
         settlePendingProjectWritesAndCaptureRevision();
     });

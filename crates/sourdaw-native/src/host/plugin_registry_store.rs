@@ -54,6 +54,7 @@ use serde::{Deserialize, Serialize};
 use crate::commands::filesystem::APP_DIR_NAME;
 use crate::commands::plugins::{MAX_SCAN_CANDIDATES, SCANNED_PLUGIN_KEY_CAPACITY};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
+use crate::host::runtime_scope::RuntimeScopeRefusal;
 use crate::state::PluginRegistryEntry;
 
 /// Schema version of the persisted registry document.
@@ -566,7 +567,7 @@ pub struct PluginRegistryStore {
 impl PluginRegistryStore {
     /// The registry file in the platform's app-data directory, or the runtime
     /// scope's refusal.
-    pub fn at_default_location() -> Result<Self, String> {
+    pub fn at_default_location() -> Result<Self, RuntimeScopeRefusal> {
         Ok(Self::new(default_registry_location()?))
     }
 
@@ -1071,7 +1072,7 @@ impl PluginRegistryStore {
     }
 }
 
-fn default_registry_location() -> Result<Option<PathBuf>, String> {
+fn default_registry_location() -> Result<Option<PathBuf>, RuntimeScopeRefusal> {
     if let Some(data) = crate::host::runtime_scope::RuntimeScope::path("native/data")? {
         return Ok(Some(data.join(REGISTRY_FILE_NAME)));
     }
@@ -1515,26 +1516,86 @@ fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
 fn write_registry_document(
     location: &Path,
     document: &PersistedScanRegistryRef<'_>,
-) -> Result<(), String> {
+) -> Result<(), RegistryWriteError> {
     let directory = location
         .parent()
-        .ok_or_else(|| format!("{} has no parent directory", location.display()))?;
-    fs::create_dir_all(directory)
-        .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
+        .ok_or_else(|| RegistryWriteError::NoParent(location.to_path_buf()))?;
+    fs::create_dir_all(directory).map_err(|source| RegistryWriteError::Uncreatable {
+        path: directory.to_path_buf(),
+        source,
+    })?;
 
-    let bytes = serde_json::to_vec(document)
-        .map_err(|error| format!("cannot serialize the registry: {error}"))?;
+    let bytes = serde_json::to_vec(document).map_err(RegistryWriteError::Unserializable)?;
     let nonce = TEMPORARY_FILE_NONCE.fetch_add(1, Ordering::Relaxed);
     let temporary_location = directory.join(format!(
         "{REGISTRY_TEMPORARY_FILE_STEM}.{}.{nonce}.tmp",
         std::process::id()
     ));
-    fs::write(&temporary_location, &bytes)
-        .map_err(|error| format!("cannot write {}: {error}", temporary_location.display()))?;
-    fs::rename(&temporary_location, location).map_err(|error| {
+    fs::write(&temporary_location, &bytes).map_err(|source| RegistryWriteError::Unwritable {
+        path: temporary_location.clone(),
+        source,
+    })?;
+    fs::rename(&temporary_location, location).map_err(|source| {
         let _ = fs::remove_file(&temporary_location);
-        format!("cannot replace {}: {error}", location.display())
+        RegistryWriteError::Unreplaceable {
+            path: location.to_path_buf(),
+            source,
+        }
     })
+}
+
+/// Why the registry file could not be saved. Only logged: a failed save keeps
+/// the scan's rows in memory for the session that produced them.
+#[derive(Debug)]
+enum RegistryWriteError {
+    NoParent(PathBuf),
+    Uncreatable {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Unserializable(serde_json::Error),
+    Unwritable {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Unreplaceable {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
+
+impl std::fmt::Display for RegistryWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoParent(location) => {
+                write!(formatter, "{} has no parent directory", location.display())
+            }
+            Self::Uncreatable { path, source } => {
+                write!(formatter, "cannot create {}: {source}", path.display())
+            }
+            Self::Unserializable(error) => {
+                write!(formatter, "cannot serialize the registry: {error}")
+            }
+            Self::Unwritable { path, source } => {
+                write!(formatter, "cannot write {}: {source}", path.display())
+            }
+            Self::Unreplaceable { path, source } => {
+                write!(formatter, "cannot replace {}: {source}", path.display())
+            }
+        }
+    }
+}
+
+impl std::error::Error for RegistryWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NoParent(_) => None,
+            Self::Unserializable(error) => Some(error),
+            Self::Uncreatable { source, .. }
+            | Self::Unwritable { source, .. }
+            | Self::Unreplaceable { source, .. } => Some(source),
+        }
+    }
 }
 
 #[cfg(test)]

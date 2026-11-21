@@ -485,7 +485,6 @@ describe('automation lane binding in one agent batch', () => {
         resetAiWorkflowCommandCheckpointRuntime();
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
-        setAutomationParameterRangeResolver(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

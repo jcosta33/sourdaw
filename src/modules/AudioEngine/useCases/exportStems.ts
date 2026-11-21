@@ -81,7 +81,6 @@ type PlanStemSidechainInput<TTrack extends StemSidechainTrack> = {
 
 type PlanStemSidechainOutput<TTrack extends StemSidechainTrack> = {
     routes: StemSidechainRoute[];
-    targetDevices: Set<object>;
     keySourceTracks: TTrack[];
 };
 
@@ -91,39 +90,48 @@ function planStemSidechain<TTrack extends StemSidechainTrack>({
     allTracks,
 }: PlanStemSidechainInput<TTrack>): PlanStemSidechainOutput<TTrack> {
     const stemRoutes: StemSidechainRoute[] = [];
-    const targetDevices = new Set<object>();
     const keySourceTracks: TTrack[] = [];
-    const seenKeySourceIds = new Set<string>();
+    // Tracks whose keyed compressors are already planned: the stem's own tracks
+    // and every key source taken in so far. It also ends a keying cycle.
+    const plannedTrackIds = new Set(stemTrackIds);
+    const pendingTrackIds = [...stemTrackIds];
 
-    for (const route of routes) {
-        if (!stemTrackIds.has(route.targetTrackId)) {
-            continue;
-        }
-        const targetTrack = allTracks.find((candidate) => candidate.id === route.targetTrackId);
-        const targetDevice = targetTrack?.devices.find(
-            (device) => device.id === route.targetDeviceId && !device.bypassed
-        );
-        if (targetDevice?.type !== 'builtin-sidechain-compressor') {
-            continue;
-        }
-        const sourceTrack = allTracks.find((candidate) => candidate.id === route.sourceTrackId);
-        // A key whose source left the project (or cannot own a strip) is dropped
-        // rather than rendered silent, matching the mixdown's route filter.
-        if (!sourceTrack || sourceTrack.disabled || !shouldCreateLiveTrackStrip(sourceTrack)) {
-            continue;
-        }
+    // A key source is rendered through its own inserts, so a compressor on it is
+    // keyed too — the live graph and the mixdown duck it before it ducks anything
+    // else. The key set is therefore closed over the routes, as
+    // `getUpstreamSubgraph` closes the freeze set.
+    for (let index = 0; index < pendingTrackIds.length; index++) {
+        const targetTrackId = pendingTrackIds[index];
+        for (const route of routes) {
+            if (route.targetTrackId !== targetTrackId) {
+                continue;
+            }
+            const targetTrack = allTracks.find((candidate) => candidate.id === route.targetTrackId);
+            const targetDevice = targetTrack?.devices.find(
+                (device) => device.id === route.targetDeviceId && !device.bypassed
+            );
+            if (targetDevice?.type !== 'builtin-sidechain-compressor') {
+                continue;
+            }
+            const sourceTrack = allTracks.find((candidate) => candidate.id === route.sourceTrackId);
+            // A key whose source left the project (or cannot own a strip) is dropped
+            // rather than rendered silent, matching the mixdown's route filter.
+            if (!sourceTrack || sourceTrack.disabled || !shouldCreateLiveTrackStrip(sourceTrack)) {
+                continue;
+            }
 
-        stemRoutes.push(route);
-        targetDevices.add(targetDevice);
-        // A track can key a compressor on itself; it is already in the stem, so
-        // it needs no second strip.
-        if (!stemTrackIds.has(sourceTrack.id) && !seenKeySourceIds.has(sourceTrack.id)) {
-            seenKeySourceIds.add(sourceTrack.id);
-            keySourceTracks.push(sourceTrack);
+            stemRoutes.push(route);
+            // A track can key a compressor on itself, or sit in a cycle; it is
+            // already planned, so it needs no second strip.
+            if (!plannedTrackIds.has(sourceTrack.id)) {
+                plannedTrackIds.add(sourceTrack.id);
+                pendingTrackIds.push(sourceTrack.id);
+                keySourceTracks.push(sourceTrack);
+            }
         }
     }
 
-    return { routes: stemRoutes, targetDevices, keySourceTracks };
+    return { routes: stemRoutes, keySourceTracks };
 }
 
 export const exportStems: ExportStemsFn = async function exportStems(
@@ -295,7 +303,6 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 await prepareOfflineContext({
                     offlineCtx,
                     tracks: groupedTracks,
-                    sidechainTargetDevices: stemSidechain.targetDevices,
                     onWarning,
                 });
                 for (const groupedTrack of groupedTracks) {
