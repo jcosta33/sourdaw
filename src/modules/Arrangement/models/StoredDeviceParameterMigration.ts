@@ -42,7 +42,9 @@ import { COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE } from '#/utils/dynamicsCompressorM
  * The built-in compressor's Auto Makeup switch (`comp-auto-makeup`) is new, and
  * a new device starts with it off. Every compressor stored before it existed
  * sounded with the browser's makeup gain, which is the switch on, so a record
- * without the key reads as on (ADR 0064). A record that carries the key, either
+ * without the key reads as on (ADR 0064). The built-in limiter's switch
+ * (`lim-auto-makeup`) is filled the same way, because its first stage is the
+ * same browser node (ADR 0066). A record that carries the key, either
  * value, is the user's setting and is never touched. The fill is idempotent the
  * same way the rescale is: once filled the key is present, and a present key
  * never fires it again.
@@ -90,6 +92,11 @@ const STORED_PARAMETER_FILLS: readonly StoredParameterFill[] = [
     {
         deviceType: 'builtin-compressor',
         paramId: 'comp-auto-makeup',
+        legacyValue: COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE,
+    },
+    {
+        deviceType: 'builtin-limiter',
+        paramId: 'lim-auto-makeup',
         legacyValue: COMPRESSOR_AUTO_MAKEUP_LEGACY_VALUE,
     },
 ];

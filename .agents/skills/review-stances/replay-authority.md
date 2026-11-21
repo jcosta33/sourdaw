@@ -155,6 +155,11 @@ boundaries.
    sibling must fail/refuse the whole group, including malformed shape/source, wrong track/family and missing redo.
    A binary document reload retaining live Undo objects is no session-hydration oracle; fresh-tab data is no cross-tab
    history proof.
+   A track the batch creates must be planned as its creator executes it (#7167, escaped through #7141): a `describe()`
+   reading a planned track built from a whole-source clone of a duplicate, or projected through actions that ran
+   before the creator, records an inverse or redo that conflicts with no divergence. Probe: plan and execute one
+   batch that creates a track from a source with non-default display state (hidden, height, muted) and a project-wide
+   edit before the creator, compare the planned and executed track field by field, and replay the group.
 
 ## Retired lessons
 

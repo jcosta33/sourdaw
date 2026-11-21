@@ -29,6 +29,9 @@ export { DRUM_KIT_DEFAULT_LEVEL_DB } from './deviceCapabilities/drumKitDefaultLe
 export { isBuiltinSynthDevice } from './deviceCapabilities/isBuiltinSynthDevice';
 export { isBypassedNoteReceiver } from './deviceCapabilities/isBypassedNoteReceiver';
 export { findMidiTransformDevice } from './deviceCapabilities/findMidiTransformDevice';
+export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
+export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
+export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
 export { isMidiTransformDevice } from './deviceCapabilities/isMidiTransformDevice';
 export { readDrumKitOutputGain } from './deviceCapabilities/readDrumKitOutputGain';

@@ -4,7 +4,6 @@ import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
 
 import { AGENT_RUN_TERMINAL_PHASES, type AgentRun } from '../models/AgentRun';
 import { type BriefReading, type BriefReadings } from '../models/BriefReading';
@@ -31,11 +30,14 @@ import { agentRunCancellation } from './cancelAgentRun';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 import { getProjectContext } from './getProjectContext';
-import { readBriefMixIntent } from './readBriefMixIntent';
+import { type readBriefMixIntent } from './readBriefMixIntent';
 import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailability';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
+import { CARD_HOLDS_NO_BRIEF, MIX_CATALOGUE_CHANGED } from './vibeRun/briefReadingRefusals';
 import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
+import { postReadingRefusal } from './vibeRun/postReadingRefusal';
+import { readChosenReadingDrift } from './vibeRun/readChosenReadingDrift';
 
 type ChooseVibeBriefReadingInput = {
     confirmationId: string;
@@ -48,24 +50,54 @@ type ChooseVibeBriefReadingOutput =
     | { status: 'refused'; reason: string }
     | { status: 'chosen' };
 
-type BriefAction = Extract<PendingAppActionConfirmation['actions'][number], { type: 'setProductionBrief' }>;
-
 function refuse(reason: string): ChooseVibeBriefReadingOutput {
     return { status: 'refused', reason };
 }
 
-/** Why the card's own facts no longer hold, or `null` while they do. */
-function readStaleness(confirmation: PendingAppActionConfirmation, briefAction: BriefAction): string | null {
-    if (projectStore.value?.productionBrief.revision !== briefAction.payload.expectedRevision) {
-        return 'The production brief changed since this card was made, so its readings no longer apply.';
+type ChoiceAdmission =
+    | Extract<ChooseVibeBriefReadingOutput, { status: 'refused' }>
+    | {
+          status: 'admitted';
+          reading: BriefReading;
+          offer: BriefReadings;
+          run: AgentRun;
+          interactionMode: 'apply' | 'macro';
+          mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+      };
+
+/** Whether the card still offers the reading, and the project still plans it as offered. */
+function admitChoice(confirmation: PendingAppActionConfirmation, readingId: string): ChoiceAdmission {
+    const reading = confirmation.approvalSnapshot.briefReadings?.readings.find(
+        (candidate) => candidate.id === readingId
+    );
+    if (reading === undefined) {
+        return { status: 'refused', reason: `The card offers no reading with id "${readingId}".` };
     }
-    if (
-        confirmation.approvalSnapshot.commandBatch?.authority.projectId !== captureProjectIdentity() ||
-        !projectRevisionMatchesLiveIgnoringSaveWrites(confirmation.projectRevision)
-    ) {
-        return 'The project changed since this card was made, so its readings no longer apply.';
+    const availability = readVibeBriefReadingAvailability(confirmation);
+    const offer = confirmation.approvalSnapshot.briefReadings;
+    const run = agentRunLifecycle.get(confirmation.runId);
+    if (availability.reason !== null) {
+        return { status: 'refused', reason: availability.reason };
     }
-    return null;
+    if (offer === undefined || run === null || !isLive(run) || !confirmation.actions.some(isBriefAction)) {
+        return { status: 'refused', reason: CARD_HOLDS_NO_BRIEF };
+    }
+    const interactionMode = run.mode;
+    if (interactionMode !== 'apply' && interactionMode !== 'macro') {
+        return { status: 'refused', reason: 'Only a run that applies changes can plan batches.' };
+    }
+    if (offer.catalogId !== getBriefMixIntentCatalog().catalogId) {
+        return { status: 'refused', reason: MIX_CATALOGUE_CHANGED };
+    }
+    const drift = readChosenReadingDrift({ confirmation, offer, reading, run, context: getProjectContext() });
+    if (drift.status === 'drifted') {
+        return { status: 'refused', reason: drift.reason };
+    }
+    return { status: 'admitted', reading, offer, run, interactionMode, mixIntent: drift.mixIntent };
+}
+
+function isBriefAction(action: PendingAppActionConfirmation['actions'][number]): boolean {
+    return action.type === 'setProductionBrief';
 }
 
 function claimReadingPlanWork(runId: string) {
@@ -110,42 +142,17 @@ export async function chooseVibeBriefReading(
     if (confirmation.status !== 'proposed' || confirmation.supersededBy !== null) {
         return { status: 'not_pending', currentStatus: confirmation.status };
     }
-    const reading = confirmation.approvalSnapshot.briefReadings?.readings.find(
-        (candidate) => candidate.id === input.readingId
-    );
-    if (reading === undefined) {
-        return refuse(`The card offers no reading with id "${input.readingId}".`);
+    const admission = admitChoice(confirmation, input.readingId);
+    if (admission.status === 'refused') {
+        postReadingRefusal({ confirmation, readingId: input.readingId, reason: admission.reason });
+        return admission;
     }
-    const availability = readVibeBriefReadingAvailability(confirmation);
-    if (availability.reason !== null) {
-        return refuse(availability.reason);
-    }
-    const offer = confirmation.approvalSnapshot.briefReadings;
-    const run = agentRunLifecycle.get(confirmation.runId);
-    const briefAction = confirmation.actions.find(
-        (action): action is BriefAction => action.type === 'setProductionBrief'
-    );
-    if (offer === undefined || run === null || !isLive(run) || briefAction === undefined) {
-        return refuse('The card no longer holds a brief to plan readings for.');
-    }
-    const interactionMode = run.mode;
-    if (interactionMode !== 'apply' && interactionMode !== 'macro') {
-        return refuse('Only a run that applies changes can plan batches.');
-    }
-    if (offer.catalogId !== getBriefMixIntentCatalog().catalogId) {
-        return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
-    }
-    const stale = readStaleness(confirmation, briefAction);
-    if (stale !== null) {
-        return refuse(stale);
-    }
-    const mixIntent = readBriefMixIntent({ catalogId: offer.catalogId, requestedDescriptors: reading.descriptors });
-    if (mixIntent === null) {
-        return refuse('The mix catalogue changed since this card was made, so its readings no longer apply.');
-    }
+    const { reading, offer, run, interactionMode, mixIntent } = admission;
     const claimed = claimReadingPlanWork(run.runId);
     if (claimed.status !== 'claimed') {
-        return refuse(`The reading could not be planned: ${claimed.status}.`);
+        const reason = `The reading could not be planned: ${claimed.status}.`;
+        postReadingRefusal({ confirmation, readingId: reading.id, reason });
+        return refuse(reason);
     }
     const lease = claimed.lease;
     const controller = new AbortController();
@@ -287,6 +294,17 @@ async function planAfterRetire(input: {
     const { confirmation, offer, reading, run, replacementId, assistantMessageId } = input;
     const revision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
+    // The retire above awaited, so the project may have moved since the checks that admitted this choice.
+    const drift = readChosenReadingDrift({
+        confirmation,
+        offer,
+        reading,
+        run,
+        context,
+    });
+    if (drift.status === 'drifted') {
+        return failReading({ run, assistantMessageId, reading, reason: drift.reason });
+    }
     const priorReceipts = run.plan?.applicationToolReceipts ?? [];
     const planned = await planBriefVibeRun({
         prompt: run.request,
@@ -298,6 +316,7 @@ async function planAfterRetire(input: {
         signal: input.signal,
         admit: agentWorkBudget.admitMeasurement(run.runId),
         priorReceipts,
+        expectedPlanDigest: reading.plan.planDigest,
         onProgress: (progress) =>
             updateChatMessage(assistantMessageId, { content: describeInitialMeasurementProgress(context, progress) }),
     });

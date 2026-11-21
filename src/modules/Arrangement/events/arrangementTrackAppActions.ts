@@ -244,7 +244,12 @@ export type ArrangementTrackAppAction =
           type: 'createFolder';
           /** `folderTrackId` is application-owned: it is materialized before `describe` so the
            *  inverse can name the exact track this command appends. Providers cannot set it. */
-          payload: { name: string; folderTrackId?: string };
+          payload: {
+              name: string;
+              folderTrackId?: string;
+              /** Internal replay metadata pinned before the first execution, as `createBus` does. */ color?: string;
+              /** Internal replay metadata pinned before the first execution, as `createBus` does. */ initialAlternativeId?: string;
+          };
       }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
     | {

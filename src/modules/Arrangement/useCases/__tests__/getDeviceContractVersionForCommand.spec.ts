@@ -39,6 +39,8 @@ const INTENTIONAL_DESCRIPTOR_VERSION_BUMPS: Readonly<Record<string, string>> = {
     crust: 'descriptor-v1:8b5fc693',
     // The compressor declares its Auto Makeup switch (ADR 0064).
     'builtin-compressor': 'descriptor-v1:e1a4ea97',
+    // The limiter declares its Auto Makeup switch (ADR 0066).
+    'builtin-limiter': 'descriptor-v1:29b3d345',
 };
 
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
