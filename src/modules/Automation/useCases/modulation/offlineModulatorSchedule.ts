@@ -2,7 +2,7 @@ import { type Modulator } from '../../models/Modulator';
 import { modulationStore } from '../../stores/modulationStore';
 
 import { computeModulatorValue } from './computeModulatorValue';
-import { dependencies } from './modulationDependencies';
+import { modulationDependenciesPort } from './modulationDependencies';
 
 /**
  * The offline evaluation of the modulator rack — the render-side half of live
@@ -53,18 +53,15 @@ type PlanTargetTrack = {
  * no automatable range — is dropped, matching live's `resolveModulationBinding`
  * refusal to write a parameter that never passed the picker's law.
  *
- * The modulation dependencies are registered once at app init; when they are
- * absent no range law exists to decide whether a parameter may be modulated,
- * so no plans are produced rather than assuming a looser rule than live's.
+ * The modulation dependencies are registered once at app init and carry the
+ * range law that decides whether a parameter may be modulated; resolving a
+ * mapping before they are registered throws rather than assuming a looser rule
+ * than live's.
  */
 export function buildOfflineModulatorPlans(input: {
     tracks: readonly PlanTargetTrack[];
     modulators?: readonly Modulator[];
 }): OfflineModulatorParamPlan[] {
-    if (dependencies === null) {
-        return [];
-    }
-    const { getPluginParamRange } = dependencies;
     const modulators = input.modulators ?? modulationStore.value?.modulators ?? [];
     const trackById = new Map(input.tracks.map((track) => [track.id, track]));
     const plans: OfflineModulatorParamPlan[] = [];
@@ -79,7 +76,7 @@ export function buildOfflineModulatorPlans(input: {
             if (!track || !device) {
                 continue;
             }
-            const range = getPluginParamRange(device.type, mapping.targetParamId);
+            const range = modulationDependenciesPort.read().getPluginParamRange(device.type, mapping.targetParamId);
             if (!range || !range.automatable) {
                 continue;
             }

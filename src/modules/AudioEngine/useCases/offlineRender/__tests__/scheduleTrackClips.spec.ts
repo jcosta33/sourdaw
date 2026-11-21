@@ -547,6 +547,18 @@ async function runSchedule({
     return pendingWorkletEvents;
 }
 
+const modulationWriter = vi.fn();
+
+let modulatedParamRange = { min: 0, max: 100, defaultValue: 0, automatable: true };
+
+function getModulatedParamRange() {
+    return modulatedParamRange;
+}
+
+function quantiseIdentity({ value }: { value: number }): number {
+    return value;
+}
+
 describe('scheduleTrackClips — legacy instrument parity', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1801,10 +1813,11 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
             }),
         };
         configureOfflineDeviceParameterLaw({ ...injectedLaw, clampValue: ({ value }) => value });
+        modulatedParamRange = { min: 0, max: 100, defaultValue: 0, automatable: true };
         setModulationDependencies({
-            updateDeviceParam: vi.fn(),
-            quantiseValue: ({ value }) => value,
-            getPluginParamRange: () => ({ min: 0, max: 100, defaultValue: 0, automatable: true }),
+            updateDeviceParam: modulationWriter,
+            quantiseValue: quantiseIdentity,
+            getPluginParamRange: getModulatedParamRange,
         });
         modulationStore.set({
             modulators: [
@@ -1908,15 +1921,11 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         // used to be built only when the track read automation, so an
         // automated-out track's enabled LFO mapping went silent in the export
         // while the monitor modulated.
+        modulatedParamRange = { min: 20, max: 20_000, defaultValue: 1000, automatable: true };
         setModulationDependencies({
-            updateDeviceParam: vi.fn(),
-            getPluginParamRange: (deviceType: string, paramId: string) => {
-                if (deviceType === 'fermenter' && paramId === 'filterCutoff') {
-                    return { min: 20, max: 20_000, defaultValue: 1000, automatable: true };
-                }
-                return null;
-            },
-            quantiseValue: ({ value }: { value: number }) => value,
+            updateDeviceParam: modulationWriter,
+            getPluginParamRange: getModulatedParamRange,
+            quantiseValue: quantiseIdentity,
         });
         modulationStore.set({
             modulators: [

@@ -32,6 +32,16 @@ describe('getTimelineContentHeight', () => {
         expect(getTimelineContentHeight(tracks)).toBe(208);
     });
 
+    it('leaves a hidden track out of the scroll range unless hidden tracks are shown', () => {
+        const tracks = [
+            makeTrack({ id: 'a', kind: 'audio', height: 100 }),
+            makeTrack({ id: 'b', kind: 'audio', height: 70, hidden: true }),
+        ];
+
+        expect(getTimelineContentHeight(tracks)).toBe(100);
+        expect(getTimelineContentHeight(tracks, undefined, 1, { showHiddenTracks: true })).toBe(170);
+    });
+
     it('excludes the master track', () => {
         const tracks = [
             makeTrack({ id: 'a', kind: 'audio', height: 100 }),
@@ -77,7 +87,11 @@ describe('getTimelineContentHeight', () => {
         ];
 
         expect(getTimelineContentHeight(tracks)).toBe(64 + 2 * VARIATION_LANE_HEIGHT + 64);
-        expect(getTimelineContentHeight(tracks, undefined, 0.625, { trackId: 'plain', height: 80 })).toBe(40 + 48 + 50);
+        expect(
+            getTimelineContentHeight(tracks, undefined, 0.625, {
+                trackHeightPreview: { trackId: 'plain', height: 80 },
+            })
+        ).toBe(40 + 48 + 50);
     });
 
     it('adds no lane height for a folder or a track whose lanes are off', () => {

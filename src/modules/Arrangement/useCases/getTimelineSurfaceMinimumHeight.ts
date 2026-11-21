@@ -8,9 +8,10 @@ import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTrac
 export function getTimelineSurfaceMinimumHeight(
     tracks: readonly Track[],
     selectedTrackId: string | null,
-    heightMode?: Preferences['trackHeight']
+    heightMode?: Preferences['trackHeight'],
+    showHiddenTracks = false
 ): number {
-    const visibleTracks = getVisibleTimelineTracks(tracks);
+    const visibleTracks = getVisibleTimelineTracks(tracks, showHiddenTracks);
     const track =
         visibleTracks.find((track) => track.id === selectedTrackId && track.kind !== 'folder') ??
         visibleTracks.find((track) => track.kind !== 'folder') ??

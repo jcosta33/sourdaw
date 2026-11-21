@@ -557,6 +557,7 @@ fn render(
         state,
         seams,
     ))
+    .map_err(|refusal| refusal.to_string())
     .map(|bytes| {
         let (frames, _) = bytes.as_chunks::<8>();
         frames
@@ -1239,6 +1240,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
             state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     let outcome = thread::scope(|scope| {
@@ -1479,6 +1481,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
             &state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     for sample_rate in [7_999.0, 384_001.0, f64::NAN, f64::INFINITY] {
