@@ -51,7 +51,6 @@ describe('handleFreezeTrack while a recording is engaged or starting', () => {
         expect(mocks.freezeTrack).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledTimes(1);
         expect(notifyUser).toHaveBeenCalledWith(WARNING, 'warning');
-        expect(handleFreezeTrack.describe(freezeAction(trackId)).inverseAction).toBeNull();
         return result;
     }
 
@@ -81,6 +80,30 @@ describe('handleFreezeTrack while a recording is engaged or starting', () => {
         recordingStartStore.set(true);
 
         expect(await freezeAndExpectWarning()).toEqual({ status: 'no-write' });
+    });
+
+    it('writes a freeze with a working inverse when the recording closed between describe and execute', async () => {
+        recordingStartStore.set(true);
+        const description = handleFreezeTrack.describe(freezeAction('armed'));
+        recordingStartStore.set(false);
+
+        const result = await handleFreezeTrack.execute(freezeAction('armed'));
+
+        expect(description.inverseAction).toMatchObject({ type: 'restoreFreezeState' });
+        expect(result).toEqual({ status: 'written' });
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses at execute, with no write, when the recording began between describe and execute', async () => {
+        const description = handleFreezeTrack.describe(freezeAction('armed'));
+        recordingStartStore.set(true);
+
+        const result = await handleFreezeTrack.execute(freezeAction('armed'));
+
+        expect(description.inverseAction).toMatchObject({ type: 'restoreFreezeState' });
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.freezeTrack).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledTimes(1);
     });
 
     it('freezes an armed track while the transport is idle', async () => {

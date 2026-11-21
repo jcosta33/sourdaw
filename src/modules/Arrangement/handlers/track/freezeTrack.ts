@@ -42,13 +42,15 @@ export const handleFreezeTrack = createHandler<'freezeTrack'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: (action) => {
+        // Recording state is deliberately not read here. A batch describes every action before it runs
+        // any, so a refusal decided now could disagree with `execute`, which is the one recording gate.
         // `unfreezeTrack` is not a complete inverse. Freeze also accepts `stale` and
         // `error` states, and those can already carry a buffer — a bare unfreeze clears it
         // and collapses the metadata to `unfrozen`, which is not where the action started.
         // Capture the whole aggregate on both sides instead.
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         const freezeId = action.payload.freezeId;
-        if (!track || !freezeId || isFreezeRefusedWhileRecording(track.id)) {
+        if (!track || !freezeId) {
             return { label: 'Freeze track', inverseAction: null };
         }
         const previous = captureFreezeStateSnapshot(track);
