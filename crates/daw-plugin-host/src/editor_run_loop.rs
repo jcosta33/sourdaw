@@ -154,6 +154,9 @@ mod tests {
         }
     }
 
+    /// The pump is process-wide and other tests in this binary drive it at the
+    /// same time, so a pass count is a floor while registered and a fixed point
+    /// once the registration drops.
     #[test]
     fn a_registered_run_loop_is_serviced_until_its_registration_drops() {
         let counting = Arc::new(CountingRunLoop::default());
@@ -161,14 +164,15 @@ mod tests {
 
         let registration = register_editor_run_loop(Arc::clone(&counting));
         service_editor_run_loops();
-        assert_eq!(counting.passes.load(Ordering::Acquire), 1);
+        assert!(counting.passes.load(Ordering::Acquire) >= 1);
         assert!(is_pumped(&run_loop));
 
         drop(registration);
+        let passes_at_drop = counting.passes.load(Ordering::Acquire);
         service_editor_run_loops();
         assert_eq!(
             counting.passes.load(Ordering::Acquire),
-            1,
+            passes_at_drop,
             "a dropped registration is not serviced again"
         );
         assert!(!is_pumped(&run_loop));
@@ -176,7 +180,8 @@ mod tests {
 
     /// A pass that copied the set before a drop on another thread reaches the
     /// loop only after the drop returned, when its owner may already have
-    /// released what the loop calls into.
+    /// released what the loop calls into. Another test's pump may service the
+    /// loop while it is registered, so the count is held fixed from the drop.
     #[test]
     fn a_pass_that_copied_the_set_before_a_drop_calls_nothing_after_it() {
         let counting = Arc::new(CountingRunLoop::default());
@@ -184,17 +189,20 @@ mod tests {
         let copied_by_a_pass = Arc::clone(&registration.pumped);
 
         drop(registration);
+        let passes_at_drop = counting.passes.load(Ordering::Acquire);
 
         assert_eq!(service_pumped(&copied_by_a_pass), 0);
         assert_eq!(
             counting.passes.load(Ordering::Acquire),
-            0,
+            passes_at_drop,
             "a loop whose registration dropped is never called"
         );
     }
 
     /// The drop waits out a pass that is already inside the loop, because the
     /// owner releases what that pass is calling into the moment drop returns.
+    /// Another test's pump may take a second pass through the loop first, so
+    /// the drop is held to having let at least one pass finish.
     #[test]
     fn dropping_a_registration_waits_out_a_pass_in_flight() {
         struct BlockingRunLoop {
@@ -205,7 +213,9 @@ mod tests {
 
         impl ServicedRunLoop for BlockingRunLoop {
             fn service_once(&self) -> usize {
-                let _ = self.entered.send(());
+                // Never blocks: a later pass must not hold the loop waiting for
+                // a reader that has already had its one signal.
+                let _ = self.entered.try_send(());
                 let _ = self.release.lock().unwrap().recv();
                 self.finished.fetch_add(1, Ordering::AcqRel);
                 1
@@ -230,9 +240,8 @@ mod tests {
         });
         drop(registration);
 
-        assert_eq!(
-            blocking.finished.load(Ordering::Acquire),
-            1,
+        assert!(
+            blocking.finished.load(Ordering::Acquire) >= 1,
             "drop returned only after the pass in flight finished"
         );
         releaser.join().unwrap();
