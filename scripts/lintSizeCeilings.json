@@ -279,7 +279,7 @@
     "src/modules/Command/useCases/captureCommandTargetFingerprints.ts": 600,
     "src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts": 600,
     "src/modules/Command/useCases/createVerifiedBatchReceipt.ts": 600,
-    "src/modules/Command/useCases/executableAppActionRegistry.ts": 3645,
+    "src/modules/Command/useCases/executableAppActionRegistry.ts": 3528,
     "src/modules/Command/useCases/executeAppAction.ts": 726,
     "src/modules/Command/useCases/executeAppActionBatch.ts": 1298,
     "src/modules/Command/useCases/executeVersionedCommandBatch.ts": 600,
