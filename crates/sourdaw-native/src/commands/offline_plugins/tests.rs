@@ -908,8 +908,9 @@ fn construct_recording_its_file(
 fn capture_then_reload_under_the_same_id(
     runtime: &SharedHostedPlugin,
     state: &AppState,
+    render_control: &OfflineRenderControl,
 ) -> Result<Vec<u8>, PluginCommandError> {
-    let chunk = read_live_state(runtime, state)?;
+    let chunk = read_live_state(runtime, state, render_control)?;
     if let Some((reloaded, load_resolution)) = RELOAD.with(|reload| reload.borrow_mut().take()) {
         attach(state, reloaded, load_resolution, DeviceKind::Effect);
     }
@@ -1242,7 +1243,7 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| {
+    seams.capture_state = |_, _, _| {
         Err(PluginCommandError::Control(
             PluginControlRefusal::TimedOut {
                 plugin: "the seam keeps it".to_string(),
@@ -1549,6 +1550,344 @@ fn a_cancel_while_the_build_waits_on_the_runtime_gate_constructs_no_instance() {
     assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
 }
 
+/// A UI thread whose queue the test pumps itself, as the shell's loop does:
+/// a task posted from a worker waits there, unrun, until the test drains it.
+struct PumpedUiThread {
+    posted: crate::host::ui_thread::PostedUiThread,
+    announce_post: Mutex<mpsc::Sender<()>>,
+}
+
+impl UiThread for PumpedUiThread {
+    fn is_ui_thread(&self) -> bool {
+        false
+    }
+
+    fn run_on_ui_thread(
+        &self,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), crate::host::ui_thread::UiThreadError> {
+        self.posted.post_and_wait(task, || {
+            self.announce_post
+                .lock()
+                .expect("announce")
+                .send(())
+                .expect("the test is watching the queue");
+            Ok(())
+        })
+    }
+}
+
+/// Constructions the counting seam was asked for. A process static, because
+/// the construct seam is a plain function; only one test reads it.
+static COUNTED_CONSTRUCTIONS: AtomicUsize = AtomicUsize::new(0);
+
+fn count_then_construct(
+    backend: crate::commands::plugins::HostBackend,
+    path: &str,
+    descriptor_id: &str,
+    sample_rate: f64,
+    mode: ProcessMode,
+) -> Result<HostedRuntime, daw_plugin_host::PluginError> {
+    COUNTED_CONSTRUCTIONS.fetch_add(1, Ordering::SeqCst);
+    create_hosted_runtime(backend, path, descriptor_id, sample_rate, mode)
+}
+
+/// A construction posted to the UI thread before quit cancels the render, and
+/// run only after, opens no plugin: the hop reads the cancel itself, because
+/// the hop's deadline bounds only the wait for the UI thread to start it.
+#[test]
+fn a_construction_posted_before_quit_and_run_after_it_opens_no_plugin() {
+    let fx = InstalledFx::create("cancel-posted-construction");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let (announce_post, post_announced) = mpsc::channel();
+    let ui = PumpedUiThread {
+        posted: crate::host::ui_thread::PostedUiThread::new(Duration::from_secs(10)),
+        announce_post: Mutex::new(announce_post),
+    };
+    COUNTED_CONSTRUCTIONS.store(0, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.construct = count_then_construct;
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-posted"),
+            )
+        });
+        post_announced
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build posts its construction");
+        cancel_every_offline_render(&state);
+        ui.posted.drain();
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled at quit returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        COUNTED_CONSTRUCTIONS.load(Ordering::SeqCst),
+        0,
+        "the plugin was not opened"
+    );
+}
+
+/// A cancel that lands between the last live state read and the first
+/// construction stops the build before it waits on the runtime gate: with the
+/// gate held, only the read ahead of the wait can end the render.
+#[test]
+fn a_cancel_between_the_capture_and_the_first_construction_runs_no_ui_task() {
+    let fx = InstalledFx::create("cancel-before-first-construction");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.capture_state = capture_then_cancel_the_render;
+    let gate_hold = crate::commands::plugins::hold_plugin_runtime_gate_exclusively();
+    let (finished, outcome) = mpsc::channel();
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let _ = finished.send(render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some(CAPTURE_CANCELLED_RENDER),
+            ));
+        });
+        let answered = outcome.recv_timeout(Duration::from_secs(5));
+        drop(gate_hold);
+        let refusal = answered
+            .expect("the render ended while the runtime gate was still held")
+            .expect_err("a render cancelled before its first construction returns no print");
+        assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    });
+
+    assert_eq!(ui.tasks_run(), 0, "no UI-thread task ran");
+}
+
+/// Set by [`enter_then_read_live_state`] once the capture is under way.
+static CAPTURE_ENTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn enter_then_read_live_state(
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+    render_control: &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError> {
+    CAPTURE_ENTERED.store(true, Ordering::SeqCst);
+    read_live_state(runtime, state, render_control)
+}
+
+/// A capture waiting on the live instance's held control gate ends once the
+/// render is cancelled, instead of waiting out the control timeout.
+#[test]
+fn a_cancel_cuts_short_a_live_state_capture_waiting_on_a_held_control_gate() {
+    const HELD_FOR: Duration = Duration::from_secs(10);
+    const CUT_SHORT_WITHIN: Duration = Duration::from_millis(500);
+    let fx = InstalledFx::create("cancel-held-gate");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    CAPTURE_ENTERED.store(false, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.capture_state = enter_then_read_live_state;
+    let (holding, hold_reached) = mpsc::channel::<()>();
+    let (release_hold, hold_released) = mpsc::channel::<()>();
+
+    let (outcome, cut_short_in) = thread::scope(|scope| {
+        let held = &live;
+        scope.spawn(move || {
+            held.with_control(OFFLINE_CONTROL_TIMEOUT, |_| {
+                holding.send(()).expect("the test is watching the hold");
+                let _ = hold_released.recv_timeout(HELD_FOR);
+                Ok::<_, std::convert::Infallible>(())
+            })
+            .expect("the hold runs");
+        });
+        hold_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the live control gate is held");
+        let rendering = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-held-gate"),
+            )
+        });
+        while !CAPTURE_ENTERED.load(Ordering::SeqCst) {
+            assert!(!rendering.is_finished(), "the render ended before capture");
+            thread::yield_now();
+        }
+        cancel_graph_offline("render-held-gate".to_string(), &state).expect("the cancel lands");
+        let cancelled_at = std::time::Instant::now();
+        let outcome = rendering.join().expect("the render thread returns");
+        let cut_short_in = cancelled_at.elapsed();
+        release_hold.send(()).expect("the hold is waiting");
+        (outcome, cut_short_in)
+    });
+
+    let refusal = outcome.expect_err("a render cancelled while capturing returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert!(
+        cut_short_in < CUT_SHORT_WITHIN,
+        "the cancel ended the wait on the held gate: {cut_short_in:?}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+/// Hold `runtime`'s control gate on a thread of its own until `release` is
+/// sent or `at_most` passes; returns once the gate is held.
+fn hold_control_gate<'scope>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    runtime: &'scope SharedHostedPlugin,
+    at_most: Duration,
+) -> mpsc::Sender<()> {
+    let (holding, hold_reached) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    scope.spawn(move || {
+        let _ = runtime.with_control(OFFLINE_CONTROL_TIMEOUT, |_| {
+            holding.send(()).expect("the test is watching the hold");
+            let _ = released.recv_timeout(at_most);
+            Ok::<_, std::convert::Infallible>(())
+        });
+    });
+    hold_reached
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the live control gate is held");
+    release
+}
+
+/// A capture nobody cancelled waits the live instance's own gate deadline, as
+/// a state save does, so an export started behind a gate held for longer than
+/// the offline control timeout still prints.
+#[test]
+fn an_uncancelled_capture_waits_out_a_gate_held_past_the_offline_control_timeout() {
+    let fx = InstalledFx::create("held-gate-print");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+
+    let printed = thread::scope(|scope| {
+        let release = hold_control_gate(scope, &live, Duration::from_secs(3));
+        let printed = render(
+            batch(impulse_track(json!([fx_device()]))),
+            &state,
+            &ui,
+            &seams,
+            Some("render-held-print"),
+        );
+        let _ = release.send(());
+        printed
+    });
+
+    printed.expect("the render waited out the hold and printed");
+}
+
+/// A capture that outwaits the live instance's own gate deadline gives the
+/// state save's verdict: the render is refused as unresponsive and the live
+/// instance is marked, which a try-lock capture would never do.
+#[test]
+fn a_capture_behind_a_gate_held_past_its_deadline_marks_the_live_instance_unresponsive() {
+    let fx = InstalledFx::create("held-gate-verdict");
+    let (state, _first) = state_with_live_fx(&fx, Format::Clap);
+    let descriptor = processing_class(Format::Clap);
+    let live = Arc::new(
+        SharedHostedPlugin::new(live_runtime(&fx, Format::Clap, &descriptor))
+            .with_control_gate_deadline(Duration::from_millis(150)),
+    );
+    record_engine_instance(
+        &state,
+        Arc::clone(&live),
+        fx.load_resolution(Format::Clap, &descriptor),
+        DeviceKind::Effect,
+        ENGINE_PLUGIN_ID,
+    );
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+
+    thread::scope(|scope| {
+        let release = hold_control_gate(scope, &live, Duration::from_secs(10));
+        let refusal = render(
+            batch(impulse_track(json!([fx_device()]))),
+            &state,
+            &ui,
+            &seams,
+            Some("render-held-verdict"),
+        )
+        .expect_err("a gate held past its deadline refuses the render");
+        let later = live.try_with_control(Duration::from_millis(10), |_| {
+            Ok::<_, std::convert::Infallible>(())
+        });
+        let _ = release.send(());
+
+        assert!(refusal.contains("plugin-unresponsive:"), "{refusal}");
+        assert!(
+            matches!(
+                later,
+                Err(crate::host::native_bridge::PluginControlError::Refused(
+                    PluginControlRefusal::Unresponsive { .. }
+                ))
+            ),
+            "the live instance is marked unresponsive"
+        );
+    });
+}
+
+const UNACTIVATED_RENDER: &str = "render-unactivated";
+
+/// The state the construct seam below cancels the render through. A process
+/// static, because the construct seam is a plain function.
+static CANCELLING_CONSTRUCTION: Mutex<Option<Arc<AppState>>> = Mutex::new(None);
+
+/// Cancel the render, then hand back a runtime whose activation failed.
+fn cancel_then_construct_an_unactivated_runtime(
+    _backend: crate::commands::plugins::HostBackend,
+    _path: &str,
+    _descriptor_id: &str,
+    _sample_rate: f64,
+    _mode: ProcessMode,
+) -> Result<HostedRuntime, daw_plugin_host::PluginError> {
+    let state = CANCELLING_CONSTRUCTION
+        .lock()
+        .expect("state")
+        .take()
+        .expect("the test names the state to cancel through");
+    cancel_graph_offline(UNACTIVATED_RENDER.to_string(), &state).expect("the cancel lands");
+    let mut wrapper =
+        ClapWrapper::new_engine_owned_command_fixture("unactivated", Vec::new(), false);
+    wrapper.deactivate_engine_owned_command_fixture();
+    Ok(wrapper.into())
+}
+
+/// A construction that finishes after the cancel, with a runtime that would
+/// refuse the render as a failed activation, ends the render as cancelled:
+/// a cancel is never reported as a plugin's failure.
+#[test]
+fn a_cancel_during_construction_wins_over_the_activation_refusal() {
+    let fx = InstalledFx::create("cancel-then-unactivated");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let state = Arc::new(state);
+    *CANCELLING_CONSTRUCTION.lock().expect("state") = Some(Arc::clone(&state));
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.construct = cancel_then_construct_an_unactivated_runtime;
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        Some(UNACTIVATED_RENDER),
+    )
+    .expect_err("a render cancelled during its construction returns no print");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+}
+
 const CAPTURE_CANCELLED_RENDER: &str = "render-capturing";
 
 /// Live state reads by [`capture_then_cancel_the_render`]. A process static,
@@ -1559,9 +1898,10 @@ static CANCELLING_CAPTURES: AtomicUsize = AtomicUsize::new(0);
 fn capture_then_cancel_the_render(
     runtime: &SharedHostedPlugin,
     state: &AppState,
+    render_control: &OfflineRenderControl,
 ) -> Result<Vec<u8>, PluginCommandError> {
     CANCELLING_CAPTURES.fetch_add(1, Ordering::SeqCst);
-    let chunk = read_live_state(runtime, state)?;
+    let chunk = read_live_state(runtime, state, render_control)?;
     cancel_graph_offline(CAPTURE_CANCELLED_RENDER.to_string(), state).expect("the cancel lands");
     Ok(chunk)
 }
@@ -1845,7 +2185,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| {
+    seams.capture_state = |_, _, _| {
         Err(PluginCommandError::Control(
             PluginControlRefusal::TimedOut {
                 plugin: "a refused rate reads no live state".to_string(),
