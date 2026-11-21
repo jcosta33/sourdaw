@@ -71,17 +71,9 @@ const ALL_BUILTIN_IDS_BY_HAND: readonly string[] = [
     'synth',
 ];
 
-const NO_PANEL_IDS: readonly string[] = [
-    'builtin-eq',
-    'builtin-synth',
-    'builtin-synth-strings',
-    'builtin-drum-kit',
-    'builtin-drum-machine-808',
-    'knead',
-    'transient-shaper',
-    'drum-kit',
-    'synth',
-];
+const NO_PANEL_BUILTIN_IDS: readonly string[] = ALL_BUILTIN_IDS_BY_HAND.filter(
+    (id) => !Object.hasOwn(EXPECTED_PANEL_KIND_BY_TYPE, id)
+);
 
 const EDGE_STRINGS: readonly string[] = [
     'builtin-synth-unknown',
@@ -102,7 +94,7 @@ describe('devicePanelKindOf', () => {
         expect(devicePanelKindOf(deviceType)).toBe(kind);
     });
 
-    it.each(NO_PANEL_IDS)('opens no panel for the built-in id %s', (deviceType) => {
+    it.each(NO_PANEL_BUILTIN_IDS)('opens no panel for the built-in id %s', (deviceType) => {
         expect(devicePanelKindOf(deviceType)).toBeNull();
     });
 
