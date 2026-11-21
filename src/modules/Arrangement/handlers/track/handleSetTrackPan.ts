@@ -1,22 +1,12 @@
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { type Track } from '../../models/Track';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackPan } from '../../useCases/setTrackGainPan/setTrackPan';
 import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
-// The batch describes every action before executing any, so the previous pan
-// is what the earlier actions of the batch leave, and a track an earlier action
-// creates exists only in that plan.
-function trackBeforeAction(trackId: string, context: HandlerValidationContext | undefined): Track | null | undefined {
-    if (context) {
-        return getPlannedTrackState(context, trackId);
-    }
-    return getTrackStoreState()?.tracks.find((track) => track.id === trackId);
-}
+import { readPlannedDisplayTrack } from './readPlannedDisplayTrack';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
     canReapplyAfterDivergence: () => true,
@@ -47,7 +37,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
         return currentPan === action.payload.expectedPan && currentPan === action.payload.pan;
     },
     describe: (alpha, context) => {
-        const prev = trackBeforeAction(alpha.payload.trackId, context);
+        const prev = readPlannedDisplayTrack(alpha.payload.trackId, context);
         // Both replay legs inherit the forward policy: undoing or redoing a
         // static edit is still not a pan gesture.
         const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
