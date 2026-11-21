@@ -53,5 +53,5 @@ export function isNodelessOfflineDeviceType(deviceType: string): boolean {
     if (isDrumDevice(deviceType)) {
         return true;
     }
-    return DECLARED_NODELESS_OFFLINE_RENDERERS[deviceType] !== undefined;
+    return Object.hasOwn(DECLARED_NODELESS_OFFLINE_RENDERERS, deviceType);
 }

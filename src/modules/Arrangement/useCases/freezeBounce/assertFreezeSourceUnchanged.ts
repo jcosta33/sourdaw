@@ -1,8 +1,7 @@
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { type Track, trackStore } from '../../stores/trackStore';
 
-// Carries no "Freeze failed" prefix: the failure paths in freezeTrack add it where they need it.
-const CHANGED_DURING_FREEZE = 'The track changed while it was freezing. Freeze it again.';
+import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
 
 function findLiveTrack(trackId: string): Track {
     const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);

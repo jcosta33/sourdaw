@@ -7999,7 +7999,7 @@
     },
     "src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts": {
         "eslint/complexity": {
-            "count": 7
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 3

@@ -17,7 +17,7 @@ import {
     type MeasurementRun,
 } from '../models/MeasurementBudget';
 import { type ProjectContext, type ProjectContextSection } from '../models/ProjectContext';
-import { type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
+import { type AdoptedRecipe, type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
@@ -140,48 +140,71 @@ function successRead(
     });
 }
 
-function sourceRecipe(input: ExecutePreviewMeasurementInput) {
-    const source = input.source;
-    if (!('recipeCallId' in source)) {
-        return undefined;
-    }
-    return input.preview.retainedCompilations?.find(
-        (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> =>
-            entry.callId === source.recipeCallId && entry.kind === 'recipe' && entry.revision === input.projectRevision
-    );
-}
+type RetainedRecipe = Extract<RetainedCompilation, { kind: 'recipe' }>;
+type CompilationSource = Parameters<typeof compilePreviewMeasurementProposal>[0]['source'];
+type CompiledProposal = Extract<ReturnType<typeof compilePreviewMeasurementProposal>, { status: 'compiled' }>;
+type Rejected = { status: 'rejected'; reason: string };
 
-function compileProposal(input: ExecutePreviewMeasurementInput) {
-    try {
-        if (input.preview.preparedBatch !== undefined) {
-            return compilePreviewMeasurementProposal({
-                callId: input.callId,
-                source: { preparedBatch: input.preview.preparedBatch },
-                context: input.preview.context,
-                prompt: input.preview.prompt,
-                revision: input.projectRevision,
-                runId: input.preview.runId,
-                creativeAuthority: input.preview.readCreativeAuthority(),
-            });
-        }
-        const recipe = sourceRecipe(input);
-        if ('recipeCallId' in input.source && recipe === undefined) {
+/**
+ * The retained expansions the preview names, in the order the loop admitted them, which is the
+ * order the planner builds its recipe steps in, so each step's prefix is a prefix of this batch.
+ */
+function resolveRecipes(
+    input: ExecutePreviewMeasurementInput,
+    recipeCallIds: readonly string[]
+): { status: 'resolved'; recipes: RetainedRecipe[] } | Rejected {
+    const retained = input.preview.retainedCompilations ?? [];
+    for (const callId of recipeCallIds) {
+        const entry = retained.find(
+            (candidate): candidate is RetainedRecipe => candidate.callId === callId && candidate.kind === 'recipe'
+        );
+        if (entry === undefined) {
             return {
-                status: 'rejected' as const,
-                reason: 'The recipeCallId must name a successful earlier-turn recipe expansion admitted in this run at the measurement revision.',
+                status: 'rejected',
+                reason: `The recipe call id "${callId}" must name a successful earlier-turn recipe expansion admitted in this run at the measurement revision.`,
             };
         }
-        let source: Parameters<typeof compilePreviewMeasurementProposal>[0]['source'] | null;
-        if ('proposal' in input.source) {
-            source = { proposal: input.source.proposal };
-        } else if (recipe !== undefined) {
-            source = { recipe };
-        } else {
-            source = null;
+        if (entry.revision !== input.projectRevision) {
+            return {
+                status: 'rejected',
+                reason: `The recipe expansion "${callId}" was admitted at another revision than this measurement's; every expansion a preview holds must be at the measurement revision.`,
+            };
         }
-        if (source === null) {
-            return { status: 'rejected' as const, reason: 'The preview has no admitted source.' };
-        }
+    }
+    const recipes = retained.filter(
+        (entry): entry is RetainedRecipe => entry.kind === 'recipe' && recipeCallIds.includes(entry.callId)
+    );
+    return { status: 'resolved', recipes };
+}
+
+/**
+ * The sources the preview measures, the whole batch last. One recipe or a semantic list is one
+ * source. Several recipes are measured at every cumulative prefix too, because admission reads each
+ * recipe step's goals between that step's own prefixes, never across the whole batch alone.
+ */
+function previewSources(
+    input: ExecutePreviewMeasurementInput
+): { status: 'resolved'; sources: CompilationSource[]; adoptedRecipes?: AdoptedRecipe[] } | Rejected {
+    if ('proposal' in input.source) {
+        return { status: 'resolved', sources: [{ proposal: input.source.proposal }] };
+    }
+    const resolved = resolveRecipes(input, input.source.recipeCallIds);
+    if (resolved.status === 'rejected') {
+        return resolved;
+    }
+    const [only, ...others] = resolved.recipes;
+    if (only !== undefined && others.length === 0) {
+        return { status: 'resolved', sources: [{ recipe: only }] };
+    }
+    return {
+        status: 'resolved',
+        sources: resolved.recipes.map((_recipe, index) => ({ retained: resolved.recipes.slice(0, index + 1) })),
+        adoptedRecipes: resolved.recipes.map((entry) => entry.recipe),
+    };
+}
+
+function compileSource(input: ExecutePreviewMeasurementInput, source: CompilationSource): CompiledProposal | Rejected {
+    try {
         return compilePreviewMeasurementProposal({
             callId: input.callId,
             source,
@@ -192,13 +215,39 @@ function compileProposal(input: ExecutePreviewMeasurementInput) {
             creativeAuthority: input.preview.readCreativeAuthority(),
         });
     } catch (error) {
-        return { status: 'rejected' as const, reason: error instanceof Error ? error.message : String(error) };
+        return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }
+}
+
+type CompiledProposals = { status: 'compiled'; batches: CompiledProposal[]; adoptedRecipes?: AdoptedRecipe[] };
+
+/** Every batch the preview renders, the whole batch last; a refusal of any compiles none. */
+function compileProposals(input: ExecutePreviewMeasurementInput): CompiledProposals | Rejected {
+    if (input.preview.preparedBatch !== undefined) {
+        const prepared = compileSource(input, { preparedBatch: input.preview.preparedBatch });
+        return prepared.status === 'rejected' ? prepared : { status: 'compiled', batches: [prepared] };
+    }
+    const sources = previewSources(input);
+    if (sources.status === 'rejected') {
+        return sources;
+    }
+    const batches: CompiledProposal[] = [];
+    for (const source of sources.sources) {
+        const compiled = compileSource(input, source);
+        if (compiled.status === 'rejected') {
+            return compiled;
+        }
+        batches.push(compiled);
+    }
+    if (sources.adoptedRecipes === undefined) {
+        return { status: 'compiled', batches };
+    }
+    return { status: 'compiled', batches, adoptedRecipes: sources.adoptedRecipes };
 }
 
 async function renderPreview(
     input: ExecutePreviewMeasurementInput,
-    preview: Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>,
+    preview: PreparedPreview,
     beats: { startBeat: number; endBeat: number },
     run: MeasurementRun
 ): Promise<PreviewRender> {
@@ -230,32 +279,41 @@ function renderedRenders(rendered: RenderedPreview) {
     }));
 }
 
-/** Render the preview's scope against the live project, then reduce each target's pair of renders. */
+type PreparedPreview = Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>;
+type MeasuredBatch = {
+    batch: CompiledProposal;
+    rendered: RenderedPreview;
+    pairs: Array<[RenderedTarget, RenderedTarget]>;
+    targets: MeasuredPreview['targets'];
+};
+
+/** Each batch's isolated workspace, in order; one that cannot be prepared releases those before it. */
+type PreparedBatch = { batch: CompiledProposal; preview: PreparedPreview };
+
+/** Render one batch's scope against the live project, then reduce each target's pair of renders. */
 async function renderAndReduce(
     input: ExecutePreviewMeasurementInput,
-    preview: Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>,
-    measured: {
-        beats: MeasuredPreview['range'];
-        commands: readonly RetainedCommand[];
-        batchContentHash: string;
-        recipeSource?: MeasuredPreview['recipeSource'];
-    },
+    { batch, preview }: PreparedBatch,
+    beats: MeasuredPreview['range'],
     run: MeasurementRun
-): Promise<AnalysisMeasureRead> {
-    const rendered = await renderPreview(input, preview, measured.beats, run);
+): Promise<{ status: 'measured'; measured: MeasuredBatch } | { status: 'failed'; failure: PreviewMeasurementFailure }> {
+    const rendered = await renderPreview(input, preview, beats, run);
     if (rendered.status === 'cancelled') {
-        return failure(input, describeMeasurementStop(run.stopReason() ?? 'cancelled'));
+        return { status: 'failed', failure: describeMeasurementStop(run.stopReason() ?? 'cancelled') };
     }
     if (rendered.status === 'refused') {
-        return failure(input, previewRefusalFailure(rendered));
+        return { status: 'failed', failure: previewRefusalFailure(rendered) };
     }
     const pairs = pairTargets(rendered);
     if (pairs === null) {
-        return failure(input, {
-            code: 'preview-unavailable',
-            safeMessage: 'The project and the preview rendered different targets for this scope.',
-            retryable: false,
-        });
+        return {
+            status: 'failed',
+            failure: {
+                code: 'preview-unavailable',
+                safeMessage: 'The project and the preview rendered different targets for this scope.',
+                retryable: false,
+            },
+        };
     }
     const reduction = await reduceMeasuredTargets({
         targets: pairs,
@@ -263,59 +321,135 @@ async function renderAndReduce(
         reduce: ([baseline, previewTarget]) => measurePreviewTarget(baseline, previewTarget, input.parsed.metrics),
     });
     if (reduction.status === 'stopped') {
-        return failure(input, describeMeasurementStop(reduction.reason));
+        return { status: 'failed', failure: describeMeasurementStop(reduction.reason) };
     }
-    // Retained only now the measurement reports, so one that stops or throws first leaves the store as it was.
+    return { status: 'measured', measured: { batch, rendered, pairs, targets: reduction.reduced } };
+}
+
+function prepareWorkspaces(
+    batches: readonly CompiledProposal[]
+): { status: 'prepared'; prepared: PreparedBatch[] } | { status: 'failed'; failure: PreviewMeasurementFailure } {
+    const prepared: PreparedBatch[] = [];
+    for (const batch of batches) {
+        const preview = previewVersionedCommandBatchEnvelope(batch.envelope);
+        if (preview.status !== 'previewed') {
+            releaseWorkspaces(prepared);
+            return {
+                status: 'failed',
+                failure: previewFailure(preview.status, 'reason' in preview ? preview.reason : undefined),
+            };
+        }
+        prepared.push({ batch, preview });
+    }
+    return { status: 'prepared', prepared };
+}
+
+function releaseWorkspaces(prepared: readonly PreparedBatch[]): void {
+    for (const { preview } of prepared) {
+        preview.resource.release();
+    }
+}
+
+/** Render and reduce every batch in order; the first that stops ends the measurement and releases the rest. */
+async function measureBatches(
+    input: ExecutePreviewMeasurementInput,
+    prepared: readonly PreparedBatch[],
+    beats: MeasuredPreview['range'],
+    run: MeasurementRun
+): Promise<{ status: 'measured'; reads: AnalysisMeasureRead[] } | { status: 'failed'; read: AnalysisMeasureRead }> {
+    const measured: MeasuredBatch[] = [];
+    for (const [index, batch] of prepared.entries()) {
+        const result = await renderAndReduce(input, batch, beats, run);
+        if (result.status === 'failed') {
+            releaseWorkspaces(prepared.slice(index + 1));
+            return { status: 'failed', read: failure(input, result.failure) };
+        }
+        measured.push(result.measured);
+    }
+    // Retained only now every batch reports, so one that stops or throws first leaves the store as it was.
     const retentionWarnings = retainAgentMeasurementRenders({
-        renders: renderedRenders(rendered),
+        renders: measured.flatMap((entry) => renderedRenders(entry.rendered)),
         sourceRevision: input.projectRevision,
     });
-    return successRead(input, rendered, pairs, { ...measured, targets: reduction.reduced, retentionWarnings });
+    const reads = measured.map((entry) =>
+        successRead(input, entry.rendered, entry.pairs, {
+            beats,
+            commands: entry.batch.commands,
+            recipeSource: entry.batch.recipeSource,
+            batchContentHash: digestCommandBatchContent(entry.batch.envelope),
+            targets: entry.targets,
+            retentionWarnings,
+        })
+    );
+    return { status: 'measured', reads };
+}
+
+/** One source's read alone, or a several-recipe preview's whole-batch read carrying each prefix's measurement. */
+function combineReads(
+    input: ExecutePreviewMeasurementInput,
+    reads: readonly AnalysisMeasureRead[],
+    adoptedRecipes: CompiledProposals['adoptedRecipes']
+): AnalysisMeasureRead {
+    const whole = reads.at(-1);
+    if (whole === undefined) {
+        return failure(input, {
+            code: 'preview-unavailable',
+            safeMessage: 'The preview measured no batch.',
+            retryable: false,
+        });
+    }
+    if (adoptedRecipes === undefined) {
+        return whole;
+    }
+    const prefixPreviews = reads
+        .slice(0, -1)
+        .flatMap((read) => (read.measuredPreview === null ? [] : [read.measuredPreview]));
+    return { ...whole, cumulative: { prefixPreviews, adoptedRecipes } };
 }
 
 /**
- * Measure a semantic list or retained recipe without applying it: compile and ground it as a
- * proposal would be, preview the resulting batch in an isolated workspace, render the scope over
- * the same range for the live project and for that preview, and reduce both to figures and
- * per-metric deltas. The commands measured are returned for the loop to retain under this call id,
- * so a later proposal adopts exactly what was measured. Every refusal is a typed failure receipt,
- * and nothing here writes the live project.
+ * Measure a semantic list or one or more retained recipes without applying them: compile and ground
+ * them as a proposal would be, preview the resulting batch in an isolated workspace, render the
+ * scope over the same range for the live project and for that preview, and reduce both to figures
+ * and per-metric deltas. Several recipes are one cumulative batch in the order the loop admitted
+ * them, and each shorter prefix of it is measured beside it, so every recipe step's goals are read
+ * between its own prefixes. The commands measured are returned for the loop to retain under this
+ * call id, so a later proposal adopts exactly what was measured. Every refusal is a typed failure
+ * receipt, and nothing here writes the live project.
  */
 export async function executePreviewMeasurement(input: ExecutePreviewMeasurementInput): Promise<AnalysisMeasureRead> {
     const resolved = resolveAnalysisMeasureBeats(input.parsed.range, input.sections);
     if (resolved.status === 'failure') {
         return failure(input, resolved.failure);
     }
-    const compiled = compileProposal(input);
+    const compiled = compileProposals(input);
     if (compiled.status === 'rejected') {
         return failure(input, { code: 'preview-proposal-rejected', safeMessage: compiled.reason, retryable: true });
     }
-    const preview = previewVersionedCommandBatchEnvelope(compiled.envelope);
-    if (preview.status !== 'previewed') {
-        return failure(input, previewFailure(preview.status, 'reason' in preview ? preview.reason : undefined));
+    const workspaces = prepareWorkspaces(compiled.batches);
+    if (workspaces.status === 'failed') {
+        return failure(input, workspaces.failure);
     }
+    const perBatch = planMeasurementWork({ scope: input.parsed.scope, subject: 'preview' });
     const started = beginMeasurementRun({
         admit: input.admit,
-        planned: planMeasurementWork({ scope: input.parsed.scope, subject: 'preview' }),
+        planned: {
+            renderJobs: perBatch.renderJobs * compiled.batches.length,
+            analyses: perBatch.analyses * compiled.batches.length,
+        },
         runSignal: input.signal,
         renderedSeconds: readMeasurementRenderedSeconds(resolved.beats.endBeat),
     });
     if (started.status === 'refused') {
-        preview.resource.release();
+        releaseWorkspaces(workspaces.prepared);
         return failure(input, started.failure);
     }
     try {
-        return await renderAndReduce(
-            input,
-            preview,
-            {
-                beats: resolved.beats,
-                commands: compiled.commands,
-                recipeSource: compiled.recipeSource,
-                batchContentHash: digestCommandBatchContent(compiled.envelope),
-            },
-            started.run
-        );
+        const measured = await measureBatches(input, workspaces.prepared, resolved.beats, started.run);
+        if (measured.status === 'failed') {
+            return measured.read;
+        }
+        return combineReads(input, measured.reads, compiled.adoptedRecipes);
     } finally {
         started.run.settle();
     }

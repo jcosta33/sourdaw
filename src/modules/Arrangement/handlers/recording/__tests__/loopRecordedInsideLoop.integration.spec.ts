@@ -223,7 +223,6 @@ describe('MIDI loop recordings', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
-        setTimeOperationDependencies(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
