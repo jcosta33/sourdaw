@@ -3,7 +3,7 @@
  *
  * One answer read by both halves of that render, so they cannot disagree: the
  * engine selection (`selectOfflineRenderEngine`) admits a chain only when every
- * hosted device on it is a printable effect, and the programme
+ * hosted device on it is a printable plugin, effect or instrument, and the programme
  * (`renderOfflineWithNativeEngine`) stamps parameter automation for exactly
  * the devices this admits. A selection that admitted a device the programme
  * left out would print it with its lanes missing.
@@ -25,10 +25,14 @@
  * The native side splices a hosted plugin as a generator exactly when the scan
  * recorded its category as `instrument`, and as an effect otherwise
  * (`chain_kind_for_category`, `crates/sourdaw-native/src/state.rs`); the
- * offline render refuses a generator. This reads the same scan answer from
- * `pluginScanStore`, so the two cannot disagree about what one plugin is. A
- * plugin the scan holds no record of answers `unknown`, which the selection
- * keeps off the native render rather than guess.
+ * offline render builds either as its own offline instance (#6777), a
+ * generator with a note store of its own. Both are printed, and both have
+ * their parameter lanes stamped; the difference is where the programme's notes
+ * go: an instrument is the sink `nativeOfflineInstrumentSink` addresses with
+ * `schedule-midi`. This reads the same scan answer from `pluginScanStore`, so
+ * the two cannot disagree about what one plugin is. A plugin the scan holds no
+ * record of answers `unknown`, which the selection keeps off the native render
+ * rather than guess.
  */
 
 import { type Device } from '#/modules/Arrangement/stores';

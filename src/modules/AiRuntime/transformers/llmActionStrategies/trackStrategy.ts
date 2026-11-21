@@ -48,6 +48,7 @@ export const trackActionNames = [
     'setTrackPan',
     'setTrackColor',
     'setTrackOutput',
+    'hideTrack',
     'foldTrack',
     'setTrackHeight',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
@@ -312,6 +313,20 @@ const trackStrategyDefinitions = [
                 type: 'setTrackOutput',
                 payload: { trackId: source.id, outputId: target.id, expectedOutputId: source.outputId },
             };
+        },
+    },
+    {
+        name: 'hideTrack',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            if (
+                !hasExactKeys(args, ['trackId', 'hidden']) ||
+                !hasTrack(context, args.trackId) ||
+                typeof args.hidden !== 'boolean'
+            ) {
+                return rejection(index, call.name, 'Expected an available trackId and boolean hidden value');
+            }
+            return { type: 'hideTrack', payload: { trackId: args.trackId, hidden: args.hidden } };
         },
     },
     {

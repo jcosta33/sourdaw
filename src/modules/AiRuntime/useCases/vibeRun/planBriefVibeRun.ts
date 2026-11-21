@@ -4,7 +4,7 @@ import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
-import { type readBriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent } from '../readBriefMixIntent';
 
 import { planVibeRunSchedule } from './planVibeRunSchedule';
 
@@ -22,7 +22,7 @@ export async function planBriefVibeRun(input: {
     prompt: string;
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    mixIntent: CatalogBriefMixIntent;
     runId: string | undefined;
     sourceRevision: string | undefined;
     signal: AbortSignal | undefined;

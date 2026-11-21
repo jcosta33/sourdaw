@@ -31,6 +31,7 @@ import {
     SPACED_AMPERSAND,
     STOP_VERB,
     SUBORDINATOR,
+    WANTING_VERB,
 } from './constraintClauseWords';
 import { DIRECTION, MEASURED_NOUN, MEASURED_WORD, MOVE_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
 
@@ -52,8 +53,11 @@ const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${CO
  * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
  */
 const LINKED_QUALITY = String.raw`${LINKING_VERB}\s+(?:${DEGREE_WORD}\s+)?${MEASURED_WORD}`;
-/** The verbs a negation governs a measured word through: one that moves a level or makes it become one. */
-const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${NOUN_VERB_HEAD}|${DIRECTION})`;
+/**
+ * The verbs a negation governs a measured word through: one that moves a level, makes it become one or
+ * wants it ("I don't want it louder").
+ */
+const GOVERNED_VERB = String.raw`(?:${LINKED_QUALITY}|${CAUSING_VERB}|${WANTING_VERB}|${NOUN_VERB_HEAD}|${DIRECTION})`;
 /**
  * A negation or modal directly before what it governs; a modal names its subject too. A third-person
  * "doesn't" opens nothing here: beside a move it describes the sound or states a purpose ("so it
@@ -105,10 +109,13 @@ const GOVERNED_END = new RegExp(String.raw`\b(?:${SUBORDINATOR}|${CLAUSE_SUBJECT
 const COMPARISON = new RegExp(String.raw`\b${COMPARED_DIRECTION}`, 'iu');
 /**
  * Hard clause boundaries, a separator among them ("don't make it harsh - brighten the vocal"); an "and",
- * an ampersand writing one, or an "or" is a boundary whose next clause may share a protection.
+ * an ampersand writing one, or an "or" is a boundary whose next clause may share a protection. A comma
+ * right before the "and" or "or" is part of that one joiner, as it is in every list ("don't make the drums
+ * wider, and the mix louder in the chorus"), so it never ends the protection before the joiner continues it.
+ * The joiner is tried first, so the comma is never read as a boundary of its own.
  */
 const BOUNDARY = new RegExp(
-    String.raw`${CLAUSE_PUNCTUATION}|(?<joiner>\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND})|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
+    String.raw`(?<joiner>(?:,\s*)?\b${LIST_JOINER}\b|${CLAUSE_JOINING_AMPERSAND}|${SPACED_AMPERSAND})|${CLAUSE_PUNCTUATION}|(?<separator>${CLAUSE_SEPARATOR})|\b${HARD_BOUNDARY_WORD}\b`,
     'giu'
 );
 /** The words a joined clause may open with and still continue the protection before it. */

@@ -28,9 +28,10 @@ use daw_plugin_host::{ClapWrapper, HostParameterUpdate, ProcessingGate, Vst3Wrap
 use serde_json::{json, Value};
 use sourdaw_harness_fx::state::{decode, RecordedState, MODE_NEVER_SET};
 use sourdaw_harness_fx::{
-    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID,
-    CLAP_START_REFUSED_PLUGIN_ID, ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_PARAM_ID, LATENCY_FRAMES,
-    VST3_CLASS_ID, VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
+    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_INSTRUMENT_PLUGIN_ID, CLAP_PLUGIN_ID,
+    CLAP_PROCESS_ERROR_PLUGIN_ID, CLAP_START_REFUSED_PLUGIN_ID, ECHO_FRAMES, FAILING_PROCESS_CALL,
+    GAIN_PARAM_ID, LATENCY_FRAMES, VST3_CLASS_ID, VST3_INSTRUMENT_CLASS_ID,
+    VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -156,6 +157,14 @@ impl InstalledFx {
             fingerprint: plugin_file_fingerprint(path, format_name)
                 .expect("the installed plugin fingerprints"),
         }
+    }
+
+    /// What a load records about an instrument class: the same file, scanned
+    /// as a generator.
+    fn instrument_resolution(&self, format: Format, descriptor_id: &str) -> VettedRegistryEntry {
+        let mut resolution = self.load_resolution(format, descriptor_id);
+        resolution.entry.chain_kind = DeviceKind::Generator;
+        resolution
     }
 
     fn seams(&self) -> OfflinePluginSeams {
@@ -459,6 +468,32 @@ fn start_refusing_class(format: Format) -> String {
     }
 }
 
+/// The descriptor id of the class that sounds the notes it is sent.
+fn instrument_class(format: Format) -> String {
+    match format {
+        Format::Clap => CLAP_INSTRUMENT_PLUGIN_ID.to_string(),
+        Format::Vst3 => format_class_id(&VST3_INSTRUMENT_CLASS_ID),
+    }
+}
+
+/// An engine holding one live instance of the instrument class, attached as a
+/// generator, with Gain at `LIVE_GAIN`.
+fn state_with_live_instrument(
+    fx: &InstalledFx,
+    format: Format,
+) -> (AppState, Arc<SharedHostedPlugin>) {
+    let state = AppState::default();
+    let descriptor = instrument_class(format);
+    let live = attach(
+        &state,
+        live_runtime(fx, format, &descriptor),
+        fx.instrument_resolution(format, &descriptor),
+        DeviceKind::Generator,
+    );
+    register_material(&state);
+    (state, live)
+}
+
 fn state_with_live_fx(fx: &InstalledFx, format: Format) -> (AppState, Arc<SharedHostedPlugin>) {
     state_with_live_class(fx, format, &processing_class(format))
 }
@@ -550,9 +585,20 @@ fn render(
     seams: &OfflinePluginSeams,
     render_id: Option<&str>,
 ) -> Result<Vec<f32>, String> {
+    render_frames(batch, FRAMES as u32, state, ui, seams, render_id)
+}
+
+fn render_frames(
+    batch: Value,
+    frames: u32,
+    state: &AppState,
+    ui: &dyn UiThread,
+    seams: &OfflinePluginSeams,
+    render_id: Option<&str>,
+) -> Result<Vec<f32>, String> {
     block_on_test(render_graph_offline_with(
         batch,
-        FRAMES as u32,
+        frames,
         EXPORT_RATE,
         render_id.map(str::to_string),
         ui,
@@ -1273,42 +1319,6 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
 }
 
 #[test]
-fn a_hosted_instrument_refuses_the_render_and_the_probe_alike() {
-    let fx = InstalledFx::create("instrument");
-    let state = AppState::default();
-    attach(
-        &state,
-        live_runtime(&fx, Format::Clap, CLAP_PLUGIN_ID),
-        fx.load_resolution(Format::Clap, CLAP_PLUGIN_ID),
-        DeviceKind::Generator,
-    );
-    register_material(&state);
-    let ui = RecordingUiThread::start();
-    let commands = impulse_track(json!([fx_device()]));
-
-    let refusal = render(batch(commands.clone()), &state, &ui, &fx.seams(), None)
-        .expect_err("a hosted instrument does not render offline yet");
-    let probe = block_on_test(crate::commands::graph::map_graph_batch(
-        json!([]),
-        batch(commands),
-        EXPORT_RATE,
-        None,
-        &state,
-    ))
-    .expect("the probe answers");
-
-    assert!(
-        refusal.contains("'d-fx'")
-            && refusal.contains("'Sourdaw Harness Fx'")
-            && refusal.contains("hosted instruments do not render offline yet"),
-        "{refusal}"
-    );
-    assert_eq!(probe["acceptance"], "rejected");
-    assert_eq!(probe["reason"].as_str(), Some(refusal.as_str()));
-    assert_eq!(ui.tasks_run(), 0);
-}
-
-#[test]
 fn the_probe_admits_the_attached_effect_the_render_prints() {
     let fx = InstalledFx::create("probe");
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
@@ -1324,6 +1334,261 @@ fn the_probe_admits_the_attached_effect_the_render_prints() {
 
     assert_eq!(probe["acceptance"], "accepted", "{probe}");
     assert_eq!(probe["reports"][0]["deviceIds"], json!(["d-fx"]));
+}
+
+// ── (d2) A hosted instrument ────────────────────────────────────────────
+
+/// One scheduled note on the instrument's device, at an export-rate frame.
+fn note(frame: usize, key: u8, velocity: u8, is_note_on: bool) -> Value {
+    json!({ "time": frame as f64 / EXPORT_RATE, "note": key, "velocity": velocity,
+            "channel": 0, "isNoteOn": is_note_on })
+}
+
+fn schedule_notes(notes: Vec<Value>) -> Value {
+    json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-fx",
+            "probabilitySeed": 0, "notes": notes })
+}
+
+/// Three held notes, none sharing a velocity: one starting and ending inside
+/// a block, one inside another, and one on block edges (blocks are 512 frames).
+/// Each is `(on, off, key, velocity)`.
+const HELD_NOTES: [(usize, usize, u8, u8); 3] = [
+    (700, 1_300, 60, 127),
+    (1_800, 2_000, 64, 64),
+    (2_560, 3_072, 67, 32),
+];
+
+fn held_note_commands() -> Vec<Value> {
+    let notes = HELD_NOTES
+        .iter()
+        .flat_map(|(on, off, key, velocity)| {
+            [
+                note(*on, *key, *velocity, true),
+                note(*off, *key, *velocity, false),
+            ]
+        })
+        .collect();
+    vec![strip("t1", json!([fx_device()])), schedule_notes(notes)]
+}
+
+/// What the instrument class writes for a velocity at `LIVE_GAIN`: the
+/// velocity as the format's wrapper normalises it, times the gain.
+fn instrument_level(format: Format, velocity: u8) -> f32 {
+    let normalised = match format {
+        Format::Clap => (f64::from(velocity) / 127.0) as f32,
+        Format::Vst3 => f32::from(velocity) / 127.0,
+    };
+    LIVE_GAIN as f32 * normalised
+}
+
+/// The print the held notes owe: each note's level from its note-on's frame up
+/// to, not including, its note-off's frame, and silence elsewhere.
+fn the_held_notes_printed(format: Format) -> Vec<f32> {
+    let mut expected = vec![0.0f32; FRAMES];
+    for (on, off, _, velocity) in HELD_NOTES {
+        expected[on..off].fill(instrument_level(format, velocity));
+    }
+    expected
+}
+
+fn a_hosted_instrument_prints_the_notes_scheduled_on_it(format: Format) {
+    let fx = InstalledFx::create(&format!("instrument-{format:?}"));
+    let (state, _live) = state_with_live_instrument(&fx, format);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(Some(record_offline_state)));
+    OFFLINE_STATE.with(|states| states.borrow_mut().clear());
+
+    let print = render(batch(held_note_commands()), &state, &ui, &seams, None)
+        .expect("the attached instrument renders offline");
+
+    assert_frames_equal(&print, &the_held_notes_printed(format));
+    let offline_states = OFFLINE_STATE.with(|states| states.borrow().clone());
+    assert_eq!(offline_states.len(), 1, "one offline instance was built");
+    let (offline_chunk, offline_rate) = &offline_states[0];
+    let expected_offline = match format {
+        Format::Clap => CLAP_RENDER_OFFLINE,
+        Format::Vst3 => VST3_OFFLINE,
+    };
+    assert_eq!(
+        recorded(offline_chunk, format).configured_mode,
+        expected_offline
+    );
+    assert_eq!(*offline_rate, EXPORT_RATE);
+    watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "one construction and one release, both on the UI thread"
+    );
+}
+
+#[test]
+fn a_clap_instrument_prints_the_notes_scheduled_on_it_on_their_samples() {
+    a_hosted_instrument_prints_the_notes_scheduled_on_it(Format::Clap);
+}
+
+#[test]
+fn a_vst3_instrument_prints_the_notes_scheduled_on_it_on_their_samples() {
+    a_hosted_instrument_prints_the_notes_scheduled_on_it(Format::Vst3);
+}
+
+/// The notes land on the one device the batch addresses: the same render with
+/// no notes prints silence, so the level above is the notes' and not the
+/// instrument's idle output.
+#[test]
+fn a_hosted_instrument_with_no_notes_prints_silence() {
+    let fx = InstalledFx::create("instrument-idle");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+
+    let print = render(
+        batch(vec![strip("t1", json!([fx_device()]))]),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("the attached instrument renders offline");
+
+    assert_frames_equal(&print, &vec![0.0; FRAMES]);
+}
+
+#[test]
+fn the_probe_admits_the_attached_instrument_the_render_prints() {
+    let fx = InstalledFx::create("instrument-probe");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Vst3);
+
+    let probe = block_on_test(crate::commands::graph::map_graph_batch(
+        json!([]),
+        batch(held_note_commands()),
+        EXPORT_RATE,
+        None,
+        &state,
+    ))
+    .expect("the probe answers");
+
+    assert_eq!(probe["acceptance"], "accepted", "{probe}");
+    assert_eq!(probe["reports"][0]["deviceIds"], json!(["d-fx"]));
+}
+
+/// A device on a strip that contributes nothing is omitted whatever it is, so
+/// an instrument there builds no offline instance.
+#[test]
+fn a_hosted_instrument_on_a_silent_strip_builds_no_instance() {
+    let fx = InstalledFx::create("instrument-silent");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut silent = strip("t1", json!([fx_device()]));
+    silent["contributesAudio"] = json!(false);
+
+    let print = render(batch(vec![silent]), &state, &ui, &fx.seams(), None)
+        .expect("a silent strip renders");
+
+    assert_frames_equal(&print, &vec![0.0; FRAMES]);
+    assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
+}
+
+/// Notes in the long part below: past the live store's reserve of events.
+const LONG_PART_NOTES: usize = 3_000;
+/// Frames between one note's on and the next's, and how long each is held.
+/// Ten frames apart puts about fifty events in a 512-frame block, under the
+/// block's event buffer, so only the store's size is under test.
+const LONG_PART_SPACING: usize = 10;
+const LONG_PART_HELD: usize = 4;
+const LONG_PART_START: usize = 1_000;
+
+fn long_part_velocity(index: usize) -> u8 {
+    (1 + index % 127) as u8
+}
+
+fn long_part_on(index: usize) -> usize {
+    LONG_PART_START + LONG_PART_SPACING * index
+}
+
+/// 3,000 notes is 6,000 events, three times what a live store holds.
+fn a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(format: Format) {
+    const {
+        assert!(2 * LONG_PART_NOTES > daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY);
+    }
+    let fx = InstalledFx::create(&format!("instrument-long-{format:?}"));
+    let (state, _live) = state_with_live_instrument(&fx, format);
+    let ui = RecordingUiThread::start();
+    let notes = (0..LONG_PART_NOTES)
+        .flat_map(|index| {
+            let velocity = long_part_velocity(index);
+            [
+                note(long_part_on(index), 60, velocity, true),
+                note(long_part_on(index) + LONG_PART_HELD, 60, velocity, false),
+            ]
+        })
+        .collect();
+    let frames = long_part_on(LONG_PART_NOTES) + 2_048;
+    let commands = vec![strip("t1", json!([fx_device()])), schedule_notes(notes)];
+
+    let print = render_frames(
+        batch(commands),
+        frames as u32,
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("a part longer than the live store holds prints whole");
+
+    let level = |index: usize| instrument_level(format, long_part_velocity(index));
+    for index in [0, LONG_PART_NOTES / 2, LONG_PART_NOTES - 1] {
+        let on = long_part_on(index);
+        assert_eq!(print[on - 1], 0.0, "silent before note {index}");
+        assert_eq!(
+            print[on..on + LONG_PART_HELD],
+            [level(index); LONG_PART_HELD],
+            "note {index} held"
+        );
+        assert_eq!(print[on + LONG_PART_HELD], 0.0, "silent after note {index}");
+    }
+    let sounding = print.iter().filter(|sample| **sample != 0.0).count();
+    assert_eq!(sounding, LONG_PART_NOTES * LONG_PART_HELD);
+}
+
+#[test]
+fn a_clap_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Clap);
+}
+
+#[test]
+fn a_vst3_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Vst3);
+}
+
+/// Two batches at one device that together pass the offline ceiling are
+/// refused by name before an instance is built: each fits the per-batch
+/// ceiling, so only the per-device total can refuse them.
+#[test]
+fn notes_past_the_offline_ceiling_across_batches_refuse_the_render_by_name() {
+    const CEILING: usize = super::OFFLINE_NOTE_EVENT_CEILING;
+    let fx = InstalledFx::create("instrument-ceiling");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let half = (0..CEILING / 2 + 1)
+        .map(|index| note(index, 60, 100, true))
+        .collect::<Vec<_>>();
+    let commands = vec![
+        strip("t1", json!([fx_device()])),
+        schedule_notes(half.clone()),
+        schedule_notes(half),
+    ];
+
+    let refusal = render(batch(commands), &state, &ui, &fx.seams(), None)
+        .expect_err("a store past the offline ceiling is refused");
+
+    assert!(
+        refusal.contains(&format!("past the store's ceiling of {CEILING}")),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
 }
 
 // ── (e) Cancellation ────────────────────────────────────────────────────

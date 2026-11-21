@@ -41,15 +41,31 @@ const context: ProjectContext = {
     selectedClipIds: [],
     activeView: 'arrange',
     playheadPosition: 0,
-    tracks: [trackOfKind('folder', 'folder'), trackOfKind('audio', 'audio'), trackOfKind('bus', 'bus')],
+    tracks: [
+        trackOfKind('folder', 'folder'),
+        trackOfKind('audio', 'audio'),
+        trackOfKind('midi', 'midi'),
+        trackOfKind('bus', 'bus'),
+        trackOfKind('master', 'master'),
+    ],
 };
 
 describe('isAgentReferenceCapabilityCandidate folder-track', () => {
     it('admits a folder track and no other kind', () => {
-        const admitted = ['folder', 'audio', 'bus', 'missing'].filter((id) =>
+        const admitted = ['folder', 'audio', 'bus', 'master', 'missing'].filter((id) =>
             isAgentReferenceCapabilityCandidate({ capability: 'folder-track', context, id })
         );
 
         expect(admitted).toEqual(['folder']);
+    });
+});
+
+describe('isAgentReferenceCapabilityCandidate hideable-track', () => {
+    it('admits every track kind but the master, and no missing id', () => {
+        const admitted = ['folder', 'audio', 'midi', 'bus', 'master', 'missing'].filter((id) =>
+            isAgentReferenceCapabilityCandidate({ capability: 'hideable-track', context, id })
+        );
+
+        expect(admitted).toEqual(['folder', 'audio', 'midi', 'bus']);
     });
 });
