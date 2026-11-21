@@ -14,6 +14,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
     validate: (action, context) => {
         const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
         // A NaN pan would be stored, and its inverse's `expectedPan` could never match it.
+        // Batches refuse here; a single dispatch skips `validate`, so `execute` refuses too.
         return Number.isFinite(action.payload.pan) && currentPan === action.payload.expectedPan;
     },
     // A suppressed edit cannot reach the recording maps, so snapshotting and
@@ -25,7 +26,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
             : captureAutomationRecordingRollback(),
     execute: (action) => {
         const currentPan = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan;
-        if (currentPan !== action.payload.expectedPan) {
+        if (currentPan !== action.payload.expectedPan || !Number.isFinite(action.payload.pan)) {
             return { status: 'conflict' };
         }
         setTrackPan(action.payload.trackId, action.payload.pan, false, {

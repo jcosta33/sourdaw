@@ -9,6 +9,7 @@ import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modul
 import { clearHandlerRegistry } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
     redo,
     registerProductionCommandHandlers,
@@ -208,7 +209,17 @@ describe('track colour and pan edits inside one batch', () => {
             GROUP
         );
 
-        expect(result.status).not.toBe('committed');
+        expect(result.status).toBe('conflicted');
+        expect(storedTrack('t-existing')?.pan).toBe(0);
+    });
+
+    it('refuses a non-finite pan on a single dispatch and leaves the stored pan alone', async () => {
+        await expect(
+            executeAppAction({
+                type: 'setTrackPan',
+                payload: { trackId: 't-existing', pan: Number.NaN, expectedPan: 0 },
+            })
+        ).rejects.toThrow('Action conflicts with current project state: setTrackPan');
         expect(storedTrack('t-existing')?.pan).toBe(0);
     });
 });
