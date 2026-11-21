@@ -58,9 +58,12 @@ const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
 /** The state a held noun may be kept in after it: "keep the level the same". */
 const HOLD_SUFFIX = String.raw`(?:\s+${HELD_STATE})?`;
 const QUALIFIED = String.raw`(?:${HELD_NOUN_QUALIFIER}\s+)?`;
-/** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
+/**
+ * The objects a noun may carry before it, possessive or not, joined as nouns are: "the vocal level",
+ * "the vocal and drums level", "the vocal, drums level".
+ */
 const PRE_MEMBER = String.raw`(?:${MASK_GLYPH}+|(?:${SCOPE_WORD})\b)(?:${APOSTROPHE}s?)?`;
-const PRE_LIST = String.raw`${PRE_MEMBER}(?:\s+${AND_WORD}\s+(?:${THE}\s+)?${PRE_MEMBER})*`;
+const PRE_LIST = String.raw`${PRE_MEMBER}(?:${AND_JOIN}(?:${THE}\s+)?${PRE_MEMBER})*`;
 function holdNoun(word: string): string {
     return String.raw`(?:${PRE_LIST}\s+)?${QUALIFIED}${word}\b`;
 }

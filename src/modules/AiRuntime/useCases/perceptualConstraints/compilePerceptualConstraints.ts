@@ -207,45 +207,56 @@ function resolveHoldObject(
     return resolveConstraintObject(object, context);
 }
 
-/** What every reader of one request shares: its masked and own text, the project, and the reading it fills. */
+/** A clause a reader consumed: its own words, and the span of the masked text they were read from. */
+type ReadClause = { text: string; span: ConsumedSpan };
+/** An unsupported entry with the span of the clause it quotes, so the net can tell which clause it came from. */
+type ReadUnsupported = { entry: UnsupportedPerceptualConstraint; span: ConsumedSpan };
+
+/** What every reader of one request shares: its masked and own text, the project, and what it reads. */
 type RequestReader = {
     masked: string;
     prompt: string;
     context: ProjectContext;
-    reading: PerceptualConstraintReading;
+    constraints: PerceptualConstraintReading['constraints'];
+    unsupported: ReadUnsupported[];
 };
 
-function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: string, hold: HoldPart) {
+function readClauseOf({ start, end }: ConsumedSpan, prompt: string): ReadClause {
+    return { text: prompt.slice(start, end).trim(), span: { start, end } };
+}
+
+function pushUnsupported({ unsupported }: RequestReader, clause: ReadClause, reason: string) {
+    unsupported.push({ entry: { constraintId: 'unsupported', clause: clause.text, reason }, span: clause.span });
+}
+
+function pushMeasuredHolds(reader: RequestReader, clause: ReadClause, hold: HoldPart) {
+    const { masked, context, constraints } = reader;
     const { object, constraintIds } = hold;
     if (constraintIds.length === 0) {
         return;
     }
     const qualities = Array.from(new Set(constraintIds.map((id) => QUALITY_OF[id]))).join(' and ');
     if (hold.unreadable !== null) {
-        reading.unsupported.push({ constraintId: 'unsupported', clause, reason: hold.unreadable });
+        pushUnsupported(reader, clause, hold.unreadable);
         return;
     }
     const resolution = resolveHoldObject(object, hold.start, masked, context);
     if (resolution.kind === 'ambiguous') {
-        reading.unsupported.push({
-            constraintId: 'unsupported',
+        pushUnsupported(
+            reader,
             clause,
-            reason: `“${object ?? ''}” names no single scope: the request names a track or role before it.`,
-        });
+            `“${object ?? ''}” names no single scope: the request names a track or role before it.`
+        );
         return;
     }
     if (resolution.kind === 'unresolved') {
-        reading.unsupported.push({
-            constraintId: 'unsupported',
-            clause,
-            reason: `“${object ?? ''}” names no track or mix whose ${qualities} can be measured.`,
-        });
+        pushUnsupported(reader, clause, `“${object ?? ''}” names no track or mix whose ${qualities} can be measured.`);
         return;
     }
     for (const constraintId of constraintIds) {
-        reading.constraints.push({
+        constraints.push({
             constraintId,
-            clause,
+            clause: clause.text,
             scope: toScope(resolution),
             protection: { kind: 'measured' },
         });
@@ -254,8 +265,9 @@ function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: 
 
 function pushHoldClauses(reader: RequestReader, clauses: readonly HoldClause[]) {
     for (const hold of clauses) {
+        const clause = { text: hold.clause, span: { start: hold.start, end: hold.end } };
         for (const part of hold.parts) {
-            pushMeasuredHolds(reader, hold.clause, part);
+            pushMeasuredHolds(reader, clause, part);
         }
     }
 }
@@ -269,28 +281,21 @@ function maskClauses(masked: string, clauses: readonly ConsumedSpan[]): string {
     return characters.join('');
 }
 
-function readLowEndConstraints(
-    masked: string,
-    prompt: string,
-    context: ProjectContext,
-    reading: PerceptualConstraintReading
-): ConsumedSpan[] {
+function readLowEndConstraints(reader: RequestReader): ConsumedSpan[] {
+    const { masked, prompt, context, constraints } = reader;
     const clauses = [
         ...readClauses(LOW_END_PROHIBITION, masked, prompt),
         ...readClauses(LOW_END_PRESERVATION, masked, prompt),
     ].toSorted((left, right) => left.start - right.start);
-    for (const { clause, object } of clauses) {
+    for (const { clause, object, start, end } of clauses) {
         const resolution: ObjectResolution =
             object === null ? { kind: 'mix' } : resolveConstraintObject(object, context);
         if (resolution.kind === 'unresolved') {
-            reading.unsupported.push({
-                constraintId: 'unsupported',
-                clause,
-                reason: `“${object ?? ''}” names no track or mix the low end can be measured on.`,
-            });
+            const read = { text: clause, span: { start, end } };
+            pushUnsupported(reader, read, `“${object ?? ''}” names no track or mix the low end can be measured on.`);
             continue;
         }
-        reading.constraints.push({
+        constraints.push({
             constraintId: 'low-end-untouched-v1',
             clause,
             scope: toScope(resolution),
@@ -349,29 +354,23 @@ function readQualityPattern(): QualityPattern {
     return { pattern, prevented, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
 }
 
-function unsupportedQuality(clause: string, reason: string): UnsupportedPerceptualConstraint {
-    return { constraintId: 'unsupported', clause, reason };
+function pushUnmeasuredQuality(reader: RequestReader, clause: ReadClause, term: string) {
+    pushUnsupported(reader, clause, `No measurement the application takes shows that “${term}” holds.`);
 }
 
-function unmeasuredQuality(clause: string, term: string): UnsupportedPerceptualConstraint {
-    return unsupportedQuality(clause, `No measurement the application takes shows that “${term}” holds.`);
-}
-
-function readIntimacy(clause: string, object: string, context: ProjectContext, reading: PerceptualConstraintReading) {
-    const resolution = resolveConstraintObject(object, context);
+function readIntimacy(reader: RequestReader, clause: ReadClause, object: string) {
+    const resolution = resolveConstraintObject(object, reader.context);
     const vocal =
         resolution.kind === 'tracks' &&
         (ROLE_WORDS.get(normalizeObjectText(object)) === 'vocal' ||
             resolution.families.every((family) => family === 'vocal'));
     if (resolution.kind !== 'tracks' || !vocal) {
-        reading.unsupported.push(
-            unsupportedQuality(clause, `Intimacy is measured only on vocal tracks, and “${object}” names none.`)
-        );
+        pushUnsupported(reader, clause, `Intimacy is measured only on vocal tracks, and “${object}” names none.`);
         return;
     }
-    reading.constraints.push({
+    reader.constraints.push({
         constraintId: 'vocal-intimacy-v1',
-        clause,
+        clause: clause.text,
         scope: { kind: 'tracks', trackIds: resolution.trackIds },
         protection: { kind: 'exclude-dimension', dimension: 'ambience' },
     });
@@ -461,14 +460,13 @@ function readKeepParts(first: ReadKeepPart, text: KeepText): { parts: KeepPart[]
 }
 
 /** One kept term of a quality clause, with the clause it is quoted by and the part holding its object. */
-type KeptTerm = { term: string; clause: string; part: QualityPart };
+type KeptTerm = { term: string; clause: ReadClause; part: QualityPart };
 
 function pushQualityTerm(
     reader: RequestReader,
     { term, clause, part }: KeptTerm,
     descriptorOf: QualityPattern['descriptorOf']
 ) {
-    const { context, reading } = reader;
     const descriptor = descriptorOf(term);
     const hold = descriptor === undefined ? undefined : DESCRIPTOR_HOLDS.get(descriptor);
     if (hold !== undefined) {
@@ -477,10 +475,10 @@ function pushQualityTerm(
         return;
     }
     if (descriptor === 'intimate') {
-        readIntimacy(clause, part.object, context, reading);
+        readIntimacy(reader, clause, part.object);
         return;
     }
-    reading.unsupported.push(unmeasuredQuality(clause, term));
+    pushUnmeasuredQuality(reader, clause, term);
 }
 
 /**
@@ -511,7 +509,7 @@ function readKeepOpenings(
 
 function pushKeepPart(
     reader: RequestReader,
-    clause: string,
+    clause: ReadClause,
     keep: KeepPart,
     descriptorOf: QualityPattern['descriptorOf']
 ) {
@@ -521,7 +519,9 @@ function pushKeepPart(
     }
     // A measured hold verifies a quality kept, never one prevented, so a prevented quality is never measured.
     if (keep.kind === 'prevented-quality') {
-        reader.reading.unsupported.push(...keep.part.terms.map((term) => unmeasuredQuality(clause, term)));
+        for (const term of keep.part.terms) {
+            pushUnmeasuredQuality(reader, clause, term);
+        }
         return;
     }
     const { part } = keep;
@@ -552,7 +552,7 @@ function readKeepConstraints(unread: string, reader: RequestReader): ConsumedSpa
         }
         const { parts, end } = readKeepParts(opening, text);
         spans.push({ start, end });
-        const clause = prompt.slice(start, end).trim();
+        const clause = readClauseOf({ start, end }, prompt);
         for (const part of parts) {
             pushKeepPart(reader, clause, part, descriptorOf);
         }
@@ -575,36 +575,27 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = maskTrackReferences(prompt, context, MASK_GLYPH);
-    const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
-    const reader: RequestReader = { masked, prompt, context, reading };
-    const lowEnd = readLowEndConstraints(masked, prompt, context, reading);
+    const reader: RequestReader = { masked, prompt, context, constraints: [], unsupported: [] };
+    const lowEnd = readLowEndConstraints(reader);
     const holds = readHoldClauses(masked, prompt);
     pushHoldClauses(reader, holds);
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
     const keeps = readKeepConstraints(maskClauses(masked, holds), reader);
     const consumed = [...lowEnd, ...holds, ...keeps];
     const unread = readUnreadConstraintClauses(masked, prompt, consumed);
-    const quoted = clausesQuotedWithin(prompt, consumed, unread);
     const unsupported = [
-        ...reading.unsupported.filter((entry) => !quoted.has(entry.clause)),
+        ...reader.unsupported.filter(({ span }) => !isQuotedWithin(span, unread)).map(({ entry }) => entry),
         ...unread.map((clause) => clause.unsupported),
     ];
-    return unionPerceptualConstraintReadings({ constraints: reading.constraints, unsupported });
+    return unionPerceptualConstraintReadings({ constraints: reader.constraints, unsupported });
 }
 
 /**
- * The clauses readers consumed that a wider clause the net recorded quotes whole. One clause yields one
- * entry: a reader's unsupported entry for such a clause gives way to the net's, which also quotes the
- * measured words no reader read ("stop the drums from losing the punch with a brighter vocal"). Entries
- * are one per clause text, as the union reading them keeps them.
+ * Whether a wider clause the net recorded quotes a reader's clause whole. One clause yields one entry: a
+ * reader's unsupported entry for such a clause gives way to the net's, which also quotes the measured
+ * words no reader read ("stop the drums from losing the punch with a brighter vocal"). It is judged by
+ * the reader clause's own span, so the same words read standalone elsewhere in the request keep theirs.
  */
-function clausesQuotedWithin(
-    prompt: string,
-    consumed: readonly ConsumedSpan[],
-    unread: readonly UnreadClause[]
-): Set<string> {
-    const within = consumed.filter((span) =>
-        unread.some((clause) => clause.span.start <= span.start && span.end <= clause.span.end)
-    );
-    return new Set(within.map((span) => prompt.slice(span.start, span.end).trim()));
+function isQuotedWithin(span: ConsumedSpan, unread: readonly UnreadClause[]): boolean {
+    return unread.some((clause) => clause.span.start <= span.start && span.end <= clause.span.end);
 }

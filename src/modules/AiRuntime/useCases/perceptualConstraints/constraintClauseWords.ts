@@ -46,8 +46,10 @@ export const CLAUSE_PUNCTUATION = `[${CLAUSE_MARKS}]`;
 const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 /** A character of a word: neither whitespace nor a clause mark. */
 export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
+/** The mark joining two object members as "and" does, spaced or not: "the vocal & the drums", "vocal&drums". */
+const AMPERSAND = '&';
 /** The marks separating clauses only as a token of their own, since each may join words: "lo-fi", "3–4 dB". */
-const TOKEN_SEPARATOR_MARKS = String.raw`\-–&/`;
+const TOKEN_SEPARATOR_MARKS = String.raw`\-–${AMPERSAND}/`;
 /** An em dash, which joins no word, so it separates clauses spaced or not: "the punch—make the vocal brighter". */
 const EM_DASH = '—';
 /**
@@ -95,10 +97,12 @@ const HARD_BOUNDARY_WORDS = [BUT, WHILE, SO, 'then', 'please'];
 export const AND_WORD = AND;
 /**
  * The one way a later member joins the one before it, for every list a clause reads: a comma, with or
- * without one of the joining words after it, or one of those words alone: "the level, and the width".
+ * without one of the joining words after it, a clause separator with one of them after it, or one of
+ * those words alone: "the level, and the width", "louder—or brighter". A separator with no joining word
+ * after it still ends the clause ("the punch—make the vocal brighter").
  */
 function joinedBy(joiningWords: string): string {
-    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s+${joiningWords}\s+)`;
+    return String.raw`(?:\s*,\s*(?:${joiningWords}\s+)?|\s*${CLAUSE_SEPARATOR}\s*${joiningWords}\s+|\s+${joiningWords}\s+)`;
 }
 /** A comma or "and" joining a later noun or object to the one before it: "the level, and the width". */
 export const AND_JOIN = joinedBy(words([AND]));
@@ -152,8 +156,9 @@ export const THE_SAME = String.raw`${THE}\s+same`;
 export const HELD_STATE = String.raw`(?:${THE_SAME}|${words(['where it is'])}|${UNCHANGED_STATE})`;
 
 /**
- * What joins a contraction's two halves, each contraction written to the builder as two words ("don t"):
- * an apostrophe, typed, typeset or left out, so "don't", "don’t" and "dont" are one word.
+ * What joins a contraction's two halves, each listed contraction written to the builder as two words
+ * ("don t"): an apostrophe, typed, typeset or left out, so "don't", "don’t" and "dont" are one word. The
+ * one contraction no list names is `NEGATED_CONTRACTION`, any word ending in "n't".
  */
 const CONTRACTION = `${APOSTROPHE}?`;
 const WITHOUT = 'without';
@@ -182,6 +187,11 @@ const NO_WORD = 'no';
 const BARE_NEGATION = words([NO_WORD, 'not']);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
 export const NO = words([NO_WORD]);
+/**
+ * Any negated contraction ("isn't", "wouldn't"): an open-ended form the builder, which lists closed
+ * words, cannot state, so it is written here once. Its apostrophe is required, since left out it would
+ * read every word ending in "nt" ("want", "event") as a negation.
+ */
 const NEGATED_CONTRACTION = String.raw`\p{L}+n${APOSTROPHE}t`;
 /** Any negation at all, which a keep or stop right after it permits: "don't keep …", "no need to keep …". */
 const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
@@ -262,8 +272,8 @@ const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|
 const WORD = String.raw`(?!${NON_OBJECT_WORD}${WHOLE_WORD_END}|${CLAUSE_SEPARATOR})${WORD_CHARACTER}+`;
 /** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
 export const OBJECT_MEMBER = String.raw`(?:${DETERMINER}\s+${WORD}(?:\s+${WORD}){0,2}?|${MASK_GLYPH}+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
-/** An object list's members join as nouns do, by "or" as by "and", or by an ampersand. */
-const MEMBER_JOIN = String.raw`(?:${AND_JOIN}|\s+${words([OR])}\s+|\s*&\s*)`;
+/** An object list's members join as directions do, by a comma, "and" or "or", or by an ampersand. */
+const MEMBER_JOIN = String.raw`(?:${LIST_JOIN}|\s*${AMPERSAND}\s*)`;
 /**
  * A list of objects. A conjunction continues it only before another member, so "the vocal and the
  * drums" is one list while "the vocal and brighten the drums" ends at "and"; "or" lists as "and" does,

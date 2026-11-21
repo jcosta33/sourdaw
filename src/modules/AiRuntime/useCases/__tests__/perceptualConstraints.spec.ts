@@ -1772,6 +1772,12 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
             [measured('loudness-held-v1', 'keep the vocal and drums level the same', onTracks('vocal', 'drums'))],
             [],
         ],
+        // the objects before a noun join as nouns do, by a comma too
+        [
+            'keep the vocal, drums level the same',
+            [measured('loudness-held-v1', 'keep the vocal, drums level the same', onTracks('vocal', 'drums'))],
+            [],
+        ],
         // "keep … from getting"
         [
             'keep the mix from getting louder',
@@ -2039,6 +2045,15 @@ describe('reading only governed protections and whole object names', () => {
             [],
             [unread('stop the bass from getting muddy or louder', NET_REASON)],
         ],
+        // the same words read standalone elsewhere keep their own entry
+        [
+            'stop the drums from losing the punch. stop the drums from losing the punch with a brighter vocal',
+            [],
+            [
+                unread('stop the drums from losing the punch', unmeasured('punch')),
+                unread('stop the drums from losing the punch with a brighter vocal', NET_REASON),
+            ],
+        ],
         // one clause yields one entry: an em dash ends it, spaced or not, as a comma does
         [
             'stop the drums from losing the punch—make the vocal brighter',
@@ -2083,6 +2098,21 @@ describe('reading only governed protections and whole object names', () => {
             [],
         ],
         ['make it brighter, wider and louder', [], []],
+        // a dash with "or" after it continues the list as a comma does, spaced or not, em or en
+        ...[
+            'keep it from getting louder—or brighter',
+            'keep it from getting louder — or brighter',
+            'keep it from getting louder – or brighter',
+            "don't make it louder—or brighter",
+        ].map(
+            (
+                prompt
+            ): [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']] => [
+                prompt,
+                [measured('loudness-not-raised-v1', prompt, MIX), measured('brightness-not-raised-v1', prompt, MIX)],
+                [],
+            ]
+        ),
         ['stop the bass from getting muddy', [], [unread('stop the bass from getting muddy', unmeasured('muddy'))]],
         [
             'prevent the vocal from sounding thin',
