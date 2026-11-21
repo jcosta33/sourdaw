@@ -50,6 +50,7 @@ import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { readBriefMixIntent } from '../readBriefMixIntent';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { planVibeRunSchedule } from '../vibeRun/planVibeRunSchedule';
 import { prepareVibeRunSchedule } from '../vibeRun/prepareVibeRunSchedule';
 
@@ -659,6 +660,28 @@ describe('choosing one reading of the brief card', () => {
             recipe.recipeId.replace(/^[^-]+-/u, '')
         );
         expect(recipeCharacters.toSorted()).toEqual(['vintage', 'warm']);
+    });
+
+    // Red when the chosen card records none of its lines, so a re-preview shows only the description (#7142).
+    it('keeps the chosen-reading line and the planned lines when the replacement card is re-previewed', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        await chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') });
+        const replacement = requireOnlyProposedCard();
+        const recorded = replacement.approvalSnapshot.plannedRunLines ?? [];
+        expect(recorded[0]).toBe('Reading chosen: Darker top end (dark).');
+        expect(recorded.length).toBeGreaterThan(1);
+
+        await expect(reproposePendingChatActions({ confirmationId: replacement.id })).resolves.toMatchObject({
+            status: 'reproposed',
+        });
+
+        const rePreviewed = requireOnlyProposedCard();
+        expect(rePreviewed.id).not.toBe(replacement.id);
+        expect(rePreviewed.approvalSnapshot.plannedRunLines).toEqual(recorded);
+        expect(rePreviewed.approvalSnapshot.briefReadings).toBeUndefined();
+        const lines = cardContent(rePreviewed).split('\n');
+        const start = lines.indexOf(recorded[0] ?? '');
+        expect(lines.slice(start, start + recorded.length)).toEqual(recorded);
     });
 
     it('applies nothing: the brief, devices, undo history and revision are as they were', async () => {

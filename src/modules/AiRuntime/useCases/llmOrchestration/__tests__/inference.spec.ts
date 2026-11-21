@@ -38,6 +38,7 @@ import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebL
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
@@ -66,7 +67,6 @@ import { getPlanningProviderSchemaContract } from '../../planningProviderSchema'
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
-import { answeringStatus } from '../answeringStatus';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();

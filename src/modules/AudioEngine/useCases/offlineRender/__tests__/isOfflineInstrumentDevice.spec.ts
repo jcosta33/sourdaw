@@ -33,6 +33,35 @@ describe('isOfflineInstrumentDevice', () => {
         }
     );
 
+    it.each(['drum-kit', 'builtin-drum-kit', 'builtin-drum-machine-x', 'yeast'])(
+        'keeps %s without asking the Faust registry',
+        (deviceType) => {
+            expect(isOfflineInstrumentDevice(deviceType)).toBe(true);
+            expect(mocks.isFaustInstrumentModule).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        'synth',
+        'builtin-synth',
+        'builtin-synth-x',
+        'Knead',
+        'Yeast',
+        'constructor',
+        '__proto__',
+        '',
+        'external-plugin',
+    ])('drops %s, which no catalog source or Faust instrument answers for', (deviceType) => {
+        expect(isOfflineInstrumentDevice(deviceType)).toBe(false);
+    });
+
+    it('defers a non-built-in id to the Faust registry in both answers', () => {
+        mocks.isFaustInstrumentModule.mockReturnValue(true);
+        expect(isOfflineInstrumentDevice('faust-x')).toBe(true);
+        mocks.isFaustInstrumentModule.mockReturnValue(false);
+        expect(isOfflineInstrumentDevice('faust-x')).toBe(false);
+    });
+
     // MD-4 review — matching the `faust-` prefix kept every Faust *effect* on a
     // dry bounce, so the take came back wet. registerFaustDSP records a real
     // isInstrument flag; that is the authority.

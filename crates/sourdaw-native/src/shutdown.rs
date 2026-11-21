@@ -1,31 +1,42 @@
 //! The process-exit cascade, in the one order that is correct.
 //!
-//! Quit is the only chance to run all five of these, and they are ordered by
+//! Quit is the only chance to run all six of these, and they are ordered by
 //! what stops being possible if they are late:
 //!
-//! 1. Retire the mDNS advertisement and the discovery threads. Skipping it
+//! 1. Cancel every offline render in flight, refuse any later one, and wait,
+//!    bounded, for each to end. A render reads live runtimes' state and hands
+//!    them back to the store, and owns offline plugin instances of its own;
+//!    one still running past the drain below could return a runtime to a store
+//!    already emptied, or hold instances nothing ever terminates. A render
+//!    releases its instances on the UI thread, which is this thread at quit,
+//!    so the wait runs the runtime releases posted to the UI thread as it
+//!    polls, and nothing else that was posted there.
+//! 2. Retire the mDNS advertisement and the discovery threads. Skipping it
 //!    leaves peers a joinable ghost session until the record's TTL expires.
-//! 2. Release the open MIDI input. The device handle is quick to close and
+//! 3. Release the open MIDI input. The device handle is quick to close and
 //!    nothing after this step needs it; leaving it open pins the controller
 //!    for every other application until the OS notices the process is gone.
-//! 3. Give every open plugin editor its CLAP `gui.destroy` while there is still
+//! 4. Give every open plugin editor its CLAP `gui.destroy` while there is still
 //!    a process to run it in. A plugin that refuses is reported, never fatal:
 //!    exit must not be blocked by a third-party editor.
-//! 4. Sweep the retirement vec. Load and unload are the only other sweep sites,
+//! 5. Sweep the retirement vec. Load and unload are the only other sweep sites,
 //!    so without this terminal one the last retirement of a session is never
 //!    freed and a plugin that persists settings in `destroy` never gets to.
-//! 5. Retire every instance that is still *live* into that same vec and free it
+//! 6. Retire every instance that is still *live* into that same vec and free it
 //!    from there. Nothing else ever will: the host process does not run
 //!    destructors at exit, so a plugin left in the stores is a CLAP or VST3
 //!    binary killed mid-flight, without the `deactivate`/`destroy` or
 //!    `setActive(0)`/`terminate` its format requires.
 //!
-//! Step 4 has to follow step 3 — closing an editor is what can retire a runtime
-//! — and step 3 is best effort, so a failure there must not skip it. Step 5
-//! follows both, because an instance whose editor is still open would be torn
-//! down with its editor. Step 5 sweeps as it waits, which is what keeps the
+//! Step 1 comes first, before the editor close, because every later step tears
+//! down what a render may still be touching; a render the wait gives up on
+//! leaves whatever it releases late in the retirement vec, which steps 5 and 6
+//! still sweep. Step 5 has to follow step 4 — closing an editor is what can
+//! retire a runtime — and step 4 is best effort, so a failure there must not
+//! skip it. Step 6 follows both, because an instance whose editor is still open
+//! would be torn down with its editor. Step 6 sweeps as it waits, which is what keeps the
 //! retirement vec's reclamation terminal: a runtime the scheduler releases
-//! during step 5's wait window would otherwise be past its only sweep. That is
+//! during step 6's wait window would otherwise be past its only sweep. That is
 //! why this lives in the crate rather than in each shell: a shell that
 //! reimplements the cascade can silently drop a step, and the second shell has
 //! no `RunEvent::Exit` to hang it off.
@@ -36,9 +47,11 @@ use std::time::{Duration, Instant};
 
 use crate::commands::collab::{shutdown_discovery, CollabState};
 use crate::commands::midi::MidiState;
+use crate::commands::offline_plugins::{cancel_every_offline_render, offline_renders_in_flight};
 use crate::commands::plugin_gui::close_every_plugin_gui;
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::ui_thread::UiThread;
 use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 
 /// How long the teardown pass may spend *waiting* for the scheduler to release
@@ -59,6 +72,19 @@ const SCHEDULER_RELEASE_BUDGET: Duration = Duration::from_millis(500);
 /// Poll interval while waiting for that release.
 const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 
+/// How long the cascade may spend waiting for cancelled offline renders to
+/// end. A cancel lands before a render's next block, so the ordinary case is a
+/// block's processing plus the release of its instances.
+///
+/// Unlike [`SCHEDULER_RELEASE_BUDGET`], the work run while waiting is charged
+/// too: the wait drains the runtime releases posted to the UI thread, which is
+/// how a render tears its plugin instances down, and that is the wall clock
+/// this budget bounds. Each sleep and each drain is charged what it measured,
+/// so the wait ends within the budget plus one drain. A construction a render
+/// posted is never run here: it stays queued until its own deadline withdraws
+/// it, so a cancelled render builds nothing on the quit thread.
+pub(crate) const OFFLINE_RENDER_STOP_BUDGET: Duration = Duration::from_millis(500);
+
 /// The deadline the shell gives this whole cascade before it stops waiting and
 /// exits the process anyway (`SHUTDOWN_DEADLINE_MS` in `electron/shutdown.ts`).
 ///
@@ -69,8 +95,9 @@ const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 pub(crate) const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
 
 const _: () = assert!(
-    SCHEDULER_RELEASE_BUDGET.as_millis() * 4 <= SHELL_FORCE_EXIT_DEADLINE.as_millis(),
-    "the waiting budget must stay a small fraction of the shell's force-exit deadline"
+    (SCHEDULER_RELEASE_BUDGET.as_millis() + OFFLINE_RENDER_STOP_BUDGET.as_millis()) * 2
+        <= SHELL_FORCE_EXIT_DEADLINE.as_millis(),
+    "the waiting budgets together must stay a small fraction of the shell's force-exit deadline"
 );
 
 /// What the exit cascade managed to do. Every field is diagnostic: nothing here
@@ -96,6 +123,9 @@ pub struct ShutdownReport {
     /// rather than left for a background thread to free. Non-zero means the
     /// terminal reclamation point was not reached for that many plugins.
     pub unreclaimed_retirements: usize,
+    /// Offline renders still holding a slot when the stop budget ran out. They
+    /// were cancelled; what they release late waits in the retirement vec.
+    pub offline_renders_left_running: usize,
     /// Whether an open MIDI input connection was released. `false` for a
     /// session that had none open; the close itself cannot fail the exit.
     pub closed_midi_input: bool,
@@ -122,6 +152,13 @@ fn shutdown_with_wait(
     windows: Option<&dyn PluginWindowHost>,
     mut wait: impl FnMut(Duration) -> Duration,
 ) -> ShutdownReport {
+    // A quit that has already lost its windows has also lost the shell thread
+    // they lived on, and `NoWindowHost` says so: what is left of the cascade
+    // runs here, on the only thread there is.
+    let editor_thread = windows.unwrap_or(&NoWindowHost);
+
+    let offline_renders_left_running = stop_offline_renders(app_state, editor_thread, &mut wait);
+
     shutdown_discovery(collab);
 
     // The MIDI step runs before the plugin passes: it is quick, bounded by the
@@ -129,12 +166,8 @@ fn shutdown_with_wait(
     // shell's force-exit deadline.
     let closed_midi_input = midi.close_open_input();
 
-    // A quit that has already lost its windows has also lost the shell thread
-    // they lived on, and `NoWindowHost` says so: what is left of the cascade
-    // runs here, on the only thread there is.
-    let editor_thread = windows.unwrap_or(&NoWindowHost);
-
     let mut report = ShutdownReport {
+        offline_renders_left_running,
         closed_midi_input,
         ..ShutdownReport::default()
     };
@@ -153,6 +186,46 @@ fn shutdown_with_wait(
     destroy_live_plugin_instances(app_state, editor_thread, &mut report, &mut wait);
 
     report
+}
+
+/// Cancel every offline render, refuse any later one, and wait for those in
+/// flight to give back their slots, until the stop budget is spent. Returns how
+/// many still hold one.
+///
+/// The registry is polled, never waited on: a render takes it to give its slot
+/// back. Each poll first runs the runtime releases other threads have posted to
+/// the UI thread, because a render releases its plugin instances there and this
+/// cascade is that thread's turn. That drain is charged to the budget with the
+/// polls; dropping it instead would leave a render waiting on this thread for
+/// a turn that never comes.
+///
+/// One drain runs every release posted so far, and each release is a plugin's
+/// teardown, so one drain can hold several teardowns and can exceed its share
+/// of the budget: the budget is checked between drains, never inside one. The
+/// shell's force-exit deadline backs it. Only releases run here — a posted
+/// construction stays queued, and reads the render's cancel when it does run
+/// (`offline_plugins::build_offline_instances`), so it opens no plugin.
+pub(crate) fn stop_offline_renders<Ui: UiThread + ?Sized>(
+    app_state: &AppState,
+    ui: &Ui,
+    wait: &mut impl FnMut(Duration) -> Duration,
+) -> usize {
+    cancel_every_offline_render(app_state);
+    let mut remaining_budget = OFFLINE_RENDER_STOP_BUDGET;
+    loop {
+        remaining_budget = remaining_budget.saturating_sub(run_posted_releases_measured(ui));
+        let in_flight = offline_renders_in_flight(app_state);
+        if in_flight == Some(0) {
+            return 0;
+        }
+        if remaining_budget.is_zero() {
+            // A registry held at the last poll is held by a render still
+            // giving its slot back, so at least that one is in flight.
+            return in_flight.unwrap_or(1);
+        }
+        let poll = SCHEDULER_RELEASE_POLL.min(remaining_budget);
+        remaining_budget = remaining_budget.saturating_sub(wait(poll));
+    }
 }
 
 /// Run every live instance's own termination sequence, on this thread, before
@@ -194,12 +267,16 @@ fn destroy_live_plugin_instances(
         .abandoned_instances
         .extend(instances.left_in_a_busy_store);
 
-    // Command-owned instances are owned outright, so this drop *is* their
-    // teardown.
-    report.destroyed_instances += instances.command_owned.len();
-    drop(instances.command_owned);
-
-    let runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
+    // Command-owned runtimes go the same way as engine-owned ones: a dormant
+    // control call that is still inside the plugin holds a clone, and the
+    // retirement sweep is what keeps the final drop off that call's thread.
+    let mut runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
+    runtimes.extend(
+        instances
+            .command_owned
+            .into_iter()
+            .map(|instance| instance.plugin),
+    );
     let retired = retire_for_reclamation(app_state, runtimes);
     reclaim_until_waiting_budget_is_spent(app_state, editor_thread, wait);
     record_reclamation(app_state, retired, report);
@@ -338,6 +415,15 @@ fn reclaim_until_waiting_budget_is_spent(
 fn sleep_one_poll(poll: Duration) -> Duration {
     let started = Instant::now();
     thread::sleep(poll);
+    started.elapsed()
+}
+
+/// Run the runtime releases posted to the UI thread, and report how long that
+/// took — a plugin's teardown takes as long as it takes, and the stop budget is
+/// charged for it, measured like [`sleep_one_poll`].
+fn run_posted_releases_measured<Ui: UiThread + ?Sized>(ui: &Ui) -> Duration {
+    let started = Instant::now();
+    ui.run_posted_releases();
     started.elapsed()
 }
 
@@ -1224,6 +1310,125 @@ mod tests {
             !midi.close_open_input(),
             "nothing may be left open for a second pass to find"
         );
+    }
+
+    /// Quit cancels a render nobody can cancel by id, refuses every later one,
+    /// and gives up waiting once the stop budget is spent, reporting the render
+    /// that is still holding its slot.
+    #[test]
+    fn the_cascade_cancels_every_offline_render_and_reports_one_that_outlives_its_budget() {
+        use crate::commands::offline_plugins::{InFlightRender, OFFLINE_RENDER_CLOSED};
+
+        let state = AppState::default();
+        let render = InFlightRender::begin(&state, None).expect("a render is admitted");
+
+        // Every charge is measured, so the budget is spent only once at least
+        // that much wall clock has passed.
+        let started = Instant::now();
+        let report = shutdown_with_wait(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+            sleep_one_poll,
+        );
+        let waited = started.elapsed();
+
+        assert!(render.control().is_cancelled(), "quit cancels the render");
+        assert_eq!(report.offline_renders_left_running, 1);
+        assert!(
+            waited >= OFFLINE_RENDER_STOP_BUDGET,
+            "the cascade waited its whole stop budget for the render: {waited:?}"
+        );
+        let Err(refusal) = InFlightRender::begin(&state, Some("late".to_string())) else {
+            panic!("a render after quit is refused");
+        };
+        assert!(
+            refusal.to_string().starts_with(OFFLINE_RENDER_CLOSED),
+            "{refusal}"
+        );
+        drop(render);
+    }
+
+    /// How long one drain of [`SlowPostedWork`] takes while it is slow: a
+    /// heavy plugin's teardown, run inline by the quit thread.
+    const SLOW_POSTED_WORK: Duration = Duration::from_millis(300);
+
+    /// How many drains are slow before the posted queue runs dry, so a wait
+    /// that never charges the drain still ends, late, rather than hanging.
+    const SLOW_DRAINS: usize = 8;
+
+    /// How many drains end a wait that never stops, with a named failure
+    /// rather than a drain log that grows until the process runs out of
+    /// memory. Far above any drain count a stopping wait reaches.
+    const RUNAWAY_DRAINS: usize = 10_000;
+
+    /// A UI thread whose posted work takes [`SLOW_POSTED_WORK`] on each of
+    /// its first [`SLOW_DRAINS`] drains, recording how long every drain really
+    /// took: a sleep has a floor and no ceiling, so the test judges the wait
+    /// against these measurements, never against the sleep it asked for.
+    #[derive(Default)]
+    struct SlowPostedWork {
+        drain_durations: std::sync::Mutex<Vec<Duration>>,
+    }
+
+    impl UiThread for SlowPostedWork {
+        fn run_posted_releases(&self) {
+            let started = Instant::now();
+            let drain = self
+                .drain_durations
+                .lock()
+                .expect("the drain log is not poisoned")
+                .len();
+            assert!(
+                drain < RUNAWAY_DRAINS,
+                "the wait never stopped draining: {drain} drains"
+            );
+            if drain < SLOW_DRAINS {
+                thread::sleep(SLOW_POSTED_WORK);
+            }
+            self.drain_durations
+                .lock()
+                .expect("the drain log is not poisoned")
+                .push(started.elapsed());
+        }
+    }
+
+    /// The posted work the quit thread runs while it waits is charged to the
+    /// stop budget with the polls: a render whose instances take longer to
+    /// build or release than the budget costs the exit the budget plus one
+    /// drain, not every drain the wait would otherwise go on running.
+    #[test]
+    fn the_quit_wait_charges_the_posted_work_it_runs_to_its_stop_budget() {
+        use crate::commands::offline_plugins::InFlightRender;
+
+        let state = AppState::default();
+        let render = InFlightRender::begin(&state, None).expect("a render is admitted");
+        let ui = SlowPostedWork::default();
+
+        let left_running = stop_offline_renders(&state, &ui, &mut |poll| poll);
+
+        assert_eq!(left_running, 1, "the held render is reported");
+        let drain_durations = ui
+            .drain_durations
+            .lock()
+            .expect("the drain log is not poisoned")
+            .clone();
+        let drains = drain_durations.len();
+        let drains_inside_the_budget = OFFLINE_RENDER_STOP_BUDGET
+            .as_millis()
+            .div_ceil(SLOW_POSTED_WORK.as_millis()) as usize;
+        assert!(
+            drains <= drains_inside_the_budget,
+            "the wait stopped draining once the budget was spent: {drains} drains"
+        );
+        let spent_before_the_last_drain: Duration =
+            drain_durations.iter().take(drains.saturating_sub(1)).sum();
+        assert!(
+            spent_before_the_last_drain < OFFLINE_RENDER_STOP_BUDGET,
+            "a drain started only while budget remained: {drain_durations:?}"
+        );
+        drop(render);
     }
 
     /// The complement, runnable everywhere: a session that never opened an

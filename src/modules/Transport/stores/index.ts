@@ -18,6 +18,9 @@ export { timeSignatureMapStore } from './timeSignatureMapStore';
 export { transportStore, defaultTransportState, DEFAULT_TEMPO_BPM, MIN_TEMPO, MAX_TEMPO } from './transportStore';
 export type { TransportState } from './transportStore';
 
+export { readRecordingEngaged } from './readRecordingEngaged';
+export { recordingStartStore } from './recordingStartStore';
+
 export { readTempoAtBeat } from './readTempoAtBeat';
 export { readSecondsAtBeat } from './readSecondsAtBeat';
 export { readBeatAtSamples } from './readBeatAtSamples';

@@ -5,7 +5,7 @@ import { commitInlineMidiNoteDelete } from '../commitInlineMidiNoteDelete';
 import { commitInlineMidiNoteMove } from '../commitInlineMidiNoteMove';
 
 type Note = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
-type StubTrack = { id: string; frozen: boolean; clips: Array<{ id: string }> };
+type StubTrack = { id: string; frozen: boolean; clips: Array<{ id: string; locked?: boolean }> };
 
 const mocks = vi.hoisted(() => ({
     notesByClipId: new Map<string, Note[]>(),
@@ -133,6 +133,77 @@ describe('inline MIDI note commits on a frozen track', () => {
             expect(deleted).toBe(true);
             expect(mocks.notesByClipId.get('clip-2')).toHaveLength(1);
 
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
+        });
+    });
+
+    describe('when the clip is locked', () => {
+        beforeEach(() => {
+            mocks.tracks = [
+                { id: 'track-1', frozen: false, clips: [{ id: 'clip-1', locked: true }, { id: 'clip-2' }] },
+            ];
+            mocks.notesByClipId = new Map([
+                ['clip-1', ORIGINAL_NOTES],
+                ['clip-2', ORIGINAL_NOTES],
+            ]);
+        });
+
+        it('refuses to create a note, leaves the notes unchanged and warns the user', () => {
+            const committed = commitInlineMidiNoteCreate({
+                clipId: 'clip-1',
+                pitch: 67,
+                startBeat: 3,
+                duration: 0.5,
+                velocity: 100,
+            });
+
+            expect(committed).toBe(false);
+            expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('locked'), 'warning');
+        });
+
+        it('refuses to move a note, leaves the notes unchanged and warns the user', () => {
+            const committed = commitInlineMidiNoteMove({ clipId: 'clip-1', noteId: 'n1', pitch: 72, startBeat: 4 });
+
+            expect(committed).toBe(false);
+            expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('locked'), 'warning');
+        });
+
+        it('refuses to delete a note, leaves the notes unchanged and warns the user', () => {
+            const committed = commitInlineMidiNoteDelete({ clipId: 'clip-1', noteId: 'n1' });
+
+            expect(committed).toBe(false);
+            expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('locked'), 'warning');
+        });
+
+        it('treats a move to the same position as a silent no-op', () => {
+            const committed = commitInlineMidiNoteMove({ clipId: 'clip-1', noteId: 'n1', pitch: 60, startBeat: 1 });
+
+            expect(committed).toBe(false);
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('still writes to an unlocked clip on the same track', () => {
+            const created = commitInlineMidiNoteCreate({
+                clipId: 'clip-2',
+                pitch: 67,
+                startBeat: 3,
+                duration: 0.5,
+                velocity: 100,
+            });
+            const moved = commitInlineMidiNoteMove({ clipId: 'clip-2', noteId: 'n1', pitch: 72, startBeat: 4 });
+            const deleted = commitInlineMidiNoteDelete({ clipId: 'clip-2', noteId: 'n2' });
+
+            expect([created, moved, deleted]).toEqual([true, true, true]);
             expect(mocks.notifyUser).not.toHaveBeenCalled();
             expect(mocks.notesByClipId.get('clip-1')).toEqual(ORIGINAL_NOTES);
         });

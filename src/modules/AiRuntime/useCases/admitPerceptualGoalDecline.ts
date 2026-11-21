@@ -8,7 +8,10 @@ import { findCoordinatedTrackLists } from './agentReference/findCoordinatedTrack
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
 import { isExplicitCommandClause } from './agentReference/groundingStrategies/isExplicitCommandClause';
-import { maskProjectReferences } from './agentReference/groundingStrategies/maskProjectReferences';
+import {
+    maskProjectReferences,
+    PROJECT_REFERENCE_MASK_GLYPH,
+} from './agentReference/groundingStrategies/maskProjectReferences';
 import { hasExplicitTrackSelection } from './agentReference/hasExplicitTrackSelection';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
@@ -90,7 +93,7 @@ function isLeadingCourtesyClause(
     if (!refinementCourtesy.filler.has(words) && !refinementCourtesy.clauses.has(words)) {
         return false;
     }
-    if (clause.masked.includes('□') || hasExplicitTrackSelection(clause.text)) {
+    if (clause.masked.includes(PROJECT_REFERENCE_MASK_GLYPH) || hasExplicitTrackSelection(clause.text)) {
         return false;
     }
     const unquoted = maskQuotedTextContents(clause.text);

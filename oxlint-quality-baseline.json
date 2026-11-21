@@ -4770,14 +4770,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts": {
-        "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-params": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/planAgentRun.ts": {
         "eslint/complexity": {
             "count": 4
@@ -12280,9 +12272,6 @@
     },
     "src/modules/Command/useCases/redo.ts": {
         "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-depth": {
             "count": 1
         },
         "typescript/no-non-null-assertion": {
