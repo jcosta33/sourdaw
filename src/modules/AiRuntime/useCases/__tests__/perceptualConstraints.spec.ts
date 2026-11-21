@@ -2062,6 +2062,8 @@ function lowEndUntouched(clause: string): PerceptualConstraintReading['constrain
 }
 
 describe('reading a protection only over the words it governs', () => {
+    const VOCAL_BRIGHT_HELD = measured('brightness-held-v1', 'Keep the vocal bright', onTracks('vocal'));
+
     it.each([
         // "don't be" opens nothing on its own, while a protection it heads still records
         ["don't be shy, make the drums louder", [], []],
@@ -2160,18 +2162,28 @@ describe('reading a protection only over the words it governs', () => {
         // the low end's own hold verbs
         ["don't mess with the low end", [lowEndUntouched("don't mess with the low end")], []],
         ['without messing with the low end', [lowEndUntouched('without messing with the low end')], []],
-        // after a keep or leave, a joined object and a direction alone ask for a move and state nothing
-        [
-            'Keep the vocal bright and the drums louder',
-            [measured('brightness-held-v1', 'Keep the vocal bright', onTracks('vocal'))],
-            [],
-        ],
-        [
-            'Keep the vocal bright and the mix wider',
-            [measured('brightness-held-v1', 'Keep the vocal bright', onTracks('vocal'))],
-            [],
-        ],
+        // a keep or leave holding what it names governs nouns and qualities, never a direction, so a
+        // later move it chains into or runs through is the request and states nothing
+        ['Keep the vocal bright and the drums louder', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright and the mix wider', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright and the drums a bit louder', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright and the drums much louder', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright and the drums 3 dB louder', [VOCAL_BRIGHT_HELD], []],
+        ['Keep the vocal bright and the drums louder in the chorus', [VOCAL_BRIGHT_HELD], []],
         ['Leave the vocal alone and the drums louder', [], []],
+        ['Leave the vocal alone and the drums a little louder', [], []],
+        ['Keep the mix balanced when you make the vocal louder', [], []],
+        // a quality after a held chain continues the keep, never read as a move
+        [
+            'keep the vocal bright and the drums warm',
+            [measured('brightness-held-v1', 'keep the vocal bright and the drums warm', onTracks('vocal'))],
+            [
+                unread(
+                    'keep the vocal bright and the drums warm',
+                    'No measurement the application takes shows that “warm” holds.'
+                ),
+            ],
+        ],
         // a keep naming the move it prevents bounds that move, so a joined direction stays in its net
         [
             'keep the mix from getting louder and the vocal quieter',

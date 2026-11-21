@@ -23,12 +23,17 @@ import {
     SCOPE_WORD,
     STOP_VERB,
 } from './constraintClauseWords';
-import { DIRECTION, MEASURED_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
+import { DIRECTION, MEASURED_NOUN, MEASURED_WORD, MOVE_WORD, NOUN_VERB_HEAD, WORD_END } from './constraintDirections';
 
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
 
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}${WORD_END}`, 'giu');
+/**
+ * What a keep or leave holding what it names governs: a measured noun or a comparison it keeps ("keep
+ * the drums quieter than the vocal"), never a way a quality moves.
+ */
+const HELD_QUALITY = new RegExp(String.raw`\b(?:${MEASURED_NOUN}${WORD_END}|${DIRECTION}\s+than\b)`, 'giu');
 /**
  * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
  * opening another verb phrase ("don't be afraid to make it wider") governs nothing measured.
@@ -51,13 +56,14 @@ const PROTECTIVE = new RegExp(
     String.raw`\b(?:${NEGATED_GOVERNOR}|(?<holding>${HOLDING_KEEP}|${LEAVE_VERB})|${NOT_NEGATED}${STOP_VERB}|${NO}\s+${MEASURED_WORD})${WORD_END}`,
     'iu'
 );
-/** A keep naming the move it prevents ("keep the mix from getting louder") bounds that move rather than holding. */
+/**
+ * A keep naming the move it prevents ("keep the mix from getting louder", "from widening") bounds that
+ * move, so it governs ways a quality moves as a negation does rather than holding what it names.
+ */
 const PREVENTED_MOVE = new RegExp(
-    String.raw`\b${FROM}\s+(?:${CAUSING_VERB}\s+)?(?:${DEGREE_WORD}\s+)?${DIRECTION}`,
+    String.raw`\b${FROM}\s+(?:${CAUSING_VERB}\s+)?(?:${DEGREE_WORD}\s+)?${MOVE_WORD}`,
     'iu'
 );
-/** A joined object and a direction alone asks for a move: "keep the vocal bright and the drums louder". */
-const MOVE_REQUEST = new RegExp(String.raw`^\s*${OBJECT_MEMBERS}\s+(?:${DEGREE_WORD}\s+)?${DIRECTION}\s*$`, 'iu');
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
 /** Hard clause boundaries; an "and" or "or" is a boundary whose next clause may share a protection. */
 const BOUNDARY = new RegExp(
@@ -122,15 +128,9 @@ type ChainStep = { chainStart: number | null; governed: number | null; holds: bo
 
 const NO_CHAIN: ChainStep = { chainStart: null, governed: null, holds: false };
 
-/**
- * A joined segment continuing the chain is governed whole, except that after a hold an object and a
- * direction alone ask for a move and end the chain; any other segment opens a chain only if it protects.
- */
+/** A joined segment continuing the chain is governed whole; any other opens a chain only if it protects. */
 function chainStep(segment: Segment, text: string, chain: ChainStep): ChainStep {
     if (segment.joined && chain.chainStart !== null && continuesChain(text)) {
-        if (chain.holds && MOVE_REQUEST.test(text)) {
-            return NO_CHAIN;
-        }
         return { ...chain, governed: 0 };
     }
     const protection = governedStart(text);
@@ -170,7 +170,9 @@ export function readUnreadConstraintClauses(
             continue;
         }
         const offset = segment.start + governed;
-        const missed = Array.from(text.slice(governed).matchAll(MEASURED_QUALITY)).some(
+        // A hold governs what it names, never a move a joined or later clause asks for ("and the drums louder").
+        const governedWords = chain.holds ? HELD_QUALITY : MEASURED_QUALITY;
+        const missed = Array.from(text.slice(governed).matchAll(governedWords)).some(
             (word) => !isConsumed(offset + word.index, consumed)
         );
         if (!missed) {
