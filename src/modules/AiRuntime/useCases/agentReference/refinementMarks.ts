@@ -1,4 +1,5 @@
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
 
 /**
  * A sign spoken or typeset before the figure, touching it or a space away: "minus 1.5 dB", and any
@@ -10,7 +11,6 @@ const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
  * "⁻", "＋"). The glyph a masked object name is written in is no such mark.
  */
 const UNREAD_MARK = /[\p{S}\p{P}]/u;
-const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
 /** The sign a figure's preceding text closes on, as `SIGN_MARK` reads it, or `null` for none. */
 function readSignBefore(before: string): RegExpExecArray | null {

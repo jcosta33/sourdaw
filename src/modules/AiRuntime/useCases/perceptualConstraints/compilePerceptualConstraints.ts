@@ -21,6 +21,7 @@ import {
     LEAVE_VERB,
     LEFT_STATE,
     LINKING_VERB,
+    LOW_END,
     MASK_GLYPH,
     MIX_PRONOUNS,
     MIX_WORDS,
@@ -56,7 +57,6 @@ type ObjectResolution =
 
 type ClauseMatch = { clause: string; object: string | null; start: number; end: number };
 
-const LOW_END = String.raw`(?:low|bottom)[\s-]+end`;
 const OBJECT_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+(?<object>${NOT_CLAUSE_PUNCTUATION}+?))?`;
 const LOW_END_PROHIBITION = new RegExp(
     String.raw`\b(?:${NEGATION}|${NO}\s+${CHANGE_NOUN}\s+to)\s+(?:${LOW_END_HOLDING_VERB}\s+)?${THE}\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
@@ -72,7 +72,11 @@ const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const SCOPE_NAMED = new RegExp(String.raw`${MASK_GLYPH}|\b${ROLE_WORD}\b`, 'iu');
 /** A quality no recipe produces but a crest factor measures, read beside the catalog's terms. */
 const DYNAMIC_TERM = 'dynamic';
-/** The catalog descriptors whose preservation a measured hold verifies; `dynamic` is read beside them. */
+/**
+ * The catalog descriptors whose preservation a measured hold verifies; `dynamic` is read beside them.
+ * Keys are the catalog's descriptor ids, never words read from the request: the request's words for each
+ * are the catalog's own `descriptorTerms`, so this is a mapping onto the direction table, not a word list.
+ */
 const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
     ['wide', FAMILY_IDS.width.held],
     ['bright', FAMILY_IDS.brightness.held],

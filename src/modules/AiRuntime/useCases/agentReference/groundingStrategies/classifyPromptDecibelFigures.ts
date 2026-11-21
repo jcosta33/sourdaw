@@ -1,3 +1,4 @@
+import { PROJECT_REFERENCE_MASK_GLYPH } from './maskProjectReferences';
 import { normalizePromptText } from './normalizePromptText';
 import { parsePromptNumberValue } from './parsePromptNumberValue';
 
@@ -78,9 +79,6 @@ const LOUDER_RANGE_VERBS: readonly string[] = ['lift'];
 function namesPhrase(normalizedScope: string, phrase: string): boolean {
     return ` ${normalizedScope} `.includes(` ${phrase} `);
 }
-
-/** The glyph a masked project reference is written in; `maskProjectReferences.ts` owns it. */
-const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
 /** Only punctuation and spacing may separate a masked reference from the figure. */
 const PROJECT_REFERENCE_BOUNDARY_PATTERN = new RegExp(`${PROJECT_REFERENCE_MASK_GLYPH}[\\p{P}\\s]*$`, 'u');

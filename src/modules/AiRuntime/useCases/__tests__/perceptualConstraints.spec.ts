@@ -2148,6 +2148,15 @@ describe('reading a protection only over the words it governs', () => {
         // the low end's own hold verbs
         ["don't mess with the low end", [lowEndUntouched("don't mess with the low end")], []],
         ['without messing with the low end', [lowEndUntouched('without messing with the low end')], []],
+        // the low end's own left state and its "no change" form
+        ['leave the low end untouched', [lowEndUntouched('leave the low end untouched')], []],
+        ['no changes to the low end', [lowEndUntouched('no changes to the low end')], []],
+        // a semicolon ends the clause, so the bound stops at it and the next clause asks for a move
+        [
+            "don't make the mix any wider; brighten the vocal",
+            [measured('stereo-width-not-widened-v1', "don't make the mix any wider", MIX)],
+            [],
+        ],
         // a brightness noun in free text opens the net as every held noun does
         ['no brightness change', [], [unread('no brightness change', NET_REASON)]],
         [

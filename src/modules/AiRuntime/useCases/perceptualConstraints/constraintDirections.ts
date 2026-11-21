@@ -1,11 +1,17 @@
 import { type MeasuredPerceptualConstraint } from '../../models/PerceptualConstraint';
 
 import { normalizePhrase } from './normalizePhrase';
+import { words } from './words';
 
 export type MeasuredConstraintId = MeasuredPerceptualConstraint['constraintId'];
 
+const APOSTROPHES = `'’`;
+/** An apostrophe, typed or typeset: "don't", "don’t". */
+export const APOSTROPHE = `[${APOSTROPHES}]`;
 /** The end of a whole word: no letter or digit follows. */
 export const WORD_END = String.raw`(?![\p{L}\p{N}])`;
+/** Unlike WORD_END, an apostrophe also continues the word, so "don't" is never read as "don". */
+export const WHOLE_WORD_END = String.raw`(?![\p{L}\p{N}${APOSTROPHES}])`;
 
 type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
 type Movement = 'up' | 'down';
@@ -80,11 +86,11 @@ const HELD_NOUNS: Readonly<Record<QualityFamily, readonly string[]>> = {
  */
 const NOUN_QUALIFIER: Readonly<Record<string, string>> = { image: 'stereo', field: 'stereo', spread: 'stereo' };
 
+const CHANGE = 'change';
 /**
  * The verbs a held noun takes in any family, each also read with "-ing": those moving its metric one
  * way ("don't raise the width") and those holding it ("don't change the level").
  */
-const CHANGE = 'change';
 const NOUN_VERBS: Readonly<Record<Movement | 'either', readonly string[]>> = {
     up: ['raise', 'increase', 'boost', 'push', 'turn up'],
     down: ['lower', 'reduce', 'decrease', 'turn down'],
@@ -93,10 +99,6 @@ const NOUN_VERBS: Readonly<Record<Movement | 'either', readonly string[]>> = {
 
 const FAMILIES: readonly QualityFamily[] = ['loudness', 'width', 'brightness', 'dynamics'];
 const MOVEMENTS: readonly Movement[] = ['up', 'down'];
-
-function phrasePattern(phrase: string): string {
-    return phrase.split(' ').join(String.raw`\s+`);
-}
 
 /** A verb phrase and its "-ing" form on its first word: "raise" and "raising", "turn up" and "turning up". */
 function withIngForm(phrase: string): string[] {
@@ -110,9 +112,9 @@ function ingForm(verb: string): string {
 }
 
 /** Each phrase, a family's either-way pair ("wider or narrower") among them, and the constraint it states. */
-function phraseEntries(words: typeof COMPARATIVES, verbForms: (word: string) => string[]) {
+function phraseEntries(table: typeof COMPARATIVES, verbForms: (word: string) => string[]) {
     return FAMILIES.flatMap((family) => {
-        const { up, down } = words[family];
+        const { up, down } = table[family];
         const ids = FAMILY_IDS[family];
         const ups = up.flatMap(verbForms);
         const downs = down.flatMap(verbForms);
@@ -135,25 +137,17 @@ const CONSTRAINT_OF_PHRASE: ReadonlyMap<string, MeasuredConstraintId> = new Map(
     DIRECTION_ENTRIES.map((entry) => [entry.phrase, entry.id])
 );
 
-/** Longest first, so "louder or quieter" is read as one two-way phrase, never as a bound on "louder". */
-function alternation(phrases: readonly string[]): string {
-    return phrases
-        .toSorted((left, right) => right.length - left.length)
-        .map(phrasePattern)
-        .join('|');
-}
-
 const COMPARATIVE_PHRASES = phraseEntries(COMPARATIVES, (word) => [word]).map((entry) => entry.phrase);
 const VERB_PHRASES = phraseEntries(QUALITY_VERBS, withIngForm).map((entry) => entry.phrase);
 
 /** One comparative ("louder", "less dynamic") or a family's either-way pair ("wider or narrower"). */
-export const DIRECTION = String.raw`(?:${alternation(COMPARATIVE_PHRASES)})${WORD_END}`;
+export const DIRECTION = String.raw`${words(COMPARATIVE_PHRASES)}${WORD_END}`;
 /** A verb moving one family with no held noun ("widen", "squashing"), or its either-way pair. */
-export const QUALITY_VERB = String.raw`(?<direction>(?:${alternation(VERB_PHRASES)})${WORD_END})`;
+export const QUALITY_VERB = String.raw`(?<direction>${words(VERB_PHRASES)}${WORD_END})`;
 /** Every single comparative word, which an object member never holds. */
-export const COMPARATIVE_WORDS = `(?:${alternation(COMPARATIVE_PHRASES.filter((phrase) => !phrase.includes(' ')))})`;
+export const COMPARATIVE_WORDS = words(COMPARATIVE_PHRASES.filter((phrase) => !phrase.includes(' ')));
 
-const DIRECTION_IN_LIST = new RegExp(`${DIRECTION}|${alternation(VERB_PHRASES)}`, 'giu');
+const DIRECTION_IN_LIST = new RegExp(`${DIRECTION}|${words(VERB_PHRASES)}`, 'giu');
 
 /** The verbs moving a held noun's metric, by the way they move it: the shared noun verbs and every quality verb. */
 export const NOUN_MOVEMENT_OF_VERB: ReadonlyMap<string, Movement> = new Map(
@@ -170,22 +164,22 @@ export const FAMILY_OF_NOUN: ReadonlyMap<string, QualityFamily> = new Map(
 );
 
 /** A verb a held noun takes, moving its metric or holding it: "raise", "turning up", "change". */
-export const NOUN_VERB = String.raw`(?<verb>${alternation(NOUN_VERB_PHRASES)})`;
-/** The verbs holding a held noun's metric either way: "don't change the level", "touching the width". */
+export const NOUN_VERB = String.raw`(?<verb>${words(NOUN_VERB_PHRASES)})`;
 /** The hold verb "change" as a noun, in either number: "no changes to the low end". */
 export const CHANGE_NOUN = String.raw`${CHANGE}s?`;
-const HOLDING_NOUN_VERB = String.raw`(?:${alternation(NOUN_VERBS.either.flatMap(withIngForm))})`;
+/** The verbs holding a held noun's metric either way: "don't change the level", "touching the width". */
+const HOLDING_NOUN_VERB = words(NOUN_VERBS.either.flatMap(withIngForm));
 /** The verbs only the low end is held by beside those: "don't affect the low end", "don't mess with". */
 const LOW_END_ONLY_VERBS = ['affect', 'mess with'];
 /** Every verb holding the low end: the held-noun hold verbs and the low end's own. */
-export const LOW_END_HOLDING_VERB = String.raw`(?:${HOLDING_NOUN_VERB}|${alternation(LOW_END_ONLY_VERBS.flatMap(withIngForm))})`;
+export const LOW_END_HOLDING_VERB = String.raw`(?:${HOLDING_NOUN_VERB}|${words(LOW_END_ONLY_VERBS.flatMap(withIngForm))})`;
 /** Every held noun of every family: "level", "stereo width" is "width" behind its qualifier. */
-export const HOLD_NOUN_WORD = String.raw`(?:${alternation(Array.from(FAMILY_OF_NOUN.keys()))})`;
+export const HOLD_NOUN_WORD = words(Array.from(FAMILY_OF_NOUN.keys()));
 /** The nouns naming loudness alone: "keep the Keys at the same level". */
-export const LOUDNESS_NOUN_WORD = String.raw`(?:${alternation(HELD_NOUNS.loudness)})`;
+export const LOUDNESS_NOUN_WORD = words(HELD_NOUNS.loudness);
 
 /** The qualifiers a held noun may stand behind: "the overall level", "the stereo width". */
-export const HELD_NOUN_QUALIFIER = String.raw`(?:${alternation(['overall', ...new Set(Object.values(NOUN_QUALIFIER))])})`;
+export const HELD_NOUN_QUALIFIER = words(['overall', ...new Set(Object.values(NOUN_QUALIFIER))]);
 
 const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
     const qualifier = NOUN_QUALIFIER[noun];
@@ -196,7 +190,7 @@ const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
  * number behind any qualifier it needs, a quality verb or a direction. A plain adjective ("bright",
  * "wide") is none: elsewhere it mostly describes a sound.
  */
-export const MEASURED_WORD = String.raw`(?:(?:${alternation(FREE_TEXT_NOUNS)})s?|${alternation(VERB_PHRASES)}|${DIRECTION})`;
+export const MEASURED_WORD = String.raw`(?:${words(FREE_TEXT_NOUNS)}s?|${words(VERB_PHRASES)}|${DIRECTION})`;
 
 function headWord(phrase: string): string {
     const [head = phrase] = phrase.split(' ');
@@ -223,17 +217,17 @@ const NOUN_VERB_HEADS = Array.from(
  * The first word of every verb a held noun takes, also read with "-ing", so a split particle still
  * reads: "don't turn the volume of the vocal up" governs the volume through "turn".
  */
-export const NOUN_VERB_HEAD = String.raw`(?:${alternation(NOUN_VERB_HEADS.flatMap(withIngForm))})`;
+export const NOUN_VERB_HEAD = words(NOUN_VERB_HEADS.flatMap(withIngForm));
 /** The verbs a held noun takes whose particle may stand after the noun: "turn … up". */
 const SPLIT_VERBS = MOVEMENTS.flatMap((movement) => NOUN_VERBS[movement]).filter((phrase) => phrase.includes(' '));
 const SPLIT_VERB_HEADS = Array.from(new Set(SPLIT_VERBS.map(headWord))).flatMap(withIngForm);
 const SPLIT_VERB_PARTICLES = Array.from(new Set(SPLIT_VERBS.map(particleOf)));
 /** A split verb's first word, also read with "-ing": "don't turn the level of the vocal up". */
-export const SPLIT_VERB_HEAD = String.raw`(?<verb>${alternation(SPLIT_VERB_HEADS)})`;
+export const SPLIT_VERB_HEAD = String.raw`(?<verb>${words(SPLIT_VERB_HEADS)})`;
 /** The particle a split verb ends on after its noun. */
-export const SPLIT_VERB_PARTICLE = String.raw`(?<particle>${alternation(SPLIT_VERB_PARTICLES)})`;
+export const SPLIT_VERB_PARTICLE = String.raw`(?<particle>${words(SPLIT_VERB_PARTICLES)})`;
 /** Those verbs' "-ing" forms alone: what a keep continues a move with ("keep widening the mix"). */
-export const NOUN_VERB_ING = String.raw`(?:${alternation(NOUN_VERB_HEADS.map(ingForm))})`;
+export const NOUN_VERB_ING = words(NOUN_VERB_HEADS.map(ingForm));
 
 function familyOfConstraint(id: MeasuredConstraintId): QualityFamily | undefined {
     return FAMILIES.find((family) => Object.values(FAMILY_IDS[family]).includes(id));

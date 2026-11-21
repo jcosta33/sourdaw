@@ -28,6 +28,7 @@ import {
     THE_SAME,
 } from './constraintClauseWords';
 import {
+    APOSTROPHE,
     directionConstraintIds,
     FAMILY_IDS,
     HELD_NOUN_QUALIFIER,
@@ -61,7 +62,7 @@ const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?
 const HOLD_SUFFIX = String.raw`(?:\s+${HELD_STATE})?`;
 const QUALIFIED = String.raw`(?:${HELD_NOUN_QUALIFIER}\s+)?`;
 /** The objects a noun may carry before it, possessive or not: "the vocal level", "the vocal and drums level". */
-const PRE_MEMBER = String.raw`(?:${MASK_GLYPH}+|(?:${SCOPE_WORD})\b)(?:['’]s?)?`;
+const PRE_MEMBER = String.raw`(?:${MASK_GLYPH}+|(?:${SCOPE_WORD})\b)(?:${APOSTROPHE}s?)?`;
 const PRE_LIST = String.raw`${PRE_MEMBER}(?:\s+${AND_WORD}\s+(?:${THE}\s+)?${PRE_MEMBER})*`;
 function holdNoun(word: string): string {
     return String.raw`(?:${PRE_LIST}\s+)?${QUALIFIED}${word}\b`;

@@ -1,26 +1,21 @@
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
-import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
+import { PROJECT_REFERENCE_MASK_GLYPH } from '../agentReference/groundingStrategies/maskProjectReferences';
 
-import { COMPARATIVE_WORDS, DIRECTION, NOUN_VERB_ING, WORD_END } from './constraintDirections';
+import {
+    APOSTROPHE,
+    COMPARATIVE_WORDS,
+    DIRECTION,
+    NOUN_VERB_ING,
+    WHOLE_WORD_END,
+    WORD_END,
+} from './constraintDirections';
 import { normalizePhrase } from './normalizePhrase';
+import { words } from './words';
 
 /**
  * The clause words every constraint reader shares, each vocabulary stated here once: scope words,
  * determiners, clause boundaries, negations, the verbs a clause turns on, and the object grammar.
  */
-
-/** A closed word list as one alternation, longest first, each phrase's words joined by any whitespace. */
-function words(list: readonly string[]): string {
-    const phrases = list
-        .toSorted((left, right) => right.length - left.length)
-        .map((phrase) =>
-            phrase
-                .split(' ')
-                .map(escapeRegExp)
-                .join(String.raw`\s+`)
-        );
-    return `(?:${phrases.join('|')})`;
-}
 
 export const MIX_WORDS = new Set(['mix', 'whole mix', 'song', 'whole song', 'project', 'master', 'master bus']);
 export const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = new Map([
@@ -53,7 +48,7 @@ export const NOT_CLAUSE_PUNCTUATION = `[^${CLAUSE_MARKS}]`;
 export const WORD_CHARACTER = String.raw`[^\s${CLAUSE_MARKS}]`;
 
 /** The glyph a masked track name or quotation is read as, one per character. */
-export const MASK_GLYPH = '□';
+export const MASK_GLYPH = PROJECT_REFERENCE_MASK_GLYPH;
 
 const THE_WORD = 'the';
 export const DETERMINER = words([THE_WORD, 'my', 'our', 'this', 'that']);
@@ -62,9 +57,11 @@ export const THE = words([THE_WORD]);
 /** The possessives a continued clause may open with: "and its width". */
 export const POSSESSIVE_DETERMINER = words(['its', 'their']);
 const LEADING_DETERMINER = new RegExp(String.raw`^${DETERMINER}\s+`, 'u');
+/** A quotation mark or an apostrophe, which an object's name is read without. */
+const QUOTE_MARK = new RegExp(`["“”‘]|${APOSTROPHE}`, 'gu');
 
 export function normalizeObjectText(text: string): string {
-    return normalizePhrase(text.replaceAll(/["'“”‘’]/gu, '')).replace(LEADING_DETERMINER, '');
+    return normalizePhrase(text.replaceAll(QUOTE_MARK, '')).replace(LEADING_DETERMINER, '');
 }
 
 const ANY_WORD = 'any';
@@ -97,6 +94,8 @@ export const CLAUSE_END = String.raw`(?=\s*(?:$|${CLAUSE_PUNCTUATION}|\b${CLAUSE
 export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
 export const OBJECT_PREPOSITION = words(['of', 'on', 'in']);
+/** The low end, by either name, its words spaced or hyphenated: "the low end", "the bottom-end". */
+export const LOW_END = String.raw`${words(['low', 'bottom'])}[\s-]+end`;
 
 export const KEEP = words(['keep', 'keeping']);
 const PRESERVING_VERB = words(['preserve', 'preserving', 'maintain', 'maintaining', 'retain', 'retaining']);
@@ -121,25 +120,28 @@ const UNCHANGED_STATE = String.raw`(?:${words(['unchanged', 'intact'])}|${AS}\s+
 const LEFT_ONLY_STATE = words(['alone', 'untouched']);
 /** Every state a left or kept object stays in: "leave the low end alone", "keep the low end intact". */
 export const LEFT_STATE = String.raw`(?:${LEFT_ONLY_STATE}|${UNCHANGED_STATE})`;
-/** The states a kept measured noun stays in: "keep the level the same", "where it is". */
 /** "the same", which a held noun stays and a level is kept at: "keep the Keys at the same level". */
 export const THE_SAME = String.raw`${THE}\s+same`;
+/** The states a kept measured noun stays in: "keep the level the same", "where it is". */
 export const HELD_STATE = String.raw`(?:${THE_SAME}|where\s+it\s+is|${UNCHANGED_STATE})`;
 
-export const NEGATION = String.raw`(?:do\s+not|don['’]?t|never|without)`;
-const MODAL = words(['must', 'should', 'may', 'can', 'will']);
+export const NEGATION = String.raw`(?:${words(['do not', 'never', 'without'])}|don${APOSTROPHE}?t)`;
+const CAN = 'can';
+const MODAL = words(['must', 'should', 'may', CAN, 'will']);
+/** The contractions' stems that drop a letter of their modal: "can't", "won't". */
+const SHORTENED_MODAL = words([CAN, 'won']);
 /** "doesn't get louder" asks for a bound; "doesn't sound brighter" describes the sound as it is. */
-const DOES_NEGATION = String.raw`(?:does\s+not|doesn['’]?t)(?!\s+${LINKING_VERB}\b)`;
+const DOES_NEGATION = String.raw`(?:${words(['does not'])}|doesn${APOSTROPHE}?t)(?!\s+${LINKING_VERB}\b)`;
 /**
  * A modal negation states a clause ("shouldn't be", "mustn't get", "can't be", "won't get"); a plain
  * copula negation ("isn't", "aren't", "wasn't") describes the sound as it is, so it is none.
  */
-export const MODAL_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n['’]?t|can['’]?t|won['’]?t|${DOES_NEGATION})`;
+export const MODAL_NEGATION = String.raw`(?:${MODAL}\s*not|${MODAL}n${APOSTROPHE}?t|${SHORTENED_MODAL}${APOSTROPHE}?t|${DOES_NEGATION})`;
 const NO_WORD = 'no';
 const BARE_NEGATION = words([NO_WORD, 'not']);
 /** "no" alone, before what it negates: "no louder", "no changes to the low end". */
 export const NO = words([NO_WORD]);
-const NEGATED_CONTRACTION = String.raw`\p{L}+n['’]t`;
+const NEGATED_CONTRACTION = String.raw`\p{L}+n${APOSTROPHE}t`;
 /** Any negation at all: one may permit a move a later keep or stop names ("you don't have to keep …"). */
 export const ANY_NEGATION = String.raw`(?:${NEGATION}|${MODAL_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION})`;
 
@@ -156,8 +158,6 @@ const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS,
  */
 export const PREDICATE_WORD = String.raw`(?:${MODAL}|${LINKING_VERB}|${PLAIN_PREDICATE_WORD})`;
 
-/** Unlike WORD_END, an apostrophe also continues the word, so "don't" is never read as "don". */
-const WHOLE_WORD_END = String.raw`(?![\p{L}\p{N}'’])`;
 const NON_OBJECT_WORD = String.raw`(?:${ANY_BOUNDARY_WORD}|${COMPARATIVE_WORDS}|${PREDICATE_WORD}|${ANY_NEGATION})`;
 /**
  * A word an object member may hold: never a boundary, a direction, a negation or a predicate word, so a
