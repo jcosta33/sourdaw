@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { cache, testOverrides } from '#/infra/di/internal/containerState';
 import { type AdjustmentLayer } from '#/modules/Arrangement/stores';
 
 import { adjustmentApplicationStore } from '../../../stores/adjustmentApplicationStore';
@@ -77,6 +78,8 @@ describe('getSharedAdjustmentLayerApplier', () => {
     });
 
     afterEach(() => {
+        testOverrides.delete(mocks.engine);
+        cache.clear();
         resetSharedAdjustmentLayerApplierForTest();
     });
 
@@ -408,5 +411,34 @@ describe('getSharedAdjustmentLayerApplier', () => {
         });
         expect(records).toEqual([]);
         expect(mocks.engine.setTrackGain).not.toHaveBeenCalled();
+    });
+    it('writes every gain, fader recomposition and tick to the engine the latest call resolved', () => {
+        getSharedAdjustmentLayerApplier().applyLayers({ activeLayers: [], beat: 0 });
+        const engineB = {
+            setTrackGain: vi.fn(),
+            setTrackPan: vi.fn(),
+            applyAdjustmentLayerTick: vi.fn(),
+            resetAdjustmentLayers: vi.fn(),
+        };
+        testOverrides.set(mocks.engine, engineB);
+        cache.clear();
+        vi.clearAllMocks();
+
+        getSharedAdjustmentLayerApplier().applyLayers({
+            activeLayers: [makeLayer(), makeLayer({ id: 'layer-eq', effectType: 'eq', parameters: [] })],
+            beat: 0,
+        });
+        setTracks([{ id: 't1', gain: 0.5, pan: 0 }]);
+        fireTrackStoreSubscribers();
+
+        expect(engineB.setTrackGain.mock.calls.map(([, gain]) => gain)).toEqual([
+            expect.closeTo(0.8 * GAIN_6DB, 6),
+            expect.closeTo(0.5 * GAIN_6DB, 6),
+        ]);
+        expect(engineB.applyAdjustmentLayerTick).toHaveBeenCalledWith([
+            expect.objectContaining({ layerId: 'layer-eq', trackId: 't1', effectType: 'eq' }),
+        ]);
+        expect(mocks.engine.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.engine.applyAdjustmentLayerTick).not.toHaveBeenCalled();
     });
 });

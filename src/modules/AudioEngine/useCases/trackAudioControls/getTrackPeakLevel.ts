@@ -1,8 +1,10 @@
-import { inject } from '#/infra/di/inject';
-
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { createMeterFrameReader } from '../engineAccess/createMeterFrameReader';
 import { readNativeEngineStripPeak } from '../livePlayback/readNativeEngineStripPeak';
+
+const readFrame = createMeterFrameReader(
+    (trackId: string) => readNativeEngineStripPeak(trackId) ?? audioEngine.getTrackPeakLevel(trackId)
+);
 
 /**
  * The level to show on a track strip's meter.
@@ -15,12 +17,6 @@ import { readNativeEngineStripPeak } from '../livePlayback/readNativeEngineStrip
  * number for a strip the native engine already answered for.
  * Omit frameTime for an immediate read; UI consumers pass their scheduler's RAF timestamp.
  */
-export const getTrackPeakLevel = inject({ audioEngine })(({ audioEngine }) => {
-    const readFrame = createMeterFrameReader(
-        (trackId: string) => readNativeEngineStripPeak(trackId) ?? audioEngine.getTrackPeakLevel(trackId)
-    );
-
-    return function getTrackPeakLevel(trackId: string, frameTime?: DOMHighResTimeStamp): number {
-        return readFrame(trackId, frameTime);
-    };
-});
+export function getTrackPeakLevel(trackId: string, frameTime?: DOMHighResTimeStamp): number {
+    return readFrame(trackId, frameTime);
+}

@@ -1,5 +1,3 @@
-import { inject } from '#/infra/di/inject';
-
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 export type MasterStereoAnalysers = {
@@ -14,9 +12,6 @@ export type MasterStereoAnalysers = {
  * channel each — the only source that can answer a stereo question such as
  * "are these channels in phase".
  */
-export const getMasterStereoAnalysers = inject({ audioEngine })(
-    ({ audioEngine }) =>
-        function getMasterStereoAnalysers(): MasterStereoAnalysers {
-            return { left: audioEngine.masterAnalyserLeft, right: audioEngine.masterAnalyserRight };
-        }
-);
+export function getMasterStereoAnalysers(): MasterStereoAnalysers {
+    return { left: audioEngine.masterAnalyserLeft, right: audioEngine.masterAnalyserRight };
+}
