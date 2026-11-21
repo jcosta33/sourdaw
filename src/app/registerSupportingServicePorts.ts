@@ -58,10 +58,10 @@ function buildProductionPorts(): SupportingServicePorts {
  * mappings, the saved CV/gate outputs, the MIDI note edits rendered phrases go
  * stale on, the onboarding tour and the sample catalog reach them through
  * ports this composition root fills. ElasticAudio's transient and sensitivity
- * paths read the project root identity the same way. Called by bootstrap and
- * again when `App` loads, beside `registerDeviceEnginePorts`, because
- * `main.tsx` loads the two independently; registering the same ports twice is
- * a no-op.
+ * paths read the project root identity the same way. Called by
+ * `bootstrapApplication` and by `main.tsx` before it first renders `App`,
+ * beside `registerDeviceEnginePorts`, because `main.tsx` loads the two
+ * independently; registering the same ports twice is a no-op.
  */
 export function registerSupportingServicePorts(): void {
     productionPorts ??= buildProductionPorts();

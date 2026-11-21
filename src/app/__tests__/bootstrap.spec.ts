@@ -9,6 +9,9 @@ import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } 
 // door a test outside the module may use.
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
+// Vitest hoists the `vi.mock` calls below above every import, so each
+// dependency bootstrap.ts pulls in is already mocked when the entry runs.
+import { bootstrapApplication } from '../bootstrap';
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
@@ -871,10 +874,14 @@ vi.mock('../initLevainDeviceStateProjectAccess', () => ({
     initLevainDeviceStateProjectAccess: initLevainDeviceStateProjectAccessMock,
 }));
 
-// Side-effect import: this is what runs the composition root under test.
-// `vi.mock` calls above are hoisted above this import by Vitest, so every
-// dependency bootstrap.ts pulls in is already mocked by the time it runs.
-import '../bootstrap';
+const fillCallsBeforeEntry = {
+    initBranchState: initBranchStateMock.mock.calls.length,
+    registerDeviceEnginePorts: registerDeviceEnginePortsMock.mock.calls.length,
+    registerProductionCommandHandlers: registerProductionCommandHandlersMock.mock.calls.length,
+    setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock.mock.calls.length,
+};
+
+bootstrapApplication();
 
 const raveModelBootCalls = [...initRaveModelsMock.mock.calls];
 
@@ -892,6 +899,19 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('fills nothing when the module is imported, only when its entry runs', () => {
+        expect(fillCallsBeforeEntry).toEqual({
+            initBranchState: 0,
+            registerDeviceEnginePorts: 0,
+            registerProductionCommandHandlers: 0,
+            setProjectIdentityTransitionDependencies: 0,
+        });
+        expect(initBranchStateMock).toHaveBeenCalledOnce();
+        expect(registerDeviceEnginePortsMock).toHaveBeenCalledOnce();
+        expect(registerProductionCommandHandlersMock).toHaveBeenCalledOnce();
+        expect(setProjectIdentityTransitionDependenciesMock).toHaveBeenCalledOnce();
+    });
+
     it('delegates the live root reader installation for sensitivity and Worker lifetimes before consumers', () => {
         // The wiring itself lives in registerSupportingServicePorts; bootstrap must
         // delegate to it before any command handler can consume transient detection.
@@ -1620,15 +1640,14 @@ describe('bootstrap', () => {
         recoverInterruptedAgentRunsMock.mockImplementationOnce(() => interruptedRecovery);
 
         vi.resetModules();
-        await import('../bootstrap');
+        (await import('../bootstrap')).bootstrapApplication();
 
         expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
         expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
 
         resolveInterruptedRecovery({ recoveredRunIds: [] });
-        await Promise.resolve();
 
-        expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
+        await vi.waitFor(() => expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith());
 
         recoverInterruptedAgentRunsMock.mockClear();
         recoverRetainedSectionRenderEffectsMock.mockClear();
@@ -1636,14 +1655,15 @@ describe('bootstrap', () => {
         recoverInterruptedAgentRunsMock.mockImplementationOnce(() => Promise.reject(new Error('hydration failed')));
 
         vi.resetModules();
-        await import('../bootstrap');
-        await Promise.resolve();
+        (await import('../bootstrap')).bootstrapApplication();
 
+        await vi.waitFor(() =>
+            expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
+            )
+        );
         expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
         expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
-        expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
-        );
     });
 
     it('registers a MIDI transform implementation for every published transform descriptor', () => {

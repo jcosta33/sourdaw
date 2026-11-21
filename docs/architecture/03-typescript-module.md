@@ -916,19 +916,20 @@ Test-support code that production code does not load: deterministic fakes and fi
 
 A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`external-module-contracts-only`), so it supplies the dependency at startup and the module holds only an empty slot.
 
-| Piece                 | Where                                   | Role                                                                                                                                                       |
-| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>Port.ts`       | `useCases/` of the module that needs it | An object that holds the supplied provider. It defines its unconfigured behavior and has a setter (`setProvider`).                                         |
-| `<name>ProjectAccess` | slot in `stores/`                       | The same idea for committed-project reads: the store file holds the slot; the module never imports the document owner.                                     |
-| `configure<Name>`     | `useCases/`                             | The public entry that installs a provider into the slot. Some return a disposer and some accept `null` to detach; others do neither.                       |
-| `init<Name>`          | `src/app/` or a module use case         | Startup wiring called from `src/app/bootstrap.ts`: it builds the provider and calls `configure*`, or it installs subscriptions and returns their disposer. |
+| Piece                 | Where                                   | Role                                                                                                                                                                                                                             |
+| --------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>Port.ts`       | `useCases/` of the module that needs it | An object that holds the supplied provider and reads it (`read()`). It defines its unconfigured behavior. Its fill is a method of the object (`setProvider`, `configure`) or a function exported beside it (`set…Dependencies`). |
+| `<name>ProjectAccess` | slot in `stores/`                       | The same idea for committed-project reads: the store file holds the slot; the module never imports the document owner.                                                                                                           |
+| `configure<Name>`     | `useCases/`                             | The public entry that installs a provider into the slot. Some return a disposer and some accept `null` to detach; others do neither.                                                                                             |
+| `init<Name>`          | `src/app/` or a module use case         | Startup wiring called from `bootstrapApplication` in `src/app/bootstrap.ts`: it builds the provider and calls `configure*`, or it installs subscriptions and returns their disposer.                                             |
 
 Rules:
 
 - The slot exists so the module need not import the provider's module; the app does the binding.
 - A port that replaces an import the tier order or a cycle forbids follows [ADR 0065](../../.agents/decisions/0065-cross-module-dependencies-are-registered-ports.md): reading it unfilled throws an error naming its registrar.
 - An unconfigured slot must have a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal, never an unhandled `null`.
-- Install a provider through the port's setter or the `configure*` entry; calling code reads the slot through the port.
+- Install a provider through the port's fill, a method of the port object or a function exported beside it, called only from a `src/app/` registrar or `bootstrapApplication`; calling code reads the slot through the port.
+- Importing a module fills nothing. `src/app/main.tsx` owns the fill order: it calls `bootstrapApplication()` once that module's import resolves, and calls the registrars the first `App` render reads before it renders `App`, because either import may finish first.
 - `init*` is the naming convention for startup wiring (some unrelated use cases also use the prefix for plain initialization). A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.
 
 ---
