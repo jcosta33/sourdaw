@@ -95,7 +95,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip at very fast tempi where a 50 ms release cannot recover between sixteenth notes.',
             'Skip when the kit already sounds gated or truncated.',
         ],
-        metrics: [{ metric: 'rms', direction: 'increase' }],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
         source: 'A release shorter than the gap between hits shortens the audible decay of each drum, which is the mechanism behind a tight kit rather than any single frequency move. The small low shelf trim removes the sustained shoulder under the kick that the compressor would otherwise lengthen.',
     },
     {
@@ -330,10 +330,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip when the kit is a single stereo loop with no internal balance to bind.',
             'Skip when downstream bus compression already reduces this material.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'rms', direction: 'increase' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Glue comes from a shared gain envelope across the whole kit, which needs a soft knee and a release long enough to span several hits rather than to track each one. A few decibels of reduction is enough; more turns cohesion into pumping.',
     },
     {

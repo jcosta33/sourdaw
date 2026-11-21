@@ -314,7 +314,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip when no earlier stage controls peaks; this one alone will chase them and pump.',
             'Skip on a fixed-velocity programmed part with nothing to settle.',
         ],
-        metrics: [{ metric: 'rms', direction: 'increase' }],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'A release spanning several chords produces the slow shared envelope that reads as cohesion, where a release tracking each chord would read as pumping. The soft knee keeps the onset of reduction from marking individual notes.',
     },
     {

@@ -320,7 +320,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip when no earlier stage controls peaks; this one alone will chase them and pump.',
             'Skip on a sustained pad-like part with no dynamic movement to settle.',
         ],
-        metrics: [{ metric: 'rms', direction: 'increase' }],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Cohesion comes from a slow shared gain envelope rather than from peak control, which is why the knee is soft and the release spans several strums. Splitting the work across two gentle stages keeps each one below the point where the envelope becomes audible.',
     },
     {

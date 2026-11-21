@@ -87,8 +87,8 @@ const expected = [
         id: 'bus-controlled',
         role: 'bus',
         device: 'builtin-compressor',
-        metric: 'rms',
-        direction: 'increase',
+        metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-18, -10],
             [2, 3],

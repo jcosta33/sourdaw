@@ -7,6 +7,7 @@ import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 
 import { createTrack } from '../useCases/__tests__/trackFixture';
 import { readRecipeExpectationTolerance } from '../useCases/metricHoldTolerances';
+import { objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
@@ -16,16 +17,42 @@ type MixRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
 
 const TEMPO = 120;
 const BEATS = 8;
-const SOURCE_POSITIONS = [0, 1, 2, 3] as const;
+
+type LawSource = {
+    name: string;
+    /** The fixture position that fixes the source's spectrum, strike shape and base level. */
+    position: number;
+    /** Gain ahead of the recipe's devices, raising the source level without changing its shape. */
+    trimDb: number;
+};
+
+/**
+ * Positions 0 to 3 peak at about -8 dBFS or lower, where a compressor's makeup alone lifts a level. A bus
+ * or a hot take peaks near 0 dBFS, where the same compressor lowers it, so the last source is the same
+ * shape as position 3 trimmed up to about -1 dBFS: a level claim whose direction depends on input level
+ * fails on it.
+ */
+const SOURCES: readonly LawSource[] = [
+    { name: 'source 0', position: 0, trimDb: 0 },
+    { name: 'source 1', position: 1, trimDb: 0 },
+    { name: 'source 2', position: 2, trimDb: 0 },
+    { name: 'source 3', position: 3, trimDb: 0 },
+    { name: 'hot source', position: 3, trimDb: 9.3 },
+];
 
 /** The devices the acceptance render law has a rule for; any other step makes a recipe unrenderable. */
 const LAW_DEVICES = new Set(['builtin-eq', 'builtin-compressor', 'builtin-gain', 'builtin-stereo-widener']);
 
+type Claim = MixRecipe['metrics'][number];
+type Figures = ReturnType<typeof measureAgentScopeRender>;
+type Stage = 'before' | 'after';
+
 /**
- * The level and dynamics claims, the ones a compressor decides. The law's source is six partials, two
- * of its four positions mono, so its spectral and stereo figures cannot discriminate a recipe's claim.
+ * The level, dynamics and transient claims, the ones a compressor decides. The law's sources are six
+ * partials, one per band, two of the four positions mono, so its spectral, band and stereo figures cannot
+ * discriminate a recipe's claim and are not checked here.
  */
-const DYNAMICS_METRICS = [
+const CHECKED_METRICS = [
     'rms',
     'crestFactor',
     'dynamicRangeEstimate',
@@ -34,9 +61,6 @@ const DYNAMICS_METRICS = [
     'shortTermLoudnessMax',
     'transientDensity',
 ] as const;
-
-type DynamicsMetric = (typeof DYNAMICS_METRICS)[number];
-type Stage = 'before' | 'after';
 
 /**
  * Every recipe the law cannot render, by the first step it has no rule for. Asserted equal
@@ -123,7 +147,7 @@ const UNRENDERABLE_RECIPES: Readonly<Record<string, string>> = {
  * The recipe's devices at their parameter midpoints, or before it runs: an edit step's device at the
  * values it starts with, an insert step's not yet there.
  */
-function recipeTrack(recipe: MixRecipe | null, position: number, stage: Stage = 'after'): Track {
+function recipeTrack(recipe: MixRecipe | null, source: LawSource, stage: Stage = 'after'): Track {
     const steps = (recipe?.steps ?? []).filter((step) => stage === 'after' || step.kind === 'edit');
     const devices = steps.map((step, index) => ({
         id: `device-${index}`,
@@ -132,7 +156,14 @@ function recipeTrack(recipe: MixRecipe | null, position: number, stage: Stage = 
         bypassed: false,
         parameterValues: stagedParameterValues(step, stage),
     }));
-    return createTrack({ id: `track-${position}`, devices });
+    const trim = {
+        id: 'source-trim',
+        name: 'builtin-gain',
+        type: 'builtin-gain',
+        bypassed: false,
+        parameterValues: { 'gain-level': source.trimDb },
+    };
+    return createTrack({ id: `track-${source.position}`, devices: source.trimDb === 0 ? devices : [trim, ...devices] });
 }
 
 /** A step's parameter midpoints once the recipe has run; before it, the device's own starting values. */
@@ -145,46 +176,42 @@ function stagedParameterValues(step: MixRecipe['steps'][number], stage: Stage): 
     );
 }
 
-function measure(recipe: MixRecipe | null, position: number, stage: Stage = 'after') {
+function measure(recipe: MixRecipe | null, source: LawSource, stage: Stage = 'after') {
     const law = createAcceptanceRenderLaw({
-        trackPosition: () => position,
+        trackPosition: () => source.position,
         tempo: () => TEMPO,
         liveTracks: () => [],
         masterGain: () => 1,
     });
-    const target = recipeTrack(recipe, position, stage);
+    const target = recipeTrack(recipe, source, stage);
     const buffer = law.renderTrack({
         targetTrackId: target.id,
         renderTracks: [target],
         startBeat: 0,
         endBeat: BEATS,
     });
-    const entries = measureAgentScopeRender(buffer, DYNAMICS_METRICS);
-    const value = (id: DynamicsMetric): number => {
-        const entry = entries[id];
-        if (entry?.status !== 'measured' || typeof entry.value !== 'number') {
-            throw new Error(`${id} was not measured`);
-        }
-        return entry.value;
-    };
-    const figures: Record<DynamicsMetric, number> = {
-        rms: value('rms'),
-        crestFactor: value('crestFactor'),
-        dynamicRangeEstimate: value('dynamicRangeEstimate'),
-        truePeak: value('truePeak'),
-        integratedLoudness: value('integratedLoudness'),
-        shortTermLoudnessMax: value('shortTermLoudnessMax'),
-        transientDensity: value('transientDensity'),
-    };
-    return figures;
+    return measureAgentScopeRender(buffer, CHECKED_METRICS);
 }
 
-function isDynamicsMetric(metric: string): metric is DynamicsMetric {
-    return (DYNAMICS_METRICS as readonly string[]).includes(metric);
+function isCheckedMetric(metric: string): boolean {
+    return (CHECKED_METRICS as readonly string[]).includes(metric);
+}
+
+function checkedClaims(recipe: MixRecipe): readonly Claim[] {
+    return recipe.metrics.filter((claim) => isCheckedMetric(claim.metric));
+}
+
+/** The figure a claim states, the frozen band's energy for a band claim. */
+function figure(entries: Figures, claim: Claim): number {
+    const projection = objectiveMetricProjection(claim.metric, entries[claim.metric], claim.band ?? null);
+    if (projection === null) {
+        throw new Error(`${claim.metric} ${claim.band ?? ''} was not measured`);
+    }
+    return projection.value;
 }
 
 function movedDirection(
-    metric: DynamicsMetric,
+    metric: Claim['metric'],
     before: number,
     after: number,
     claimed: 'increase' | 'decrease' | 'hold'
@@ -221,7 +248,7 @@ function compressorThresholdDb(recipe: MixRecipe): number | null {
  * source whose peak reaches its threshold: a compressor reduces nothing below it, so a quieter source
  * cannot show the claim either way. Every other claim is meant for every source.
  */
-function isMeantFor(recipe: MixRecipe, metric: DynamicsMetric, dryTruePeakDb: number): boolean {
+function isMeantFor(recipe: MixRecipe, metric: Claim['metric'], dryTruePeakDb: number): boolean {
     const thresholdDb = compressorThresholdDb(recipe);
     if (thresholdDb === null || (metric !== 'crestFactor' && metric !== 'dynamicRangeEstimate')) {
         return true;
@@ -229,43 +256,101 @@ function isMeantFor(recipe: MixRecipe, metric: DynamicsMetric, dryTruePeakDb: nu
     return dryTruePeakDb > thresholdDb;
 }
 
-function dynamicsClaims(recipe: MixRecipe) {
-    return recipe.metrics.filter((claim): claim is typeof claim & { metric: DynamicsMetric } =>
-        isDynamicsMetric(claim.metric)
-    );
-}
-
 /**
  * Claims no law source is meant for: every source's peak sits below the compressor threshold, so the
  * law cannot check them. Asserted equal to what the catalog holds, so no claim leaves the checked set
  * unnoticed.
  */
-const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [
-    'master-glued:dynamicRangeEstimate',
-    'master-controlled:dynamicRangeEstimate',
-];
+const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [];
+
+/**
+ * Renderable recipes whose every stated move is a band, spectral or stereo one. The law's sources cannot
+ * discriminate those, so the render spec checks none of them; asserted equal to what the catalog holds.
+ * A recipe whose rationale makes a level or dynamics move the law renders states it and leaves this table.
+ */
+const RECIPES_WITH_NO_CHECKABLE_CLAIM: Readonly<Record<string, string>> = Object.fromEntries(
+    [
+        'vocal-warm',
+        'vocal-tight',
+        'vocal-wide',
+        'vocal-dark',
+        'vocal-muddy',
+        'vocal-thin',
+        'drums-warm',
+        'drums-bright',
+        'drums-tight',
+        'drums-wide',
+        'drums-dark',
+        'drums-airy',
+        'drums-muddy',
+        'bass-warm',
+        'bass-bright',
+        'bass-wide',
+        'bass-dark',
+        'bass-airy',
+        'bass-muddy',
+        'guitar-warm',
+        'guitar-bright',
+        'guitar-tight',
+        'guitar-dark',
+        'guitar-airy',
+        'guitar-muddy',
+        'guitar-thin',
+        'keys-warm',
+        'keys-bright',
+        'keys-tight',
+        'keys-dark',
+        'keys-airy',
+        'keys-muddy',
+        'keys-thin',
+        'bus-warm',
+        'bus-bright',
+        'bus-tight',
+        'bus-wide',
+        'bus-dark',
+        'bus-airy',
+        'bus-muddy',
+        'master-warm',
+        'master-bright',
+        'master-wide',
+        'master-dark',
+        'master-airy',
+        'master-muddy',
+    ].map((id) => [id, 'states only band, spectral or stereo moves'])
+);
 
 describe('mix recipe metric claims against the acceptance render law', () => {
     const recipes = getMixRecipeCatalog().recipes;
-    const claimed = recipes.filter(
-        (recipe) => firstUnrenderableDevice(recipe) === null && dynamicsClaims(recipe).length > 0
-    );
-    const dry = new Map(SOURCE_POSITIONS.map((position) => [position, measure(null, position, 'before')]));
-    const dryFigures = (position: (typeof SOURCE_POSITIONS)[number]) => {
-        const figures = dry.get(position);
+    const claimed = recipes.filter((recipe) => firstUnrenderableDevice(recipe) === null);
+    const dry = new Map(SOURCES.map((source) => [source.name, measure(null, source, 'before')]));
+    const dryFigures = (source: LawSource) => {
+        const figures = dry.get(source.name);
         if (figures === undefined) {
-            throw new Error(`No dry render of source ${position}.`);
+            throw new Error(`No dry render of ${source.name}.`);
         }
         return figures;
     };
-    const dryPeak = (position: (typeof SOURCE_POSITIONS)[number]): number => dryFigures(position).truePeak;
+    const dryPeak = (source: LawSource): number =>
+        figure(dryFigures(source), { metric: 'truePeak', direction: 'hold' });
     /** The figures before the recipe runs: the devices its edit steps change, or the dry source when it only inserts. */
-    const beforeFigures = (recipe: MixRecipe, position: (typeof SOURCE_POSITIONS)[number]) => {
+    const beforeFigures = (recipe: MixRecipe, source: LawSource) => {
         if (recipe.steps.some((step) => step.kind === 'edit')) {
-            return measure(recipe, position, 'before');
+            return measure(recipe, source, 'before');
         }
-        return dryFigures(position);
+        return dryFigures(source);
     };
+
+    it('names every authored renderable recipe with no level, dynamics or transient claim, and only those', () => {
+        const unchecked = claimed
+            .filter((recipe) => recipe.origin === undefined && checkedClaims(recipe).length === 0)
+            .map((recipe) => [recipe.id, 'states only band, spectral or stereo moves']);
+        expect(Object.fromEntries(unchecked)).toEqual(RECIPES_WITH_NO_CHECKABLE_CLAIM);
+    });
+
+    it('states no metric for a factory preset recipe, so none is left unchecked', () => {
+        const stated = claimed.filter((recipe) => recipe.origin !== undefined && recipe.metrics.length > 0);
+        expect(stated.map((recipe) => recipe.id)).toEqual([]);
+    });
 
     it('names every recipe the law cannot render, and only those, with the device it has no rule for', () => {
         const unrenderable = Object.fromEntries(
@@ -279,42 +364,38 @@ describe('mix recipe metric claims against the acceptance render law', () => {
 
     it('names every claim no law source drives the compressor for, and only those', () => {
         const undriven = claimed.flatMap((recipe) =>
-            dynamicsClaims(recipe)
-                .filter((claim) =>
-                    SOURCE_POSITIONS.every((position) => !isMeantFor(recipe, claim.metric, dryPeak(position)))
-                )
+            checkedClaims(recipe)
+                .filter((claim) => SOURCES.every((source) => !isMeantFor(recipe, claim.metric, dryPeak(source))))
                 .map((claim) => `${recipe.id}:${claim.metric}`)
         );
         expect(undriven).toEqual(CLAIMS_NO_LAW_SOURCE_DRIVES);
     });
 
-    describe.each(SOURCE_POSITIONS)('on source %i at the parameter midpoints', (position) => {
+    describe.each(SOURCES)('on $name at the parameter midpoints', (source) => {
         const rows = claimed
             .map((recipe) => ({
                 recipe,
-                claims: dynamicsClaims(recipe).filter((claim) => isMeantFor(recipe, claim.metric, dryPeak(position))),
+                claims: checkedClaims(recipe).filter((claim) => isMeantFor(recipe, claim.metric, dryPeak(source))),
             }))
             .filter((row) => row.claims.length > 0);
 
         it.each(rows.map((row) => [row.recipe.id, row] as const))(
-            '%s moves every dynamics metric it claims the way it claims',
+            '%s moves every metric it claims the way it claims',
             (_id, { recipe, claims }) => {
-                const before = beforeFigures(recipe, position);
-                const after = measure(recipe, position);
-                expect(
-                    claims.map((claim) => ({
+                const before = beforeFigures(recipe, source);
+                const after = measure(recipe, source);
+                const observed = claims.map((claim) => {
+                    const from = figure(before, claim);
+                    const to = figure(after, claim);
+                    return {
                         metric: claim.metric,
-                        moved: movedDirection(claim.metric, before[claim.metric], after[claim.metric], claim.direction),
-                        before: before[claim.metric],
-                        after: after[claim.metric],
-                    }))
-                ).toEqual(
-                    claims.map((claim) => ({
-                        metric: claim.metric,
-                        moved: claim.direction,
-                        before: before[claim.metric],
-                        after: after[claim.metric],
-                    }))
+                        moved: movedDirection(claim.metric, from, to, claim.direction),
+                        before: from,
+                        after: to,
+                    };
+                });
+                expect(observed).toEqual(
+                    observed.map((entry, index) => ({ ...entry, moved: claims[index]!.direction }))
                 );
             },
             120_000
