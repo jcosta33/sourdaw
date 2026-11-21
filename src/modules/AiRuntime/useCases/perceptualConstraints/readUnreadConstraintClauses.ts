@@ -19,6 +19,7 @@ import {
     MASK_GLYPH,
     MIX_PRONOUN,
     MODAL_VERB_NEGATION,
+    MOVE_LEAD_VERB,
     NEGATION,
     NO,
     NOT_PERMITTED,
@@ -69,11 +70,12 @@ const PROTECTIVE = new RegExp(
     'iu'
 );
 /**
- * A keep naming the move it prevents ("keep the mix from getting louder", "from widening") bounds that
- * move, so it governs ways a quality moves as a negation does rather than holding what it names.
+ * A keep naming the move it prevents ("keep the mix from getting louder", "from going brighter", "from
+ * sounding wider", "from widening") bounds that move, so it governs ways a quality moves as a negation
+ * does rather than holding what it names.
  */
 const PREVENTED_MOVE = new RegExp(
-    String.raw`\b${FROM}\s+(?:${CAUSING_VERB}\s+)?(?:${DEGREE_WORD}\s+)?${MOVE_WORD}`,
+    String.raw`\b${FROM}\s+(?:(?:${CAUSING_VERB}|${MOVE_LEAD_VERB})\s+)?(?:${DEGREE_WORD}\s+)?${MOVE_WORD}`,
     'iu'
 );
 /**

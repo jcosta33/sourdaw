@@ -2545,6 +2545,52 @@ describe('reading only governed protections and whole object names', () => {
         });
     });
 
+    // A keep or stop names the move it prevents through any verb a quality becomes or shows a level
+    // through, so each bounds the direction it names on its object, as "getting" does.
+    const MOVE_VERB_NAMES = ['Lead Vox', 'Keys', 'Bass (DI)', 'Keys-2', 'Drums (loud)', 'Vox #2'];
+    it.each([
+        ['keep the mix from going brighter', 'brightness-not-raised-v1', MIX],
+        ['keep Lead Vox from going wider', 'stereo-width-not-widened-v1', onTracks('extra-0')],
+        ['keep the drums from going darker', 'brightness-not-lowered-v1', onTracks('drums')],
+        ['keep the vocal from turning wider', 'stereo-width-not-widened-v1', onTracks('vocal')],
+        ['keep the drums from growing brighter', 'brightness-not-raised-v1', onTracks('drums')],
+        ['keep the mix from appearing darker', 'brightness-not-lowered-v1', MIX],
+        ['keep Keys from going wider', 'stereo-width-not-widened-v1', onTracks('extra-1')],
+        ['keep Bass (DI) from sounding brighter', 'brightness-not-raised-v1', onTracks('extra-2')],
+        ['keep Keys-2 from sounding brighter', 'brightness-not-raised-v1', onTracks('extra-3')],
+        ['keep Drums (loud) from sounding wider', 'stereo-width-not-widened-v1', onTracks('extra-4')],
+        ['keep Vox #2 from sounding brighter', 'brightness-not-raised-v1', onTracks('extra-5')],
+        ['keep the drums from going louder', 'loudness-not-raised-v1', onTracks('drums')],
+        ['keep the mix from going quieter', 'loudness-not-lowered-v1', MIX],
+        ['keep the mix from turning narrower', 'stereo-width-not-narrowed-v1', MIX],
+        ['stop the vocal from looking louder', 'loudness-not-raised-v1', onTracks('vocal')],
+        ['prevent the mix from coming across wider', 'stereo-width-not-widened-v1', MIX],
+        ['keep the drums from ending up less dynamic', 'dynamics-not-reduced-v1', onTracks('drums')],
+    ] satisfies [string, MeasuredPerceptualConstraint['constraintId'], PerceptualConstraintScope][])(
+        'bounds "%s"',
+        (prompt, constraintId, scope) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext(...MOVE_VERB_NAMES))).toEqual({
+                constraints: [measured(constraintId, prompt, scope)],
+                unsupported: [],
+            });
+        }
+    );
+
+    // An object no reader can measure records the prevented move unsupported, never nothing.
+    it.each([
+        'keep every track from going wider',
+        'keep every track from sounding brighter',
+        'keep "Drums" from sounding brighter',
+        'keep Bass (DI) from sounding brighter',
+        'keep Keys-2 from sounding brighter',
+        'keep Vox #2 from sounding brighter',
+    ])('records "%s" unsupported', (prompt) => {
+        expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({
+            constraints: [],
+            unsupported: [unread(prompt, NET_REASON)],
+        });
+    });
+
     // A protection whose object a separator follows goes on past it when the rest is its own
     // complement, so the clause is recorded unsupported, never dropped.
     it.each([

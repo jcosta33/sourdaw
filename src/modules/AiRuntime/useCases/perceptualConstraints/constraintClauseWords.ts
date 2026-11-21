@@ -176,6 +176,43 @@ const MAKING_VERB = words(['make', 'making', 'let', 'letting']);
 export const CAUSING_VERB = String.raw`(?:${MAKING_VERB}|${BECOMING_VERB})`;
 /** The verbs linking a subject to how it sounds: "shouldn't be louder", "sounding bright". */
 export const LINKING_VERB = words(['be', 'being', 'sound', 'sounding', 'feel', 'feeling', 'seem', 'seeming']);
+/** The verbs a quality changes into a level through beside "get" and "become": "from going brighter". */
+const CHANGING_VERB = words([
+    'go',
+    'goes',
+    'going',
+    'turn',
+    'turns',
+    'turning',
+    'grow',
+    'grows',
+    'growing',
+    'end up',
+    'ends up',
+    'ending up',
+    'gets',
+    'becomes',
+]);
+/** The verbs a quality shows as a level through beside the linking verbs: "from looking brighter". */
+const APPEARING_VERB = words([
+    'look',
+    'looks',
+    'looking',
+    'appear',
+    'appears',
+    'appearing',
+    'come across',
+    'comes across',
+    'coming across',
+    'sounds',
+    'feels',
+    'seems',
+]);
+/**
+ * Every verb a move is named through before its direction: "sound louder", "getting wider", "from
+ * going brighter", "turning narrower", "coming across darker". The verb is never part of the object.
+ */
+export const MOVE_LEAD_VERB = String.raw`(?:${LINKING_VERB}|${BECOMING_VERB}|${CHANGING_VERB}|${APPEARING_VERB})`;
 
 const AS_WORD = 'as';
 /** "as", which a kept term ("as dynamic") and a kept state ("as it is") stand behind. */
@@ -274,10 +311,10 @@ const PERMISSION_LEAD = String.raw`(?:${FEEL}\s+(?:${PERMITTED_PERSON}\s+)?)?${P
  */
 export const NOT_PERMITTED = String.raw`(?<!\b(?:${ANY_NEGATION}|${NOBODY})(?:\s+${PERMISSION_ADVERB})*(?:\s+${PERMISSION_LEAD})?\s+)`;
 /**
- * The one leading words a move clause names its move through: "sound louder", "getting any wider". The
- * linking or becoming verb is never part of the object, so "sound louder" is a louder clause.
+ * The one leading words a move clause names its move through: "sound louder", "getting any wider",
+ * "going brighter". The verb is never part of the object, so "sound louder" is a louder clause.
  */
-export const DIRECTION_LEAD = String.raw`(?:(?:${LINKING_VERB}|${BECOMING_VERB})\s+)?(?:${ANY}\s+)?`;
+export const DIRECTION_LEAD = String.raw`(?:${MOVE_LEAD_VERB}\s+)?(?:${ANY}\s+)?`;
 const PLAIN_PREDICATE_WORD = words([...AUXILIARY_WORDS, ...PREDICATE_VERB_WORDS, ...COMPLEMENT_WORDS]);
 /**
  * The words opening a predicate or its complement, which an object member never holds, so "the vocal
