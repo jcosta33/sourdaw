@@ -1,7 +1,7 @@
 import { dbToGain } from '#/utils/audioLevelLaw';
-import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 import { FLANGER_MIN_DELAY_SECONDS } from '../models/DeviceParamLaws';
+import { resolveDrumKitBy } from '../models/DrumKitSelection';
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
 import { type OfflineCurveWriteTargets } from '../models/OfflineCurveWriteTargets';
 import { type OfflineDeviceNode } from '../models/OfflineDeviceNode';

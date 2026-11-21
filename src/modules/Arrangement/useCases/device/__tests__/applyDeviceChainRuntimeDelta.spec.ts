@@ -32,14 +32,19 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn<(message: string) => void>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
-    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
-    getTrackStrip: mocks.getTrackStrip,
-    matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
-    createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
-    mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
+        getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+        getTrackStrip: mocks.getTrackStrip,
+        matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
+        createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+        mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isDrumDevice: actual.isDrumDevice,
+    };
+});
 
 vi.mock('../../projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: mocks.projectTrackToLiveStrip }));
 
@@ -47,9 +52,14 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: mocks.captureProjectRevision,
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        captureProjectRevision: mocks.captureProjectRevision,
+        captureProjectRootIdentity: actual.captureProjectRootIdentity,
+        getCrdtDoc: actual.getCrdtDoc,
+    };
+});
 
 function seedTrack(): Track {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });

@@ -20,11 +20,12 @@ import {
 } from '../models/VibeRunPlan';
 import { isSilentVibeRunCell } from '../validators/isSilentVibeRunCell';
 
-import { resolveRoleFamily } from './canonicalRoleFamilies';
+import { CANONICAL_ROLE_OPTIONS, resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
 import { findPlannableTrackExclusion } from './findPlannableTrackExclusion';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 import { readBriefProtectedTrackIds } from './readBriefProtectedTrackIds';
+import { servesDrumPart } from './servesDrumPart';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -307,7 +308,10 @@ function classifyRoleTracks(
     const excludedTargets: VibeRunExcludedTarget[] = [];
     const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
     for (const track of roleTracks) {
-        const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
+        const canonicalRole = CANONICAL_ROLE_OPTIONS.find((role) => role === track.canonicalRole?.role);
+        const recipes = rolePlanRecipes.filter(
+            (recipe) => servesDrumPart(recipe, canonicalRole) && canApplyEditSteps(recipe, track)
+        );
         const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
         if (recipes.length === 0) {
             excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
