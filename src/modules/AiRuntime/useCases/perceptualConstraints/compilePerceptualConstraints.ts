@@ -1,7 +1,6 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import {
-    type MeasuredPerceptualConstraint,
     type PerceptualConstraintReading,
     type PerceptualConstraintScope,
     type UnsupportedPerceptualConstraint,
@@ -13,29 +12,28 @@ import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp
 import { resolveRoleFamily } from '../canonicalRoleFamilies';
 import { maskTrackReferences } from '../maskTrackReferences';
 
+import {
+    CLAUSE_END,
+    HOLDING_KEEP,
+    MIX_WORDS,
+    normalizeObjectText,
+    OBJECT_MEMBER,
+    OBJECT_MEMBER_SEPARATOR,
+    ROLE_WORDS,
+} from './constraintClauseWords';
+import { type MeasuredConstraintId, QUALITY_OF } from './constraintDirections';
+import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
+import { type ConsumedSpan, readUnreadConstraintClauses } from './readUnreadConstraintClauses';
+
 type ObjectResolution =
     | { kind: 'mix' }
     | { kind: 'tracks'; trackIds: string[]; families: (SemanticCommandListRoleFamily | null)[] }
     | { kind: 'unresolved' };
 
-type ClauseMatch = { clause: string; object: string | null; start: number };
-type MeasuredConstraintId = MeasuredPerceptualConstraint['constraintId'];
-/**
- * A clause a measured-hold reader consumed: its own words, the span it covers, the holds it states,
- * and its object. `unreadable` says why the clause cannot be held on any one scope.
- */
-type HoldClause = {
-    clause: string;
-    start: number;
-    end: number;
-    constraintIds: MeasuredConstraintId[];
-    object: string | null;
-    unreadable: string | null;
-};
+type ClauseMatch = { clause: string; object: string | null; start: number; end: number };
 
 const LOW_END = String.raw`(?:low|bottom)[\s-]+end`;
 const OBJECT_TAIL = String.raw`(?:\s+(?:of|on|in)\s+(?<object>[^,.;:!?]+?))?`;
-const CLAUSE_END = String.raw`(?=\s*(?:$|[,.;:!?]|\b(?:and|but|while|so|then|please)\b))`;
 const LOW_END_PROHIBITION = new RegExp(
     String.raw`\b(?:do\s+not|don['’]?t|never|without|no\s+changes?\s+to)\s+(?:(?:touch(?:ing)?|chang(?:e|ing)|alter(?:ing)?|affect(?:ing)?|mess(?:ing)?\s+with)\s+)?the\s+${LOW_END}${OBJECT_TAIL}${CLAUSE_END}`,
     'giu'
@@ -44,128 +42,20 @@ const LOW_END_PRESERVATION = new RegExp(
     String.raw`\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+the\s+${LOW_END}${OBJECT_TAIL}\s+(?:alone|untouched|unchanged|intact|as\s+(?:it\s+)?is)${CLAUSE_END}`,
     'giu'
 );
-const QUALITY_VERBS = String.raw`(?:keep|keeping|preserve|preserving|maintain|maintaining|retain|retaining)`;
 /** At most four words, so a quality later in the request never reads as this clause's object. */
 const QUALITY_OBJECT = String.raw`(?<object>(?:[^\s,.;:!?]+\s+){0,3}?[^\s,.;:!?]+)`;
-const OBJECT_MEMBER_SEPARATOR = /\s*(?:,|&|\band\b)\s*/u;
-const LEADING_DETERMINER = /^(?:the|my|our|this|that)\s+/u;
-const MIX_WORDS = new Set(['mix', 'whole mix', 'song', 'whole song', 'project', 'master', 'master bus']);
-const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = new Map([
-    ['vocal', 'vocal'],
-    ['vocals', 'vocal'],
-    ['lead vocal', 'vocal'],
-    ['lead vocals', 'vocal'],
-    ['vox', 'vocal'],
-    ['drum', 'drums'],
-    ['drums', 'drums'],
-    ['bass', 'bass'],
-    ['guitar', 'guitar'],
-    ['guitars', 'guitar'],
-    ['keys', 'keys'],
-]);
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
-
-/**
- * A word an object member may hold: never a conjunction, a direction, a negation or a copula, so a
- * member never runs into the next clause ("The vocal is louder and the drums must not …").
- */
-const WORD = String.raw`(?!(?:and|or|but|louder|quieter|softer|is|are|be|not|never|without|cannot|do|does|will|must|should|may|can|don['’]?t|doesn['’]?t|won['’]?t|mustn['’]?t|shouldn['’]?t|can['’]?t)(?![\p{L}\p{N}'’]))[^\s,.;:!?]+`;
-const MIX_PRONOUN = String.raw`(?:it|everything|anything)`;
-/** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
-const SCOPE_WORD = Array.from(ROLE_WORDS.keys())
-    .concat(Array.from(MIX_WORDS))
-    .toSorted((left, right) => right.length - left.length)
-    .map((word) =>
-        word
-            .split(' ')
-            .map(escapeRegExp)
-            .join(String.raw`\s+`)
-    )
-    .join('|');
-/** A masked track name, a role or mix word, a pronoun, or a determiner and a short noun phrase. */
-const OBJECT_MEMBER = String.raw`(?:(?:the|my|our|this|that)\s+${WORD}(?:\s+${WORD}){0,2}?|□+|(?:${SCOPE_WORD}|${MIX_PRONOUN})\b)`;
-/**
- * A list of objects. A conjunction continues it only before another member, so "the vocal and the
- * drums" is one list while "the vocal and brighten the drums" ends at "and".
- */
-const OBJECT_LIST = String.raw`(?<object>${OBJECT_MEMBER}(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)${OBJECT_MEMBER})*)`;
-const LIST_TAIL = String.raw`(?:\s+(?:of|on|in)\s+${OBJECT_LIST})?`;
-const NEGATION = String.raw`(?:do\s+not|don['’]?t|never|without)`;
-const MODAL_NEGATION = String.raw`(?:must\s+not|mustn['’]?t|should\s+not|shouldn['’]?t|may\s+not|can\s*not|can['’]?t|does\s+not|doesn['’]?t|will\s+not|won['’]?t)`;
-/** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
-const CLAUSE_HEAD = String.raw`(?<=^|[,.;:!?]\s*|\b(?:and|but|while|so|then|please)\s+)`;
-/** Longest first, so "louder or quieter" is read as one two-way clause, never as a bound on "louder". */
-const LOUDNESS_DIRECTION = String.raw`(?<direction>louder\s+or\s+(?:quieter|softer)|(?:quieter|softer)\s+or\s+louder|louder|quieter|softer)`;
-/** "sound louder" is a louder clause: the linking verb is never part of the object. */
-const DIRECTION_LEAD = String.raw`(?:(?:sound|feel|seem|get|become|be)\s+)?(?:any\s+)?`;
-const LOUDNESS_VERB = String.raw`(?<verb>raise|raising|increase|increasing|boost|boosting|push|pushing|turn(?:ing)?\s+up|lower|lowering|reduce|reducing|decrease|decreasing|turn(?:ing)?\s+down|change|changing|alter|altering|touch|touching)`;
-const HOLD_SUFFIX = String.raw`(?:\s+(?:the\s+same|unchanged|intact|as\s+(?:it\s+)?is|where\s+it\s+is))?`;
-const LOUDNESS_NOUN_WORD = String.raw`(?:level|loudness|volume)`;
-const HOLD_NOUN_WORD = String.raw`(?:level|loudness|volume|width|image|field|spread|brightness|dynamics|dynamic\s+range)`;
-/** A held noun, with the object it may carry before it ("the vocal level"). */
-const holdNoun = (word: string) => String.raw`(?:(?:□+|(?:${SCOPE_WORD})\b)\s+)?(?:(?:overall|stereo)\s+)?${word}\b`;
-/** Nouns joined by "and" or commas share the clause's one object: "the width and dynamics of the vocal". */
-const nounList = (word: string) =>
-    String.raw`(?<nouns>the\s+${holdNoun(word)}(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)(?:the\s+)?${holdNoun(word)})*)`;
-const NOUN_IN_LIST = new RegExp(
-    String.raw`(?:(?<pre>□+|(?:${SCOPE_WORD})\b)\s+)?(?:(?:overall|stereo)\s+)?(?<noun>${HOLD_NOUN_WORD})\b`,
-    'dgiu'
-);
-const HOLD_PATTERNS = [
-    // "don't make it sound louder", "without making the drums any quieter", "don't let the mix get louder"
-    String.raw`\b${NEGATION}\s+(?:make|making|get|getting|let|letting)(?:\s+(?!any\b)${OBJECT_LIST})?\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
-    // "the mix must not get louder", "the mix doesn't get louder"
-    String.raw`${CLAUSE_HEAD}${OBJECT_LIST}\s+${MODAL_NEGATION}\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
-    // "don't raise the level of the drums", "don't change the drums volume"
-    String.raw`\b${NEGATION}\s+${LOUDNESS_VERB}\s+${nounList(LOUDNESS_NOUN_WORD)}${LIST_TAIL}${CLAUSE_END}`,
-    // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
-    String.raw`\b${QUALITY_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
-    // "keep the Keys at the same level"
-    String.raw`\b(?:keep|keeping)\s+${OBJECT_LIST}\s+at\s+the\s+same\s+${LOUDNESS_NOUN_WORD}${CLAUSE_END}`,
-].map((source) => new RegExp(source, 'dgiu'));
-/**
- * A direction clause whose object is no list the reader can read ("don't make the vocal brighter and
- * louder"): recorded unsupported rather than held on a guessed scope or dropped.
- */
-/**
- * A character of a fallback object: it never crosses a conjunction, a negation or a "please" into the
- * next clause. Those and punctuation are every boundary a readable clause opens or ends at.
- */
-const IN_CLAUSE = String.raw`(?:(?!\b(?:and|or|but|while|so|then|please)\b|\b${NEGATION})[^,.;:!?])`;
-const UNREADABLE_DIRECTION = new RegExp(
-    String.raw`\b${NEGATION}\s+(?:make|making|get|getting|let|letting)\s+(?<object>${IN_CLAUSE}+?(?:\s+(?:and|or))?)\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
-    'dgiu'
-);
-const RAISING_VERB = /^(?:rais|increas|boost|push|turn(?:ing)?\s+up)/iu;
-const LOWERING_VERB = /^(?:lower|reduc|decreas|turn(?:ing)?\s+down)/iu;
 const MIX_PRONOUNS = new Set(['it', 'everything', 'anything']);
 const SCOPE_NAMED = new RegExp(
     String.raw`□|\b(?:${Array.from(ROLE_WORDS.keys(), (word) => escapeRegExp(word)).join('|')})\b`,
     'iu'
 );
-const QUALITY_OF: Readonly<Record<MeasuredConstraintId, string>> = {
-    'loudness-held-v1': 'loudness',
-    'loudness-not-raised-v1': 'loudness',
-    'loudness-not-lowered-v1': 'loudness',
-    'stereo-width-held-v1': 'stereo width',
-    'dynamics-held-v1': 'dynamics',
-    'brightness-held-v1': 'brightness',
-};
 /** The catalog descriptors whose preservation a measured hold verifies; `dynamic` is read beside them. */
 const DESCRIPTOR_HOLDS: ReadonlyMap<string, MeasuredConstraintId> = new Map([
     ['wide', 'stereo-width-held-v1'],
     ['bright', 'brightness-held-v1'],
     ['dynamic', 'dynamics-held-v1'],
 ]);
-
-function normalizeObjectText(text: string): string {
-    return text
-        .toLowerCase()
-        .replaceAll(/["'“”‘’]/gu, '')
-        .replaceAll(/\s+/gu, ' ')
-        .trim()
-        .replace(LEADING_DETERMINER, '');
-}
 
 function nameVariants(name: string): string[] {
     const normalized = normalizeObjectText(name);
@@ -197,8 +87,20 @@ function resolveMember(member: string, context: ProjectContext): ObjectResolutio
     return { kind: 'unresolved' };
 }
 
-/** A list ("the Bass and the Keys") resolves member by member; any unresolved member leaves the whole unresolved. */
+/**
+ * The whole object text first, so a name holding a separator ("Lead or Rhythm", "Salt and Pepper")
+ * is one object; only text that names nothing whole is read as a list.
+ */
 function resolveConstraintObject(object: string, context: ProjectContext): ObjectResolution {
+    const whole = resolveMember(object, context);
+    if (whole.kind !== 'unresolved') {
+        return whole;
+    }
+    return resolveMemberList(object, context);
+}
+
+/** A list ("the Bass and the Keys") resolves member by member; any unresolved member leaves the whole unresolved. */
+function resolveMemberList(object: string, context: ProjectContext): ObjectResolution {
     const members = object.split(OBJECT_MEMBER_SEPARATOR).filter((member) => member.trim().length > 0);
     const trackIds: string[] = [];
     const families: (SemanticCommandListRoleFamily | null)[] = [];
@@ -222,128 +124,20 @@ function resolveConstraintObject(object: string, context: ProjectContext): Objec
 
 function readClauses(pattern: RegExp, masked: string, prompt: string): ClauseMatch[] {
     return Array.from(masked.matchAll(pattern), (match) => {
-        const clause = prompt.slice(match.index, match.index + match[0].length).trim();
+        const end = match.index + match[0].length;
+        const clause = prompt.slice(match.index, end).trim();
         const objectText = match.groups?.object;
         if (objectText === undefined) {
-            return { clause, object: null, start: match.index };
+            return { clause, object: null, start: match.index, end };
         }
         const objectStart = match.index + match[0].lastIndexOf(objectText);
-        return { clause, object: prompt.slice(objectStart, objectStart + objectText.length), start: match.index };
+        const object = prompt.slice(objectStart, objectStart + objectText.length);
+        return { clause, object, start: match.index, end };
     });
 }
 
 function toScope(resolution: Extract<ObjectResolution, { kind: 'mix' | 'tracks' }>): PerceptualConstraintScope {
     return resolution.kind === 'mix' ? { kind: 'mix' } : { kind: 'tracks', trackIds: resolution.trackIds };
-}
-
-function familyOfNoun(noun: string, verb: string | undefined): MeasuredConstraintId {
-    const word = noun.toLowerCase();
-    if (/^(?:width|image|field|spread)$/u.test(word)) {
-        return 'stereo-width-held-v1';
-    }
-    if (word === 'brightness') {
-        return 'brightness-held-v1';
-    }
-    if (word.startsWith('dynamic')) {
-        return 'dynamics-held-v1';
-    }
-    if (verb !== undefined && RAISING_VERB.test(verb)) {
-        return 'loudness-not-raised-v1';
-    }
-    if (verb !== undefined && LOWERING_VERB.test(verb)) {
-        return 'loudness-not-lowered-v1';
-    }
-    return 'loudness-held-v1';
-}
-
-function directionHold(direction: string): MeasuredConstraintId {
-    const word = direction.toLowerCase();
-    if (word === 'louder') {
-        return 'loudness-not-raised-v1';
-    }
-    if (word === 'quieter' || word === 'softer') {
-        return 'loudness-not-lowered-v1';
-    }
-    return 'loudness-held-v1';
-}
-
-function spanText(prompt: string, span: [number, number] | undefined): string | null {
-    return span === undefined ? null : prompt.slice(span[0], span[1]);
-}
-
-/**
- * Each noun's family, and the clause's one object: the "of" tail or an object standing before a noun.
- * Two different objects in one clause hold no single scope, so the clause is unreadable.
- */
-function readNounClause(
-    match: RegExpExecArray,
-    clause: string,
-    prompt: string
-): Omit<HoldClause, 'clause' | 'start' | 'end'> {
-    const nounsSpan = match.indices?.groups?.nouns;
-    const nouns = match.groups?.nouns ?? '';
-    const constraintIds: MeasuredConstraintId[] = [];
-    const objects = new Map<string, string>();
-    const tail = spanText(prompt, match.indices?.groups?.object);
-    if (tail !== null) {
-        objects.set(normalizeObjectText(tail), tail);
-    }
-    for (const noun of nouns.matchAll(NOUN_IN_LIST)) {
-        const id = familyOfNoun(noun.groups?.noun ?? '', match.groups?.verb);
-        if (!constraintIds.includes(id)) {
-            constraintIds.push(id);
-        }
-        const preSpan = noun.indices?.groups?.pre;
-        if (preSpan !== undefined && nounsSpan !== undefined) {
-            const pre = prompt.slice(nounsSpan[0] + preSpan[0], nounsSpan[0] + preSpan[1]);
-            objects.set(normalizeObjectText(pre), pre);
-        }
-    }
-    const [object = null, ...others] = objects.values();
-    return {
-        constraintIds,
-        object,
-        unreadable: others.length > 0 ? `“${clause}” names more than one scope for one hold.` : null,
-    };
-}
-
-function readHoldMatch(match: RegExpExecArray, prompt: string): HoldClause {
-    const start = match.index;
-    const end = start + match[0].length;
-    const clause = prompt.slice(start, end).trim();
-    if (match.groups?.nouns !== undefined) {
-        return { clause, start, end, ...readNounClause(match, clause, prompt) };
-    }
-    const direction = match.groups?.direction;
-    return {
-        clause,
-        start,
-        end,
-        constraintIds: [direction === undefined ? 'loudness-held-v1' : directionHold(direction)],
-        object: spanText(prompt, match.indices?.groups?.object),
-        unreadable: null,
-    };
-}
-
-/** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
-function readHoldClauses(masked: string, prompt: string): HoldClause[] {
-    const readable = HOLD_PATTERNS.flatMap((pattern) =>
-        Array.from(masked.matchAll(pattern), (match) => readHoldMatch(match, prompt))
-    );
-    const unreadable = Array.from(masked.matchAll(UNREADABLE_DIRECTION), (match): HoldClause => {
-        const object = spanText(prompt, match.indices?.groups?.object) ?? '';
-        return {
-            ...readHoldMatch(match, prompt),
-            unreadable: `“${object}” names no track or mix whose loudness can be measured.`,
-        };
-    });
-    // No readable clause opens or ends inside a fallback object, so the two overlap only by sharing a
-    // start, where the stable sort keeps the readable clause, which comes first.
-    const clauses = readable.concat(unreadable).toSorted((left, right) => left.start - right.start);
-    return clauses.filter(
-        (clause, index) =>
-            !clauses.slice(0, index).some((other) => other.start < clause.end && clause.start < other.end)
-    );
 }
 
 /**
@@ -365,13 +159,19 @@ function resolveHoldObject(
     return resolveConstraintObject(object, context);
 }
 
-function pushMeasuredHolds(
-    reading: PerceptualConstraintReading,
-    hold: Pick<HoldClause, 'clause' | 'start' | 'object' | 'constraintIds' | 'unreadable'>,
-    masked: string,
-    context: ProjectContext
-) {
-    const { clause, object, constraintIds } = hold;
+/** What every reader of one request shares: its masked and own text, the project, and the reading it fills. */
+type RequestReader = {
+    masked: string;
+    prompt: string;
+    context: ProjectContext;
+    reading: PerceptualConstraintReading;
+};
+
+function pushMeasuredHolds({ masked, context, reading }: RequestReader, clause: string, hold: HoldPart) {
+    const { object, constraintIds } = hold;
+    if (constraintIds.length === 0) {
+        return;
+    }
     const qualities = Array.from(new Set(constraintIds.map((id) => QUALITY_OF[id]))).join(' and ');
     if (hold.unreadable !== null) {
         reading.unsupported.push({ constraintId: 'unsupported', clause, reason: hold.unreadable });
@@ -418,7 +218,7 @@ function readLowEndConstraints(
     prompt: string,
     context: ProjectContext,
     reading: PerceptualConstraintReading
-) {
+): ConsumedSpan[] {
     const clauses = [
         ...readClauses(LOW_END_PROHIBITION, masked, prompt),
         ...readClauses(LOW_END_PRESERVATION, masked, prompt),
@@ -441,10 +241,12 @@ function readLowEndConstraints(
             protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
         });
     }
+    return clauses;
 }
 
 type QualityPattern = {
     pattern: RegExp;
+    continuation: RegExp;
     termPattern: RegExp;
     descriptorOf: (term: string) => string | undefined;
 };
@@ -453,6 +255,7 @@ type QualityPattern = {
  * A kept quality: a catalog term, or "dynamic", which no recipe produces but a crest factor measures.
  * Further terms joined by "and", "but" or commas share the object ("keep the vocal intimate and
  * dynamic"), and are read only when the clause ends after them, so "and warm up the drums" is not one.
+ * A later object with its own term continues the keep ("keep the vocal warm and the drums bright").
  */
 function readQualityPattern(): QualityPattern {
     const catalog = getMixRecipeCatalog();
@@ -473,15 +276,20 @@ function readQualityPattern(): QualityPattern {
         )
         .join('|');
     const term = String.raw`(?:${terms})(?![\p{L}\p{N}])`;
+    const more = String.raw`(?<more>(?:(?:\s*,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?:as\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
-        String.raw`\b${QUALITY_VERBS}\s+${QUALITY_OBJECT}\s+(?:sounding\s+|feeling\s+|as\s+)?(?<term>${term})(?<more>(?:(?:\s*,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?:as\s+)?${term})+${CLAUSE_END})?`,
+        String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+(?:sounding\s+|feeling\s+|as\s+)?(?<term>${term})${more}`,
         'giu'
+    );
+    const continuation = new RegExp(
+        String.raw`(?:\s*,\s*(?:and\s+)?|\s+and\s+)(?<object>${OBJECT_MEMBER})\s+(?:sounding\s+|feeling\s+|as\s+)?(?<term>${term})${more}${CLAUSE_END}`,
+        'yiu'
     );
     const descriptorOf = (candidate: string): string | undefined => {
         const normalized = candidate.toLowerCase().replaceAll(/[\s-]+/gu, ' ');
         return entries.find((entry) => entry.term.replaceAll('-', ' ') === normalized)?.descriptor;
     };
-    return { pattern, termPattern: new RegExp(term, 'giu'), descriptorOf };
+    return { pattern, continuation, termPattern: new RegExp(term, 'giu'), descriptorOf };
 }
 
 function unsupportedQuality(clause: string, reason: string): UnsupportedPerceptualConstraint {
@@ -508,75 +316,112 @@ function readIntimacy(clause: string, object: string, context: ProjectContext, r
     });
 }
 
+type QualityPart = { start: number; object: string; terms: string[] };
+
+/** A kept quality's object and terms, read from the prompt by the match's own offsets. */
+function readQualityPart(match: RegExpExecArray, prompt: string, termPattern: RegExp): QualityPart {
+    const objectText = match.groups?.object ?? '';
+    const objectStart = match.index + match[0].indexOf(objectText);
+    const terms = [
+        match.groups?.term ?? '',
+        ...Array.from((match.groups?.more ?? '').matchAll(termPattern), (entry) => entry[0]),
+    ];
+    return { start: match.index, object: prompt.slice(objectStart, objectStart + objectText.length), terms };
+}
+
+/** The match and every later object a continuation adds under its keep, with where the last one ends. */
+function readQualityParts(
+    match: RegExpExecArray,
+    unread: string,
+    prompt: string,
+    { continuation, termPattern }: Pick<QualityPattern, 'continuation' | 'termPattern'>
+): { parts: QualityPart[]; end: number } {
+    const parts = [readQualityPart(match, prompt, termPattern)];
+    let end = match.index + match[0].length;
+    continuation.lastIndex = end;
+    let next = continuation.exec(unread);
+    while (next !== null) {
+        parts.push(readQualityPart(next, prompt, termPattern));
+        end = next.index + next[0].length;
+        continuation.lastIndex = end;
+        next = continuation.exec(unread);
+    }
+    return { parts, end };
+}
+
+/** One kept term of a quality clause, with the clause it is quoted by and the part holding its object. */
+type KeptTerm = { term: string; clause: string; part: QualityPart };
+
+function pushQualityTerm(
+    reader: RequestReader,
+    { term, clause, part }: KeptTerm,
+    descriptorOf: QualityPattern['descriptorOf']
+) {
+    const { context, reading } = reader;
+    const descriptor = descriptorOf(term);
+    const hold = descriptor === undefined ? undefined : DESCRIPTOR_HOLDS.get(descriptor);
+    if (hold !== undefined) {
+        const holdPart = { start: part.start, object: part.object, constraintIds: [hold], unreadable: null };
+        pushMeasuredHolds(reader, clause, holdPart);
+        return;
+    }
+    if (descriptor === 'intimate') {
+        readIntimacy(clause, part.object, context, reading);
+        return;
+    }
+    reading.unsupported.push(
+        unsupportedQuality(clause, `No measurement the application takes shows that “${term}” holds.`)
+    );
+}
+
 /**
  * `unread` is the masked text with the hold clauses blanked, so no quality is read twice; a pronoun's
- * scope is still judged against the whole masked request.
+ * scope is still judged against the whole masked request. Returns the spans it read.
  */
-function readQualityConstraints(
-    unread: string,
-    masked: string,
-    prompt: string,
-    context: ProjectContext,
-    reading: PerceptualConstraintReading
-) {
-    const { pattern, termPattern, descriptorOf } = readQualityPattern();
+function readQualityConstraints(unread: string, reader: RequestReader): ConsumedSpan[] {
+    const { prompt } = reader;
+    const { pattern, continuation, termPattern, descriptorOf } = readQualityPattern();
+    const spans: ConsumedSpan[] = [];
     for (const match of unread.matchAll(pattern)) {
-        const objectText = match.groups?.object ?? '';
-        const objectStart = match.index + match[0].indexOf(objectText);
-        const object = prompt.slice(objectStart, objectStart + objectText.length);
+        const { parts, end } = readQualityParts(match, unread, prompt, { continuation, termPattern });
+        spans.push({ start: match.index, end });
+        const clause = prompt.slice(match.index, end).trim();
         // "keep the lo-fi vibe" states a quality with no object to hold it on.
-        if (normalizeObjectText(object).length === 0) {
-            continue;
-        }
-        const clause = prompt.slice(match.index, match.index + match[0].length).trim();
-        const terms = [
-            match.groups?.term ?? '',
-            ...Array.from((match.groups?.more ?? '').matchAll(termPattern), (entry) => entry[0]),
-        ];
-        for (const term of terms) {
-            const descriptor = descriptorOf(term);
-            const hold = descriptor === undefined ? undefined : DESCRIPTOR_HOLDS.get(descriptor);
-            if (hold !== undefined) {
-                pushMeasuredHolds(
-                    reading,
-                    { clause, start: match.index, object, constraintIds: [hold], unreadable: null },
-                    masked,
-                    context
-                );
-                continue;
+        for (const part of parts.filter((entry) => normalizeObjectText(entry.object).length > 0)) {
+            for (const term of part.terms) {
+                pushQualityTerm(reader, { term, clause, part }, descriptorOf);
             }
-            if (descriptor === 'intimate') {
-                readIntimacy(clause, object, context, reading);
-                continue;
-            }
-            reading.unsupported.push(
-                unsupportedQuality(clause, `No measurement the application takes shows that “${term}” holds.`)
-            );
         }
     }
+    return spans;
 }
 
 /**
  * Reads the request's perceptual constraints: a prohibition or preservation of the low end ("don't
- * touch the low end", "leave the low end of the Bass alone"); a loudness clause, one-way ("don't make
- * it louder", a bound that lets it get quieter) or two-way ("don't change the level", a hold); a kept
- * stereo width, dynamics or brightness ("keep the stereo width", "keep the drums as dynamic as they
- * are"); and a preserved quality ("keep the vocal intimate", "keep the mix wide"). A quality is any
- * term of the mix recipe catalog's descriptor vocabulary; one with no measured invariant, or an object
- * that resolves to nothing it can be measured on, is reported unsupported rather than dropped, so the
- * batch it rides can never be approved as verified.
+ * touch the low end", "leave the low end of the Bass alone"); a loudness, width, brightness or
+ * dynamics clause, one-way ("don't make it louder", "don't make the mix any wider", a bound that lets
+ * it move the other way) or two-way ("don't change the level", "keep the stereo width", a hold); and a
+ * preserved quality ("keep the vocal intimate", "keep the mix wide"). A quality is any term of the mix
+ * recipe catalog's descriptor vocabulary; one with no measured invariant, a comparison with another
+ * scope, an object that resolves to nothing it can be measured on, and any protective clause naming a
+ * measured quality that no reader consumed are reported unsupported rather than dropped, so the batch
+ * it rides can never be approved as verified.
  */
 export function compilePerceptualConstraints(prompt: string, context: ProjectContext): PerceptualConstraintReading {
     // A name keeps its place as one masked word, so a clause still holds it as its object, which is
     // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
     const masked = maskTrackReferences(prompt, context, '□');
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
-    readLowEndConstraints(masked, prompt, context, reading);
+    const reader: RequestReader = { masked, prompt, context, reading };
+    const lowEnd = readLowEndConstraints(masked, prompt, context, reading);
     const holds = readHoldClauses(masked, prompt);
     for (const hold of holds) {
-        pushMeasuredHolds(reading, hold, masked, context);
+        for (const part of hold.parts) {
+            pushMeasuredHolds(reader, hold.clause, part);
+        }
     }
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    readQualityConstraints(maskClauses(masked, holds), masked, prompt, context, reading);
+    const qualities = readQualityConstraints(maskClauses(masked, holds), reader);
+    reading.unsupported.push(...readUnreadConstraintClauses(masked, prompt, [...lowEnd, ...holds, ...qualities]));
     return unionPerceptualConstraintReadings(reading);
 }
