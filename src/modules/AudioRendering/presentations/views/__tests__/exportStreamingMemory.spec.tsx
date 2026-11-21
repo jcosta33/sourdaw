@@ -577,6 +577,12 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        isDrumDevice: actual.isDrumDevice,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         openCachedAudioBufferHold: actual.openCachedAudioBufferHold,
         captureOfflineRenderProjectSource: vi.fn(() => {
             throw new Error('Unexpected selection render capture in this fixture');

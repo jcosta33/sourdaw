@@ -1031,7 +1031,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
         // compileRuntimeGrinderNeuralPatch. Node apply sites plus the pure
-        // delta compiler; createWebAudioEngine applies accepted deltas.
+        // delta compiler; the web audio engine's delta application unit
+        // (webAudioEngine/createRuntimeGraphDeltaApplication) compiles and
+        // applies accepted deltas.
         'src/modules/AudioEngine/engine/BacteriaNode.ts': 3,
         'src/modules/AudioEngine/engine/CrustNode.ts': 3,
         'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
@@ -1062,7 +1064,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // through `proofParamBridge`, which is censused separately under
         // 'persistence-runtime' and guard-listed below.
         'src/modules/AudioEngine/engine/ProofNode.ts': 3,
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        'src/modules/AudioEngine/repositories/webAudioEngine/createRuntimeGraphDeltaApplication.ts': 4,
         'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
         // Device-list admission extracts a pure compiler helper and its call.
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
@@ -1126,15 +1128,24 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts': 1,
         // A local parameterValues map captures the projected numeric leaves for metadata-aware comparison.
         'src/modules/Arrangement/models/CapturedDevicePatchProjection.ts': 1,
+        // Count provenance: measured 3 — the restore and write projectors and the
+        // projector-table type each name a detached `devices: Device[]` chain
+        // parameter. Pure projections over a passed-in chain; nothing is published.
+        'src/modules/Arrangement/models/DeviceChainProjectorByActionType.ts': 3,
         // The typed patch helpers operate on detached chains. Toaster's kit
         // snapshots declare two empty scalar footprints.
-        'src/modules/Arrangement/models/DeviceChainActionProjection.ts': 6,
-        // Count provenance: measured 5/1/2 — pure working-owner snapshots,
-        // preset reconstruction and current-owner decoding. These return values
-        // and never publish project state. Plus 2 member assignments (#7166):
-        // `target.owner.devices = …map(…)` and `owner.devices = devices`.
-        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 7,
+        'src/modules/Arrangement/models/DeviceChainProjectors.ts': 6,
+        // Count provenance: measured 3 — the empty working-owner parameter map,
+        // plus the two snapshot projections of owner and source devices. These
+        // return values and never publish project state. Plus 1 member
+        // assignment (#7166): `target.owner.devices = …map(…)`.
+        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 4,
         'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        // Count provenance: measured 2 — the `Owner` type's `devices` field and
+        // the owner pushed from a track's devices, both moved unchanged out of
+        // DevicePatchWritePlan, plus 1 member assignment (#7166):
+        // `owner.devices = devices`. Pure owner projection; nothing is published.
+        'src/modules/Arrangement/models/PlannedOwnerProjection.ts': 3,
         'src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts': 2,
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
