@@ -214,21 +214,41 @@ fn an_output_queue_claimed_without_a_point_reports_nothing() {
     );
 }
 
-/// A block the processor refuses is not its output: what it reported on the
-/// way to failing reaches neither the observers nor the controller.
+/// A block the processor refuses is not its output: what it reported and the
+/// notes it wrote on the way to failing reach neither the observers, the
+/// controller nor the note capture — not in that block, and not carried into
+/// the next one, which delivers only its own.
 #[test]
 fn a_refused_block_forwards_nothing_the_processor_reported() {
     let _hint = flush_hint_guard();
     let plugin = InstalledPlugin::create("vst3-output-refused");
     let mut wrapper = emitter(&plugin);
+    let notes = wrapper.output_note_queue();
     observed(&wrapper);
 
-    process(&mut wrapper, &[], &[refuse()]);
+    process(&mut wrapper, &[note(60, true, 3)], &[refuse()]);
 
     assert_eq!(
         observed(&wrapper),
         [],
         "observers hear nothing of a refused block"
+    );
+    let mut captured = Vec::new();
+    notes.drain(&mut captured);
+    assert_eq!(captured, [], "a refused block's notes are not captured");
+
+    process(&mut wrapper, &[note(64, true, 5)], &[]);
+
+    assert_eq!(observed(&wrapper), [], "nor carried into the next block");
+    notes.drain(&mut captured);
+    assert_eq!(
+        captured,
+        [note(
+            64 + EMITTED_TRANSPOSE as u8,
+            true,
+            5 + EMITTED_DELAY_FRAMES as u32
+        )],
+        "the next block delivers only its own note"
     );
     wrapper.flush_parameters_off_audio_thread();
     assert_ne!(

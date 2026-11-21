@@ -15,7 +15,7 @@
 //! per-bus storage the negotiated layout sizes — and refilled in place.
 //! `process` takes no lock, allocates nothing, and performs no I/O.
 
-use crate::output_notes::OutputNoteQueue;
+use crate::output_notes::{OutputNoteQueue, OUTPUT_NOTE_CAPACITY};
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
@@ -378,11 +378,41 @@ impl IEventListTrait for HostEventList {
 
 /// The `outputEvents` list one block hands the plugin.
 ///
-/// Write-only from the plugin's side: each note it adds goes straight into the
-/// instance's [`OutputNoteQueue`], which is wait-free, so nothing is buffered
-/// here and nothing here allocates.
+/// Write-only from the plugin's side. The notes it adds are held here, in
+/// storage preallocated at construction, until the processor answers: a call it
+/// refuses produced no output the host stands behind, so its notes are
+/// discarded, and only a successful call's are handed to the instance's
+/// wait-free [`OutputNoteQueue`]. Nothing here allocates.
 struct HostOutputEventList {
     notes: Arc<OutputNoteQueue>,
+    staged: Box<[Cell<HostMidiEvent>]>,
+    staged_count: Cell<usize>,
+}
+
+impl HostOutputEventList {
+    fn new(notes: Arc<OutputNoteQueue>) -> Self {
+        Self {
+            notes,
+            staged: (0..OUTPUT_NOTE_CAPACITY)
+                .map(|_| Cell::new(HostMidiEvent::default()))
+                .collect(),
+            staged_count: Cell::new(0),
+        }
+    }
+
+    /// Hand this call's notes to the queue, in the order the plugin wrote
+    /// them. **RT-safe.** A note the queue has no room for is counted there.
+    fn commit(&self) {
+        for note in &self.staged[..self.staged_count.get()] {
+            self.notes.push(note.get());
+        }
+        self.discard();
+    }
+
+    /// Drop this call's notes. **RT-safe.**
+    fn discard(&self) {
+        self.staged_count.set(0);
+    }
 }
 
 impl Class for HostOutputEventList {
@@ -412,11 +442,14 @@ impl IEventListTrait for HostOutputEventList {
         let Some(note) = output_note(event) else {
             return kResultOk;
         };
-        if self.notes.push(note) {
-            kResultOk
-        } else {
-            kResultFalse
-        }
+        let count = self.staged_count.get();
+        let Some(slot) = self.staged.get(count) else {
+            self.notes.count_dropped();
+            return kResultFalse;
+        };
+        slot.set(note);
+        self.staged_count.set(count + 1);
+        kResultOk
     }
 }
 
@@ -1477,9 +1510,7 @@ impl Vst3Wrapper {
             parameter_changes: ComWrapper::new(HostParameterChanges::new()),
             event_list: ComWrapper::new(HostEventList::new()),
             output_parameter_changes: ComWrapper::new(HostParameterChanges::new()),
-            output_events: ComWrapper::new(HostOutputEventList {
-                notes: Arc::clone(&output_notes),
-            }),
+            output_events: ComWrapper::new(HostOutputEventList::new(Arc::clone(&output_notes))),
             output_notes,
             read_only_parameters,
             process_context: Box::new(empty_process_context(sample_rate)),
@@ -2017,6 +2048,7 @@ impl Vst3Wrapper {
         }
 
         self.output_parameter_changes.reset();
+        self.output_events.discard();
         let mut data = flush_process_data(
             self.process_mode,
             borrowed_ptr::<_, IParameterChanges>(&self.parameter_changes),
@@ -2032,6 +2064,7 @@ impl Vst3Wrapper {
 
         if flushed {
             self.forward_processor_output();
+            self.output_events.commit();
             self.instance
                 .host
                 .state
@@ -2237,6 +2270,7 @@ impl Vst3Wrapper {
         };
 
         self.output_parameter_changes.reset();
+        self.output_events.discard();
         let refused = {
             let mut data = ProcessData {
                 processMode: self.process_mode,
@@ -2278,6 +2312,7 @@ impl Vst3Wrapper {
 
         if !refused {
             self.forward_processor_output();
+            self.output_events.commit();
         }
 
         if refused {
@@ -2733,15 +2768,6 @@ fn bundle_name(bundle_path: &Path) -> &str {
         .unwrap_or("VST3 Plugin")
 }
 
-/// Read a controller's parameter list in the seam's vocabulary.
-///
-/// VST3 parameters are always normalised to 0..1, so the range reported here is
-/// the format's own rather than a rescaling this host invented. Hidden
-/// parameters are omitted: the format marks them as not for a user to see, and a
-/// generic editor that shows them is showing the plugin's internals.
-///
-/// Free function because the scanner reads the same list from an instance it
-/// never activates.
 /// The ids of every parameter the controller marks read-only, hidden or not,
 /// in ascending order: the readouts a processor reports and nobody edits.
 fn read_only_parameter_ids(controller: &ComPtr<IEditController>) -> Vec<ParamID> {
@@ -2764,6 +2790,15 @@ fn read_only_parameter_ids(controller: &ComPtr<IEditController>) -> Vec<ParamID>
     ids
 }
 
+/// Read a controller's parameter list in the seam's vocabulary.
+///
+/// VST3 parameters are always normalised to 0..1, so the range reported here is
+/// the format's own rather than a rescaling this host invented. Hidden
+/// parameters are omitted: the format marks them as not for a user to see, and a
+/// generic editor that shows them is showing the plugin's internals.
+///
+/// Free function because the scanner reads the same list from an instance it
+/// never activates.
 pub fn read_parameters(controller: &ComPtr<IEditController>) -> Vec<PluginParameter> {
     // SAFETY: control path only; the `ComPtr` holds a reference on a live,
     // initialised controller.

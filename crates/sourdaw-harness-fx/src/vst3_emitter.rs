@@ -12,7 +12,7 @@
 //! Two writes put the host's guards to the test: with `Drive` it also claims an
 //! output queue for [`EMPTY_CLAIM_PARAM_ID`] and adds no point to it, and a
 //! write to [`REFUSE_PARAM_ID`] makes it report [`REFUSED_REPORT`] for the
-//! modulated control and then fail the block.
+//! modulated control and emit its notes, and then fail the block.
 //!
 //! The controller half holds only what the host tells it, so a test reads
 //! through the controller exactly what the host forwarded.
@@ -53,8 +53,8 @@ const PARAMS: [ParamID; 3] = [DRIVE_PARAM_ID, METER_PARAM_ID, MODULATED_PARAM_ID
 /// An output queue the processor claims on every `Drive` write and never
 /// fills. Not a declared parameter: only the host's output list sees it.
 pub const EMPTY_CLAIM_PARAM_ID: ParamID = 23;
-/// Writing this makes the processor report [`REFUSED_REPORT`] and then refuse
-/// the block. Not a declared parameter.
+/// Writing this makes the processor report [`REFUSED_REPORT`] and emit its
+/// notes, and then refuse the block. Not a declared parameter.
 pub const REFUSE_PARAM_ID: ParamID = 24;
 /// What a refused block reports for [`MODULATED_PARAM_ID`] before failing.
 pub const REFUSED_REPORT: ParamValue = 0.25;
@@ -434,6 +434,8 @@ impl IAudioProcessorTrait for Emitter {
                 // SAFETY: the current call's live output list.
                 unsafe { report(changes, MODULATED_PARAM_ID, REFUSED_REPORT) };
             }
+            // SAFETY: the current call's live `ProcessData`.
+            unsafe { emit_notes(data) };
             return kResultFalse;
         }
         // SAFETY: the current call's live `ProcessData`.
