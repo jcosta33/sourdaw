@@ -1,6 +1,7 @@
 import { type Track } from '#/modules/Arrangement/stores';
 import { getAddedDeviceParameterValues } from '#/modules/Arrangement/useCases';
 import { type renderOffline, type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import { isCompressorAutoMakeupEngaged } from '#/utils/dynamicsCompressorMakeupLaw';
 
 import { metricGoalAudioBuffer } from '../useCases/__tests__/metricGoalWorkflowFixture';
 
@@ -48,7 +49,8 @@ const STRIKE_RISE_SECONDS = 0.005;
  *   with its own frequency, gain and Q), by the Audio EQ Cookbook bell Web Audio specifies.
  * - `builtin-compressor`: the Web Audio `DynamicsCompressorNode` it is (`acceptanceRenderLawCompressor`):
  *   a stereo-linked peak read 6 ms ahead, Blink's static curve at its threshold, ratio and knee, the
- *   node's automatic makeup, then the device's own makeup gain.
+ *   node's automatic makeup while its Auto Makeup switch is on (off cancels it, an absent switch reads
+ *   on, `isCompressorAutoMakeupEngaged`), then the device's own makeup gain.
  * - `builtin-gain`: its level in decibels.
  * - `builtin-stereo-widener`: the mid scaled by its mid level, the side by its width and side level,
  *   with the side below its mono-bass frequency removed.
@@ -168,6 +170,7 @@ export function createAcceptanceRenderLaw(input: {
                         attackMs: read('comp-attack'),
                         releaseMs: read('comp-release'),
                         makeupDb: read('comp-makeup'),
+                        autoMakeup: isCompressorAutoMakeupEngaged(values['comp-auto-makeup']),
                     },
                     SAMPLE_RATE
                 );

@@ -7,6 +7,8 @@ export type LawCompressorSettings = {
     attackMs: number;
     releaseMs: number;
     makeupDb: number;
+    /** The device's Auto Makeup switch: on keeps the node's hidden post-gain, off cancels it exactly. */
+    autoMakeup: boolean;
 };
 
 /** Blink's static curve for one setting: linear to the threshold, an exponential knee, then the ratio. */
@@ -138,7 +140,8 @@ export function compress(signal: Stereo, settings: LawCompressorSettings, sample
     const detectorRelease = onePole(DETECTOR_RELEASE_SECONDS, sampleRate);
     const attack = onePole(settings.attackMs * 0.001 * ATTACK_TIME_CONSTANT_FRACTION, sampleRate);
     const release = onePole(settings.releaseMs * 0.001 * RELEASE_TIME_CONSTANT_FRACTION, sampleRate);
-    const makeupDb = settings.makeupDb - 0.6 * decibels(saturate(1, curve));
+    const nodeMakeupDb = settings.autoMakeup ? -0.6 * decibels(saturate(1, curve)) : 0;
+    const makeupDb = settings.makeupDb + nodeMakeupDb;
     const frames = signal.left.length;
     const left = new Float64Array(frames);
     const right = new Float64Array(frames);

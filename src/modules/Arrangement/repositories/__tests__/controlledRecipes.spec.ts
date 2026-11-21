@@ -18,6 +18,7 @@ const expected = [
         role: 'vocal',
         device: 'builtin-compressor',
         metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-24, -16],
             [3, 5],
@@ -31,6 +32,7 @@ const expected = [
         role: 'drums',
         device: 'faust-noise-gate',
         metric: 'rms',
+        direction: 'decrease',
         windows: [
             [-55, -30],
             [0.0002, 0.01],
@@ -44,6 +46,7 @@ const expected = [
         role: 'bass',
         device: 'builtin-compressor',
         metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-24, -16],
             [4, 6],
@@ -57,6 +60,7 @@ const expected = [
         role: 'guitar',
         device: 'builtin-compressor',
         metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-22, -14],
             [3, 5],
@@ -70,6 +74,7 @@ const expected = [
         role: 'keys',
         device: 'builtin-compressor',
         metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-22, -14],
             [3, 5],
@@ -82,7 +87,8 @@ const expected = [
         id: 'bus-controlled',
         role: 'bus',
         device: 'builtin-compressor',
-        metric: 'dynamicRangeEstimate',
+        metric: 'rms',
+        direction: 'increase',
         windows: [
             [-18, -10],
             [2, 3],
@@ -97,6 +103,7 @@ const expected = [
         role: 'master',
         device: 'builtin-compressor',
         metric: 'dynamicRangeEstimate',
+        direction: 'decrease',
         windows: [
             [-14, -6],
             [2, 3],
@@ -142,7 +149,7 @@ describe('controlled authored recipes', () => {
                     ],
                 },
             ]);
-            expect(recipe!.metrics).toEqual([{ metric: entry.metric, direction: 'decrease' }]);
+            expect(recipe!.metrics).toEqual([{ metric: entry.metric, direction: entry.direction }]);
             const body = [...recipe!.prerequisites, ...recipe!.contraindications].join(' ').toLowerCase();
             for (const condition of entry.conditions) {
                 expect(body).toContain(condition);

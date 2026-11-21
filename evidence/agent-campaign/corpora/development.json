@@ -3521,11 +3521,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -0.94 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -5.05 dBFS (exact).",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -0.6 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -4.8 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Chorus",
-                    "metrics": { "integratedLoudness": -0.94, "rms": -5.05 }
+                    "metrics": { "integratedLoudness": -0.6, "rms": -4.8 }
                 }
             }
         },
@@ -4033,7 +4033,7 @@
                             "arguments": {
                                 "deviceId": "$kick-insert",
                                 "paramId": "comp-threshold",
-                                "value": -34
+                                "value": -40
                             },
                             "dependsOn": ["kick-insert"]
                         },
@@ -4092,7 +4092,7 @@
                             "arguments": {
                                 "deviceId": "$snare-insert",
                                 "paramId": "comp-threshold",
-                                "value": -34
+                                "value": -40
                             },
                             "dependsOn": ["snare-insert"]
                         },
@@ -4148,7 +4148,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-threshold",
-                            "value": -34
+                            "value": -40
                         }
                     },
                     {
@@ -4183,7 +4183,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-threshold",
-                            "value": -34
+                            "value": -40
                         }
                     },
                     {
