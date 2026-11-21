@@ -16,6 +16,7 @@ import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { chatStore } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
@@ -176,5 +177,20 @@ describe('a vibe batch whose preview evidence the run plan cannot keep', () => {
         );
         expect(proposedCards()).toEqual([]);
         expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+    });
+
+    it('refuses a re-preview whose fresh evidence the plan cannot keep and leaves the card proposed', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderTrack(input));
+        fillPlanReceipts(brief.runId);
+
+        await expect(reproposePendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
+            status: 'rejected',
+            reason: `the run's plan cannot hold more than ${String(RECEIPT_BOUND)} entries in applicationToolReceipts`,
+        });
+
+        expect(requireOnlyProposedCard().id).toBe(drums.id);
+        expect(agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts).toHaveLength(RECEIPT_BOUND);
     });
 });
