@@ -2728,7 +2728,7 @@ describe('generateToolPlanningOutcome', () => {
 
         // Red when an admission refusal before the local engine loaded settles the turn to ready with no engine.
         it('restores the previous status when admission refuses a local attempt before the engine loaded', async () => {
-            const previous = { state: 'idle' };
+            const previous = { state: 'error', message: 'Error: WebLLM worker failed' };
             mocks.llmStatus.value = previous;
             mocks.isWebLlmLoaded.mockReturnValue(false);
             mocks.backendChain.value = ['webllm'];
