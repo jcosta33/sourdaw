@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -20,6 +20,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -30,6 +31,7 @@ import {
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { initStalenessDetection } from '../../../useCases/freezeBounce/initStalenessDetection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
@@ -64,7 +66,18 @@ function freezeTrackInStore(): void {
         ...track,
         frozen: true,
         frozenBufferId: 'frozen-buffer',
-        freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer' },
+        freezeState: {
+            status: 'frozen',
+            frozenBufferId: 'frozen-buffer',
+            sourceContentHash: 'hash-before-the-take',
+            renderSettings: {
+                sampleRate: 44_100,
+                bitDepth: 32,
+                channelCount: 2,
+                tailLengthSeconds: 0,
+                bakeVersion: FREEZE_BAKE_VERSION,
+            },
+        },
     }));
     flushAutomergeStorageWrites();
 }
@@ -143,7 +156,7 @@ describe('recording onto a frozen track (issue #7239)', () => {
         expect(readTrack().clips).toEqual([]);
     });
 
-    it('refuses to commit a take onto a track frozen after the recording opened', async () => {
+    it('keeps a take committed after the track froze mid-recording and marks the freeze stale', async () => {
         updateTrack(TRACK_ID, (track) => ({ ...track, armed: true }));
         const [provisional] = startRecording(4);
         if (!provisional) {
@@ -151,15 +164,21 @@ describe('recording onto a frozen track (issue #7239)', () => {
         }
         flushAutomergeStorageWrites();
         freezeTrackInStore();
-        const before = JSON.stringify(readTrack().clips);
+        const unsubscribeStaleness = initStalenessDetection();
 
-        await executeAppAction({
-            type: 'commitRecording',
-            payload: { clip: { ...provisional, endBeat: 8, name: 'Recorded take' } },
-        });
-        flushAutomergeStorageWrites();
+        try {
+            await executeAppAction({
+                type: 'commitRecording',
+                payload: { clip: { ...provisional, endBeat: 8, name: 'Recorded take' } },
+            });
+            flushAutomergeStorageWrites();
 
-        expect(JSON.stringify(readTrack().clips)).toBe(before);
-        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+            expect(readTrack().clips.map((clip) => [clip.name, clip.endBeat])).toEqual([['Recorded take', 8]]);
+            await vi.waitFor(() => {
+                expect(readTrack().freezeState.status).toBe('stale');
+            });
+        } finally {
+            unsubscribeStaleness();
+        }
     });
 });

@@ -3,7 +3,6 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ClipStateSnapshot } from '../../events/arrangementClipStateSnapshots';
-import { FROZEN_TRACK_RECORDING_MESSAGE, isFrozenTrackRefusingRecording } from '../../models/FrozenTrackRecording';
 import { type Clip } from '../../stores/trackStore';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -27,19 +26,6 @@ function controllerCommit(action: CommitRecordingAction) {
 
 function owningTrackExists(action: CommitRecordingAction): boolean {
     return getTrackStoreState()?.tracks.some((candidate) => candidate.id === action.payload.clip.trackId) === true;
-}
-
-function owningTrackIsFrozen(action: CommitRecordingAction): boolean {
-    const owner = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.clip.trackId);
-    return owner !== undefined && isFrozenTrackRefusingRecording(owner);
-}
-
-function owningTrackAcceptsTake(action: CommitRecordingAction): boolean {
-    return owningTrackExists(action) && !owningTrackIsFrozen(action);
-}
-
-function commitRefusalReason(action: CommitRecordingAction): string | null {
-    return owningTrackIsFrozen(action) ? FROZEN_TRACK_RECORDING_MESSAGE : null;
 }
 
 function mutableRecordingClip(snapshot: ClipStateSnapshot): Clip {
@@ -96,14 +82,12 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
     validateSessionEntry: isRecordingSessionEntry,
     // Runtime consumption is deferred; every execute write belongs to the CRDT transaction.
     requiresAbortCompensation: false,
-    validate: owningTrackAcceptsTake,
-    validationRefusalReason: commitRefusalReason,
+    validate: owningTrackExists,
     execute: (action) => {
         const { clip } = action.payload;
-        if (!owningTrackAcceptsTake(action)) {
+        if (!owningTrackExists(action)) {
             // Refusal publishes nothing and cannot consume runtime capture.
-            // The captured terminal retires only its committed missing owner,
-            // and a track frozen since the take opened keeps the take provisional.
+            // The captured terminal retires only its committed missing owner.
             return toHandlerExecutionResult(false);
         }
         updateTrack(clip.trackId, (time) => {
