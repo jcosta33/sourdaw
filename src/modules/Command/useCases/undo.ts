@@ -389,6 +389,32 @@ async function stepOverConflictedHeadOrSettle({
     return result;
 }
 
+type ConflictedHeadInput = StepOverInput & {
+    readonly blocked: boolean;
+    readonly stepOverConflicts: boolean;
+};
+
+/**
+ * A head whose inverse refused. A blocked refusal (a transient state the handler already
+ * reported) leaves the history untouched and steps over nothing; a diverged document is
+ * reported here and may step onto the unit beneath.
+ */
+function settleConflictedHead({
+    blocked,
+    stepOverConflicts,
+    ...input
+}: ConflictedHeadInput): Promise<UndoResult> | UndoResult {
+    const { initialPast, headId, beneath, retained } = input;
+    if (blocked) {
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+    }
+    notifyUndoConflict(undoEntryLabel(input.conflictedHead));
+    if (!stepOverConflicts) {
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+    }
+    return stepOverConflictedHeadOrSettle(input);
+}
+
 async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
@@ -451,25 +477,15 @@ async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
         if (outcome.status === 'inert') {
             continue;
         }
-        if (outcome.status === 'conflict' && outcome.blocked === true) {
-            // The handler told the user why; the history is untouched and nothing beneath is stepped onto.
-            return settleWithoutUndo({ initialPast, headId, retainedPast: [...past, ...outcome.retained] });
-        }
         if (outcome.status === 'conflict') {
-            notifyUndoConflict(undoEntryLabel(candidate.head));
-            if (!stepOverConflicts) {
-                return settleWithoutUndo({
-                    initialPast,
-                    headId,
-                    retainedPast: [...past, ...outcome.retained],
-                });
-            }
-            return stepOverConflictedHeadOrSettle({
+            return settleConflictedHead({
                 initialPast,
                 headId,
                 conflictedHead: candidate.head,
                 retained: outcome.retained,
                 beneath: past,
+                blocked: outcome.blocked === true,
+                stepOverConflicts,
                 onCommitted,
             });
         }

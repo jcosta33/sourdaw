@@ -357,6 +357,34 @@ async function stepOverConflictedRedoOrSettle({
     return completeRedo(outcome, onCommitted);
 }
 
+type ConflictedRedoInput = StepOverRedoInput & {
+    readonly blocked: boolean;
+    readonly stepOverConflicts: boolean;
+};
+
+/**
+ * A head whose redo refused. Nothing was written, so the entry stays at the head of `future`
+ * and remains redoable. A blocked refusal (a transient state the handler already reported)
+ * steps onto nothing; a diverged document is reported here and #2878 steps onto the unit
+ * behind it when the gate admits that replay.
+ */
+function settleConflictedRedo({
+    blocked,
+    stepOverConflicts,
+    ...input
+}: ConflictedRedoInput): Promise<RedoResult> | RedoResult {
+    if (blocked) {
+        settleWithoutRedo(input);
+        return { headConsumed: false };
+    }
+    notifyUser(`Cannot redo "${undoEntryLabel(input.conflictedEntries[0]!)}": project state has changed`, 'warning');
+    if (!stepOverConflicts) {
+        settleWithoutRedo(input);
+        return { headConsumed: false };
+    }
+    return stepOverConflictedRedoOrSettle(input);
+}
+
 async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<RedoResult> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
@@ -411,25 +439,13 @@ async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
 
         const outcome = await executeRedo(entry);
 
-        if (outcome.status === 'conflict' && outcome.blocked === true) {
-            // The handler told the user why; the entry stays redoable and nothing behind it is stepped onto.
-            settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-            return { headConsumed: false };
-        }
         if (outcome.status === 'conflict') {
-            const label = undoEntryLabel(entry);
-            notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
-            // Nothing was written, so the entry stays at the head of `future`
-            // and remains redoable; #2878 steps onto the unit behind it when
-            // the gate admits that replay.
-            if (!stepOverConflicts) {
-                settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                return { headConsumed: false };
-            }
-            return stepOverConflictedRedoOrSettle({
+            return settleConflictedRedo({
                 initialFuture: state.future,
                 futureAtConflict: future,
                 conflictedEntries: [entry],
+                blocked: outcome.blocked === true,
+                stepOverConflicts,
                 onCommitted,
             });
         }
