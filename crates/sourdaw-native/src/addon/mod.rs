@@ -301,9 +301,9 @@ impl SourdawNative {
         );
     }
 
-    /// Run the process-exit cascade: retire discovery, close every plugin
-    /// editor, sweep the retirement vec, then terminate every instance still
-    /// loaded.
+    /// Run the process-exit cascade: cancel every offline render and wait for
+    /// it, retire discovery, close every plugin editor, sweep the retirement
+    /// vec, then terminate every instance still loaded.
     ///
     /// A shell must call this on its quit path. The Tauri shell got the same
     /// steps from `RunEvent::Exit`; a Node shell has no equivalent hook, so the
@@ -802,6 +802,15 @@ impl SourdawNative {
             )
             .await,
         )?))
+    }
+
+    /// Re-read the processing tail of each named instance; see
+    /// `commands::plugins::read_plugin_tails`.
+    #[napi]
+    pub async fn read_plugin_tails(&self, instance_ids: Vec<String>) -> Result<Value> {
+        json(reason(
+            commands::plugins::read_plugin_tails(instance_ids, &self.singletons.app_state).await,
+        )?)
     }
 
     #[napi]
