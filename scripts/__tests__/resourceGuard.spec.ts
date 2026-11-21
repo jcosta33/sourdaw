@@ -1944,7 +1944,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['test:run', 'src/x.spec.ts'],
-            expected: 6 * 1024 ** 3,
+            expected: 7680 * 1024 ** 2,
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
