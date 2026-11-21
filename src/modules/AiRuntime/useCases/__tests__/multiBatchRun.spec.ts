@@ -910,6 +910,36 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
     });
 
+    it('takes the Preparing line off a batch whose plan the run refuses, leaving only the refusal', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        // The commands the run still has to spend now fall short of what the later batches owe, so
+        // the planner rejects the next batch's plan after its Preparing line was written.
+        const { limits, consumed } = agentRunLifecycle.get(brief.runId)?.budgets ?? {
+            limits: {},
+            consumed: {},
+        };
+        const drumsCommandCount =
+            agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule?.slices.find((slice) => slice.position === 2)
+                ?.commandCount ?? 0;
+        const spendable = (limits.maxCommands ?? 0) - (consumed.maxCommands ?? 0) - drumsCommandCount;
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: brief.runId,
+                attemptId: 'exhaust-maxCommands',
+                category: 'maxCommands',
+                estimate: spendable,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'reserved' });
+
+        await confirmPendingChatActions({ confirmationId: drums.id });
+
+        const contents = (chatStore.value?.messages ?? []).map((message) => message.content);
+        expect(contents.filter((content) => content.includes('Preparing batch'))).toEqual([]);
+        expect(contents.filter((content) => content.includes('Batch 3 of 4 was not proposed'))).toHaveLength(1);
+    });
+
     it('refuses a later batch once the brief changed since the run was planned', async () => {
         const brief = await confirmBrief();
         const drums = requireOnlyProposedCard();

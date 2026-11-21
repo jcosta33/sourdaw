@@ -304,6 +304,40 @@ async function proposeMeasuredVibeBatch(input: {
 }
 
 /**
+ * Plans the grounded batch onto its run. A plan the planner or the run refuses takes the batch's
+ * progress line off before the refusal propagates, since the run tells that refusal in a message
+ * of its own, exactly as it does a batch refused at grounding.
+ */
+function materializeScheduledBatchPlan(input: {
+    run: AgentRun;
+    schedule: AgentRunBatchSchedule;
+    grounded: GroundedBatch;
+    description: ReturnType<typeof describePendingActionConfirmation>;
+    assistantMessageId: string;
+}): ReturnType<typeof materializePromptCommandPlan> {
+    const { run, schedule, grounded, description, assistantMessageId } = input;
+    try {
+        return materializePromptCommandPlan({
+            userText: run.request,
+            runId: run.runId,
+            assistantMessageId,
+            interactionMode: schedule.interactionMode,
+            trustCeiling: schedule.trustCeiling ?? undefined,
+            resume: undefined,
+            onResumedPlanAccepted: undefined,
+            projectRevision: grounded.revision,
+            context: grounded.context,
+            result: { ...grounded.result, planningOutcome: { kind: 'proposal' } },
+            actionLabels: description.actionLabels,
+            protectedTargetIds: description.protectedUnchanged.map((item) => item.id),
+        });
+    } catch (error) {
+        removeChatMessage(assistantMessageId);
+        throw error;
+    }
+}
+
+/**
  * Plans, records and either parks the grounded batch for approval or, under a ceiling that approves
  * it, executes it — through the same plan, confirmation and execution path the first batch took.
  */
@@ -329,20 +363,7 @@ async function dispatchScheduledBatch(
         inheritedProtectedUnchanged: grounded.result.protectionFacts?.protectedUnchanged,
         requestProtectionFacts: grounded.result.protectionFacts,
     });
-    const materialized = materializePromptCommandPlan({
-        userText: run.request,
-        runId: run.runId,
-        assistantMessageId,
-        interactionMode: schedule.interactionMode,
-        trustCeiling: schedule.trustCeiling ?? undefined,
-        resume: undefined,
-        onResumedPlanAccepted: undefined,
-        projectRevision: grounded.revision,
-        context: grounded.context,
-        result: { ...grounded.result, planningOutcome: { kind: 'proposal' } },
-        actionLabels: description.actionLabels,
-        protectedTargetIds: description.protectedUnchanged.map((item) => item.id),
-    });
+    const materialized = materializeScheduledBatchPlan({ run, schedule, grounded, description, assistantMessageId });
     if (materialized.status === 'terminal') {
         await materialized.completion;
         return { status: 'awaiting-approval' };
