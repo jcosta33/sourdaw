@@ -51,6 +51,7 @@ import {
 } from '../models/HostedTurnHistory';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContextProductionBrief } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
@@ -1488,6 +1489,7 @@ type ExecutedRead = {
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
     mixAlternatives?: readonly PlannedBriefMixAlternative[];
+    constraintReading?: PerceptualConstraintReading;
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
@@ -1506,6 +1508,7 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
             brief: executed.composedBrief,
             mixIntent: executed.mixIntent,
             ...(executed.mixAlternatives === undefined ? {} : { mixAlternatives: executed.mixAlternatives }),
+            constraintReading: executed.constraintReading,
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {

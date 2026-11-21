@@ -6,7 +6,6 @@ import { type PerceptualConstraintReading } from '../../models/PerceptualConstra
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
 import { type ScheduledVibeRunBatch, type VibeRunVerificationRange } from '../../models/VibeRunPlan';
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
-import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { readArrangementRange } from '../readArrangementRange';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
@@ -28,6 +27,9 @@ export type PrepareVibeRunInput = {
     runId: string;
     priorReceipts: readonly ApplicationToolReceipt[];
 };
+
+/** The preparation stage's input: the caller's request with the constraint reading it was bound to. */
+export type PrepareVibeRunStageInput = PrepareVibeRunInput & { reading: PerceptualConstraintReading };
 
 export type PreparedVibeRunSchedule =
     | { status: 'none' }
@@ -64,7 +66,7 @@ function validSections(context: ProjectContext): boolean {
  * characters, the goals their initial figures read, and whether the whole run fits. It is pure CPU,
  * reserves no budget and writes nothing, so a reading can be prepared and prepared again.
  */
-export function prepareVibeRunSchedule(input: PrepareVibeRunInput): PreparedVibeRunSchedule {
+export function prepareVibeRunSchedule(input: PrepareVibeRunStageInput): PreparedVibeRunSchedule {
     const catalog = getMixRecipeCatalog();
     if (input.mixIntent.requestedDescriptors.length === 0) {
         return { status: 'none' };
@@ -125,8 +127,7 @@ export function prepareVibeRunSchedule(input: PrepareVibeRunInput): PreparedVibe
         return [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }];
     });
     const initialRequests = planMetricMeasurementRequests({ context: input.context, reads: initialReads });
-    const reading = compilePerceptualConstraints(input.prompt, input.context);
-    const refusals = readVibeRunWholeFit(input, batches, reading, initialReads);
+    const refusals = readVibeRunWholeFit(input, batches, input.reading, initialReads);
     if (refusals.length > 0) {
         return { status: 'unscheduled', lines: [`No batches were scheduled after the brief: ${refusals.join('; ')}.`] };
     }
@@ -137,7 +138,7 @@ export function prepareVibeRunSchedule(input: PrepareVibeRunInput): PreparedVibe
         ranges,
         arrangementRange,
         batches,
-        reading,
+        reading: input.reading,
         initialRequests,
         planDigest: digest({ catalogVersion: catalog.version, batches }),
     };

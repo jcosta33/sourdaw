@@ -964,11 +964,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // call that measures a batch preview. Measurement compiles a versioned
         // Command envelope over an isolated projection; no device hydration or write.
         'src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts': 4,
-        // Count provenance: moved from planVibeRunSchedule.ts, measured 3 — the
+        // Count provenance: new file entry, measured 3 — the
         // `compilePerceptualConstraints` import, its module path and one call
-        // that reads the request's constraint clauses while preparing the
+        // that reads the request's constraint clauses while planning the
         // schedule. Pure prompt reading; no device hydration or write.
-        'src/modules/AiRuntime/useCases/vibeRun/prepareVibeRunSchedule.ts': 3,
+        'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
         // Count provenance: new file entry, measured 3 — the
         // `compilePerceptualConstraints` import, its module path and one call
         // that blanks the clauses the constraint reader consumed before the

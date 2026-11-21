@@ -3,6 +3,7 @@ import { type BriefMixIntent } from './BriefMixIntent';
 import { type PlannedBriefMixAlternative } from './BriefReading';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type MetricRecipeSource } from './MetricGoalAdmission';
+import { type PerceptualConstraintReading } from './PerceptualConstraint';
 import { type ProjectContextProductionBrief } from './ProjectContext';
 
 export { type AdoptedRecipe } from './AdoptedRecipe';
@@ -56,5 +57,7 @@ export type RetainedCompilation = RetainedCommandSet &
               mixIntent: BriefMixIntent;
               /** The named readings an ambiguous request admits; absent when the request has one reading. */
               mixAlternatives?: readonly PlannedBriefMixAlternative[];
+              /** The constraints those readings were prepared against; set whenever `mixAlternatives` is. */
+              constraintReading?: PerceptualConstraintReading;
           }
     );

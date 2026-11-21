@@ -1823,12 +1823,14 @@ const planPromptIntent = inject({ logger })(
                     // A request that reads more than one way plans and measures nothing: choosing a
                     // reading on the card plans exactly that one.
                     const readings = buildBriefReadings(briefCompilation.mixAlternatives ?? []);
-                    if (readings.length > 0) {
+                    const constraintReading = briefCompilation.constraintReading;
+                    if (readings.length > 0 && constraintReading !== undefined) {
                         const briefReadings: BriefReadingOffer = {
                             catalogId: mixIntent.catalogId,
                             metricGoalState: briefMetricGoalState,
                             readings,
                             brief: briefCompilation.brief,
+                            constraintReading: structuredClone(constraintReading),
                         };
                         if (providerProposal !== null) {
                             briefReadings.providerProposal = providerProposal;

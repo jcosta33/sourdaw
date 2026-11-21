@@ -4,6 +4,7 @@ import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/m
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type PlannedBriefMixAlternative } from '../models/BriefReading';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -145,8 +146,8 @@ function parseBriefUpdate(provided: Record<string, unknown>): Parsed {
  * application writes these, never provider text, so a hard constraint in the brief always names
  * what the request said and the objects it said it about.
  */
-function readRequestHardConstraints(prompt: string, context: ProjectContext): BriefStatement[] {
-    return compilePerceptualConstraints(prompt, context).constraints.flatMap((constraint): BriefStatement[] => {
+function readRequestHardConstraints(reading: PerceptualConstraintReading): BriefStatement[] {
+    return reading.constraints.flatMap((constraint): BriefStatement[] => {
         if (constraint.scope.kind === 'mix') {
             return [{ scope: { kind: 'project' }, statement: constraint.clause }];
         }
@@ -177,6 +178,7 @@ function prepareReadings(input: {
     catalogId: string;
     prompt: string;
     context: ProjectContext;
+    reading: PerceptualConstraintReading;
     brief: ProjectContextProductionBrief;
     sourceRunId: string | null;
 }): ReadingPreparation {
@@ -203,6 +205,7 @@ function prepareReadings(input: {
         const prepared = prepareVibeRunSchedule({
             prompt: input.prompt,
             context: input.context,
+            reading: input.reading,
             brief: input.brief,
             mixIntent,
             runId: input.sourceRunId,
@@ -228,6 +231,20 @@ function prepareReadings(input: {
         });
     }
     return { status: 'prepared', alternatives: planned };
+}
+
+/** The lines describing what the composed brief changes, naming tracks and sections as the context does. */
+function describeBriefChange(
+    before: ProjectContextProductionBrief,
+    after: ProjectContextProductionBrief,
+    context: ProjectContext
+): ReturnType<typeof describeProductionBriefChange> {
+    return describeProductionBriefChange({
+        before,
+        after,
+        trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
+        sectionNames: Object.fromEntries((context.sections ?? []).map((section) => [section.id, section.name])),
+    });
 }
 
 /** The one `setProductionBrief` a composed brief is retained as. */
@@ -327,9 +344,10 @@ export function executeBriefCompile(input: {
     if (before === undefined || before.revision !== input.context.productionBrief?.revision) {
         return failure('stale-production-brief', 'The production brief changed while this request was planned.', false);
     }
+    const constraintReading = compilePerceptualConstraints(input.prompt, input.context);
     const composed = composeProductionBriefUpdate({
         brief: before,
-        update: { ...parsed.update, hardConstraints: readRequestHardConstraints(input.prompt, input.context) },
+        update: { ...parsed.update, hardConstraints: readRequestHardConstraints(constraintReading) },
         trackIds: input.context.tracks.map((track) => track.id),
         sectionIds: (input.context.sections ?? []).map((section) => section.id),
         sourceRunId: input.sourceRunId,
@@ -343,18 +361,14 @@ export function executeBriefCompile(input: {
         catalogId: mixIntent.catalogId,
         prompt: input.prompt,
         context: input.context,
+        reading: constraintReading,
         brief: composed.brief,
         sourceRunId: input.sourceRunId,
     });
     if (readings.status === 'refused') {
         return failure('invalid-tool-arguments', readings.reason, true);
     }
-    const changeLines = describeProductionBriefChange({
-        before,
-        after: composed.brief,
-        trackNames: Object.fromEntries(input.context.tracks.map((track) => [track.id, track.name])),
-        sectionNames: Object.fromEntries((input.context.sections ?? []).map((section) => [section.id, section.name])),
-    });
+    const changeLines = describeBriefChange(before, composed.brief, input.context);
     if (changeLines === null) {
         return failure('invalid-tool-arguments', 'update: the composed brief could not be described.', false);
     }
@@ -380,6 +394,7 @@ export function executeBriefCompile(input: {
     };
     if (alternatives.length > 0) {
         result.mixAlternatives = readings.alternatives;
+        result.constraintReading = constraintReading;
     }
     return result;
 }

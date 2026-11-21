@@ -48,6 +48,7 @@ import { executeBriefCompile } from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
+import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { readBriefMixIntent } from '../readBriefMixIntent';
 import { planVibeRunSchedule } from '../vibeRun/planVibeRunSchedule';
 import { prepareVibeRunSchedule } from '../vibeRun/prepareVibeRunSchedule';
@@ -177,9 +178,11 @@ function preparedFor(runId: string, brief: ProjectContextProductionBrief, descri
     if (mixIntent === null) {
         throw new TypeError('Expected the characters to be a selection from the live catalogue');
     }
+    const context = getProjectContext();
     const prepared = prepareVibeRunSchedule({
         prompt: AMBIGUOUS_PROMPT,
-        context: getProjectContext(),
+        context,
+        reading: compilePerceptualConstraints(AMBIGUOUS_PROMPT, context),
         brief,
         mixIntent,
         runId,

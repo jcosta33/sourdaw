@@ -27,6 +27,7 @@ import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunP
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
+import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
 
@@ -440,7 +441,8 @@ async function planSchedule(
     input: ScheduleInput,
     expectedPlanDigest: string | undefined
 ): Promise<PlannedVibeRunSchedule> {
-    const prepared = prepareVibeRunSchedule(input);
+    const reading = compilePerceptualConstraints(input.prompt, input.context);
+    const prepared = prepareVibeRunSchedule({ ...input, reading });
     if (prepared.status === 'none' && expectedPlanDigest !== undefined) {
         return { status: 'unscheduled', lines: [PLAN_NO_LONGER_HOLDS] };
     }
@@ -453,7 +455,7 @@ async function planSchedule(
             lines: [PLAN_NO_LONGER_HOLDS],
         };
     }
-    const { batches, reading, catalog, candidate, ranges, arrangementRange } = prepared;
+    const { batches, catalog, candidate, ranges, arrangementRange } = prepared;
     const collected = await collectVibeRunInitialBaselines({
         runId: input.runId,
         sourceRevision: input.sourceRevision,

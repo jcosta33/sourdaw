@@ -1,5 +1,6 @@
 import { type AgentTrustCeiling } from './AgentExecutionMode';
 import { type AgentRunProviderProposal } from './AgentRun';
+import { type PerceptualConstraintReading } from './PerceptualConstraint';
 import { type ProjectContextProductionBrief } from './ProjectContext';
 import { type ScheduledVibeRunBatch } from './VibeRunPlan';
 
@@ -40,6 +41,11 @@ export type BriefReadingOffer = {
     readings: readonly BriefReading[];
     /** The whole next brief the card writes, which each reading's plan is read against. */
     brief: ProjectContextProductionBrief;
+    /**
+     * The request's constraints as read when the readings were offered; a chosen reading is prepared
+     * against them, as a scheduled batch is held to its recorded constraints.
+     */
+    constraintReading: PerceptualConstraintReading;
     /**
      * What the card's own planning recorded on the run plan beside the metric state, kept so the chosen
      * reading's plan is recorded as the directly planned brief's would be.
