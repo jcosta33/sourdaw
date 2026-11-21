@@ -15,7 +15,7 @@ import { createStemImportConfirmationResourceLease } from '../agentReference/cre
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
-import { UNDISPLAYED_MEASUREMENT_REASON } from '../deriveMeasuredAudibleImpact';
+import { NO_AUDIBLE_CLAIM_REASON, UNDISPLAYED_MEASUREMENT_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readMetricCreativeAuthorityIds } from '../readMetricCreativeAuthorityIds';
@@ -117,11 +117,31 @@ function deriveWithoutProofs(
     return { status: 'not-claimed', reason: UNDISPLAYED_MEASUREMENT_REASON };
 }
 
+/** A preview the card was offered but could not keep shows no figure, so proofs may not supply them. */
+function deriveCardClaim(
+    evidence: Parameters<typeof deriveAudibleImpact>[0],
+    cardDroppedPreview: boolean
+): ReturnType<typeof deriveAudibleImpact> {
+    if (cardDroppedPreview) {
+        return deriveWithoutProofs(evidence);
+    }
+    return deriveAudibleImpact(evidence);
+}
+
+type RunPlan = NonNullable<NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan']>;
+
+function planClaimsNothing(plan: RunPlan): boolean {
+    const { audible } = plan.expectedImpact;
+    return audible.status === 'not-claimed' && audible.reason === NO_AUDIBLE_CLAIM_REASON;
+}
+
 /**
  * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
  * this exact batch: the predictions of its frozen goals with their verification against the bound
  * measurement, or the measured figures of a goalless plan. A card with neither goal state nor claim
- * writes nothing: the plan it opened with already carries no claim of an earlier batch.
+ * writes nothing only when the plan already carries the plain no-claim reason. A re-preview with no
+ * goals writes no plan before it persists, so the plan may still hold the earlier batch's claim, and
+ * this write is the one that resets it.
  */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
@@ -140,10 +160,8 @@ function recordConfirmationMetricGoalPlan(
         snapshotPreview: measuredPreview,
         proofPreviews: state?.proofs.map((proof) => proof.preview) ?? [],
     };
-    // A preview the card was offered but could not keep shows no figure, so proofs may not supply them.
-    const cardDroppedPreview = input.measuredPreview !== undefined && measuredPreview === undefined;
-    const claim = cardDroppedPreview ? deriveWithoutProofs(evidence) : deriveAudibleImpact(evidence);
-    if (metricGoalState === undefined && claim === null) {
+    const claim = deriveCardClaim(evidence, input.measuredPreview !== undefined && measuredPreview === undefined);
+    if (metricGoalState === undefined && claim === null && planClaimsNothing(run.plan)) {
         return;
     }
     agentRunLifecycle.recordPlan({

@@ -33,6 +33,7 @@ import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 import {
     configuredLiteralMetricState,
@@ -96,10 +97,14 @@ type Card = { confirmationId: string; envelope: Parameters<typeof digestCommandB
 /** Persists one real approval card for `gain` on the run, with a preview built for that exact batch. */
 function proposeCard(input: {
     gain: number;
+    /** The gain the batch expects the track to hold when it runs; a card that is only persisted never needs it. */
+    expectedGain?: number;
     preview?: (bound: { revision: string; batchContentHash: string }) => MeasuredPreview;
     /** A preview held only by the metric-goal proofs, as a vibe-run batch card holds it. */
     proofPreviews?: readonly ((bound: { revision: string; batchContentHash: string }) => MeasuredPreview)[];
     foreignHash?: boolean;
+    /** An approval compiled with no metric-goal state at all, so the card persists with none. */
+    withoutGoalState?: boolean;
     /** Frozen metric goals of a perceptual or comparative request, bound to the batch the card persists. */
     goals?: {
         kind: 'perceptual' | 'comparative';
@@ -109,7 +114,10 @@ function proposeCard(input: {
 }): Card {
     const revision = captureProjectRevision();
     const actions = [
-        { type: 'setTrackGain' as const, payload: { trackId: 'vocal', gain: input.gain, expectedGain: 1 } },
+        {
+            type: 'setTrackGain' as const,
+            payload: { trackId: 'vocal', gain: input.gain, expectedGain: input.expectedGain ?? 1 },
+        },
     ];
     const compiled = compileAgentActionExecution({
         actions,
@@ -139,6 +147,12 @@ function proposeCard(input: {
             previews: input.goals.proofPreviews?.map((build) => build({ revision, batchContentHash })) ?? [],
         });
     }
+    let approval = compiled.agentApproval;
+    let persistedGoalState = metricGoalState;
+    if (input.withoutGoalState === true) {
+        approval = { ...approval, metricGoalState: undefined };
+        persistedGoalState = undefined;
+    }
     const confirmationId = persistPromptActionConfirmation({
         runId: RUN_ID,
         prompt: 'Set the vocal gain',
@@ -147,10 +161,10 @@ function proposeCard(input: {
         actionLabels: ['setTrackGain'],
         commandEnvelopes: compiled.commandEnvelopes,
         commandBatch: compiled.commandBatch,
-        agentApproval: compiled.agentApproval,
+        agentApproval: approval,
         affectedIds: ['vocal'],
         protectedUnchanged: [],
-        metricGoalState,
+        metricGoalState: persistedGoalState,
         measuredPreview: input.preview?.({ revision, batchContentHash }),
         executionMode: 'atomic',
         group: { groupId: `group-${String(input.gain)}`, groupLabel: 'Set vocal gain' },
@@ -817,6 +831,40 @@ describe('the plan’s audible claim', () => {
         expect(audible().status).toBe('not-claimed');
         proposeCard({ gain: 0.6 });
         expect(audible().status).toBe('not-claimed');
+    });
+
+    it('clears the claim of an earlier batch when a goalless card is re-previewed after the project moved', async () => {
+        const liveGain = trackStore.value?.tracks.find((track) => track.id === 'vocal')?.gain;
+        const first = proposeCard({
+            gain: 0.7,
+            expectedGain: liveGain,
+            preview: previewOf([vocalTarget()]),
+            proofPreviews: [],
+        });
+        expect(audible().status).toBe('measured');
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'master', name: 'Main Out' } });
+        agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'waiting-for-approval' });
+
+        const result = await reproposePendingChatActions({ confirmationId: first.confirmationId });
+
+        expect(result).toMatchObject({ status: 'reproposed' });
+        const reproposed = result.status === 'reproposed' ? getPendingActionConfirmation(result.confirmationId) : null;
+        expect(reproposed?.approvalSnapshot.measuredPreview).toBeUndefined();
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('clears the claim of an earlier batch when a card with no goal state and no claim is persisted', () => {
+        proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]), withoutGoalState: true });
+        expect(audible().status).toBe('measured');
+        proposeCard({ gain: 0.6, withoutGoalState: true });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('writes nothing for a card with no goal state and no claim when the plan already claims none', () => {
+        proposeCard({ gain: 0.7, withoutGoalState: true });
+        const before = agentRunLifecycle.get(RUN_ID)?.plan;
+        proposeCard({ gain: 0.6, withoutGoalState: true });
+        expect(agentRunLifecycle.get(RUN_ID)?.plan).toEqual(before);
     });
 
     it('claims the new measurement after a re-preview, and nothing once a later re-preview carries none', () => {
