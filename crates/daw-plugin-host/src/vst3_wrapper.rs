@@ -244,10 +244,11 @@ impl HostParameterChanges {
             .map(|queue| (queue.param_id.get(), queue.value.get()))
     }
 
-    /// Whether the list carries a value for `param_id`. RT-safe: a linear scan
-    /// of at most `MAX_PARAMETER_QUEUES` entries.
-    fn carries(&self, param_id: ParamID) -> bool {
-        self.staged().any(|(staged, _)| staged == param_id)
+    /// Whether the list carries exactly `value` for `param_id`. RT-safe: a
+    /// linear scan of at most `MAX_PARAMETER_QUEUES` entries.
+    fn carries(&self, param_id: ParamID, value: ParamValue) -> bool {
+        self.staged()
+            .any(|(staged, staged_value)| staged == param_id && staged_value == value)
     }
 }
 
@@ -2043,17 +2044,17 @@ impl Vst3Wrapper {
     /// `outputParameterChanges` to the controller and the host's observers.
     /// **RT-safe**: the audio thread runs it after every block.
     ///
-    /// A value for a parameter the host handed the processor in this same call
-    /// is the processor repeating what it was told — automation played back, a
-    /// knob the user is turning in the editor, a host write — and is dropped
-    /// for the length of the call, as the CLAP backend drops the same echo:
-    /// forwarded, it would come back as a plugin-made edit and mark the project
-    /// dirty on every automation point played. Every other parameter passes.
-    /// The same accepted bound applies: a processor that corrects a value it
-    /// was handed has that correction dropped with the echo.
+    /// The value the host handed the processor for a parameter in this same
+    /// call, reported back unchanged, is the processor repeating what it was
+    /// told — automation played back, a knob the user is turning in the
+    /// editor, a host write — and is dropped: forwarded, it would come back as
+    /// a plugin-made edit and mark the project dirty on every automation point
+    /// played. Any other value passes, including a correction of the one it was
+    /// handed: unlike a CLAP event, the input list holds the value the host
+    /// wrote, so an echo can be told from a clamp.
     fn forward_processor_output(&self) {
         for (param_id, value) in self.output_parameter_changes.staged() {
-            if self.parameter_changes.carries(param_id) {
+            if self.parameter_changes.carries(param_id, value) {
                 continue;
             }
             let observed = self.read_only_parameters.binary_search(&param_id).is_err();

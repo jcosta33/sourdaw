@@ -3,8 +3,9 @@
 //!
 //! Every call it reports, in `outputParameterChanges`, a read-only meter (the
 //! block's input peak). Whenever the host hands it `Drive` it echoes the value
-//! straight back, as wrapper-generated plugins do, and reports the dependent
-//! control `Drive` moves (half of `Drive`). For every note it is handed it emits
+//! straight back, as wrapper-generated plugins do — or, above
+//! [`DRIVE_CEILING`], reports the ceiling it clamped the value to — and reports
+//! the dependent control `Drive` moves (half of the value it kept). For every note it is handed it emits
 //! the note an octave up, one frame later, in `outputEvents`. Audio passes
 //! through unchanged.
 //!
@@ -34,6 +35,9 @@ pub(crate) const EMITTER_CLASS_NAME: &str = "Sourdaw Harness Fx Emitter";
 
 /// The control the host writes. Echoed back on every call that carries it.
 pub const DRIVE_PARAM_ID: ParamID = 20;
+/// The highest `Drive` the processor keeps: a write above it is clamped, and
+/// the clamped value is what the processor reports.
+pub const DRIVE_CEILING: ParamValue = 0.9;
 /// A read-only readout: the block's input peak.
 pub const METER_PARAM_ID: ParamID = 21;
 /// A control the processor moves itself: half of `Drive`, whenever `Drive`
@@ -402,7 +406,7 @@ impl IAudioProcessorTrait for Emitter {
 
         // SAFETY: the output list is live for this call, or null.
         if let Some(changes) = unsafe { ComRef::from_raw(data.outputParameterChanges) } {
-            if let Some(value) = written {
+            if let Some(value) = written.map(|value| value.min(DRIVE_CEILING)) {
                 // SAFETY: the current call's live output list.
                 unsafe { report(changes, DRIVE_PARAM_ID, value) };
                 // SAFETY: as above.

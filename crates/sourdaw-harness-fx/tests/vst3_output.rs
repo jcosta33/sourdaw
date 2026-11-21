@@ -18,8 +18,8 @@ use daw_plugin_host::{
     HostedPluginRuntime, PluginParameterEvent, ProcessMode, Vst3Wrapper,
 };
 use sourdaw_harness_fx::{
-    DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE, METER_PARAM_ID,
-    MODULATED_PARAM_ID, VST3_EMITTER_CLASS_ID,
+    DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES, EMITTED_TRANSPOSE,
+    METER_PARAM_ID, MODULATED_PARAM_ID, VST3_EMITTER_CLASS_ID,
 };
 use std::sync::Mutex;
 use support::InstalledPlugin;
@@ -113,6 +113,29 @@ fn observers_hear_the_processors_own_moves_and_neither_its_echo_nor_its_meter() 
         [],
         "a block that moves only the meter tells the project nothing"
     );
+}
+
+/// A value the processor corrects is its own move, not an echo: the host wrote
+/// Drive above the ceiling, the processor kept the ceiling, and both the
+/// controller and the observers learn what it kept.
+#[test]
+fn a_processor_correction_of_a_host_written_value_reaches_the_controller_and_observers() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-correction");
+    let mut wrapper = emitter(&plugin);
+    observed(&wrapper);
+
+    process(&mut wrapper, &[], &[drive(0.95)]);
+
+    assert_eq!(
+        observed(&wrapper),
+        [
+            PluginParameterEvent::value(DRIVE_PARAM_ID, DRIVE_CEILING),
+            PluginParameterEvent::value(MODULATED_PARAM_ID, DRIVE_CEILING * 0.5),
+        ]
+    );
+    assert!(wrapper.flush_parameters_off_audio_thread());
+    assert_eq!(controller_value(&wrapper, DRIVE_PARAM_ID), DRIVE_CEILING);
 }
 
 /// The controller learns every value the processor reports, meter included,
