@@ -1,16 +1,11 @@
 import { type UnsupportedPerceptualConstraint } from '../../models/PerceptualConstraint';
 
-import { MODAL_NEGATION, NEGATION, QUALITY_VERBS, SCOPE_WORD } from './constraintClauseWords';
-import { DIRECTION } from './constraintDirections';
+import { CAUSING_VERB, HOLDING_KEEP, MODAL_NEGATION, NEGATION, SCOPE_WORD } from './constraintClauseWords';
+import { DIRECTION, MEASURED_WORD, NOUN_VERB_HEAD } from './constraintDirections';
 
 /** A span of the request a constraint reader consumed, start inclusive and end exclusive. */
 export type ConsumedSpan = { start: number; end: number };
 
-/**
- * A word naming a quality a measured constraint holds or a way it moves. Plain adjectives ("bright",
- * "wide") are left out: a quality reader reads those, and elsewhere they mostly describe a sound.
- */
-const MEASURED_WORD = String.raw`(?:levels?|loudness|volume|width|stereo\s+(?:image|field|spread)|brightness|dynamics|dynamic\s+range|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?|${DIRECTION})`;
 const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}(?![\p{L}\p{N}])`, 'giu');
 /**
  * A linking verb governs a measured word only when that word follows it ("shouldn't be louder"); one
@@ -18,15 +13,18 @@ const MEASURED_QUALITY = new RegExp(String.raw`\b${MEASURED_WORD}(?![\p{L}\p{N}]
  */
 const LINKING_VERB = String.raw`(?:be|sound|feel|seem)\s+(?:(?:any|more|less|too|so)\s+)?${MEASURED_WORD}`;
 /** The verbs a negation governs a measured word through: one that moves a level or makes it become one. */
-const GOVERNED_VERB = String.raw`(?:${LINKING_VERB}|make|making|get|getting|let|letting|become|becoming|raise|raising|increase|increasing|boost|boosting|push|pushing|turn|turning|lower|lowering|reduce|reducing|decrease|decreasing|change|changing|alter|altering|touch|touching|widen(?:ing)?|narrow(?:ing)?|brighten(?:ing)?|darken(?:ing)?|squash(?:ing)?|flatten(?:ing)?)`;
+const GOVERNED_VERB = String.raw`(?:${LINKING_VERB}|${CAUSING_VERB}|${NOUN_VERB_HEAD})`;
+/** A negated stop or prevent permits what it governs: "don't stop the mix getting wider". */
+const NOT_NEGATED = String.raw`(?<!(?:${NEGATION}|${MODAL_NEGATION})\s+)`;
 /**
  * What makes a clause protective of a measured quality: a negation or modal directly before a verb
- * it governs the quality through, or a direction ("isn't louder"); a keep-type verb; or "no" before
- * the measured word itself ("no louder"). A negation of anything else ("don't forget to make the bass
- * wider", "no reverb") governs no measured word, so it opens nothing.
+ * it governs the quality through, or a direction ("isn't louder"); a keep-type verb continuing no
+ * move; a leave; a stop or prevent no negation permits; or "no" before the measured word itself
+ * ("no louder"). A negation of anything else ("don't forget to make the bass wider", "no reverb")
+ * governs no measured word, so it opens nothing.
  */
 const PROTECTIVE = new RegExp(
-    String.raw`\b(?:(?:${NEGATION}|${MODAL_NEGATION}|avoid|avoiding)\s+(?:${GOVERNED_VERB}|${DIRECTION})|${QUALITY_VERBS}|leave|leaving|stop|stopping|prevent|preventing|no\s+${MEASURED_WORD})(?![\p{L}\p{N}])`,
+    String.raw`\b(?:(?:${NEGATION}|${MODAL_NEGATION}|avoid|avoiding)\s+(?:${GOVERNED_VERB}|${DIRECTION})|${HOLDING_KEEP}|leave|leaving|${NOT_NEGATED}(?:stop|stopping|prevent|preventing)|no\s+${MEASURED_WORD})(?![\p{L}\p{N}])`,
     'iu'
 );
 const COMPARISON = new RegExp(String.raw`\b${DIRECTION}\s+than\b`, 'iu');
@@ -38,9 +36,9 @@ const CONTINUES = new RegExp(
     'iu'
 );
 
-export const COMPARATIVE_REASON =
+const COMPARATIVE_REASON =
     'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
-export const UNREAD_REASON =
+const UNREAD_REASON =
     'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
 
 type Segment = { start: number; end: number; joined: boolean };

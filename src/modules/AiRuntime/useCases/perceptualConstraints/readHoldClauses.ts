@@ -1,11 +1,11 @@
 import {
     CLAUSE_END,
     CLAUSE_HEAD,
+    KEEP_VERBS,
     MODAL_NEGATION,
     NEGATION,
     normalizeObjectText,
     OBJECT_LIST,
-    QUALITY_VERBS,
     SCOPE_WORD,
 } from './constraintClauseWords';
 import {
@@ -106,7 +106,7 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
     ),
     // "keep the overall level the same", "keep the width and dynamics of the vocal", "keep the stereo width"
     holdPattern(
-        String.raw`\b${QUALITY_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
+        String.raw`\b${KEEP_VERBS}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}${HOLD_SUFFIX}${CLAUSE_END}`,
         NOUN_CONTINUATION
     ),
     // "keep the Keys at the same level"

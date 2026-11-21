@@ -14,11 +14,11 @@ import { maskTrackReferences } from '../maskTrackReferences';
 
 import {
     CLAUSE_END,
+    HOLDING_KEEP,
     MIX_WORDS,
     normalizeObjectText,
     OBJECT_MEMBER,
     OBJECT_MEMBER_SEPARATOR,
-    QUALITY_VERBS,
     ROLE_WORDS,
 } from './constraintClauseWords';
 import { type MeasuredConstraintId, QUALITY_OF } from './constraintDirections';
@@ -278,7 +278,7 @@ function readQualityPattern(): QualityPattern {
     const term = String.raw`(?:${terms})(?![\p{L}\p{N}])`;
     const more = String.raw`(?<more>(?:(?:\s*,\s*(?:(?:and|but)\s+)?|\s+(?:and|but)\s+)(?:as\s+)?${term})+${CLAUSE_END})?`;
     const pattern = new RegExp(
-        String.raw`\b${QUALITY_VERBS}\s+${QUALITY_OBJECT}\s+(?:sounding\s+|feeling\s+|as\s+)?(?<term>${term})${more}`,
+        String.raw`\b${HOLDING_KEEP}\s+${QUALITY_OBJECT}\s+(?:sounding\s+|feeling\s+|as\s+)?(?<term>${term})${more}`,
         'giu'
     );
     const continuation = new RegExp(

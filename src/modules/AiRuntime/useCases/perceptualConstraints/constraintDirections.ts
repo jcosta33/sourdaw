@@ -70,6 +70,12 @@ const HELD_NOUNS: Readonly<Record<QualityFamily, readonly string[]>> = {
 };
 
 /**
+ * The held nouns too common to name a metric outside a hold reader's own grammar: free text names the
+ * metric with them only behind this qualifier ("the stereo field", never "the field recording").
+ */
+const NOUN_QUALIFIER: Readonly<Record<string, string>> = { image: 'stereo', field: 'stereo', spread: 'stereo' };
+
+/**
  * The verbs a held noun takes in any family, each also read with "-ing": those moving its metric one
  * way ("don't raise the width") and those holding it ("don't change the level").
  */
@@ -93,8 +99,12 @@ function normalizePhrase(phrase: string): string {
 /** A verb phrase and its "-ing" form on its first word: "raise" and "raising", "turn up" and "turning up". */
 function withIngForm(phrase: string): string[] {
     const [verb = '', ...rest] = phrase.split(' ');
+    return [phrase, [ingForm(verb), ...rest].join(' ')];
+}
+
+function ingForm(verb: string): string {
     const stem = verb.endsWith('e') ? verb.slice(0, -1) : verb;
-    return [phrase, [`${stem}ing`, ...rest].join(' ')];
+    return `${stem}ing`;
 }
 
 /** Each phrase, a family's either-way pair ("wider or narrower") among them, and the constraint it states. */
@@ -165,6 +175,42 @@ export const NOUN_VERB = String.raw`(?<verb>${alternation(NOUN_VERB_PHRASES)})`;
 export const HOLD_NOUN_WORD = String.raw`(?:${alternation(Array.from(FAMILY_OF_NOUN.keys()))})`;
 /** The nouns naming loudness alone: "keep the Keys at the same level". */
 export const LOUDNESS_NOUN_WORD = String.raw`(?:${alternation(HELD_NOUNS.loudness)})`;
+
+const FREE_TEXT_NOUNS = Array.from(FAMILY_OF_NOUN.keys(), (noun) => {
+    const qualifier = NOUN_QUALIFIER[noun];
+    return qualifier === undefined ? noun : `${qualifier} ${noun}`;
+});
+/**
+ * Any word naming a measured quality or a way it moves, as free text names it: a held noun in either
+ * number behind any qualifier it needs, a quality verb or a direction. A plain adjective ("bright",
+ * "wide") is none: elsewhere it mostly describes a sound.
+ */
+export const MEASURED_WORD = String.raw`(?:(?:${alternation(FREE_TEXT_NOUNS)})s?|${alternation(VERB_PHRASES)}|${DIRECTION})`;
+
+function headWord(phrase: string): string {
+    const [head = phrase] = phrase.split(' ');
+    return head;
+}
+
+/** The first word of every verb a held noun takes: "turn" of "turn up". */
+const NOUN_VERB_HEADS = Array.from(
+    new Set(
+        [
+            ...MOVEMENTS.flatMap((movement) => [
+                ...NOUN_VERBS[movement],
+                ...FAMILIES.flatMap((family) => QUALITY_VERBS[family][movement]),
+            ]),
+            ...NOUN_VERBS.either,
+        ].map(headWord)
+    )
+);
+/**
+ * The first word of every verb a held noun takes, also read with "-ing", so a split particle still
+ * reads: "don't turn the volume of the vocal up" governs the volume through "turn".
+ */
+export const NOUN_VERB_HEAD = String.raw`(?:${alternation(NOUN_VERB_HEADS.flatMap(withIngForm))})`;
+/** Those verbs' "-ing" forms alone: what a keep continues a move with ("keep widening the mix"). */
+export const NOUN_VERB_ING = String.raw`(?:${alternation(NOUN_VERB_HEADS.map(ingForm))})`;
 
 function familyOfConstraint(id: MeasuredConstraintId): QualityFamily | undefined {
     return FAMILIES.find((family) => Object.values(FAMILY_IDS[family]).includes(id));

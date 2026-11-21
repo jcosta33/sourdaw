@@ -1,7 +1,7 @@
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 
-import { COMPARATIVE_WORDS } from './constraintDirections';
+import { COMPARATIVE_WORDS, DIRECTION, NOUN_VERB_ING } from './constraintDirections';
 
 /** The words every constraint reader shares: scope words, clause boundaries, negations and objects. */
 export const MIX_WORDS = new Set(['mix', 'whole mix', 'song', 'whole song', 'project', 'master', 'master bus']);
@@ -31,7 +31,14 @@ export function normalizeObjectText(text: string): string {
 }
 
 export const CLAUSE_END = String.raw`(?=\s*(?:$|[,.;:!?]|\b(?:and|but|while|so|then|please)\b))`;
-export const QUALITY_VERBS = String.raw`(?:keep|keeping|preserve|preserving|maintain|maintaining|retain|retaining)`;
+export const KEEP_VERBS = String.raw`(?:keep|keeping|preserve|preserving|maintain|maintaining|retain|retaining)`;
+/** The verbs that make a quality become a level ("don't make it louder"), beside those a held noun takes. */
+export const CAUSING_VERB = String.raw`(?:make|making|get|getting|let|letting|become|becoming)`;
+/**
+ * A keep-type verb that holds what follows, never one continuing a move ("keep widening the mix",
+ * "keep making the drums wider"), which asks for more of it.
+ */
+export const HOLDING_KEEP = String.raw`${KEEP_VERBS}(?![\p{L}\p{N}])(?!\s+(?:${NOUN_VERB_ING}|${CAUSING_VERB}\b[^,.;:!?]*?${DIRECTION}))`;
 export const NEGATION = String.raw`(?:do\s+not|don['’]?t|never|without)`;
 /** "isn't" and "is not" state a clause as a modal negation does: "the mix isn't louder". */
 export const MODAL_NEGATION = String.raw`(?:must\s+not|mustn['’]?t|should\s+not|shouldn['’]?t|may\s+not|can\s*not|can['’]?t|does\s+not|doesn['’]?t|will\s+not|won['’]?t|is\s+not|isn['’]?t|are\s+not|aren['’]?t)`;

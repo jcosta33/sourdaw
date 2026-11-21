@@ -1966,6 +1966,40 @@ describe('reading only governed protections and whole object names', () => {
         // a negated stop, prevent or keep … from permits the move, so it states no bound
         ["don't stop the mix from getting wider", [], []],
         ["don't prevent the vocal from getting brighter", [], []],
+        // a keep that continues a move, and a negated stop or prevent that permits one, protect nothing
+        ['keep widening the mix', [], []],
+        ['keep raising the level of the vocal', [], []],
+        ['keep making the drums wider', [], []],
+        ["don't stop widening the mix", [], []],
+        ["don't stop the mix getting wider", [], []],
+        ["don't prevent the vocal getting brighter", [], []],
+        // a plain noun no qualifier makes a measured one opens nothing: "field" is not the stereo field
+        ['keep the field recording', [], []],
+        // a protective stop, prevent or keep still holds, binds or is recorded
+        ['stop the vocal getting louder', [], [unread('stop the vocal getting louder', NET_REASON)]],
+        ['prevent the mix widening', [], [unread('prevent the mix widening', NET_REASON)]],
+        [
+            'keep the mix from getting wider',
+            [measured('stereo-width-not-widened-v1', 'keep the mix from getting wider', MIX)],
+            [],
+        ],
+        ['keep the stereo image', [measured('stereo-width-held-v1', 'keep the stereo image', MIX)], []],
+        ['keep the width', [measured('stereo-width-held-v1', 'keep the width', MIX)], []],
+        [
+            "don't turn the volume of the vocal up by 3 dB",
+            [],
+            [unread("don't turn the volume of the vocal up by 3 dB", NET_REASON)],
+        ],
+        [
+            "don't push the stereo field of the drums past 3 dB",
+            [],
+            [unread("don't push the stereo field of the drums past 3 dB", NET_REASON)],
+        ],
+        [
+            "don't raise the volume of the vocal by more than 3 dB",
+            [],
+            [unread("don't raise the volume of the vocal by more than 3 dB", NET_REASON)],
+        ],
         // a negation or "no" that governs no measured word opens no protective clause
         ["don't forget to make the bass wider", [], []],
         ["don't be afraid to make the bass wider", [], []],
