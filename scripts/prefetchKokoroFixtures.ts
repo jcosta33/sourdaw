@@ -15,8 +15,10 @@ import { KOKORO_ARTIFACTS } from '../tests/e2e/kokoroFixtureArtifacts.ts';
  *   SOURDAW_KOKORO_FIXTURE_DIR=<dir> node scripts/prefetchKokoroFixtures.ts
  */
 
+// Every attempt and backoff for both artifacts (2 × (4 × 90 s + 30 s) = 13 min) must fit inside
+// the 15-minute timeout of the workflows' Prefetch Kokoro fixtures step, or the retries never run.
 const ATTEMPTS = 4;
-const ATTEMPT_TIMEOUT_MS = 10 * 60_000;
+const ATTEMPT_TIMEOUT_MS = 90_000;
 const RETRY_DELAY_MS = 5_000;
 
 type PinnedArtifact = { name: string; url: string; size: number; sha256: string };
