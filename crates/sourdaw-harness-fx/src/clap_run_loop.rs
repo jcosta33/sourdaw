@@ -23,7 +23,21 @@ use std::io::{PipeReader, PipeWriter, Write};
 use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use std::sync::Mutex;
-use std::thread::ThreadId;
+
+/// Names the thread that read it, for as long as that thread lives.
+type ThreadMark = usize;
+
+/// The calling thread's mark, read without `std::thread::current()`.
+///
+/// The host unloads this library while the thread that called into it lives
+/// on. `current()` leaves a thread-exit destructor in this library's own std,
+/// which would then run in unmapped code when that thread exits. A const,
+/// drop-free thread local registers no destructor, and its address differs
+/// between live threads.
+fn this_thread() -> ThreadMark {
+    thread_local!(static MARK: u8 = const { 0 });
+    MARK.with(|mark| std::ptr::from_ref(mark).addr())
+}
 
 /// The period both timers ask for. Shorter than any pump's turn, so every pass
 /// finds them due.
@@ -34,7 +48,7 @@ const TIMER_PERIOD_MS: u32 = 1;
 struct EditorRegistrations {
     timer: Option<clap_id>,
     pipe: Option<(PipeReader, PipeWriter)>,
-    created_on: ThreadId,
+    created_on: ThreadMark,
 }
 
 /// The editor class's run-loop state. `[main-thread]` only, so a lock is
@@ -95,7 +109,7 @@ impl RunLoopFixture {
         *self.lock_editor() = Some(EditorRegistrations {
             timer,
             pipe,
-            created_on: std::thread::current().id(),
+            created_on: this_thread(),
         });
     }
 
@@ -158,8 +172,8 @@ impl RunLoopFixture {
         }
     }
 
-    fn note_thread(&self, created_on: ThreadId) {
-        if std::thread::current().id() != created_on {
+    fn note_thread(&self, created_on: ThreadMark) {
+        if this_thread() != created_on {
             self.all_on_creating_thread.store(false, Ordering::Release);
         }
     }
