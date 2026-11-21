@@ -265,6 +265,23 @@ describe('a freeze whose track starts recording while it renders', () => {
         expect(notifyUser).toHaveBeenCalledWith(WARNING, 'warning');
     });
 
+    it('refuses the commit when a count-in starts while the source is checked after the render', async () => {
+        armFixtureTrack();
+        const freeze = startFreeze();
+        await freeze.inRender;
+        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
+            recordingStartStore.set(true);
+            return realComputeTrackHash(clips, devices);
+        });
+
+        await exitRender(freeze, 'resolves');
+
+        expect(shown()).toEqual(UNFROZEN);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith(WARNING, 'warning');
+    });
+
     it('settles back to the stale take a refresh was replacing', async () => {
         makeTakeStale();
         armFixtureTrack();
