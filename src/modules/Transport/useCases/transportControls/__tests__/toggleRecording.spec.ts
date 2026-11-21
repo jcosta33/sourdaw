@@ -1469,7 +1469,7 @@ describe('toggleRecording', () => {
 
             toggleRecording();
 
-            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning');
             expect(mocks.startRecording).not.toHaveBeenCalled();
             expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         });

@@ -30,6 +30,7 @@ import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry'
 import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { hasArmedTakeTarget } from './hasArmedTakeTarget';
+import { noTakeTargetMessage } from './noTakeTargetMessage';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
@@ -765,7 +766,7 @@ export function toggleRecording(): void {
     // above stays open — it engages no recording, and the scheduler owns the
     // window it arms.
     if (!hasArmedTakeTarget()) {
-        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
+        notifyUser(noTakeTargetMessage(), 'warning');
         return;
     }
 

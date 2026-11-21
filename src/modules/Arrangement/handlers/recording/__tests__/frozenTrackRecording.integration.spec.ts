@@ -21,11 +21,13 @@ import {
 import { transportStore } from '#/modules/Transport/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { initStalenessDetection } from '../../../useCases/freezeBounce/initStalenessDetection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { recordingMidiBound } from '../../../useCases/recording/recordingMidiBound';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
 
@@ -116,6 +118,44 @@ describe('recording onto a frozen track (issue #7239)', () => {
 
         expect(clips).toEqual([]);
         expect(readTrack().clips).toEqual([]);
+    });
+
+    describe('overdub capture targets of an automatic punch', () => {
+        const provider = () => ({ status: 'pending' as const });
+
+        function armTrackWithClip(): void {
+            const clip = ClipDummy.create({ id: 'clip-existing', trackId: TRACK_ID, type: 'midi', endBeat: 8 });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [clip] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+            flushAutomergeStorageWrites();
+        }
+
+        afterEach(() => {
+            recordingMidiBound.clear();
+        });
+
+        it('registers the clip of an unfrozen armed MIDI track at the punch point', () => {
+            armTrackWithClip();
+            recordingMidiBound.begin(provider);
+
+            recordingMidiBound.captureMidiTargets([], 4);
+
+            expect(recordingMidiBound.hasMidiCapture(provider)).toBe(true);
+        });
+
+        it('registers no capture target on a frozen armed MIDI track, so the punch ending is not held', () => {
+            armTrackWithClip();
+            freezeTrackInStore();
+            recordingMidiBound.begin(provider);
+
+            recordingMidiBound.captureMidiTargets([], 4);
+
+            expect(recordingMidiBound.hasMidiCapture(provider)).toBe(false);
+        });
     });
 
     it('keeps a take committed after the track froze mid-recording and marks the freeze stale', async () => {

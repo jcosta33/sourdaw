@@ -80,7 +80,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         soloModeStore: actual.soloModeStore,
         adjustmentLayerStore: { value: null },
         gainEnvelopeStore: { value: null },
-        getTrackEligibility: vi.fn(),
+        getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
         markerStore: { value: null },
         vcaGroupStore: { value: null },
         warpStateStore: { value: null },
