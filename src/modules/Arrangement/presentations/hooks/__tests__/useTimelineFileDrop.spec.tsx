@@ -1,10 +1,9 @@
 import { renderHook, act, waitFor, render, fireEvent } from '@testing-library/react';
 import { IDBFactory } from 'fake-indexeddb';
-import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
-import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { useTimelineFileDrop } from '../useTimelineFileDrop';
 
 type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
@@ -12,7 +11,6 @@ type TimelineDropTrack = {
     id: string;
     kind: string;
     clips?: Array<{ id: string }>;
-    hidden?: boolean;
 };
 type TimelineDropTrackState = {
     tracks: TimelineDropTrack[];
@@ -776,61 +774,6 @@ describe('useTimelineFileDrop', () => {
         expect(batchActions().map((candidate) => candidate.payload)).not.toContainEqual(
             expect.objectContaining({ trackId: 't2' })
         );
-    });
-
-    describe('a selected track the views hide', () => {
-        const dropWithNoRowHit = async () => {
-            const file = new File(['audio'], 'clap.wav', { type: 'audio/wav' });
-            mocks.hitTestTrack.mockReturnValue(null);
-            mocks.trackStoreValue.value = {
-                tracks: [{ id: 't1', kind: 'audio', hidden: true }],
-                selectedTrackId: 't1',
-            };
-            mocks.resolveDroppedSampleFile.mockResolvedValueOnce({ status: 'resolved', provider: 'browser', file });
-            mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('buf-browser', 1));
-            const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-            await act(async () => {
-                await result.current.handleFileDrop({
-                    preventDefault: vi.fn(),
-                    dataTransfer: {
-                        getData: (type: string) => {
-                            if (type !== 'application/x-sourdaw-sample') {
-                                return '';
-                            }
-                            return JSON.stringify({
-                                name: 'Clap',
-                                id: 'browser-clap',
-                                path: 'Drums/Clap.wav',
-                                libraryRootId: 'root-browser',
-                            });
-                        },
-                        files: [],
-                    },
-                } as any);
-            });
-        };
-
-        afterEach(() => {
-            timelineEditingStore.set(defaultTimelineEditingState);
-        });
-
-        it('is not a drop target while hidden tracks stay out of the views', async () => {
-            timelineEditingStore.set(defaultTimelineEditingState);
-
-            await dropWithNoRowHit();
-
-            expect(batchActions().map((candidate) => candidate.payload)).not.toContainEqual(
-                expect.objectContaining({ trackId: 't1' })
-            );
-        });
-
-        it('is the drop target while hidden tracks are shown', async () => {
-            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
-
-            await dropWithNoRowHit();
-
-            expect(batchPayload('addClip')).toEqual(expect.objectContaining({ trackId: 't1' }));
-        });
     });
 
     it('cancels a library import when its captured target disappears', async () => {

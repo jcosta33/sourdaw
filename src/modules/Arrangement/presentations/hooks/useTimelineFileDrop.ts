@@ -23,7 +23,6 @@ import { compileNewAudioTrackAction } from '../../useCases/compileNewAudioTrackA
 import { type CreationBatchAction, type CreationBatchResult, retainedCreation } from '../../useCases/creationBatch';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { readShownSelectedTrackId } from '../../useCases/readShownSelectedTrackId';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
@@ -120,7 +119,7 @@ function parsePlugin(raw: string): PluginPayload {
 }
 
 function captureAudioTargetIntent(trackHit: string | null): AudioTargetIntent {
-    const trackId = trackHit ?? readShownSelectedTrackId();
+    const trackId = trackHit ?? trackStore.value?.selectedTrackId;
     const track = trackId ? trackStore.value?.tracks.find((candidate) => candidate.id === trackId) : null;
     return trackId && track?.kind === 'audio' ? { kind: 'existing', trackId } : { kind: 'create' };
 }
@@ -174,7 +173,7 @@ export const useTimelineFileDrop = ({
             let stagedAsset: ClipAudioAssetStaging | null = null;
             try {
                 const render = parseAiRender(aiRenderData);
-                let targetTrackId = trackHit ?? readShownSelectedTrackId();
+                let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 const targetTrack = targetTrackId
                     ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
                     : null;
@@ -267,7 +266,7 @@ export const useTimelineFileDrop = ({
         if (pluginData) {
             try {
                 const plugin = parsePlugin(pluginData);
-                const targetTrackId = trackHit ?? readShownSelectedTrackId();
+                const targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 if (!targetTrackId) {
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
