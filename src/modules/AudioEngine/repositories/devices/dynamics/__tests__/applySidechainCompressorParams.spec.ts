@@ -3,11 +3,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../../helpers/__tests__/audioContext.mock';
 import { type OfflineDeviceNode } from '../../types';
 import { applySidechainCompressorParams } from '../applySidechainCompressorParams';
-import { createSidechainCompressorFallback } from '../createSidechainCompressorFallback';
+import { createOfflineSidechainCompressor } from '../createOfflineSidechainCompressor';
 
 // applySidechainCompressorParams has two branches: a native-processor path
 // (inputNode is a 2-input AudioWorkletNode → writes named AudioParams directly)
-// and a fallback path (delegates to applyCompressorParams). The worklet path
+// and a degraded path (a Makeup GainNode, the only parameter that applies). The worklet path
 // needs `inputNode instanceof AudioWorkletNode`, so we install a real class on
 // the global for the duration of the worklet-path tests.
 
@@ -77,15 +77,15 @@ describe('applySidechainCompressorParams', () => {
         });
     });
 
-    describe('fallback (non-worklet) path', () => {
-        it('delegates to applyCompressorParams when the input is not a 2-input worklet', () => {
-            // The real createSidechainCompressor builds a non-worklet fallback
-            // device under the mock context (no global AudioWorkletNode here).
+    describe('degraded (non-worklet) path', () => {
+        it('applies only Makeup, as a linear gain, to the degraded gain node', () => {
             const context = createMockAudioContext();
-            const device = createSidechainCompressorFallback(asBaseAudioContext(context));
+            const device = createOfflineSidechainCompressor(asBaseAudioContext(context));
+            const makeup = device.namedNodes?.makeup as GainNode;
 
-            // No throw + the fallback compressor node receives the threshold.
-            expect(() => applySidechainCompressorParams(device, { 'sc-comp-threshold': -12 })).not.toThrow();
+            applySidechainCompressorParams(device, { 'sc-comp-threshold': -12, 'sc-comp-makeup': 12 });
+
+            expect(makeup.gain.value).toBeCloseTo(10 ** (12 / 20), 10);
             device.dispose?.();
         });
     });

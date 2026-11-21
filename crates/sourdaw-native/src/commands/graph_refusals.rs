@@ -11,6 +11,9 @@
 
 use std::fmt;
 
+use super::levain::LevainBankError;
+use super::timeline_sample_lifecycle::TimelineMaterialError;
+
 use daw_dsp::grinder::nam::NamAdmissionError;
 use daw_dsp::toaster::transient::TransientShaperError;
 use daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY;
@@ -26,7 +29,7 @@ use super::graph::{
     BACTERIA_MOD_SOURCE_COUNT, BACTERIA_MOD_TARGET_COUNT, GRAND_BOULE_PREVIEW_LIVE_ONLY,
     MAX_BACTERIA_MOD_ASSIGNMENTS, MAX_BATCH_COMMANDS, MAX_IMMEDIATE_DEVICE_PARAMETERS,
     MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
-    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES,
+    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES, OFFLINE_RENDER_SAMPLE_RATES,
 };
 use super::offline_plugins::OfflineRenderError;
 
@@ -178,10 +181,10 @@ pub(crate) enum GraphRefusal {
     Poisoned {
         cause: String,
     },
-    /// Text from a timeline-material check this module does not own.
-    TimelineMaterial(String),
-    /// Text from a levain bank build this module does not own.
-    LevainBank(String),
+    /// A refusal from the timeline-material lifecycle.
+    TimelineMaterial(TimelineMaterialError),
+    /// A levain bank build's refusal.
+    LevainBank(LevainBankError),
     /// A refusal from the offline render's plugin instances or its cancel.
     OfflineRender(OfflineRenderError),
     OfflineCommand(OfflineCommandError),
@@ -450,6 +453,14 @@ pub(crate) enum GraphRefusal {
     PcmTooLong {
         frames: usize,
     },
+
+    OfflineSampleRateOutOfRange {
+        sample_rate: f64,
+    },
+    OfflineFrameCountZero,
+    OfflineFrameCountTooLarge {
+        frames: usize,
+    },
 }
 
 impl GraphRefusal {
@@ -518,7 +529,8 @@ impl fmt::Display for GraphRefusal {
             }
             Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
             Self::Poisoned { cause } => f.write_str(cause),
-            Self::TimelineMaterial(text) | Self::LevainBank(text) => f.write_str(text),
+            Self::TimelineMaterial(refusal) => refusal.fmt(f),
+            Self::LevainBank(refusal) => refusal.fmt(f),
             Self::OfflineRender(error) => error.fmt(f),
             Self::OfflineCommand(error) => error.fmt(f),
             Self::OfflineDroppedCommands { diagnostics } => write!(
@@ -913,6 +925,20 @@ impl fmt::Display for GraphRefusal {
                 "PCM payload holds {frames} frames per channel, above the \
                  {MAX_OFFLINE_RENDER_FRAMES}-frame ceiling"
             ),
+
+            Self::OfflineSampleRateOutOfRange { sample_rate } => write!(
+                f,
+                "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+                 {} to {} Hz",
+                OFFLINE_RENDER_SAMPLE_RATES.start(),
+                OFFLINE_RENDER_SAMPLE_RATES.end()
+            ),
+            Self::OfflineFrameCountZero => f.write_str("Frame count must be at least 1"),
+            Self::OfflineFrameCountTooLarge { frames } => write!(
+                f,
+                "Frame count {frames} exceeds the offline render ceiling of \
+                 {MAX_OFFLINE_RENDER_FRAMES}"
+            ),
         }
     }
 }
@@ -921,6 +947,8 @@ impl std::error::Error for GraphRefusal {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::OfflineRender(error) => Some(error),
+            Self::TimelineMaterial(error) => Some(error),
+            Self::LevainBank(error) => Some(error),
             _ => None,
         }
     }
@@ -929,6 +957,26 @@ impl std::error::Error for GraphRefusal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_render_bound_refusals_keep_their_text() {
+        assert_eq!(
+            GraphRefusal::OfflineSampleRateOutOfRange {
+                sample_rate: 7_999.0
+            }
+            .to_string(),
+            "Sample rate 7999 Hz is outside the offline render's supported range of 8000 to \
+             384000 Hz"
+        );
+        assert_eq!(
+            GraphRefusal::OfflineFrameCountZero.to_string(),
+            "Frame count must be at least 1"
+        );
+        assert_eq!(
+            GraphRefusal::OfflineFrameCountTooLarge { frames: 28_800_001 }.to_string(),
+            "Frame count 28800001 exceeds the offline render ceiling of 28800000"
+        );
+    }
 
     #[test]
     fn queue_capacity_refusals_start_with_the_tokens_typescript_matches() {

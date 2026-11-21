@@ -8,7 +8,7 @@ import { isRecordingAutomationByKey } from '../automationRecording/isRecordingAu
 import { makeKey } from '../automationRecording/makeKey';
 
 import { computeModulatorValue } from './computeModulatorValue';
-import { getModulationDependencies } from './getModulationDependencies';
+import { modulationDependenciesPort } from './modulationDependencies';
 import { modulationParamSlew, modulationSlewEpoch } from './modulationSlewState';
 import { resolveModulationBinding } from './resolveModulationBinding';
 
@@ -58,7 +58,7 @@ function deviceAcceptsAutomationParameter(
         return false;
     }
 
-    const declared = getModulationDependencies().getPluginParamRange(device.type, parameterId);
+    const declared = modulationDependenciesPort.read().getPluginParamRange(device.type, parameterId);
     if (!declared) {
         return true;
     }
@@ -320,12 +320,12 @@ export function applyModulationToEngine(
             // straight back to 5), so a modulation that should carry the index
             // one step would never arrive. Quantise the delivery, not the state.
             modulationParamSlew.set(key, smoothed);
-            const delivered = getModulationDependencies().quantiseValue({
+            const delivered = modulationDependenciesPort.read().quantiseValue({
                 deviceType: binding.deviceType,
                 paramId: mapping.targetParamId,
                 value: smoothed,
             });
-            const previousDelivered = getModulationDependencies().quantiseValue({
+            const previousDelivered = modulationDependenciesPort.read().quantiseValue({
                 deviceType: binding.deviceType,
                 paramId: mapping.targetParamId,
                 value: prev,
@@ -342,12 +342,9 @@ export function applyModulationToEngine(
             const movedPastEpsilon = Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered;
 
             if (!hadPrev || isDiscontinuity || movedPastEpsilon || hasCompetingAutomationWrites) {
-                getModulationDependencies().updateDeviceParam(
-                    targetOwner.trackId,
-                    targetOwner.deviceId,
-                    mapping.targetParamId,
-                    delivered
-                );
+                modulationDependenciesPort
+                    .read()
+                    .updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, mapping.targetParamId, delivered);
             }
         }
     }

@@ -463,6 +463,31 @@ describe('positive whole-request metric intent', () => {
             });
             expect(readMetricPublication(schema)).toEqual(expected);
             expect(readMetricPublication(projectOpenAiStrictToolSchema(schema))).toEqual(expected);
+            // The local form keeps every objective, its id, kind, recipe and scopes, and prints no recipe's
+            // title or expectations, which recipe.discover reads.
+            const discovered = createPlanningInterpretationToolSchema({
+                creative,
+                answer,
+                metric,
+                binding: built.planningBinding,
+                recipeObjectiveDetail: 'discovered',
+            });
+            expect(readMetricPublication(discovered)).toEqual(
+                expected.map((objective) =>
+                    objective.kind === 'recipe' ? { ...objective, label: null, goals: [] } : objective
+                )
+            );
+            expect(expected.filter((objective) => objective.kind === 'recipe').length).toBeGreaterThan(0);
+            for (const objective of expected.filter((entry) => entry.kind === 'recipe')) {
+                const recipe = getMixRecipeCatalog().recipes.find((entry) => entry.id === objective.recipeId);
+                expect(objective.recipeId?.startsWith(`${recipe?.roles[0] ?? ''}-${recipe?.descriptor ?? ''}`)).toBe(
+                    true
+                );
+                expect(discovered.function.description).not.toContain(objective.label);
+            }
+            expect(discovered.function.description).toContain(
+                'muddy and thin recipes remove that fault, every other descriptor produces its quality'
+            );
             for (const objective of metric.objectives) {
                 for (const goal of objective.goals) {
                     if (goal.source.kind === 'recipe') {

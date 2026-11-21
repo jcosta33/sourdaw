@@ -64,6 +64,16 @@ vi.mock('../recordingSessionState', () => ({
     touchActive,
 }));
 
+let outputLatencySeconds = 0;
+
+function getRecordingContext(): AudioContext {
+    return { baseLatency: 0, outputLatency: outputLatencySeconds } as AudioContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 function setTracks(tracks: TestTrack[]): void {
     trackSnapshot.value = { tracks };
 }
@@ -77,9 +87,10 @@ describe('recordAutomationValue', () => {
         touchActive.clear();
         trackSnapshot.value = null;
         transportSnapshot.value = { tempo: 120 };
+        outputLatencySeconds = 0;
         setAutomationRecordingDependencies({
-            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
-            getCompensationDelay: () => 0,
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getZeroCompensationDelay,
         });
     });
 
@@ -167,10 +178,7 @@ describe('recordAutomationValue', () => {
     // and reused, so a mid-session tempo change does not re-time recorded beats.
     it('captures tempo at the first value and ignores a mid-session tempo change', () => {
         // Non-zero latency makes the beat->second conversion tempo-sensitive.
-        setAutomationRecordingDependencies({
-            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0.5 }) as AudioContext,
-            getCompensationDelay: () => 0,
-        });
+        outputLatencySeconds = 0.5;
         setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         transportSnapshot.value = { tempo: 60 };

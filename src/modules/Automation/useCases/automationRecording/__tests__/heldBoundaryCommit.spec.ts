@@ -44,6 +44,16 @@ function replay(action: (typeof undoEntries)[number]['inverseAction']): void {
  * replaced.
  */
 
+const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as unknown as AudioContext;
+
+function getZeroLatencyContext(): AudioContext {
+    return zeroLatencyContext;
+}
+
+function getZeroCompensationDelay(): number {
+    return 0;
+}
+
 const TRACK_ID = 'held-track';
 
 function seedTrack(automationMode: 'write' | 'touch' | 'latch'): void {
@@ -132,8 +142,8 @@ describe('automation recording committed through the transport stop boundary', (
         laneBaselines.clear();
         undoEntries.length = 0;
         setAutomationRecordingDependencies({
-            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as unknown as AudioContext,
-            getCompensationDelay: () => 0,
+            getAudioContext: getZeroLatencyContext,
+            getCompensationDelay: getZeroCompensationDelay,
         });
         transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120, playheadPosition: 0 });
     });

@@ -27,6 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
         resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
         audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
         applyNoteExpression: apply_note_expression,

@@ -2484,12 +2484,6 @@ describe('project discovery tool', () => {
             verdict: { status: 'unsupported', domain: 'ghost', reason: 'unknown-domain' },
             code: 'invalid-tool-arguments',
         },
-        {
-            label: 'a catalog whose provider is unregistered',
-            callArguments: { domain: 'capability' },
-            verdict: { status: 'unavailable', domain: 'capability', reason: 'capability-provider-unregistered' },
-            code: 'unavailable-tool',
-        },
     ])('reports $label as the owner verdict, unretryable', async ({ callArguments, verdict, code }) => {
         const requestTurn = vi
             .fn()

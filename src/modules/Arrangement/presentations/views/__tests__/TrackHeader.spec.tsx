@@ -170,6 +170,22 @@ describe('TrackHeader', () => {
         });
     });
 
+    it('marks a hidden track as hidden and dims it, and marks nothing on a shown track', () => {
+        const { unmount } = renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+        expect(screen.queryByTestId('track-hidden-badge')).not.toBeInTheDocument();
+        expect(screen.getByRole('row')).not.toHaveClass('opacity-50');
+        unmount();
+
+        renderWithTooltip(<TrackHeader track={{ ...mockTrack, hidden: true }} isSelected={false} />);
+        expect(screen.getByTestId('track-hidden-badge')).toHaveTextContent('Hidden');
+        expect(screen.getByRole('row')).toHaveClass('opacity-50');
+    });
+
+    it('marks a hidden folder row as hidden', () => {
+        renderWithTooltip(<TrackHeader track={{ ...mockFolderTrack, hidden: true }} isSelected={false} />);
+        expect(screen.getByTestId('track-hidden-badge')).toHaveTextContent('Hidden');
+    });
+
     it('should render folder track differently', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
