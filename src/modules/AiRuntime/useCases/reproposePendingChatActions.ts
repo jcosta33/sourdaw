@@ -442,6 +442,67 @@ function persistReproposalConfirmation(
 }
 
 /**
+ * Measure the re-previewed batch again and record the fresh proof on the live run, refusing
+ * when the card or run moved meanwhile or the run plan cannot hold the new evidence.
+ */
+async function refreshMetricProof(
+    prepared: PreparedReproposal,
+    goalState: NonNullable<ReturnType<typeof metricGoalStateCodec>>,
+    context: ReturnType<typeof getProjectContext>
+): Promise<
+    | { status: 'rejected'; reason: string }
+    | { status: 'refreshed'; state: typeof goalState; approval: ReturnType<typeof compileAgentRiskApproval> }
+> {
+    const { confirmation, refreshed } = prepared;
+    let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    const watch = watchVibeBatchRePreview(confirmation, context);
+    try {
+        refreshedProof = await prepareMetricGoalPreview({
+            state: goalState,
+            commandBatch: refreshed.commandBatch,
+            context,
+            prompt: confirmation.prompt,
+            runId: confirmation.runId,
+            onBegin: watch.onBegin,
+            onProgress: watch.onProgress,
+        });
+    } catch (error) {
+        return { status: 'rejected', reason: failureReason(error) };
+    } finally {
+        await watch.settle();
+    }
+    const live = getPendingActionConfirmation(confirmation.id);
+    const liveRun = agentRunLifecycle.get(confirmation.runId);
+    if (
+        live?.status !== 'proposed' ||
+        live.supersededBy !== null ||
+        live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
+        liveRun === null ||
+        TERMINAL_RUN_PHASES.has(liveRun.phase)
+    ) {
+        return {
+            status: 'rejected',
+            reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+        };
+    }
+    const approval = compileAgentRiskApproval({
+        commandBatch: refreshed.commandBatch,
+        requireExplicitApproval: true,
+        metricGoalState: JSON.stringify(refreshedProof.state),
+    });
+    const refusal = recordBatchPreviewEvidence(
+        liveRun,
+        refreshed.currentRevision,
+        approval.metricGoalState,
+        refreshedProof.receipts
+    );
+    if (refusal !== null) {
+        return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
+    }
+    return { status: 'refreshed', state: refreshedProof.state, approval };
+}
+
+/**
  * Replace a stale or partially accepted proposal with a fresh one bound to the current
  * revision. The run stays alive: the superseded proposal is invalidated and its prepared
  * resources discarded, but nothing cancels the run the musician is still steering.
@@ -465,53 +526,13 @@ export async function reproposePendingChatActions(
         if (selectsSubset) {
             goalState = { ...goalState, proofs: [] };
         }
-        let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
-        const watch = watchVibeBatchRePreview(confirmation, context);
-        try {
-            refreshedProof = await prepareMetricGoalPreview({
-                state: goalState,
-                commandBatch: refreshed.commandBatch,
-                context,
-                prompt: confirmation.prompt,
-                runId: confirmation.runId,
-                onBegin: watch.onBegin,
-                onProgress: watch.onProgress,
-            });
-        } catch (error) {
-            return { status: 'rejected', reason: failureReason(error) };
-        } finally {
-            await watch.settle();
+        const refreshedPreview = await refreshMetricProof(prepared, goalState, context);
+        if (refreshedPreview.status !== 'refreshed') {
+            return refreshedPreview;
         }
-        const live = getPendingActionConfirmation(confirmation.id);
-        const liveRun = agentRunLifecycle.get(confirmation.runId);
-        if (
-            live?.status !== 'proposed' ||
-            live.supersededBy !== null ||
-            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
-            liveRun === null ||
-            TERMINAL_RUN_PHASES.has(liveRun.phase)
-        ) {
-            return {
-                status: 'rejected',
-                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
-            };
-        }
-        goalState = refreshedProof.state;
+        goalState = refreshedPreview.state;
         measuredState = goalState;
-        approval = compileAgentRiskApproval({
-            commandBatch: refreshed.commandBatch,
-            requireExplicitApproval: true,
-            metricGoalState: JSON.stringify(goalState),
-        });
-        const refusal = recordBatchPreviewEvidence(
-            liveRun,
-            refreshed.currentRevision,
-            approval.metricGoalState,
-            refreshedProof.receipts
-        );
-        if (refusal !== null) {
-            return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
-        }
+        approval = refreshedPreview.approval;
     }
     const card = composeRePreviewedCard({
         confirmation,
