@@ -7,14 +7,6 @@ import { resetResolvedTokenCache, resolveToken } from '#/utils/UI/resolveToken';
 import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
 
-type TestTimelineView = {
-    scrollX: number;
-    scrollY: number;
-    pixelsPerBeat: number;
-    autoScrollEnabled: boolean;
-    viewportWidth?: number;
-};
-
 const stores = vi.hoisted(() => ({
     trackStore: { kind: 'tracks' },
     markerStore: { kind: 'markers' },
@@ -30,7 +22,7 @@ const stores = vi.hoisted(() => ({
         ],
         selectedTrackId: null,
     },
-    view: { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true } as TestTimelineView,
+    view: { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportWidth: 0 },
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -138,7 +130,7 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
             return { width: text.length * 5 };
         });
         stores.markers = { markers: [], sections: [] };
-        stores.view = { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true };
+        stores.view = { scrollX: 48, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportWidth: 0 };
         resizeObserverHarness.callback = null;
         densityObserverHarness.query = null;
         cssWidth = 200;
