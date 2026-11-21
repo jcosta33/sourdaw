@@ -1,4 +1,4 @@
-import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
+import { isBuiltinSynthDevice, isDrumDevice } from '../models/NoteInputKindByDeviceType';
 
 import type { TrackChannelStrip } from '../models/AudioEngineState';
 import type { RuntimeGraphDeltaNode } from '../models/RuntimeGraphDelta';

@@ -2,7 +2,7 @@
  * Use case: resolve built-in synthesizer parameters from device descriptors.
  */
 
-import { isBuiltinSynthDevice } from '#/utils/deviceTypeMatching';
+import { isBuiltinSynthDevice } from '#/modules/AudioEngine/useCases';
 
 import { type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 

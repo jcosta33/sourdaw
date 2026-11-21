@@ -11,3 +11,10 @@
  * Ephemeral runtime state, not project truth.
  */
 export const pendingKeyedUnloads = new Map<string, Promise<void>>();
+
+/**
+ * How many keyed unloads each instance id has had admitted. An activation that
+ * waited on one compares it after the wait: a later unload admitted meanwhile
+ * (Remove, Undo, Redo) owns the instance's fate, so the waiter must not reload.
+ */
+export const pendingKeyedUnloadGenerations = new Map<string, number>();
