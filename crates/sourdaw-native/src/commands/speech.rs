@@ -30,9 +30,8 @@ enum DictationError {
     AlreadyInProgress,
     AlreadyResolved,
     NotActive,
-    /// The filesystem boundary's refusal text for a picked model path, passed
-    /// through unchanged.
-    ModelPath(String),
+    /// The filesystem boundary's refusal for a picked model path.
+    ModelPath(filesystem::FileRefusal),
     ModelLoad(WhisperError),
     VerifiedModelLoad(WhisperError),
     ModelCache(ModelCacheError),
@@ -65,7 +64,7 @@ impl fmt::Display for DictationError {
             }
             Self::AlreadyResolved => f.write_str("Dictation session already resolved."),
             Self::NotActive => f.write_str("Dictation session is not active."),
-            Self::ModelPath(message) => f.write_str(message),
+            Self::ModelPath(refusal) => refusal.fmt(f),
             Self::ModelLoad(error) => write!(f, "Failed to load Whisper model: {error}"),
             Self::VerifiedModelLoad(error) => {
                 write!(f, "Failed to load verified local Whisper model: {error}")
@@ -80,6 +79,7 @@ impl std::error::Error for DictationError {
         match self {
             Self::ModelLoad(source) | Self::VerifiedModelLoad(source) => Some(source),
             Self::ModelCache(source) => Some(source),
+            Self::ModelPath(source) => Some(source),
             _ => None,
         }
     }
@@ -1698,7 +1698,7 @@ mod tests {
                 "Dictation session is not active.",
             ),
             (
-                DictationError::ModelPath("File not found or not accessible".to_string()),
+                DictationError::ModelPath(filesystem::FileRefusal::NotFoundOrNotAccessible),
                 "File not found or not accessible",
             ),
             (

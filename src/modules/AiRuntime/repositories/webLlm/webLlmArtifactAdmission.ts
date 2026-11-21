@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { LocalModelDownloadRequiredError } from '../../errors/LocalModelDownloadRequiredError';
 import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 
 import { createWebLlmAppConfig } from './createWebLlmAppConfig';
@@ -498,7 +499,7 @@ async function admitWebLlmModelArtifactsExclusive(
             await verifyPromotedArtifacts(model, dependencies);
         } catch (error) {
             await purgeWebLlmModelArtifacts(modelId, dependencies);
-            throw new Error(
+            throw new LocalModelDownloadRequiredError(
                 'Verified WebLLM cache was missing or poisoned and has been purged. Explicit consent is required to download it again.',
                 { cause: error }
             );
@@ -511,13 +512,15 @@ async function admitWebLlmModelArtifactsExclusive(
 
     if (provenance === 'invalid') {
         await purgeWebLlmModelArtifacts(modelId, dependencies);
-        throw new Error(
+        throw new LocalModelDownloadRequiredError(
             'WebLLM cache provenance was invalid and has been purged. Explicit consent is required to download it again.'
         );
     }
 
     if (options.downloadConsent !== true) {
-        throw new Error('Explicit model-download consent is required before WebLLM can fetch this artifact set.');
+        throw new LocalModelDownloadRequiredError(
+            'Explicit model-download consent is required before WebLLM can fetch this artifact set.'
+        );
     }
 
     // A download needs the whole set anew, so this model's stale entries and an interrupted

@@ -1,6 +1,5 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
-import { getFactoryDrumKitByIndex } from '#/modules/AudioEngine/useCases';
-import { isDrumDevice } from '#/utils/deviceTypeMatching';
+import { getFactoryDrumKitByIndex, isDrumDevice } from '#/modules/AudioEngine/useCases';
 
 import {
     CANONICAL_TRACK_ROLES,

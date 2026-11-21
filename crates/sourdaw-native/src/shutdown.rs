@@ -143,7 +143,7 @@ fn shutdown_with_wait(
             report.closed_editors = gui_report.closed_instance_ids;
             report.editors_that_refused = gui_report.errors;
         }
-        Err(error) => report.editor_close_error = Some(error),
+        Err(error) => report.editor_close_error = Some(error.to_string()),
     }
 
     // Deliberately after the close pass and outside the match: a close that

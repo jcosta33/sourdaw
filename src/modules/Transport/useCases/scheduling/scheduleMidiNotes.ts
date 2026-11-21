@@ -4,13 +4,17 @@ import { getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
     builtinSynthVoice,
+    type classifyNoteReceivingDevice,
     ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
     getNoteExpressionDimensions,
+    isBypassedNoteReceiver,
     registerScheduledSource,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
     scheduleFaustNote,
     startNoteExpression,
 } from '#/modules/AudioEngine/useCases';
@@ -33,12 +37,6 @@ import {
 } from '#/modules/MIDI/useCases';
 import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import {
-    isBypassedNoteReceiver,
-    type NoteReceivingInstrumentKind,
-    resolveDrumKitBy,
-    resolveDrumKitOutputGain,
-} from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -110,6 +108,8 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     // device's export refusal was hiding, just pointing the other way.
     'builtin-crumbs': { controlsKey: 'crumbsControls' },
 };
+
+type NoteReceivingInstrumentKind = NonNullable<ReturnType<typeof classifyNoteReceivingDevice>>;
 
 // A Toaster child's notes go to its parent's kit, whatever else the parent's
 // chain holds; only this parent arm looks for a toaster outside the receiver.
