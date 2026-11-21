@@ -16,7 +16,9 @@ import {
 import { RECIPE_EXPANSION_MAX_COMMANDS } from '../../models/RecipeExpansionLimits';
 import { type VibeRunBatch, type VibeRunMeasurement } from '../../models/VibeRunPlan';
 import { expandMixRecipe } from '../expandMixRecipe';
+import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
+import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
 registerDeviceEnginePorts();
 
@@ -758,6 +760,38 @@ describe('planWholeProjectVibeRun batches', () => {
         expect(batch.objective.descriptors).toEqual(['warm', 'punchy']);
         expect(expandBatch(batch, context)).toBe(batch.commandCount);
         expect(batch.commandCount).toBe(batch.targets.reduce((total, target) => total + target.commandCount, 0));
+    });
+
+    // Red when the tight recipe states the bass band falling again: the run pools both descriptors'
+    // goals on the bus and the whole-run fit refuses a batch whose goals contradict.
+    it('plans warm and tight together on a bus, whose pooled goals the run does not refuse', () => {
+        const context = projectContext([contextTrack('t-bus', 'Group', 'bus')]);
+        const catalog = getMixRecipeCatalog();
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['warm', 'tight'],
+            recipes: [catalogRecipe('bus-warm'), catalogRecipe('bus-tight')],
+            measurements: [],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the bus to plan one batch.');
+        }
+        expect(batch.targets.map((target) => target.recipeIds)).toEqual([['bus-warm', 'bus-tight']]);
+        const goals = readVibeBatchRecipeGoals({
+            batch,
+            catalog,
+            range: { startBeat: 0, endBeat: 16, sectionId: null },
+        });
+        if (goals.status === 'refused') {
+            throw new TypeError(goals.reason);
+        }
+        expect(goals.goals.map((goal) => goal.source.kind === 'recipe' && goal.source.recipeId)).toEqual(
+            expect.arrayContaining(['bus-warm', 'bus-tight'])
+        );
+        expect(hasContradictoryMetricGoals(goals.goals)).toBe(false);
     });
 
     it('reports a role no requested character has a measurable recipe for instead of planning an empty batch', () => {

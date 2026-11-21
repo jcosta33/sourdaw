@@ -305,7 +305,6 @@ const RECIPES_WITH_NO_CHECKABLE_CLAIM: Readonly<Record<string, string>> = Object
         'keys-thin',
         'bus-warm',
         'bus-bright',
-        'bus-tight',
         'bus-wide',
         'bus-dark',
         'bus-airy',

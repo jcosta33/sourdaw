@@ -90,7 +90,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group is the only low-frequency source in the mix.',
             'Skip when one source in the group is loud enough that the compressor only ever tracks that one.',
         ],
-        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Summing several sources stacks their low-frequency shoulders, so trimming that region before compression stops it dominating the detector. The shorter release then shortens the decay of the group as a whole, which is what tightness means at bus level.',
     },
     {
