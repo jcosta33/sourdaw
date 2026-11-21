@@ -7,8 +7,6 @@ import {
     forEachChild,
     isClassDeclaration,
     isClassExpression,
-    isArrayLiteralExpression,
-    isAsExpression,
     isCallExpression,
     isEnumDeclaration,
     isIdentifier,
@@ -19,8 +17,6 @@ import {
     isObjectLiteralExpression,
     isParameter,
     isPropertyAssignment,
-    isSatisfiesExpression,
-    isVariableStatement,
     isStringLiteral,
     isFunctionDeclaration,
     isFunctionExpression,
@@ -31,6 +27,8 @@ import {
     ScriptTarget,
 } from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+import { getRuntimeActionTypes } from '#/modules/AiRuntime/useCases';
 
 function source(path: string): string {
     return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -55,68 +53,6 @@ function productionSources(root = resolve(process.cwd(), 'src')): Array<{ path: 
 
 function matches(text: string, pattern: RegExp): string[] {
     return text.match(pattern) ?? [];
-}
-
-/**
- * String elements of a top-level `const <name> = [...]` array literal, read from
- * the AST rather than scraped.
- *
- * The runtime action union used to be a hand-written discriminated union and was
- * read here with a `/type: '(…)'/` regex. `43905d409` rewrote it as a string
- * array with the payloads derived from it, so the file stopped containing a
- * single `type: '…'` literal and the regex started returning nothing. The
- * assertion then compared `[]` against the four legacy actions and **failed** —
- * it was red from that commit onward, and nothing was running it. It did not
- * pass vacuously; it could not, because the expected side is never empty.
- *
- * Reading the array removes the coupling to a syntactic form. The two throws
- * below are the part that matters: an extraction that silently returns less than
- * the whole array is how a census like this goes green while the thing it guards
- * is broken, and both of the cheap ways to do that are refused here rather than
- * left to be discovered.
- *
- * Unwraps `as const` and `satisfies`, which the declaration carries and which
- * would otherwise hide the array behind an expression node.
- */
-function stringArrayLiteralElements(file: SourceFile, name: string): string[] {
-    let found: string[] | undefined;
-    for (const statement of file.statements) {
-        if (!isVariableStatement(statement)) {
-            continue;
-        }
-        for (const declaration of statement.declarationList.declarations) {
-            if (!isIdentifier(declaration.name) || declaration.name.text !== name) {
-                continue;
-            }
-            let initializer = declaration.initializer;
-            while (initializer && (isAsExpression(initializer) || isSatisfiesExpression(initializer))) {
-                initializer = initializer.expression;
-            }
-            if (!initializer || !isArrayLiteralExpression(initializer)) {
-                throw new Error(`${name} is not an array literal in ${file.fileName}`);
-            }
-            const strings = initializer.elements.filter(isStringLiteral).map((element) => element.text);
-            if (strings.length !== initializer.elements.length) {
-                // Spreads, nested arrays and identifiers would otherwise be
-                // dropped without a word, and the survivors could still satisfy
-                // every assertion below — splitting a 238-entry list into named
-                // groups joined by `...` is an ordinary refactor, and it would
-                // hide whatever lives in the groups that were not read.
-                throw new Error(
-                    `${name} in ${file.fileName} holds ${initializer.elements.length} elements but only ` +
-                        `${strings.length} are string literals; this reader would silently skip the rest`
-                );
-            }
-            if (found) {
-                throw new Error(`${name} is declared more than once in ${file.fileName}`);
-            }
-            found = strings;
-        }
-    }
-    if (!found) {
-        throw new Error(`${name} is not a top-level array literal in ${file.fileName}`);
-    }
-    return found;
 }
 
 function parsedSource(path: string): SourceFile {
@@ -350,12 +286,11 @@ describe('VCA activation quarantine', () => {
             .filter(({ path }) => path === 'src/utils/handlerContract.ts' || /\/events\/\w+AppActions\.ts$/.test(path))
             .map(({ text }) => text)
             .join('\n');
-        const runtimeActions = parsedSource('src/modules/AiRuntime/models/RuntimeAction.ts');
         const registeredVcaActions = matches(handlers, /^\s{8}(\w*Vca\w*):/gm).map((row) => row.trim().split(':')[0]);
         const persistedVcaActions = matches(appActions, /type: '([^']*Vca[^']*)'/g).map(
             (row) => row.match(/'([^']+)'/)?.[1]
         );
-        const runtimeActionTypes = stringArrayLiteralElements(runtimeActions, 'RUNTIME_ACTION_TYPES');
+        const runtimeActionTypes = getRuntimeActionTypes();
         const runtimeVcaActions = runtimeActionTypes.filter((action) => action.includes('Vca'));
 
         expect(registeredVcaActions).toEqual([
@@ -373,11 +308,6 @@ describe('VCA activation quarantine', () => {
             'restoreLegacyVcaState',
         ]);
         // Check the census found something before trusting what it did not find.
-        // The real union holds ~240 entries; a reader returning four or fewer has
-        // failed, not discovered a small union. The sharper guard is in
-        // `stringArrayLiteralElements` itself, which refuses to return a partial
-        // read at all — this catches the remaining case of a genuinely empty
-        // literal, which parses fine.
         expect(runtimeActionTypes.length).toBeGreaterThan(LEGACY_ACTIONS.length);
         // Sorted because the two lists are ordered differently — `LEGACY_ACTIONS`
         // is in build order, and `RUNTIME_ACTION_TYPES` is only alphabetical from

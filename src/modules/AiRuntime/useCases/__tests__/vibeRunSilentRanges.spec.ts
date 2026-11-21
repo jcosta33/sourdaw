@@ -30,6 +30,7 @@ import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore'
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
+import { digestScheduledVibeRunPlan } from '../../validators/digestScheduledVibeRunPlan';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
@@ -339,13 +340,18 @@ function requireSchedule(card: Confirmation) {
 
 /** Re-seal a tampered plan's digests so only the tampered field can make the reader refuse it. */
 function resealed(
-    plan: Pick<MeasuredScheduledVibeRunPlan, 'briefRevision' | 'initial'> & { batches: unknown }
+    plan: Pick<MeasuredScheduledVibeRunPlan, 'briefRevision' | 'initial' | 'valueChoiceTier'> & { batches: unknown }
 ): string {
     const initialDigest = digest(plan.initial);
     return JSON.stringify({
         ...plan,
         initialDigest,
-        planDigest: digest({ briefRevision: plan.briefRevision, batches: plan.batches, initialDigest }),
+        planDigest: digestScheduledVibeRunPlan({
+            briefRevision: plan.briefRevision,
+            batches: plan.batches,
+            initialDigest,
+            valueChoiceTier: plan.valueChoiceTier,
+        }),
     });
 }
 

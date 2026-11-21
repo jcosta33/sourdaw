@@ -19,8 +19,10 @@ import {
     type VibeRunExcludedTargetReason,
     type VibeRunPlan,
     type VibeRunUnplannedRole,
+    type VibeRunValueChoiceTier,
 } from '../../models/VibeRunPlan';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
+import { digestScheduledVibeRunPlan } from '../../validators/digestScheduledVibeRunPlan';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -338,7 +340,24 @@ function buildMeasuredPlan(input: {
         batches,
         initial,
         initialDigest,
-        planDigest: digest({ briefRevision: source.brief.revision, batches, initialDigest }),
+        planDigest: digestScheduledVibeRunPlan({ briefRevision: source.brief.revision, batches, initialDigest }),
+    };
+}
+
+/** The tier is decided after the plan is built, so the plan digest is taken again with it bound. */
+function withValueChoiceTier(
+    plan: MeasuredScheduledVibeRunPlan,
+    valueChoiceTier: VibeRunValueChoiceTier
+): MeasuredScheduledVibeRunPlan {
+    return {
+        ...plan,
+        valueChoiceTier,
+        planDigest: digestScheduledVibeRunPlan({
+            briefRevision: plan.briefRevision,
+            batches: plan.batches,
+            initialDigest: plan.initialDigest,
+            valueChoiceTier,
+        }),
     };
 }
 
@@ -443,7 +462,7 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
-    const schedule = buildSchedule(plan, input.reading);
+    const schedule = buildSchedule(withValueChoiceTier(plan, valueChoice.tier), input.reading);
     return {
         status: 'scheduled',
         receipts: input.collected.receipts,

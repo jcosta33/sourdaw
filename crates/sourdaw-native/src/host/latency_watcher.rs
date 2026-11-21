@@ -531,6 +531,7 @@ mod tests {
     /// and the frames are what the fixture declared.
     #[test]
     fn a_sweep_services_a_flagged_instance_and_aims_the_compensation() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let (handle, mut command_rx, _retired_adoption_rx) =
@@ -571,6 +572,7 @@ mod tests {
     /// nothing, so one restart cannot loop.
     #[test]
     fn a_second_sweep_over_a_serviced_instance_publishes_nothing() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));
@@ -605,6 +607,7 @@ mod tests {
     /// forever — the flag dies with the instance instead.
     #[test]
     fn a_sweep_does_not_reraise_the_hint_for_an_instance_that_refuses_control() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         runtime.begin_unload();
         let sink = RecordingEventSink::default();
@@ -624,6 +627,7 @@ mod tests {
     /// still standing and nothing else will read it.
     #[test]
     fn a_sweep_reraises_the_hint_for_a_live_instance_it_could_not_reach() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));
