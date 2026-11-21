@@ -47,7 +47,7 @@ describe('initEngine status publication', () => {
 
     it('shows loading while the webllm engine starts, then ready', async () => {
         getBackendChainMock.mockReturnValue(['webllm']);
-        const seenDuringInit: LlmEngineStatus[] = [];
+        const seenDuringInit: Array<typeof llmStatusStore.value> = [];
         initWebLlmEngineMock.mockImplementation(async () => {
             seenDuringInit.push(llmStatusStore.value);
         });
