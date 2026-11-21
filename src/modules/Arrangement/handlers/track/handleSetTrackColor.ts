@@ -1,8 +1,20 @@
 import { createHandler } from '#/utils/createHandler';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type Track } from '../../models/Track';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+
+// The batch describes every action before executing any, so the previous colour
+// is what the earlier actions of the batch leave, and a track an earlier action
+// creates exists only in that plan.
+function trackBeforeAction(trackId: string, context: HandlerValidationContext | undefined): Track | null | undefined {
+    if (context) {
+        return getPlannedTrackState(context, trackId);
+    }
+    return getTrackStoreState()?.tracks.find((track) => track.id === trackId);
+}
 
 export const handleSetTrackColor = createHandler<'setTrackColor'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedColor !== undefined,
@@ -18,8 +30,8 @@ export const handleSetTrackColor = createHandler<'setTrackColor'>({
         setTrackColor(action.payload.trackId, action.payload.color);
         return { status: 'written' };
     },
-    describe: (alpha) => {
-        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+    describe: (alpha, context) => {
+        const prev = trackBeforeAction(alpha.payload.trackId, context);
         return {
             label: 'Set track color',
             inverseAction: prev
