@@ -334,6 +334,23 @@ fn a_due_timer_fires_with_its_id_on_the_servicing_thread() {
     );
 }
 
+/// A pass long after the deadline fires the timer once and counts the next
+/// period from itself, so it neither fires again to catch up nor early.
+#[test]
+fn a_fired_timer_comes_due_one_period_after_the_pass_that_fired_it() {
+    let instance = Instance::new();
+    instance.attach();
+    let id = instance.register_timer(10).unwrap();
+    let period = instance.run_loop().timer_period(id).unwrap();
+    let late = Instant::now() + Duration::from_secs(60);
+    let service = |now| instance.run_loop().service_timers(now);
+
+    assert_eq!(service(late), 1);
+    assert_eq!(service(late), 0, "no catch-up firing");
+    assert_eq!(service(late + period - Duration::from_millis(1)), 0);
+    assert_eq!(service(late + period), 1);
+}
+
 #[test]
 fn an_unregistered_timer_stops_firing_and_an_unknown_id_is_refused() {
     let instance = Instance::new();
@@ -550,10 +567,15 @@ fn the_shared_pump_services_a_registered_instance_until_it_leaves() {
     let registration = register_editor_run_loop(Arc::clone(instance.run_loop()));
     std::thread::sleep(MIN_TIMER_PERIOD * 4);
     service_editor_run_loops();
-    let fired = instance.recorder.timer_calls(id);
-    assert!(fired > 0, "the pump must fire a due timer");
+    assert!(
+        instance.recorder.timer_calls(id) > 0,
+        "the pump must fire a due timer"
+    );
 
+    // Other tests drive the same pump, so the fixed point is read only once
+    // the registration has left it.
     drop(registration);
+    let fired = instance.recorder.timer_calls(id);
     std::thread::sleep(MIN_TIMER_PERIOD * 4);
     service_editor_run_loops();
     assert_eq!(instance.recorder.timer_calls(id), fired);
