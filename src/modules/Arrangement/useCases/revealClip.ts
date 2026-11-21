@@ -15,9 +15,8 @@ import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTrac
 
 import { selectClipWithFocus } from './clipSelection/selectClipWithFocus';
 import { toggleFolderCollapse } from './folder/toggleFolderCollapse';
-import { getTracksShownInViews } from './getTracksShownInViews';
 import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
-import { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
+import { revealTrackInViews } from './revealTrackInViews';
 import { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 const REVEAL_HORIZONTAL_MARGIN_PX = 32;
@@ -89,14 +88,6 @@ function getClipVerticalBounds(
     return null;
 }
 
-/** A clip on a hidden track is revealed by showing hidden tracks for the session; the track stays hidden. */
-function showHiddenTracksForReveal(tracks: readonly Track[], track: Track): void {
-    if (getTracksShownInViews(tracks, false).some((shown) => shown.id === track.id)) {
-        return;
-    }
-    setShowHiddenTracks(true);
-}
-
 function readVisibleTracks(): Track[] {
     return getVisibleTimelineTracks(
         trackStore.value?.tracks ?? [],
@@ -118,7 +109,7 @@ export function revealClip(clipId: string): boolean {
         toggleVariationLanes(located.track.id, true);
     }
 
-    showHiddenTracksForReveal(tracks, located.track);
+    revealTrackInViews(tracks, located.track.id);
     const bounds = getClipVerticalBounds(readVisibleTracks(), located, view.trackHeightPreview);
     if (!bounds) {
         return false;

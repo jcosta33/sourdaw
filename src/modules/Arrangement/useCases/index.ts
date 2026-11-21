@@ -281,6 +281,8 @@ export { setSnapValue } from './timelineEditing/setSnapValue';
 export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
 export { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
 export { getTracksShownInViews } from './getTracksShownInViews';
+export { getHiddenTrackIds } from './getHiddenTrackIds';
+export { selectTrackRevealingHidden } from './toggleTrackState/selectTrackRevealingHidden';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
