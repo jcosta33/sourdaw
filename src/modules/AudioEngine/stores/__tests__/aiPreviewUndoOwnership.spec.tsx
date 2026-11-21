@@ -249,7 +249,6 @@ describe('AI preview undo ownership', () => {
 
     afterEach(async () => {
         clearRuntimeAudioBufferCache();
-        setTimeOperationDependencies(null);
         await flushIndexedDbTasks(4);
     });
 

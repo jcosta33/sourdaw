@@ -3705,9 +3705,6 @@
     "src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/agentReference/levenshteinDistance.ts": {
@@ -7999,7 +7996,7 @@
     },
     "src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts": {
         "eslint/complexity": {
-            "count": 7
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 3

@@ -32,6 +32,17 @@ export type RetainedCommandSet = {
 };
 
 /**
+ * What a preview of several retained recipes adds to its whole-batch measurement. It also measures
+ * each shorter cumulative prefix of its batch, in step order, because admission reads every step's
+ * goals between that step's own prefixes; and it names the recipes it holds in batch order, where a
+ * one-recipe preview carries its recipe in `measuredPreview.recipeSource`.
+ */
+export type CumulativePreview = {
+    prefixPreviews: readonly MeasuredPreview[];
+    adoptedRecipes: readonly AdoptedRecipe[];
+};
+
+/**
  * What a successful application compiler call leaves behind for a later `command.batch.propose` to
  * adopt by call id through `compiledCallIds`. A transform document, a recipe expansion and a
  * measured preview all lower to ordinary catalog commands the application emitted, so one reference
@@ -43,7 +54,7 @@ export type RetainedCompilation = RetainedCommandSet &
     (
         | { kind: 'transform' }
         | { kind: 'recipe'; recipe: AdoptedRecipe; metricRecipe?: MetricRecipeSource }
-        | { kind: 'preview'; measuredPreview: MeasuredPreview }
+        | { kind: 'preview'; measuredPreview: MeasuredPreview; cumulative?: CumulativePreview }
         /**
          * The one `setProductionBrief` the application composed from the request, and the lines that
          * describe its change. It is confirmed alone and never grounded with other commands. `brief` is

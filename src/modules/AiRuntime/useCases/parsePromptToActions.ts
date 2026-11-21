@@ -1719,9 +1719,12 @@ const planPromptIntent = inject({ logger })(
                           planningOutcome.retainedCompilations.filter((compiled) => compiled.callId === callId)
                       )
                     : [];
-                const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
-                    compiled.kind === 'recipe' ? [compiled.recipe] : []
-                );
+                const adoptedRecipes = selectedCompilations.flatMap((compiled) => {
+                    if (compiled.kind === 'recipe') {
+                        return [compiled.recipe];
+                    }
+                    return compiled.kind === 'preview' ? (compiled.cumulative?.adoptedRecipes ?? []) : [];
+                });
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const storedMetricState = refinedCard?.approvalSnapshot.metricGoalState;
                 const inheritedMetricState = metricGoalStateCodec(storedMetricState);
@@ -1822,15 +1825,13 @@ const planPromptIntent = inject({ logger })(
                     }
                     // A request that reads more than one way plans and measures nothing: choosing a
                     // reading on the card plans exactly that one.
-                    const { mixReadings } = briefCompilation;
-                    if (mixReadings !== undefined) {
-                        const readings = buildBriefReadings(mixReadings.alternatives);
+                    const readings = buildBriefReadings(briefCompilation.mixAlternatives ?? []);
+                    if (readings.length > 0) {
                         const briefReadings: BriefReadingOffer = {
                             catalogId: mixIntent.catalogId,
                             metricGoalState: briefMetricGoalState,
                             readings,
                             brief: briefCompilation.brief,
-                            constraintReading: structuredClone(mixReadings.constraintReading),
                         };
                         if (providerProposal !== null) {
                             briefReadings.providerProposal = providerProposal;

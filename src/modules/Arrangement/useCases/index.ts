@@ -39,7 +39,6 @@ export { resolveBouncedClipEndBeat } from './freezeBounce/resolveBouncedClipEndB
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
-export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { resolveAgentMeasurementTargets } from './resolveAgentMeasurementTargets';
 export { renderAgentMeasurementTarget } from './renderAgentMeasurementTarget';

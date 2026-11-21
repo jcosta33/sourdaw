@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "3d2263690dfaed74cfe84286f45ad2d2d8acdbacd4607a8be43b8ed3a9b8dd6a"
+        "digest": "48655f3a6d8b6e16a8a6f37498dd85b8ad793a2034f61ef86e64cddc67a9b1ea"
     },
     "census": {
-        "digest": "6bddd390efa87d365583684c6b6cc79698a47415a0a8543108eac62a1db63cb3"
+        "digest": "b4cd8eb0e28ec0fda93d1daf27a0451c789dc16e7042f5a419e4baf6dac0d705"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -838,7 +838,7 @@
             "fixtures": [
                 {
                     "path": "electron/__tests__/commands.spec.ts",
-                    "digest": "41c3aa5a84e2bf845b4188ee613645774eb183a1d6798dc890e6ec75c911c3c0"
+                    "digest": "b4df72b8e80971d4510c6480221b2c63b9cade279606eca55ce5fae5320af25f"
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",

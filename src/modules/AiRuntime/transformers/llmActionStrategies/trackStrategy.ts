@@ -1,5 +1,6 @@
 import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -47,6 +48,8 @@ export const trackActionNames = [
     'setTrackPan',
     'setTrackColor',
     'setTrackOutput',
+    'foldTrack',
+    'setTrackHeight',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
 
 export type TrackCallName = (typeof trackActionNames)[number];
@@ -309,6 +312,41 @@ const trackStrategyDefinitions = [
                 type: 'setTrackOutput',
                 payload: { trackId: source.id, outputId: target.id, expectedOutputId: source.outputId },
             };
+        },
+    },
+    {
+        name: 'foldTrack',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const track = findTrack(context, args.trackId);
+            if (
+                !hasExactKeys(args, ['trackId', 'folded']) ||
+                track?.kind !== 'folder' ||
+                typeof args.folded !== 'boolean'
+            ) {
+                return rejection(index, call.name, 'Expected an available folder trackId and boolean folded value');
+            }
+            return { type: 'foldTrack', payload: { trackId: track.id, folded: args.folded } };
+        },
+    },
+    {
+        name: 'setTrackHeight',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            if (
+                !hasExactKeys(args, ['trackId', 'height']) ||
+                !hasTrack(context, args.trackId) ||
+                !isFiniteNumber(args.height) ||
+                args.height < MIN_TRACK_HEIGHT ||
+                args.height > MAX_TRACK_HEIGHT
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Expected an available trackId and a height from ${MIN_TRACK_HEIGHT} through ${MAX_TRACK_HEIGHT}`
+                );
+            }
+            return { type: 'setTrackHeight', payload: { trackId: args.trackId, height: args.height } };
         },
     },
 ] as const satisfies readonly TrackStrategyDefinition<TrackCallName>[];

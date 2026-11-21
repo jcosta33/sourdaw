@@ -222,7 +222,6 @@ describe('executeGlobalTimeOperation', () => {
         mocks.batchDepth = 0;
         setStates();
         restoreAutomationSnapshot({ lanes: [] });
-        setTimeOperationDependencies(null);
     });
 
     it('applies insert geometry, complete owner snapshots, and dormant identity preservation in one batch', () => {
@@ -940,21 +939,6 @@ describe('executeGlobalTimeOperation', () => {
             inversePlan: null,
         });
         expect(mocks.writeDepths).toEqual([]);
-    });
-
-    it('fails missing dependency registration before identity allocation or writes', () => {
-        setStates({
-            tracks: [createTrack('track-1', 'midi', [createClip({ id: 'inside', startBeat: 4, endBeat: 6 })])],
-        });
-        const randomUUID = vi.spyOn(crypto, 'randomUUID');
-
-        expect(() =>
-            executeGlobalTimeOperation({
-                operation: { type: 'duplicate', startBeat: 4, endBeat: 6 },
-            })
-        ).toThrow('Arrangement time operation dependencies are not registered');
-        expect(randomUUID).not.toHaveBeenCalled();
-        expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
     it('rejects a stale local capture without applying an owner handle', () => {
