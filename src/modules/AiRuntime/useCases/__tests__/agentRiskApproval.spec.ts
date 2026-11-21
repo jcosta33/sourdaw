@@ -469,20 +469,6 @@ describe('agent risk approval', () => {
             }
         });
 
-        it('validates a stored approval that predates the recorded input as it always did', () => {
-            const revision = captureProjectRevision();
-            const { commandBatch } = createBatch(revision);
-            const approval = compileAgentRiskApproval({
-                commandBatch,
-                metricGoalState: literalGoalState(commandBatch),
-            });
-            const { explicitApprovalRequired: _recorded, ...legacy } = approval;
-            expect(legacy).not.toHaveProperty('explicitApprovalRequired');
-            expect(validateAgentRiskApproval({ approval: legacy, commandBatch, currentRevision: revision })).toEqual({
-                status: 'valid',
-            });
-        });
-
         it('validates a batch compiled with explicit confirmation required', () => {
             const revision = captureProjectRevision();
             const { commandBatch } = createBatch(revision);

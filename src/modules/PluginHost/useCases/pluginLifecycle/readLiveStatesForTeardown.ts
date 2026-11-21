@@ -8,10 +8,10 @@ import { loadedExternalInstancePluginIds } from './loadedExternalInstances';
 import { preservationReason } from './preservationReason';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-// The native read bounds only its wait on the plugin's real-time seam (2 s);
-// its wait on the plugin's control gate is unbounded while another control
-// operation holds it, so a hung plugin can leave the read pending forever. A
-// teardown must never wait on that, so the read is bounded here.
+// The native read waits up to 2 s on the plugin's real-time seam and up to the
+// native control gate's 10 s deadline while another control operation holds the
+// gate, and a read that is itself the hung call never answers at all. A teardown
+// must not wait that long, so the read is bounded here.
 const TEARDOWN_STATE_READ_TIMEOUT_MS = 5000;
 
 type TeardownStateRead =
@@ -96,8 +96,9 @@ function withinTeardownBudget(
  * A scheduled read is bounded inside its lifecycle turn as well, so the deadline
  * releases the read and its turn: later TypeScript lifecycle operations on the
  * instance, and a rebuild queued behind them, proceed. A plugin hung inside its
- * own native call still holds the native control gate, so a later native unload
- * or retire of that same instance can still block.
+ * own native call still holds the native control gate; a later native unload or
+ * retire of that instance waits out the gate's deadline once, then detaches the
+ * instance as unresponsive without freeing it.
  */
 function readForOrdering(
     instanceId: string,
