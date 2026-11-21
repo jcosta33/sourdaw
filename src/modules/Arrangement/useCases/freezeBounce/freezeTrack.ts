@@ -23,10 +23,12 @@ import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
+import { captureFreezeMidiNotes } from './freezeMidiNoteSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
+import { restoreFreezeSnapshot } from './restoreFreezeSnapshot';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -92,6 +94,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         return false;
     }
     const previousFreeze = captureFreezeStateSnapshot(track);
+    const renderedMidiNotes = captureFreezeMidiNotes(track.clips);
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -113,10 +116,24 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const pendingTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
     const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
 
+    // Cancelling aborts and forgets the task, so nothing else would settle the track: an exit
+    // that finds this task aborted and unreplaced restores the pre-freeze state itself. A task
+    // another freeze has superseded leaves the track to that freeze.
+    const exitAsNoLongerCurrent = (): false => {
+        if (
+            abortController.signal.aborted &&
+            activeFreezeTasks.get(trackId) === undefined &&
+            isEligibleActiveProjectTrack(taskIdentity)
+        ) {
+            restoreFreezeSnapshot(scope, trackId, previousFreeze);
+        }
+        return false;
+    };
+
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
         if (!isCurrentFreezeTask(taskIdentity)) {
-            return false;
+            return exitAsNoLongerCurrent();
         }
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
@@ -159,7 +176,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         });
 
         if (!isCurrentFreezeTask(taskIdentity)) {
-            return false;
+            return exitAsNoLongerCurrent();
         }
 
         if (!renderedBuffer) {
@@ -191,9 +208,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        await assertFreezeSourceUnchanged(trackId, hash);
+        await assertFreezeSourceUnchanged(trackId, hash, renderedMidiNotes);
         if (!isCurrentFreezeTask(taskIdentity)) {
-            return false;
+            return exitAsNoLongerCurrent();
         }
 
         const renderedAt = Date.now();
@@ -252,16 +269,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         if (abortController.signal.aborted) {
-            // A cancelled refresh keeps the take it was replacing, so the track stays
-            // frozen on it and can still be unfrozen; a cancelled first freeze is unfrozen.
-            scope(() => {
-                updateTrack(trackId, (time) => ({
-                    ...time,
-                    frozen: previousFreeze.frozen,
-                    frozenBufferId: previousFreeze.frozenBufferId,
-                    freezeState: previousFreeze.freezeState,
-                }));
-            });
+            restoreFreezeSnapshot(scope, trackId, previousFreeze);
             return true;
         }
 
