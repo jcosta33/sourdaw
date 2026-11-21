@@ -140,10 +140,10 @@ function buildProductionPorts(): DeviceEnginePorts {
  * modules' parameter vocabularies, runtime writes, factory presets, MIDI
  * processing, note releases, live state, saved racks, template content,
  * stored kit voices and the built-in synth and drum synth voices reach them
- * through ports this composition root fills. Called by bootstrap and again
- * when `App` loads, because `main.tsx` loads the two independently and the
- * preset browser can render before bootstrap has run; registering the same
- * ports twice is a no-op.
+ * through ports this composition root fills. Called by `bootstrapApplication`
+ * and by `main.tsx` before it first renders `App`, because `main.tsx` loads
+ * the two independently and the preset browser can render before bootstrap
+ * has run; registering the same ports twice is a no-op.
  */
 export function registerDeviceEnginePorts(): void {
     productionPorts ??= buildProductionPorts();
