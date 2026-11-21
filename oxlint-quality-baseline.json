@@ -14499,9 +14499,6 @@
         }
     },
     "src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 1
         }

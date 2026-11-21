@@ -12,6 +12,7 @@ import { disposeWebMidiSubscriptions } from './disposeWebMidiSubscriptions';
 import { getMidiInputTrackOwnerId } from './getMidiInputTrackOwnerId';
 import { handleWebMidiMessage } from './handleWebMidiMessage';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
+import { resolveYeastNoteOffReceiver } from './resolveYeastNoteOffReceiver';
 import { setMidiInputTrack } from './setMidiInputTrack';
 import { subscribeToRecordedControllerTake } from './subscribeToRecordedControllerTake';
 import { webMidiSubscriptionState } from './webMidiSubscriptionState';
@@ -89,7 +90,10 @@ function subscribeToYeastNotesOff(): void {
             const instrumentSnapshot = instrumentTrack
                 ? {
                       id: instrumentTrack.id,
-                      devices: instrumentTrack.devices.map(({ id, type }) => ({ id, type })),
+                      receiver: resolveYeastNoteOffReceiver(
+                          instrumentTrack.devices,
+                          resolvedInstrument.toasterChildPad !== null
+                      ),
                   }
                 : null;
             routeYeastNoteOffsForTargetTrack(instrumentSnapshot, unroutedNoteOffs, {
