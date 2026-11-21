@@ -31,7 +31,7 @@ import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { readTakeTargetAudioTracks } from './readTakeTargetAudioTracks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { refusesWithoutTakeTarget } from './refusesWithoutTakeTarget';
-import { releaseTakelessRecordingStart } from './releaseTakelessRecordingStart';
+import { releaseStartWithoutTakeTarget } from './releaseStartWithoutTakeTarget';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
 import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
@@ -597,8 +597,8 @@ async function beginActualRecording(
     admissionTempo = admitted.tempo;
     admissionChanges = admitted.changes;
     clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
-    if (clips.length === 0) {
-        return releaseTakelessRecordingStart(detachReaders);
+    if (await releaseStartWithoutTakeTarget(detachReaders)) {
+        return false;
     }
     bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });

@@ -1542,6 +1542,27 @@ describe('toggleRecording', () => {
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
             expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
         });
+
+        it('engages an overdub that opens no new clip on an unfrozen armed MIDI track (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                overdubEnabled: true,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true }],
+            });
+            // An overdub records into the existing clip, so `startRecording` opens none.
+            mocks.startRecording.mockReturnValue([]);
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
     });
 
     describe('count-in recording start anchored on the audio clock', () => {
