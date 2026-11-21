@@ -8,22 +8,21 @@ import {
 import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
-import { appendChatMessage, chatStore, updateChatMessage } from '../stores/chatStore';
+import { appendChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
 
-import { describeBatchPreviewProgress } from './agentRequestOrchestration/describeBatchPreviewProgress';
+import { composeRePreviewedCard } from './agentRequestOrchestration/composeRePreviewedCard';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
-import { settleStoppedBatchPreparation } from './agentRequestOrchestration/settleStoppedBatchPreparation';
+import { watchVibeBatchRePreview } from './agentRequestOrchestration/watchVibeBatchRePreview';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
-import { cancelPendingChatActions } from './cancelPendingChatActions';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -54,7 +53,6 @@ type WorkingBatch = NonNullable<PendingAppActionConfirmation['approvalSnapshot']
 const SUPERSEDED_REASON = 'Superseded by a re-preview against the current project.';
 const SUPERSEDED_MESSAGE = 'This proposal was replaced by a re-preview against the current project.';
 const RE_PREVIEW_SUPERSESSION = { reason: SUPERSEDED_REASON, content: SUPERSEDED_MESSAGE };
-const REPROPOSED_CONTENT = 'Re-previewed against the current project.';
 const ALREADY_REPLACED_REASON = 'A newer proposal already replaced this one.';
 const MISSING_RUN_REASON = 'The run this proposal belongs to is no longer recorded.';
 const PREPARED_STEM_RESOURCES_REASON =
@@ -386,7 +384,8 @@ type PreparedReproposal = Extract<ReturnType<typeof prepareReproposal>, { status
 
 function persistReproposalConfirmation(
     prepared: PreparedReproposal,
-    approval: ReturnType<typeof compileAgentRiskApproval>
+    approval: ReturnType<typeof compileAgentRiskApproval>,
+    card: ReturnType<typeof composeRePreviewedCard>
 ): string | null {
     const { confirmation, parsedRefreshed, refreshed, actions, actionLabels, carriedSelection, selectsSubset } =
         prepared;
@@ -394,7 +393,7 @@ function persistReproposalConfirmation(
     appendChatMessage({
         id: assistantMessageId,
         role: 'assistant',
-        content: REPROPOSED_CONTENT,
+        content: card.content,
         timestamp: Date.now(),
         isCommandAction: true,
     });
@@ -422,8 +421,9 @@ function persistReproposalConfirmation(
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
-        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
+        // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
+        measuredPreview: card.measuredPreview,
+        vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
@@ -436,78 +436,9 @@ function persistReproposalConfirmation(
         },
         projectRevision: refreshed.currentRevision,
         parsedCommandBatch: parsedRefreshed,
-        content: REPROPOSED_CONTENT,
+        content: card.content,
         supersedes: confirmation.id,
     });
-}
-
-type RePreviewWatch = {
-    onBegin: Parameters<typeof prepareMetricGoalPreview>[0]['onBegin'];
-    onProgress: Parameters<typeof prepareMetricGoalPreview>[0]['onProgress'];
-    settle: () => Promise<void>;
-};
-
-/** Hands a re-previewed card back to the live run: no Stop, and the content it showed before the progress lines. */
-function restoreRePreviewedCard(messageId: string, cardContent: string | undefined): void {
-    if (cardContent === undefined) {
-        updateChatMessage(messageId, { stoppableRunId: undefined });
-        return;
-    }
-    updateChatMessage(messageId, { stoppableRunId: undefined, content: cardContent });
-}
-
-/**
- * A vibe-run batch card re-previews as its scheduled preview rendered: while the preview renders, the
- * card's message carries the same progress line and a Stop that cancels the run, which ends the
- * measurement. Every exit takes both off again. A run still live gets the card's own text back. A run
- * Stop or anything else ended meanwhile keeps no proposed card: a cancelled run's card is cancelled
- * as its own Cancel would, releasing what it held, and the message ends on the line a stopped batch
- * preparation ends on. The watch takes the card only once this re-preview holds the run's one preview
- * (`onBegin`): a re-preview refused beside another that is still rendering leaves that one's line and
- * Stop as they are, and returns its refusal.
- */
-function watchVibeBatchRePreview(
-    confirmation: PendingAppActionConfirmation,
-    context: ReturnType<typeof getProjectContext>
-): RePreviewWatch {
-    const run = agentRunLifecycle.get(confirmation.runId);
-    const position = confirmation.approvalSnapshot.batchPosition;
-    if (run?.plan?.batchSchedule?.kind !== 'vibe-run' || !position) {
-        return { onBegin: undefined, onProgress: undefined, settle: () => Promise.resolve() };
-    }
-    const messageId = confirmation.assistantMessageId;
-    let begun = false;
-    let cardContent: string | undefined;
-    return {
-        onBegin: () => {
-            begun = true;
-            cardContent = chatStore.value?.messages.find((message) => message.id === messageId)?.content;
-            updateChatMessage(messageId, { stoppableRunId: run.runId });
-        },
-        onProgress: (progress) =>
-            updateChatMessage(messageId, {
-                content: describeBatchPreviewProgress({
-                    context,
-                    position: position.index,
-                    total: position.total,
-                    progress,
-                }),
-            }),
-        settle: async () => {
-            if (!begun) {
-                return;
-            }
-            const current = agentRunLifecycle.get(run.runId);
-            if (current !== null && !TERMINAL_RUN_PHASES.has(current.phase)) {
-                restoreRePreviewedCard(messageId, cardContent);
-                return;
-            }
-            if (current?.phase === 'cancelled' || current?.phase === 'partially-completed') {
-                await cancelPendingChatActions({ confirmationId: confirmation.id });
-            }
-            settleStoppedBatchPreparation(messageId, position.index, position.total, agentRunLifecycle.get(run.runId));
-        },
-    };
 }
 
 /**
@@ -528,12 +459,13 @@ export async function reproposePendingChatActions(
     let approval = prepared.approval;
 
     let goalState = metricGoalStateCodec(approval.metricGoalState);
+    let measuredState: typeof goalState = null;
+    const context = getProjectContext();
     if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
         if (selectsSubset) {
             goalState = { ...goalState, proofs: [] };
         }
         let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
-        const context = getProjectContext();
         const watch = watchVibeBatchRePreview(confirmation, context);
         try {
             refreshedProof = await prepareMetricGoalPreview({
@@ -565,6 +497,7 @@ export async function reproposePendingChatActions(
             };
         }
         goalState = refreshedProof.state;
+        measuredState = goalState;
         approval = compileAgentRiskApproval({
             commandBatch: refreshed.commandBatch,
             requireExplicitApproval: true,
@@ -580,7 +513,16 @@ export async function reproposePendingChatActions(
             return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
         }
     }
-    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval);
+    const card = composeRePreviewedCard({
+        confirmation,
+        actions: prepared.actions,
+        context,
+        commandBatch: refreshed.commandBatch,
+        envelope: parsedRefreshed.envelope,
+        measuredState,
+        selectsSubset,
+    });
+    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval, card);
     if (!reproposedConfirmationId) {
         return { status: 'rejected', reason: 'Prepared action resources exceed the live confirmation limit.' };
     }

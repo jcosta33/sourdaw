@@ -27,6 +27,7 @@ import { setTimelineMinimapAutoScroll } from '../../useCases/setTimelineMinimapA
 import { setTimelineMinimapScrollX } from '../../useCases/setTimelineMinimapScrollX';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
+import { getTimelineVisibleBeats, getTimelineVisibleSpanPx } from './timelineVisibleSpan';
 
 const MIN_PROJECT_BEATS = 64;
 const VIEWPORT_MIN_WIDTH = 6;
@@ -109,6 +110,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const sections = markerState.sections;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
+    const timelineViewportWidth = viewState.viewportWidth ?? 0;
 
     const transport = useStore(transportStore, defaultTransportState);
     const meterMap = useStore(timeSignatureMapStore, EMPTY_METER_MAP);
@@ -121,7 +123,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const readoutPixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
     const scrollStartBeat = Math.max(0, scrollX / readoutPixelsPerBeat);
     const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
-    const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
+    const visibleEndBeat = scrollStartBeat + getTimelineVisibleBeats(timelineViewportWidth, readoutPixelsPerBeat);
     const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
     const sliderEndBar = Math.max(sliderStartBar, getLastBarNumberBeforeBeat({ ...meter, beat: visibleEndBeat }));
     const sectionDescriptions = getOrderedSections(sections)
@@ -260,7 +262,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const safePixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
         const viewportStartPx = (scrollX / safePixelsPerBeat) * beatsToPixels;
-        const visibleBeats = canvasWidth / safePixelsPerBeat;
+        const visibleBeats = getTimelineVisibleBeats(timelineViewportWidth, safePixelsPerBeat);
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
         const boundedViewportStart = Math.max(0, Math.min(canvasWidth, viewportStartPx));
         const boundedViewportWidth = Math.max(0, Math.min(viewportWidthPx, canvasWidth - boundedViewportStart));
@@ -286,7 +288,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             ctx.lineTo(boundedViewportStart + boundedViewportWidth - 0.5, 0.5);
             ctx.stroke();
         }
-    }, [tracks, sections, pixelsPerBeat, scrollX, canvasMetrics, activeHeight, themeRevision]);
+    }, [tracks, sections, pixelsPerBeat, scrollX, timelineViewportWidth, canvasMetrics, activeHeight, themeRevision]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -362,11 +364,11 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const totalBeats = getMinimapTotalBeats(tracks, sections);
         const beatsToPixels = canvasWidth / totalBeats;
-        const visibleBeats = canvasWidth / pixelsPerBeat;
+        const visibleBeats = getTimelineVisibleBeats(timelineViewportWidth, pixelsPerBeat);
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
         const viewportStartPx = (scrollX / pixelsPerBeat) * beatsToPixels;
 
-        return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
+        return { canvasWidth, totalBeats, visibleBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
     const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
@@ -395,7 +397,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             dragOffsetInMinimapPx = clickX - viewportStartPx;
         } else {
             // Click outside viewport — jump to center on that point
-            const visibleBeats = rect.width / pixelsPerBeat;
+            const visibleBeats = metrics.visibleBeats;
             const clickedBeat = clickX / beatsToPixels;
             const targetBeat = Math.max(0, clickedBeat - visibleBeats / 2);
             const newScrollX = targetBeat * pixelsPerBeat;
@@ -447,11 +449,13 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         // Keys can arrive faster than React re-renders (held auto-repeat), so each step
         // starts from the store's current scroll, not the render-time closure value.
-        const { scrollX: currentScrollX, pixelsPerBeat: currentPixelsPerBeat } =
-            timelineViewStore.value ?? defaultTimelineView;
+        const {
+            scrollX: currentScrollX,
+            pixelsPerBeat: currentPixelsPerBeat,
+            viewportWidth: currentViewportWidth = 0,
+        } = timelineViewStore.value ?? defaultTimelineView;
         const stepPx = 4 * currentPixelsPerBeat;
-        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / currentPixelsPerBeat : 16;
-        const pagePx = pageBeats * currentPixelsPerBeat;
+        const pagePx = getTimelineVisibleSpanPx(currentViewportWidth, currentPixelsPerBeat);
         let targetScrollX: number;
 
         switch (event.key) {

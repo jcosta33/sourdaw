@@ -39,6 +39,18 @@ describe('unloadDiscardedHostedPlugins', () => {
         expect(mocks.clearReportedLatency.mock.calls).toEqual([['d-1'], ['d-2']]);
     });
 
+    // An Undo landing mid-teardown waits only on unloads already requested, so none may wait on another.
+    it('requests every unload before the first one settles', async () => {
+        const firstUnload = Promise.withResolvers<void>();
+        mocks.unloadPluginCarryingLiveState.mockReturnValueOnce(firstUnload.promise);
+
+        const release = unloadDiscardedHostedPlugins(INSTANCES);
+
+        expect(mocks.unloadPluginCarryingLiveState.mock.calls).toEqual([['p-1'], ['q-2']]);
+        firstUnload.resolve();
+        await release;
+    });
+
     it('still unloads the other instances and reports every failure when one teardown fails', async () => {
         mocks.unloadPluginCarryingLiveState.mockRejectedValueOnce(new Error('host gone'));
 

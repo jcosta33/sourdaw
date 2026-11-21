@@ -5,6 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
 import { findFollowerLaneRefusal } from './followerLaneRefusal';
+import { isLaneTransformSessionEntry } from './validateAutomationSessionEntries';
 
 export const handleScaleAutomation = createHandler<'scaleAutomation'>({
     execute: (alpha) => {
@@ -27,6 +28,7 @@ export const handleScaleAutomation = createHandler<'scaleAutomation'>({
             factor: alpha.payload.factor,
             anchor: alpha.payload.anchor,
         }),
+    validateSessionEntry: isLaneTransformSessionEntry,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

@@ -36,7 +36,9 @@ use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use serde::{Deserialize, Serialize};
 
-use super::{canonicalize_through_missing_tail, private_state_directory};
+use super::{
+    canonicalize_through_missing_tail, private_state_directory, AtomicWriteError, FileRefusal,
+};
 use crate::host::plugin_folder_grants;
 
 const GRANT_FILE_NAME: &str = "file-grants.json";
@@ -246,16 +248,15 @@ pub(crate) fn refuse_write_grant_in_plugin_folder(
     canonical: &Path,
     mode: GrantMode,
     plugin_folders: &[PathBuf],
-) -> Result<(), String> {
+) -> Result<(), FileRefusal> {
     if mode != GrantMode::ReadWrite {
         return Ok(());
     }
     match plugin_folder_containing(canonical, plugin_folders) {
-        Some(folder) => Err(format!(
-            "{} is inside the plugin folder {}, and Sourdaw never writes into plugin folders. Choose another folder.",
-            canonical.display(),
-            folder.display()
-        )),
+        Some(folder) => Err(FileRefusal::WriteGrantInPluginFolder {
+            path: canonical.to_path_buf(),
+            folder: folder.clone(),
+        }),
         None => Ok(()),
     }
 }
@@ -311,7 +312,7 @@ struct PersistedGrants {
 
 /// Where the grant document lives: inside the private directory the resolver
 /// refuses ahead of every built-in root and every grant.
-pub(crate) fn grant_file_location() -> Result<Option<PathBuf>, String> {
+pub(crate) fn grant_file_location() -> Result<Option<PathBuf>, FileRefusal> {
     Ok(private_state_directory()?.map(|directory| directory.join(GRANT_FILE_NAME)))
 }
 
@@ -330,20 +331,18 @@ fn persisted_document(registry: &GrantRegistry) -> PersistedGrants {
     }
 }
 
-fn save_grants(document: &PersistedGrants) -> Result<(), String> {
-    let location =
-        grant_file_location()?.ok_or_else(|| "No application data directory".to_string())?;
-    let directory = location
-        .parent()
-        .ok_or_else(|| "Grant file has no parent directory".to_string())?;
-    fs::create_dir_all(directory)
-        .map_err(|error| format!("Failed to create the grant directory: {error}"))?;
-    let bytes = serde_json::to_vec_pretty(document)
-        .map_err(|error| format!("Failed to serialize the grants: {error}"))?;
+fn save_grants(document: &PersistedGrants) -> Result<(), FileRefusal> {
+    let location = grant_file_location()?.ok_or(FileRefusal::NoApplicationDataDirectory)?;
+    let directory = location.parent().ok_or(FileRefusal::GrantFileHasNoParent)?;
+    fs::create_dir_all(directory).map_err(FileRefusal::GrantDirectoryUncreatable)?;
+    let bytes = serde_json::to_vec_pretty(document).map_err(FileRefusal::GrantsUnserializable)?;
     super::replace_file_atomically(&location, |file| {
         use std::io::Write;
         file.write_all(&bytes)
-            .map_err(|error| format!("Failed to write the grants: {error}"))
+    })
+    .map_err(|error| match error {
+        AtomicWriteError::File(refusal) => refusal,
+        AtomicWriteError::Write(cause) => FileRefusal::GrantsUnwritable(cause),
     })
 }
 
@@ -406,14 +405,14 @@ fn resolve_persisted_grants(document: PersistedGrants) -> Vec<FileGrant> {
 /// A refused runtime scope is an error rather than an empty set: the caller
 /// excludes these paths, and an empty set would exclude nothing.
 #[cfg(not(test))]
-pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, String> {
+pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, FileRefusal> {
     read_write_paths_under(grant_file_location())
 }
 
 /// [`persisted_read_write_paths`] for the grant document `location` names.
 fn read_write_paths_under(
-    location: Result<Option<PathBuf>, String>,
-) -> Result<Vec<PathBuf>, String> {
+    location: Result<Option<PathBuf>, FileRefusal>,
+) -> Result<Vec<PathBuf>, FileRefusal> {
     Ok(location?
         .map(|location| read_write_paths_at(&location))
         .unwrap_or_default())
@@ -422,7 +421,7 @@ fn read_write_paths_under(
 /// Tests never read the developer's own grant file; they supply the set
 /// through the plugin folder validator's forbidden roots instead.
 #[cfg(test)]
-pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, String> {
+pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, FileRefusal> {
     Ok(Vec::new())
 }
 
@@ -478,9 +477,9 @@ fn read_grant_document(location: &Path) -> Option<PersistedGrants> {
 /// deepest ancestor that does and re-appends what is missing: the resulting
 /// path has every symlink in its existing part already followed, which is the
 /// same shape the resolver compares against.
-pub(crate) fn resolve_grant_target(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn resolve_grant_target(path: &Path) -> Result<PathBuf, FileRefusal> {
     if !path.is_absolute() {
-        return Err("Granted path must be absolute".to_string());
+        return Err(FileRefusal::GrantPathNotAbsolute);
     }
     canonicalize_through_missing_tail(path)
 }
@@ -515,11 +514,14 @@ mod tests {
 
     #[test]
     fn a_refused_scope_reads_no_renderer_writable_grants_rather_than_none() {
-        assert_eq!(read_write_paths_under(Ok(None)), Ok(Vec::new()));
         assert_eq!(
-            read_write_paths_under(Err("refused".to_string())),
-            Err("refused".to_string())
+            read_write_paths_under(Ok(None)).unwrap(),
+            Vec::<PathBuf>::new()
         );
+        let refusal = read_write_paths_under(Err(FileRefusal::RuntimeScope("refused".to_string())))
+            .unwrap_err();
+        assert!(matches!(refusal, FileRefusal::RuntimeScope(_)));
+        assert_eq!(refusal.to_string(), "refused");
     }
 
     #[test]
@@ -746,7 +748,7 @@ mod tests {
             &plugin_folders,
         )
         .expect_err("a write pick inside a plugin folder is refused");
-        assert!(message.contains("/plugins/VST3"), "{message}");
+        assert!(message.to_string().contains("/plugins/VST3"), "{message}");
     }
 
     #[cfg(target_os = "windows")]

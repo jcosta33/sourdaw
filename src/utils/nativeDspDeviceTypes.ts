@@ -1,15 +1,16 @@
+import { type BuiltinDeviceType } from './builtinDeviceTypes';
+
 /**
- * The canonical set of native-DSP device types, and the union derived from it.
+ * The canonical set of native-DSP device types, and the union derived from it:
+ * the native subset of the built-in vocabulary in `builtinDeviceTypes.ts`.
  *
- * These live outside `src/modules` for the same reason as the matchers in
- * `deviceTypeMatching.ts`: two places have to agree on them exactly and the
- * module graph gives them no shared contract barrel. The offline factory list
+ * Device types are domain-free persisted wire ids, which is why this vocabulary
+ * lives in `src/utils` (ADR 0063); what each device does lives in the module that
+ * owns that behaviour. Two places read this list and must agree on it exactly:
+ * the offline factory list
  * (`AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts`) decides
  * which types can be *built*; the composition root decides which types must be
- * *hydrated*. A contract barrel cannot carry the vocabulary between them —
- * `no-models-repos-transformers-in-index` forbids a barrel re-exporting anything
- * under `repositories/`, so there is no legal route from the factory list to
- * `src/app/`. One copy here, imported by both, is what keeps them welded.
+ * *hydrated*.
  *
  * Keeping them welded is the point. The two sides have drifted before: a
  * `grand-boule` branch existed in the strategy factory while the matcher list
@@ -43,7 +44,7 @@ export const NATIVE_DSP_DEVICE_TYPES = [
     'native-scoring',
     'knead',
     'transient-shaper',
-] as const;
+] as const satisfies readonly BuiltinDeviceType[];
 
 export type NativeDspDeviceType = (typeof NATIVE_DSP_DEVICE_TYPES)[number];
 

@@ -7,6 +7,8 @@ import { type Track } from '../../models/Track';
 import { reconcileRoutingAfterRemovingTracks } from '../../services/reconcileRoutingAfterRemovingTracks';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from '../../useCases/device/unloadDiscardedHostedPlugins';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -95,9 +97,12 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         const removals: Array<{
             trackId: string;
             finalizeRuntimeRemoval: () => void;
+            unloadHostedPlugins: () => Promise<void>;
             modulationRemoval: ReturnType<typeof removeTrackModulationReferences>;
         }> = [];
         for (const track of state.tracks) {
+            // Read before removeTrack: the instances are unreachable once the track leaves the store.
+            const hostedInstances = collectHostedPluginInstances(track);
             const result = removeTrack(track.id, {
                 deferRuntimeEffects: true,
                 suppressRemovedEvent: true,
@@ -106,6 +111,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                 removals.push({
                     trackId: track.id,
                     finalizeRuntimeRemoval: result.finalizeRuntimeRemoval,
+                    unloadHostedPlugins: () => unloadDiscardedHostedPlugins(hostedInstances),
                     modulationRemoval: removeTrackModulationReferences({
                         trackId: track.id,
                         deferRuntimeEffects: true,
@@ -120,9 +126,10 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             status: 'written',
             afterCommit: () =>
                 runAllAsyncEffects(
-                    removals.flatMap(({ trackId, finalizeRuntimeRemoval, modulationRemoval }) =>
+                    removals.flatMap(({ trackId, finalizeRuntimeRemoval, unloadHostedPlugins, modulationRemoval }) =>
                         [
                             runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                            runtimeAuthority.guardAbsent(trackId, unloadHostedPlugins),
                             modulationRemoval.afterCommit,
                             runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
                         ].map((effect) => runtimeAuthority.guard<void | Promise<void>>(effect))
@@ -138,7 +145,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                 }
                 const committedIds = new Set(committedState.tracks.map((track) => track.id));
                 const effects: Array<() => void | Promise<void>> = [];
-                for (const { trackId, finalizeRuntimeRemoval, modulationRemoval } of removals) {
+                for (const { trackId, finalizeRuntimeRemoval, unloadHostedPlugins, modulationRemoval } of removals) {
                     if (committedIds.has(trackId)) {
                         effects.push(() => {
                             projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
@@ -146,6 +153,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                     } else {
                         effects.push(
                             runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                            runtimeAuthority.guardAbsent(trackId, unloadHostedPlugins),
                             runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId }))
                         );
                     }
