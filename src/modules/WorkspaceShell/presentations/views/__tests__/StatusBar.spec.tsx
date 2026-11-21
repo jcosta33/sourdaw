@@ -478,7 +478,7 @@ describe('StatusBar', () => {
             );
             expectExternalProjectLink(
                 screen.getByRole('menuitem', { name: 'Report a bug' }),
-                'https://github.com/jcosta33/sourdaw/discussions/categories/general'
+                'https://github.com/jcosta33/sourdaw/discussions/categories/bugs'
             );
         });
     });

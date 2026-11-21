@@ -1,0 +1,34 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bug reports are public. Leave out private audio, projects, and logs, as well as personal information. Use a small example you can share publicly if it helps reproduce the bug.
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, operating system, and Sourdaw version
+      description: Include versions if you know them.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the steps that trigger the bug, starting from a fresh project if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: error-context
+    attributes:
+      label: Error details
+      description: If you saw an error, share the message with any private details removed.
