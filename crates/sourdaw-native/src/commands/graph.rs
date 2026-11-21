@@ -16603,6 +16603,74 @@ mod tests {
         );
     }
 
+    /// A resumed mapping session carries the note events its earlier batches
+    /// scheduled, so the probe refuses a total past the ceiling exactly as a
+    /// fresh replay of the same history does, and accepts one at the ceiling.
+    #[test]
+    fn a_resumed_mapping_session_counts_the_note_events_its_earlier_batches_scheduled() {
+        const FIRST_EVENTS: usize = OFFLINE_NOTE_EVENT_CEILING / 2;
+        let schedule = |count: usize, first_index: usize| {
+            let notes: Vec<Value> = (first_index..first_index + count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let strip = json!({
+            "kind": "create-track-strip",
+            "trackId": "t1",
+            "name": "Lead",
+            "state": strip_state(1.0),
+            "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                           "parameterValues": {} } ],
+            "honorMuted": true,
+            "contributesAudio": true
+        });
+        let resumed_probe = |second_events: usize| {
+            let state = AppState::default();
+            let first = block_on_test(map_graph_batch(
+                json!([]),
+                batch_of(json!([strip.clone(), schedule(FIRST_EVENTS, 0)])),
+                48_000.0,
+                session_key("s1", 0),
+                &state,
+            ))
+            .expect("establishing apply resolves");
+            assert_eq!(first["acceptance"], "accepted", "{first}");
+            block_on_test(map_graph_batch(
+                json!([]),
+                batch_of(json!([schedule(second_events, FIRST_EVENTS)])),
+                48_000.0,
+                session_key("s1", 2),
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+        let fresh_probe = |second_events: usize| {
+            let state = AppState::default();
+            block_on_test(map_graph_batch(
+                json!([strip.clone(), schedule(FIRST_EVENTS, 0)]),
+                batch_of(json!([schedule(second_events, FIRST_EVENTS)])),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+
+        let at_ceiling = resumed_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS);
+        assert_eq!(at_ceiling["acceptance"], "accepted", "{at_ceiling}");
+
+        let over = resumed_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS + 1);
+        assert_eq!(over["acceptance"], "rejected", "{over}");
+        let fresh = fresh_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS + 1);
+        assert_eq!(fresh["acceptance"], "rejected", "{fresh}");
+        assert_eq!(
+            over["reason"], fresh["reason"],
+            "resumed: {over}; fresh: {fresh}"
+        );
+    }
+
     /// More notes at one frame than a block's event buffer holds: the buffer
     /// refuses the rest, and a print without them is not the batch.
     #[test]

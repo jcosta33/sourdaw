@@ -19,6 +19,11 @@ vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: vi.fn(() => 0),
 }));
 
+vi.mock('../resolveTrackClipsWithComping', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../resolveTrackClipsWithComping')>();
+    return { ...original, resolveTrackClipsWithComping: vi.fn(original.resolveTrackClipsWithComping) };
+});
+
 import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import {
     type MapGraphBatchInput,
@@ -34,6 +39,7 @@ import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
 import { offlineRenderCapturePorts } from '../offlineRenderCapturePorts';
 import { type OfflineRenderProjectSource } from '../OfflineRenderSource';
 import { renderOfflineWithNativeEngine, type NativeOfflineRenderInput } from '../renderOfflineWithNativeEngine';
+import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 registerDeviceEnginePorts();
 
@@ -1092,6 +1098,81 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
             noteEvent(0.5, 72, 100, true),
             noteEvent(1, 72, 0, false),
         ]);
+    });
+
+    it('comps a MIDI clip against the render’s own tempo map, not the live one, after a tempo change', async () => {
+        const { transport, commands } = capturingTransport(FRAMES);
+        // 120 BPM to beat 2 (0.5 s a beat), then 60 BPM (1 s a beat): beat 4 sits at 3 s.
+        // The live session holds the default map, which puts beat 4 at 2 s.
+        const secondsAtBeat = (beat: number) => (beat <= 2 ? beat * 0.5 : beat - 1);
+        const tempoAtBeat = (beat: number) => (beat < 2 ? 120 : 60);
+        const tempoChangeEndpoints: NativeOfflineRenderInput['projectPpqEndpoints'] = ({
+            startPpq,
+            endPpq,
+            sampleRate,
+        }) => {
+            const startSeconds = secondsAtBeat(startPpq);
+            const endSeconds = secondsAtBeat(endPpq);
+            return {
+                startSamples: startSeconds * sampleRate,
+                endSamples: endSeconds * sampleRate,
+                durationSamples: (endSeconds - startSeconds) * sampleRate,
+                startSeconds,
+                endSeconds,
+                durationSeconds: endSeconds - startSeconds,
+            };
+        };
+        const clips = [midiClip({ id: 'clip-a', startBeat: 4, endBeat: 8 })];
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'midi-1',
+                    takes: [
+                        { id: 'take-a', clipId: 'clip-a', name: 'take-a', startBeat: 4, endBeat: 8, selected: false },
+                    ],
+                    activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: 'take-a' }],
+                },
+            ],
+        });
+        vi.mocked(resolveTrackClipsWithComping).mockClear();
+        const keys = createTrack({ id: 'midi-1', name: 'Keys', kind: 'midi', devices: [synth], clips });
+
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: FRAMES,
+            durationSeconds: FRAMES / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [{ id: 'tempo-change-1', beat: 2, tempo: 60, curve: 'instant' }],
+            projectPpqEndpoints: tempoChangeEndpoints,
+            resolveTempoAtBeat: ({ beat }) => tempoAtBeat(beat),
+            renderableTracks: [keys],
+            scheduledTracks: [keys],
+            contributingTrackIds: new Set(['midi-1']),
+            soloGatedByTrackId: new Map(),
+            vcaMultiplierByTrackId: new Map(),
+            hostedPluginRuntime: loadedInstrument,
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const scheduled = commands.find((command) => command.kind === 'schedule-midi');
+        expect(scheduled?.kind === 'schedule-midi' ? scheduled.notes : null).toEqual([
+            noteEvent(3, 60, 100, true),
+            noteEvent(4, 60, 0, false),
+            noteEvent(5, 64, 64, true),
+            noteEvent(6, 64, 0, false),
+        ]);
+        // Comping of a MIDI clip never converts through the map, so no note time
+        // can tell the render's timeline from the live one: the map handed to the
+        // resolver is the observable. Every resolution of this render reads it.
+        const timelines = vi.mocked(resolveTrackClipsWithComping).mock.calls.map((call) => call[3]);
+        expect(timelines.length).toBeGreaterThan(0);
+        for (const timeline of timelines) {
+            expect(timeline?.secondsAtBeat(4)).toBe(3);
+            expect(timeline?.tempoAtBeat(4)).toBe(60);
+        }
     });
 
     it('moves every note by the strip’s latency compensation, as the audio clips and the web notes move', async () => {
