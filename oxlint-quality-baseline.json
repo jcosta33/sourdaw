@@ -3705,9 +3705,6 @@
     "src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/agentReference/levenshteinDistance.ts": {
@@ -14494,9 +14491,6 @@
         }
     },
     "src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 1
         }

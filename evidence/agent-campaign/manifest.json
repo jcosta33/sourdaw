@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "716d8313932fbe0861d059895ac18aa2e003dbf407c79d660573c5ac3c99a5ea"
+        "digest": "7d28903e60e4fef63111227a0c07b9a305f06632a609bf3fcfd08a84e6a4213f"
     },
     "census": {
-        "digest": "6bddd390efa87d365583684c6b6cc79698a47415a0a8543108eac62a1db63cb3"
+        "digest": "b4cd8eb0e28ec0fda93d1daf27a0451c789dc16e7042f5a419e4baf6dac0d705"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -246,7 +246,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "cc7cac5501186013008cfae5891f58e030cb772b031205e059e9d05fbd133497"
+                    "digest": "11fc059a908aefc45bafefadd7cbf7ebeebad176cb2e59d65281cf064b271bf6"
                 }
             ]
         },
