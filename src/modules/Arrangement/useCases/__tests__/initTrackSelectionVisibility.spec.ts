@@ -85,6 +85,33 @@ describe('initTrackSelectionVisibility', () => {
         expect(trackStore.value?.selectedTrackId).toBe('other');
     });
 
+    it('skips a child of a collapsed folder for the next drawn row', () => {
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'folder', kind: 'folder', collapsed: true }),
+                TrackDummy.create({ id: 'a' }),
+                TrackDummy.create({ id: 'child', parentId: 'folder' }),
+                TrackDummy.create({ id: 'z' }),
+            ],
+            selectedTrackId: 'a',
+        });
+
+        hide('a');
+
+        expect(trackStore.value?.selectedTrackId).toBe('z');
+    });
+
+    it('selects nothing when the only other track is the master', () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'a' }), TrackDummy.create({ id: 'master', kind: 'master' })],
+            selectedTrackId: 'a',
+        });
+
+        hide('a');
+
+        expect(trackStore.value?.selectedTrackId).toBeNull();
+    });
+
     it('moves a hidden selection when hidden tracks stop being shown', () => {
         timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
         setProject(tracks(['a']), 'a');

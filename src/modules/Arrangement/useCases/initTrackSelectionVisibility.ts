@@ -2,20 +2,23 @@ import { type Track } from '../models/Track';
 import { timelineEditingStore } from '../stores/timelineEditingStore';
 import { trackStore } from '../stores/trackStore';
 
+import { getTimelineRowTracks } from './getTimelineRowTracks';
 import { getTracksShownInViews } from './getTracksShownInViews';
 import { selectTrack } from './toggleTrackState/selectTrack';
 
-function pickNearestShownTrackId(
+// The replacement is a row the arrangement draws: never the master, and never a
+// child of a collapsed folder.
+function pickNearestDrawnTrackId(
     tracks: readonly Track[],
     selectedIndex: number,
-    shownIds: ReadonlySet<string>
+    showHiddenTracks: boolean
 ): string | null {
-    const candidates = tracks.filter((track) => track.kind !== 'master' && shownIds.has(track.id));
-    const next = candidates.find((track) => tracks.indexOf(track) > selectedIndex);
+    const rows = getTimelineRowTracks(tracks, showHiddenTracks);
+    const next = rows.find((track) => tracks.indexOf(track) > selectedIndex);
     if (next) {
         return next.id;
     }
-    return candidates.at(-1)?.id ?? null;
+    return rows.at(-1)?.id ?? null;
 }
 
 function reconcileTrackSelection(): void {
@@ -33,7 +36,7 @@ function reconcileTrackSelection(): void {
     if (shownIds.has(selectedTrackId)) {
         return;
     }
-    selectTrack(pickNearestShownTrackId(state.tracks, selectedIndex, shownIds));
+    selectTrack(pickNearestDrawnTrackId(state.tracks, selectedIndex, showHiddenTracks));
 }
 
 /**
