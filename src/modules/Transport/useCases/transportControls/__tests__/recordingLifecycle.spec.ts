@@ -1,6 +1,69 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { recordingStartStore } from '../../../stores';
 import { recordingLifecycle } from '../recordingLifecycle';
+
+describe('recording start state published to handlers', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
+    });
+
+    afterEach(() => {
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
+        vi.useRealTimers();
+    });
+
+    it('holds while a count-in timer runs and clears when a cancelled count-in drops it', () => {
+        recordingLifecycle.setCountInTimerId(setTimeout(() => {}, 1000));
+        expect(recordingStartStore.value).toBe(true);
+
+        recordingLifecycle.setCountInTimerId(null);
+        expect(recordingStartStore.value).toBe(false);
+    });
+
+    it('holds while admission is pending and clears on cancel and on completion', () => {
+        recordingLifecycle.beginPendingRecordingStart();
+        expect(recordingStartStore.value).toBe(true);
+        recordingLifecycle.cancelPendingRecordingStart();
+        expect(recordingStartStore.value).toBe(false);
+
+        const token = recordingLifecycle.beginPendingRecordingStart();
+        expect(recordingLifecycle.completePendingRecordingStart(token)).toBe(true);
+        expect(recordingStartStore.value).toBe(false);
+    });
+
+    it('stays set while a count-in is cancelled but admission is still pending', () => {
+        recordingLifecycle.setCountInTimerId(setTimeout(() => {}, 1000));
+        recordingLifecycle.beginPendingRecordingStart();
+
+        recordingLifecycle.setCountInTimerId(null);
+
+        expect(recordingStartStore.value).toBe(true);
+    });
+
+    it('holds while a stop closes a recording and clears once it settles', async () => {
+        let finish: () => void = () => {};
+        recordingLifecycle.trackClosing(new Promise<void>((resolve) => (finish = resolve)));
+        expect(recordingStartStore.value).toBe(true);
+
+        finish();
+        await recordingLifecycle.waitUntilRecordingClosed();
+        expect(recordingStartStore.value).toBe(false);
+    });
+
+    it('holds while a take commit is in flight and clears when it settles, even on failure', async () => {
+        let fail: (error: Error) => void = () => {};
+        recordingLifecycle.trackCommit(new Promise<void>((_resolve, reject) => (fail = reject)));
+        expect(recordingStartStore.value).toBe(true);
+
+        fail(new Error('commit failed'));
+        await recordingLifecycle.waitForCommits();
+        expect(recordingStartStore.value).toBe(false);
+    });
+});
 
 describe('recording lifecycle', () => {
     beforeEach(() => {

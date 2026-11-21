@@ -1,10 +1,13 @@
 import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureFreezeStateSnapshot } from '../../useCases/freezeBounce/freezeStateSnapshot';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 type MutableFreezeStateSnapshot = {
     frozen: boolean;
@@ -21,6 +24,10 @@ const pendingFreezeSnapshots = new WeakMap<object, MutableFreezeStateSnapshot>()
 
 export const handleFreezeTrack = createHandler<'freezeTrack'>({
     execute: async (action) => {
+        if (isFreezeRefusedWhileRecording(action.payload.trackId)) {
+            notifyUser(FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, 'warning');
+            return toHandlerExecutionResult(false);
+        }
         const didWrite = await freezeTrack(action.payload.trackId, action.payload.freezeId);
         if (didWrite) {
             const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
@@ -41,7 +48,7 @@ export const handleFreezeTrack = createHandler<'freezeTrack'>({
         // Capture the whole aggregate on both sides instead.
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         const freezeId = action.payload.freezeId;
-        if (!track || !freezeId) {
+        if (!track || !freezeId || isFreezeRefusedWhileRecording(track.id)) {
             return { label: 'Freeze track', inverseAction: null };
         }
         const previous = captureFreezeStateSnapshot(track);
