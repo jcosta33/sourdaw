@@ -2271,6 +2271,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
         it.each([
             [
+                'hideTrack',
+                { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
+                () => trackNamed(TRACK_ID).hidden,
+                true,
+            ],
+            [
                 'foldTrack',
                 { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
                 () => trackNamed(FOLDER_ID).collapsed,
@@ -2421,6 +2427,15 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 200,
             ],
             [
+                'a hide then a show of one track',
+                [
+                    { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
+                    { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: false } },
+                ] as const,
+                () => trackNamed(TRACK_ID).hidden,
+                false,
+            ],
+            [
                 'a fold then an unfold of one folder',
                 [
                     { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
@@ -2479,6 +2494,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 'Track "ghost-track" does not exist',
             ],
             [
+                'a hide of a track that does not exist',
+                { type: 'hideTrack', payload: { trackId: 'ghost-track', hidden: true } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
                 'a fold of a track that is not a folder',
                 { type: 'foldTrack', payload: { trackId: TRACK_ID, folded: true } },
                 `Track "${TRACK_ID}" is not a folder, so it has nothing to fold`,
@@ -2525,6 +2545,18 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(trackNamed(SHORT_ID)).toMatchObject({ height: 100, frozen: true });
         });
 
+        it('hides and shows a frozen track, since hiding is a view property that leaves the freeze alone', async () => {
+            expect(trackNamed(SHORT_ID).frozen).toBe(true);
+
+            const result = await runAsAgent([{ type: 'hideTrack', payload: { trackId: SHORT_ID, hidden: true } }]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(trackNamed(SHORT_ID)).toMatchObject({ hidden: true, frozen: true });
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackNamed(SHORT_ID)).toMatchObject({ hidden: false, frozen: true });
+        });
+
         it('undoes a zoom and the removal of a zoomed track as one group, restoring the track and every height', async () => {
             const result = await runAsAgent([
                 { type: 'zoomTracksVertical', payload: { delta: 40 } },
@@ -2542,6 +2574,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
 
         it.each([
+            [
+                'hideTrack',
+                TRACK_ID,
+                { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
+                () => trackNamed(TRACK_ID).hidden,
+                false,
+            ],
             [
                 'foldTrack',
                 FOLDER_ID,
@@ -2589,6 +2628,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         it.each([
             [{ type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } }, TRACK_ID, 'setTrackHeight'],
             [{ type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } }, FOLDER_ID, 'foldTrack'],
+            [{ type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } }, TRACK_ID, 'hideTrack'],
         ] as const)(
             'refuses a %s on a track an earlier action of the batch removes, writing nothing',
             async (edit, trackId, name) => {
