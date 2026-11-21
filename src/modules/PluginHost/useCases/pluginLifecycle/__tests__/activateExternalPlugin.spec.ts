@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     defaultExternalPluginActivationState,
@@ -12,6 +12,7 @@ import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExter
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { readPluginState } from '../readPluginState';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
+import { LIFECYCLE_SETTLEMENT_DEADLINE_MS } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../../../repositories/pluginBridge/types';
@@ -37,6 +38,7 @@ vi.mock('../../../repositories/pluginBridge/onPluginLatencyChanged', () => ({
     onPluginLatencyChanged: mocks.subscribe,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 /**
  * The handler the single live subscription installed. Captured rather than
@@ -268,6 +270,83 @@ describe('activateExternalPlugin', () => {
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows the unresponsive message when the host refuses a restore because the plugin stopped responding', async () => {
+        // The shape the desktop bridge rejects with: its own prefix, then the native message.
+        mocks.setPluginStateRepo.mockRejectedValueOnce(
+            new Error(
+                "Error invoking remote method 'set_plugin_state': Error: plugin-unresponsive: Plugin 'Comp' stopped responding inside a call and is no longer processed or controlled"
+            )
+        );
+
+        await activateExternalPlugin({ pluginId: 'compressor', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
+            status: 'error',
+            message: 'compressor stopped responding; it is silent until it answers again or is reloaded.',
+        });
+    });
+
+    it('lets a restore that answers after a rebuild gave up on it write nothing onto the next generation', async () => {
+        const lateRestore = Promise.withResolvers<void>();
+        // Answer at last however the case ends, so the held turn cannot leak into later cases.
+        onTestFinished(() => lateRestore.resolve());
+        mocks.setPluginStateRepo.mockReturnValueOnce(lateRestore.promise);
+        const abandoned = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledOnce());
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+        await rebuild;
+
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toEqual({ status: 'active' });
+        lateRestore.reject(new Error('state chunk rejected'));
+        await abandoned;
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+    });
+
+    it('lets a restore that succeeds after a rebuild gave up on it clear nothing on the next generation', async () => {
+        const lateRestore = Promise.withResolvers<void>();
+        // Answer at last however the case ends, so the held turn cannot leak into later cases.
+        onTestFinished(() => lateRestore.resolve());
+        mocks.setPluginStateRepo.mockReturnValueOnce(lateRestore.promise);
+        const abandoned = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledOnce());
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+        await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+        vi.useRealTimers();
+        await rebuild;
+
+        // The next generation's own restore is rejected, so it holds an error
+        // status and a restore-failure marker.
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+        const statusBeforeLateAnswer = externalPluginActivationStore.value?.byInstanceId['inst-1'];
+        expect(statusBeforeLateAnswer).toMatchObject({ status: 'error' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        lateRestore.resolve();
+        await abandoned;
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual(statusBeforeLateAnswer);
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
     });
 
     // Issue 3693: a plugin that rejects its saved chunk holds its own defaults,

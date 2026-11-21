@@ -39,6 +39,7 @@ type AgentApproval = Parameters<ApprovalBindingIssuer>[0]['approval'];
 function buildAgentApproval(sourceRevision: string): AgentApproval {
     return {
         schemaVersion: 1,
+        explicitApprovalRequired: false,
         actionHashes: [],
         sourceRevision,
         targetFingerprints: {},
