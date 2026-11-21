@@ -206,4 +206,79 @@ describe('freezeTrack started over a running freeze', () => {
             expect(track.freezeState).toEqual(prior.freezeState);
         }
     });
+
+    it('undoes to the exact error prior when a freeze over a running freeze of an errored track commits', async () => {
+        const prior = TrackDummy.create({
+            id: 'freeze-track',
+            freezeState: { status: 'error', errorMessage: 'Render failed: out of memory' },
+        });
+        seedTrack(prior);
+        await freezeOverRunningFreeze();
+        await undo();
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.frozen).toBe(false);
+            expect(track.freezeState).toEqual({ status: 'error', errorMessage: 'Render failed: out of memory' });
+        }
+    });
+
+    it('undoes to unfrozen when the track arrives freezing from a collaborator with no local freeze running', async () => {
+        seedTrack(
+            TrackDummy.create({
+                id: 'freeze-track',
+                freezeState: { status: 'freezing', freezeId: 'remote-freeze', renderProgress: 0.4 },
+            })
+        );
+        expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+        render.mockResolvedValue(buffer(0.5));
+        await freeze();
+        expect(projectedTrack().freezeState.status).toBe('frozen');
+        await undo();
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.frozen).toBe(false);
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+        }
+    });
+
+    it('undoes to the stale take when the collaborator freezing the track carried a take', async () => {
+        seedTrack(
+            TrackDummy.create({
+                id: 'freeze-track',
+                frozen: true,
+                frozenBufferId: 'old-take',
+                freezeState: {
+                    status: 'freezing',
+                    freezeId: 'remote-freeze',
+                    frozenBufferId: 'old-take',
+                    renderProgress: 0.4,
+                },
+            })
+        );
+        render.mockResolvedValue(buffer(0.5));
+        await freeze();
+        await undo();
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.frozen).toBe(true);
+            expect(track.frozenBufferId).toBe('old-take');
+            expect(track.freezeState).toEqual({
+                status: 'stale',
+                freezeId: 'remote-freeze',
+                frozenBufferId: 'old-take',
+            });
+        }
+    });
+
+    it('undoes an unfreeze issued while a freeze renders to unfrozen, never freezing', async () => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        expect(projectedTrack().freezeState.status).toBe('freezing');
+        await executeAppAction({ type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } });
+        expect(projectedTrack().freezeState.status).toBe('unfrozen');
+        await undo();
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState.status).not.toBe('freezing');
+        }
+        first.release();
+        await running;
+    });
 });
