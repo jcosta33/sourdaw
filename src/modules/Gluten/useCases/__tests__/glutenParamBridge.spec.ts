@@ -25,7 +25,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: mockExecuteAppAction,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     updateDeviceParam: mockUpdateDeviceParam,
 }));
 

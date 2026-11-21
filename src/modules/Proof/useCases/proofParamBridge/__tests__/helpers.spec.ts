@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { bridges, type ProofAudioBridge } from '../helpers';
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     updateDeviceParam: vi.fn(),
     updateDevicePatch: vi.fn(),
 }));

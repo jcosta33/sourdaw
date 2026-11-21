@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
     }),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     wireSidechainRoute: mocks.wireSidechainRoute,
     unwireSidechainRoute: mocks.unwireSidechainRoute,
     getEngineState: mocks.getEngineState,

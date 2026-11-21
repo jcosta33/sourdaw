@@ -19,7 +19,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     resolveEligibleDeviceWriteTarget: hydrationMocks.resolveEligibleDeviceWriteTarget,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     getToasterDeviceControls: hydrationMocks.getToasterDeviceControls,
 }));
 

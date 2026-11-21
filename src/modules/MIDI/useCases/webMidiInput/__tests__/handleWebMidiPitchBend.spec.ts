@@ -32,6 +32,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        hasPadOutputHost: actual.hasPadOutputHost,
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         builtinSynthVoice: { read: () => synthVoices },
         writeNativeBuiltinParameters: vi.fn(),

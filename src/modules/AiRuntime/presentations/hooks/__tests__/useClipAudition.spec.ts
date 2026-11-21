@@ -13,6 +13,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     fixture.engine = actual.audioEngine;
     return {
+        hasPadOutputHost: actual.hasPadOutputHost,
         playAuditionNote: fixture.play,
         audioEngine: {
             beginAudioPreviewIntent: () => {

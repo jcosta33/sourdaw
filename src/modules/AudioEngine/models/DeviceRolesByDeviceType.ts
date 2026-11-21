@@ -13,12 +13,19 @@ import { type BuiltinDeviceType, resolveBuiltinDeviceType } from '#/utils/builti
  *   although it makes no audio, because the offline scheduler keys note
  *   projection off its presence on the track, so it must survive the insert
  *   filter.
+ * - `padOutputHost` - the device hosts one output per pad, and its folder
+ *   track's children are those pads' tracks (Toaster).
  */
-export type DeviceRoles = Readonly<{ midiTransform: boolean; offlineSource: boolean }>;
+export type DeviceRoles = Readonly<{
+    midiTransform: boolean;
+    offlineSource: boolean;
+    padOutputHost: boolean;
+}>;
 
-const NONE: DeviceRoles = { midiTransform: false, offlineSource: false };
-const SOURCE: DeviceRoles = { midiTransform: false, offlineSource: true };
-const TRANSFORM_SOURCE: DeviceRoles = { midiTransform: true, offlineSource: true };
+const NONE: DeviceRoles = { midiTransform: false, offlineSource: false, padOutputHost: false };
+const SOURCE: DeviceRoles = { midiTransform: false, offlineSource: true, padOutputHost: false };
+const SOURCE_PAD_HOST: DeviceRoles = { midiTransform: false, offlineSource: true, padOutputHost: true };
+const TRANSFORM_SOURCE: DeviceRoles = { midiTransform: true, offlineSource: true, padOutputHost: false };
 
 /**
  * The roles of every built-in device type. Exhaustive over the vocabulary, so
@@ -55,7 +62,7 @@ const DEVICE_ROLES_BY_DEVICE_TYPE: { readonly [Type in BuiltinDeviceType]: Devic
     'builtin-drum-machine-electronic': SOURCE,
     'builtin-drum-machine-acoustic': SOURCE,
     fermenter: SOURCE,
-    toaster: SOURCE,
+    toaster: SOURCE_PAD_HOST,
     levain: SOURCE,
     'builtin-crumbs': SOURCE,
     'grand-boule': SOURCE,

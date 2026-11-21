@@ -6,7 +6,11 @@ const { getDrumKitByIndex } = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return { getDrumKitByIndex, resolveDrumKitBy: actual.resolveDrumKitBy };
+    return {
+        getDrumKitByIndex,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+    };
 });
 
 import { resolveDrumKit } from '../resolveDrumKit';

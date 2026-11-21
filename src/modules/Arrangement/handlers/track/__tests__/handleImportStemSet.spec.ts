@@ -61,6 +61,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         findMidiTransformDevice: actual.findMidiTransformDevice,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         builtinSynthVoice: { read: vi.fn() },
         startFaustNote: vi.fn(),

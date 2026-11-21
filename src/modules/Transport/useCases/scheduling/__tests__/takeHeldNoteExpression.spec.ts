@@ -10,6 +10,8 @@ import { takeHeldNoteExpression } from '../takeHeldNoteExpression';
 // The engine's own timeline is the contract under test with the held notes: what a window takes from a
 // started note is what that timeline moves on to.
 vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     advanceNoteExpression: (
         await vi.importActual<Pick<typeof import('#/modules/AudioEngine/useCases'), 'advanceNoteExpression'>>(
             '#/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression'

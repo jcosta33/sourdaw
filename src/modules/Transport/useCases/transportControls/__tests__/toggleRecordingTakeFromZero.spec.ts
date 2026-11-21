@@ -103,7 +103,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     audioEngine: {

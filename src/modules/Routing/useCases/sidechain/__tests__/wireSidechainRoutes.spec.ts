@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     wireSidechainRoute: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     wireSidechainRoute: mocks.wireSidechainRoute,
 }));
 

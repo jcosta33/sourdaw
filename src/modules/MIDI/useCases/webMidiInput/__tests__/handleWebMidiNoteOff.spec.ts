@@ -62,6 +62,8 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrac
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
         audioEngine: {
             context: audio_clock,
             getTrackStrip: get_track_strip,

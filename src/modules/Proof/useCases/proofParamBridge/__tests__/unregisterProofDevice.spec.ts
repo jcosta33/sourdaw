@@ -10,7 +10,9 @@ import { bridges, type ProofAudioBridge } from '../helpers';
 import { registerProofDevice } from '../registerProofDevice';
 import { unregisterProofDevice } from '../unregisterProofDevice';
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     updateDeviceParam: vi.fn(),
     updateDevicePatch: vi.fn(),
 }));

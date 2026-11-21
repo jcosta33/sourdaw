@@ -18,7 +18,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 // `getTrackStrip` is how `setPadParamImmediate` reaches the live worklet. Stubbed
 // to "no strip", which is the real state during an offline render: the store write
 // still happens, which is the half this spec is about.
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     getToasterDeviceControls: mocks.getToasterDeviceControls,
     getTrackStrip: mocks.getTrackStrip,
     writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,

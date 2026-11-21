@@ -18,7 +18,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     setSend: mocks.setSendEngine,
     removeSend: mocks.removeSendEngine,
 }));

@@ -24,7 +24,9 @@ vi.mock('../applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
+        .hasPadOutputHost,
     updateDeviceParam: mocks.updateDeviceParam,
 }));
 

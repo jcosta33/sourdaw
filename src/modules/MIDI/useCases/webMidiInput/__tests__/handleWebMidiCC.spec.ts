@@ -38,6 +38,8 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
