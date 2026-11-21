@@ -4,12 +4,11 @@ import {
     getMidiInputTrackRevision,
     setMidiInputTrack,
 } from '#/modules/MIDI/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { FROZEN_TRACK_RECORDING_MESSAGE, isFrozenTrackRefusingRecording } from '../../models/FrozenTrackRecording';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility } from '../../stores/trackEligibility';
+
+import { refusesArm } from './refusesArm';
 
 type ArmTrackOptions = {
     deferRuntimeEffect?: boolean;
@@ -77,11 +76,7 @@ export function armTrack(
     if (!projectStateChanged && !runtimeStateChanged) {
         return false;
     }
-    if (armed && !getTrackEligibility(track.kind).acceptsArm) {
-        return false;
-    }
-    if (armed && isFrozenTrackRefusingRecording(track)) {
-        notifyUser(FROZEN_TRACK_RECORDING_MESSAGE, 'warning');
+    if (refusesArm(track, armed)) {
         return false;
     }
     if (projectStateChanged) {
