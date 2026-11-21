@@ -4,6 +4,7 @@ import {
 } from '../models/InternalReplayOwnerValidation';
 import { getHandlerByType } from '../stores/handlerRegistry';
 
+import { validateTransportBarsSessionEntry } from './validateTransportBarsSessionEntry';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 import type { SessionActionContract } from '../stores/undoSessionMirror';
@@ -55,6 +56,20 @@ function createCapturedDeviceReplayContract(
             getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
         validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
     };
+}
+
+function createTransportBarsReplayContract(actionType: 'setCountInBars' | 'setPreRollBars'): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
+        validateEntry: (entry) => validateTransportBarsSessionEntry(actionType, entry),
+    };
+}
+
+function createTransportBarsReplayContracts(): readonly SessionActionContract[] {
+    return [createTransportBarsReplayContract('setCountInBars'), createTransportBarsReplayContract('setPreRollBars')];
 }
 
 /**
@@ -133,6 +148,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
         ...createVerticalZoomReplayContracts(),
+        ...createTransportBarsReplayContracts(),
         createInternalReplayContract('discardCreatedTrack'),
         createInternalReplayContract('discardDuplicatedClip'),
         createInternalReplayContract('discardDrawnClip'),

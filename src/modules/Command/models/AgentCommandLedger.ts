@@ -392,7 +392,7 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'project-timeline',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Undoable transport settings with no executable descriptor yet. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled; the count-in and pre-roll handlers describe no inverse action, so the packet gives them one before registering them or retires the toggles.',
+        reason: 'Undoable transport settings with no executable descriptor yet. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled; setCountInBars and setPreRollBars describe their inverse, but toggleCountIn and togglePreRoll do not, and none of the four has an executable descriptor yet, so the packet registers the bar setters and gives the toggles an inverse or retires them.',
         actionTypes: [
             'toggleLoop',
             'toggleMetronome',

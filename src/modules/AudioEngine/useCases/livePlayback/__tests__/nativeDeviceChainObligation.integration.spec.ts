@@ -4,8 +4,8 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { asAudioNode, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, compileReorderDevicesAction } from '#/modules/Arrangement/useCases';
-import { resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
 
+import { resolveNoteReceivingInstrument } from '../../../models/NoteReceivingInstrument';
 import { armNativeLiveMidiWriter } from '../armNativeLiveMidiWriter';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
