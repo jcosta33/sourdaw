@@ -278,7 +278,9 @@ pub(crate) fn read_live_state(
     runtime: &SharedHostedPlugin,
     _state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    runtime.get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
+    runtime
+        .get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
+        .map_err(|error| error.to_string())
 }
 
 /// A test's look at every built instance just before the render.
@@ -437,7 +439,7 @@ impl OfflinePluginInstances<'_> {
             let (failed, never_processing) = instance
                 .runtime
                 .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                    Ok((
+                    Ok::<_, std::convert::Infallible>((
                         plugin.has_failed_a_process_call(),
                         plugin.has_passed_a_block_unprocessed(),
                     ))
@@ -709,9 +711,11 @@ pub(crate) async fn build_offline_instances<'a>(
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
                 AudioPlugin::set_state(plugin, &chunk)
                     .map_err(|reason| format!("its live state could not be restored: {reason}"))?;
-                Ok(<HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize)
+                Ok::<_, String>(
+                    <HostedRuntime as HostedPluginRuntime>::latency_samples(plugin) as usize,
+                )
             })
-            .map_err(|reason| refusal(instance, &reason))?;
+            .map_err(|reason| refusal(instance, &reason.to_string()))?;
         if let Some(last) = built.instances.last_mut() {
             last.latency_frames = latency_frames;
         }

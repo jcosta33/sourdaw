@@ -1112,7 +1112,7 @@ fn authorize_scan_roots(
         let canonical = match policy.authorize_scan_root(&path) {
             Ok(canonical) => canonical,
             Err(error) => {
-                errors.push(error);
+                errors.push(error.to_string());
                 continue;
             }
         };
@@ -1540,10 +1540,14 @@ fn authorize_plugin_file(
     path: &Path,
     format: &str,
 ) -> Result<PathBuf, String> {
-    let authorized = scan_policy.authorize_scan_root(path)?;
+    let authorized = scan_policy
+        .authorize_scan_root(path)
+        .map_err(|refusal| refusal.to_string())?;
     if let Some(module) = plugin_file_path(&authorized, format) {
         if module != authorized {
-            scan_policy.authorize_scan_root(&module)?;
+            scan_policy
+                .authorize_scan_root(&module)
+                .map_err(|refusal| refusal.to_string())?;
         }
     }
     Ok(authorized)
@@ -2002,6 +2006,7 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
     runtime: &mut P,
 ) -> Result<bool, String> {
     lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
+        .map_err(|error| error.to_string())
 }
 
 /// How a load builds its runtime: [`create_hosted_runtime`] in production, a
@@ -2089,7 +2094,8 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
             sample_rate,
             mode,
         )
-    })?
+    })
+    .map_err(|error| error.to_string())?
 }
 
 /// Run a runtime's teardown on the shell's UI thread.
@@ -2947,7 +2953,7 @@ fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
                 request,
             );
         }));
-        Ok(())
+        Ok::<_, std::convert::Infallible>(())
     }) {
         eprintln!(
             "[Plugin] instance '{instance_id}' will not carry its own host requests: {error}"
@@ -3513,7 +3519,9 @@ pub async fn set_plugin_parameter(
         }
     };
 
-    let enqueue_result = runtime.enqueue_parameter(param_id, value);
+    let enqueue_result = runtime
+        .enqueue_parameter(param_id, value)
+        .map_err(|error| error.to_string());
 
     let mut engine_plugins = state
         .engine_plugins
@@ -3557,7 +3565,10 @@ pub async fn get_plugin_parameters(
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         match engine_plugins.get(&instance_id.0) {
             Some(instance) => {
-                instance.runtime.ensure_public_control_allowed()?;
+                instance
+                    .runtime
+                    .ensure_public_control_allowed()
+                    .map_err(|refusal| refusal.to_string())?;
                 Arc::clone(&instance.runtime)
             }
             None => return Err(format!("No plugin instance: {}", instance_id.0)),
@@ -3572,7 +3583,9 @@ pub async fn get_plugin_parameters(
     // The lock is released first: the poll runs on the control seam, which can
     // wait on the audio thread, and holding the instance map across that would
     // stall every other command for the same reason.
-    let polled_parameters = runtime.poll_parameters(std::time::Duration::from_secs(2))?;
+    let polled_parameters = runtime
+        .poll_parameters(std::time::Duration::from_secs(2))
+        .map_err(|refusal| refusal.to_string())?;
 
     let mut engine_plugins = state
         .engine_plugins
@@ -3632,7 +3645,9 @@ pub(crate) fn read_plugin_state_chunk(
             .map(|instance| Arc::clone(&instance.runtime))
     };
     if let Some(runtime) = runtime {
-        return runtime.get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2));
+        return runtime
+            .get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2))
+            .map_err(|error| error.to_string());
     }
 
     Err(format!("No plugin instance: {}", instance_id))
@@ -3677,10 +3692,9 @@ fn write_plugin_state_chunk(
         }
     };
 
-    let refreshed_parameters = runtime.set_state_invalidating_pending_parameters(
-        std::time::Duration::from_secs(2),
-        plugin_state,
-    )?;
+    let refreshed_parameters = runtime
+        .set_state_invalidating_pending_parameters(std::time::Duration::from_secs(2), plugin_state)
+        .map_err(|error| error.to_string())?;
 
     let mut engine_plugins = state
         .engine_plugins
@@ -3883,7 +3897,10 @@ mod tests {
             false
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             let carries = self
                 .carries
                 .lock()
@@ -3891,7 +3908,9 @@ mod tests {
                 .pop_front()
                 .unwrap_or(true);
             if !carries {
-                return Err("the shell's UI thread did not take the editor call".to_string());
+                return Err("the shell's UI thread did not take the editor call"
+                    .to_string()
+                    .into());
             }
             task.run();
             Ok(())
@@ -3908,8 +3927,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err(crate::host::plugin_window::PluginWindowError::NoWindowServer)
         }
 
         fn destroy_window(&self, _label: &str) {}
@@ -4375,7 +4395,7 @@ mod tests {
                         "instance-swapped-write",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4459,7 +4479,7 @@ mod tests {
                         "instance-swapped-restore",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4538,7 +4558,7 @@ mod tests {
                         "instance-swapped-poll",
                         replacement,
                     );
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4622,7 +4642,7 @@ mod tests {
                     poll_may_run
                         .recv_timeout(Duration::from_secs(5))
                         .expect("the test opens the gate once the map is held");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
             control_gate_taken
@@ -4668,7 +4688,7 @@ mod tests {
                 // schedule leaves the write-back guard unexercised but no
                 // schedule of correct code fails.
                 event_runtime
-                    .with_control(Duration::from_secs(2), |_plugin| Ok(()))
+                    .with_control(Duration::from_secs(2), |_plugin| Ok::<_, String>(()))
                     .expect("fixture control access should succeed");
                 event_runtime
                     .enqueue_parameter(7, 0.75)
@@ -7570,7 +7590,10 @@ mod tests {
             false
         }
 
-        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<UiThreadTask>,
+        ) -> Result<(), crate::host::ui_thread::UiThreadError> {
             (self.change)();
             task.run();
             Ok(())
@@ -7587,8 +7610,9 @@ mod tests {
             _label: &str,
             _title: &str,
             _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err(crate::host::plugin_window::PluginWindowError::NoWindowServer)
         }
 
         fn destroy_window(&self, _label: &str) {}

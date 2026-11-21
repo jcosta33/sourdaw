@@ -176,24 +176,46 @@ pub(crate) struct ForbiddenRoots {
     pub(crate) renderer_writable_grants: Vec<PathBuf>,
 }
 
+/// Why the forbidden set could not be resolved. Each variant carries the text
+/// of the resolver that refused, which owns its wording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ForbiddenRootsError {
+    /// The app's own storage roots could not be located.
+    AppStorage(String),
+    /// The renderer's read-write file grants could not be read.
+    RendererGrants(String),
+}
+
+impl fmt::Display for ForbiddenRootsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AppStorage(reason) | Self::RendererGrants(reason) => formatter.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for ForbiddenRootsError {}
+
 impl ForbiddenRoots {
     /// The real forbidden set, resolved the way picks are: canonical where the
     /// folder exists, through its deepest existing ancestor where it does not.
     ///
     /// A refused runtime scope is an error, never an empty storage set: without
     /// the scope no folder can be shown to lie outside the app's own storage.
-    pub(crate) fn production() -> Result<Self, String> {
+    pub(crate) fn production() -> Result<Self, ForbiddenRootsError> {
         Ok(Self {
             home: dirs::home_dir().map(|home| fs::canonicalize(&home).unwrap_or(home)),
             default_roots: default_plugin_scan_roots()
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            app_storage_roots: built_in_roots()?
+            app_storage_roots: built_in_roots()
+                .map_err(|error| ForbiddenRootsError::AppStorage(error.to_string()))?
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            renderer_writable_grants: grant_registry::persisted_read_write_paths()?,
+            renderer_writable_grants: grant_registry::persisted_read_write_paths()
+                .map_err(|error| ForbiddenRootsError::RendererGrants(error.to_string()))?,
         })
     }
 }
@@ -234,7 +256,7 @@ pub(crate) fn production_store_location() -> Option<PathBuf> {
 }
 
 /// The grant document inside the private state directory `private_state` names.
-fn store_location_in(private_state: Result<Option<PathBuf>, String>) -> Option<PathBuf> {
+fn store_location_in<Refusal>(private_state: Result<Option<PathBuf>, Refusal>) -> Option<PathBuf> {
     let directory = private_state.ok().flatten()?;
     Some(directory.join(GRANT_FILE_NAME))
 }
@@ -314,10 +336,10 @@ pub(crate) fn validate_folder(
     match path_has_symlink_component(requested) {
         Ok(true) => return Err(PluginFolderRefusal::SymbolicLink(requested.to_path_buf())),
         Ok(false) => {}
-        Err(cause) => {
+        Err(refusal) => {
             return Err(PluginFolderRefusal::Unreadable {
                 path: requested.to_path_buf(),
-                cause,
+                cause: refusal.to_string(),
             })
         }
     }
@@ -599,7 +621,17 @@ mod tests {
     fn a_refused_scope_has_no_forbidden_roots() {
         crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
             concat!(module_path!(), "::a_refused_scope_has_no_forbidden_roots"),
-            || assert!(ForbiddenRoots::production().is_err()),
+            || {
+                let refused = ForbiddenRoots::production();
+                assert!(matches!(refused, Err(ForbiddenRootsError::AppStorage(_))));
+                assert_eq!(
+                    refused.err().map(|error| error.to_string()),
+                    Some(
+                        "Native runtime scope must be an existing canonical UUID directory in the reserved namespace"
+                            .to_string()
+                    )
+                );
+            },
         );
     }
 
@@ -607,10 +639,10 @@ mod tests {
     fn a_refused_scope_has_no_grant_store() {
         let private = PathBuf::from("/scope/native/data/private");
         assert_eq!(
-            store_location_in(Ok(Some(private.clone()))),
+            store_location_in::<String>(Ok(Some(private.clone()))),
             Some(private.join(GRANT_FILE_NAME))
         );
-        assert_eq!(store_location_in(Ok(None)), None);
+        assert_eq!(store_location_in::<String>(Ok(None)), None);
         assert_eq!(store_location_in(Err("refused".to_string())), None);
     }
 

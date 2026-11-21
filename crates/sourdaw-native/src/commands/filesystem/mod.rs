@@ -415,7 +415,7 @@ pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), Strin
 }
 
 pub(crate) fn ipc_temp_dir() -> Result<PathBuf, String> {
-    if let Some(path) = RuntimeScope::path("native/ipc")? {
+    if let Some(path) = RuntimeScope::path("native/ipc").map_err(|error| error.to_string())? {
         return Ok(path);
     }
     Ok(std::env::temp_dir().join(IPC_TEMP_DIR_NAME))
@@ -544,7 +544,9 @@ pub(crate) fn built_in_roots() -> Result<Vec<PathBuf>, String> {
     if let Some(data_dir) = application_data_directory()? {
         roots.push(data_dir);
     }
-    if let Some(cache_dir) = RuntimeScope::path("native/cache")? {
+    if let Some(cache_dir) =
+        RuntimeScope::path("native/cache").map_err(|error| error.to_string())?
+    {
         roots.push(cache_dir);
     } else if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
@@ -718,7 +720,7 @@ fn create_private_state_directory(directory: &Path) -> std::io::Result<()> {
 }
 
 fn application_data_directory() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = RuntimeScope::path("native/data")? {
+    if let Some(path) = RuntimeScope::path("native/data").map_err(|error| error.to_string())? {
         return Ok(Some(path));
     }
     Ok(dirs::data_dir().map(|root| root.join(APP_DIR_NAME)))
@@ -736,7 +738,7 @@ pub(crate) fn private_state_directory() -> Result<Option<PathBuf>, String> {
 
 /// Where Sourdaw keeps its own projects.
 fn project_directory() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = RuntimeScope::path("native/projects")? {
+    if let Some(path) = RuntimeScope::path("native/projects").map_err(|error| error.to_string())? {
         return Ok(Some(path));
     }
     Ok(dirs::document_dir().map(|root| root.join(PROJECT_DIR_NAME)))

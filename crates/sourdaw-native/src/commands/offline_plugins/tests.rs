@@ -274,7 +274,10 @@ impl UiThread for RecordingUiThread {
         thread::current().id() == self.thread_id
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+    fn run_on_ui_thread(
+        &self,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), crate::host::ui_thread::UiThreadError> {
         let (done, waited) = mpsc::sync_channel(1);
         let queued = Arc::clone(task);
         self.work
@@ -285,7 +288,7 @@ impl UiThread for RecordingUiThread {
             .map_err(|_| "the UI thread is gone".to_string())?;
         waited
             .recv()
-            .map_err(|_| "the UI thread never answered".to_string())
+            .map_err(|_| "the UI thread never answered".to_string().into())
     }
 }
 
@@ -585,7 +588,7 @@ fn record_offline_state(runtimes: &[Arc<SharedHostedPlugin>]) {
             .expect("the offline instance gives its state");
         let rate = runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                Ok(plugin.activation_sample_rate())
+                Ok::<_, String>(plugin.activation_sample_rate())
             })
             .expect("the offline instance answers");
         OFFLINE_STATE.with(|states| states.borrow_mut().push((chunk, rate)));
@@ -651,7 +654,7 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
     assert_eq!(live_recorded.gain, LIVE_GAIN);
     let live_rate = live
         .with_control(Duration::from_secs(2), |plugin| {
-            Ok(plugin.activation_sample_rate())
+            Ok::<_, String>(plugin.activation_sample_rate())
         })
         .expect("the live instance answers");
     assert_eq!(live_rate, LIVE_RATE, "the live instance was never re-rated");

@@ -32,7 +32,7 @@ pub async fn grant_plugin_folder(path: String) -> Result<String, String> {
         let location = store_location()?;
         plugin_folder_grants::grant_at(
             &location,
-            &ForbiddenRoots::production()?,
+            &ForbiddenRoots::production().map_err(|error| error.to_string())?,
             Path::new(path.trim()),
         )
         .map(|granted| granted.display().to_string())
@@ -47,12 +47,13 @@ pub async fn grant_plugin_folder(path: String) -> Result<String, String> {
 pub async fn get_plugin_folder_grants() -> Result<Vec<PluginFolderGrant>, String> {
     on_blocking_pool(|| {
         let location = store_location()?;
-        Ok(
-            plugin_folder_grants::list_at(&location, &ForbiddenRoots::production()?)
-                .into_iter()
-                .map(grant_dto)
-                .collect(),
+        Ok(plugin_folder_grants::list_at(
+            &location,
+            &ForbiddenRoots::production().map_err(|error| error.to_string())?,
         )
+        .into_iter()
+        .map(grant_dto)
+        .collect())
     })
     .await
 }
