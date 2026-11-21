@@ -1,4 +1,4 @@
-import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
@@ -32,7 +32,7 @@ export function getCopyMidiArticulationsStatus(
         !targetClip ||
         sourceClip.type !== 'midi' ||
         targetClip.type !== 'midi' ||
-        isTrackFrozenOrFreezing(track) !== input.expectedTrackFrozen ||
+        (track.frozen === true) !== input.expectedTrackFrozen ||
         (sourceClip.locked === true) !== input.expectedSourceClipLocked ||
         (targetClip.locked === true) !== input.expectedTargetClipLocked ||
         !state ||

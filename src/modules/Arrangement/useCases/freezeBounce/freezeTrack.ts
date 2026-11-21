@@ -20,6 +20,7 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { claimPreFreezeSnapshot } from './claimPreFreezeSnapshot';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
@@ -27,6 +28,7 @@ import { captureFreezeMidiNotes } from './freezeMidiNoteSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { preFreezeSnapshots } from './preFreezeSnapshots';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreFreezeSnapshot } from './restoreFreezeSnapshot';
 
@@ -69,6 +71,7 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
+        preFreezeSnapshots.delete(trackId);
     }
 }
 
@@ -93,7 +96,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return false;
     }
-    const previousFreeze = captureFreezeStateSnapshot(track);
+    const previousFreeze = claimPreFreezeSnapshot(
+        trackId,
+        captureFreezeStateSnapshot(track),
+        activeFreezeTasks.has(trackId)
+    );
     const renderedMidiNotes = captureFreezeMidiNotes(track.clips);
 
     if (activeFreezeTasks.has(trackId)) {
@@ -126,6 +133,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             isEligibleActiveProjectTrack(taskIdentity)
         ) {
             restoreFreezeSnapshot(scope, trackId, previousFreeze);
+            preFreezeSnapshots.delete(trackId);
         }
         return false;
     };
@@ -270,6 +278,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         if (abortController.signal.aborted) {
             restoreFreezeSnapshot(scope, trackId, previousFreeze);
+            preFreezeSnapshots.delete(trackId);
             return true;
         }
 

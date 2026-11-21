@@ -79,7 +79,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
-        isTrackFrozenOrFreezing: actual.isTrackFrozenOrFreezing,
         addWarpMarker: actual.addWarpMarker,
         markerStore: actual.markerStore,
         readMusicalRange: actual.readMusicalRange,

@@ -213,6 +213,17 @@ describe('a freeze whose MIDI notes change during the render', () => {
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 
+    it('accepts a note added through the addNotes action while freezing and refuses the take', async () => {
+        await freezeWhile(async () => {
+            await executeAppAction(addNotesAction());
+        });
+
+        expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
+        expect(findTrack().frozen).toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
     it('refuses the take when a note is edited in place while the render is pending', async () => {
         await freezeWhile(() => {
             const state = midiStore.value!;
@@ -286,5 +297,25 @@ describe('a cancelled freeze', () => {
         await secondFreeze;
         expect(findTrack().frozen).toBe(true);
         expect(findTrack().freezeState.status).toBe('frozen');
+    });
+
+    it('returns the track to its original state when a freeze that superseded another is cancelled', async () => {
+        const first = holdNextRender();
+        const firstFreeze = freezeTrack(TRACK_ID);
+        await first.entered;
+
+        const second = holdNextRender();
+        const secondFreeze = freezeTrack(TRACK_ID);
+        await second.entered;
+        cancelFreezeTrack(TRACK_ID);
+
+        first.release();
+        second.release();
+        await Promise.all([firstFreeze, secondFreeze]);
+
+        expectSettledUnfrozen();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        await executeAppAction(addNotesAction());
+        expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((note) => note.id)).toEqual(['first-note', 'later-note']);
     });
 });

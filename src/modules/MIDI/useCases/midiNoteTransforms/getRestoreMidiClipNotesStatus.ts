@@ -1,4 +1,4 @@
-import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
@@ -53,7 +53,7 @@ function readLiveNoteTransformReplayTarget(trackId: string, clipId: string): Not
             }
             target = {
                 trackId: track.id,
-                trackFrozen: isTrackFrozenOrFreezing(track),
+                trackFrozen: track.frozen === true,
                 clipLocked: clip.locked === true,
             };
         }
@@ -99,7 +99,7 @@ export function getRestoreMidiClipNotesStatus({
             !targetClip ||
             sourceClip.type !== 'midi' ||
             targetClip.type !== 'midi' ||
-            isTrackFrozenOrFreezing(track) !== articulationReplayGuard.expectedTrackFrozen ||
+            (track.frozen === true) !== articulationReplayGuard.expectedTrackFrozen ||
             (sourceClip.locked === true) !== articulationReplayGuard.expectedSourceClipLocked ||
             (targetClip.locked === true) !== articulationReplayGuard.expectedTargetClipLocked ||
             !sourceNotes ||

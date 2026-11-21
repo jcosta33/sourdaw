@@ -1,4 +1,4 @@
-import { isTrackFrozenOrFreezing, trackStore } from '#/modules/Arrangement/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -40,7 +40,7 @@ function getProjectedNoteTransformReplayTarget(action: RestoreMidiClipNotesActio
     if (liveTrack) {
         return {
             trackId: liveTrack.id,
-            trackFrozen: isTrackFrozenOrFreezing(liveTrack),
+            trackFrozen: liveTrack.frozen === true,
             clipLocked: false,
         };
     }

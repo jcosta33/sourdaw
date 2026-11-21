@@ -38,7 +38,6 @@ const { mocks } = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    isTrackFrozenOrFreezing: () => false,
     sanitizeTrackSnapshot: (value: unknown) => value,
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
