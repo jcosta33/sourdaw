@@ -1,5 +1,3 @@
-import { hasPadOutputHost } from '#/modules/AudioEngine/useCases';
-
 type TrackEligibility = {
     acceptsClipAdd: boolean;
     acceptsClipUpdate: boolean;
@@ -143,5 +141,5 @@ export function shouldCreateLiveTrackStrip(track: LiveStripTrack): boolean {
     if (track.kind !== 'folder') {
         return false;
     }
-    return hasPadOutputHost(track.devices);
+    return track.devices.some((device) => device.type === 'toaster');
 }

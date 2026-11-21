@@ -11,8 +11,6 @@ import { relocateHeldNoteExpression } from '../relocateHeldNoteExpression';
 // The engine's own timelines are the contract under test with the registry: what a relocation carries is
 // what the engine's relocation makes of the timeline a note started with.
 vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
     startNoteExpression: (
         await vi.importActual<Pick<typeof import('#/modules/AudioEngine/useCases'), 'startNoteExpression'>>(
             '#/modules/AudioEngine/useCases/noteExpression/startNoteExpression'

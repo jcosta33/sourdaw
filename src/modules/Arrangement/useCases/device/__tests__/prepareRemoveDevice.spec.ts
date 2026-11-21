@@ -44,12 +44,7 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
     mapAllTracks: mocks.mapAllTracks,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (
-        await vi.importActual<typeof import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost')>(
-            '#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'
-        )
-    ).hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     deactivateTrackStrip: mocks.deactivateTrackStrip,
     clearReportedLatency: mocks.clearReportedLatency,
 }));

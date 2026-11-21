@@ -33,9 +33,7 @@ const mocks = vi.hoisted(() => ({
 // The AudioEngine and Command use-case barrels are mocked by name because the
 // render itself is not under test here and the real barrels pull the whole
 // engine/command graph into a spec whose subject is the storage transaction.
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 

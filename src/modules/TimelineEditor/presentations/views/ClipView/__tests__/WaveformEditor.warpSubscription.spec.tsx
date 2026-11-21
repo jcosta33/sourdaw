@@ -57,9 +57,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     audioToMidi: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(() => null),

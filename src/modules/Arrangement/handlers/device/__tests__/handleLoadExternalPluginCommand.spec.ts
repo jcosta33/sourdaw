@@ -24,9 +24,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     findSupportedPlugin: mocks.findSupportedPlugin,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     reportLatency: mocks.reportLatency,
 }));

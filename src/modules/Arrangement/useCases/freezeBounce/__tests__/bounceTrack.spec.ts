@@ -65,9 +65,7 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 

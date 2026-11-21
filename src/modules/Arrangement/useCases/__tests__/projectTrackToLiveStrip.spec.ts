@@ -55,7 +55,6 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
-        hasPadOutputHost: actual.hasPadOutputHost,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
         initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,

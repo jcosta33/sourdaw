@@ -38,9 +38,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
     takeOwnsRecordingRoot: vi.fn(() => true),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0.2 })),
     stopAudioRecording: vi.fn(),
 }));

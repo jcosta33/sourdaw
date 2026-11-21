@@ -63,7 +63,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         findMidiTransformDevice: actual.findMidiTransformDevice,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
-        hostsPadOutputs: actual.hostsPadOutputs,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         builtinSynthVoice: { read: vi.fn() },
         startFaustNote: vi.fn(),

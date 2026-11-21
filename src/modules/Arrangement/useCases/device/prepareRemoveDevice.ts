@@ -1,4 +1,4 @@
-import { clearReportedLatency, deactivateTrackStrip, hasPadOutputHost } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, deactivateTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPluginCarryingLiveState } from '#/modules/PluginHost/useCases';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -55,7 +55,8 @@ export function prepareRemoveDevice(
     const trackEligibility = getTrackEligibility(track.kind);
     const wasLive = shouldCreateLiveTrackStrip(track);
     const remainsLive =
-        trackEligibility.createsLiveStrip || (track.kind === 'folder' && hasPadOutputHost(remainingDevices));
+        trackEligibility.createsLiveStrip ||
+        (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
     const deactivatesStrip = wasLive && !remainsLive;
     const isProjectOnlyFolder = track.kind === 'folder' && !wasLive;
     const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;

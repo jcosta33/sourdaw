@@ -23,9 +23,7 @@ vi.mock('../resolveRecordingPlacement', () => ({
     }),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     builtinSynthVoice: { read: vi.fn() },
     audioEngine: { context: { currentTime: 3, sampleRate: 48_000, baseLatency: 0, outputLatency: 0 } },
     getCompensationDelay: () => 0,

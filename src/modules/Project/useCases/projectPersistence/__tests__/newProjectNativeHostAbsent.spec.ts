@@ -39,9 +39,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),

@@ -33,9 +33,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     renderTrackSubgraphOffline: mocks.renderTrackSubgraphOffline,
 }));
 

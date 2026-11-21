@@ -12,9 +12,7 @@ const mocks = vi.hoisted(() => ({
     removeSendEngine: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStripEngine,
     setBusGain: mocks.setBusGainEngine,
     setSend: mocks.setSendEngine,

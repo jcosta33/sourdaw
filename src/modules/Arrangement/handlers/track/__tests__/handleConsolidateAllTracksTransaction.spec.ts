@@ -39,9 +39,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 // The offline render is gated per call so a test can move project state
 // between the loop's bounces; the engine graph itself is not under test here.
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 

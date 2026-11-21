@@ -42,9 +42,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: { beginAudioPreviewIntent: vi.fn() },
     playAuditionNote: vi.fn(() => vi.fn()),
 }));

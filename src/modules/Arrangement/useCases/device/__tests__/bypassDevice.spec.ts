@@ -17,9 +17,7 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
 }));
 
 // Mock dynamic import
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: mocks.updateDeviceBypass,
 }));
 

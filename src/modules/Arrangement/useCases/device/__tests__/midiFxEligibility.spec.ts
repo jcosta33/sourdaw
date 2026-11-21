@@ -36,9 +36,7 @@ vi.mock('../../updateTrack', () => ({
     updateTrack: mocks.updateTrack,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     addMidiFxToStrip: mocks.addMidiFxToStrip,
     updateMidiFxBypass: mocks.updateMidiFxBypass,
     updateMidiFxParam: mocks.updateMidiFxParam,

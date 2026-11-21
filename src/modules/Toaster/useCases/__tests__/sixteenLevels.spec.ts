@@ -30,9 +30,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: vi.fn(() => []),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
 }));

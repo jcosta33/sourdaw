@@ -20,9 +20,7 @@ const mocks = vi.hoisted(() => ({
     applyClipAutomationLaneTransition: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 

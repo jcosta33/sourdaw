@@ -37,9 +37,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 

@@ -9,9 +9,7 @@ import { updateProofMeters, type ProofMeterData } from '../../../stores/proofSto
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { registerProofDevice } from '../registerProofDevice';
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     updateDevicePatch: vi.fn(),
 }));

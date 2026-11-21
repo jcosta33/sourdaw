@@ -18,9 +18,7 @@ vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
-    hasPadOutputHost: (await import('#/modules/AudioEngine/useCases/deviceCapabilities/hasPadOutputHost'))
-        .hasPadOutputHost,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackGain: mocks.setTrackGain,
     setTrackMute: mocks.setTrackMute,
     setTrackSoloGate: mocks.setTrackSoloGate,

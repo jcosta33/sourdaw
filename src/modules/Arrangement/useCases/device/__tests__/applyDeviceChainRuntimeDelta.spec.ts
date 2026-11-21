@@ -35,7 +35,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
-        hasPadOutputHost: actual.hasPadOutputHost,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
         getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
