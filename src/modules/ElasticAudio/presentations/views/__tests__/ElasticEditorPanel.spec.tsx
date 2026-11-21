@@ -629,6 +629,37 @@ describe('ElasticEditorPanel', () => {
             expect(drawing.fill).toHaveBeenCalledWith(0, 0, cssWidth, 120);
         });
 
+        it('keeps the backing store within the canvas area limit in a tall pane', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Missing fixture clip');
+            }
+            clip.endBeat = 800;
+            vi.stubGlobal('devicePixelRatio', 2);
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const container = canvas.parentElement;
+            if (!container) {
+                throw new Error('Missing waveform container');
+            }
+            // Each side stays under the per-side limit at the full pixel ratio (64,640 x 4,600),
+            // while their product passes the area limit, so only the area bound can hold it.
+            Object.defineProperty(container, 'clientHeight', { configurable: true, value: 2300 });
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            flushFrame();
+            const cssWidth = (800 + 8) * 40;
+
+            expect(canvas.width).toBeGreaterThan(0);
+            expect(canvas.height).toBeGreaterThan(0);
+            expect(canvas.width * canvas.height).toBeLessThanOrEqual(268435456);
+            expect(canvas.style.width).toBe(`${cssWidth}px`);
+            expect(canvas.style.height).toBe('2300px');
+            expect(drawing.fill).toHaveBeenLastCalledWith(0, 0, cssWidth, 2300);
+        });
+
         it.each(['width', 'height', 'context reset', 'context restored'])(
             'restores pixels after an external %s even when visual inputs are unchanged',
             (reset) => {
