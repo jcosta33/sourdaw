@@ -801,6 +801,9 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
             for (const reservation of reservations) {
                 const rssBytes = sampleActiveRss(reservation.owner);
                 if (rssBytes === undefined) {
+                    if (!existsSync(reservation.path)) {
+                        continue;
+                    }
                     throw new Error('active validation memory could not be measured');
                 }
                 activeHeadroomBytes += Math.max(0, reservation.owner.reservedRssBytes - rssBytes);

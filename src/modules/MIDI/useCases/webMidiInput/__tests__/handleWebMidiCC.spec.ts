@@ -35,24 +35,31 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    builtinSynthVoice: { read: vi.fn() },
-    writeNativeBuiltinParameters: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    audioEngine: {
-        context: audio_clock,
-        getTrackStrip: get_track_strip,
-        setTrackGain: set_track_gain,
-        setTrackPan: set_track_pan,
-    },
-    applyNoteExpression: apply_note_expression,
-    getDefaultBendRangeSemitones: () => 48,
-    getCompensationDelay: () => 0,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        builtinSynthVoice: { read: vi.fn() },
+        writeNativeBuiltinParameters: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        audioEngine: {
+            context: audio_clock,
+            getTrackStrip: get_track_strip,
+            setTrackGain: set_track_gain,
+            setTrackPan: set_track_pan,
+        },
+        applyNoteExpression: apply_note_expression,
+        getDefaultBendRangeSemitones: () => 48,
+        getCompensationDelay: () => 0,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+    };
+});
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');

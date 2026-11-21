@@ -6683,7 +6683,7 @@ pub(crate) async fn render_graph_offline_with(
         ));
     }
 
-    let render = InFlightRender::begin(state, render_id)?;
+    let render = InFlightRender::begin(state, render_id).map_err(|error| error.to_string())?;
     let mut hosted = HostedInstances::offline(state).map_err(|refusal| refusal.to_string())?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
@@ -6714,13 +6714,15 @@ pub(crate) async fn render_graph_offline_with(
     };
     // A render cancelled before it starts builds no plugin instance.
     if render.control().is_cancelled() {
-        return Err(render.cancelled());
+        return Err(render.cancelled().to_string());
     }
     #[cfg(test)]
     if let Some(after_mapping) = &seams.after_mapping {
         after_mapping(state);
     }
-    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
+    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams)
+        .await
+        .map_err(|error| error.to_string())?;
     let (left, right) =
         render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)
             .map_err(|refusal| refusal.to_string())?;
