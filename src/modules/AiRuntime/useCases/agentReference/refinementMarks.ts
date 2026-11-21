@@ -33,7 +33,10 @@ function findUnreadMark(text: string): string | null {
 }
 
 /** A quotation of object names alone ("the "Bass" track"), read as the names it quotes. */
-const QUOTED_NAMES = /["“'‘]\s*(?:□|clip)[\s□]*["”'’]/gu;
+const QUOTED_NAMES = new RegExp(
+    String.raw`["“'‘]\s*(?:${PROJECT_REFERENCE_MASK_GLYPH}|clip)[\s${PROJECT_REFERENCE_MASK_GLYPH}]*["”'’]`,
+    'gu'
+);
 /** An apostrophe inside a word ("don't", "let's", "that's"), read with the word it joins. */
 const WORD_APOSTROPHE = /(?<=\p{L})['’](?=\p{L})/gu;
 /** A percent sign a space after its figure ("50 %"), which states the figure's unit. */

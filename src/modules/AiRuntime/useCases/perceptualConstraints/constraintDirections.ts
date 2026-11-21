@@ -8,10 +8,11 @@ export type MeasuredConstraintId = MeasuredPerceptualConstraint['constraintId'];
 const APOSTROPHES = `'’`;
 /** An apostrophe, typed or typeset: "don't", "don’t". */
 export const APOSTROPHE = `[${APOSTROPHES}]`;
+const WORD_CONTINUING = String.raw`\p{L}\p{N}`;
 /** The end of a whole word: no letter or digit follows. */
-export const WORD_END = String.raw`(?![\p{L}\p{N}])`;
+export const WORD_END = `(?![${WORD_CONTINUING}])`;
 /** Unlike WORD_END, an apostrophe also continues the word, so "don't" is never read as "don". */
-export const WHOLE_WORD_END = String.raw`(?![\p{L}\p{N}${APOSTROPHES}])`;
+export const WHOLE_WORD_END = `(?![${WORD_CONTINUING}${APOSTROPHES}])`;
 
 type QualityFamily = 'loudness' | 'width' | 'brightness' | 'dynamics';
 type Movement = 'up' | 'down';

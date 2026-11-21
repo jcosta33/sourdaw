@@ -32,6 +32,7 @@ import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
+import { AVOID_VERB, KEEP, SCOPE_WORD } from '../perceptualConstraints/constraintClauseWords';
 import { findExcludedDimensionEdit } from '../perceptualConstraints/findExcludedDimensionEdit';
 import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from '../perceptualConstraints/perceptualConstraintInvariants';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
@@ -2132,6 +2133,17 @@ describe('reading a protection only over the words it governs', () => {
             [],
         ],
         ["the mix won't get louder", [measured('loudness-not-raised-v1', "the mix won't get louder", MIX)], []],
+        // a typeset apostrophe (U+2019) reads as a typed one, in a negation and in a modal negation
+        [
+            'don’t make the mix any wider',
+            [measured('stereo-width-not-widened-v1', 'don’t make the mix any wider', MIX)],
+            [],
+        ],
+        [
+            'the vocal shouldn’t be louder',
+            [measured('loudness-not-raised-v1', 'the vocal shouldn’t be louder', onTracks('vocal'))],
+            [],
+        ],
         // an object never swallows the verb of the clause after it
         [
             "don't make the bass louder and the vocal needs to be brighter",
@@ -2170,6 +2182,17 @@ describe('reading a protection only over the words it governs', () => {
             expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints, unsupported });
         }
     );
+});
+
+describe('a clause word list', () => {
+    // Each list states its shorter phrase first, so only the builder's longest-first order reads the whole word.
+    it.each([
+        ['the avoid verbs', AVOID_VERB, 'avoiding'],
+        ['the keep verbs', KEEP, 'keeping'],
+        ['the scope words', SCOPE_WORD, 'master bus'],
+    ])('reads %s by the longest phrase first', (_name, list, text) => {
+        expect(new RegExp(`^${list}`, 'iu').exec(text)?.[0]).toBe(text);
+    });
 });
 
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';
