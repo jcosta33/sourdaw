@@ -128,6 +128,16 @@ describe('revertMappingsToBase', () => {
         mocks.trackStore.value = null;
     });
 
+    it('should throw the port error naming its registrar when modulation dependencies are not registered', async () => {
+        const { revertMappingsToBase } = await loadSubjectModules();
+        setTrackBase(300);
+
+        expect(() => revertMappingsToBase([createMapping(0.5)])).toThrow(
+            'modulationDependenciesPort.read: modulation dependencies are not registered; call setModulationDependencies()'
+        );
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
     it('should write each removed destination base value once', async () => {
         const { setModulationDependencies, revertMappingsToBase } = await loadSubjectModules();
         setDependencies(setModulationDependencies);

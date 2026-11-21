@@ -926,6 +926,7 @@ A module sometimes needs a collaborator it cannot import: the import would close
 Rules:
 
 - The slot exists so the module need not import the provider's module; the app does the binding.
+- A port that replaces an import the tier order or a cycle forbids follows [ADR 0065](../../.agents/decisions/0065-cross-module-dependencies-are-registered-ports.md): reading it unfilled throws an error naming its registrar.
 - An unconfigured slot must have a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal, never an unhandled `null`.
 - Install a provider through the port's setter or the `configure*` entry; calling code reads the slot through the port.
 - `init*` is the naming convention for startup wiring (some unrelated use cases also use the prefix for plain initialization). A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.

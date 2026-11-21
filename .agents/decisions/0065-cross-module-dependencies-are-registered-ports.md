@@ -40,7 +40,9 @@ A dependency is reached in this order of preference:
 
 A registered port is the shape `src/modules/Transport/useCases/scheduling/kitSwing.ts` already
 uses. The consuming module owns it. The implementation sits in one module-private `let`, which is
-the only mutable binding. The port exposes one fill function and a reader. A port keeps the fill
+the only mutable binding. The port has one fill function and a reader: the fill is a method of the
+port object, as in `kitSwing.ts`, or a function exported beside a port object that holds the reader,
+as the Automation ports do. A port keeps the fill
 name it already has (`configure`, `setProvider`, `set…Dependencies`), so a migration does not
 rewrite its registrar. A fill stores the
 implementation and replaces any earlier one; the existing ports that refuse a different second
@@ -52,13 +54,14 @@ port whose absence is a real product state declares that in its read type, for e
 returning `null` for "no collaboration session", and every caller handles it. The fill function
 never accepts `null` to unregister.
 
-Only the composition root under `src/app/` configures ports, through registrar functions. No
-module exports a mutable binding; the lint rule `import-x/no-mutable-exports` is the guard that
-enforces it. No module performs registration as a side effect of being evaluated. The required end
-state is that `src/app/bootstrap.ts` exports one entry function, and `main.tsx` calls it and the
-port registrars explicitly, each once, in an order that `main.tsx` states. A registrar's position in
-that order, not import order, decides what is filled when the first render or the first command
-runs.
+Only the composition root under `src/app/` may configure ports, through registrar functions. No
+module may export a mutable binding; the lint rule `import-x/no-mutable-exports` is the guard that
+enforces it once the migration is complete. Registration must not run as a side effect of
+evaluation. `src/app/bootstrap.ts` must export one entry function, and `main.tsx` must call it and
+the port registrars explicitly, each once, in an order that `main.tsx` states. A registrar's
+position in that order, not import order, must decide what is filled when the first render or the
+first command runs. These rules are the requirement the code is being migrated to, as the
+Consequence section states, and are not yet met everywhere.
 
 Specs give a port its fake through the same fill function production uses, in the case or its
 setup that needs it. Vitest evaluates each spec file in a fresh module graph, so a filled port never
