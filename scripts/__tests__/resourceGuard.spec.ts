@@ -307,7 +307,7 @@ describe('resource admission', () => {
         }
     });
 
-    it('reaps a dead owner reservation instead of sampling it, so an unreadable sampler cannot block admission', async () => {
+    it('reaps a dead owner reservation before sampling it', async () => {
         const root = fixtureRoot('dead-owner-unsampled');
         try {
             const reservationsRoot = join(root, 'sourdaw-validation.reservations');
@@ -322,16 +322,21 @@ describe('resource admission', () => {
                     command: 'fixture',
                     startedAt: 'Mon Nov  9 10:00:00 2026',
                     processStartedAt: 'Mon Nov  9 10:00:00 2026',
-                    reservedRssBytes: 64 * 1024 ** 3,
+                    reservedRssBytes: 1024,
                 })
             );
+            const sampledTokens: string[] = [];
             const session = await enterResourceSession({
                 root,
                 requiredRssBytes: 1024 ** 3,
                 availableMemoryBytes: 4 * 1024 ** 3,
-                activeRssSampler: () => undefined,
+                activeRssSampler: (owner) => {
+                    sampledTokens.push(owner.token);
+                    return undefined;
+                },
             });
 
+            expect(sampledTokens).toEqual([]);
             expect(existsSync(deadPath)).toBe(false);
             session.release();
         } finally {
