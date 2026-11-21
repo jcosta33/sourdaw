@@ -2,9 +2,9 @@ import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 
 type MixDescriptor = ReturnType<typeof getBriefMixIntentCatalog>['descriptors'][number];
 
-export function readBriefMixIntent(
-    value: unknown
-): { catalogId: string; requestedDescriptors: readonly MixDescriptor[] } | null {
+export type BriefMixIntent = { catalogId: string; requestedDescriptors: readonly MixDescriptor[] };
+
+export function readBriefMixIntent(value: unknown): BriefMixIntent | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return null;
     }

@@ -8,7 +8,7 @@ import { type ScheduledVibeRunBatch, type VibeRunVerificationRange } from '../..
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { readArrangementRange } from '../readArrangementRange';
-import { type readBriefMixIntent } from '../readBriefMixIntent';
+import { type BriefMixIntent } from '../readBriefMixIntent';
 
 import { readVibeRunCandidates } from './readVibeRunCandidates';
 import { readVibeRunInitialGoals } from './readVibeRunInitialGoals';
@@ -23,7 +23,7 @@ export type PrepareVibeRunInput = {
     prompt: string;
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    mixIntent: BriefMixIntent;
     runId: string;
     priorReceipts: readonly ApplicationToolReceipt[];
 };
@@ -41,7 +41,6 @@ export type PreparedVibeRunSchedule =
           ranges: readonly VibeRunVerificationRange[];
           arrangementRange: VibeRunVerificationRange;
           batches: readonly ScheduledVibeRunBatch[];
-          reading: PerceptualConstraintReading;
           initialRequests: ReturnType<typeof planMetricMeasurementRequests>;
           /** The identity of what would be scheduled, judged before anything is measured. */
           planDigest: string;
@@ -138,7 +137,6 @@ export function prepareVibeRunSchedule(input: PrepareVibeRunStageInput): Prepare
         ranges,
         arrangementRange,
         batches,
-        reading: input.reading,
         initialRequests,
         planDigest: digest({ catalogVersion: catalog.version, batches }),
     };
