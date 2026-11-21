@@ -21,6 +21,7 @@ import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
@@ -117,16 +118,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
-        if (!isCurrentFreezeTask(taskIdentity)) {
-            return false;
-        }
-
-        // The render reads the live track list, not `track`, so a clip added while the digest was
-        // pending would be rendered; if it were removed again before the commit the final check
-        // would see the start hash. Hash the live source now. The MIDI capture and the render call
-        // below follow synchronously, with no await between this check and the render's read.
-        await assertFreezeSourceUnchanged(trackId, hash);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        // Re-hashes the live source: the render reads it, not `track`. The MIDI capture and the
+        // render call below follow synchronously, with no await between this check and the render.
+        if (!(await confirmFreezeSourceBeforeRender(trackId, hash, isCurrentFreezeTask, taskIdentity))) {
             return false;
         }
 
