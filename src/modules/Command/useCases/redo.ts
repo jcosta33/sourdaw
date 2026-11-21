@@ -358,6 +358,8 @@ async function stepOverConflictedRedoOrSettle({
 }
 
 type ConflictedRedoInput = StepOverRedoInput & {
+    /** Names the refused unit to the user. */
+    readonly label: string;
     readonly blocked: boolean;
     readonly stepOverConflicts: boolean;
 };
@@ -369,6 +371,7 @@ type ConflictedRedoInput = StepOverRedoInput & {
  * behind it when the gate admits that replay.
  */
 function settleConflictedRedo({
+    label,
     blocked,
     stepOverConflicts,
     ...input
@@ -377,7 +380,7 @@ function settleConflictedRedo({
         settleWithoutRedo(input);
         return { headConsumed: false };
     }
-    notifyUser(`Cannot redo "${undoEntryLabel(input.conflictedEntries[0]!)}": project state has changed`, 'warning');
+    notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
     if (!stepOverConflicts) {
         settleWithoutRedo(input);
         return { headConsumed: false };
@@ -444,6 +447,7 @@ async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): P
                 initialFuture: state.future,
                 futureAtConflict: future,
                 conflictedEntries: [entry],
+                label: undoEntryLabel(entry),
                 blocked: outcome.blocked === true,
                 stepOverConflicts,
                 onCommitted,
