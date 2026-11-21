@@ -150,13 +150,11 @@ describe('global time operations retire take-lane state (#4520)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.batchDepth = 0;
-        setTimeOperationDependencies(null);
         setTracks([]);
         takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         takeLaneStore.set({ lanes: [] });
     });
 

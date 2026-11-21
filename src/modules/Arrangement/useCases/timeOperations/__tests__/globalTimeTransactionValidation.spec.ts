@@ -198,7 +198,6 @@ describe('executeGlobalTimeOperation input validation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     describe('rejects non-object or wrong-shaped inputs before any work', () => {
@@ -272,7 +271,6 @@ describe('executeGlobalTimeOperation clip ownership validation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('rejects a clip with an empty id', () => {
@@ -375,7 +373,6 @@ describe('executeGlobalTimeOperation marker state validation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('rejects when markers is not an array', () => {
@@ -461,7 +458,6 @@ describe('executeGlobalTimeOperation computed-time validation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('rejects an insert that would overflow a straddling clip endBeat', () => {
@@ -518,7 +514,6 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         tempoMapStore.set({ changes: [] });
     });
@@ -638,7 +633,6 @@ describe('executeGlobalTimeOperation marker section geometry (applied paths)', (
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('delete leaves a section fully before the range untouched', () => {
@@ -769,7 +763,6 @@ describe('executeGlobalTimeOperation supplied replay plan validation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('rejects a supplied replay plan that is not a plain object', () => {
@@ -915,7 +908,6 @@ describe('executeGlobalTimeOperation main-flow rejection gates', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
-        setTimeOperationDependencies(null);
     });
 
     it('rejects when track state is unavailable', () => {

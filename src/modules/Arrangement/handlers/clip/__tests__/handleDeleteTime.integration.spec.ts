@@ -335,7 +335,6 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         clearHandlerRegistry();
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
-        setTimeOperationDependencies(null);
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();
@@ -918,7 +917,15 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         const beforeDocument = structuredClone(getCrdtDoc<Project>('root'));
         const beforeOwners = durableOwners();
 
-        setTimeOperationDependencies(null);
+        setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
+            prepareAutomationTimeOperation,
+            prepareAutomationTimeStateRestore,
+            prepareMidiGlobalTimeTransaction,
+            prepareMidiTimeStateRestore,
+            prepareTimelineMapTimeOperation,
+            prepareTimelineMapStateRestore,
+        });
         projectCrdtToStores({ resetProjections: true });
         hydrateProductionContracts();
 
