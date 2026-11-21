@@ -4,36 +4,29 @@ import {
     type HandlerMaterializationContext,
     type HandlerValidationContext,
 } from '#/utils/handlerContract';
-import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompSelectionSpanSnapshot } from '../../events/arrangementTakeAppActions';
-import { changesCompSource } from '../../models/ChangesCompSourceByActionType';
+import { compSourceChange } from '../../models/ChangesCompSourceByActionType';
 import { changesTempo } from '../../models/ChangesTempoByActionType';
-import { type Clip, type Track } from '../../models/Track';
-import { type CompAudioSourceInputContext } from '../../stores/compAudioSourceInputs';
-import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import {
     applyTakeLaneCompRegionPatch,
-    captureCompSelection,
     runWithTakeLaneWriteIntent,
     type TakeLaneCompRegionPatch,
     type TakeLaneStoreValue,
 } from '../../stores/takeLaneWriteJournal';
-import { sanitizeTrackSnapshot } from '../../stores/trackStore';
-import { getTrackStoreState } from '../getTrackStoreState';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAuthorizations';
+import { compRegionPatchFromState, type CompRegionInput } from './captureCompRegionPatchFromState';
 import { compRegionIntervalValidation } from './compRegionIntervalValidation';
-import { liveCompAudioSourceInputs } from './liveCompAudioSourceInputs';
-import { prepareCompAudioSourcePatch } from './prepareCompAudioSourcePatch';
-import { originalMidiTakeRowReplacement } from './prepareOriginalMidiTakeRowReplacement';
-import { takeLaneSelection } from './takeLaneSelection';
+import { sourceInputsAfterPrefix, type TakeLanePrefixContext } from './compSourcePlan';
+import { projectTakeLaneStateThroughActionPrefix } from './projectTakeLaneStateThroughActionPrefix';
 
-const { captureOriginalMidiTakeRowCopies, prepareOriginalMidiTakeRowReplacement } = originalMidiTakeRowReplacement;
+const { captureCompRegionIntervalPatchFromState, captureRemovedCompRegionPatchFromState } = compRegionPatchFromState;
 
 const {
-    isValidInterval,
     hasValidSnapshot,
     isCompleteSetCompRegionPayload,
     isCompleteRemoveCompRegionPayload,
@@ -58,72 +51,6 @@ function selectionsEqual(
     );
 }
 
-type CompRegionInput = {
-    readonly trackId: string;
-    readonly startBeat: number;
-    readonly endBeat: number;
-    readonly takeId: string;
-};
-
-function captureCompRegionIntervalPatchFromState(
-    state: TakeLaneStoreValue,
-    input: CompRegionInput,
-    sourcePlan = sourceInputsAfterPrefix(input.trackId)
-): CompRegionIntervalPatch | null {
-    if (!sourcePlan || !isValidInterval(input.startBeat, input.endBeat)) {
-        return null;
-    }
-    const matches = state.lanes.filter((lane) => lane.trackId === input.trackId);
-    const lane = matches.length === 1 ? matches[0] : undefined;
-    if (!lane || !lane.takes.some((take) => take.id === input.takeId)) {
-        return null;
-    }
-    return prepareCompAudioSourcePatch(
-        state,
-        {
-            laneId: lane.id,
-            trackId: input.trackId,
-            startBeat: input.startBeat,
-            endBeat: input.endBeat,
-            expected: captureCompSelection(lane.activeCompRegions, input.startBeat, input.endBeat),
-            replacement: [{ startBeat: input.startBeat, endBeat: input.endBeat, takeId: input.takeId }],
-        },
-        sourcePlan.clips,
-        liveTempoTimeline,
-        sourcePlan.inputs
-    );
-}
-
-function captureRemovedCompRegionPatchFromState(
-    state: TakeLaneStoreValue,
-    input: { readonly trackId: string; readonly startBeat: number },
-    sourcePlan = sourceInputsAfterPrefix(input.trackId)
-): CompRegionIntervalPatch | null {
-    if (!sourcePlan || !Number.isFinite(input.startBeat) || input.startBeat < 0) {
-        return null;
-    }
-    const lanes = state.lanes.filter((lane) => lane.trackId === input.trackId);
-    const lane = lanes.length === 1 ? lanes[0] : undefined;
-    const region = lane?.activeCompRegions.find((candidate) => candidate.startBeat === input.startBeat);
-    if (!lane || !region || !lane.takes.some((take) => take.id === region.takeId)) {
-        return null;
-    }
-    return prepareCompAudioSourcePatch(
-        state,
-        {
-            laneId: lane.id,
-            trackId: lane.trackId,
-            startBeat: region.startBeat,
-            endBeat: region.endBeat,
-            expected: captureCompSelection(lane.activeCompRegions, region.startBeat, region.endBeat),
-            replacement: [],
-        },
-        sourcePlan.clips,
-        liveTempoTimeline,
-        sourcePlan.inputs
-    );
-}
-
 function captureRemovedCompRegionPatch(input: {
     readonly trackId: string;
     readonly startBeat: number;
@@ -135,180 +62,6 @@ function captureRemovedCompRegionPatch(input: {
 function captureCompRegionIntervalPatch(input: CompRegionInput): CompRegionIntervalPatch | null {
     const state = takeLaneStore.value;
     return state ? captureCompRegionIntervalPatchFromState(state, input) : null;
-}
-
-type TakeLanePrefixContext = HandlerMaterializationContext;
-
-type CompSourcePlan = { readonly clips: Clip[]; readonly inputs: CompAudioSourceInputContext };
-
-function appendRestoredTrack(tracks: Track[], action: Extract<AppAction, { type: 'restoreTrack' }>): Track[] | null {
-    const snapshot: unknown = action.payload.trackSnapshot;
-    if (!isRecord(snapshot) || !Array.isArray(snapshot.clips)) {
-        return null;
-    }
-    const restored = sanitizeTrackSnapshot({ tracks: [snapshot], selectedTrackId: null }).tracks;
-    if (
-        restored.length !== 1 ||
-        restored[0]!.id !== action.payload.trackId ||
-        restored[0]!.clips.length !== snapshot.clips.length ||
-        tracks.some((track) => track.id === action.payload.trackId)
-    ) {
-        return null;
-    }
-    return [...tracks, restored[0]!];
-}
-
-/** Track lifecycle prefixes already carry the real owner snapshot. Read its
- * normalized source shape; do not reconstruct clip edits or a tempo clock. */
-function sourceInputsAfterPrefix(
-    trackId: string,
-    context?: TakeLanePrefixContext,
-    limit = context?.actionIndex ?? 0
-): CompSourcePlan | null {
-    const live = liveCompAudioSourceInputs();
-    const currentTracks = getTrackStoreState()?.tracks;
-    let tracks: Track[] = [];
-    if (currentTracks !== undefined && currentTracks !== null) {
-        tracks = [...currentTracks];
-    }
-    for (const action of (context?.preparedPrefix ?? context?.actions)?.slice(0, limit) ?? []) {
-        if (action.type === 'removeTrack') {
-            tracks = tracks.filter((track) => track.id !== action.payload.trackId);
-        }
-        if (action.type !== 'restoreTrack') {
-            continue;
-        }
-        const restored = appendRestoredTrack(tracks, action);
-        if (!restored) {
-            return null;
-        }
-        tracks = restored;
-    }
-    return {
-        clips: tracks.find((track) => track.id === trackId)?.clips ?? [],
-        inputs: { ...live, tracks: { tracks } },
-    };
-}
-
-function canAppendRestoredLanes(state: TakeLaneStoreValue, restoredLanes: TakeLaneStoreValue['lanes']): boolean {
-    const laneIds = new Set(state.lanes.map((lane) => lane.id));
-    const trackIds = new Set(state.lanes.map((lane) => lane.trackId));
-    for (const lane of restoredLanes) {
-        if (laneIds.has(lane.id) || trackIds.has(lane.trackId)) {
-            return false;
-        }
-        laneIds.add(lane.id);
-        trackIds.add(lane.trackId);
-    }
-    return true;
-}
-
-function prefixCompPatch(
-    state: TakeLaneStoreValue,
-    action: AppAction,
-    context: TakeLanePrefixContext,
-    actionIndex: number,
-    mode: 'capture' | 'validate'
-): CompRegionIntervalPatch | null | undefined {
-    if (action.type === 'setCompRegion') {
-        if (mode === 'capture') {
-            return captureCompRegionIntervalPatchFromState(
-                state,
-                action.payload,
-                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
-            );
-        }
-        return isCompleteSetCompRegionPayload(action.payload) ? action.payload : null;
-    }
-    if (action.type === 'removeCompRegion') {
-        if (mode === 'capture') {
-            return captureRemovedCompRegionPatchFromState(
-                state,
-                action.payload,
-                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
-            );
-        }
-        return isCompleteRemoveCompRegionPayload(action.payload) ? action.payload : null;
-    }
-    if (action.type === 'restoreCompRegionInterval') {
-        return isCompleteRestoreCompRegionIntervalPayload(action.payload) ? action.payload : null;
-    }
-    return undefined;
-}
-
-function projectTakeLaneStateThroughActionPrefix(
-    initialState: TakeLaneStoreValue,
-    context: TakeLanePrefixContext | undefined,
-    mode: 'capture' | 'validate'
-): TakeLaneStoreValue | null {
-    if (!context) {
-        return initialState;
-    }
-    let state = structuredClone(initialState);
-    for (const [actionIndex, action] of (context.preparedPrefix ?? context.actions)
-        .slice(0, context.actionIndex)
-        .entries()) {
-        if (action.type === 'selectTake') {
-            const selected = takeLaneSelection.apply(state, action);
-            if (!selected) {
-                return null;
-            }
-            state = selected;
-            continue;
-        }
-        if (action.type === 'replaceOriginalMidiTakeRow') {
-            let copyScope: typeof action.payload.copyScope | null = action.payload.copyScope;
-            if (copyScope === 'capture') {
-                copyScope = captureOriginalMidiTakeRowCopies(action.payload, state);
-            }
-            const next = copyScope && prepareOriginalMidiTakeRowReplacement({ ...action.payload, copyScope }, state);
-            if (!next) {
-                return null;
-            }
-            state = next;
-            continue;
-        }
-        if (action.type === 'removeTrack') {
-            state = { lanes: state.lanes.filter((lane) => lane.trackId !== action.payload.trackId) };
-            continue;
-        }
-        if (action.type === 'restoreTrack') {
-            const restoredLanes = decodeExactTakeLaneSnapshots(action.payload.takeLaneSnapshots);
-            if (!restoredLanes || !canAppendRestoredLanes(state, restoredLanes)) {
-                return null;
-            }
-            state = { lanes: [...state.lanes, ...restoredLanes] };
-            continue;
-        }
-
-        const patch = prefixCompPatch(state, action, context, actionIndex, mode);
-        if (patch === undefined) {
-            continue;
-        }
-        if (!patch) {
-            return null;
-        }
-        const sourcePlan = sourceInputsAfterPrefix(patch.trackId, context, actionIndex);
-        if (!sourcePlan) {
-            return null;
-        }
-        const authorizations = captureCompAudioSourceAuthorizations(
-            state,
-            patch,
-            sourcePlan.clips,
-            liveTempoTimeline,
-            sourcePlan.inputs
-        );
-        if (!authorizations) {
-            return null;
-        }
-        const next = applyTakeLaneCompRegionPatch(state, patch, sourcePlan.inputs, authorizations);
-        if (!next) {
-            return null;
-        }
-        state = next;
-    }
-    return state;
 }
 
 function mentionsSourceOwner(
@@ -352,6 +105,15 @@ function mentionsSourceOwner(
     return false;
 }
 
+/** A track lifecycle action carries the whole track snapshot, which the source-track prefix applies directly. */
+function leavesSourceOwnerAlone(action: AppAction, trackId: string, clipIds: ReadonlySet<string>): boolean {
+    const change = compSourceChange(action.type);
+    if (change === false || change === 'track-lifecycle') {
+        return true;
+    }
+    return action.payload !== undefined && !mentionsSourceOwner(action.payload, trackId, clipIds);
+}
+
 function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixContext | undefined): boolean {
     if (!context) {
         return true;
@@ -372,14 +134,7 @@ function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixCon
     const ids = new Set(clips.map((clip) => clip.id));
     // No clock is reconstructed from a geometry-only replay projection. Such
     // promotion-dependent combinations refuse before any command publishes.
-    return prefix.every(
-        (action) =>
-            !changesTempo(action.type) &&
-            (action.type === 'restoreTrack' ||
-                action.type === 'removeTrack' ||
-                !changesCompSource(action.type) ||
-                (action.payload !== undefined && !mentionsSourceOwner(action.payload, trackId, ids)))
-    );
+    return prefix.every((action) => !changesTempo(action.type) && leavesSourceOwnerAlone(action, trackId, ids));
 }
 
 function captureCompRegionIntervalPatchAfterPrefix(

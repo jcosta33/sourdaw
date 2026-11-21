@@ -260,7 +260,6 @@ export async function buildOfflineWebAudioGraph(args: GraphInput) {
     const { input, plan, offlineCtx, backend, masterNode, onWarning, abortSignal } = args;
     const {
         allRenderableTracks,
-        routableSidechainTargets,
         contributingTrackIds,
         soloGatedByTrackId,
         vcaMultiplierByTrackId,
@@ -283,7 +282,6 @@ export async function buildOfflineWebAudioGraph(args: GraphInput) {
     await prepareOfflineContext({
         offlineCtx,
         tracks: allRenderableTracks,
-        sidechainTargetDevices: routableSidechainTargets,
         onWarning,
     });
 

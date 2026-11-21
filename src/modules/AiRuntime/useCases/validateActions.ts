@@ -7,7 +7,7 @@ import { isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import {
     RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
     RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
-    RUNTIME_ACTION_TYPES,
+    isRuntimeActionType,
     type RuntimeAction,
     type RuntimeActionType,
 } from '../models/RuntimeAction';
@@ -15,8 +15,6 @@ import { unawaitedAiActionByActionType } from '../models/UnawaitedAiActionByActi
 
 import { type BatchLocalActionIdentity } from './agentReference/BatchLocalActionIdentity';
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
-
-const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTION_TYPES);
 
 type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
 
@@ -408,8 +406,9 @@ export const validateActions = inject({ logger })(
         ): RuntimeAction[] {
             const batchCreatedLanes = indexBatchCreatedLanes(actions, batchLocalActionIdentities);
             return actions.filter((action, actionIndex) => {
-                if (!KNOWN_ACTION_TYPES.has(action.type)) {
-                    logger.warn(`Unknown action type rejected: ${action.type}`);
+                const declaredType: string = action.type;
+                if (!isRuntimeActionType(declaredType)) {
+                    logger.warn(`Unknown action type rejected: ${declaredType}`);
                     return false;
                 }
 

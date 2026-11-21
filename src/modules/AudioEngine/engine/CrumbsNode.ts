@@ -127,7 +127,7 @@ export async function createCrumbsNode(
 
     // `channel` is accepted and dropped: `CrumbsEngine` allocates and releases
     // voices by pitch and has no MPE member-channel concept, which is also why
-    // Crumbs is absent from `NOTE_EXPRESSION_DEVICES`. Taking the parameter
+    // Crumbs sounds no expression in `LiveNoteControlsByDeviceType`. Taking the parameter
     // keeps the melodic slot order intact for callers that pass it.
     const noteOn = (note: number, velocity: number, sampleFrame?: number, _channel?: number): void => {
         if (!bypassed) {

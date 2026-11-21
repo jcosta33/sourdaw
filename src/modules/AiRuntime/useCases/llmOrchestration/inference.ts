@@ -6,6 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
+import { isLocalModelDownloadRequiredError } from '../../errors/LocalModelDownloadRequiredError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
@@ -82,6 +83,7 @@ import {
 } from '../agentToolCatalog';
 import { resolveLocalModelToAutoLoad } from '../aiRuntimeQueries/resolveLocalModelToAutoLoad';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
+import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
@@ -377,6 +379,24 @@ async function generateLocalToolPlanningOutcome(input: {
         }
         return { status: 'exceeded', shortfall };
     }
+}
+
+/** The download-required error escapes the chain as itself, so the planner can name its remedy. */
+function readChainAttemptFailure(error: unknown, normalizedAttemptError: Error | null): Error {
+    if (isLocalModelDownloadRequiredError(error)) {
+        return error;
+    }
+    if (normalizedAttemptError !== null) {
+        return normalizedAttemptError;
+    }
+    return error instanceof Error ? error : new Error(String(error));
+}
+
+function readChainFailureStatusMessage(lastError: Error | null): string {
+    if (isLocalModelDownloadRequiredError(lastError)) {
+        return describeNoAiBackendRemedy();
+    }
+    return lastError?.message ?? 'All backends failed';
 }
 
 /** A missing reading is an unread one, as in the picker. */
@@ -1034,14 +1054,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     settleReady(backend);
                     return { status: 'rejected', reason: error.message };
                 }
-                lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
+                lastError = readChainAttemptFailure(error, normalizedAttemptError);
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }
         }
 
         answeringStatus.settle(answeringTurn, {
             state: 'error',
-            message: lastError?.message ?? 'All backends failed',
+            message: readChainFailureStatusMessage(lastError),
         });
         throw lastError ?? new Error('All AI backends failed');
     }

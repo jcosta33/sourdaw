@@ -59,29 +59,51 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 }));
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrackId: () => 'track-1' }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: {
-        context: audio_clock,
-        getTrackStrip: get_track_strip,
-        ensureTrackStrip: ensure_track_strip,
-        scheduleDeviceKeyOn: schedule_device_key_on,
-        scheduleDeviceKeyOff: vi.fn(),
-    },
-    applyNoteExpression: () => {},
-    getCompensationDelay: () => 0,
-    getDefaultBendRangeSemitones: () => 48,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-    soundsNativeNotes: () => false,
-    startFaustNote: vi.fn(() => () => {}),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        audioEngine: {
+            context: audio_clock,
+            getTrackStrip: get_track_strip,
+            ensureTrackStrip: ensure_track_strip,
+            scheduleDeviceKeyOn: schedule_device_key_on,
+            scheduleDeviceKeyOff: vi.fn(),
+        },
+        applyNoteExpression: () => {},
+        getCompensationDelay: () => 0,
+        getDefaultBendRangeSemitones: () => 48,
+        getFactoryDrumKitByIndex: () => null,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        isDeviceCarriedByNativeSession: () => false,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: () => false,
+        startFaustNote: vi.fn(() => () => {}),
+    };
+});
 
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    registerFaustDSP: vi.fn(),
-    isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
-}));
+// The real AudioEngine barrel the capability answers come from reads these.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        registerFaustDSP: vi.fn(),
+        isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
+        compileFaustDSP: actual.compileFaustDSP,
+        createFaustNode: actual.createFaustNode,
+        forgetRetiredPluginInstances: actual.forgetRetiredPluginInstances,
+        getFaustModuleLatencyMs: actual.getFaustModuleLatencyMs,
+        isFaustModule: actual.isFaustModule,
+        markExternalPluginEngineAttached: actual.markExternalPluginEngineAttached,
+        readExternalPluginStatesBeforeEngineRetire: actual.readExternalPluginStatesBeforeEngineRetire,
+        registerBuiltinFaustDSP: actual.registerBuiltinFaustDSP,
+        setPluginBypass: actual.setPluginBypass,
+        setPluginParameter: actual.setPluginParameter,
+    };
+});
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
