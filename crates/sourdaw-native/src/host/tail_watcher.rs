@@ -110,9 +110,20 @@ pub fn tail_change_payload(
 ///
 /// Called from the parameter-event drain's tick, once it has taken the hint.
 pub fn publish_pending_tail_changes(engine_plugins: &EnginePlugins, events: &dyn EventSink) {
+    publish_pending_tail_changes_within(CONTROL_TIMEOUT, engine_plugins, events);
+}
+
+/// `publish_pending_tail_changes` with the per-instance wait as a parameter, so
+/// a test that holds the audio seam can give the visit a deadline only its own
+/// release beats.
+pub(crate) fn publish_pending_tail_changes_within(
+    timeout: Duration,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "tail re-read") {
         let refreshed = runtime
-            .try_with_control(CONTROL_TIMEOUT, |plugin| {
+            .try_with_control(timeout, |plugin| {
                 Ok::<_, std::convert::Infallible>(
                     plugin
                         .take_tail_change()

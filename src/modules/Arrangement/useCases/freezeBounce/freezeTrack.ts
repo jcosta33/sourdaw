@@ -21,6 +21,7 @@ import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type Track } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { getTrackEligibility } from '../../stores/trackEligibility';
@@ -80,6 +81,30 @@ function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortControl
     }
 }
 
+/**
+ * How far past the content a take has to ring. This used to be a substring
+ * test on the device type that no descriptor fed, so it could not see the Dutch
+ * Oven or Bacteria and shrank with tempo because beats are not seconds.
+ *
+ * A hosted plugin's tail moves with its preset, and a VST3 plugin never says
+ * so, so ask each loaded instance now, as an export does, and size from what it
+ * answers. Null when the freeze was cancelled or superseded during the refresh.
+ */
+async function readFreezeTailSeconds(track: Track, task: FreezeTaskIdentity): Promise<number | null> {
+    await refreshExternalPluginTails();
+    if (!isCurrentFreezeTask(task)) {
+        return null;
+    }
+    return getDeviceChainTailSeconds({
+        devices: track.devices,
+        automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
+        tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
+            .tailSamplesByInstanceId,
+        engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
+    }).seconds;
+}
+
 export async function freezeTrack(trackId: string, freezeIdOverride?: string): Promise<boolean> {
     const state = trackStore.value;
     const project = projectStore.value;
@@ -132,27 +157,12 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
 
         // How far past the content this take has to ring, read from the same
-        // device tail declarations the export path evaluates. This used to be a
-        // substring test on the device type — 8 beats for an id containing
-        // "reverb" or "delay", 4 for anything else — which no descriptor fed, so
-        // it could not see the Dutch Oven or Bacteria at all, and which shrank
-        // with tempo because beats are not seconds.
-        //
-        // A hosted plugin's tail moves with its preset, and a VST3 plugin never says
-        // so, so ask each loaded instance now, as an export does, and size from what
-        // it answers.
-        await refreshExternalPluginTails();
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        // device tail declarations the export path evaluates; see
+        // `readFreezeTailSeconds`.
+        const tailSeconds = await readFreezeTailSeconds(track, taskIdentity);
+        if (tailSeconds === null) {
             return false;
         }
-        const tailSeconds = getDeviceChainTailSeconds({
-            devices: track.devices,
-            automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
-            tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
-            hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
-                .tailSamplesByInstanceId,
-            engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
-        }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         // Read synchronously before the render call: the render reads the MIDI store when it starts,

@@ -378,6 +378,7 @@ mod tests {
     use crate::host::plugin_editor_asks::editor_window_host;
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::{PluginEditorWindow, PluginWindowHost};
+    use crate::host::tail_watcher::publish_pending_tail_changes_within;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
 
@@ -855,9 +856,24 @@ mod tests {
             .expect("an idle fixture's access seam is free");
 
         let ticking_sink = Arc::clone(&sink);
-        let ticker = std::thread::spawn(move || tick(&engine_plugins, ticking_sink.as_ref()));
-        // Well inside the 50 ms the tail leg waits for the seam.
-        std::thread::sleep(Duration::from_millis(15));
+        let (started, ticking_started) = std::sync::mpsc::channel();
+        let ticker = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat, so a slow machine
+            // cannot end the wait before the test has taken its marker.
+            publish_pending_tail_changes_within(
+                Duration::from_secs(10),
+                &engine_plugins,
+                ticking_sink.as_ref(),
+            );
+        });
+        ticking_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the ticker starts");
+        // Let the ticker reach the seam wait. A stall that delays it past the
+        // marker can only make this test pass vacuously (the event then takes its
+        // sequence after the marker either way); it can never make it fail.
+        std::thread::sleep(Duration::from_millis(50));
         let marker = crate::host::tail_watcher::next_tail_sequence();
         drop(seam);
         ticker.join().expect("the tick finishes");

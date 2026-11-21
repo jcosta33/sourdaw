@@ -4144,6 +4144,16 @@ pub async fn read_plugin_tails(
     instance_ids: Vec<String>,
     state: &AppState,
 ) -> Result<Vec<PluginTailReading>, String> {
+    read_plugin_tails_within(TAIL_READ_TIMEOUT, instance_ids, state)
+}
+
+/// `read_plugin_tails` with the per-instance wait as a parameter, so a test that
+/// holds the audio seam can give the read a deadline only its own release beats.
+fn read_plugin_tails_within(
+    timeout: Duration,
+    instance_ids: Vec<String>,
+    state: &AppState,
+) -> Result<Vec<PluginTailReading>, String> {
     // Resolve the runtimes under the map lock and release it before reading:
     // the reads wait on the audio thread and must not park every other reader
     // of this map.
@@ -4160,7 +4170,7 @@ pub async fn read_plugin_tails(
             })
             .collect::<Vec<_>>()
     };
-    Ok(read_tails(runtimes))
+    Ok(read_tails_within(timeout, runtimes))
 }
 
 /// The control path being in use is the expected way an instance goes unread
@@ -4173,7 +4183,8 @@ fn is_expected_tail_refusal(error: &PluginControlError<std::convert::Infallible>
     )
 }
 
-fn read_tails<Runtime: HostedPluginRuntime>(
+fn read_tails_within<Runtime: HostedPluginRuntime>(
+    timeout: Duration,
     runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
 ) -> Vec<PluginTailReading> {
     runtimes
@@ -4181,7 +4192,7 @@ fn read_tails<Runtime: HostedPluginRuntime>(
         .filter_map(|(instance_id, runtime)| {
             // The sequence is taken inside the control closure, with the read,
             // so it orders this figure against an event for the same instance.
-            let read = runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| {
+            let read = runtime.try_with_control(timeout, |plugin| {
                 Ok::<_, std::convert::Infallible>((plugin.tail_samples(), next_tail_sequence()))
             });
             match read {
@@ -11881,6 +11892,16 @@ mod tests {
         (runtime, tail_samples)
     }
 
+    /// A read's wait when the test holds the seam and releases it itself: long
+    /// enough that only the release, never the clock, ends the read.
+    const HELD_SEAM_READ_DEADLINE: Duration = Duration::from_secs(10);
+
+    fn read_tails<Runtime: HostedPluginRuntime>(
+        runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
+    ) -> Vec<PluginTailReading> {
+        read_tails_within(TAIL_READ_TIMEOUT, runtimes)
+    }
+
     /// A reading with its sequence blanked, for assertions about the figure.
     fn figure_of(readings: Vec<PluginTailReading>) -> Vec<(String, u32)> {
         readings
@@ -11924,11 +11945,23 @@ mod tests {
             .expect("an idle fixture's access seam is free");
 
         let reading_runtime = Arc::clone(&runtime);
+        let (started, reading_started) = std::sync::mpsc::channel();
         let reader = std::thread::spawn(move || {
-            read_tails(vec![("engine-owned-fixture".to_string(), reading_runtime)])
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat, so a slow machine
+            // cannot end the read before the test has taken its marker.
+            read_tails_within(
+                HELD_SEAM_READ_DEADLINE,
+                vec![("engine-owned-fixture".to_string(), reading_runtime)],
+            )
         });
-        // Well inside the 50 ms the read waits for the seam.
-        std::thread::sleep(TAIL_READ_TIMEOUT / 3);
+        reading_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the reader starts");
+        // Let the reader reach the seam wait. A stall that delays it past the
+        // marker can only make this test pass vacuously (the read then takes its
+        // sequence after the marker either way); it can never make it fail.
+        std::thread::sleep(Duration::from_millis(50));
         let marker = next_tail_sequence();
         drop(seam);
         let readings = reader.join().expect("the reader thread finishes");
@@ -12040,23 +12073,32 @@ mod tests {
         let reader_state = Arc::clone(&state);
         let reader = std::thread::spawn(move || {
             started.send(()).expect("the test is listening");
-            let readings = crate::block_on_test(read_plugin_tails(
+            let readings = read_plugin_tails_within(
+                HELD_SEAM_READ_DEADLINE,
                 vec!["engine-owned-fixture".to_string()],
                 &reader_state,
-            ));
+            );
             answered.send(readings).expect("the test is listening");
         });
         reading_started
             .recv_timeout(Duration::from_secs(2))
             .expect("the reader starts");
-        // Well inside the deadline: the reader is parked on the seam by now.
-        std::thread::sleep(TAIL_READ_TIMEOUT / 2);
+        // The deadline is far away, so the read cannot end before the release
+        // below; the pause only gives the reader time to park on the seam.
+        std::thread::sleep(Duration::from_millis(50));
 
         let map_is_free = state.engine_plugins.try_lock().is_ok();
         let still_waiting = answer.try_recv().is_err();
         drop(seam);
+        let released_answer = answer
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the read answers once the seam is released");
         reader.join().expect("the reader thread finishes");
 
+        assert!(
+            released_answer.is_ok(),
+            "the read answers once the seam is released"
+        );
         assert!(
             still_waiting,
             "the check ran after the read ended, so it observed nothing"
