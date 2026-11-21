@@ -9,6 +9,7 @@ import {
     SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
     type SemanticCommandListRoleFamily,
 } from '../../models/SemanticCommandList';
+import { BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { countMeasurementWork } from '../countMeasurementWork';
@@ -23,7 +24,6 @@ import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSecond
 import { type VibeBatchPair } from './readVibeBatchPairs';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 
-const BRIEF_POSITION = 1;
 const BRIEF_COMMAND_COUNT = 1;
 
 /**

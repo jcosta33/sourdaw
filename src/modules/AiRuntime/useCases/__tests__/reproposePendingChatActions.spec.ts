@@ -4,6 +4,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type BriefReadingPlan } from '../../models/BriefReading';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -214,6 +215,10 @@ function readyRefresh(batch: ReturnType<typeof buildBatch>) {
         commandEnvelopes: ['envelope-refreshed'],
         currentRevision: CURRENT_REVISION,
     };
+}
+
+function readingPlan(planDigest: string): BriefReadingPlan {
+    return { batches: [], planDigest, trackNames: {}, constraintReading: { constraints: [], unsupported: [] } };
 }
 
 function previewedSelection() {
@@ -493,8 +498,8 @@ describe('reproposePendingChatActions', () => {
             catalogId: 'catalog',
             metricGoalState: 'state',
             readings: [
-                { id: 'r1', name: 'Warm', descriptors: ['warm'] },
-                { id: 'r2', name: 'Bright', descriptors: ['bright', 'airy'] },
+                { id: 'r1', name: 'Warm', descriptors: ['warm'], plan: readingPlan('digest-warm') },
+                { id: 'r2', name: 'Bright', descriptors: ['bright', 'airy'], plan: readingPlan('digest-bright') },
             ],
             brief: {
                 schemaVersion: 1,

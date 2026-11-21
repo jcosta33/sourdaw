@@ -4323,14 +4323,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/chooseVibeBriefReading.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts": {
         "eslint/complexity": {
             "count": 2
@@ -5070,7 +5062,7 @@
             "count": 1
         },
         "eslint/max-lines-per-function": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/vibeRun/readVibeBatchValueReply.ts": {
@@ -5980,11 +5972,6 @@
     },
     "src/modules/Arrangement/models/ScratchPadSection.ts": {
         "eslint/max-params": {
-            "count": 1
-        }
-    },
-    "src/modules/Arrangement/models/StoredDeviceParameterMigration.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
             "count": 1
         }
     },
