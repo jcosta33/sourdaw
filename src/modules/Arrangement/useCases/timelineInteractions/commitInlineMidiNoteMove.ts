@@ -1,6 +1,8 @@
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
+import { refuseInlineMidiEditOnFrozenTrack } from './refuseInlineMidiEditOnFrozenTrack';
+
 type CommitInlineMidiNoteMoveInput = {
     clipId: string;
     noteId: string;
@@ -9,6 +11,9 @@ type CommitInlineMidiNoteMoveInput = {
 };
 
 export function commitInlineMidiNoteMove(input: CommitInlineMidiNoteMoveInput): boolean {
+    if (refuseInlineMidiEditOnFrozenTrack(input.clipId)) {
+        return false;
+    }
     const previousNotes = getNotesForClip(input.clipId);
     const targetNote = previousNotes.find((note) => note.id === input.noteId);
     if (!targetNote) {
