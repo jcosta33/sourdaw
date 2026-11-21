@@ -58,6 +58,19 @@ function createCapturedDeviceReplayContract(
     };
 }
 
+/** A forward command whose own handler validates the whole undo entry it recorded. */
+function createOwnerEntryReplayContract(
+    actionType: 'commitRecording' | 'editTempoMap' | 'deleteTime' | 'zoomTracksVertical'
+): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
+
 function createTransportBarsReplayContract(actionType: 'setCountInBars' | 'setPreRollBars'): SessionActionContract {
     return {
         actionType,
@@ -77,16 +90,7 @@ function createTransportBarsReplayContracts(): readonly SessionActionContract[] 
  * inverse restores the heights the zoom clamped from, and the zoom's own entry validator binds it.
  */
 function createVerticalZoomReplayContracts(): readonly SessionActionContract[] {
-    return [
-        {
-            actionType: 'zoomTracksVertical',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('zoomTracksVertical', payload),
-            validateEntry: (entry) => getHandlerByType('zoomTracksVertical')?.validateSessionEntry?.(entry) === true,
-        },
-        createInternalReplayContract('restoreTrackHeights'),
-    ];
+    return [createOwnerEntryReplayContract('zoomTracksVertical'), createInternalReplayContract('restoreTrackHeights')];
 }
 
 /**
@@ -96,13 +100,7 @@ function createVerticalZoomReplayContracts(): readonly SessionActionContract[] {
  */
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
-        {
-            actionType: 'commitRecording',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
-            validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('commitRecording'),
         {
             actionType: 'insertAutomationLanePoints',
             operationVersion: 1,
@@ -120,13 +118,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
-        {
-            actionType: 'editTempoMap',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('editTempoMap', payload),
-            validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('editTempoMap'),
         {
             actionType: 'relinkClipAudioSources',
             operationVersion: 1,
@@ -140,13 +132,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                         validateVersionedCommandArguments('relinkClipAudioSources', action.payload)
                 ) && getHandlerByType('relinkClipAudioSources')?.validateSessionEntry?.(entry) === true,
         },
-        {
-            actionType: 'deleteTime',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
-            validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('deleteTime'),
         ...createVerticalZoomReplayContracts(),
         ...createTransportBarsReplayContracts(),
         createInternalReplayContract('discardCreatedTrack'),
