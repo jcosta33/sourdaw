@@ -280,6 +280,11 @@ describe('TrackListView', () => {
 
             expect(toggle).toHaveAttribute('aria-pressed', 'true');
             expect(screen.getByTestId('track-t2')).toBeInTheDocument();
+
+            fireEvent.click(toggle);
+
+            expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('track-t2')).toBeNull();
             expect(executeUserAppAction).not.toHaveBeenCalled();
         } finally {
             timelineEditingStore.set(defaultTimelineEditingState);

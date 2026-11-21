@@ -44,7 +44,7 @@ import {
 } from '../../models/TimelineTrackExtent';
 import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
-import { getVisibleTimelineTracks } from '../../transformers/getVisibleTimelineTracks';
+import { getTimelineRowTracks } from '../../useCases/getTimelineRowTracks';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { setShowHiddenTracks } from '../../useCases/timelineEditing/setShowHiddenTracks';
 import { toggleInlineAutomation } from '../../useCases/timelineEditing/toggleInlineAutomation';
@@ -164,7 +164,7 @@ export const TrackListView = ({
 
     const showHiddenTracks = editing?.showHiddenTracks ?? false;
     const hiddenTrackCount = tracks.filter((track) => track.hidden && track.kind !== 'master').length;
-    const visibleTracks = getVisibleTimelineTracks(tracks, showHiddenTracks);
+    const visibleTracks = getTimelineRowTracks(tracks, showHiddenTracks);
     const automationRows = getInlineAutomationRows(visibleTracks, automationLanes ?? [], editing);
 
     const handleDragStart = (trackId: string) => {

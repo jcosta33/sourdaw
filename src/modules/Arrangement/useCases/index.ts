@@ -280,7 +280,7 @@ export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
 export { setSnapValue } from './timelineEditing/setSnapValue';
 export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
 export { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
-export { filterTracksShownInViews } from './filterTracksShownInViews';
+export { getTracksShownInViews } from './getTracksShownInViews';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
