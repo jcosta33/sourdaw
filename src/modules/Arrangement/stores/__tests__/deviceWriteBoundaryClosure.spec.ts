@@ -1980,7 +1980,8 @@ function isAssignmentOperator(kind: SyntaxKind): boolean {
 }
 
 // A member target writes a device-data property when it is `x.devices`,
-// `x['devices']`, or a destructuring pattern whose targets include one.
+// `x['devices']`, or a destructuring pattern whose targets include one. A
+// nested `a = b` default is its own assignment, counted when the walk reaches it.
 function collectDeviceDataTargets(target: Expression, writes: Set<Node>): void {
     const expression = unwrapStateExpression(target);
     if (isPropertyAccessExpression(expression)) {
@@ -1997,10 +1998,6 @@ function collectDeviceDataTargets(target: Expression, writes: Set<Node>): void {
         ) {
             writes.add(expression);
         }
-        return;
-    }
-    if (isBinaryExpression(expression) && expression.operatorToken.kind === SyntaxKind.EqualsToken) {
-        collectDeviceDataTargets(expression.left, writes);
         return;
     }
     if (isArrayLiteralExpression(expression)) {
@@ -2411,18 +2408,29 @@ describe('device write boundary closure', () => {
         ["track['devices'] = [];", 1],
         ['track[`parameterValues`] = {};', 1],
         ['(track as Track).devices = [];', 1],
+        ['(track.devices) = [];', 1],
+        ['(track.devices as Device[]) = [];', 1],
+        ['track.devices! = [];', 1],
+        ['(track.parameterValues satisfies object) = {};', 1],
         ['[track.devices] = [[]];', 1],
         ['[...track.devices] = [];', 1],
         ['({ chain: track.devices } = source);', 1],
         ['({ chain: track.parameterValues = {} } = source);', 1],
         ['({ ...track.devices } = source);', 1],
         ['for (track.devices of chains) { void 0; }', 1],
+        ['for (track.devices in chains) { void 0; }', 1],
         ['track.devices = []; device.parameterValues = {};', 2],
     ])('counts a device-data member assignment: %s', (source, expected) => {
         const file = { path: 'src/modules/Arrangement/memberWrite.ts', source };
         expect(countDeviceDataMemberAssignments(file)).toBe(expected);
         const counts = countDeviceDataByPath([productionSource(file.path, source)]);
         expect(counts[file.path]).toBe(expected);
+    });
+
+    it('adds member assignments to the lexical device-data count of the same file', () => {
+        const path = 'src/modules/Arrangement/memberAndLexical.ts';
+        const source = 'const seed = { devices: [] }; track.devices = [];';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBe(2);
     });
 
     it.each([
@@ -2435,6 +2443,9 @@ describe('device write boundary closure', () => {
         "track['name'] = 'devices';",
         'const same = track.devices === other.devices;',
         '({ chain: track.name } = source);',
+        '({ chain: track.devices || [] } = source);',
+        'for (const devices of chains) { void devices; }',
+        'for (const parameterValues in chains) { void parameterValues; }',
     ])('does not count a read or unrelated assignment as a member write: %s', (source) => {
         expect(countDeviceDataMemberAssignments({ path: 'src/modules/Arrangement/readOnly.ts', source })).toBe(0);
     });
