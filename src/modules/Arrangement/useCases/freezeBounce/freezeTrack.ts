@@ -30,6 +30,7 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { refuseFreezeCommitWhileRecording } from './refuseFreezeCommitWhileRecording';
 import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
@@ -69,6 +70,14 @@ function isEligibleActiveProjectTrack({
 
 function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
     return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
+}
+
+/** The last check before the commit write: the task is no longer current, or its track is about to record. */
+function isCommitUnauthorized(
+    task: FreezeTaskIdentity,
+    refusal: Omit<Parameters<typeof refuseFreezeCommitWhileRecording>[0], 'trackId'>
+): boolean {
+    return !isCurrentFreezeTask(task) || refuseFreezeCommitWhileRecording({ trackId: task.trackId, ...refusal });
 }
 
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
@@ -208,11 +217,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         await assertFreezeSourceUnchanged(trackId, hash);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
+        if (isCommitUnauthorized(taskIdentity, { pendingFreeze, settled: previousFreeze, scope })) {
             return false;
         }
 
-        // Synchronous from here to the commit write: no await can let a note land in between.
         assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();
