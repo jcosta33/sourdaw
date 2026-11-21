@@ -262,6 +262,27 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.status).not.toBe('error');
         });
 
+        // A rebuild ends the generation, then waits on the retry before it unloads and clears anything.
+        it('writes no restore failure for a restore retry a graph rebuild is waiting on', async () => {
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            externalPluginRestoreFailures.clear();
+            const retryWrite = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(retryWrite.promise);
+            const nativeUnload = Promise.withResolvers<Awaited<ReturnType<typeof unloadPluginRepoSignature>>>();
+            mocks.unloadPlugin.mockReturnValueOnce(nativeUnload.promise);
+
+            const retry = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledTimes(2));
+            const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+            retryWrite.reject(new Error('chunk rejected again'));
+
+            await expect(retry).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(false);
+            nativeUnload.resolve({ unloadedInstanceIds: [INSTANCE_ID], errors: [], reports: [] });
+            await rebuild;
+        });
+
         it('leaves a newer activation of the id unmarked when the forgotten one restores into nothing', async () => {
             const firstWrite = Promise.withResolvers<void>();
             const secondWrite = Promise.withResolvers<void>();

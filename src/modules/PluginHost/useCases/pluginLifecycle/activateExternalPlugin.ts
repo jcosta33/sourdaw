@@ -232,12 +232,12 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
-            // An engine retire forgets the instance without ending the graph generation.
+            // A rebuild ends the graph generation before it waits on this retry; an engine retire
+            // forgets the instance, and its task with it, without ending the generation.
             function isCurrentRestore(): boolean {
                 return (
                     activationEpoch === externalPluginActivationEpoch.current &&
-                    externalPluginActivationTasks.get(instanceId) === restoreTask &&
-                    loadedExternalInstances.has(instanceId)
+                    externalPluginActivationTasks.get(instanceId) === restoreTask
                 );
             }
             const restoreTask = restorePluginState(instanceId, stateChunk)
