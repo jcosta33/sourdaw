@@ -434,10 +434,7 @@ async function executePreparedBatch(
             prepared.commitValidation = result?.commitValidation ?? null;
             if (result?.status === 'no-write' || result?.status === 'conflict') {
                 attemptedActions.pop();
-                if (result.status === 'conflict' && result.blocked === true) {
-                    throw new AppActionBlockedError(prepared.action.type, result.reason);
-                }
-                throw new AppActionConflictError(prepared.action.type, result.reason);
+                throw handlerRefusalError(prepared.action.type, result);
             }
             prepared.afterCommit = result?.afterCommit ?? null;
             prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
@@ -451,6 +448,14 @@ async function executePreparedBatch(
             prepared.commitValidation?.release();
         }
     }
+}
+
+/** A handler refusal is a blocked conflict only when the handler said it reflects transient runtime state. */
+function handlerRefusalError(actionType: string, result: HandlerExecutionResult): AppActionConflictError {
+    if (result.blocked === true) {
+        return new AppActionBlockedError(actionType, result.reason);
+    }
+    return new AppActionConflictError(actionType, result.reason);
 }
 
 /** A conflict keeps `blocked` only when a handler refused for a transient runtime state. */
