@@ -177,7 +177,6 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         playheadPositionRef.current = previousPlayhead;
         trackStore.set(structuredClone(defaultTrackState));
         timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });

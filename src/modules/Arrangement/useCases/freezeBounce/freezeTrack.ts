@@ -19,10 +19,12 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
+import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
 import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
+import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
@@ -134,6 +136,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+        // Read synchronously before the render call: the render reads the MIDI store when it starts,
+        // after the digest's await, so an earlier capture could miss rows written while hashing.
+        const renderedMidi = captureFreezeMidi(track.clips);
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
             tailSeconds,
             onScheduled: (tally) => {
@@ -195,6 +200,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         if (!isCurrentFreezeTask(taskIdentity)) {
             return false;
         }
+
+        // Synchronous from here to the commit write: no await can let a note land in between.
+        assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();
         // Resolved by the command layer when this runs as an action, so the handler's

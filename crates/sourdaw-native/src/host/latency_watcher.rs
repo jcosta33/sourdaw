@@ -37,7 +37,9 @@ use std::time::Duration;
 pub const PLUGIN_LATENCY_CHANGED_EVENT: &str = "plugin-latency-changed";
 
 /// How long a latency re-query may wait for the RT path to release the plugin.
-/// Matches the timeout every other control-path command uses.
+/// The visit first waits up to the control gate deadline
+/// (`CONTROL_GATE_DEADLINE` in `native_bridge`), then up to this long for the
+/// RT seam.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long a hint-driven sweep's visit may hold one instance. Sized for the

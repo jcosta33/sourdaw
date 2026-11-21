@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Track } from '#/modules/Arrangement/stores';
+import { externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -125,6 +126,7 @@ type ExportDialogMocks = {
     loggerWarn: ReturnType<typeof vi.fn>;
     midiStore: TestStore<TestMidiState>;
     notifyUser: ReturnType<typeof vi.fn>;
+    refreshExternalPluginTails: ReturnType<typeof vi.fn<() => Promise<void>>>;
     renderOffline: ReturnType<typeof vi.fn<RenderOffline>>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<RestoreAudioBuffers>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
@@ -182,6 +184,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         loggerWarn: vi.fn(),
         midiStore,
         notifyUser: vi.fn(),
+        refreshExternalPluginTails: vi.fn<() => Promise<void>>(async () => {}),
         renderOffline: vi.fn<RenderOffline>(),
         restoreCachedAudioBuffersFromIdb: vi.fn<RestoreAudioBuffers>(),
         selectNativeAudioExportFile: vi.fn(),
@@ -323,6 +326,14 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     getToasterPresets: vi.fn(),
     setToasterGrooveAssignmentExecutor: vi.fn(),
     listToasterPatternsOutsideArrangement: mocks.listToasterPatternsOutsideArrangement,
+}));
+
+// Only the refresh is replaced: one case loads the real AudioEngine, which needs the
+// rest of this barrel. The refresh's own behaviour is pinned in PluginHost; this spec
+// observes only when the dialog asks for it.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    refreshExternalPluginTails: mocks.refreshExternalPluginTails,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -1391,6 +1402,41 @@ describe('ExportDialog', () => {
         expect(screen.getByRole('checkbox', { name: /auto-detect/i })).toBeChecked();
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 9.25 }));
         expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalledTimes(2);
+    });
+
+    it('sizes the render from the tail the hosted plugins report when the export starts', async () => {
+        // The dialog is open and the label shows the load-time figure; the
+        // plugin is then switched to a longer preset, which only a re-read sees.
+        let hostedTailSeconds = 2;
+        mocks.getAutoDetectedTailSeconds.mockImplementation(() => ({
+            seconds: hostedTailSeconds,
+            uncappedSeconds: hostedTailSeconds,
+            clamped: false,
+        }));
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        expect(mocks.refreshExternalPluginTails).toHaveBeenCalledTimes(1);
+        const hostAnswer = Promise.withResolvers<void>();
+        mocks.refreshExternalPluginTails.mockReturnValueOnce(hostAnswer.promise);
+
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+
+        // The export has prepared everything but the tail, and the host has not answered:
+        // a render started now would be sized from the stale figure.
+        await waitFor(() => expect(mocks.refreshExternalPluginTails).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        hostedTailSeconds = 20;
+        hostAnswer.resolve();
+
+        await waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledTimes(1));
+        expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 20 }));
+    });
+
+    it('repaints the detected tail label when the hosted tail store changes', () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        const subscribedStores = mocks.useStore.mock.calls.map(([store]) => store);
+        expect(subscribedStores).toContain(externalPluginTailStore);
     });
 
     it('re-reads the project snapshot for tail detection after async export preparation', async () => {

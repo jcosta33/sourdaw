@@ -34,7 +34,7 @@ const METHOD_STEPS: readonly MethodStep[] = [
     },
     {
         name: 'propose adopting only the preview call id',
-        clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because the preview already carries the recipe's commands. For a semantic-list preview, pass proposal instead of recipeCallId. ",
+        clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because the preview already carries the recipe's commands. A change across several targets expands one recipe per target in one turn and previews them together with recipeCallIds listing every expansion's callId. For a semantic-list preview, pass proposal instead of recipeCallId. ",
     },
     {
         name: 'reads needing no earlier receipt share a turn',

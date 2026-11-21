@@ -1145,7 +1145,6 @@ describe('projectLiveMidiProgramme for a take a split or Delete Time freezes, ag
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
-        setTimeOperationDependencies(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();

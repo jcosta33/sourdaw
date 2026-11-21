@@ -207,7 +207,6 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
         clearHandlerRegistry();
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
-        setTimeOperationDependencies(null);
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();

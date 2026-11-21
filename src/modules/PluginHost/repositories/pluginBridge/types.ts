@@ -86,6 +86,17 @@ export type PluginTailChange = {
 };
 
 /**
+ * One instance's tail as `read_plugin_tails` answers it: the figure the plugin
+ * reports now, asked for rather than pushed. An instance the host could not
+ * reach is absent from the answer, never present with a guessed tail.
+ */
+export type PluginTailReading = {
+    instance_id: string;
+    /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
+    tail_samples: number;
+};
+
+/**
  * Payload of `plugin-gui-closed`, pushed when the OS ended a plugin editor
  * window the app did not close itself — a title-bar click, or the cascade that
  * follows the owner window being destroyed.

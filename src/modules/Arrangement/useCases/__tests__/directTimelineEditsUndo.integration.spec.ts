@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { Container } from '#/infra/di/Container';
@@ -11,7 +11,12 @@ import {
     trackStore,
     vcaGroupStore,
 } from '#/modules/Arrangement/stores';
-import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    setArrangementEventBus,
+    setTrackStoreState,
+    setVcaRuntimeProjectionDependencies,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore } from '#/modules/Command/stores';
 import {
@@ -70,6 +75,7 @@ describe('direct timeline and mixer edits and Undo', () => {
     let unsubscribeFromNotifications: () => void = () => undefined;
 
     beforeEach(() => {
+        setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain: vi.fn() });
         Container.clear();
         const notificationEventBus = createEventBus<NotificationEvents>();
         notifications = [];
