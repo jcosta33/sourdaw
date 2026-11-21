@@ -17,6 +17,12 @@ describe('commandBatchIdempotencyPort', () => {
         expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow('configureCommandBatchIdempotency');
         expect(() => commandBatchIdempotencyPort.claim(key)).toThrow('configureCommandBatchIdempotency');
         expect(() => commandBatchIdempotencyPort.release(key)).toThrow('configureCommandBatchIdempotency');
+        expect(() => commandBatchIdempotencyPort.complete({ ...key, serializedReceipt: '{}' })).toThrow(
+            'configureCommandBatchIdempotency'
+        );
+        expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow(
+            'configureCommandBatchIdempotency'
+        );
     });
 
     it('reports no repository before registration', () => {

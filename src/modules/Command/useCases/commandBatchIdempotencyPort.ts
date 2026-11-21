@@ -18,8 +18,8 @@ function readRepository(caller: string): CommandBatchIdempotencyRepository {
 /**
  * Filled from inside Command by `configureCommandBatchIdempotency`, which the
  * composition root (`#/app/bootstrap`) calls once at boot. A read before that
- * throws rather than skipping the claim: a batch executed without its
- * idempotency claim could run twice.
+ * throws. `isConfigured()` still lets a caller run a batch without the durable
+ * ledger when nothing is registered, which production never does (#7280).
  */
 export const commandBatchIdempotencyPort = {
     lookup(input: {
