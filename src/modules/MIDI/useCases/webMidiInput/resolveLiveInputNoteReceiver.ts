@@ -1,5 +1,5 @@
+import { findPadOutputHost, resolveNoteReceivingInstrument } from '#/modules/AudioEngine/useCases';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
 
 /**
  * The instrument live MIDI input plays a key on: the first note-accepting
@@ -10,9 +10,9 @@ import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/
 export function resolveLiveInputNoteReceiver<TDevice extends { type: string }>(
     devices: readonly TDevice[],
     routesToToasterPad: boolean
-): NoteReceivingInstrument<TDevice> | null {
+): ReturnType<typeof resolveNoteReceivingInstrument<TDevice>> {
     if (routesToToasterPad) {
-        const toaster = devices.find((device) => device.type === 'toaster');
+        const toaster = findPadOutputHost(devices);
         return toaster ? { device: toaster, kind: 'toaster' } : null;
     }
     return resolveNoteReceivingInstrument(devices, isFaustInstrumentModule);

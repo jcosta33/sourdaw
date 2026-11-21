@@ -40,6 +40,7 @@ import {
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
+import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -795,8 +796,18 @@ const validators = {
     setSnapValue: 'unchecked',
     zoomToFit: 'unchecked',
     zoomToSelection: 'unchecked',
-    zoomTracksVertical: 'unchecked',
-    setTrackHeight: 'unchecked',
+    // A delta of zero would write nothing, and a larger one than the height range only saturates.
+    zoomTracksVertical: (param): param is PayloadOf<'zoomTracksVertical'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['delta']) &&
+        isInRange(param.delta, -MAX_TRACK_ZOOM_DELTA, MAX_TRACK_ZOOM_DELTA) &&
+        param.delta !== 0,
+    // The writer clamps a height, so an out-of-range one is refused here rather than silently moved.
+    setTrackHeight: (param): param is PayloadOf<'setTrackHeight'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'height']) &&
+        isNonEmptyString(param.trackId) &&
+        isInRange(param.height, MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT),
 
     // Track state
     selectTrack: 'unchecked',
@@ -864,9 +875,17 @@ const validators = {
         isOptionalOwn(param, 'expectedOutputId', isNonEmptyString),
     setTrackInput: 'unchecked',
     setTrackNotes: 'unchecked',
-    hideTrack: 'unchecked',
+    hideTrack: (param): param is PayloadOf<'hideTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'hidden']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.hidden === 'boolean',
     disableTrack: 'unchecked',
-    foldTrack: 'unchecked',
+    foldTrack: (param): param is PayloadOf<'foldTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'folded']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.folded === 'boolean',
     groupTracks: 'unchecked',
     ungroupTracks: 'unchecked',
     removeAllTracks: 'unchecked',

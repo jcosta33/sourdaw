@@ -7,6 +7,10 @@
 //! parameter, `Gain`. Its state chunk also records the process mode the host
 //! gave the instance (see [`state`]).
 //!
+//! Its instrument classes (CLAP and VST3) sound the notes they are sent: while a
+//! note is held every output sample is `Gain * velocity`, from the sample its
+//! note-on names to the sample its note-off names (see [`note_voice`]).
+//!
 //! Test-only: no script packages or installs it.
 
 #![cfg_attr(
@@ -15,16 +19,21 @@
 )]
 
 mod clap_front;
+mod clap_gui;
+#[cfg(unix)]
+mod clap_run_loop;
 mod echo;
+mod note_voice;
 pub mod state;
 mod vst3_emitter;
 mod vst3_front;
 mod vst3_probe;
 
 pub use clap_front::{
-    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID,
-    CLAP_START_REFUSED_PLUGIN_ID, GAIN_PARAM_ID,
+    CLAP_EDITOR_PLUGIN_ID, CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_INSTRUMENT_PLUGIN_ID, CLAP_PLUGIN_ID,
+    CLAP_PROCESS_ERROR_PLUGIN_ID, CLAP_START_REFUSED_PLUGIN_ID, GAIN_PARAM_ID,
 };
+pub use clap_gui::{GuiCommand, COMMAND_PARAM_ID};
 pub use echo::{ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_DEFAULT, LATENCY_FRAMES};
 pub use vst3_emitter::{
     held_as_f32, DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES,
@@ -33,9 +42,9 @@ pub use vst3_emitter::{
     WELL_FORMED_PITCH,
 };
 pub use vst3_front::{
-    VST3_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
-    VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID, VST3_PROCESS_ERROR_CLASS_ID,
-    VST3_START_REFUSED_CLASS_ID,
+    VST3_CLASS_ID, VST3_INSTRUMENT_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID,
+    VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID, VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+    VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
 };
 pub use vst3_probe::{
     ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, LEVEL_PARAM_ID, LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS,

@@ -47,6 +47,11 @@ const projectContext: ProjectContext = {
     ],
 };
 
+const folderContext: ProjectContext = {
+    ...projectContext,
+    tracks: [...projectContext.tracks, { ...projectContext.tracks[0]!, id: 'track-drums-folder', kind: 'folder' }],
+};
+
 const foreignCall = { name: 'addMarker', arguments: { beat: 0, name: 'Intro' } };
 
 describe('trackStrategy', () => {
@@ -93,6 +98,59 @@ describe('trackStrategy', () => {
                 reason: 'Expected an optional safe name and one of audio, midi, or folder',
             });
         }
+    });
+
+    describe('display edits', () => {
+        const bridge = (name: string, args: Record<string, unknown>, context = folderContext) =>
+            bridgeTrackToolCall({ call: { name, arguments: args }, context, index: 0 });
+
+        it('bridges fold and height to their payloads', () => {
+            expect(bridge('foldTrack', { trackId: 'track-drums-folder', folded: true })).toEqual({
+                type: 'foldTrack',
+                payload: { trackId: 'track-drums-folder', folded: true },
+            });
+            expect(bridge('setTrackHeight', { trackId: 'track-vox', height: 120 })).toEqual({
+                type: 'setTrackHeight',
+                payload: { trackId: 'track-vox', height: 120 },
+            });
+        });
+
+        it('bridges hide and show to their payloads', () => {
+            expect(bridge('hideTrack', { trackId: 'track-vox', hidden: true })).toEqual({
+                type: 'hideTrack',
+                payload: { trackId: 'track-vox', hidden: true },
+            });
+            expect(bridge('hideTrack', { trackId: 'track-drums-folder', hidden: false })).toEqual({
+                type: 'hideTrack',
+                payload: { trackId: 'track-drums-folder', hidden: false },
+            });
+        });
+
+        it('leaves zoomTracksVertical to no provider route while it is withdrawn from agent commands', () => {
+            expect(bridge('zoomTracksVertical', { delta: -20 })).toBeNull();
+        });
+
+        const FOLD_REASON = 'Expected an available folder trackId and boolean folded value';
+        const HIDE_REASON = 'Expected an available trackId and boolean hidden value';
+        const HEIGHT_REASON = 'Expected an available trackId and a height from 30 through 300';
+
+        it.each([
+            ['hideTrack', { trackId: 'ghost', hidden: true }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox', hidden: 'yes' }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox' }, HIDE_REASON],
+            ['hideTrack', { trackId: 'track-vox', hidden: true, expectedHidden: false }, HIDE_REASON],
+            ['foldTrack', { trackId: 'track-vox', folded: true }, FOLD_REASON],
+            ['foldTrack', { trackId: 'ghost', folded: true }, FOLD_REASON],
+            ['foldTrack', { trackId: 'track-drums-folder', folded: 'yes' }, FOLD_REASON],
+            ['foldTrack', { trackId: 'track-drums-folder', folded: true, extra: 1 }, FOLD_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: 29 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: 301 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'ghost', height: 100 }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: Number.NaN }, HEIGHT_REASON],
+            ['setTrackHeight', { trackId: 'track-vox', height: '100' }, HEIGHT_REASON],
+        ])('rejects %s with %j', (name, args, reason) => {
+            expect(bridge(name, args)).toEqual({ index: 0, name, reason });
+        });
     });
 });
 

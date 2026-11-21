@@ -283,7 +283,6 @@ describe('Inspector VCA gestures through production Command and committed gain',
         cleanup();
         command.setActionHistoryMetadataPort(noMetadata);
         command.productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
-        setVcaRuntimeProjectionDependencies(null);
         command.clearUndoHistory();
         command.resetActionReplayAuthority();
         clearActionHistory();

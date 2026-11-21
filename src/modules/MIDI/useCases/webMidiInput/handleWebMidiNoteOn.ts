@@ -1,8 +1,16 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
-import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
+import {
+    applyNoteExpression,
+    audioEngine,
+    findMidiTransformDevice,
+    isBypassedNoteReceiver,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
+    resolveLiveNoteControls,
+    startFaustNote,
+} from '#/modules/AudioEngine/useCases';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { type AdmittedChannelWheels } from '../../repositories/webMidi/captureAdmittedWheels';
@@ -184,7 +192,8 @@ export const handleWebMidiNoteOn = inject({
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
-            const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
+            const yeastDevice =
+                instrumentTrack === undefined ? undefined : findMidiTransformDevice(instrumentTrack.devices);
             if (instrumentTrack && yeastDevice) {
                 noteData.yeastDeviceId = yeastDevice.id;
                 const sampleTime = dispatchFrame;
@@ -405,11 +414,20 @@ export const handleWebMidiNoteOn = inject({
             // Each branch below addresses the receiver's node, or the first node of
             // its kind when the receiver's own is not built, and records the node it
             // played: the key-up and panic release by that id alone.
-            if (receivingDevice?.type === 'fermenter') {
+            const liveNoteControls = receivingDevice ? resolveLiveNoteControls(receivingDevice.type) : null;
+            if (receivingDevice && liveNoteControls?.controlsKey === 'fermenterControls') {
                 const fermenterDevice = receivingDevice;
-                const deviceNode = resolveDeviceNode(strip, { deviceId: fermenterDevice.id, type: 'fermenter' });
+                const deviceNode = resolveDeviceNode(strip, {
+                    deviceId: fermenterDevice.id,
+                    type: fermenterDevice.type,
+                });
                 if (deviceNode?.fermenterControls?.ready) {
-                    deviceNode.fermenterControls.noteOn(note, velocity, dispatchFrame, channel);
+                    deviceNode.fermenterControls.noteOn(
+                        note,
+                        liveNoteControls.scaleVelocity(velocity),
+                        dispatchFrame,
+                        channel
+                    );
                     postStartBend();
                     noteData.fermenterDeviceId = deviceNode.deviceId;
                 }
@@ -438,14 +456,17 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            if (receivingDevice?.type === 'grand-boule') {
+            if (receivingDevice && liveNoteControls?.controlsKey === 'grandBouleControls') {
                 const grandBouleDevice = receivingDevice;
-                const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
+                const deviceNode = resolveDeviceNode(strip, {
+                    deviceId: grandBouleDevice.id,
+                    type: grandBouleDevice.type,
+                });
                 if (deviceNode?.grandBouleControls?.ready) {
                     const playedDeviceId = deviceNode.deviceId;
                     const finalVelocity =
                         velocityCalibration.read('handleWebMidiNoteOn').calibratedVelocity(playedDeviceId, velocity) ??
-                        velocity / 127;
+                        liveNoteControls.scaleVelocity(velocity);
                     deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
                     postStartBend();
                     noteData.grandBouleDeviceId = playedDeviceId;
@@ -458,22 +479,32 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            if (receivingDevice?.type === 'levain') {
+            if (receivingDevice && liveNoteControls?.controlsKey === 'levainControls') {
                 const levainDevice = receivingDevice;
-                const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
+                const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: levainDevice.type });
                 if (deviceNode?.levainControls?.ready) {
-                    deviceNode.levainControls.noteOn(note, velocity, dispatchFrame, channel);
+                    deviceNode.levainControls.noteOn(
+                        note,
+                        liveNoteControls.scaleVelocity(velocity),
+                        dispatchFrame,
+                        channel
+                    );
                     postStartBend();
                     noteData.levainDeviceId = deviceNode.deviceId;
                 }
                 return;
             }
 
-            if (receivingDevice?.type === 'builtin-crumbs') {
+            if (receivingDevice && liveNoteControls?.controlsKey === 'crumbsControls') {
                 const crumbsDevice = receivingDevice;
-                const deviceNode = resolveDeviceNode(strip, { deviceId: crumbsDevice.id, type: 'builtin-crumbs' });
+                const deviceNode = resolveDeviceNode(strip, { deviceId: crumbsDevice.id, type: crumbsDevice.type });
                 if (deviceNode?.crumbsControls?.ready) {
-                    deviceNode.crumbsControls.noteOn(note, velocity, dispatchFrame, channel);
+                    deviceNode.crumbsControls.noteOn(
+                        note,
+                        liveNoteControls.scaleVelocity(velocity),
+                        dispatchFrame,
+                        channel
+                    );
                     noteData.crumbsDeviceId = deviceNode.deviceId;
                 }
                 return;

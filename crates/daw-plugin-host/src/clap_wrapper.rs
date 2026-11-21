@@ -18,6 +18,15 @@
 /// clamp `num_samples` to `MAX_BUFFER`, so a larger callback would be
 /// silently truncated to this many frames per block.
 pub const MAX_BUFFER: usize = 4096;
+
+/// The fewest frames this host promises a `process` call will carry, stated
+/// to `activate` as `min_frames_count`.
+///
+/// One, the floor CLAP bounds the range by, because it is the only promise the
+/// engine keeps: a callback is split at a loop seam into spans as short as the
+/// distance to the loop end, and a device may run at any period. Promising more
+/// lets a plugin size scratch or assert from a bound the host then breaks.
+pub const MIN_PROCESS_FRAMES: u32 = 1;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
@@ -42,6 +51,8 @@ const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
+#[cfg(unix)]
+use crate::editor_run_loop::{register_editor_run_loop, EditorRunLoopRegistration};
 use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
@@ -50,9 +61,10 @@ use crate::scanner::{
     category_from_clap_features, clap_library_path, owned_feature_list, ScanError,
 };
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginError,
-    PluginHostRequestNotifier, ProcessMode, ProcessingGate, MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, AudioPlugin, EditorClosed, EditorVisibility, EditorWindowAsks,
+    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
+    MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -72,7 +84,8 @@ use clap_sys::ext::gui::CLAP_WINDOW_API_WIN32;
 #[cfg(target_os = "linux")]
 use clap_sys::ext::gui::CLAP_WINDOW_API_X11;
 use clap_sys::ext::gui::{
-    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
+    clap_gui_resize_hints, clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI,
+    CLAP_WINDOW_API_COCOA,
 };
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::note_ports::{
@@ -141,6 +154,17 @@ pub struct ClapWrapper {
     /// from inside the plugin after the open has returned. Dropped on close: a
     /// window that has gone away is not one to resize.
     editor_resizer: Option<EditorWindowResizer>,
+    /// The window this plugin's editor is drawn into, for answering what the
+    /// plugin asks of it. Installed and released with the resizer.
+    editor_window: Option<SharedEditorWindow>,
+    /// This instance's place in the shared editor pump, which services the
+    /// timers and descriptors it registered through `clap.timer-support` and
+    /// `clap.posix-fd-support`. Taken only once construction has succeeded, so a
+    /// failed load leaves nothing behind in the pump, and given up first in
+    /// `Drop`, so no pass can call into the instance while it is torn down.
+    /// The shell pumps only on Linux, and only while an editor is open.
+    #[cfg(unix)]
+    run_loop_registration: Option<EditorRunLoopRegistration>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -259,6 +283,21 @@ struct EngineOwnedCommandFixture {
     /// is a contract for the same reason teardown is, and the only way to prove
     /// it is to be told what the installing thread was holding at the time.
     notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run at the top of `set_parameter`, `get_parameters`, `get_state`,
+    /// `set_state`, `open_gui` and `close_gui`, standing in for the vendor code
+    /// each of them reaches.
+    ///
+    /// Third-party code of unbounded duration again, so a host's lock
+    /// discipline around these calls is a contract: an observer that blocks is
+    /// how a test holds a call inside the plugin and reads what that holds up.
+    vendor_call_observer: Option<Box<dyn Fn() + Send + Sync>>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+fn observe_vendor_call(fixture: &EngineOwnedCommandFixture) {
+    if let Some(observe) = fixture.vendor_call_observer.as_ref() {
+        observe();
+    }
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -1304,6 +1343,13 @@ impl ClapWrapper {
 
         eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
 
+        // Last, so every failure exit above leaves nothing in the pump.
+        // SAFETY: `plugin` is the live instance initialised above, on the loading
+        // (main) thread, and the wrapper built below gives the registration up
+        // before it destroys the instance.
+        #[cfg(unix)]
+        let run_loop_registration = Some(unsafe { join_editor_pump(&host_state, plugin) });
+
         Ok(Self {
             _library: None,
             entry: entry_ptr,
@@ -1320,6 +1366,9 @@ impl ClapWrapper {
             host_state,
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1368,6 +1417,9 @@ impl ClapWrapper {
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1393,6 +1445,7 @@ impl ClapWrapper {
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
                 teardown_observer: None,
                 notifier_install_observer: None,
+                vendor_call_observer: None,
             }),
         }
     }
@@ -1517,6 +1570,25 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.notifier_install_observer = Some(observe);
+        }
+    }
+
+    /// Be told — and held up, if the observer blocks — every time this
+    /// fixture's `set_parameter`, `get_parameters`, `get_state`, `set_state`,
+    /// `open_gui` or `close_gui` runs.
+    ///
+    /// Each of those is a vendor call of unbounded duration in a real plugin,
+    /// and a fixture has no plugin to be slow; an observer that waits on a
+    /// channel is how a downstream host test keeps one inside the plugin while
+    /// it checks what else still runs.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_vendor_calls(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.vendor_call_observer = Some(observe);
         }
     }
 
@@ -1907,6 +1979,7 @@ impl ClapWrapper {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
+            observe_vendor_call(fixture);
             if !fixture.has_gui {
                 return Err(ClapError::GuiUnsupported);
             }
@@ -1914,6 +1987,7 @@ impl ClapWrapper {
                 return Err(ClapError::GuiAlreadyOpen);
             }
 
+            self.host_state.discard_editor_window_asks();
             self.gui_open = true;
             return Ok((800, 600));
         }
@@ -1925,6 +1999,9 @@ impl ClapWrapper {
         if self.gui_open {
             return Err(ClapError::GuiAlreadyOpen);
         }
+
+        // Anything a previous editor asked of its window is about that window.
+        self.host_state.discard_editor_window_asks();
 
         // SAFETY: non-null (checked above); `gui_ext` is the plugin's own extension
         // struct from load, valid while the instance `self` owns is alive.
@@ -2046,7 +2123,145 @@ impl ClapWrapper {
     /// stops existing.
     fn release_editor_window_resizer(&mut self) {
         self.editor_resizer = None;
+        self.editor_window = None;
         self.host_state.set_editor_resize_available(false);
+    }
+
+    /// Install the window this editor is drawn into, so what the plugin asks
+    /// of it — to be shown, hidden, or closed, or to have its resizability
+    /// re-read — has somewhere to go. Released with the resizer.
+    pub fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        self.editor_window = Some(window);
+    }
+
+    /// The window the pending asks go to, leaving them recorded. Control path
+    /// only; no plugin call.
+    pub fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        if !self.host_state.has_pending_editor_window_asks() {
+            return None;
+        }
+        self.editor_window.clone()
+    }
+
+    /// Take what the plugin asked of its editor window, with the window to
+    /// answer it through. Control path only; no plugin call.
+    ///
+    /// Nothing is taken while no window is installed: the asks wait for the
+    /// next open, which discards them as belonging to a window that is gone.
+    pub fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        let window = self.editor_window.clone()?;
+        let asks = self.host_state.take_editor_window_asks();
+        if asks.is_empty() {
+            return None;
+        }
+        Some((asks, window))
+    }
+
+    /// Carry out what the plugin asked of its editor window. **On the thread
+    /// that owns the window** — every answer calls into the editor.
+    ///
+    /// A closed editor is answered alone: the other asks were about a view
+    /// that no longer exists.
+    pub fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        if let Some(closed) = asks.closed {
+            self.acknowledge_editor_closed(closed);
+            return;
+        }
+        if let Some(visibility) = asks.visibility {
+            self.apply_editor_visibility(visibility);
+        }
+        if asks.resize_hints_changed {
+            let resizable = self.editor_can_resize();
+            if let Some(window) = self.editor_window.as_ref() {
+                window.set_resizable(resizable);
+            }
+        }
+    }
+
+    /// End the editor session the plugin ended. **Window thread only.**
+    ///
+    /// gui.h: with `was_destroyed` the host must call `destroy` to acknowledge,
+    /// and the view is already gone, so it is not hidden first. The window is
+    /// destroyed last, once the editor has left it; the shell's close path then
+    /// drops the editor record and tells the renderer the editor closed, as it
+    /// does for a window the user closed.
+    fn acknowledge_editor_closed(&mut self, closed: EditorClosed) {
+        let window = self.editor_window.clone();
+
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            self.gui_open = false;
+            self.release_editor_window_resizer();
+            if let Some(window) = window {
+                window.destroy();
+            }
+            return;
+        }
+
+        if self.gui_open && !self.gui_ext.is_null() && !self.plugin.is_null() {
+            // SAFETY: non-null (checked above); `gui_ext` is the plugin's own extension
+            // struct from load, valid while the instance `self` owns is alive.
+            let gui = unsafe { &*self.gui_ext };
+            if !closed.was_destroyed {
+                if let Some(hide) = gui.hide {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor the plugin reports closed but not destroyed.
+                    unsafe { hide(self.plugin) };
+                }
+            }
+            if let Some(destroy) = gui.destroy {
+                // SAFETY: the extension's callback, matched as `Some`, acknowledging the
+                // editor the plugin reported closed; `gui_open` is cleared below so no
+                // later close destroys it again.
+                unsafe { destroy(self.plugin) };
+            }
+        }
+
+        self.gui_open = false;
+        self.release_editor_window_resizer();
+        if let Some(window) = window {
+            window.destroy();
+        }
+    }
+
+    /// Show or hide the editor and its window together. **Window thread only.**
+    fn apply_editor_visibility(&mut self, visibility: EditorVisibility) {
+        let Some(window) = self.editor_window.clone() else {
+            return;
+        };
+
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            match visibility {
+                EditorVisibility::Show => window.show(),
+                EditorVisibility::Hide => window.hide(),
+            }
+            return;
+        }
+
+        // SAFETY: window thread, which is `open_gui_extension`'s contract; the
+        // extension outlives this borrow of `self`.
+        let gui = unsafe { self.open_gui_extension() };
+        match visibility {
+            EditorVisibility::Show => {
+                if let Some(show) = gui.and_then(|gui| gui.show) {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor is open (`open_gui_extension` returned it).
+                    unsafe { show(self.plugin) };
+                }
+                window.show();
+            }
+            EditorVisibility::Hide => {
+                if let Some(hide) = gui.and_then(|gui| gui.hide) {
+                    // SAFETY: the extension's callback, matched as `Some`, on the live
+                    // instance whose editor is open (`open_gui_extension` returned it).
+                    unsafe { hide(self.plugin) };
+                }
+                window.hide();
+            }
+        }
     }
 
     /// Resize the window this editor is drawn into, where the host gave one.
@@ -2094,12 +2309,38 @@ impl ClapWrapper {
         let Some(gui) = (unsafe { self.open_gui_extension() }) else {
             return false;
         };
-        match gui.can_resize {
-            // SAFETY: the extension's callback, matched as `Some`, on the live instance
-            // whose editor is open (`open_gui_extension` returned `Some`).
-            Some(can_resize) => unsafe { can_resize(self.plugin) },
-            None => false,
+        let Some(can_resize) = gui.can_resize else {
+            return false;
+        };
+        // SAFETY: the extension's callback, matched as `Some`, on the live instance
+        // whose editor is open (`open_gui_extension` returned `Some`).
+        if !unsafe { can_resize(self.plugin) } {
+            return false;
         }
+        self.resize_hints_allow_some_axis(gui)
+    }
+
+    /// Whether the plugin's resize hints leave the user an axis to drag along.
+    ///
+    /// A plugin with no hints has stated no constraint, so `can_resize` stands.
+    /// One that refuses both axes is not resizable whatever `can_resize` said.
+    fn resize_hints_allow_some_axis(&self, gui: &clap_plugin_gui) -> bool {
+        let Some(get_resize_hints) = gui.get_resize_hints else {
+            return true;
+        };
+        let mut hints = clap_gui_resize_hints {
+            can_resize_horizontally: true,
+            can_resize_vertically: true,
+            preserve_aspect_ratio: false,
+            aspect_ratio_width: 0,
+            aspect_ratio_height: 0,
+        };
+        // SAFETY: the extension's callback, matched as `Some`, on the live instance
+        // whose editor is open, with one live out-parameter.
+        if !unsafe { get_resize_hints(self.plugin, &mut hints) } {
+            return true;
+        }
+        hints.can_resize_horizontally || hints.can_resize_vertically
     }
 
     /// Resize the editor because the host's window was resized, reporting the
@@ -2320,6 +2561,7 @@ impl ClapWrapper {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
             record_gui_lifecycle_thread(fixture);
+            observe_vendor_call(fixture);
             self.gui_open = false;
             return;
         }
@@ -2996,6 +3238,25 @@ unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
     }
 }
 
+/// Hand an instance's run loop the plugin it delivers to, then put it in the
+/// shared editor pump. Timers and descriptors the plugin registered during
+/// `init` are already in the run loop, and fire from the next pass.
+///
+/// # Safety
+/// `plugin` must be the live, initialised instance whose `host_data` is
+/// `host_state`, called on its main thread, and the returned registration must
+/// be dropped before the instance is destroyed.
+#[cfg(unix)]
+unsafe fn join_editor_pump(
+    host_state: &HostCallbackState,
+    plugin: *const clap_plugin,
+) -> EditorRunLoopRegistration {
+    // SAFETY: the live, initialised instance on its main thread, outliving the
+    // registration returned below (this fn's contract).
+    unsafe { host_state.run_loop().attach(plugin) };
+    register_editor_run_loop(Arc::clone(host_state.run_loop()))
+}
+
 /// Destroy an instance a load is abandoning before the wrapper takes ownership
 /// of it, so the entry's later `deinit` never runs with a live instance.
 ///
@@ -3030,7 +3291,9 @@ unsafe fn activate_plugin(plugin: *const clap_plugin, sample_rate: f64) -> bool 
         // SAFETY: the instance's own `activate`, matched as `Some`, on a live instance
         // not yet activated (this fn's contract); `MAX_BUFFER` is the block ceiling
         // `process_audio_internal` clamps every block to.
-        Some(activate) => unsafe { activate(plugin, sample_rate, 32, MAX_BUFFER as u32) },
+        Some(activate) => unsafe {
+            activate(plugin, sample_rate, MIN_PROCESS_FRAMES, MAX_BUFFER as u32)
+        },
         None => false,
     }
 }
@@ -3284,7 +3547,14 @@ impl ClapWrapper {
             // SAFETY: the instance's own callback, matched as `Some`, on an instance
             // deactivated above (or never active); `MAX_BUFFER` is the block ceiling
             // `process_audio_internal` clamps to.
-            if !unsafe { activate_fn(self.plugin, self.sample_rate, 32, MAX_BUFFER as u32) } {
+            if !unsafe {
+                activate_fn(
+                    self.plugin,
+                    self.sample_rate,
+                    MIN_PROCESS_FRAMES,
+                    MAX_BUFFER as u32,
+                )
+            } {
                 return Err(ClapError::LatencyReactivationFailed {
                     name: self.name.clone(),
                 });
@@ -3398,6 +3668,12 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn set_parameter(&mut self, param_id: u32, value: f64) {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
+            return;
+        }
+
         if self.params_ext.is_null() || self.plugin.is_null() {
             return;
         }
@@ -3451,6 +3727,7 @@ impl AudioPlugin for ClapWrapper {
     fn get_parameters(&self) -> Vec<PluginParameter> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
             return fixture.parameters.clone();
         }
 
@@ -3534,6 +3811,7 @@ impl AudioPlugin for ClapWrapper {
     fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
             return Ok(fixture.state.clone());
         }
 
@@ -3568,6 +3846,7 @@ impl AudioPlugin for ClapWrapper {
     fn set_state(&mut self, state_data: &[u8]) -> Result<(), PluginError> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_mut() {
+            observe_vendor_call(fixture);
             fixture.state = state_data.to_vec();
             return Ok(());
         }
@@ -3631,6 +3910,22 @@ impl AudioPlugin for ClapWrapper {
 
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         ClapWrapper::apply_pending_editor_resize(self)
+    }
+
+    fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        ClapWrapper::set_editor_window(self, window)
+    }
+
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        ClapWrapper::editor_window_with_pending_asks(self)
+    }
+
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        ClapWrapper::take_editor_window_asks(self)
+    }
+
+    fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        ClapWrapper::answer_editor_window_asks(self, asks)
     }
 
     fn take_state_dirty(&mut self) -> bool {
@@ -3800,6 +4095,13 @@ impl Drop for ClapWrapper {
         {
             observe();
         }
+
+        // Out of the editor pump before any teardown, and waiting out a pass
+        // already inside this instance: a pass calls `on_timer` and `on_fd`,
+        // which must not overlap `destroy`. The run loop itself lives on in
+        // `host_state` until the fields drop, after `destroy`.
+        #[cfg(unix)]
+        drop(self.run_loop_registration.take());
 
         // Close GUI if it's still open
         if self.gui_open {
@@ -4231,6 +4533,9 @@ mod tests {
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
+            editor_window: None,
+            #[cfg(unix)]
+            run_loop_registration: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -5207,6 +5512,257 @@ mod tests {
 
         assert!(wrapper.is_activated());
         assert_eq!(entry_lifecycle(), ["plugin_init", "plugin_activate"]);
+    }
+
+    // ── Construction exits and the editor pump (#6736) ──────────────────
+    //
+    // Every way a load can fail once an instance exists, and the success path
+    // for contrast. Each row's fake records its lifecycle calls and the thread
+    // `destroy` ran on, and keeps a weak handle on the instance's run loop:
+    // once the load has returned an error, nothing — the pump least of all —
+    // may still hold it.
+
+    #[cfg(unix)]
+    mod construction_exits {
+        use super::*;
+        use crate::clap_run_loop::ClapRunLoop;
+        use crate::editor_run_loop::{is_pumped, ServicedRunLoop};
+        use std::sync::{Mutex, Weak};
+        use std::thread::ThreadId;
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Exit {
+            Loads,
+            InitFails,
+            PortsUnreadable,
+            RequiresRealtime,
+            RefusesOffline,
+        }
+
+        static EXIT: Mutex<Exit> = Mutex::new(Exit::Loads);
+        static RUN_LOOP: Mutex<Option<Weak<ClapRunLoop>>> = Mutex::new(None);
+        static DESTROYED_ON: Mutex<Option<ThreadId>> = Mutex::new(None);
+        /// Whether the instance was still in the editor pump when `destroy` ran.
+        static PUMPED_AT_DESTROY: Mutex<Option<bool>> = Mutex::new(None);
+
+        fn exit() -> Exit {
+            *EXIT.lock().unwrap()
+        }
+
+        /// Keep a weak handle on the run loop of the instance being initialised,
+        /// reached the way a plugin reaches its host: through `host_data`.
+        unsafe extern "C" fn observing_init(plugin: *const clap_plugin) -> bool {
+            record_lifecycle_call("plugin_init");
+            // SAFETY: `plugin` is the fake `observing_create_plugin` built, whose
+            // `plugin_data` is the live host the factory was handed.
+            let host = unsafe { (*plugin).plugin_data } as *const clap_host;
+            // SAFETY: the host the wrapper built, whose `host_data` is its pinned state.
+            let state = unsafe { (*host).host_data } as *const HostCallbackState;
+            // SAFETY: as above; the state outlives the instance.
+            let run_loop = unsafe { &*state }.run_loop();
+            run_loop.register_timer(10);
+            *RUN_LOOP.lock().unwrap() = Some(Arc::downgrade(run_loop));
+            exit() != Exit::InitFails
+        }
+
+        unsafe extern "C" fn observing_destroy(plugin: *const clap_plugin) {
+            *DESTROYED_ON.lock().unwrap() = Some(std::thread::current().id());
+            let pumped = observed_run_loop().is_some_and(|run_loop| {
+                let run_loop: Arc<dyn ServicedRunLoop> = run_loop;
+                is_pumped(&run_loop)
+            });
+            *PUMPED_AT_DESTROY.lock().unwrap() = Some(pumped);
+            // SAFETY: the instance the host is destroying, from `Box::into_raw`.
+            unsafe { recording_plugin_destroy(plugin) };
+        }
+
+        unsafe extern "C" fn hard_realtime(_plugin: *const clap_plugin) -> bool {
+            true
+        }
+
+        static HARD_REALTIME_RENDER: clap_plugin_render = clap_plugin_render {
+            has_hard_realtime_requirement: Some(hard_realtime),
+            set: Some(render_set_accepting),
+        };
+
+        unsafe extern "C" fn observing_get_extension(
+            _plugin: *const clap_plugin,
+            id: *const i8,
+        ) -> *const c_void {
+            // SAFETY: the host passes a NUL-terminated extension id.
+            let id = unsafe { CStr::from_ptr(id) };
+            match exit() {
+                Exit::PortsUnreadable if id == CLAP_EXT_AUDIO_PORTS => {
+                    &raw const UNREADABLE_AUDIO_PORTS as *const c_void
+                }
+                Exit::RequiresRealtime if id == CLAP_EXT_RENDER => {
+                    &raw const HARD_REALTIME_RENDER as *const c_void
+                }
+                Exit::RefusesOffline if id == CLAP_EXT_RENDER => {
+                    &raw const REFUSING_RENDER as *const c_void
+                }
+                _ => ptr::null(),
+            }
+        }
+
+        unsafe extern "C" fn observing_create_plugin(
+            _factory: *const clap_plugin_factory,
+            host: *const clap_host,
+            _plugin_id: *const i8,
+        ) -> *const clap_plugin {
+            Box::into_raw(Box::new(clap_plugin {
+                desc: ptr::null(),
+                plugin_data: host.cast_mut().cast(),
+                init: Some(observing_init),
+                destroy: Some(observing_destroy),
+                activate: Some(recording_plugin_activate),
+                deactivate: Some(recording_plugin_deactivate),
+                start_processing: None,
+                stop_processing: None,
+                reset: None,
+                process: None,
+                get_extension: Some(observing_get_extension),
+                on_main_thread: None,
+            }))
+        }
+
+        static OBSERVING_FACTORY: clap_plugin_factory = clap_plugin_factory {
+            get_plugin_count: None,
+            get_plugin_descriptor: None,
+            create_plugin: Some(observing_create_plugin),
+        };
+
+        unsafe extern "C" fn observing_get_factory(_factory_id: *const i8) -> *const c_void {
+            &raw const OBSERVING_FACTORY as *const c_void
+        }
+
+        static OBSERVING_ENTRY: clap_plugin_entry = clap_plugin_entry {
+            clap_version: CLAP_VERSION,
+            init: None,
+            deinit: Some(recording_entry_deinit),
+            get_factory: Some(observing_get_factory),
+        };
+
+        fn load(row: Exit, mode: ProcessMode) -> Result<ClapWrapper, ClapError> {
+            *EXIT.lock().unwrap() = row;
+            *RUN_LOOP.lock().unwrap() = None;
+            *DESTROYED_ON.lock().unwrap() = None;
+            *PUMPED_AT_DESTROY.lock().unwrap() = None;
+            clear_entry_lifecycle();
+            // SAFETY: a static fake entry with no `init` to have run, live for the process.
+            unsafe {
+                ClapWrapper::load_initialized_entry(
+                    &raw const OBSERVING_ENTRY,
+                    LIFECYCLE_PLUGIN_ID,
+                    48_000.0,
+                    mode,
+                )
+            }
+        }
+
+        fn observed_run_loop() -> Option<Arc<ClapRunLoop>> {
+            RUN_LOOP.lock().unwrap().as_ref().and_then(Weak::upgrade)
+        }
+
+        #[test]
+        fn every_failure_exit_destroys_before_deinit_on_the_loading_thread_and_leaves_no_pump_entry(
+        ) {
+            let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+            let rows: [(Exit, ProcessMode, &[&str]); 4] = [
+                (
+                    Exit::InitFails,
+                    ProcessMode::Realtime,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::PortsUnreadable,
+                    ProcessMode::Realtime,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::RequiresRealtime,
+                    ProcessMode::Offline,
+                    &["plugin_init", "plugin_destroy", "entry_deinit"],
+                ),
+                (
+                    Exit::RefusesOffline,
+                    ProcessMode::Offline,
+                    &[
+                        "plugin_init",
+                        "render_set_refused",
+                        "plugin_destroy",
+                        "entry_deinit",
+                    ],
+                ),
+            ];
+
+            for (row, mode, lifecycle) in rows {
+                let error = load(row, mode).err();
+                let error = error.unwrap_or_else(|| panic!("{row:?} must not load"));
+                let expected_error = match row {
+                    Exit::InitFails => matches!(error, ClapError::PluginInitFailed),
+                    Exit::PortsUnreadable => matches!(error, ClapError::AudioPortNoInfo { .. }),
+                    Exit::RequiresRealtime => matches!(error, ClapError::RequiresRealtime { .. }),
+                    Exit::RefusesOffline => matches!(error, ClapError::OfflineRefused { .. }),
+                    Exit::Loads => false,
+                };
+                assert!(expected_error, "{row:?} failed as {error}");
+                assert_eq!(entry_lifecycle(), lifecycle, "{row:?}");
+                assert_eq!(
+                    *DESTROYED_ON.lock().unwrap(),
+                    Some(std::thread::current().id()),
+                    "{row:?} destroys on the thread that loaded it"
+                );
+                assert_eq!(
+                    *PUMPED_AT_DESTROY.lock().unwrap(),
+                    Some(false),
+                    "{row:?} never joined the pump"
+                );
+                assert!(
+                    RUN_LOOP.lock().unwrap().is_some(),
+                    "{row:?} reached init, so it had a run loop to leave behind"
+                );
+                assert!(
+                    observed_run_loop().is_none(),
+                    "{row:?} left its run loop alive — the pump still holds it"
+                );
+            }
+        }
+
+        #[test]
+        fn a_loaded_instance_is_pumped_until_its_drop_and_then_released() {
+            let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+            let wrapper = load(Exit::Loads, ProcessMode::Realtime).expect("the fake loads");
+
+            let run_loop: Arc<dyn ServicedRunLoop> =
+                observed_run_loop().expect("a live instance keeps its run loop");
+            assert!(
+                is_pumped(&run_loop),
+                "a constructed instance joins the pump"
+            );
+            drop(run_loop);
+
+            drop(wrapper);
+            assert_eq!(
+                *PUMPED_AT_DESTROY.lock().unwrap(),
+                Some(false),
+                "the instance leaves the pump before it is destroyed"
+            );
+            assert_eq!(
+                entry_lifecycle(),
+                [
+                    "plugin_init",
+                    "plugin_activate",
+                    "plugin_deactivate",
+                    "plugin_destroy",
+                    "entry_deinit",
+                ]
+            );
+            assert!(
+                observed_run_loop().is_none(),
+                "a dropped instance leaves the pump"
+            );
+        }
     }
 
     // ── Plugin-initiated host requests: editor resize + state dirty ─────

@@ -51,6 +51,7 @@ export async function createEdmTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'NY Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -30,
                     'comp-ratio': 10,
                     'comp-attack': 1,
@@ -135,6 +136,7 @@ export async function createEdmTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Compressor',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 4,
                     'comp-attack': 10,

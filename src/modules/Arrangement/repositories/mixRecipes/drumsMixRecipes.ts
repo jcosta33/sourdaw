@@ -6,6 +6,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-warm',
         descriptor: 'warm',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'drums'],
         title: 'Shell weight lifted, cymbal shelf eased',
         steps: [
             {
@@ -36,6 +37,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-bright',
         descriptor: 'bright',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Stick attack and cymbal shelf raised together',
         steps: [
             {
@@ -65,12 +67,14 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-tight',
         descriptor: 'tight',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'percussion', 'drums'],
         title: 'Short-release compression over a trimmed low shoulder',
         steps: [
             {
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
                     { paramId: 'comp-ratio', minimum: 4, maximum: 6 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 15 },
@@ -98,12 +102,14 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-punchy',
         descriptor: 'punchy',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'percussion', 'drums'],
         title: 'Transient passes, body compresses',
         steps: [
             {
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -127,6 +133,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-wide',
         descriptor: 'wide',
         roles: ['drums'],
+        drumParts: ['hi-hat', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Overhead spread with the kick held centre',
         steps: [
             {
@@ -154,6 +161,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-intimate',
         descriptor: 'intimate',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Small-room ambience with the top rolled off',
         steps: [
             {
@@ -183,6 +191,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-dark',
         descriptor: 'dark',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Cymbal shelf and attack region pulled down',
         steps: [
             {
@@ -212,6 +221,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-airy',
         descriptor: 'airy',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Air shelf above the cymbal body',
         steps: [
             {
@@ -242,6 +252,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-muddy',
         descriptor: 'muddy',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'overhead', 'room', 'drums'],
         title: 'Clear the boxy region between the shells',
         steps: [
             {
@@ -266,6 +277,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-thin',
         descriptor: 'thin',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'drums'],
         title: 'Rebuild kick weight and snare body',
         steps: [
             {
@@ -295,12 +307,14 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-glued',
         descriptor: 'glued',
         roles: ['drums'],
+        drumParts: ['overhead', 'room', 'drums'],
         title: 'Soft-knee bus compression across the kit',
         steps: [
             {
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -326,6 +340,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-lo-fi',
         descriptor: 'lo-fi',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Sample-rate reduction into a band limit',
         steps: [
             {
@@ -362,6 +377,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-vintage',
         descriptor: 'vintage',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'percussion', 'overhead', 'room', 'drums'],
         title: 'Saturated body with reduced bandwidth',
         steps: [
             {
@@ -400,6 +416,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-controlled-gate',
         descriptor: 'controlled',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'percussion', 'drums'],
         title: 'Reduce close-drum bleed between distinct strikes',
         steps: [
             {
@@ -428,6 +445,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-tight-transient',
         descriptor: 'tight',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'percussion', 'drums'],
         title: 'Shorter drum tails with the strike unchanged',
         steps: [
             {
@@ -450,6 +468,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         id: 'drums-punchy-transient',
         descriptor: 'punchy',
         roles: ['drums'],
+        drumParts: ['kick', 'snare', 'tom', 'percussion', 'drums'],
         title: 'Stronger drum strikes with the tail unchanged',
         steps: [
             {

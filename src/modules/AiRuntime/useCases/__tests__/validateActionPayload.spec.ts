@@ -127,6 +127,57 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'hideTrack',
+        validPayload: { trackId: 'track-1', hidden: true },
+        invalidPayloads: [
+            { trackId: '', hidden: true },
+            { trackId: 'track-1', hidden: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', hidden: true, expectedHidden: true },
+            { trackId: 'track-1', hidden: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'foldTrack',
+        validPayload: { trackId: 'track-1', folded: false },
+        invalidPayloads: [
+            { trackId: '', folded: true },
+            { trackId: 'track-1', folded: 1 },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', folded: true, expectedFolded: true },
+            { trackId: 'track-1', folded: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackHeight',
+        validPayload: { trackId: 'track-1', height: 120 },
+        invalidPayloads: [
+            { trackId: '', height: 120 },
+            { trackId: 'track-1', height: 29 },
+            { trackId: 'track-1', height: 301 },
+            { trackId: 'track-1', height: Number.NaN },
+            { trackId: 'track-1', height: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', height: '120' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', height: 120, expectedHeight: 120 },
+            { trackId: 'track-1', height: 120, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'zoomTracksVertical',
+        validPayload: { delta: -40 },
+        invalidPayloads: [
+            { delta: 0 },
+            { delta: 271 },
+            { delta: -271 },
+            { delta: Number.NaN },
+            { delta: Number.POSITIVE_INFINITY },
+            { delta: '40' },
+            {},
+            { delta: 40, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setTrackOutput',
         validPayload: { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: 'master' },
         invalidPayloads: [
@@ -289,7 +340,13 @@ const guardedPayloadContractCases = [
     guardedPayloadCase({
         actionType: 'removeDevice',
         validPayload: { deviceId: 'device-1' },
-        invalidPayloads: [{ deviceId: '' }, {}, { deviceId: 1 }, { deviceId: 'device-1', trackId: 'track-1' }],
+        invalidPayloads: [
+            { deviceId: '' },
+            {},
+            { deviceId: 1 },
+            { deviceId: 'device-1', trackId: 'track-1' },
+            { deviceId: 'device-1', expectedFrozen: false },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'createBus',
@@ -971,6 +1028,17 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it('admits a track height and a zoom delta at the edges of their ranges', () => {
+        const height = PAYLOAD_VALIDATORS.setTrackHeight;
+        const zoom = PAYLOAD_VALIDATORS.zoomTracksVertical;
+        if (height === 'unchecked' || zoom === 'unchecked') {
+            throw new Error('Expected real payload guards for the display edits');
+        }
+
+        expect([30, 300].map((value) => height({ trackId: 'track-1', height: value }))).toEqual([true, true]);
+        expect([270, -270, 1, -1].map((delta) => zoom({ delta }))).toEqual([true, true, true, true]);
     });
 
     it('admits only complete valid loop restore triples', () => {

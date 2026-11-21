@@ -109,9 +109,9 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
     try {
         current = compileAgentRiskApproval({
             commandBatch: input.commandBatch,
-            // An approval stored before the input was recorded keeps the inference it was validated by.
-            requireExplicitApproval:
-                input.approval.explicitApprovalRequired ?? input.approval.policy.decision === 'confirm',
+            // The compilation's own input: the decision alone cannot say it, since metric admission
+            // escalates an allow batch to confirm without any explicit request.
+            requireExplicitApproval: input.approval.explicitApprovalRequired,
             metricGoalState: serializedGoals,
         });
     } catch (error) {

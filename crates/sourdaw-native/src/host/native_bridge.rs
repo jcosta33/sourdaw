@@ -21,11 +21,11 @@ use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, Tr
 use daw_engine::{CaptureFirstInput, CapturePeriodObservation};
 use daw_plugin_host::{
     signal_pending_process_refusal, HostMidiEvent, HostParameterUpdate, HostTransport,
-    HostedPluginRuntime, HostedRuntime, PluginParameter, ProcessingGate,
+    HostedPluginRuntime, HostedRuntime, PluginError, PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{fence, AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -89,6 +89,30 @@ const PENDING_PARAMETER_READY: u8 = 2;
 const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
 const PLUGIN_LIFECYCLE_UNLOADING: u8 = 1;
 const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
+/// How long a control call waits for another control call on the same
+/// instance to let go of its control gate before treating the instance as
+/// unresponsive.
+///
+/// The holder is third-party code of unbounded duration, so no figure separates
+/// a slow call from a hung one; this one is chosen to sit well clear of every
+/// bound the host already puts on a control call's own waits. A control call
+/// spends at most 2 s on the RT seam (every production `with_control` timeout)
+/// and 2 s on the editor's UI-thread hop (`EDITOR_UI_THREAD_DEADLINE`), and the
+/// host gives a whole plugin instantiation plus its full capability query 10 s
+/// in the scan worker (`WORKER_TIMEOUT`) and one shell window round trip 10 s
+/// (`WINDOW_HOST_DEADLINE`). A gate held longer than the longest of those makes
+/// the instance unresponsive until the holder lets go — a slow call recovers,
+/// a hung one never does. TypeScript's rebuild fence waits longer than this
+/// (`LIFECYCLE_SETTLEMENT_DEADLINE_MS`), so a call queued natively behind a
+/// hung one answers before the fence gives up on it.
+const CONTROL_GATE_DEADLINE: Duration = Duration::from_secs(10);
+/// The gate wait's poll interval, the same cadence as the RT-seam wait.
+const CONTROL_GATE_POLL: Duration = Duration::from_millis(2);
+/// The start of every refusal from an instance found unresponsive
+/// ([`PluginControlRefusal::Unresponsive`]). A wire contract: TypeScript
+/// classifies the failure by this text
+/// (`src/modules/PluginHost/useCases/pluginLifecycle/isPluginUnresponsiveFailure.ts`).
+const PLUGIN_UNRESPONSIVE_MARKER: &str = "plugin-unresponsive:";
 
 /// The retention queue's filler value. `MidiNoteEvent` has no `Default`, so the
 /// inert note-off stands in; its fields are never read past
@@ -354,23 +378,254 @@ fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
     }
 }
 
+/// A held control gate. Letting go of it withdraws an unresponsive verdict:
+/// the call that outlived the deadline has returned, so the plugin answers
+/// again, and it must not wait for some later control call to say so.
+///
+/// The release allocates nothing and logs nothing — it runs at the end of
+/// every control call. The SeqCst fence between the unlock and the verdict
+/// read pairs with the one in `give_up_on_gate`, between the verdict write and
+/// its last try of the gate.
+struct ControlGateGuard<'gate, Runtime: HostedPluginRuntime> {
+    gate: Option<MutexGuard<'gate, ()>>,
+    owner: &'gate SharedHostedPlugin<Runtime>,
+}
+
+impl<Runtime: HostedPluginRuntime> Drop for ControlGateGuard<'_, Runtime> {
+    fn drop(&mut self) {
+        drop(self.gate.take());
+        fence(Ordering::SeqCst);
+        self.owner.recover_if_unresponsive();
+    }
+}
+
+/// Why the control path refused to run an operation against one hosted
+/// plugin instance. Built on the control path only, never on the audio
+/// callback; each variant names the plugin it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginControlRefusal {
+    Unloading {
+        plugin: String,
+    },
+    Retired {
+        plugin: String,
+    },
+    InvalidLifecycle {
+        plugin: String,
+        state: u8,
+    },
+    /// The non-RT control gate is held and the caller refused to wait.
+    GateBusy {
+        plugin: String,
+    },
+    /// A control call held the instance's control gate past its deadline, and
+    /// that call still holds it. Its text starts with
+    /// [`PLUGIN_UNRESPONSIVE_MARKER`].
+    Unresponsive {
+        plugin: String,
+    },
+    /// The audio thread held the access seam past the control timeout.
+    TimedOut {
+        plugin: String,
+    },
+}
+
+impl std::fmt::Display for PluginControlRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unloading { plugin } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' is unloading",
+                plugin
+            ),
+            Self::Retired { plugin } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' has been retired",
+                plugin
+            ),
+            Self::InvalidLifecycle { plugin, state } => write!(
+                formatter,
+                "Engine-owned plugin instance '{}' is in invalid lifecycle state {}",
+                plugin, state
+            ),
+            Self::GateBusy { plugin } => write!(
+                formatter,
+                "Plugin non-RT control path for '{}' is busy",
+                plugin
+            ),
+            Self::Unresponsive { plugin } => write!(
+                formatter,
+                "{PLUGIN_UNRESPONSIVE_MARKER} Plugin '{plugin}' stopped responding inside a call and is no longer processed or controlled"
+            ),
+            Self::TimedOut { plugin } => write!(
+                formatter,
+                "Timed out waiting for plugin control access: {}",
+                plugin
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PluginControlRefusal {}
+
+/// A control operation's outcome when it did not succeed: the control path
+/// refused to run it, or it ran and failed with its own error `E`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginControlError<E> {
+    Refused(PluginControlRefusal),
+    Operation(E),
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for PluginControlError<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::Operation(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> std::error::Error for PluginControlError<E> {}
+
+impl<E> From<PluginControlRefusal> for PluginControlError<E> {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl PluginControlError<std::convert::Infallible> {
+    /// The refusal of an operation that cannot fail on its own.
+    pub fn into_refusal(self) -> PluginControlRefusal {
+        match self {
+            Self::Refused(refusal) => refusal,
+            Self::Operation(never) => match never {},
+        }
+    }
+}
+
+/// Why a host-side parameter write was not queued for the audio thread.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterWriteError {
+    Refused(PluginControlRefusal),
+    NotActivated { plugin: String },
+    NonFinite { plugin: String, value: f64 },
+    QueueFull { plugin: String },
+}
+
+impl std::fmt::Display for ParameterWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::NotActivated { plugin } => write!(
+                formatter,
+                "CLAP plugin '{}' is not activated; parameter update rejected",
+                plugin
+            ),
+            Self::NonFinite { plugin, value } => write!(
+                formatter,
+                "Invalid parameter value for plugin '{}': {}",
+                plugin, value
+            ),
+            Self::QueueFull { plugin } => write!(
+                formatter,
+                "Pending parameter queue full for plugin '{}'",
+                plugin
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ParameterWriteError {}
+
+impl From<PluginControlRefusal> for ParameterWriteError {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+/// Why a state save or restore through the control path failed on its own.
+#[derive(Debug)]
+pub enum PluginStateError {
+    /// Host writes are still queued for the audio thread, so a saved state
+    /// would miss them.
+    PendingWrites {
+        plugin: String,
+    },
+    Plugin(PluginError),
+}
+
+impl std::fmt::Display for PluginStateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PendingWrites { plugin } => write!(
+                formatter,
+                "Plugin '{}' has pending parameter writes awaiting audio processing; retry state save after the process path drains them",
+                plugin
+            ),
+            Self::Plugin(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for PluginStateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::PendingWrites { .. } => None,
+            Self::Plugin(error) => Some(error),
+        }
+    }
+}
+
 struct PluginRuntimeLifecycle {
     state: AtomicU8,
+    /// Set when a control call gave up on the instance's control gate, and
+    /// cleared as soon as that gate is let go again.
+    /// Separate from `state` because unload and retire still move `state`
+    /// along while the call that outlived the deadline may still be executing
+    /// inside the plugin.
+    unresponsive: AtomicBool,
 }
 
 impl PluginRuntimeLifecycle {
     fn new() -> Self {
         Self {
             state: AtomicU8::new(PLUGIN_LIFECYCLE_ACTIVE),
+            unresponsive: AtomicBool::new(false),
         }
+    }
+
+    // The verdict and the lifecycle state are SeqCst: a recovery (clear the
+    // verdict, then read the state) and a cancelled unload (reactivate, then
+    // read the verdict) each write one flag and read the other, and only a
+    // single total order over both guarantees that at least one of them sees
+    // the other's write and asks the instance to process again. The same order
+    // pairs the lifecycle with the intent to process across the SeqCst fences
+    // in `SharedHostedPlugin::{begin_unload, cancel_unload, restart_if_active}`.
+
+    /// Record the verdict; `true` only for the call that made it.
+    fn mark_unresponsive(&self) -> bool {
+        !self.unresponsive.swap(true, Ordering::SeqCst)
+    }
+
+    /// Withdraw the verdict; `true` only when there was one to withdraw.
+    fn clear_unresponsive(&self) -> bool {
+        self.unresponsive.swap(false, Ordering::SeqCst)
+    }
+
+    fn is_unresponsive(&self) -> bool {
+        self.unresponsive.load(Ordering::SeqCst)
+    }
+
+    fn is_active(&self) -> bool {
+        self.state.load(Ordering::SeqCst) == PLUGIN_LIFECYCLE_ACTIVE
     }
 
     fn begin_unload(&self) {
         let _ = self.state.compare_exchange(
             PLUGIN_LIFECYCLE_ACTIVE,
             PLUGIN_LIFECYCLE_UNLOADING,
-            Ordering::AcqRel,
-            Ordering::Acquire,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
         );
     }
 
@@ -378,8 +633,8 @@ impl PluginRuntimeLifecycle {
         let _ = self.state.compare_exchange(
             PLUGIN_LIFECYCLE_UNLOADING,
             PLUGIN_LIFECYCLE_ACTIVE,
-            Ordering::AcqRel,
-            Ordering::Acquire,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
         );
     }
 
@@ -389,24 +644,19 @@ impl PluginRuntimeLifecycle {
     }
 
     fn allows_process(&self) -> bool {
-        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE
+        self.is_active() && !self.is_unresponsive()
     }
 
-    fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), String> {
+    fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), PluginControlRefusal> {
+        let plugin = || plugin_name.to_string();
         match self.state.load(Ordering::Acquire) {
             PLUGIN_LIFECYCLE_ACTIVE => Ok(()),
-            PLUGIN_LIFECYCLE_UNLOADING => Err(format!(
-                "Engine-owned plugin instance '{}' is unloading",
-                plugin_name
-            )),
-            PLUGIN_LIFECYCLE_RETIRED => Err(format!(
-                "Engine-owned plugin instance '{}' has been retired",
-                plugin_name
-            )),
-            lifecycle_state => Err(format!(
-                "Engine-owned plugin instance '{}' is in invalid lifecycle state {}",
-                plugin_name, lifecycle_state
-            )),
+            PLUGIN_LIFECYCLE_UNLOADING => Err(PluginControlRefusal::Unloading { plugin: plugin() }),
+            PLUGIN_LIFECYCLE_RETIRED => Err(PluginControlRefusal::Retired { plugin: plugin() }),
+            state => Err(PluginControlRefusal::InvalidLifecycle {
+                plugin: plugin(),
+                state,
+            }),
         }
     }
 }
@@ -435,6 +685,10 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     access_state: AtomicU8,
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
+    /// How long a control call waits for this instance's control gate before
+    /// it treats the instance as unresponsive. [`CONTROL_GATE_DEADLINE`] in
+    /// production.
+    control_gate_deadline: Duration,
     activated: bool,
     /// Whether the plugin takes note events, read from it once at load.
     ///
@@ -471,7 +725,29 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     /// drops after `wrapper`, on the same thread.
     #[cfg(test)]
     teardown_witness: OnceLock<TeardownWitness>,
+    /// What a test runs on another side of a race when a recovery reaches the
+    /// step it names.
+    #[cfg(test)]
+    recovery_interleaving: Mutex<Option<RecoveryInterleaving<Runtime>>>,
 }
+
+/// A point inside a recovery at which a test runs the other side of a race.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RecoveryStep {
+    /// The verdict is withdrawn and the lifecycle not yet read.
+    VerdictWithdrawn,
+    /// The lifecycle was read active and the start not yet requested.
+    LifecycleReadActive,
+    /// The start is requested and the lifecycle not yet read again.
+    StartRequested,
+}
+
+#[cfg(test)]
+type RecoveryInterleaving<Runtime> = (
+    RecoveryStep,
+    Box<dyn FnOnce(&SharedHostedPlugin<Runtime>) + Send>,
+);
 
 /// Pushes the thread it drops on into a test's record.
 #[cfg(test)]
@@ -510,6 +786,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             access_state: AtomicU8::new(PLUGIN_ACCESS_IDLE),
             lifecycle: PluginRuntimeLifecycle::new(),
             non_rt_control_lock: Mutex::new(()),
+            control_gate_deadline: CONTROL_GATE_DEADLINE,
             activated,
             accepts_midi,
             processing,
@@ -520,7 +797,60 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             unserved_blocks: AtomicU64::new(0),
             #[cfg(test)]
             teardown_witness: OnceLock::new(),
+            #[cfg(test)]
+            recovery_interleaving: Mutex::new(None),
         }
+    }
+
+    /// Run `other_side` once, the first time a recovery reaches `step`.
+    #[cfg(test)]
+    pub(crate) fn interleave_with_recovery(
+        &self,
+        step: RecoveryStep,
+        other_side: impl FnOnce(&Self) + Send + 'static,
+    ) {
+        *self
+            .recovery_interleaving
+            .lock()
+            .expect("the recovery interleaving slot must not be poisoned") =
+            Some((step, Box::new(other_side)));
+    }
+
+    /// Whether the interleaving a test set is still waiting for its step.
+    #[cfg(test)]
+    fn recovery_interleaving_pending(&self) -> bool {
+        self.recovery_interleaving
+            .lock()
+            .expect("the recovery interleaving slot must not be poisoned")
+            .is_some()
+    }
+
+    #[cfg(test)]
+    fn reach_recovery_step(&self, step: RecoveryStep) {
+        let other_side = {
+            let mut slot = self
+                .recovery_interleaving
+                .lock()
+                .expect("the recovery interleaving slot must not be poisoned");
+            match slot.take() {
+                Some((at, other_side)) if at == step => Some(other_side),
+                unmatched => {
+                    *slot = unmatched;
+                    None
+                }
+            }
+        };
+        if let Some(other_side) = other_side {
+            other_side(self);
+        }
+    }
+
+    /// The same owner with a shorter gate deadline, so a test can hold the
+    /// gate past it without waiting out the production figure.
+    #[cfg(test)]
+    pub(crate) fn with_control_gate_deadline(mut self, deadline: Duration) -> Self {
+        self.control_gate_deadline = deadline;
+        self
     }
 
     /// Record into `threads` the thread this plugin's wrapper is torn down on.
@@ -662,27 +992,28 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.pending_parameters.enqueue(param_id, value).is_ok()
     }
 
-    pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
+    pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), ParameterWriteError> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
         if !self.activated {
-            return Err(format!(
-                "CLAP plugin '{}' is not activated; parameter update rejected",
-                self.name
-            ));
+            return Err(ParameterWriteError::NotActivated {
+                plugin: self.name.clone(),
+            });
         }
 
         if !value.is_finite() {
-            return Err(format!(
-                "Invalid parameter value for plugin '{}': {}",
-                self.name, value
-            ));
+            return Err(ParameterWriteError::NonFinite {
+                plugin: self.name.clone(),
+                value,
+            });
         }
 
         self.pending_parameters
             .enqueue(param_id, value)
-            .map_err(|()| format!("Pending parameter queue full for plugin '{}'", self.name))?;
+            .map_err(|()| ParameterWriteError::QueueFull {
+                plugin: self.name.clone(),
+            })?;
 
         // The processor learns about this write from the audio thread. The
         // editor is a different object in some formats and has to be told
@@ -715,19 +1046,38 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn get_state_after_pending_parameters_drain(
         &self,
         timeout: Duration,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.read_state_after_parameters_drain(timeout)
+    }
+
+    /// [`Self::get_state_after_pending_parameters_drain`], except that the wait
+    /// for the control gate ends, refusing `GateBusy`, once `abandoned` says
+    /// the caller no longer wants the state. The deadline and the verdict a
+    /// deadline brings are the waiting lock's own.
+    pub fn get_state_after_pending_parameters_drain_unless(
+        &self,
+        timeout: Duration,
+        abandoned: &dyn Fn() -> bool,
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
+        let _non_rt_control_guard = self.lock_non_rt_control_unless(abandoned)?;
+        self.read_state_after_parameters_drain(timeout)
+    }
+
+    fn read_state_after_parameters_drain(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginControlError<PluginStateError>> {
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
             if self.pending_parameters.has_pending() {
-                return Err(format!(
-                    "Plugin '{}' has pending parameter writes awaiting audio processing; retry state save after the process path drains them",
-                    self.name
-                ));
+                return Err(PluginStateError::PendingWrites {
+                    plugin: self.name.clone(),
+                });
             }
 
-            plugin.get_state().map_err(|error| error.to_string())
+            plugin.get_state().map_err(PluginStateError::Plugin)
         })
     }
 
@@ -735,38 +1085,61 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         &self,
         timeout: Duration,
         plugin_state: &[u8],
-    ) -> Result<Vec<PluginParameter>, String> {
+    ) -> Result<Vec<PluginParameter>, PluginControlError<PluginError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
-            plugin
-                .set_state(plugin_state)
-                .map_err(|error| error.to_string())?;
+            plugin.set_state(plugin_state)?;
             self.pending_parameters.clear();
             Ok(plugin.get_parameters())
         })
     }
 
+    /// Close the lifecycle, then withdraw the intent to process across a
+    /// SeqCst fence.
+    ///
+    /// A racing recovery requests the start, fences, and re-reads the
+    /// lifecycle (`restart_if_active`): either it reads this unload and
+    /// withdraws its own start, or its start precedes this withdrawal. Either
+    /// way the unloading instance ends not asked to process.
+    ///
+    /// The audio thread — the only thread CLAP lets leave the processing state
+    /// — skips an unloading instance without processing it and leaves the
+    /// processing state on its first block after the withdrawal. The instance
+    /// stays in the scheduler until the unload finishes, so that block arrives.
     pub fn begin_unload(&self) {
-        // Withdraw the intent to process before the lifecycle closes the door,
-        // so the audio thread — the only thread CLAP lets leave the processing
-        // state — still has blocks in which to do it. The instance stays in the
-        // scheduler until the unload finishes, so those blocks do arrive.
-        self.processing.request_stop();
         self.lifecycle.begin_unload();
+        fence(Ordering::SeqCst);
+        self.processing.request_stop();
     }
 
+    /// Reactivate first, then restart unless the instance is unresponsive. A
+    /// recovery racing this clears the verdict first and then restarts if the
+    /// instance is active, so whichever of the two reads second sees the
+    /// other's write and the restart is never lost.
+    ///
+    /// The SeqCst fence between reactivating and restarting pairs with the one
+    /// a recovery takes after withdrawing a start it found unloading
+    /// (`restart_if_active`): either the recovery reads this
+    /// reactivation and starts again, or its withdrawal precedes this start.
     pub fn cancel_unload(&self) {
         self.lifecycle.cancel_unload();
-        self.processing.request_start();
+        fence(Ordering::SeqCst);
+        self.restart_unless_unresponsive();
+    }
+
+    fn restart_unless_unresponsive(&self) {
+        if !self.lifecycle.is_unresponsive() {
+            self.processing.request_start();
+        }
     }
 
     pub fn retire(&self) {
         self.lifecycle.retire();
     }
 
-    pub fn ensure_public_control_allowed(&self) -> Result<(), String> {
+    pub fn ensure_public_control_allowed(&self) -> Result<(), PluginControlRefusal> {
         self.ensure_active_lifecycle()
     }
 
@@ -778,11 +1151,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// same ask with different conversions.
     pub(crate) fn refresh_latency_change(
         plugin: &mut Runtime,
-    ) -> Result<Option<LatencyChange>, String> {
-        match plugin
-            .poll_latency_change()
-            .map_err(|error| error.to_string())?
-        {
+    ) -> Result<Option<LatencyChange>, PluginError> {
+        match plugin.poll_latency_change()? {
             Some(_) => Ok(Some(LatencyChange {
                 latency_ms: plugin.latency_ms(),
                 latency_frames: plugin.latency_samples() as usize,
@@ -803,7 +1173,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Runs on the non-RT control path through the existing CAS control seam, so
     /// the deactivate/reactivate a latency change requires cannot race the RT
     /// `process` path — and it adds no new audio-thread calls.
-    pub fn poll_latency_change(&self, timeout: Duration) -> Result<Option<LatencyChange>, String> {
+    pub fn poll_latency_change(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
         self.with_control(timeout, |plugin| Self::refresh_latency_change(plugin))
     }
 
@@ -834,11 +1207,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn poll_parameters(
         &self,
         timeout: Duration,
-    ) -> Result<Option<Vec<PluginParameter>>, String> {
+    ) -> Result<Option<Vec<PluginParameter>>, PluginControlRefusal> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
 
-        self.with_control_locked(timeout, |plugin| {
+        self.with_control_locked(timeout, |plugin| -> Result<_, std::convert::Infallible> {
             // The regular control-path visit, and so the place a write that
             // could not be delivered when it was made finally reaches the
             // editor.
@@ -850,6 +1223,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
             Ok(Some(plugin.get_parameters()))
         })
+        .map_err(PluginControlError::into_refusal)
     }
 
     /// Whether any host-side parameter write is still queued for the audio
@@ -862,11 +1236,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.pending_parameters.has_pending()
     }
 
-    pub fn with_control<ResultValue>(
+    pub fn with_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
         self.with_control_locked(timeout, operation)
@@ -875,12 +1249,13 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Run a control operation, but only if the control gate is free right now.
     ///
     /// [`with_control`](Self::with_control) waits twice: on the gate that
-    /// serializes this instance's control operations, and then on the RT seam
-    /// under `timeout`. Only the second wait is bounded — the gate is held for
-    /// however long the operation holding it takes, and `open_gui` or `set_state`
-    /// on a large preset is unbounded third-party code. That is fine for a
-    /// command answering one user action, and wrong for a caller serving every
-    /// instance on a timer: the parameter drain answers flush requests on the
+    /// serializes this instance's control operations, for up to
+    /// [`CONTROL_GATE_DEADLINE`], and then on the RT seam under `timeout`. The
+    /// gate is held for however long the operation holding it takes, and
+    /// `open_gui` or `set_state` on a large preset is unbounded third-party code,
+    /// so the first wait can run to that deadline. That is fine for a command
+    /// answering one user action, and wrong for a caller serving every instance
+    /// on a timer: the parameter drain answers flush requests on the
     /// same 16 ms tick that feeds every plugin's knobs to the renderer, so one
     /// instance mid-`open_gui` would freeze all of them.
     ///
@@ -888,21 +1263,21 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// caller, which is the one that knows whether coming back later is cheap.
     /// The bounded RT wait is kept: that one is the audio thread holding the seam
     /// for the length of a block, which is what `timeout` was sized for.
-    pub fn try_with_control<ResultValue>(
+    pub fn try_with_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.try_lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
         self.with_control_locked(timeout, operation)
     }
 
-    pub fn with_unload_control<ResultValue>(
+    pub fn with_unload_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
     }
@@ -910,54 +1285,218 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Take the gate that serializes this instance's non-RT control operations.
     ///
     /// The whole acquisition runs under the async-worker hand-off: uncontended —
-    /// the ordinary case — it is one `try_lock`, and contended it waits for
-    /// however long the operation holding the gate takes, bounded only by *that*
-    /// operation's control timeout. Only the acquisition is handed off — the
-    /// guard comes back to the caller — which is sound because `block_in_place`
-    /// runs its closure on the calling thread.
-    fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
-        without_stalling_async_worker(|| {
-            if let Ok(guard) = self.non_rt_control_lock.try_lock() {
-                return Ok(guard);
-            }
+    /// the ordinary case — it is one `try_lock`, and contended it polls until the
+    /// holder lets go or the gate deadline passes. Only the acquisition is handed
+    /// off — the guard comes back to the caller — which is sound because
+    /// `block_in_place` runs its closure on the calling thread.
+    ///
+    /// A holder still inside the plugin at the deadline is treated as
+    /// unresponsive: the instance stops processing, and while that holder keeps
+    /// the gate every later control call refuses at once instead of queueing
+    /// behind it. The holder is not interrupted — nothing can stop a vendor call
+    /// from outside — so the instance stays allocated for as long as that call
+    /// holds its reference; see [`Self::mark_unresponsive`]. A call that was
+    /// only slow lets go of the gate eventually, and letting go withdraws the
+    /// verdict ([`ControlGateGuard`]), so the instance processes again even if
+    /// no further control call ever comes.
+    fn lock_non_rt_control(&self) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
+        self.lock_non_rt_control_unless(&|| false)
+    }
 
-            self.non_rt_control_lock.lock()
+    /// [`Self::lock_non_rt_control`], leaving the wait with `GateBusy` once
+    /// `abandoned` is true: the gate was busy when this waiter left, which is
+    /// no verdict on its holder.
+    fn lock_non_rt_control_unless(
+        &self,
+        abandoned: &dyn Fn() -> bool,
+    ) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
+        without_stalling_async_worker(|| {
+            let deadline = Instant::now() + self.control_gate_deadline;
+            loop {
+                if let Some(guard) = self.try_take_gate() {
+                    return Ok(guard);
+                }
+
+                // The gate is still held by the call some waiter already gave
+                // up on: waiting out a deadline of its own would only add a
+                // hang the verdict settled.
+                self.refuse_if_unresponsive()?;
+
+                if abandoned() {
+                    return Err(PluginControlRefusal::GateBusy {
+                        plugin: self.name.clone(),
+                    });
+                }
+
+                if Instant::now() >= deadline {
+                    return self.give_up_on_gate();
+                }
+
+                thread::sleep(CONTROL_GATE_POLL);
+            }
         })
-        .map_err(|error| {
-            format!(
-                "Failed to lock plugin non-RT control path for '{}': {}",
-                self.name, error
-            )
+    }
+
+    /// The deadline has passed: one last look at the gate, then the verdict.
+    ///
+    /// The holder may let go between the verdict and this waiter's refusal, and
+    /// a holder that let go before the verdict was recorded had nothing to
+    /// withdraw. So the gate is tried once more after marking, across a SeqCst
+    /// fence matched by the one in [`ControlGateGuard`]'s release: either that
+    /// release sees the verdict and withdraws it, or this try sees the gate
+    /// free and takes it, withdrawing the verdict on the way.
+    fn give_up_on_gate(&self) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
+        }
+        self.mark_unresponsive();
+        fence(Ordering::SeqCst);
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
+        }
+        Err(self.unresponsive_refusal())
+    }
+
+    fn refuse_if_unresponsive(&self) -> Result<(), PluginControlRefusal> {
+        if self.lifecycle.is_unresponsive() {
+            return Err(self.unresponsive_refusal());
+        }
+        Ok(())
+    }
+
+    /// The refusal every control call on an unresponsive instance answers.
+    fn unresponsive_refusal(&self) -> PluginControlRefusal {
+        PluginControlRefusal::Unresponsive {
+            plugin: self.name.clone(),
+        }
+    }
+
+    /// Take the control gate if it is free right now, withdrawing an
+    /// unresponsive verdict on the way.
+    ///
+    /// A free gate is the proof the verdict was waiting for: the call that held
+    /// it past the deadline has returned, so the plugin answers again.
+    ///
+    /// A poisoned gate is taken rather than refused — the panic that poisoned
+    /// it happened inside some earlier operation's body, the gate itself is
+    /// free, and refusing forever would both silence this instance for the life
+    /// of the process and have a caller that retries spin on every tick.
+    fn try_take_gate(&self) -> Option<ControlGateGuard<'_, Runtime>> {
+        let guard = match self.non_rt_control_lock.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return None,
+        };
+        self.recover_if_unresponsive();
+        Some(ControlGateGuard {
+            gate: Some(guard),
+            owner: self,
         })
+    }
+
+    /// Withdraw the verdict, then restart an instance whose lifecycle is
+    /// still active; an unloading or retired one must not start again.
+    ///
+    /// The verdict goes first so a racing [`Self::cancel_unload`], which
+    /// reactivates first and restarts unless unresponsive, cannot lose the
+    /// restart: each writes one flag before reading the other. The cost is
+    /// that the audio thread may meet a processable instance still asked to
+    /// stop for a block, which only delays its start by that block.
+    ///
+    /// The restart re-reads the lifecycle after requesting the start
+    /// ([`Self::restart_if_active`]), so a racing [`Self::begin_unload`] that
+    /// lands between the first read and the start cannot leave the unloading
+    /// instance asked to process.
+    fn recover_if_unresponsive(&self) {
+        if self.lifecycle.clear_unresponsive() {
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::VerdictWithdrawn);
+            self.restart_if_active();
+        }
+    }
+
+    /// Request the start, then re-read the lifecycle across a SeqCst fence and
+    /// withdraw the start if it is no longer active.
+    ///
+    /// Each side of the race writes before it reads the other's flag:
+    /// [`Self::begin_unload`] closes the lifecycle, fences, and withdraws, so
+    /// a start this re-read finds still active precedes that withdrawal. A
+    /// withdrawal made here is fenced before the next read, so a
+    /// [`Self::cancel_unload`] landing after it is either read here and
+    /// started again, or starts after the withdrawal itself.
+    fn restart_if_active(&self) {
+        while self.lifecycle.is_active() {
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::LifecycleReadActive);
+            self.processing.request_start();
+            fence(Ordering::SeqCst);
+            #[cfg(test)]
+            self.reach_recovery_step(RecoveryStep::StartRequested);
+            if self.lifecycle.is_active() {
+                return;
+            }
+            self.processing.request_stop();
+            fence(Ordering::SeqCst);
+        }
+    }
+
+    /// Record that this instance's control gate outlived its deadline.
+    ///
+    /// The verdict withdraws the intent to process, so the audio thread — which
+    /// already skips the instance while the late call holds the RT seam — leaves
+    /// the processing state on its own thread once that call returns, and
+    /// processes the instance again only once that gate is let go and the
+    /// verdict withdrawn.
+    ///
+    /// The intent to process is withdrawn before the verdict is recorded: a
+    /// recovery that clears this verdict restarts after it, so a stop landing
+    /// later can only be one whose verdict that recovery has not seen, and the
+    /// caller's retry of the gate ([`Self::give_up_on_gate`]) withdraws it.
+    ///
+    /// Nothing here frees anything, and nothing may: the late call may still be
+    /// executing inside the plugin's code. An unload of an unresponsive instance
+    /// detaches it from the scheduler and the instance map as any unload does,
+    /// then hands its runtime to the retirement vec, whose sweep frees only a
+    /// runtime nothing else references (`take_released_retired_runtimes`). The
+    /// late call reached this owner through an `Arc` clone of its own, so the
+    /// runtime — wrapper, plugin and library — stays allocated until that call
+    /// returns, or for the rest of the process if it never does.
+    fn mark_unresponsive(&self) {
+        self.processing.request_stop();
+        if self.lifecycle.mark_unresponsive() {
+            eprintln!(
+                "[Plugin] '{}' held its control gate past {:?}; treating it as unresponsive",
+                self.name, self.control_gate_deadline
+            );
+        }
     }
 
     /// Take the control gate without waiting for it.
     ///
     /// No async hand-off, because there is nothing to hand off: this never
-    /// blocks. A poisoned gate is taken rather than refused — the panic that
-    /// poisoned it happened inside some earlier operation's body, the gate itself
-    /// is free, and refusing forever would both silence this instance for the
-    /// life of the process and have a caller that retries spin on every tick.
-    fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
-        match self.non_rt_control_lock.try_lock() {
-            Ok(guard) => Ok(guard),
-            Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
-            Err(TryLockError::WouldBlock) => Err(format!(
-                "Plugin non-RT control path for '{}' is busy",
-                self.name
-            )),
+    /// blocks. A held gate answers busy, or the unresponsive refusal when the
+    /// holder is the call a waiter already gave up on.
+    fn try_lock_non_rt_control(
+        &self,
+    ) -> Result<ControlGateGuard<'_, Runtime>, PluginControlRefusal> {
+        if let Some(guard) = self.try_take_gate() {
+            return Ok(guard);
         }
+        self.refuse_if_unresponsive()?;
+        Err(PluginControlRefusal::GateBusy {
+            plugin: self.name.clone(),
+        })
     }
 
-    fn ensure_active_lifecycle(&self) -> Result<(), String> {
+    fn ensure_active_lifecycle(&self) -> Result<(), PluginControlRefusal> {
         self.lifecycle.ensure_public_control_allowed(&self.name)
     }
 
-    fn with_control_locked<ResultValue>(
+    fn with_control_locked<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         // The whole body runs under the hand-off, not just the contended wait:
         // `operation` is third-party CLAP code of unbounded duration (`set_state`
         // on a large preset, `open_gui`), so the ordinary uncontended claim —
@@ -969,7 +1508,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 // SAFETY: `_guard` holds the control side of the access seam
                 // until this return, so neither the audio thread nor another
                 // control visit can be inside the wrapper.
-                return operation(unsafe { &mut *self.wrapper.get() });
+                return operation(unsafe { &mut *self.wrapper.get() })
+                    .map_err(PluginControlError::Operation);
             }
 
             self.spin_for_control(timeout, operation)
@@ -1004,11 +1544,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// CLAP entry points from the caller's own thread is what the GUI and state
     /// call sites depend on. `with_control_locked` owns the async-worker
     /// hand-off so this stays a plain wait.
-    fn spin_for_control<ResultValue>(
+    fn spin_for_control<ResultValue, OperationError>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
-    ) -> Result<ResultValue, String> {
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let deadline = Instant::now() + timeout;
 
         loop {
@@ -1016,13 +1556,15 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 // SAFETY: `_guard` holds the control side of the access seam
                 // until this return, so neither the audio thread nor another
                 // control visit can be inside the wrapper.
-                return operation(unsafe { &mut *self.wrapper.get() });
+                return operation(unsafe { &mut *self.wrapper.get() })
+                    .map_err(PluginControlError::Operation);
             }
 
             if Instant::now() >= deadline {
-                return Err(format!(
-                    "Timed out waiting for plugin control access: {}",
-                    self.name
+                return Err(PluginControlError::Refused(
+                    PluginControlRefusal::TimedOut {
+                        plugin: self.name.clone(),
+                    },
                 ));
             }
 
@@ -1035,8 +1577,8 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         operation: impl FnOnce(&mut Runtime, &PendingParameterQueue) -> ResultValue,
     ) -> Option<ResultValue> {
         if !self.lifecycle.allows_process() {
-            // An unloading instance is still wired into the scheduler, so blocks
-            // keep arriving for it. It must not be processed, but this is the
+            // An unloading or unresponsive instance is still wired into the
+            // scheduler, so blocks keep arriving for it. It must not be processed, but this is the
             // audio thread, and leaving the CLAP processing state is the audio
             // thread's job — so spend the visit on that and nothing else.
             self.leave_processing_state_on_audio_thread();
@@ -2106,7 +2648,7 @@ mod tests {
 
         let name = shared
             .with_control(Duration::from_millis(50), |plugin| {
-                Ok(plugin.get_name().to_string())
+                Ok::<_, String>(plugin.get_name().to_string())
             })
             .expect("an idle seam must hand the wrapper straight to the operation");
 
@@ -2127,11 +2669,19 @@ mod tests {
             .store(PLUGIN_ACCESS_PROCESSING, Ordering::Release);
 
         let started = Instant::now();
-        let outcome = shared.with_control(Duration::from_millis(60), |_| Ok(()));
+        let outcome = shared.with_control(Duration::from_millis(60), |_| Ok::<_, String>(()));
 
         assert_eq!(
             outcome,
-            Err("Timed out waiting for plugin control access: fixture".to_string())
+            Err(PluginControlError::Refused(
+                PluginControlRefusal::TimedOut {
+                    plugin: "fixture".to_string()
+                }
+            ))
+        );
+        assert_eq!(
+            outcome.unwrap_err().to_string(),
+            "Timed out waiting for plugin control access: fixture"
         );
         assert!(
             started.elapsed() >= Duration::from_millis(60),
@@ -2167,7 +2717,7 @@ mod tests {
 
             let waiting_plugin = Arc::clone(&shared);
             let waiter = tokio::spawn(async move {
-                waiting_plugin.with_control(Duration::from_secs(2), |_| Ok(()))
+                waiting_plugin.with_control(Duration::from_secs(2), |_| Ok::<_, String>(()))
             });
 
             // The waiter holds the non-RT gate for as long as it is spinning, so
@@ -2229,7 +2779,7 @@ mod tests {
             let operation = tokio::spawn(async move {
                 operating_plugin.with_control(Duration::from_secs(2), |_| {
                     thread::sleep(Duration::from_millis(600));
-                    Ok(())
+                    Ok::<_, String>(())
                 })
             });
 
@@ -2270,6 +2820,371 @@ mod tests {
         });
     }
 
+    /// Hold the instance's control gate with an operation that does not return
+    /// until the returned sender fires — the way a vendor call that hangs holds
+    /// it — and return once the gate is provably taken.
+    fn hold_control_gate_until_released(
+        shared: &Arc<SharedHostedPlugin<ClapWrapper>>,
+    ) -> (
+        std::sync::mpsc::Sender<()>,
+        thread::JoinHandle<Result<(), PluginControlRefusal>>,
+    ) {
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let holding = Arc::clone(shared);
+        let holder = thread::spawn(move || {
+            holding
+                .with_control(Duration::from_secs(2), |_| {
+                    let _ = released.recv();
+                    Ok(())
+                })
+                .map_err(PluginControlError::into_refusal)
+        });
+        let probe_deadline = Instant::now() + Duration::from_secs(5);
+        while shared.non_rt_control_lock.try_lock().is_ok() {
+            if Instant::now() >= probe_deadline {
+                panic!("the holding operation never took the control gate");
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        (release, holder)
+    }
+
+    /// Run `call` on its own thread and wait for its answer under a watchdog,
+    /// so a call that never returns fails the test by name instead of hanging
+    /// the harness.
+    fn answer_within<ResultValue: Send + 'static>(
+        watchdog: Duration,
+        call: impl FnOnce() -> ResultValue + Send + 'static,
+    ) -> Option<(ResultValue, Duration)> {
+        let (answer, answered) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let started = Instant::now();
+            let outcome = call();
+            let _ = answer.send((outcome, started.elapsed()));
+        });
+        answered.recv_timeout(watchdog).ok()
+    }
+
+    /// The defect this guards: the gate wait fell back to an unbounded `lock()`,
+    /// so one vendor call that never returned held every later control call on
+    /// the instance — unload included — forever.
+    #[test]
+    fn a_control_call_behind_a_hung_holder_gives_up_and_the_instance_fails_fast_after() {
+        let gate_deadline = Duration::from_millis(100);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared =
+            Arc::new(SharedHostedPlugin::new(wrapper).with_control_gate_deadline(gate_deadline));
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "the fixture must process while it is responsive"
+        );
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let unloading = Arc::clone(&shared);
+        let unload = answer_within(Duration::from_secs(5), move || {
+            unloading
+                .with_unload_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal)
+        });
+        let Some((unload_outcome, unload_waited)) = unload else {
+            let _ = release.send(());
+            panic!("an unload behind a hung control call never answered");
+        };
+
+        let controlling = Arc::clone(&shared);
+        let later = answer_within(Duration::from_secs(5), move || {
+            (
+                controlling
+                    .with_control(Duration::from_secs(2), |_| Ok(()))
+                    .map_err(PluginControlError::into_refusal),
+                controlling
+                    .try_with_control(Duration::from_secs(2), |_| Ok(()))
+                    .map_err(PluginControlError::into_refusal),
+            )
+        });
+        let still_hung_processable = shared.lifecycle.allows_process();
+        let still_hung_asked_to_process = shared.processing_gate().wants_processing();
+        let _ = release.send(());
+        let Some(((later_control, later_try_control), later_waited)) = later else {
+            panic!("a control call on an instance already found unresponsive never answered");
+        };
+
+        let unload_error =
+            unload_outcome.expect_err("the unload must give up behind a hung holder");
+        assert_eq!(
+            unload_error,
+            PluginControlRefusal::Unresponsive {
+                plugin: "fixture".to_string()
+            },
+            "the unload must answer the unresponsive refusal naming the plugin"
+        );
+        let unload_text = unload_error.to_string();
+        assert!(
+            unload_text.starts_with("plugin-unresponsive:") && unload_text.contains("'fixture'"),
+            "the unresponsive refusal must carry the wire marker and name the plugin, answered {unload_text:?}"
+        );
+        assert!(
+            unload_waited >= gate_deadline,
+            "the unload must wait out the gate deadline before giving up, gave up after {unload_waited:?}"
+        );
+        assert_eq!(later_control, Err(unload_error.clone()));
+        assert_eq!(later_try_control, Err(unload_error));
+        assert!(
+            later_waited < gate_deadline,
+            "an instance already found unresponsive must refuse without waiting again, waited {later_waited:?}"
+        );
+        assert_eq!(
+            holder.join().expect("the holding thread must not panic"),
+            Ok(()),
+            "the hung call itself is left to finish whenever it does"
+        );
+        assert!(
+            !still_hung_processable && !still_hung_asked_to_process,
+            "an instance whose call is still hung must be neither processable nor asked to process"
+        );
+    }
+
+    /// A call that outlived the gate deadline but did return was slow, not
+    /// hung: once it lets go, the next control call runs, and the instance
+    /// processes again.
+    #[test]
+    fn an_instance_found_unresponsive_recovers_once_its_slow_call_returns() {
+        let gate_deadline = Duration::from_millis(100);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared =
+            Arc::new(SharedHostedPlugin::new(wrapper).with_control_gate_deadline(gate_deadline));
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let waiting = Arc::clone(&shared);
+        let gave_up = answer_within(Duration::from_secs(5), move || {
+            waiting
+                .with_unload_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal)
+        });
+        let Some((gave_up, _)) = gave_up else {
+            let _ = release.send(());
+            panic!("a waiter behind a slow control call never answered");
+        };
+        assert_eq!(
+            gave_up,
+            Err(PluginControlRefusal::Unresponsive {
+                plugin: "fixture".to_string()
+            }),
+            "the waiter must give up at the deadline while the slow call holds the gate"
+        );
+        assert!(shared.lifecycle.is_unresponsive());
+        let _ = release.send(());
+        assert_eq!(
+            holder.join().expect("the holding thread must not panic"),
+            Ok(())
+        );
+
+        let recovering = Arc::clone(&shared);
+        let recovered = answer_within(Duration::from_secs(5), move || {
+            recovering
+                .with_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal)
+        });
+        let Some((recovered, _)) = recovered else {
+            panic!("a control call on a free gate never answered");
+        };
+
+        assert_eq!(
+            recovered,
+            Ok(()),
+            "the first control call to find the gate free must run"
+        );
+        assert!(
+            !shared.lifecycle.is_unresponsive(),
+            "taking the free gate must withdraw the unresponsive verdict"
+        );
+        assert!(
+            shared.processing_gate().wants_processing(),
+            "a recovered active instance must be asked to process again"
+        );
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "a recovered instance must be processed again"
+        );
+    }
+
+    /// A plugin found unresponsive that nobody calls again — no editor open, no
+    /// parameter write, no unload — must not stay silent once its slow call
+    /// returns: letting go of the gate is itself the proof it answers again.
+    #[test]
+    fn an_instance_found_unresponsive_processes_again_when_its_slow_call_lets_go() {
+        let gate_deadline = Duration::from_millis(100);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared =
+            Arc::new(SharedHostedPlugin::new(wrapper).with_control_gate_deadline(gate_deadline));
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let waiting = Arc::clone(&shared);
+        let gave_up = answer_within(Duration::from_secs(5), move || {
+            waiting
+                .with_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal)
+        });
+        let Some((gave_up, _)) = gave_up else {
+            let _ = release.send(());
+            panic!("a waiter behind a slow control call never answered");
+        };
+        assert_eq!(
+            gave_up,
+            Err(PluginControlRefusal::Unresponsive {
+                plugin: "fixture".to_string()
+            }),
+            "the waiter must give up at the deadline while the slow call holds the gate"
+        );
+        assert!(shared.lifecycle.is_unresponsive());
+
+        let _ = release.send(());
+        assert_eq!(
+            holder.join().expect("the holding thread must not panic"),
+            Ok(())
+        );
+
+        assert!(
+            !shared.lifecycle.is_unresponsive(),
+            "the slow call letting go of the gate must withdraw the verdict"
+        );
+        assert!(
+            shared.processing_gate().wants_processing(),
+            "a recovered active instance must be asked to process again"
+        );
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "a recovered instance must be processed with no further control call"
+        );
+    }
+
+    /// When the other side of a race with a recovery runs: before the
+    /// recovery, at one of its steps, or after it.
+    #[derive(Clone, Copy, Debug)]
+    enum RacePoint {
+        Before,
+        At(RecoveryStep),
+        After,
+    }
+
+    /// Run the real recovery with `other_side` at `point`, and fail if the
+    /// point was never reached.
+    fn recover_with_other_side_at(
+        shared: &SharedHostedPlugin<ClapWrapper>,
+        point: RacePoint,
+        other_side: fn(&SharedHostedPlugin<ClapWrapper>),
+    ) {
+        match point {
+            RacePoint::Before => {
+                other_side(shared);
+                shared.recover_if_unresponsive();
+            }
+            RacePoint::At(step) => {
+                shared.interleave_with_recovery(step, other_side);
+                shared.recover_if_unresponsive();
+                assert!(
+                    !shared.recovery_interleaving_pending(),
+                    "the recovery never reached {step:?}"
+                );
+            }
+            RacePoint::After => {
+                shared.recover_if_unresponsive();
+                other_side(shared);
+            }
+        }
+    }
+
+    /// A recovery and a cancelled unload can race on an instance that is both
+    /// unresponsive and unloading. Whether the unload is cancelled before the
+    /// recovery, between its withdrawing the verdict and its restart, or after
+    /// it, the instance must end up asked to process and processable.
+    #[test]
+    fn a_recovery_racing_a_cancelled_unload_never_loses_the_restart() {
+        let points = [
+            RacePoint::Before,
+            RacePoint::At(RecoveryStep::VerdictWithdrawn),
+            RacePoint::After,
+        ];
+        for point in points {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+            let shared = SharedHostedPlugin::new(wrapper);
+            shared.begin_unload();
+            shared.mark_unresponsive();
+            recover_with_other_side_at(&shared, point, |shared| shared.cancel_unload());
+            assert!(
+                shared.processing_gate().wants_processing() && shared.lifecycle.allows_process(),
+                "the restart was lost with the unload cancelled at {point:?}"
+            );
+        }
+    }
+
+    /// A recovery and an unload can race on an active, unresponsive instance.
+    /// Wherever the unload lands relative to the recovery, the unloading
+    /// instance must end up not asked to process.
+    #[test]
+    fn a_recovery_racing_an_unload_never_leaves_the_unloading_instance_asked_to_process() {
+        let points = [
+            RacePoint::Before,
+            RacePoint::At(RecoveryStep::VerdictWithdrawn),
+            RacePoint::At(RecoveryStep::LifecycleReadActive),
+            RacePoint::At(RecoveryStep::StartRequested),
+            RacePoint::After,
+        ];
+        for point in points {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+            let shared = SharedHostedPlugin::new(wrapper);
+            shared.mark_unresponsive();
+            recover_with_other_side_at(&shared, point, |shared| shared.begin_unload());
+            assert!(
+                !shared.lifecycle.is_active(),
+                "the unload at {point:?} must leave the instance unloading"
+            );
+            assert!(
+                !shared.processing_gate().wants_processing(),
+                "the unloading instance was left asked to process with the unload at {point:?}"
+            );
+        }
+    }
+
+    /// Ordinary contention is not a hang: a holder that lets go inside the
+    /// deadline hands the gate to the waiter, which runs and leaves the
+    /// instance usable.
+    #[test]
+    fn a_control_call_behind_a_holder_that_finishes_in_time_takes_the_gate() {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared = Arc::new(
+            SharedHostedPlugin::new(wrapper).with_control_gate_deadline(Duration::from_secs(2)),
+        );
+        let (release, holder) = hold_control_gate_until_released(&shared);
+
+        let waiting = Arc::clone(&shared);
+        let releasing = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            let _ = release.send(());
+        });
+        let waited = answer_within(Duration::from_secs(5), move || {
+            waiting
+                .with_unload_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal)
+        });
+
+        releasing
+            .join()
+            .expect("the releasing thread must not panic");
+        let _ = holder.join();
+        let (outcome, _) = waited.expect("the waiter must answer once the holder lets go");
+        assert_eq!(outcome, Ok(()));
+        assert_eq!(
+            shared
+                .with_control(Duration::from_secs(2), |_| Ok(()))
+                .map_err(PluginControlError::into_refusal),
+            Ok(()),
+            "contention resolved inside the deadline must not mark the instance unresponsive"
+        );
+    }
+
     #[test]
     fn plugin_lifecycle_rejects_public_control_after_unload_begins() {
         let lifecycle = PluginRuntimeLifecycle::new();
@@ -2280,9 +3195,75 @@ mod tests {
 
         assert_eq!(
             lifecycle.ensure_public_control_allowed("fixture"),
-            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+            Err(PluginControlRefusal::Unloading {
+                plugin: "fixture".to_string()
+            })
+        );
+        assert_eq!(
+            lifecycle
+                .ensure_public_control_allowed("fixture")
+                .unwrap_err()
+                .to_string(),
+            "Engine-owned plugin instance 'fixture' is unloading"
         );
         assert!(!lifecycle.allows_process());
+    }
+
+    #[test]
+    fn control_refusals_keep_their_historical_text() {
+        let plugin = || "fixture".to_string();
+        let cases = [
+            (
+                PluginControlRefusal::Retired { plugin: plugin() },
+                "Engine-owned plugin instance 'fixture' has been retired",
+            ),
+            (
+                PluginControlRefusal::InvalidLifecycle {
+                    plugin: plugin(),
+                    state: 7,
+                },
+                "Engine-owned plugin instance 'fixture' is in invalid lifecycle state 7",
+            ),
+            (
+                PluginControlRefusal::GateBusy { plugin: plugin() },
+                "Plugin non-RT control path for 'fixture' is busy",
+            ),
+            (
+                PluginControlRefusal::Unresponsive { plugin: plugin() },
+                "plugin-unresponsive: Plugin 'fixture' stopped responding inside a call and is no longer processed or controlled",
+            ),
+        ];
+        for (refusal, text) in cases {
+            assert_eq!(refusal.to_string(), text);
+        }
+        assert_eq!(
+            ParameterWriteError::NotActivated { plugin: plugin() }.to_string(),
+            "CLAP plugin 'fixture' is not activated; parameter update rejected"
+        );
+        assert_eq!(
+            ParameterWriteError::NonFinite {
+                plugin: plugin(),
+                value: f64::NAN
+            }
+            .to_string(),
+            "Invalid parameter value for plugin 'fixture': NaN"
+        );
+        assert_eq!(
+            ParameterWriteError::QueueFull { plugin: plugin() }.to_string(),
+            "Pending parameter queue full for plugin 'fixture'"
+        );
+        assert_eq!(
+            PluginStateError::PendingWrites { plugin: plugin() }.to_string(),
+            "Plugin 'fixture' has pending parameter writes awaiting audio processing; retry state save after the process path drains them"
+        );
+        assert_eq!(
+            PadAuditionError::IdsExhausted.to_string(),
+            "Crumbs pad audition ids exhausted"
+        );
+        assert_eq!(
+            PadAuditionError::QueueFull(CrumbsCommandQueueFull).to_string(),
+            "Command queue full"
+        );
     }
 
     #[test]
@@ -3734,6 +4715,26 @@ impl std::fmt::Display for CrumbsCommandQueueFull {
 
 impl std::error::Error for CrumbsCommandQueueFull {}
 
+/// Why a pad audition was not started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadAuditionError {
+    /// No room for the audition and the release it reserves.
+    QueueFull(CrumbsCommandQueueFull),
+    /// Every audition receipt id has been issued.
+    IdsExhausted,
+}
+
+impl std::fmt::Display for PadAuditionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::QueueFull(full) => full.fmt(f),
+            Self::IdsExhausted => f.write_str("Crumbs pad audition ids exhausted"),
+        }
+    }
+}
+
+impl std::error::Error for PadAuditionError {}
+
 static LAST_PAD_AUDITION_ID: AtomicU32 = AtomicU32::new(0);
 
 /// The control-side producer for one attached slot. Each accepted pad audition
@@ -3767,9 +4768,9 @@ impl CrumbsCommandSender {
             .map_err(|_| CrumbsCommandQueueFull)
     }
 
-    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, String> {
+    pub fn start_pad_audition(&mut self, note: u8, velocity: u8) -> Result<u32, PadAuditionError> {
         if self.producer.slots() < self.held_auditions.len() + 2 {
-            return Err(CrumbsCommandQueueFull.to_string());
+            return Err(PadAuditionError::QueueFull(CrumbsCommandQueueFull));
         }
 
         // Receipts must never alias after a slot with the same instance id
@@ -3778,14 +4779,14 @@ impl CrumbsCommandSender {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
                 previous.checked_add(1)
             })
-            .map_err(|_| "Crumbs pad audition ids exhausted".to_string())?;
+            .map_err(|_| PadAuditionError::IdsExhausted)?;
         let audition_id = previous + 1;
         self.push(CrumbsCommand::PadAuditionOn {
             note,
             velocity,
             audition_id,
         })
-        .map_err(|error| error.to_string())?;
+        .map_err(PadAuditionError::QueueFull)?;
         self.held_auditions.push(audition_id);
         Ok(audition_id)
     }

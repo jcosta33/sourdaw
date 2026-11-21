@@ -11,6 +11,8 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
+import { type VibeBatchValueChoice } from '../models/VibeBatchValueChoice';
+import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
@@ -39,8 +41,8 @@ type PendingActionProtectedObject = {
 
 type PendingAgentRiskApproval = {
     metricGoalState?: string | null;
-    /** The explicit-approval input the approval was compiled with; absent on approvals stored before it was recorded. */
-    explicitApprovalRequired?: boolean;
+    /** The explicit-approval input the approval was compiled with. */
+    explicitApprovalRequired: boolean;
     schemaVersion: 1;
     actionHashes: string[];
     sourceRevision: string;
@@ -139,6 +141,14 @@ type PendingActionApprovalSnapshot = {
     protectionFacts?: ProposalProtectionFacts;
     /** The readings an ambiguous brief request offers; absent on every other card. */
     briefReadings?: BriefReadings;
+    /** The values a vibe-run batch card expands with, so a re-preview composes the card again; absent elsewhere. */
+    vibeValueChoice?: VibeBatchValueChoice;
+    /** The lines a brief card shows after its description (readings, or planned batches), so a re-preview shows them again. */
+    plannedRunLines?: string[];
+    /** The positions of the actions a refinement keeps from the card it replaced, so a re-preview notes them again. */
+    keptDirectionActionIndexes?: number[];
+    /** The workflow the proposal was planned for, which a re-preview describes it under again. */
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 type PendingActionBatchPosition = { index: number; total: number };
@@ -345,6 +355,10 @@ type ProposePendingActionConfirmationInput = {
     groundingBasis?: ProposalGroundingBasis;
     protectionFacts?: ProposalProtectionFacts;
     briefReadings?: BriefReadings;
+    vibeValueChoice?: VibeBatchValueChoice;
+    plannedRunLines?: string[];
+    keptDirectionActionIndexes?: number[];
+    workflowCapabilityId?: WorkflowCapabilityId;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -394,6 +408,10 @@ export function proposePendingActionConfirmation(
         ...(input.groundingBasis === undefined ? {} : { groundingBasis: structuredClone(input.groundingBasis) }),
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
         ...(input.briefReadings === undefined ? {} : { briefReadings: structuredClone(input.briefReadings) }),
+        vibeValueChoice: structuredClone(input.vibeValueChoice),
+        plannedRunLines: structuredClone(input.plannedRunLines),
+        keptDirectionActionIndexes: structuredClone(input.keptDirectionActionIndexes),
+        workflowCapabilityId: input.workflowCapabilityId,
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

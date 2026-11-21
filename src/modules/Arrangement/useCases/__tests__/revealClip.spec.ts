@@ -57,6 +57,64 @@ describe('revealClip', () => {
 
     afterEach(() => {
         setTrackHeight(previousMode);
+        timelineEditingStore.set(defaultTimelineEditingState);
+    });
+
+    describe('hidden tracks', () => {
+        const hiddenTarget = (overrides: { hidden?: boolean; folderHidden?: boolean }) => {
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: 'track-first', height: 80 }),
+                    TrackDummy.create({ id: 'folder', kind: 'folder', hidden: overrides.folderHidden ?? false }),
+                    TrackDummy.create({
+                        id: 'track-target',
+                        height: 60,
+                        clips: [targetClip],
+                        hidden: overrides.hidden ?? false,
+                        parentId: overrides.folderHidden === undefined ? null : 'folder',
+                    }),
+                ],
+                selectedTrackId: null,
+            });
+        };
+
+        it('reveals a hidden track clip by showing hidden tracks, and leaves the track hidden', () => {
+            hiddenTarget({ hidden: true });
+
+            expect(revealClip(targetClip.id)).toBe(true);
+
+            expect(timelineEditingStore.value?.showHiddenTracks).toBe(true);
+            expect(clipSelectionStore.value?.selectedClipId).toBe(targetClip.id);
+            expect(trackStore.value?.tracks.find((track) => track.id === 'track-target')?.hidden).toBe(true);
+            expect(timelineViewStore.value?.scrollY).toBe(66);
+        });
+
+        it('reveals a clip under a hidden folder', () => {
+            hiddenTarget({ folderHidden: true });
+
+            expect(revealClip(targetClip.id)).toBe(true);
+
+            expect(timelineEditingStore.value?.showHiddenTracks).toBe(true);
+            expect(clipSelectionStore.value?.selectedClipId).toBe(targetClip.id);
+            expect(trackStore.value?.tracks.find((track) => track.id === 'folder')?.hidden).toBe(true);
+        });
+
+        it('reveals with hidden tracks already shown', () => {
+            hiddenTarget({ hidden: true });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+
+            expect(revealClip(targetClip.id)).toBe(true);
+
+            expect(clipSelectionStore.value?.selectedClipId).toBe(targetClip.id);
+        });
+
+        it('leaves the flag off when the track is shown', () => {
+            hiddenTarget({});
+
+            expect(revealClip(targetClip.id)).toBe(true);
+
+            expect(timelineEditingStore.value?.showHiddenTracks).toBe(false);
+        });
     });
 
     it('selects the clip and reveals its position without changing timeline zoom', () => {

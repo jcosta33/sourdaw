@@ -240,6 +240,7 @@ const confirmation = {
         commandBatch,
         agentApproval: {
             schemaVersion: 1,
+            explicitApprovalRequired: true,
             actionHashes: [],
             sourceRevision: 'revision-1',
             targetFingerprints: {},

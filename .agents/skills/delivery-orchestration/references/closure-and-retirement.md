@@ -71,17 +71,28 @@ extra key refuses:
 ```
 
 `evidence` holds 1–8 entries whose URLs name this repository. `findings` is the total list of live
-roots, 1–100, none repeating a root or thread; the comment IDs are decimal strings and
+roots, at most 100, none repeating a root or thread; the comment IDs are decimal strings and
 `threadId` is the thread's node ID. `reviewBodies` is an array, not a map: one entry per
-`REQUEST_CHANGES` review and at least one, keyed by its node ID, whose `rootCommentIds` are
-non-empty, unique and all appear in `findings`. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
+`REQUEST_CHANGES` review, keyed by its node ID, whose `rootCommentIds` are
+non-empty, unique and all appear in `findings`. `findings` and `reviewBodies` are either both
+non-empty or both empty. The empty pair is the finding-free form for a PR that never received a
+finding: every review proof must then read zero review threads, zero `REQUEST_CHANGES` reviews
+and zero reviews of any state visible to the author App, so any thread, resolved or not, or any
+visible review (commented, dismissed, approved, requesting changes, or the author App's own
+pending review) refuses it. GitHub's reviews connection returns only reviews visible to the
+reading actor, so another actor's unsubmitted pending review is not visible to the proof.
+Every retirement, with findings or finding-free, also requires the PR to have been opened by the
+author App (its author node ID is `AUTHOR_BOT_NODE_ID`) and no other open PR in the repository to
+target its head branch as base. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
 bytes, without trimming or normalization (`retirementReviewBodyDigest`).
 The command checks this binding initially, before marker writes, before closing, after closing,
 and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
 close or replay and must never be adopted as bound evidence.
-Each review proof reads both complete review-thread and requested-changes-review connections in
-one GraphQL response. Eligibility is bounded to 100 threads, 100 requested-changes reviews and 100
-comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
+Each review proof reads, in one GraphQL response, both complete review-thread and
+requested-changes-review connections, the PR's author and head branch, the total count of its
+reviews in every state, and the total count of open PRs whose base is that head branch. The head
+branch in the response must equal the one inspected. Eligibility is bounded to 100 threads, 100
+requested-changes reviews and 100 comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
 refuse without pagination or stitching separate responses. One response does not establish
 GraphQL resolver atomicity or prevent later changes.
 The command refuses an unconfirmed

@@ -138,7 +138,6 @@ describe('Delete Time Range retires per-clip satellite data', () => {
 
     afterEach(() => {
         clearUndoHistory();
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 

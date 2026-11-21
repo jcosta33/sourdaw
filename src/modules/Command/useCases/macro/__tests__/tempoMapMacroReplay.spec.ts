@@ -147,4 +147,11 @@ describe('macro tempo row aliases use admitted arguments only after success', ()
         await replayTempoMapMacroAction(inverseRemove(), ids, {});
         expect(ids).toEqual(new Map([['recorded', 'previous']]));
     });
+
+    it('refuses an action that is not a tempo map edit', async () => {
+        await expect(replayTempoMapMacroAction({ type: 'togglePlayback' }, new Map(), {})).rejects.toBeInstanceOf(
+            AppActionConflictError
+        );
+        expect(execute).not.toHaveBeenCalled();
+    });
 });
