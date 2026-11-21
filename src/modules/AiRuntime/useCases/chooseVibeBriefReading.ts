@@ -378,7 +378,7 @@ async function persistReadingCard(input: {
         return failReading(notPrepared);
     }
     const noProtections = { protectedUnchanged: [], protectedControls: [] };
-    const plannedLines = result.plannedRunLines ?? [];
+    const linesAfterDescription = [describeChosenBriefReading(reading)].concat(result.plannedRunLines ?? []);
     const persisted = persistPromptActionConfirmation({
         confirmationId: replacementId,
         runId: run.runId,
@@ -401,7 +401,9 @@ async function persistReadingCard(input: {
         group: commandGroup,
         projectRevision: revision,
         parsedCommandBatch,
-        content: [description.content, '', describeChosenBriefReading(reading), ...plannedLines].join('\n'),
+        content: [description.content, '', ...linesAfterDescription].join('\n'),
+        plannedRunLines: linesAfterDescription,
+        workflowCapabilityId: result.workflowCapabilityId,
         supersedes: confirmation.id,
     });
     if (persisted === null) {
