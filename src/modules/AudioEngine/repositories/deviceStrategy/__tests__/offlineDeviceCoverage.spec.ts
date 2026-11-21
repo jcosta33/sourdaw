@@ -288,6 +288,17 @@ describe('offline device coverage', () => {
             expect(EXEMPTED_CATALOG_IDS.length).toBeGreaterThan(4);
         });
 
+        it('keeps the declared yeast exemption', () => {
+            expect(isNodelessOfflineDeviceType('yeast')).toBe(true);
+        });
+
+        it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+            'does not treat inherited object keys as declared node-less types: %s',
+            (deviceType) => {
+                expect(isNodelessOfflineDeviceType(deviceType)).toBe(false);
+            }
+        );
+
         // The direction that catches the wavetable case: if the offline
         // registry *can* build a node for an exempted id, the exemption is
         // throwing that node away rather than routing around a device that has
