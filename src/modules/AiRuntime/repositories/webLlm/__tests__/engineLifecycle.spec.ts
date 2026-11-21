@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LocalModelRefusalError } from '../../../errors/LocalModelRefusalError';
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
@@ -77,6 +78,7 @@ function ignoreEngine(_engine: unknown): void {}
 describe('WebLLM engineLifecycle injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        answeringStatus.clear();
         vi.stubGlobal('Worker', MockLlmWorker);
         workerInstances.length = 0;
         workerSpawns.length = 0;
@@ -465,6 +467,33 @@ describe('WebLLM engineLifecycle injectables', () => {
             await initWebLlmEngine(undefined);
 
             expect(llmStatusStore.value).toEqual(generating);
+        });
+
+        it('shows a refused switch only once the turn answering with the loaded model settles', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await loadModelX();
+            const generating = { state: 'generating', backend: 'webllm', modelId: LOADED_MODEL } as const;
+            const turn = answeringStatus.openTurn();
+            answeringStatus.publish(turn, generating);
+            artifactAdmissionMock.mockRejectedValueOnce(
+                new LocalModelRefusalError({
+                    reason: 'insufficient-storage',
+                    modelId: 'model-y',
+                    requiredBytes: 2_000_000_000,
+                    availableBytes: 1_000,
+                })
+            );
+
+            await expect(initWebLlmEngine('model-y', { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'insufficient-storage' },
+            });
+
+            expect(llmStatusStore.value).toEqual(generating);
+            answeringStatus.settle(turn, answeringStatus.readSettled());
+            expect(llmStatusStore.value).toMatchObject({
+                state: 'error',
+                refusal: { reason: 'insufficient-storage', modelId: 'model-y' },
+            });
         });
 
         it('republishes ready for the kept model and aborts another model that is still loading', async () => {

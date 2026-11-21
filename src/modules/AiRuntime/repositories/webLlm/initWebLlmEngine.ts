@@ -3,7 +3,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { isLocalModelRefusalError, LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
-import { type LlmEngineStatus, llmStatusStore } from '../../stores/llmStatusStore';
+import { answeringStatus } from '../../stores/answeringStatus';
+import { type LlmEngineStatus } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
@@ -56,10 +57,10 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 }
                 // A refused load leaves its error showing, and an aborted one its loading text, while this one
                 // answers; a switch still loading owns the status.
-                const shown = llmStatusStore.value?.state;
+                const shown = answeringStatus.readEngineStatus()?.state;
                 const switchLoading = engineState.initPromise !== null && !engineState.initSignal?.aborted;
                 if (shown === 'error' || (shown === 'loading' && !switchLoading)) {
-                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                    answeringStatus.publishEngineStatus({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
                 return Promise.resolve(engineState.engine);
             }
@@ -109,7 +110,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
 
             const attemptPromise = (async () => {
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
+                    answeringStatus.publishEngineStatus({
+                        state: 'loading',
+                        progress: 0,
+                        text: 'Loading AI engine...',
+                    });
                 }
 
                 // Before admission, so a machine that cannot run the model neither fetches nor
@@ -160,7 +165,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                                                 if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
                                                     return;
                                                 }
-                                                llmStatusStore.set({
+                                                answeringStatus.publishEngineStatus({
                                                     state: 'loading',
                                                     progress: report.progress,
                                                     text: report.text,
@@ -189,7 +194,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
                             return;
                         }
-                        llmStatusStore.set({
+                        answeringStatus.publishEngineStatus({
                             state: 'loading',
                             progress: report.progress,
                             text: report.text,
@@ -207,7 +212,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 engineState.activeArtifactSetDigest = admission.artifactSetDigest;
                 installWorkerRetirement(workerForAttempt(attemptWorker), initializedEngine);
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                    answeringStatus.publishEngineStatus({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
@@ -229,7 +234,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                     engineState.worker = null;
                 }
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set(describeLoadFailure(error));
+                    answeringStatus.publishEngineStatus(describeLoadFailure(error));
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
