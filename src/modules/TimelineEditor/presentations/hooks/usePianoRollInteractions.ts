@@ -69,7 +69,7 @@ import {
     getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
 import { movePianoRollTakeRows } from '../helpers/pianoRollTakeRowActions';
-import { isNoteEditKey, refuseNoteEditOnFrozenTrack, willWriteNotes } from '../helpers/refuseNoteEditOnFrozenTrack';
+import { keyClips, refuseNoteEditOnFrozenTrack, releaseClips } from '../helpers/refuseNoteEditOnFrozenTrack';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
@@ -423,8 +423,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // paint undo snapshot) must read the target's own list: the primary's
     // `notes` prop describes only the primary clip.
     const targetClipNotes = targetClipId === clipId ? notes : (openedClipNotes?.[targetClipId] ?? []);
-    const viewClipIds = [clipId, targetClipId, ...Object.keys(openedClipNotes ?? {})];
-    const refuseFrozenEdit = (): boolean => refuseNoteEditOnFrozenTrack(viewClipIds);
+    const owners = { clipId, targetClipId, notes, openedClipNotes };
 
     const projectionForViewId = (id: string): PianoRollTakeNotes | undefined => {
         for (const projection of takeProjections?.values() ?? []) {
@@ -817,7 +816,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 // R-A12: snap to nearest scale degree when constrainToScale is active
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
-                    if ((stepInput || (paintMode && !chordMode)) && refuseFrozenEdit()) {
+                    if ((stepInput || (paintMode && !chordMode)) && refuseNoteEditOnFrozenTrack([targetClipId])) {
                         return;
                     }
                     if (stepInput) {
@@ -1119,7 +1118,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             auditionRef.current = null;
         }
 
-        if (willWriteNotes(drag.mode, { dragPreviewRef, pendingStampRef, rubberBandRef }) && refuseFrozenEdit()) {
+        const writtenClips = releaseClips(drag.mode, { dragPreviewRef, pendingStampRef, rubberBandRef }, owners);
+        if (refuseNoteEditOnFrozenTrack(writtenClips)) {
             dragPreviewRef.current = null;
             pendingStampRef.current = null;
             rubberBandRef.current = null;
@@ -1555,7 +1555,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (hit) {
             const stamped = stampedByClickRef.current;
             stampedByClickRef.current = null;
-            if ((stamped && isStampedCell(hit.note, stamped)) || refuseFrozenEdit()) {
+            if ((stamped && isStampedCell(hit.note, stamped)) || refuseNoteEditOnFrozenTrack([hit.ownerClipId])) {
                 return;
             }
             if (editFrozen(hit.note.id, null)) {
@@ -1575,7 +1575,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             event.preventDefault();
             return;
         }
-        if (isNoteEditKey(event, { selectedCount: selectedNoteIds.size, stepInput }) && refuseFrozenEdit()) {
+        const keyContext = { selectedNoteIds, stepInput, owners, isTakeView: projectionForViewId };
+        if (refuseNoteEditOnFrozenTrack(keyClips(event, keyContext))) {
             event.preventDefault();
             event.nativeEvent.stopImmediatePropagation();
             return;

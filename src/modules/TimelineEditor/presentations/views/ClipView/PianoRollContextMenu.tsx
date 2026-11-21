@@ -114,7 +114,8 @@ export const PianoRollContextMenu = ({
     };
 
     const handleApplyGroove = async (): Promise<void> => {
-        if (!grooveTemplateId) {
+        // A groove assignment is part of the clip's content, locked with its notes.
+        if (!grooveTemplateId || refuseNoteEditOnFrozenTrack([clipId])) {
             return;
         }
         await executeUserAppAction({

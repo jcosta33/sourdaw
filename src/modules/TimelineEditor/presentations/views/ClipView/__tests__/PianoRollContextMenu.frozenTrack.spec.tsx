@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
@@ -127,6 +127,36 @@ describe('PianoRollContextMenu on a frozen track', () => {
             fireEvent.click(screen.getByText(label));
 
             expect(writeCallCount()).toBeGreaterThan(0);
+            expect(frozenWarnings()).toHaveLength(0);
+        });
+    });
+
+    describe('Apply Groove', () => {
+        const applyGrooveCalls = (): unknown[][] =>
+            mocks.writes.executeUserAppAction.mock.calls.filter((call) => call[0]?.type === 'applyGroove');
+
+        const chooseGrooveThenApply = async (): Promise<void> => {
+            renderMenu();
+            fireEvent.click(screen.getByText('Extract Groove'));
+            await waitFor(() => expect(screen.getByText('Apply Groove (50%)')).toBeEnabled());
+            fireEvent.click(screen.getByText('Apply Groove (50%)'));
+        };
+
+        it('assigns no groove and warns once when the clip track is frozen', async () => {
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+
+            await chooseGrooveThenApply();
+
+            expect(applyGrooveCalls()).toHaveLength(0);
+            expect(frozenWarnings()).toHaveLength(1);
+        });
+
+        it('still assigns the groove with no frozen warning when the track is not frozen', async () => {
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: false, clips: [{ id: 'clip-1' }] }];
+
+            await chooseGrooveThenApply();
+
+            await waitFor(() => expect(applyGrooveCalls()).toHaveLength(1));
             expect(frozenWarnings()).toHaveLength(0);
         });
     });

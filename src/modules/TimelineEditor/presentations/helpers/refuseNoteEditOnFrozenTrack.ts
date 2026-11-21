@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { stepRecordStore } from '#/modules/MIDI/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const FROZEN_TRACK_NOTE_EDIT_MESSAGE = 'This track is frozen. Unfreeze it to edit its notes.';
@@ -15,9 +16,10 @@ function isClipOnFrozenTrack(clipId: string): boolean {
 }
 
 /**
- * Refuses a piano-roll edit gesture when any of the clips it may write sits on
- * a frozen track: warns once and returns true so the caller drops the whole
- * gesture before it touches the MIDI store or pushes an undo entry. Call it
+ * Refuses a piano-roll edit gesture when any of the clips it writes sits on a
+ * frozen track: warns once and returns true so the caller drops the whole
+ * gesture before it touches the MIDI store or pushes an undo entry. Pass the
+ * clips the gesture writes, never the clips merely open beside them. Call it
  * once per gesture, at the point the gesture would first write.
  */
 export function refuseNoteEditOnFrozenTrack(clipIds: readonly (string | null)[]): boolean {
@@ -29,56 +31,112 @@ export function refuseNoteEditOnFrozenTrack(clipIds: readonly (string | null)[])
     return true;
 }
 
-type NoteEditKeyContext = { selectedCount: number; stepInput: boolean };
+type NoteRef = { id: string };
 
-const VELOCITY_PRESET_KEYS = new Set(['1', '2', '3', '4', '5', '6', '7']);
+/** The notes the piano roll shows (primary clip and opened clips) and the clip new notes land in. */
+export type NoteOwners = {
+    clipId: string;
+    targetClipId: string;
+    notes: readonly NoteRef[];
+    openedClipNotes: Record<string, readonly NoteRef[]> | undefined;
+};
+
+/** The clips that own at least one of the given note ids. */
+export function ownerClipIds(noteIds: ReadonlySet<string>, { clipId, notes, openedClipNotes }: NoteOwners): string[] {
+    const owners: string[] = [];
+    if (notes.some((note) => noteIds.has(note.id))) {
+        owners.push(clipId);
+    }
+    for (const [openedId, openedNotes] of Object.entries(openedClipNotes ?? {})) {
+        if (openedId !== clipId && openedNotes.some((note) => noteIds.has(note.id))) {
+            owners.push(openedId);
+        }
+    }
+    return owners;
+}
 
 type KeyPress = { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean };
 
-/** Keys that rewrite the selected notes outside step input. */
-function isSelectionTransformKey({ key, metaKey, ctrlKey, shiftKey }: KeyPress): boolean {
+type NoteEditKeyContext = {
+    selectedNoteIds: ReadonlySet<string>;
+    stepInput: boolean;
+    owners: NoteOwners;
+    /** Whether a note id is a frozen-take view, which the single-clip transforms leave alone. */
+    isTakeView: (noteId: string) => unknown;
+};
+
+const VELOCITY_PRESET_KEYS = new Set(['1', '2', '3', '4', '5', '6', '7']);
+
+function isSingleClipTransformKey({ key, metaKey, ctrlKey, shiftKey }: KeyPress): boolean {
     const hasModifier = metaKey || ctrlKey;
-    if (key.startsWith('Arrow')) {
-        return true;
-    }
     if (key === 'S') {
         return shiftKey && !hasModifier;
     }
     return (key === 'l' || key === 'j') && !hasModifier && !shiftKey;
 }
 
-/** Whether a key press, on the piano roll canvas, writes notes given the current selection and mode. */
-export function isNoteEditKey(event: KeyPress, { selectedCount, stepInput }: NoteEditKeyContext): boolean {
-    if (event.key === 'd' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
-        return true;
-    }
-    if (selectedCount === 0) {
-        return false;
-    }
+function clipsWrittenBySelectionKey(event: KeyPress, context: NoteEditKeyContext): string[] {
+    const selectedOwners = ownerClipIds(context.selectedNoteIds, context.owners);
     if (event.key === 'Delete' || event.key === 'Backspace') {
-        return true;
+        return selectedOwners;
     }
-    return stepInput ? VELOCITY_PRESET_KEYS.has(event.key) : isSelectionTransformKey(event);
+    if (context.stepInput) {
+        return VELOCITY_PRESET_KEYS.has(event.key) ? selectedOwners : [];
+    }
+    if (event.key.startsWith('Arrow')) {
+        return selectedOwners;
+    }
+    // Legato, join and split act on one clip's notes and do nothing across clips.
+    const hasTakeView = [...context.selectedNoteIds].some((id) => context.isTakeView(id) !== undefined);
+    const singleClip = !hasTakeView && selectedOwners.length === 1;
+    return singleClip && isSingleClipTransformKey(event) ? selectedOwners : [];
 }
 
 /**
- * Whether releasing the pointer now would commit a note write: a move, resize
- * or duplicate that produced a preview, or a click-stamp / chord stamp left
- * pending by a press on empty grid that did not become a rubber-band drag.
+ * The clips a key press on the piano roll canvas writes: empty when the key
+ * would change nothing given the selection, mode and clips involved, so a
+ * no-op key never earns a frozen warning. Mirrors the key branches of the
+ * canvas key handler.
  */
-export function willWriteNotes(
-    mode: string,
-    refs: {
-        dragPreviewRef: { current: unknown };
-        pendingStampRef: { current: unknown };
-        rubberBandRef: { current: { w: number; h: number } | null };
+export function keyClips(event: KeyPress, context: NoteEditKeyContext): string[] {
+    if (context.stepInput && event.key === ' ' && event.ctrlKey) {
+        const step = stepRecordStore.value;
+        return step?.active && step.clipId ? [step.clipId] : [];
     }
-): boolean {
+    if (event.key === 'd' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        return duplicateKeyClips(context);
+    }
+    return context.selectedNoteIds.size === 0 ? [] : clipsWrittenBySelectionKey(event, context);
+}
+
+/** Duplicate acts on the selection, or on the whole primary clip when nothing is selected. */
+function duplicateKeyClips({ selectedNoteIds, owners }: NoteEditKeyContext): string[] {
+    if (selectedNoteIds.size > 0) {
+        return ownerClipIds(selectedNoteIds, owners);
+    }
+    return owners.notes.length > 0 ? [owners.clipId] : [];
+}
+
+type ReleaseRefs = {
+    dragPreviewRef: { current: { noteIds: ReadonlySet<string> } | null };
+    pendingStampRef: { current: unknown };
+    rubberBandRef: { current: { w: number; h: number } | null };
+};
+
+const NOTE_DRAG_MODES = new Set(['move', 'duplicate', 'resize-left', 'resize-right']);
+
+/**
+ * The clips releasing the pointer now would write: the owners of a moved,
+ * resized or duplicated note that produced a preview, or the target clip of a
+ * click-stamp / chord stamp left pending by a press on empty grid that did not
+ * become a rubber-band drag. Empty when the release writes nothing.
+ */
+export function releaseClips(mode: string, refs: ReleaseRefs, owners: NoteOwners): string[] {
     if (mode === 'rubber-band') {
         const rubberBand = refs.rubberBandRef.current;
         const draggedOut = rubberBand !== null && (rubberBand.w > 2 || rubberBand.h > 2);
-        return refs.pendingStampRef.current !== null && !draggedOut;
+        return refs.pendingStampRef.current !== null && !draggedOut ? [owners.targetClipId] : [];
     }
-    const movesNotes = mode === 'move' || mode === 'duplicate' || mode === 'resize-left' || mode === 'resize-right';
-    return movesNotes && refs.dragPreviewRef.current !== null;
+    const preview = refs.dragPreviewRef.current;
+    return NOTE_DRAG_MODES.has(mode) && preview !== null ? ownerClipIds(preview.noteIds, owners) : [];
 }

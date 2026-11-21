@@ -563,7 +563,8 @@ export const NotePropertyLane = ({
         const h = container.getBoundingClientRect().height;
         const hitNote = hitNoteAtX(toLanePoint(event.clientX, event.clientY).x);
 
-        if (!hitNote || refuseNoteEditOnFrozenTrack([clipId, hitNote.clipId])) {
+        // A paint drag can reach any lane note and a shift ramp every selected one.
+        if (!hitNote || refuseNoteEditOnFrozenTrack(laneNotes.map((entry) => entry.clipId))) {
             return;
         }
 
@@ -677,7 +678,11 @@ export const NotePropertyLane = ({
             return;
         }
         const container = containerRef.current;
-        if (!container || sortedSelected.length < 2 || refuseNoteEditOnFrozenTrack([clipId])) {
+        if (
+            !container ||
+            sortedSelected.length < 2 ||
+            refuseNoteEditOnFrozenTrack(selectedEntries.map((entry) => entry.clipId))
+        ) {
             return;
         }
 

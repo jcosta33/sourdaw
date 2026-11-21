@@ -3,6 +3,8 @@ import { type ReactElement, useRef } from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { defaultStepRecordState, stepRecordStore } from '#/modules/MIDI/stores';
+
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => ({
@@ -296,5 +298,155 @@ describe('usePianoRollInteractions on a frozen track', () => {
         expect(setSelectedNoteIds).toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(writeCallCount()).toBe(0);
+    });
+});
+
+describe('usePianoRollInteractions with a frozen clip opened beside an unfrozen one', () => {
+    const OPENED_NOTE = { id: 'n2', pitch: 72, startBeat: 2, duration: 2, velocity: 100 };
+    const withOpenedFrozenClip: Partial<HarnessArgs> = { openedClipNotes: { 'clip-2': [OPENED_NOTE] } };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        let reads = 0;
+        mocks.getNotesForClip.mockImplementation(() => {
+            reads += 1;
+            return [reads % 2 === 1 ? NOTE : { ...NOTE, duration: 3 }];
+        });
+        mocks.writes.addMidiNote.mockImplementation((_clipId, pitch, startBeat, duration, velocity) => ({
+            id: 'new-note',
+            pitch,
+            startBeat,
+            duration,
+            velocity,
+        }));
+        mocks.trackState.tracks = [
+            { id: 'track-1', frozen: false, clips: [{ id: 'clip-1' }] },
+            { id: 'track-2', frozen: true, clips: [{ id: 'clip-2' }] },
+        ];
+    });
+
+    afterEach(() => {
+        stepRecordStore.set(defaultStepRecordState);
+        cleanup();
+    });
+
+    it.each<[string, Partial<HarnessArgs>, (canvas: HTMLElement) => void]>([
+        [
+            'drawing in the unfrozen target clip',
+            {},
+            (canvas) => {
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
+            },
+        ],
+        [
+            'moving a note of the unfrozen clip',
+            {},
+            (canvas) => {
+                fireEvent.mouseDown(canvas, { clientX: 120, clientY: yForPitch(60) });
+                fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(60) });
+                fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(60) });
+            },
+        ],
+        [
+            'deleting a note of the unfrozen clip',
+            { selectedNoteIds: new Set(['n1']) },
+            (canvas) => {
+                fireEvent.keyDown(canvas, { key: 'Delete' });
+            },
+        ],
+    ])('still writes without a warning when %s', (_name, overrides, perform) => {
+        perform(renderRoll({ ...withOpenedFrozenClip, ...overrides }));
+
+        expect(writeCallCount()).toBeGreaterThan(0);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each<[string, Partial<HarnessArgs>, (canvas: HTMLElement) => void]>([
+        [
+            'drawing into the frozen target clip',
+            { focusedClipId: 'clip-2' },
+            (canvas) => {
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
+            },
+        ],
+        [
+            'moving a note of the frozen clip',
+            {},
+            (canvas) => {
+                fireEvent.mouseDown(canvas, { clientX: 120, clientY: yForPitch(72) });
+                fireEvent.mouseMove(canvas, { clientX: 200, clientY: yForPitch(72) });
+                fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(72) });
+            },
+        ],
+        [
+            'deleting a note of the frozen clip',
+            { selectedNoteIds: new Set(['n2']) },
+            (canvas) => {
+                fireEvent.keyDown(canvas, { key: 'Delete' });
+            },
+        ],
+        [
+            'deleting a selection that spans both clips',
+            { selectedNoteIds: new Set(['n1', 'n2']) },
+            (canvas) => {
+                fireEvent.keyDown(canvas, { key: 'Delete' });
+            },
+        ],
+        [
+            'nudging a note of the frozen clip',
+            { selectedNoteIds: new Set(['n2']) },
+            (canvas) => {
+                fireEvent.keyDown(canvas, { key: 'ArrowRight' });
+            },
+        ],
+        [
+            'double-clicking a note of the frozen clip',
+            {},
+            (canvas) => {
+                fireEvent.doubleClick(canvas, { clientX: 120, clientY: yForPitch(72) });
+            },
+        ],
+    ])('writes nothing and warns once when %s', (_name, overrides, perform) => {
+        perform(renderRoll({ ...withOpenedFrozenClip, ...overrides }));
+
+        expect(writeCallCount()).toBe(0);
+        expect(frozenWarnings()).toHaveLength(1);
+    });
+
+    it('refuses Ctrl+Space in step input when step recording writes into a frozen clip', () => {
+        stepRecordStore.set({ ...defaultStepRecordState, active: true, clipId: 'clip-2' });
+
+        fireEvent.keyDown(renderRoll({ ...withOpenedFrozenClip, stepInput: true }), { key: ' ', ctrlKey: true });
+
+        expect(mocks.writes.stepRecordNoteOn).not.toHaveBeenCalled();
+        expect(frozenWarnings()).toHaveLength(1);
+    });
+
+    it('still enters a step note with Ctrl+Space when step recording writes into the unfrozen clip', () => {
+        stepRecordStore.set({ ...defaultStepRecordState, active: true, clipId: 'clip-1' });
+
+        fireEvent.keyDown(renderRoll({ ...withOpenedFrozenClip, stepInput: true }), { key: ' ', ctrlKey: true });
+
+        expect(mocks.writes.stepRecordNoteOn).toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each<[string, Partial<HarnessArgs>, Parameters<typeof fireEvent.keyDown>[1]]>([
+        [
+            'Ctrl+D with nothing selected in an empty frozen clip',
+            { notes: [], openedClipNotes: {} },
+            { key: 'd', ctrlKey: true },
+        ],
+        ['legato on a selection spanning two clips', { selectedNoteIds: new Set(['n1', 'n2']) }, { key: 'l' }],
+        ['join on a selection spanning two clips', { selectedNoteIds: new Set(['n1', 'n2']) }, { key: 'j' }],
+    ])('does not warn for %s, which changes nothing', (_name, overrides, key) => {
+        mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+
+        fireEvent.keyDown(renderRoll({ ...withOpenedFrozenClip, ...overrides }), key);
+
+        expect(writeCallCount()).toBe(0);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

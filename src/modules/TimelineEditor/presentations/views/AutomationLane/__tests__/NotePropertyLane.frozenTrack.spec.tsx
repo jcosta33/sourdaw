@@ -135,3 +135,75 @@ describe('NotePropertyLane on a frozen track', () => {
         });
     });
 });
+
+describe('NotePropertyLane with a selection spanning an unfrozen primary and a frozen opened clip', () => {
+    const frozenOpenedNote = { id: 'n3', pitch: 64, startBeat: 4, duration: 1, velocity: 100 };
+
+    const renderSpanning = (selected: string[]): HTMLElement => {
+        const { container } = render(
+            <NotePropertyLane
+                clipId="clip-1"
+                trackId="track-1"
+                selectedNoteIds={new Set(selected)}
+                openedClipNotes={{ 'clip-2': [frozenOpenedNote] }}
+                beatWidth={40}
+                scrollRef={scrollContainer()}
+                getValue={(note: { velocity: number }) => note.velocity}
+                setValue={mocks.setValue}
+                label="Velocity"
+                undoLabel="Change velocity"
+            />
+        );
+        return container;
+    };
+
+    const paint = (): void => {
+        const canvas = screen.getByRole('group').querySelector('canvas')!;
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 10, clientY: 2 });
+        fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 10, clientY: 2 });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.trackState.tracks = [
+            { id: 'track-1', frozen: false, clips: [{ id: 'clip-1' }] },
+            { id: 'track-2', frozen: true, clips: [{ id: 'clip-2' }] },
+        ];
+    });
+
+    afterEach(() => {
+        cleanup();
+    });
+
+    it('refuses a paint drag, leaving the frozen clip unchanged, when the selection reaches it', () => {
+        renderSpanning(['n1', 'n3']);
+
+        paint();
+
+        expect(mocks.setValue).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(frozenWarnings()).toHaveLength(1);
+    });
+
+    it('refuses dragging a ramp handle when the selection reaches the frozen clip', () => {
+        const container = renderSpanning(['n1', 'n3']);
+        const handles = container.querySelectorAll('div.cursor-ns-resize');
+        expect(handles).toHaveLength(2);
+
+        fireEvent.pointerDown(handles[1]!, { pointerId: 3 });
+        fireEvent.pointerMove(handles[1]!, { pointerId: 3, clientY: 2 });
+
+        expect(mocks.setValue).not.toHaveBeenCalled();
+        expect(frozenWarnings()).toHaveLength(1);
+    });
+
+    it('still paints the unfrozen clip without a warning when the selection stays inside it', () => {
+        renderSpanning(['n1', 'n2']);
+
+        paint();
+
+        expect(mocks.setValue).toHaveBeenCalledWith('clip-1', 'n1', expect.any(Number));
+        expect(mocks.setValue).not.toHaveBeenCalledWith('clip-2', expect.anything(), expect.anything());
+        expect(frozenWarnings()).toHaveLength(0);
+    });
+});
