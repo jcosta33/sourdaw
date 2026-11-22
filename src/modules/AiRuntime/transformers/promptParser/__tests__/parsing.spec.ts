@@ -109,7 +109,7 @@ describe('promptParser parsing', () => {
             }
         );
 
-        it('does not execute a colliding exact alias by registry order', () => {
+        it('executes the declared copy clip alias of Duplicate Clip now that no clipboard preset shares it', () => {
             const context = {
                 selectedTrackId: 'track-1',
                 selectedClipId: 'clip-1',
@@ -117,7 +117,9 @@ describe('promptParser parsing', () => {
                 trackCount: 1,
             };
 
-            expect(tryPresetMatch('copy clip', context)).toEqual([]);
+            expect(tryPresetMatch('copy clip', context)).toEqual([
+                { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
+            ]);
         });
 
         it('executes only a unique complete label or declared imperative alias', () => {
