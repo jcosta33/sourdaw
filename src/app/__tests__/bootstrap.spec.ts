@@ -22,6 +22,7 @@ import type {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import type { setModulationDependencies } from '#/modules/Automation/useCases';
 import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/useCases';
 import type { resetActionReplayAuthority, syncActionReplayMetadata } from '#/modules/Command/useCases';
 import type { subscribeToPublishedActionHistory } from '#/modules/CrdtDocument/useCases';
@@ -31,6 +32,47 @@ import type { NotificationEventBus } from '#/utils/Notification/notificationEven
 const elasticRootMocks = vi.hoisted(() => ({
     install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
 }));
+
+// Members whose callbacks the composition root builds itself. Each is a distinct
+// double so a spec can capture the callback bootstrap registered and observe which
+// dependency it forwards to. `beforeUnloadSpy` records the window listeners the
+// first boot installs, before any later re-boot adds its own.
+const callbackWiring = vi.hoisted(() => {
+    const disposeWebMidiRealtimeProcessor = vi.fn<() => void>();
+    const disposeGlobalErrorHandlers = vi.fn<() => void>();
+    return {
+        disposeWebMidiRealtimeProcessor,
+        disposeGlobalErrorHandlers,
+        setWebMidiRealtimeProcessor: vi.fn(() => disposeWebMidiRealtimeProcessor),
+        destroyWebMidi: vi.fn<() => void>(),
+        teardownYeastRuntime: vi.fn<() => void>(),
+        cleanupUnusedFreezeFiles: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+        setCommandDeviceVersionsResolver: vi.fn<(resolver: (deviceType: string) => string | undefined) => void>(),
+        getDeviceContractVersionForCommand: vi.fn<(deviceType: string) => string | undefined>(),
+        getExternalPluginContractVersionForCommand: vi.fn<(deviceType: string) => string | undefined>(),
+        setStopPlaybackCallback: vi.fn<(callback: () => void) => void>(),
+        stopPlayback: vi.fn<() => Promise<void>>(),
+        getAudioContext: vi.fn<() => { currentTime: number }>(),
+        readNativeEngineCursorBeats: vi.fn<() => number | null>(),
+        setGestureClockSource:
+            vi.fn<
+                (source: { getAudioTimeSeconds: () => number; readNativeCursorBeats: () => number | null }) => void
+            >(),
+        getPluginById: vi.fn(),
+        setModulationDependencies: vi.fn<(dependencies: ModulationDependencies) => void>(),
+        getTransportState: vi.fn<() => { isPlaying: boolean; playheadPosition: number } | undefined>(),
+        registerLevainDevice: vi.fn(),
+        setEngineReady: vi.fn<(deviceId: string, isReady: boolean) => void>(),
+        prepareCrumbsEngine: vi.fn(),
+        captureOfflineLevain: vi.fn(),
+        setFermenterTelemetry:
+            vi.fn<(deviceId: string, peakL: number, peakR: number, scopeBuffer: Float32Array) => void>(),
+        updateCrustMeters: vi.fn<(deviceId: string, meters: Record<string, unknown>) => void>(),
+        deleteCrustMeters: vi.fn<(deviceId: string) => void>(),
+        updateBacteriaMeters: vi.fn(),
+        beforeUnloadSpy: vi.spyOn(window, 'addEventListener'),
+    };
+});
 
 const briefAdmissionWiring = vi.hoisted(() => ({
     setSubscription: vi.fn<(subscription: (listener: () => void) => () => void) => void>(),
@@ -52,6 +94,7 @@ const briefAdmissionWiring = vi.hoisted(() => ({
 // in what order without depending on any module's internal action-type keys.
 
 type HandlerMapSentinel = { moduleId: string };
+type ModulationDependencies = Parameters<typeof setModulationDependencies>[0];
 type ArrangementEventBus = Parameters<typeof setArrangementEventBus>[0];
 type RuntimeGraphProjectRevisionValidator = NonNullable<
     Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0]
@@ -96,6 +139,30 @@ type RuntimeSinkUnderTest = {
     nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
     updateTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
     updateNativeTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
+    emitDeviceLoaded: (payload: Record<string, unknown>) => void;
+    emitDeviceRemoved: (payload: Record<string, unknown>) => void;
+    registerLevainDevice: (input: {
+        deviceId: string;
+        device: Record<string, unknown>;
+        port: MessagePort;
+        onProgress: () => void;
+    }) => unknown;
+    setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;
+    captureOfflineInstrument: (
+        device: { id: string; type: string },
+        source?: undefined
+    ) => (input: { port: MessagePort; signal?: AbortSignal }) => Promise<void>;
+    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort; signal?: AbortSignal }) => Promise<unknown>;
+    setFermenterTelemetry: (
+        deviceId: string,
+        telemetry: { peakL: number; peakR: number; scopeBuffer: Float32Array }
+    ) => void;
+    updateCrustMeters: (deviceId: string, meters: Record<string, unknown>) => void;
+    deleteCrustMeters: (deviceId: string) => void;
+    updateBacteriaMeters: (
+        deviceId: string,
+        meters: { inputDb: number; outputDb: number; bandLevels: number[]; latency: number }
+    ) => void;
 };
 
 /**
@@ -239,7 +306,7 @@ const {
         ),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
-        registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
+        registerGlobalErrorHandlersMock: vi.fn(() => callbackWiring.disposeGlobalErrorHandlers),
         eventBusMock: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
         loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
@@ -409,7 +476,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clampExternalPluginAutomationValue: noop,
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
-    getDeviceContractVersionForCommand: () => 'descriptor-v1:test',
+    getDeviceContractVersionForCommand: callbackWiring.getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds: () => ({}),
     reserveNextTrackColorForCommand: () => 'oklch(0.40 0.08 250)',
     getAllTracks: noop,
@@ -421,9 +488,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     changesTrackOutsideDevicePlan: () => false,
     getPlannedDevicePatchState: () => null,
     getAutomationParameterRange: getAutomationParameterRangeMock,
-    getPluginById: noop,
+    getPluginById: callbackWiring.getPluginById,
     persistDevicePatch: noop,
-    cleanupUnusedFreezeFiles: noop,
+    cleanupUnusedFreezeFiles: callbackWiring.cleanupUnusedFreezeFiles,
     setTrackGain: setTrackGainMock,
     setTrackPan: setTrackPanMock,
     setDeviceParameter: noop,
@@ -453,7 +520,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: noop,
     writeNativeBuiltinParameters: noop,
     updateDevicePatch: noop,
-    getAudioContext: noop,
+    getAudioContext: callbackWiring.getAudioContext,
     getCompensationDelay: noop,
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
@@ -492,10 +559,10 @@ vi.mock('#/modules/Automation/useCases', () => ({
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
     setAutomationParameterRangeResolver: setAutomationParameterRangeResolverMock,
-    setModulationDependencies: noop,
+    setModulationDependencies: callbackWiring.setModulationDependencies,
 }));
 
-vi.mock('#/modules/Bacteria/stores', () => ({ updateBacteriaMeters: noop }));
+vi.mock('#/modules/Bacteria/stores', () => ({ updateBacteriaMeters: callbackWiring.updateBacteriaMeters }));
 
 vi.mock('#/modules/BrowserAi/useCases', () => ({
     initBrowserAi: initBrowserAiMock,
@@ -538,7 +605,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     },
     setActionHistoryMetadataPort: noop,
     commandProjectRevisionPort: commandProjectRevisionPortMock,
-    commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
+    commandDeviceVersionsPort: {
+        setDeviceTypeResolver: noop,
+        setResolver: callbackWiring.setCommandDeviceVersionsResolver,
+    },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
@@ -603,6 +673,22 @@ vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
     setCrumbsEventBus: setCrumbsEventBusMock,
 }));
 
+vi.mock('#/modules/Crumbs/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crumbs/useCases')>()),
+    prepareCrumbsEngine: callbackWiring.prepareCrumbsEngine,
+}));
+
+vi.mock('#/modules/Crust/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crust/stores')>()),
+    updateCrustMeters: callbackWiring.updateCrustMeters,
+    deleteCrustMeters: callbackWiring.deleteCrustMeters,
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    setGestureClockSource: callbackWiring.setGestureClockSource,
+}));
+
 vi.mock('#/modules/DawInterchange/useCases', () => ({
     getDawProjectHandlers: sentinelHandlers('DawProject'),
 }));
@@ -612,7 +698,7 @@ vi.mock('#/modules/Bacteria/useCases', async (importOriginal) => ({
     getBacteriaHandlers: sentinelHandlers('Bacteria'),
 }));
 
-vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
+vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: callbackWiring.setFermenterTelemetry }));
 
 vi.mock('#/modules/Fermenter/useCases', () => ({
     getFermenterHandlers: sentinelHandlers('Fermenter'),
@@ -645,16 +731,16 @@ vi.mock('#/modules/Knead/useCases', () => ({
     getPitchHandlers: sentinelHandlers('Pitch'),
 }));
 
-vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
+vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: callbackWiring.setEngineReady }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
     getLevainHandlers: sentinelHandlers('Levain'),
     reconcileLevainDeviceStatesFromProject: noop,
-    registerLevainDevice: noop,
+    registerLevainDevice: callbackWiring.registerLevainDevice,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
-    captureOfflineLevain: vi.fn(() => {
+    captureOfflineLevain: callbackWiring.captureOfflineLevain.mockImplementation(() => {
         throw new Error('bootstrap wiring fixture does not capture Levain state');
     }),
     projectLevainDeviceStateToNativePatch: projectLevainDeviceStateToNativePatchMock,
@@ -677,15 +763,15 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectChannelBend: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
-    setWebMidiRealtimeProcessor: noop,
+    setWebMidiRealtimeProcessor: callbackWiring.setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus: noop,
     setRecordingMidiAdmissionPort: setRecordingMidiAdmissionPortMock,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
-    destroyWebMidi: noop,
+    destroyWebMidi: callbackWiring.destroyWebMidi,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    getExternalPluginContractVersionForCommand: () => 'external-plugin-v1:test',
+    getExternalPluginContractVersionForCommand: callbackWiring.getExternalPluginContractVersionForCommand,
     getPluginHostHandlers: sentinelHandlers('PluginHost'),
     registerReleasedStripReportSink: registerReleasedStripReportSinkMock,
 }));
@@ -770,7 +856,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportHandlers: sentinelHandlers('Transport'),
-    getTransportState: noop,
+    getTransportState: callbackWiring.getTransportState,
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
@@ -779,11 +865,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
     isValidTimelineMapStateRestorePlan: isValidTimelineMapStateRestorePlanMock,
-    setStopPlaybackCallback: noop,
+    setStopPlaybackCallback: callbackWiring.setStopPlaybackCallback,
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
-    stopPlayback: noop,
+    stopPlayback: callbackWiring.stopPlayback,
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
-    readNativeEngineCursorBeats: noop,
+    readNativeEngineCursorBeats: callbackWiring.readNativeEngineCursorBeats,
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: updateTunerTelemetryMock }));
@@ -808,7 +894,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     createOfflineYeastMidiProcessor: noop,
     getYeastHandlers: sentinelHandlers('Yeast'),
     processRealtimeMidiInput: noop,
-    teardownYeastRuntime: noop,
+    teardownYeastRuntime: callbackWiring.teardownYeastRuntime,
 }));
 
 vi.mock('#/utils/capabilities', () => ({ logCapabilities: noop }));
@@ -1680,5 +1766,416 @@ describe('bootstrap', () => {
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
         expect(raveModelBootCalls).toEqual([[]]);
+    });
+
+    describe('command device version resolution', () => {
+        function getResolver(): (deviceType: string) => string | undefined {
+            const call = callbackWiring.setCommandDeviceVersionsResolver.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never registered the command device version resolver');
+            }
+            return call[0];
+        }
+
+        beforeEach(() => {
+            callbackWiring.getDeviceContractVersionForCommand.mockReset();
+            callbackWiring.getExternalPluginContractVersionForCommand.mockReset();
+        });
+
+        it('answers a built-in device type from the Arrangement descriptor without asking PluginHost', () => {
+            callbackWiring.getDeviceContractVersionForCommand.mockReturnValue('descriptor-v1:toaster');
+
+            expect(getResolver()('toaster')).toBe('descriptor-v1:toaster');
+            expect(callbackWiring.getDeviceContractVersionForCommand).toHaveBeenCalledExactlyOnceWith('toaster');
+            expect(callbackWiring.getExternalPluginContractVersionForCommand).not.toHaveBeenCalled();
+        });
+
+        it('falls back to the hosted plugin contract for a type no built-in descriptor owns', () => {
+            callbackWiring.getDeviceContractVersionForCommand.mockReturnValue(undefined);
+            callbackWiring.getExternalPluginContractVersionForCommand.mockReturnValue('external-plugin-v1:vst3-abc');
+
+            expect(getResolver()('external:vst3-abc')).toBe('external-plugin-v1:vst3-abc');
+            expect(callbackWiring.getExternalPluginContractVersionForCommand).toHaveBeenCalledExactlyOnceWith(
+                'external:vst3-abc'
+            );
+        });
+
+        it('stays unresolved when neither owner knows the type', () => {
+            expect(getResolver()('unknown')).toBeUndefined();
+        });
+    });
+
+    it('stops resuming owner handoffs when the project-load authority turns stale after the asset transfer resolves', async () => {
+        const resumeDurableOwnerRebindsAfterProjectLoad = vi.fn<DurableAssetOwnerRecoveryAfterProjectLoad>(() =>
+            Promise.resolve()
+        );
+        const controller = new AbortController();
+        getAssetTransferMock.mockImplementationOnce(() => {
+            controller.abort();
+            return { resumeDurableOwnerRebindsAfterProjectLoad };
+        });
+
+        await getDurableAssetOwnerRecoveryAfterProjectLoad()({
+            ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            isCurrent: () => true,
+            signal: controller.signal,
+        });
+
+        expect(getAssetTransferMock).toHaveBeenCalled();
+        expect(resumeDurableOwnerRebindsAfterProjectLoad).not.toHaveBeenCalled();
+    });
+
+    describe('page lifecycle teardown', () => {
+        function getBeforeUnloadHandler(): () => void {
+            const registrations: readonly (readonly unknown[])[] = callbackWiring.beforeUnloadSpy.mock.calls;
+            const listener = registrations.find(([type]) => type === 'beforeunload')?.[1];
+            if (typeof listener !== 'function') {
+                throw new TypeError('bootstrap never registered a beforeunload handler');
+            }
+            return () => {
+                listener.call(window, new Event('beforeunload'));
+            };
+        }
+
+        beforeEach(() => {
+            callbackWiring.destroyWebMidi.mockClear();
+            callbackWiring.disposeWebMidiRealtimeProcessor.mockClear();
+            callbackWiring.teardownYeastRuntime.mockClear();
+            callbackWiring.cleanupUnusedFreezeFiles.mockClear();
+        });
+
+        it('releases WebMIDI before the Yeast bridge it routes through is retired', () => {
+            getBeforeUnloadHandler()();
+
+            expect(callbackWiring.destroyWebMidi).toHaveBeenCalledOnce();
+            expect(callbackWiring.disposeWebMidiRealtimeProcessor).toHaveBeenCalledOnce();
+            expect(callbackWiring.teardownYeastRuntime).toHaveBeenCalledOnce();
+            const [destroyOrder] = callbackWiring.destroyWebMidi.mock.invocationCallOrder;
+            const [disposeOrder] = callbackWiring.disposeWebMidiRealtimeProcessor.mock.invocationCallOrder;
+            const [teardownOrder] = callbackWiring.teardownYeastRuntime.mock.invocationCallOrder;
+            expect(destroyOrder).toBeLessThan(disposeOrder ?? Number.NEGATIVE_INFINITY);
+            expect(disposeOrder).toBeLessThan(teardownOrder ?? Number.NEGATIVE_INFINITY);
+        });
+
+        it('attempts to collect unused freeze files and tolerates that attempt failing', () => {
+            callbackWiring.cleanupUnusedFreezeFiles.mockReturnValueOnce(Promise.reject(new Error('disk gone')));
+
+            expect(getBeforeUnloadHandler()).not.toThrow();
+            expect(callbackWiring.cleanupUnusedFreezeFiles).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('device control dependencies', () => {
+        function getGestureClockSource() {
+            const call = callbackWiring.setGestureClockSource.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never registered the gesture clock source');
+            }
+            return call[0];
+        }
+
+        function getModulationDependencies(): ModulationDependencies {
+            const call = callbackWiring.setModulationDependencies.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never registered the modulation dependencies');
+            }
+            return call[0];
+        }
+
+        function getMidiLearnDependencies() {
+            const call = setMidiLearnDependenciesMock.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never registered the MIDI learn dependencies');
+            }
+            return call[0] as {
+                getTransportIsPlaying: () => boolean;
+                getTransportPlayheadPosition: () => number;
+            };
+        }
+
+        beforeEach(() => {
+            loggerMock.error.mockClear();
+            callbackWiring.stopPlayback.mockReset();
+            callbackWiring.getPluginById.mockReset();
+            callbackWiring.getTransportState.mockReset();
+            callbackWiring.getAudioContext.mockReset();
+            callbackWiring.readNativeEngineCursorBeats.mockReset();
+        });
+
+        it('asks the scheduler to stop when Transport requests a stop', () => {
+            callbackWiring.stopPlayback.mockReturnValue(Promise.resolve());
+            const requestStop = callbackWiring.setStopPlaybackCallback.mock.calls[0]?.[0];
+            if (!requestStop) {
+                throw new Error('bootstrap never registered the stop playback callback');
+            }
+
+            requestStop();
+
+            expect(callbackWiring.stopPlayback).toHaveBeenCalledOnce();
+            expect(loggerMock.error).not.toHaveBeenCalled();
+        });
+
+        it('logs a failed scheduler stop request with its cause instead of leaving it unhandled', async () => {
+            const failure = new Error('worklet gone');
+            callbackWiring.stopPlayback.mockReturnValue(Promise.reject(failure));
+            const requestStop = callbackWiring.setStopPlaybackCallback.mock.calls[0]?.[0];
+            if (!requestStop) {
+                throw new Error('bootstrap never registered the stop playback callback');
+            }
+
+            requestStop();
+
+            await vi.waitFor(() =>
+                expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
+                    expect.objectContaining({ message: 'Scheduler stop request failed', cause: failure })
+                )
+            );
+        });
+
+        it('timestamps gestures from the live audio clock', () => {
+            callbackWiring.getAudioContext.mockReturnValue({ currentTime: 4.5 });
+
+            expect(getGestureClockSource().getAudioTimeSeconds()).toBe(4.5);
+        });
+
+        it('follows the native engine cursor, or null when it is not the audible transport', () => {
+            callbackWiring.readNativeEngineCursorBeats.mockReturnValueOnce(12.25).mockReturnValueOnce(null);
+
+            expect(getGestureClockSource().readNativeCursorBeats()).toBe(12.25);
+            expect(getGestureClockSource().readNativeCursorBeats()).toBeNull();
+        });
+
+        it('resolves a modulation target range from the plugin descriptor parameter with that id', () => {
+            callbackWiring.getPluginById.mockReturnValue({
+                parameters: [
+                    { id: 'cutoff', minValue: 20, maxValue: 20_000, defaultValue: 1000, automatable: true },
+                    { id: 'drive', minValue: 0, maxValue: 1, defaultValue: 0.25, automatable: false },
+                ],
+            });
+
+            expect(getModulationDependencies().getPluginParamRange('filter', 'drive')).toEqual({
+                min: 0,
+                max: 1,
+                defaultValue: 0.25,
+                automatable: false,
+            });
+            expect(callbackWiring.getPluginById).toHaveBeenCalledExactlyOnceWith('filter');
+        });
+
+        it('has no modulation range for an unknown parameter or an unknown device type', () => {
+            callbackWiring.getPluginById.mockReturnValueOnce({
+                parameters: [{ id: 'cutoff', minValue: 20, maxValue: 20_000, defaultValue: 1000, automatable: true }],
+            });
+
+            expect(getModulationDependencies().getPluginParamRange('filter', 'missing')).toBeNull();
+            expect(getModulationDependencies().getPluginParamRange('absent', 'cutoff')).toBeNull();
+        });
+
+        it('lets MIDI learn read the transport play state and playhead', () => {
+            callbackWiring.getTransportState.mockReturnValue({ isPlaying: true, playheadPosition: 7.5 });
+
+            expect(getMidiLearnDependencies().getTransportIsPlaying()).toBe(true);
+            expect(getMidiLearnDependencies().getTransportPlayheadPosition()).toBe(7.5);
+        });
+
+        it('reports a stopped transport at the origin to MIDI learn before Transport has state', () => {
+            callbackWiring.getTransportState.mockReturnValue(undefined);
+
+            expect(getMidiLearnDependencies().getTransportIsPlaying()).toBe(false);
+            expect(getMidiLearnDependencies().getTransportPlayheadPosition()).toBe(0);
+        });
+    });
+
+    describe('audio device runtime sink forwarding', () => {
+        function getSink(): RuntimeSinkUnderTest {
+            const call = configureAudioDeviceRuntimeSinkMock.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never configured the audio device runtime sink');
+            }
+            return call[0];
+        }
+
+        const port = { postMessage: () => {} } as unknown as MessagePort;
+
+        beforeEach(() => {
+            eventBusMock.emit.mockClear();
+        });
+
+        it('publishes a loaded device on the event bus under its own event name', () => {
+            const payload = { deviceId: 'd1', deviceType: 'levain' };
+
+            getSink().emitDeviceLoaded(payload);
+
+            expect(eventBusMock.emit).toHaveBeenCalledExactlyOnceWith('audioDevice.loaded', payload);
+        });
+
+        it('publishes a removed device on the event bus under its own event name', () => {
+            const payload = { deviceId: 'd1', deviceType: 'levain' };
+
+            getSink().emitDeviceRemoved(payload);
+
+            expect(eventBusMock.emit).toHaveBeenCalledExactlyOnceWith('audioDevice.removed', payload);
+        });
+
+        it('registers a Levain device positionally and returns the sample load outcome', () => {
+            const device = { id: 'levain-1' };
+            const onProgress = vi.fn();
+            callbackWiring.registerLevainDevice.mockReturnValueOnce('loaded');
+
+            const outcome = getSink().registerLevainDevice({ deviceId: 'levain-1', device, port, onProgress });
+
+            expect(outcome).toBe('loaded');
+            expect(callbackWiring.registerLevainDevice).toHaveBeenCalledExactlyOnceWith(
+                'levain-1',
+                device,
+                port,
+                onProgress
+            );
+        });
+
+        it('hands a Levain engine readiness change to the Levain store by device', () => {
+            getSink().setLevainEngineReady({ deviceId: 'levain-1', isReady: true });
+
+            expect(callbackWiring.setEngineReady).toHaveBeenCalledExactlyOnceWith('levain-1', true);
+        });
+
+        it('prepares a Crumbs device through the one shared Crumbs use case and returns its outcome', async () => {
+            const controller = new AbortController();
+            callbackWiring.prepareCrumbsEngine.mockResolvedValueOnce('ready');
+
+            await expect(
+                getSink().prepareCrumbsDevice({ deviceId: 'crumbs-1', port, signal: controller.signal })
+            ).resolves.toBe('ready');
+
+            expect(callbackWiring.prepareCrumbsEngine).toHaveBeenCalledExactlyOnceWith({
+                deviceId: 'crumbs-1',
+                port,
+                signal: controller.signal,
+            });
+        });
+
+        it('spreads a Fermenter telemetry frame into the store’s positional arguments', () => {
+            const scopeBuffer = new Float32Array([0.1, -0.2]);
+
+            getSink().setFermenterTelemetry('fermenter-1', { peakL: 0.5, peakR: 0.25, scopeBuffer });
+
+            expect(callbackWiring.setFermenterTelemetry).toHaveBeenCalledExactlyOnceWith(
+                'fermenter-1',
+                0.5,
+                0.25,
+                scopeBuffer
+            );
+        });
+
+        it('scopes a Crust meter frame to its device and forwards only the meter fields', () => {
+            getSink().updateCrustMeters('crust-2', {
+                grDb: -3,
+                inputDb: -12,
+                outputDb: -9,
+                lufsIntegrated: -14,
+                lufsShortTerm: -13,
+                lufsMomentary: -11,
+                lra: 5,
+                truepeakMax: -1,
+                truepeakExceeded: false,
+                unrelatedField: 'dropped',
+            });
+
+            expect(callbackWiring.updateCrustMeters).toHaveBeenCalledExactlyOnceWith('crust-2', {
+                grDb: -3,
+                inputDb: -12,
+                outputDb: -9,
+                lufsIntegrated: -14,
+                lufsShortTerm: -13,
+                lufsMomentary: -11,
+                lra: 5,
+                truepeakMax: -1,
+                truepeakExceeded: false,
+            });
+        });
+
+        it('drops only the torn-down Crust device’s meters', () => {
+            getSink().deleteCrustMeters('crust-2');
+
+            expect(callbackWiring.deleteCrustMeters).toHaveBeenCalledExactlyOnceWith('crust-2');
+        });
+
+        it('spreads a Bacteria meter frame into the store’s positional arguments', () => {
+            getSink().updateBacteriaMeters('bacteria-1', {
+                inputDb: -20,
+                outputDb: -18,
+                bandLevels: [-30, -25, -40],
+                latency: 64,
+            });
+
+            expect(callbackWiring.updateBacteriaMeters).toHaveBeenCalledExactlyOnceWith(
+                'bacteria-1',
+                -20,
+                -18,
+                [-30, -25, -40],
+                64
+            );
+        });
+
+        it('captures a device’s offline setup when asked, and prepares from that capture later', async () => {
+            const levainPort = { postMessage: () => {} } as unknown as MessagePort;
+            const controller = new AbortController();
+            const device = { id: 'levain-9', type: 'levain' };
+            callbackWiring.captureOfflineLevain.mockClear();
+            callbackWiring.captureOfflineLevain.mockReturnValueOnce('captured-levain-state');
+            prepareOfflineLevainMock.mockClear();
+
+            const prepare = getSink().captureOfflineInstrument(device);
+
+            expect(callbackWiring.captureOfflineLevain).toHaveBeenCalledExactlyOnceWith({
+                deviceId: 'levain-9',
+                device,
+            });
+            expect(prepareOfflineLevainMock).not.toHaveBeenCalled();
+
+            await prepare({ port: levainPort, signal: controller.signal });
+
+            expect(prepareOfflineLevainMock).toHaveBeenCalledExactlyOnceWith({
+                deviceId: 'levain-9',
+                port: levainPort,
+                signal: controller.signal,
+                captured: 'captured-levain-state',
+            });
+        });
+    });
+
+    describe('non-fatal startup probe failures', () => {
+        async function bootAgain(): Promise<void> {
+            vi.resetModules();
+            (await import('../bootstrap')).bootstrapApplication();
+        }
+
+        beforeEach(() => {
+            loggerMock.warn.mockClear();
+        });
+
+        it('warns with the error text when browser AI initialization rejects', async () => {
+            initBrowserAiMock.mockImplementationOnce(() => Promise.reject(new Error('webgpu missing')));
+
+            await bootAgain();
+
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    'Browser AI initialization failed (non-fatal): Error: webgpu missing'
+                )
+            );
+        });
+
+        it('warns with the error text when the RAVE model probe rejects', async () => {
+            initRaveModelsMock.mockImplementationOnce(() => Promise.reject(new Error('opfs unavailable')));
+
+            await bootAgain();
+
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    'RAVE model presence probe failed (non-fatal): Error: opfs unavailable'
+                )
+            );
+        });
     });
 });
