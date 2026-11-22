@@ -2,6 +2,7 @@ import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { DEFAULT_TEMPO_BPM, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../models/AgentRunPlanBounds';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
@@ -11,7 +12,6 @@ import {
 import { BRIEF_COMMAND_COUNT, BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
-import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../stores/agentRunStore';
 import { countMeasurementWork } from '../countMeasurementWork';
 import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal } from '../metricGoalContractTypes';

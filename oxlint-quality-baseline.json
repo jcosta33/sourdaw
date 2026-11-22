@@ -4925,9 +4925,6 @@
     },
     "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
@@ -5009,9 +5006,6 @@
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/validateActionPayload.ts": {
