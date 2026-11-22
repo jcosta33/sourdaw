@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, MutexGuard, PoisonError, TryLockError};
 
+use super::plugins::lock_plugin_lifecycle;
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
 use crate::host::plugin_editor_asks::editor_window_host;
@@ -954,6 +955,12 @@ pub async fn close_plugin_gui(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), String> {
+    // An attach moves the instance from the command store to the engine's
+    // under this lease, and in between it is in neither. Holding the lease puts
+    // the close on one side of the move, where the plugin is found and its
+    // editor closed, instead of destroying the window over an editor the
+    // plugin still holds open.
+    let _lifecycle_guard = lock_plugin_lifecycle(&instance_id).await;
     close_editor_and_window(&instance_id, windows_host, state).map_err(|error| error.to_string())
 }
 
@@ -1637,6 +1644,71 @@ mod tests {
             recorded_threads(&gui_threads),
             [windows.thread_id, windows.thread_id],
             "the close must reach the plugin on the shell's thread, like the open"
+        );
+    }
+
+    /// An attach moves an instance between the two stores under its lifecycle
+    /// lease, and in between it is in neither. A close that ran there found no
+    /// plugin, destroyed the window and left the plugin's editor open, so it
+    /// could never be reopened. The close waits for the move and then reaches
+    /// the plugin.
+    #[test]
+    fn a_close_made_while_an_attach_moves_the_instance_still_closes_the_plugins_editor() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "in-transit", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui("in-transit".to_string(), &windows, &state))
+            .expect("the fixture editor should open");
+
+        // The attach's hold: its lease, with the record out of every store.
+        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("in-transit")
+            .expect("nothing else holds the instance");
+        let in_transit = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("in-transit")
+            .expect("the fixture is engine-owned");
+        let gate = super::super::plugins::plugin_lifecycle_gate("in-transit");
+        // The map, the attach's lease and its guard, and `gate` above.
+        let idle_holders = Arc::strong_count(&gate);
+
+        std::thread::scope(|scope| {
+            let close = scope.spawn(|| {
+                crate::block_on_test(close_plugin_gui("in-transit".to_string(), &windows, &state))
+            });
+            // A close parked on the lease holds two more clones of its gate.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while Arc::strong_count(&gate) < idle_holders + 2 {
+                assert!(
+                    !close.is_finished(),
+                    "the close ran inside the attach's move instead of waiting for it"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the close never reached the lifecycle lease"
+                );
+                std::thread::yield_now();
+            }
+
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .insert("in-transit".to_string(), in_transit);
+            drop(attach_lease);
+
+            close
+                .join()
+                .expect("the close thread should not panic")
+                .expect("the close should succeed once the move is done");
+        });
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the plugin's editor must be closed, not only its window destroyed"
         );
     }
 

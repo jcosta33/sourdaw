@@ -470,7 +470,7 @@ pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
     PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
-struct PluginLifecycleLease {
+pub(super) struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
     _guard: tokio::sync::OwnedMutexGuard<()>,
@@ -488,7 +488,7 @@ impl Drop for PluginLifecycleLease {
         }
     }
 }
-fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+pub(super) fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut gates = PLUGIN_LIFECYCLE_GATES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -498,7 +498,7 @@ fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
     )
 }
-async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
+pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).lock_owned().await;
     PluginLifecycleLease {
@@ -514,7 +514,7 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
 /// load or unload owns this instance right now: the attach leaves it dormant
 /// and the next batch tries again, which is the same answer an engine refusal
 /// gets.
-fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
+pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).try_lock_owned().ok()?;
     Some(PluginLifecycleLease {
