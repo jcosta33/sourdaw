@@ -9,8 +9,8 @@ import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: vi.fn() }));
-vi.mock('../../../services/computeTrackHash', () => ({
-    computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
+vi.mock('../digestFreezePrintInput', () => ({
+    digestFreezePrintInput: vi.fn().mockReturnValue('mock-hash'),
 }));
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 

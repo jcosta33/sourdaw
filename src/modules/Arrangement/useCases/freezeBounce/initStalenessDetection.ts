@@ -1,117 +1,123 @@
-import { automationStore } from '#/modules/Automation/stores';
-import { sidechainStore } from '#/modules/Routing/stores';
+import { subgraphPrintInputsMatch, subscribeSubgraphPrintInputStores } from '#/modules/AudioEngine/useCases';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { trackStore, type TrackStoreState } from '../../stores/trackStore';
-import { vcaGroupStore } from '../../stores/vcaGroupStore';
+import { type Track, trackStore } from '../../stores/trackStore';
 
-import { computeFreezeSourceHash } from './computeFreezeSourceHash';
-import { type FreezeSources } from './freezeSourceTracks';
-import { takeChangedFreezeSources } from './takeChangedFreezeSources';
+import { digestFreezePrintInput } from './digestFreezePrintInput';
+import { readLiveFreezePrintInput } from './readLiveFreezePrintInput';
+import { type FreezePrintInput } from './selectFreezePrintInput';
 
-let isEvaluating = false;
-let prevState: TrackStoreState | null = null;
-const seenSources = new Map<string, FreezeSources>();
+function markStale(trackId: string): void {
+    updateTrack(trackId, (time) => ({
+        ...time,
+        freezeState: { ...time.freezeState, status: 'stale' },
+    }));
+}
 
 /**
- * Subscribes to the stores a freeze's render reads (tracks, sidechain routes, automation lanes,
- * VCA groups) to detect when a frozen track's sources are modified, transitioning its state to
- * 'stale'. A write only costs a hash when the sources of some frozen track actually differ from
- * the ones last seen.
+ * A buffer baked under older freeze rules is wrong in ways no downstream fix reaches: it was cut
+ * short by a tail the device declarations never sized, and it has this track's fader and pan
+ * position printed into it, which playback then applies a second time. Re-rendering is the only
+ * remedy, so it is stale, the state the UI already offers a re-freeze from, whatever its sources.
+ */
+function bakedUnderOlderRules(track: Track): boolean {
+    return (track.freezeState.renderSettings?.bakeVersion ?? 0) < FREEZE_BAKE_VERSION;
+}
+
+/**
+ * Re-evaluates every frozen track whenever a store its render reads is written (the tracks, MIDI
+ * rows, automation, sidechain routes, VCA groups, takes, clip gain envelopes, adjustment layers and
+ * modulators), and marks a track stale once the input its freeze prints no longer has the
+ * signature the take was rendered from.
+ *
+ * Change detection is by reference: a frozen track's print input is reselected on each write, and
+ * only digested when it reads some value other than the ones last seen. A first sighting (a
+ * freshly loaded or freshly frozen track) records what it reads and digests nothing, so a freeze
+ * signed under older rules stays frozen until one of its sources changes.
+ *
+ * Evaluation is synchronous. A write it causes, or any write that lands while it runs, asks for one
+ * more pass after it rather than being dropped.
  *
  * Conforms to R8: Staleness Detection.
  */
 export function initStalenessDetection(): () => void {
-    prevState = trackStore.value; // capture initial state
-    seenSources.clear();
-    for (const track of prevState?.tracks ?? []) {
-        if (track.freezeState.status === 'frozen') {
-            takeChangedFreezeSources(seenSources, track.id);
+    const seen = new Map<string, FreezePrintInput>();
+    let active = true;
+    let evaluating = false;
+    let passRequested = false;
+
+    function evaluateTrack(track: Track): void {
+        if (bakedUnderOlderRules(track)) {
+            markStale(track.id);
+            return;
+        }
+        const input = readLiveFreezePrintInput(track.id);
+        if (!input) {
+            return;
+        }
+        const previous = seen.get(track.id);
+        seen.set(track.id, input);
+        if (previous === undefined || subgraphPrintInputsMatch(previous, input)) {
+            return;
+        }
+        if (digestFreezePrintInput(input) !== track.freezeState.sourceContentHash) {
+            markStale(track.id);
         }
     }
 
-    function evaluate(state: TrackStoreState | null): void {
-        void (async () => {
-            if (isEvaluating || !state || !prevState) {
-                prevState = state;
-                return;
+    function runPass(): void {
+        const frozenTracks = (trackStore.value?.tracks ?? []).filter((track) => track.freezeState.status === 'frozen');
+        const frozenIds = new Set(frozenTracks.map((track) => track.id));
+        for (const trackId of seen.keys()) {
+            if (!frozenIds.has(trackId)) {
+                seen.delete(trackId);
             }
-
-            isEvaluating = true;
-            const previous = prevState;
-            prevState = state;
-
-            try {
-                for (const track of state.tracks) {
-                    if (track.freezeState.status !== 'frozen') {
-                        seenSources.delete(track.id);
-                        continue;
-                    }
-
-                    // A buffer baked under older freeze rules is wrong in ways
-                    // no downstream fix reaches: it was cut short by a tail the
-                    // device declarations never sized, and it has this track's
-                    // fader and pan position printed into it, which playback
-                    // then applies a second time. Re-rendering is the only
-                    // remedy, so it is marked stale — the state the UI already
-                    // offers a re-freeze from — regardless of whether its
-                    // content changed.
-                    //
-                    // Deliberately checked before the predecessor lookup, since
-                    // it reads nothing from the predecessor. Below that guard it
-                    // never fired on the load projection, where every track is
-                    // new and therefore skipped — so a user who opened a project
-                    // and pressed play straight away heard the legacy buffer
-                    // with fader and pan applied twice, until some later
-                    // unrelated store update happened to mark it.
-                    if ((track.freezeState.renderSettings?.bakeVersion ?? 0) < FREEZE_BAKE_VERSION) {
-                        updateTrack(track.id, (time) => ({
-                            ...time,
-                            freezeState: { ...time.freezeState, status: 'stale' },
-                        }));
-                        continue;
-                    }
-
-                    const prevTrack = previous.tracks.find((time) => time.id === track.id);
-                    // Read for every frozen track, so the first sighting is recorded even when
-                    // the predecessor lookup below skips it.
-                    //
-                    // The signature covers every track the freeze's render reads, so an edit to a
-                    // routed source, or a routing change that adds or removes one, counts.
-                    const sources = takeChangedFreezeSources(seenSources, track.id);
-                    if (prevTrack && sources) {
-                        const hash = await computeFreezeSourceHash(sources);
-                        if (hash !== track.freezeState.sourceContentHash) {
-                            updateTrack(track.id, (time) => ({
-                                ...time,
-                                freezeState: { ...time.freezeState, status: 'stale' },
-                            }));
-                        }
-                    }
-                }
-            } finally {
-                isEvaluating = false;
-            }
-        })();
+        }
+        for (const track of frozenTracks) {
+            evaluateTrack(track);
+        }
     }
 
-    const unsubscribes = [
-        trackStore.subscribe(evaluate),
-        sidechainStore.subscribe(() => {
-            evaluate(trackStore.value);
-        }),
-        automationStore.subscribe(() => {
-            evaluate(trackStore.value);
-        }),
-        vcaGroupStore.subscribe(() => {
-            evaluate(trackStore.value);
-        }),
-    ];
+    function takePassRequest(): boolean {
+        const requested = passRequested && active;
+        passRequested = false;
+        return requested;
+    }
+
+    function evaluate(): void {
+        if (!active) {
+            return;
+        }
+        if (evaluating) {
+            passRequested = true;
+            return;
+        }
+        evaluating = true;
+        try {
+            do {
+                runPass();
+            } while (takePassRequest());
+        } finally {
+            evaluating = false;
+        }
+    }
+
+    for (const track of trackStore.value?.tracks ?? []) {
+        if (track.freezeState.status !== 'frozen') {
+            continue;
+        }
+        const input = readLiveFreezePrintInput(track.id);
+        if (input) {
+            seen.set(track.id, input);
+        }
+    }
+
+    const unsubscribe = subscribeSubgraphPrintInputStores(evaluate);
 
     return () => {
-        for (const unsubscribe of unsubscribes) {
-            unsubscribe();
-        }
+        active = false;
+        seen.clear();
+        unsubscribe();
     };
 }

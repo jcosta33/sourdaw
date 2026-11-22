@@ -1,9 +1,11 @@
 import { renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Track } from '../../models/Track';
 import { getTrackEligibility } from '../../stores/trackEligibility';
-import { readOfflineRenderSubgraph } from '../readOfflineRenderSubgraph';
+import { trackStore } from '../../stores/trackStore';
+import { type OfflineRenderSubgraph, selectOfflineRenderSubgraph } from '../selectOfflineRenderSubgraph';
 
 /** Seconds of extra render an auto-tail bounce gets before the silence trim. */
 const AUTO_TAIL_SECONDS = 10;
@@ -70,7 +72,25 @@ export type RenderOfflineOptions = {
      * Pass an explicit handler to collect instead of notify.
      */
     onWarning?: (message: string) => void;
+    /**
+     * A render input captured by the caller in one synchronous read (a freeze): the subgraph is
+     * selected from it and the render reads it, never the live stores, so the take is exactly the
+     * input the caller signed.
+     */
+    captured?: {
+        subgraph: OfflineRenderSubgraph;
+        source: NonNullable<Parameters<typeof renderTrackSubgraphOffline>[0]['source']>;
+    };
 };
+
+function readLiveRenderSubgraph(targetTrack: Track, includeSendReturns: boolean): OfflineRenderSubgraph {
+    return selectOfflineRenderSubgraph({
+        targetTrack,
+        allTracks: trackStore.value?.tracks ?? [],
+        sidechainRoutes: sidechainStore.value?.routes ?? [],
+        includeSendReturns,
+    });
+}
 
 /**
  * Render a single track's region offline for freeze and bounce.
@@ -103,7 +123,8 @@ export async function renderTrackOffline(
         return null;
     }
 
-    const { renderTracks, printTrackIds } = readOfflineRenderSubgraph(targetTrack, options?.includeSends ?? true);
+    const { renderTracks, printTrackIds } =
+        options?.captured?.subgraph ?? readLiveRenderSubgraph(targetTrack, options?.includeSends ?? true);
 
     const buffer = await renderTrackSubgraphOffline({
         targetTrackId: targetTrack.id,
@@ -120,6 +141,7 @@ export async function renderTrackOffline(
         onScheduled: options?.onScheduled,
         onWarning: options?.onWarning ?? reportDroppedDeviceToUser,
         abortSignal: options?.abortSignal,
+        source: options?.captured?.source,
     });
 
     if (!buffer) {

@@ -10,6 +10,7 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
@@ -31,25 +32,25 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Track } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../../services/computeTrackHash';
-import { trackStore } from '../../../stores';
+import { trackStore, vcaGroupStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, removeClip, setArrangementEventBus } from '../../index';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
+import { digestFreezePrintInput } from '../digestFreezePrintInput';
 import { initStalenessDetection } from '../initStalenessDetection';
 import { renderTrackOffline } from '../renderOffline';
 
 registerSupportingServicePorts();
 
 // The Freeze action, its commit and the clip writes are the real ones over a real CRDT document.
-// Only the offline render, which owns the audio, is replaced; like the real one it reads the live
-// track list when it is called.
+// Only the offline render, which owns the audio, is replaced; like the real one it reads the input
+// the freeze captured and hands it, never the live stores.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
-vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
-    return { computeTrackHash: vi.fn(original.computeTrackHash) };
+vi.mock('../digestFreezePrintInput', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../digestFreezePrintInput')>();
+    return { digestFreezePrintInput: vi.fn(original.digestFreezePrintInput) };
 });
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -58,14 +59,63 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     clearReportedLatency: vi.fn(),
 }));
 
-const { computeTrackHash: realComputeTrackHash } = await vi.importActual<
-    typeof import('../../../services/computeTrackHash')
->('../../../services/computeTrackHash');
+const { digestFreezePrintInput: realDigest } =
+    await vi.importActual<typeof import('../digestFreezePrintInput')>('../digestFreezePrintInput');
 
 const TRACK_ID = 'track-1';
 const SOURCE_ID = 'track-source';
 const OTHER_ID = 'track-other';
 const CHANGED_MESSAGE = 'The track changed while it was freezing. Freeze it again.';
+
+const FIRST_EXTRA_ID = 'track-first-extra';
+const SECOND_EXTRA_ID = 'track-second-extra';
+
+function automationLane(trackId: string, parameterId: string, value: number) {
+    return {
+        id: `lane-${trackId}-${parameterId}`,
+        trackId,
+        parameterId,
+        parameterName: parameterId,
+        points: [{ id: 'point-1', beat: 0, value, curve: 'linear' as const, tension: 0 }],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+}
+
+/** A sidechain route from the routed source into the target: both its ends are in the render. */
+function sidechainRoute(gain: number) {
+    return {
+        id: 'route-inside',
+        sourceTrackId: SOURCE_ID,
+        targetTrackId: TRACK_ID,
+        targetDeviceId: 'device-1',
+        targetParameterId: 'key',
+        gain,
+    };
+}
+
+function setVcaGain(gain: number): void {
+    vcaGroupStore.set({ groups: [{ id: 'vca-1', name: 'VCA', gain, muted: false, trackIds: [SOURCE_ID] }] });
+}
+
+function joinSourceToVca(gain: number): void {
+    setVcaGain(gain);
+    updateTrack(SOURCE_ID, (track) => ({ ...track, vcaGroupId: 'vca-1' }));
+}
+
+function setSourceNotePitch(pitch: number): void {
+    midiStore.set({
+        ...midiStore.value!,
+        notesByClipId: {
+            ...midiStore.value!.notesByClipId,
+            'source-clip': [{ id: 'note-1', pitch, startBeat: 0, duration: 1, velocity: 90 }],
+        },
+    });
+}
 
 function findTrack(trackId: string) {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
@@ -126,7 +176,7 @@ async function freeze(): Promise<void> {
 }
 
 beforeEach(() => {
-    vi.mocked(computeTrackHash).mockImplementation(realComputeTrackHash);
+    vi.mocked(digestFreezePrintInput).mockImplementation(realDigest);
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
@@ -153,19 +203,23 @@ afterEach(() => {
     clearUndoHistory();
     resetActionReplayAuthority();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    sidechainStore.set({ routes: [] });
+    vcaGroupStore.set({ groups: [] });
+    automationStore.set({ lanes: [] });
     projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
 });
 
 describe('a freeze whose render reads a routed source track', () => {
-    it('refuses the take when the source gains a clip during the digest and loses it before the commit', async () => {
-        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-            const hash = await realComputeTrackHash(clips, devices);
-            addLateClip(SOURCE_ID);
-            return hash;
-        });
+    it('renders the captured sources and commits when a source gains a clip and loses it during the render', async () => {
+        let renderedSourceClipIds: string[] = [];
         vi.mocked(renderTrackOffline).mockImplementation((_track, _start, _end, options) => {
+            addLateClip(SOURCE_ID);
+            const capturedSource = options?.captured?.source.project.tracks?.tracks.find(
+                (candidate) => candidate.id === SOURCE_ID
+            );
+            renderedSourceClipIds = (capturedSource?.clips ?? []).map((clip) => clip.id);
             options?.onScheduled?.({ scheduledNotes: 1, scheduledBuffers: [], withheldDeviceTypes: [] });
             removeClip('late-clip');
             return Promise.resolve(renderedBuffer());
@@ -173,12 +227,9 @@ describe('a freeze whose render reads a routed source track', () => {
 
         await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
 
-        const track = findTrack(TRACK_ID);
-        expect(track.frozen).toBe(false);
-        expect(track.freezeState.sourceContentHash).toBeUndefined();
-        expect(renderTrackOffline).not.toHaveBeenCalled();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+        expect(renderedSourceClipIds).toEqual(['source-clip']);
+        expect(findTrack(TRACK_ID).frozen).toBe(true);
+        expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
     });
 
     it('refuses the take when the source is edited during the render', async () => {
@@ -197,7 +248,11 @@ describe('a freeze whose render reads a routed source track', () => {
     it.each([
         ["a routed source's gain changes", (track: Track) => ({ ...track, gain: 0.3 })],
         ["a routed source's pan changes", (track: Track) => ({ ...track, pan: -0.5 })],
-        ['a routed source is muted', (track: Track) => ({ ...track, muted: true })],
+        [
+            "a routed source's automation is turned off",
+            (track: Track) => ({ ...track, automationMode: 'off' as const }),
+        ],
+        ['a routed source is disabled', (track: Track) => ({ ...track, disabled: true })],
         [
             'a routed source gains a send',
             (track: Track) => ({ ...track, sends: [{ busId: TRACK_ID, level: 0.5, preFader: false }] }),
@@ -295,6 +350,98 @@ describe('a freeze whose render reads a routed source track', () => {
         expect(findTrack(TRACK_ID).freezeState.sourceContentHash).toBe(first);
     });
 
+    it('commits the take when a routed content source is muted during the render', async () => {
+        // The render honours only a sidechain key's mute; a content source prints unmuted.
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            updateTrack(SOURCE_ID, (track) => ({ ...track, muted: true }));
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(true);
+    });
+
+    it("refuses the take when a point on the target's device lane is edited during the render", async () => {
+        automationStore.set({ lanes: [automationLane(TRACK_ID, 'device-1:cutoff', 0.2)] });
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            automationStore.set({ lanes: [automationLane(TRACK_ID, 'device-1:cutoff', 0.9)] });
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it("commits the take when a point on the target's own gain lane is edited during the render", async () => {
+        automationStore.set({ lanes: [automationLane(TRACK_ID, 'gain', 0.2)] });
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            automationStore.set({ lanes: [automationLane(TRACK_ID, 'gain', 0.9)] });
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(true);
+    });
+
+    it("refuses the take when the target's send level changes during the render", async () => {
+        updateTrack(TRACK_ID, (track) => ({ ...track, sends: [{ busId: OTHER_ID, level: 0.8, preFader: false }] }));
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            updateTrack(TRACK_ID, (track) => ({ ...track, sends: [{ busId: OTHER_ID, level: 0.2, preFader: false }] }));
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it("refuses the take when a routed source's VCA group gain changes during the render", async () => {
+        joinSourceToVca(0.5);
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            setVcaGain(0.9);
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
+    it('renders the captured VCA gain and commits when it changes and changes back during the render', async () => {
+        joinSourceToVca(0.5);
+        let renderedGain: number | undefined;
+        vi.mocked(renderTrackOffline).mockImplementation((_track, _start, _end, options) => {
+            setVcaGain(0.9);
+            renderedGain = options?.captured?.source.project.vcaGroups[0]?.gain;
+            setVcaGain(0.5);
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(renderedGain).toBe(0.5);
+        expect(findTrack(TRACK_ID).frozen).toBe(true);
+    });
+
+    it('refuses the take when a sidechain route inside the render changes during the render', async () => {
+        sidechainStore.set({ routes: [sidechainRoute(1)] });
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            sidechainStore.set({ routes: [sidechainRoute(0.5)] });
+            return Promise.resolve(renderedBuffer());
+        });
+
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+
+        expect(findTrack(TRACK_ID).frozen).toBe(false);
+        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+    });
+
     describe('once frozen', () => {
         let stopStaleness: () => void;
 
@@ -317,16 +464,16 @@ describe('a freeze whose render reads a routed source track', () => {
         });
 
         it('keeps the freeze when a track outside the render is edited', async () => {
-            vi.mocked(computeTrackHash).mockClear();
+            vi.mocked(digestFreezePrintInput).mockClear();
 
             addLateClip(OTHER_ID);
 
-            expect(computeTrackHash).not.toHaveBeenCalled();
+            expect(digestFreezePrintInput).not.toHaveBeenCalled();
             expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
 
             addLateClip(SOURCE_ID, 'source-late-clip');
 
-            expect(computeTrackHash).toHaveBeenCalled();
+            expect(digestFreezePrintInput).toHaveBeenCalled();
         });
 
         it('marks the track stale when the source is rerouted away', async () => {
@@ -401,7 +548,7 @@ describe('a freeze whose render reads a routed source track', () => {
 
         it('keeps the freeze when a sidechain route between unrelated tracks changes', async () => {
             await freezeWatched();
-            vi.mocked(computeTrackHash).mockClear();
+            vi.mocked(digestFreezePrintInput).mockClear();
 
             sidechainStore.set({
                 routes: [
@@ -416,7 +563,111 @@ describe('a freeze whose render reads a routed source track', () => {
                 ],
             });
 
-            expect(computeTrackHash).not.toHaveBeenCalled();
+            expect(digestFreezePrintInput).not.toHaveBeenCalled();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+        });
+    });
+    describe('once frozen, watched for changes', () => {
+        let stopStaleness: () => void = () => undefined;
+
+        afterEach(() => {
+            stopStaleness();
+        });
+
+        async function freezeWatched(): Promise<void> {
+            await freeze();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+            stopStaleness = initStalenessDetection();
+        }
+
+        it('marks the track stale when a note of a routed MIDI source is edited', async () => {
+            resetProject('midi');
+            setSourceNotePitch(60);
+            await freezeWatched();
+
+            setSourceNotePitch(62);
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('marks the track stale when a routed source is disabled', async () => {
+            await freezeWatched();
+
+            updateTrack(SOURCE_ID, (track) => ({ ...track, disabled: true }));
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('marks the track stale when a sidechain route inside the render changes', async () => {
+            sidechainStore.set({ routes: [sidechainRoute(1)] });
+            await freezeWatched();
+
+            sidechainStore.set({ routes: [sidechainRoute(0.5)] });
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('counts both writes that land while an evaluation is in flight', async () => {
+            // Two more frozen tracks, ordered ahead of the target, so a pass has already read them
+            // by the time the target's evaluation runs.
+            const state = trackStore.value!;
+            trackStore.set({
+                ...state,
+                tracks: [
+                    createTrack({ id: FIRST_EXTRA_ID, name: 'First extra', kind: 'audio' }),
+                    createTrack({ id: SECOND_EXTRA_ID, name: 'Second extra', kind: 'audio' }),
+                    ...state.tracks,
+                ],
+            });
+            addClip({
+                id: 'first-extra-clip',
+                trackId: FIRST_EXTRA_ID,
+                startBeat: 0,
+                endBeat: 4,
+                name: 'A',
+                type: 'audio',
+            });
+            addClip({
+                id: 'second-extra-clip',
+                trackId: SECOND_EXTRA_ID,
+                startBeat: 0,
+                endBeat: 4,
+                name: 'B',
+                type: 'audio',
+            });
+            vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer());
+            await executeAppAction({ type: 'freezeTrack', payload: { trackId: FIRST_EXTRA_ID } });
+            await executeAppAction({ type: 'freezeTrack', payload: { trackId: SECOND_EXTRA_ID } });
+            await freezeWatched();
+            vi.mocked(digestFreezePrintInput).mockImplementationOnce((input) => {
+                addLateClip(FIRST_EXTRA_ID, 'first-extra-late');
+                addLateClip(SECOND_EXTRA_ID, 'second-extra-late');
+                return realDigest(input);
+            });
+
+            addLateClip(SOURCE_ID);
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+                expect(findTrack(FIRST_EXTRA_ID).freezeState.status).toBe('stale');
+                expect(findTrack(SECOND_EXTRA_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        it('evaluates nothing once torn down', async () => {
+            await freezeWatched();
+            stopStaleness();
+            vi.mocked(digestFreezePrintInput).mockClear();
+
+            addLateClip(SOURCE_ID);
+
+            expect(digestFreezePrintInput).not.toHaveBeenCalled();
             expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
         });
     });

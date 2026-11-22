@@ -24,8 +24,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeAppAction: vi.fn(async () => undefined),
 }));
 
-vi.mock('../../../services/computeTrackHash', () => ({
-    computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
+vi.mock('../digestFreezePrintInput', () => ({
+    digestFreezePrintInput: vi.fn().mockReturnValue('mock-hash'),
 }));
 
 vi.mock('../renderOffline', () => ({

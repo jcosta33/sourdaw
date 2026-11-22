@@ -1,11 +1,12 @@
 import {
+    type AdjustmentLayer,
     type TrackStoreState,
     type TakeLaneStoreState,
     type GainEnvelopeStoreState,
     type SoloMode,
     type VcaGroupState,
 } from '#/modules/Arrangement/stores';
-import { type AutomationStoreState } from '#/modules/Automation/stores';
+import { type AutomationStoreState, type ModulationStoreState } from '#/modules/Automation/stores';
 import { type MidiStoreState, type GrooveTemplateState, type ChordTrackState } from '#/modules/MIDI/stores';
 import { type externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { type sidechainStore } from '#/modules/Routing/stores';
@@ -73,4 +74,14 @@ export type OfflineRenderRuntimeSource = {
     externalPluginParameters: typeof externalPluginParameterStore.value;
     calibrationByDevice: ReadonlyMap<string, Readonly<Record<string, number>> | null>;
     soloMode: SoloMode;
+};
+
+/**
+ * What a render of the live session reads besides its document: the adjustment-layer stack and the
+ * modulator rack. Supplying it with a project source says that document is the live session's own,
+ * so device setup is captured from the live instances, not projected from each device record.
+ */
+export type OfflineRenderSessionSource = {
+    adjustmentLayers: AdjustmentLayer[];
+    modulators: ModulationStoreState['modulators'];
 };
