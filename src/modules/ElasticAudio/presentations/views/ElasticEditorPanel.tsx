@@ -28,7 +28,6 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
-import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -45,6 +44,8 @@ import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSen
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
+
+import { resolveAudibleSourceSpans, type SourceSpanBeats } from './audibleSourceSpans';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -172,8 +173,6 @@ export const ElasticEditorPanel = (): ReactElement => {
     }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds, snapValue, transientSensitivity]);
 
     const beatWidth = Math.max(1, 40 * zoom);
-    const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
-    const playbackStretchRatio = resolvePlaybackStretchRatio(clip);
     const audioOffsetSeconds = clip ? resolveAudioSourceOffsetSeconds(clip, tempo) : 0;
 
     useEffect(() => {
@@ -184,10 +183,8 @@ export const ElasticEditorPanel = (): ReactElement => {
             beatWidth,
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
-            clipLengthBeats,
-            stretchRatio: playbackStretchRatio,
+            audibleSpans: resolveAudibleSourceSpans(clip, tempo),
             tempo,
-            audioOffsetSeconds,
             scrollKey: `${clipId ?? ''}:${clip?.audioBufferId ?? ''}:${audioOffsetSeconds}`,
             scrolledToWindowRef,
             viewScrollLeft,
@@ -210,18 +207,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };
-    }, [
-        clipId,
-        zoom,
-        warpState,
-        beatWidth,
-        viewScrollLeft,
-        clip?.audioBufferId,
-        clipLengthBeats,
-        playbackStretchRatio,
-        tempo,
-        audioOffsetSeconds,
-    ]);
+    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip, tempo, audioOffsetSeconds]);
 
     if (clipId === null || !isAudioClip) {
         return (
@@ -594,13 +580,23 @@ function visibleMarkers(
     });
 }
 
-// Same gate and bound playback applies (`scheduleAudioClips`, `audioWaveformSpan`): an off clip
-// ignores its stored ratio.
-function resolvePlaybackStretchRatio(clip: { stretchMode?: string; stretchRatio?: number } | null): number {
-    if (!clip?.stretchMode || clip.stretchMode === 'off') {
-        return 1;
+type XRange = { startX: number; endX: number };
+
+/** The parts of [0, width] outside every audible window, left to right. */
+function dimmedRanges(windows: readonly XRange[], width: number): { x: number; width: number }[] {
+    const ranges: { x: number; width: number }[] = [];
+    let cursor = 0;
+    for (const window of windows) {
+        const start = Math.min(window.startX, width);
+        if (start > cursor) {
+            ranges.push({ x: cursor, width: start - cursor });
+        }
+        cursor = Math.max(cursor, window.endX);
     }
-    return boundStretchRatio(clip.stretchRatio ?? 1);
+    if (cursor < width) {
+        ranges.push({ x: cursor, width: width - cursor });
+    }
+    return ranges;
 }
 
 const PEAK_BIN_MARGIN = 16;
@@ -623,10 +619,8 @@ type DrawArgs = {
     beatWidth: number;
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
-    clipLengthBeats: number;
-    stretchRatio: number;
+    audibleSpans: readonly SourceSpanBeats[];
     tempo: number;
-    audioOffsetSeconds: number;
     scrollKey: string;
     scrolledToWindowRef: { current: string | null };
     viewScrollLeft: number;
@@ -643,8 +637,7 @@ type WaveformDrawing = {
     dpr: number;
     beatWidth: number;
     scrollLeft: number;
-    windowStartX: number;
-    windowEndX: number;
+    windowsKey: string;
     background: string;
     cssWidth: string;
     cssHeight: string;
@@ -678,10 +671,8 @@ function drawWaveform(args: DrawArgs): void {
         beatWidth,
         warpState,
         clipAudioBufferId,
-        clipLengthBeats,
-        stretchRatio,
+        audibleSpans,
         tempo,
-        audioOffsetSeconds,
         scrollKey,
         scrolledToWindowRef,
         viewScrollLeft,
@@ -700,14 +691,13 @@ function drawWaveform(args: DrawArgs): void {
     // same frame (x = file beat * beatWidth), so a marker sits on the transient it marks.
     const sourceSeconds = clipAudioBufferId ? (audioBufferCache.get(clipAudioBufferId)?.duration ?? 0) : 0;
     const sourceBeats = (sourceSeconds * tempo) / 60;
-    const windowStartBeats = (audioOffsetSeconds * tempo) / 60;
-    const windowEndBeats = windowStartBeats + clipLengthBeats * stretchRatio;
-    // The source and the audible window set the extent, so the canvas keeps its size when Detect adds
+    const lastWindowEndBeats = audibleSpans.reduce((max, span) => Math.max(max, span.endBeats), 0);
+    // The source and the audible windows set the extent, so the canvas keeps its size when Detect adds
     // markers: growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
         64,
         sourceBeats + 8,
-        windowEndBeats + 8,
+        lastWindowEndBeats + 8,
         warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
@@ -716,8 +706,11 @@ function drawWaveform(args: DrawArgs): void {
     const backingWidth = Math.floor(width * dpr);
     const backingHeight = Math.floor(height * dpr);
     const background = resolveToken('--color-bg-overlay', '#151515');
-    const windowStartX = windowStartBeats * beatWidth;
-    const windowEndX = windowEndBeats * beatWidth;
+    const windows = audibleSpans.map((span) => ({
+        startX: span.startBeats * beatWidth,
+        endX: span.endBeats * beatWidth,
+    }));
+    const windowsKey = windows.map((window) => `${window.startX}:${window.endX}`).join('|');
     const sourceBins = Math.max(1, Math.floor(sourceBeats * beatWidth));
     // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
     // removing a source invalidates its waveform cache. A new peak identity must redraw.
@@ -735,8 +728,7 @@ function drawWaveform(args: DrawArgs): void {
         previous.dpr === dpr &&
         previous.beatWidth === beatWidth &&
         previous.scrollLeft === viewScrollLeft &&
-        previous.windowStartX === windowStartX &&
-        previous.windowEndX === windowEndX &&
+        previous.windowsKey === windowsKey &&
         previous.background === background &&
         canvas.width === backingWidth &&
         canvas.height === backingHeight &&
@@ -761,7 +753,7 @@ function drawWaveform(args: DrawArgs): void {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (scrolledToWindowRef.current !== scrollKey) {
         scrolledToWindowRef.current = scrollKey;
-        container.scrollLeft = windowStartX;
+        container.scrollLeft = windows[0]?.startX ?? 0;
     }
     // Only the bins in view are stroked, so a scroll redraw costs the viewport, not the source length.
     const binRange = visibleBinRange(container.scrollLeft, container.clientWidth, peaks?.length ?? 0);
@@ -793,13 +785,10 @@ function drawWaveform(args: DrawArgs): void {
         }
     }
 
-    // Source outside the clip's audible window stays visible, dimmed.
+    // Source outside the clip's audible windows stays visible, dimmed.
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    if (windowStartX > 0) {
-        ctx.fillRect(0, 0, Math.min(windowStartX, width), height);
-    }
-    if (windowEndX < width) {
-        ctx.fillRect(Math.max(0, windowEndX), 0, width - Math.max(0, windowEndX), height);
+    for (const range of dimmedRanges(windows, width)) {
+        ctx.fillRect(range.x, 0, range.width, height);
     }
 
     const grid = { width, height, beatWidth };
@@ -845,8 +834,7 @@ function drawWaveform(args: DrawArgs): void {
         dpr,
         beatWidth,
         scrollLeft: viewScrollLeft,
-        windowStartX,
-        windowEndX,
+        windowsKey,
         background,
         cssWidth: canvas.style.width,
         cssHeight: canvas.style.height,
