@@ -191,7 +191,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         >(() => ({ status: 'ineligible' })),
         adjustmentLayerStore: { value: null },
         gainEnvelopeStore: { value: null },
-        getTrackEligibility: vi.fn(),
+        getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
         markerStore: { value: null },
         updateClipInStore: vi.fn(() => false),
         warpStateStore: { value: null },
@@ -1999,6 +1999,57 @@ describe('startPlayheadScheduler', () => {
         expect(audioEngineMocks.startAudioRecording).not.toHaveBeenCalled();
         expect(arrangementMocks.stopRecording).not.toHaveBeenCalled();
         expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // #7239 — a frozen track plays only its buffer and never starts a take, so
+    // a punch-in with only a frozen track armed must not engage a recording
+    // that captures nothing.
+    it('does not punch in when the only armed track is frozen', async () => {
+        trackStoreState.value = {
+            tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'midi', frozen: true, clips: [] })],
+        };
+        transportStoreState.value = playingState({
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+
+        expect(arrangementMocks.startRecording).not.toHaveBeenCalled();
+        expect(arrangementMocks.updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // A frozen armed audio track beside the track that opens the punch is no
+    // take target, so it must not ask for the input: an input failure there
+    // would report the whole punch as discarded.
+    it('captures no input for a frozen armed audio track beside an unfrozen armed MIDI punch', async () => {
+        trackStoreState.value = {
+            tracks: [
+                recordingTrack({ id: 'midi-1', armed: true, kind: 'midi', clips: [] }),
+                recordingTrack({ id: 'audio-frozen', armed: true, kind: 'audio', frozen: true, clips: [] }),
+            ],
+        };
+        transportStoreState.value = playingState({
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'midi-1', id: 'clip-midi-1', startBeat: 0 }]);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => {
+            expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
+            expect(schedulerSession.tickInFlight).toBe(false);
+        });
+
+        expect(audioEngineMocks.startAudioRecording).not.toHaveBeenCalled();
     });
 
     // The punched clip is anchored on the punch point, so a note played on the

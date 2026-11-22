@@ -66,6 +66,7 @@ const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string 
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
     trackStore: { value: { tracks: [] } },

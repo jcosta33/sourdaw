@@ -134,6 +134,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: vi.fn(),
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         activeRecordingRef: { current: [] },
         readMusicalRangeInputs: vi.fn(() => []),
         trackStore: mocks.trackStore,
