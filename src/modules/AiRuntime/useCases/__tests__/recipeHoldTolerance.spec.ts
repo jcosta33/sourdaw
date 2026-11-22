@@ -284,25 +284,25 @@ describe('recipe holds at admission', () => {
     });
 
     it('keeps increase and decrease goals at tolerance zero and judged by direction alone', () => {
-        const goals = readGoals('bass-intimate').map(({ metricId, relation, tolerance }) => ({
+        const goals = readGoals('bus-intimate').map(({ metricId, relation, tolerance }) => ({
             metricId,
             relation,
             tolerance,
         }));
         expect(goals).toEqual([
-            { metricId: 'dynamicRangeEstimate', relation: 'decrease', tolerance: 0 },
             { metricId: 'rms', relation: 'increase', tolerance: 0 },
+            { metricId: 'dynamicRangeEstimate', relation: 'decrease', tolerance: 0 },
         ]);
         const figures = (range: [number, number], level: [number, number]): Figures => ({
             dynamicRangeEstimate: { baseline: range[0], preview: range[1] },
             rms: { baseline: level[0], preview: level[1] },
         });
-        expect(admit('bass-intimate', figures([10, 9.999], [-20, -19.999]))).toMatchObject({ status: 'verified' });
-        expect(admit('bass-intimate', figures([10, 10], [-20, -19]))).toMatchObject({
+        expect(admit('bus-intimate', figures([10, 9.999], [-20, -19.999]))).toMatchObject({ status: 'verified' });
+        expect(admit('bus-intimate', figures([10, 10], [-20, -19]))).toMatchObject({
             status: 'blocked',
             failure: 'out-of-tolerance',
         });
-        expect(admit('bass-intimate', figures([10, 9], [-20, -20]))).toMatchObject({
+        expect(admit('bus-intimate', figures([10, 9], [-20, -20]))).toMatchObject({
             status: 'blocked',
             failure: 'out-of-tolerance',
         });

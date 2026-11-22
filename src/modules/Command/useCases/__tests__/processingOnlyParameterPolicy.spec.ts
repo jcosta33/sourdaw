@@ -273,7 +273,6 @@ describe('processing-only parameter policy', () => {
     afterEach(() => {
         stopAutomationRecording();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         undoStore.set({ past: [], future: [] });
         automationStore.set({ lanes: [] });

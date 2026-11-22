@@ -483,7 +483,6 @@ describe('automation lane binding in one agent batch', () => {
 
     afterEach(() => {
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();

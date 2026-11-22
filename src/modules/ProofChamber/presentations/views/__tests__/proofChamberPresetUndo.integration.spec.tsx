@@ -50,6 +50,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
         openCachedAudioBufferHold: vi.fn(() => {
             throw new Error('Unexpected audio buffer residency hold in this fixture');
         }),

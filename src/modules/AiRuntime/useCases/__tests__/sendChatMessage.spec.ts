@@ -735,7 +735,6 @@ describe('sendChatMessage retained-provider selection', () => {
 
     afterEach(() => {
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);

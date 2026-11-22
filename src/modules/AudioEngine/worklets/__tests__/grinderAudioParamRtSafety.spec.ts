@@ -6,7 +6,7 @@ import {
     getGrinderAutomationValue,
     grinderAutomatedProcessSizes,
     grinderProcessSizes,
-    grinderRightPtrCalls,
+    grinderCallCounts,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
 } from '../../testing/grinderProcessorTestHarness';
@@ -39,7 +39,7 @@ describe('grinderAudioParamRtSafety', () => {
         expect(grinderSetParamCalls).toEqual([]);
         expect(grinderProcessSizes).toEqual([]);
         expect(grinderAutomatedProcessSizes).toEqual([frames]);
-        expect(grinderRightPtrCalls).toBe(0);
+        expect(grinderCallCounts.rightPtr).toBe(0);
         expect(getGrinderAutomationHeader(0)).toBe(frames);
         expect([0, 1, 2, 3].map((frame) => getGrinderAutomationValue(0, frame))).toEqual([1, 2, 3, 4]);
         expect(getGrinderAutomationHeader(6)).toBe(1);

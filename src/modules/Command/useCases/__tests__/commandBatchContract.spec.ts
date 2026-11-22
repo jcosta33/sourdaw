@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
@@ -150,7 +150,6 @@ function splitBatchReceipt(result: Awaited<ReturnType<typeof executeVersionedCom
 describe('command batch contract', () => {
     afterEach(() => {
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
     });
 
@@ -906,26 +905,5 @@ describe('command batch contract', () => {
         expect(receipt.outcome).toBe('rejected');
         expect(receipt.commandOutcomes.map((command) => command.outcome)).toEqual(['not-applied', 'not-applied']);
         expect(receipt.semanticDiff).toBeNull();
-    });
-
-    it('does not dispatch a preview batch when isolated preflight state is unavailable', async () => {
-        const execute = vi.fn();
-        registerHandlerMap({
-            setTrackGain: { execute, describe: () => ({ label: 'Set gain', inverseAction: null }), undoable: false },
-            setTrackPan: { execute, describe: () => ({ label: 'Set pan', inverseAction: null }), undoable: false },
-        });
-
-        const input = batch();
-        const result = await executeVersionedCommandBatchEnvelope({
-            authority: authority(input),
-            serialized: JSON.stringify(input),
-        });
-
-        expect(result).toEqual({
-            status: 'rejected',
-            reason: 'Command batch preflight state is unavailable',
-            actions: [],
-        });
-        expect(execute).not.toHaveBeenCalled();
     });
 });
