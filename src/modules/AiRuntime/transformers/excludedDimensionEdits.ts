@@ -1,6 +1,10 @@
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type ExcludingPerceptualConstraint, type PerceptualExcludedDimension } from '../models/PerceptualConstraint';
+import {
+    readDimensionEditedByEveryWrite,
+    readPerceptualDimensionOfDeviceType,
+} from '../models/PerceptualDimensionByDeviceType';
 import { type ProjectContext } from '../models/ProjectContext';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
@@ -11,16 +15,6 @@ export type Edit = { dimension: EditDimension; trackId: string | null; detail: s
 type DeviceFacts = { type: string | null; trackId: string | null };
 export type AutomatedParameter = { trackId: string | null; parameterId: string };
 
-/** Devices whose whole job is spectral shaping: removing or bypassing one changes the low end it shapes. */
-const SPECTRAL_DEVICE_TYPES = new Set(['builtin-eq', 'builtin-filter']);
-/** Devices that add space around a source. */
-const SPATIAL_DEVICE_TYPES = new Set([
-    'builtin-reverb',
-    'builtin-convolution-reverb',
-    'builtin-delay',
-    'builtin-chorus',
-    'builtin-stereo-widener',
-]);
 /** Parameters on other devices that set where their low end is cut or summed to mono. */
 const LOW_END_PARAMETER_IDS = new Set(['rev-lowcut', 'delay-lowcut', 'conv-lowcut', 'width-mono-bass']);
 const SPATIAL_PARAMETER_PREFIXES = ['rev-', 'conv-', 'delay-', 'chorus-', 'width-'];
@@ -53,7 +47,15 @@ function isSpatialParameter(deviceType: string | null, paramId: string): boolean
     if (deviceType === null) {
         return SPATIAL_PARAMETER_PREFIXES.some((prefix) => paramId.startsWith(prefix));
     }
-    return SPATIAL_DEVICE_TYPES.has(deviceType);
+    return readDimensionEditedByEveryWrite(deviceType) === 'ambience';
+}
+
+/** A device of unknown type is judged by its parameter's prefix, a known one by what every write on it edits. */
+function isLowEndFilterWrite(deviceType: string | null, paramId: string): boolean {
+    if (deviceType === null) {
+        return paramId.startsWith('filter-');
+    }
+    return readDimensionEditedByEveryWrite(deviceType) === 'low-frequency-band';
 }
 
 /**
@@ -63,9 +65,10 @@ function isSpatialParameter(deviceType: string | null, paramId: string): boolean
  */
 function parameterDimensions(deviceType: string | null, paramId: string): PerceptualExcludedDimension[] {
     const dimensions: PerceptualExcludedDimension[] = [];
-    const eqLowBand = paramId.startsWith('eq-low-') && (deviceType === null || deviceType === 'builtin-eq');
-    const filter = deviceType === 'builtin-filter' || (deviceType === null && paramId.startsWith('filter-'));
-    if (eqLowBand || filter || LOW_END_PARAMETER_IDS.has(paramId)) {
+    const eqLowBand =
+        paramId.startsWith('eq-low-') &&
+        (deviceType === null || readPerceptualDimensionOfDeviceType(deviceType) === 'low-frequency-band');
+    if (eqLowBand || isLowEndFilterWrite(deviceType, paramId) || LOW_END_PARAMETER_IDS.has(paramId)) {
         dimensions.push('low-frequency-band');
     }
     if (isSpatialParameter(deviceType, paramId)) {
@@ -78,10 +81,8 @@ function deviceTypeDimensions(deviceType: string | null): PerceptualExcludedDime
     if (deviceType === null) {
         return [];
     }
-    if (SPECTRAL_DEVICE_TYPES.has(deviceType)) {
-        return ['low-frequency-band'];
-    }
-    return SPATIAL_DEVICE_TYPES.has(deviceType) ? ['ambience'] : [];
+    const dimension = readPerceptualDimensionOfDeviceType(deviceType);
+    return dimension === null ? [] : [dimension];
 }
 
 /** Every dimension a chain of these device types shapes, once each. */
@@ -297,7 +298,7 @@ export function readParameterEdits(
 
 export function readAddedDeviceEdits(action: ActionOf<'addDevice'>): Edit[] {
     // An added EQ or filter sits at its defaults until a parameter write shapes it; added space is space.
-    const spatial = SPATIAL_DEVICE_TYPES.has(action.payload.deviceType);
+    const spatial = readPerceptualDimensionOfDeviceType(action.payload.deviceType) === 'ambience';
     return edits(spatial ? ['ambience'] : [], action.payload.trackId, action.payload.deviceType);
 }
 

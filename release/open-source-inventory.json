@@ -1638,6 +1638,7 @@
                 "public/faust/libfaust-wasm.js",
                 "public/legal/THIRD-PARTY-NOTICES.md",
                 "public/legal/TRADEMARKS.md",
+                "src/modules/AiRuntime/models/PerceptualDimensionByDeviceType.ts",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
@@ -2811,6 +2812,7 @@
         {
             "value": "Mellotron",
             "paths": [
+                "src/modules/AiRuntime/models/PerceptualDimensionByDeviceType.ts",
                 "src/modules/Arrangement/models/DeviceParameter.ts",
                 "src/modules/AudioEngine/models/DeviceRolesByDeviceType.ts",
                 "src/modules/AudioEngine/models/LiveNoteControlsByDeviceType.ts",
