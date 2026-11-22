@@ -344,6 +344,50 @@ describe('resource admission', () => {
         }
     });
 
+    it('stops admission on an unreadable reservation whose owner is dead and past its orphan grace', async () => {
+        const root = fixtureRoot('dead-owner-unreadable-table');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            writeFileSync(
+                join(reservationsRoot, 'dead.json'),
+                JSON.stringify({
+                    token: 'dead',
+                    pid: 2 ** 22 + 12_345,
+                    cwd: 'fixture',
+                    command: 'fixture',
+                    startedAt: 'Mon Nov  9 10:00:00 2026',
+                    processStartedAt: 'Mon Nov  9 10:00:00 2026',
+                    reservedRssBytes: 1024 ** 3,
+                    processToken: 'session',
+                    orphanUntil: 0,
+                })
+            );
+            const unreadableTableHost: ProcessTreeHost = {
+                platform: () => 'linux',
+                processTable: () => undefined,
+                processStartedAt: () => undefined,
+                terminateWindowsTree: () => undefined,
+                kill: () => {
+                    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+                },
+            };
+
+            await expect(
+                enterResourceSession({
+                    root,
+                    requiredRssBytes: 1024 ** 3,
+                    availableMemoryBytes: 1024 ** 3,
+                    memoryReserveBytes: 0,
+                    processHost: unreadableTableHost,
+                    waitIntervalMs: 10,
+                })
+            ).rejects.toThrow('active validation memory could not be measured');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('stops admission when available memory cannot be measured', async () => {
         const root = fixtureRoot('unmeasured-available');
         try {
