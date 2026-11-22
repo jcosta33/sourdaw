@@ -43,6 +43,7 @@ export const routingActionNames = [
 export type RoutingCallName = (typeof routingActionNames)[number];
 
 type RoutingStrategyInput = {
+    acceptsSidechainInput: (deviceType: string) => boolean;
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
@@ -185,7 +186,7 @@ const routingStrategyDefinitions = [
     },
     {
         name: 'addSidechainRoute',
-        transform: ({ call, context, index, sidechainRouteDeviceAdmissions }) => {
+        transform: ({ acceptsSidechainInput, call, context, index, sidechainRouteDeviceAdmissions }) => {
             const args = call.arguments;
             const source = findTrack(context, args.sourceTrackId);
             const target = findTrack(context, args.targetTrackId);
@@ -211,7 +212,7 @@ const routingStrategyDefinitions = [
             ) {
                 return rejection(index, call.name, 'targetDeviceId requires an exact application-owned capability');
             }
-            const supportedDevices = findSupportedSidechainDevices(target);
+            const supportedDevices = findSupportedSidechainDevices(target, acceptsSidechainInput);
             let targetDevice = supportedDevices.find((device) => device.id === args.targetDeviceId);
             if (args.targetDeviceId === undefined && supportedDevices.length === 1) {
                 targetDevice = supportedDevices[0];

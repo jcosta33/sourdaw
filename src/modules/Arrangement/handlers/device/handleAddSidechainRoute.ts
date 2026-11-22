@@ -1,4 +1,5 @@
-import { addSidechainRouteSnapshot, getSidechainTargetCapability } from '#/modules/Routing/useCases';
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
+import { addSidechainRouteSnapshot } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
