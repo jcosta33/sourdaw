@@ -428,7 +428,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     initStalenessDetection: noop,
     initTimelineViewReconciliation: initTimelineViewReconciliationMock,
     setArrangementEventBus: setArrangementEventBusMock,
-    setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
@@ -454,7 +453,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: noop,
     getCompensationDelay: noop,
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
-    commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
     configureOfflineMidiEventProjection: configureOfflineMidiProjectionMock,
@@ -642,7 +640,6 @@ vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
 
 vi.mock('#/modules/Knead/useCases', () => ({
     getPitchHandlers: sentinelHandlers('Pitch'),
-    setPitchEditDependencies: noop,
 }));
 
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));

@@ -220,7 +220,6 @@ describe('an approved range write from a planned request', () => {
 
     afterEach(() => {
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();

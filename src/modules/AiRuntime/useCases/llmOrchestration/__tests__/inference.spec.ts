@@ -38,6 +38,7 @@ import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebL
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
@@ -66,7 +67,6 @@ import { getPlanningProviderSchemaContract } from '../../planningProviderSchema'
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
-import { answeringStatus } from '../answeringStatus';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();
@@ -2724,6 +2724,36 @@ describe('generateToolPlanningOutcome', () => {
             ).resolves.toMatchObject({ status: 'rejected' });
 
             expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
+        });
+
+        // Red when an admission refusal before the local engine loaded settles the turn to ready with no engine.
+        it('restores the previous status when admission refuses a local attempt before the engine loaded', async () => {
+            const previous = { state: 'error', message: 'Error: WebLLM worker failed' };
+            mocks.llmStatus.value = previous;
+            mocks.isWebLlmLoaded.mockReturnValue(false);
+            mocks.backendChain.value = ['webllm'];
+            const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({
+                status: 'rejected' as const,
+                reason: 'The turn budget is exhausted.',
+            }));
+
+            await expect(
+                generateToolPlanningOutcome(
+                    'system',
+                    'mute the first track',
+                    toolSchemas,
+                    undefined,
+                    'mute the first track',
+                    undefined,
+                    undefined,
+                    onProviderAttempt
+                )
+            ).resolves.toEqual({ status: 'rejected', reason: 'The turn budget is exhausted.' });
+
+            expect(onProviderAttempt).toHaveBeenCalledOnce();
+            expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
+            expect(mocks.llmStatusSet).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'ready' }));
         });
 
         describe('across two overlapping turns', () => {

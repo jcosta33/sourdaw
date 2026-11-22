@@ -23,7 +23,6 @@ import {
 } from '../../../stores/kneadStore';
 import { getPitchHandlers } from '../../getPitchHandlers';
 import { commitPitchEdit } from '../commitPitchEdit';
-import { setPitchEditDependencies } from '../pitchEditDependencies';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -34,6 +33,11 @@ const mockNotificationEventBus = {
 };
 
 const commitPitchEditMock = vi.fn();
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    commitPitchEdit: (...args: unknown[]) => commitPitchEditMock(...args),
+}));
 
 type PitchEditTestClip = Clip & {
     fileId?: string;
@@ -168,7 +172,6 @@ describe('commitPitchEdit through action dispatch', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         const clipOverrides: Partial<PitchEditTestClip>[] = [
@@ -364,7 +367,6 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         doc = {};
@@ -475,7 +477,6 @@ describe('commitPitchEdit native output path (#3406)', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
         kneadStore.set({ ...defaultKneadState, contours: {}, clips: {} });
     });

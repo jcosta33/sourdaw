@@ -17,7 +17,6 @@ import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandBatchPreviewPort } from '../commandBatchPreviewPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
-import { commandRuntimeRepairPort } from '../commandRuntimeRepairPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 
@@ -226,13 +225,7 @@ describe('prepared storage through command batch commits', () => {
         vi.unstubAllGlobals();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
-        commandBatchPreviewPort.setRecoveryProvider(null);
-        commandBatchIdempotencyPort.setRepository(null);
-        commandBatchExecutionAuthorityPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
         localStorage.removeItem(durableStorageKey);
         clearHandlerRegistry();
     });

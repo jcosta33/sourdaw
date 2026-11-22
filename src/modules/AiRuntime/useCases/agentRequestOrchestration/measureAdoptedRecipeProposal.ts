@@ -65,6 +65,9 @@ export async function measureAdoptedRecipeProposal(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    recordBatchPreviewEvidence(liveRun, input.revision, agentApproval.metricGoalState ?? undefined, proof.receipts);
+    // Evidence the run's plan cannot keep leaves the card unmeasured, as a preview that could not run does.
+    if (recordBatchPreviewEvidence(liveRun, input.revision, agentApproval.metricGoalState, proof.receipts) !== null) {
+        return { status: 'unmeasured' };
+    }
     return { status: 'measured', metricGoalState: JSON.stringify(proof.state), agentApproval };
 }

@@ -1,4 +1,4 @@
-import { resolveToasterPadBinding, setTrackOutput } from '#/modules/AudioEngine/useCases';
+import { hasPadOutputHost, resolveToasterPadBinding, setTrackOutput } from '#/modules/AudioEngine/useCases';
 
 import { type Track } from '../stores/trackStore';
 
@@ -7,7 +7,7 @@ export function refreshToasterPadBindings(tracks: readonly Track[], parentId: st
         return;
     }
     const parents = tracks.filter((track) => track.id === parentId);
-    if (parents.length !== 1 || !parents[0]!.devices.some((device) => device.type === 'toaster')) {
+    if (parents.length !== 1 || !hasPadOutputHost(parents[0]!.devices)) {
         return;
     }
     const children = tracks.filter((track) => track.parentId === parentId);

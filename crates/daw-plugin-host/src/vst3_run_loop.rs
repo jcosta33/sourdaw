@@ -22,8 +22,7 @@
 //! Nothing here is reachable from the audio thread.
 
 use std::collections::HashSet;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use vst3::Steinberg::Linux::{
@@ -33,6 +32,10 @@ use vst3::Steinberg::Linux::{
 use vst3::Steinberg::{kInvalidArgument, kResultFalse, kResultOk, tresult};
 use vst3::{ComPtr, ComRef};
 
+use crate::editor_run_loop::{poll_now, ServicedRunLoop};
+pub use crate::editor_run_loop::{
+    register_editor_run_loop, service_editor_run_loops, EditorRunLoopRegistration,
+};
 use crate::vst3_editor::com_identity;
 
 /// The floor a plugin's requested timer interval is held to.
@@ -101,15 +104,6 @@ struct Registry {
 #[derive(Default)]
 pub struct HostRunLoop {
     registry: Mutex<Registry>,
-    /// Held for the whole of one pass, and taken again by the close.
-    ///
-    /// A pass calls into handlers this editor owns, so the editor may not
-    /// release them while one is running. Uncontended whenever the shell's pump
-    /// and the editor's close are the same thread, which is the arrangement the
-    /// whole editor lifecycle now keeps; the lock is what makes the other
-    /// arrangement — a runtime retired off that thread with its editor still
-    /// open — wait rather than free a handler mid-call.
-    pass: Mutex<()>,
 }
 
 impl HostRunLoop {
@@ -259,10 +253,6 @@ impl HostRunLoop {
     /// Never waits. This runs on the shell's UI thread, so a pass that blocked
     /// would stop the editor it is servicing from drawing.
     pub fn service_once(&self) -> usize {
-        let _pass = self
-            .pass
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.service_timers(Instant::now()) + self.service_file_descriptors()
     }
 
@@ -405,12 +395,7 @@ fn poll_descriptors(descriptors: &[FileDescriptor]) -> PolledDescriptors {
         })
         .collect();
 
-    // Zero timeout: `poll` answers what is ready and returns. A pass on the UI
-    // thread has no time to wait in.
-    // SAFETY: `poll_fds` is a live, correctly sized array of `pollfd`, and the
-    // length is its own element count.
-    let ready = unsafe { libc::poll(poll_fds.as_mut_ptr(), poll_fds.len() as libc::nfds_t, 0) };
-    if ready <= 0 {
+    if !poll_now(&mut poll_fds) {
         return PolledDescriptors::default();
     }
 
@@ -440,74 +425,17 @@ fn poll_descriptors(descriptors: &[FileDescriptor]) -> PolledDescriptors {
     polled
 }
 
-/// Every open editor's run loop, in the order the editors opened.
-///
-/// Process-wide because what pumps it is: one UI thread serves every editor
-/// this host has open, and the alternative — carrying a run-loop host down
-/// through `AudioPlugin::open_gui` — would put a platform's event loop into a
-/// seam that is deliberately shell-independent.
-static EDITOR_RUN_LOOPS: Mutex<Vec<(EditorRunLoopId, Arc<HostRunLoop>)>> = Mutex::new(Vec::new());
-
-/// Names one editor's registration, so a close removes its own and no other.
-type EditorRunLoopId = u64;
-
-/// One editor's place in the pumped set, given up when the editor closes.
-pub struct EditorRunLoopRegistration {
-    id: EditorRunLoopId,
-    run_loop: Arc<HostRunLoop>,
-}
-
-fn editor_run_loops() -> std::sync::MutexGuard<'static, Vec<(EditorRunLoopId, Arc<HostRunLoop>)>> {
-    EDITOR_RUN_LOOPS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Ask the host's UI loop to start servicing this editor.
-pub fn register_editor_run_loop(run_loop: Arc<HostRunLoop>) -> EditorRunLoopRegistration {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    editor_run_loops().push((id, Arc::clone(&run_loop)));
-    EditorRunLoopRegistration { id, run_loop }
-}
-
-impl Drop for EditorRunLoopRegistration {
-    /// Leave the pumped set, then wait out a pass already inside this loop.
-    ///
-    /// The wait is what the private service thread's `join` used to be: a pass
-    /// calls into handlers the editor is about to release, so the close may not
-    /// return while one is running.
-    fn drop(&mut self) {
-        editor_run_loops().retain(|(id, _)| *id != self.id);
-        let _pass = self
-            .run_loop
-            .pass
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+impl ServicedRunLoop for HostRunLoop {
+    fn service_once(&self) -> usize {
+        HostRunLoop::service_once(self)
     }
-}
-
-/// One pass over every open editor's run loop. Returns how many handlers were
-/// called.
-///
-/// The shell calls this from its own event loop, which is the thread that owns
-/// the editor windows — the thread `IRunLoop` exists to deliver these callbacks
-/// on. The registry is copied out before any of them runs: `onTimer` and
-/// `onFDIsSet` are editor code, and an editor that closes from inside its own
-/// callback would otherwise deadlock against the registry it is already inside.
-pub fn service_editor_run_loops() -> usize {
-    let open: Vec<Arc<HostRunLoop>> = editor_run_loops()
-        .iter()
-        .map(|(_, run_loop)| Arc::clone(run_loop))
-        .collect();
-
-    open.iter().map(|run_loop| run_loop.service_once()).sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use vst3::{Class, ComWrapper};
 
     /// A plugin's timer handler, counting the wakes it was given.

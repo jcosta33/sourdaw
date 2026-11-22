@@ -156,6 +156,23 @@ describe('handleRemoveAllTracks', () => {
                 ]);
             });
 
+            it('keeps the plugins of a track an ambiguous commit leaves in committed truth only', async () => {
+                const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+                mutateCrdtDoc<{ tracks: unknown }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks = { tracks: [TrackDummy.create({ id: 't1' })], selectedTrackId: null };
+                    },
+                });
+
+                await result?.afterAmbiguousCommit?.();
+
+                expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual([
+                    [[{ deviceId: 't2-plugin', instanceId: 't2-instance' }]],
+                ]);
+            });
+
             it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
                 'releases nothing once the project root is replaced, phase=%s',
                 async (phase) => {

@@ -28,8 +28,7 @@
             "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": false,
-            "pendingContract": "analysis.measure previews one recipe; a multi-target batch needs a multi-recipe preview"
+            "sealed": true
         },
         "whole-project-vibe-with-constraint": {
             "sealed": true
@@ -412,36 +411,6 @@
                         }
                     }
                 ]
-            }
-        },
-        {
-            "id": "AC067-HO-MULTI-1",
-            "promptClass": "perceptual-multi-target",
-            "class": "execute-exact",
-            "prompt": "make the chorus hit harder",
-            "providerTurns": [],
-            "oracle": {
-                "kind": "pending"
-            }
-        },
-        {
-            "id": "AC067-HO-MULTI-2",
-            "promptClass": "perceptual-multi-target",
-            "class": "execute-exact",
-            "prompt": "polish the low end",
-            "providerTurns": [],
-            "oracle": {
-                "kind": "pending"
-            }
-        },
-        {
-            "id": "AC067-HO-MULTI-3",
-            "promptClass": "perceptual-multi-target",
-            "class": "execute-exact",
-            "prompt": "tighten up the drums",
-            "providerTurns": [],
-            "oracle": {
-                "kind": "pending"
             }
         },
         {
@@ -3585,7 +3554,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5 “”; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "guitar-bright",
                     "targetName": "Guitar"
@@ -3633,7 +3602,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Slow autopan across a sustaining part” describes “wide” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The part sustains long enough for movement below 1 Hz to be perceived as image rather than as tremolo.”. Contraindications: “Skip on a rhythmic comping part, where movement fights the groove instead of supporting it.”; “Skip when the mix will be judged primarily in mono, where the pan collapses to level modulation.”. Authored parameter windows: “Rate” 0.3–1 “Hz”; “Depth” 0.3–0.6 “”; “Shape” 0–0 “”. Choose Propose this to prepare it for “Keys” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Slow autopan across a sustaining part” describes “wide” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The part sustains long enough for movement below 1 Hz to be perceived as image rather than as tremolo.”. Contraindications: “Skip on a rhythmic comping part, where movement fights the groove instead of supporting it.”; “Skip when the mix will be judged primarily in mono, where the pan collapses to level modulation.”. Authored parameter windows: “Rate” 0.3–1 “Hz”; “Depth” 0.3–0.6; “Shape” 0–0. Choose Propose this to prepare it for “Keys” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "keys-wide",
                     "targetName": "Keys"
@@ -3714,11 +3683,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.63 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 7.83 dBTP (exact).",
+                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.91 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 8.42 dBTP (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Verse",
-                    "metrics": { "crestFactor": 12.63, "truePeak": 7.83 }
+                    "metrics": { "crestFactor": 12.91, "truePeak": 8.42 }
                 }
             }
         },
@@ -3774,7 +3743,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "comp-threshold",
-                                "value": -34
+                                "value": -40
                             },
                             "dependsOn": ["insert"]
                         },
@@ -3830,7 +3799,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-threshold",
-                            "value": -34
+                            "value": -40
                         }
                     },
                     {
@@ -4324,7 +4293,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "eq-mid-gain",
-                                "value": 5
+                                "value": 8
                             },
                             "dependsOn": ["insert"]
                         },
@@ -4344,7 +4313,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "eq-high-gain",
-                                "value": 5
+                                "value": 8
                             },
                             "dependsOn": ["insert"]
                         }
@@ -4391,7 +4360,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-gain",
-                            "value": 5
+                            "value": 8
                         }
                     },
                     {
@@ -4405,7 +4374,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-high-gain",
-                            "value": 5
+                            "value": 8
                         }
                     }
                 ],
@@ -6187,6 +6156,502 @@
                         }
                     ],
                     "summary": "The vibe run finished: the brief and 4 of 5 batches were applied."
+                }
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-1",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the snare and overheads sound dull in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Snare", "Overheads"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-bright",
+                            "targetName": "Snare",
+                            "rangeName": "Chorus"
+                        },
+                        {
+                            "recipeId": "drums-bright",
+                            "targetName": "Overheads",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "drums-bright",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "drums-bright",
+                    "targetName": "Overheads",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Snare", "Overheads"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Snare", "Overheads"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 4000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 4000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": 3
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "increase",
+                        "target": "Snare"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "presence",
+                        "relation": "increase",
+                        "target": "Snare"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "increase",
+                        "target": "Overheads"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "presence",
+                        "relation": "increase",
+                        "target": "Overheads"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-snare", "eq-mid-freq", "eq-mid-gain", "eq-mid-q", "eq-high-freq", "eq-high-gain", "track-overheads"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 12
+                }
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-2",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the backing vocals feel thin in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Backing Vocals L", "Backing Vocals R"],
+                    "objectives": [
+                        {
+                            "recipeId": "vocal-thin",
+                            "targetName": "Backing Vocals L",
+                            "rangeName": "Verse"
+                        },
+                        {
+                            "recipeId": "vocal-thin",
+                            "targetName": "Backing Vocals R",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "vocal-thin",
+                    "targetName": "Backing Vocals L",
+                    "role": "vocal"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "vocal-thin",
+                    "targetName": "Backing Vocals R",
+                    "role": "vocal"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Backing Vocals L", "Backing Vocals R"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Backing Vocals L", "Backing Vocals R"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 550
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 1.75
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 0.95
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 550
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 1.75
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 0.95
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Backing Vocals L"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Backing Vocals L"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Backing Vocals R"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Backing Vocals R"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left", "eq-low-freq", "eq-low-gain", "eq-mid-freq", "eq-mid-gain", "eq-mid-q", "track-backing-vocal-right"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 12
+                }
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-3",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the hi-hat and overheads are too harsh in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Hi-Hat", "Overheads"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-dark",
+                            "targetName": "Hi-Hat",
+                            "rangeName": "Intro"
+                        },
+                        {
+                            "recipeId": "drums-dark",
+                            "targetName": "Overheads",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "drums-dark",
+                    "targetName": "Hi-Hat",
+                    "role": "drums"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "drums-dark",
+                    "targetName": "Overheads",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Hi-Hat", "Overheads"],
+                    "rangeName": "Intro",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Hi-Hat", "Overheads"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": -4
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 4000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": -2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.15
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": -4
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 4000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": -2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.15
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Hi-Hat"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "presence",
+                        "relation": "decrease",
+                        "target": "Hi-Hat"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Overheads"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "presence",
+                        "relation": "decrease",
+                        "target": "Overheads"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-hi-hat", "eq-high-gain", "eq-mid-freq", "eq-mid-gain", "eq-mid-q", "track-overheads"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 10
                 }
             }
         }

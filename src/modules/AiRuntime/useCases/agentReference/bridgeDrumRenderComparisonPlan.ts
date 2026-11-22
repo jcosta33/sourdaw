@@ -1,3 +1,5 @@
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
@@ -20,6 +22,40 @@ type BridgeDrumRenderComparisonPlanResult =
           renderTailSeconds: number;
           providerKnownTargetIds: string[];
       };
+
+const AUTO_MAKEUP_PARAM_ID = 'comp-auto-makeup';
+
+/** The Auto Makeup value a placed compressor starts with: its declared default. */
+function readPlacedAutoMakeup(deviceType: string): number | undefined {
+    return getPluginById(deviceType)?.parameters.find((parameter) => parameter.id === AUTO_MAKEUP_PARAM_ID)
+        ?.defaultValue;
+}
+
+/**
+ * A placed compressor starts with Auto Makeup off; this workflow's parallel gain was voiced with
+ * the browser's makeup gain in the output, so it turns the switch on (ADR 0064).
+ */
+function setAutoMakeup(input: {
+    deviceId: string;
+    busId: string;
+    deviceType: string;
+    value: number;
+    placedValue: number;
+}): RuntimeAction {
+    return {
+        type: 'setDeviceParameter',
+        payload: {
+            deviceId: input.deviceId,
+            paramId: AUTO_MAKEUP_PARAM_ID,
+            value: input.value,
+            expectedTrackId: input.busId,
+            expectedDeviceType: input.deviceType,
+            expectedDeviceIds: [input.deviceId],
+            expectedValue: input.placedValue,
+            expectedTrackFrozen: false,
+        },
+    };
+}
 
 function valuesEqual(left: unknown, right: unknown): boolean {
     if (Object.is(left, right)) {
@@ -62,6 +98,11 @@ export function bridgeDrumRenderComparisonPlan({
         return { status: 'rejected', reason: 'Provider plan does not match the selected EX-11 workflow' };
     }
 
+    const autoMakeupDefault = readPlacedAutoMakeup(scope.capability.fixedValues.compressorDeviceType);
+    if (autoMakeupDefault === undefined) {
+        return { status: 'rejected', reason: 'EX-11 Compressor Auto Makeup descriptor is unavailable' };
+    }
+
     const drumBusId = `bus-ai-${crypto.randomUUID()}`;
     const parallelBusId = `bus-ai-${crypto.randomUUID()}`;
     const compressorDeviceId = `device-ai-${crypto.randomUUID()}`;
@@ -78,6 +119,13 @@ export function bridgeDrumRenderComparisonPlan({
         })),
         { type: 'createBus', payload: { name: fixed.parallelBusName } },
         { type: 'addDevice', payload: { trackId: parallelBusId, deviceType: fixed.compressorDeviceType } },
+        setAutoMakeup({
+            deviceId: compressorDeviceId,
+            busId: parallelBusId,
+            deviceType: fixed.compressorDeviceType,
+            value: fixed.compressorAutoMakeup,
+            placedValue: autoMakeupDefault,
+        }),
         {
             type: 'addSend',
             payload: {

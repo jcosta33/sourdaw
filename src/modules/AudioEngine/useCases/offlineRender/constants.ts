@@ -108,6 +108,13 @@ export const RENDER_RELEASE_TIMEOUT_MS = NO_PROGRESS_TIMEOUT_MS + NO_PROGRESS_PO
 
 export const YIELD_EVERY_N_NOTES = 200;
 
+/**
+ * The most frames one native offline render accepts: `MAX_OFFLINE_RENDER_FRAMES`
+ * in `crates/sourdaw-native/src/commands/graph.rs`, pinned equal by a spec. An
+ * export longer than this keeps the Web Audio route rather than failing natively.
+ */
+export const NATIVE_OFFLINE_RENDER_MAX_FRAMES = 48_000 * 600;
+
 /** Web Audio render quantum. `suspend()` only accepts times on this frame grid. */
 export const RENDER_QUANTUM_FRAMES = 128;
 

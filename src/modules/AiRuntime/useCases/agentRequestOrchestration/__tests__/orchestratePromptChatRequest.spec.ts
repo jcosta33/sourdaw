@@ -823,4 +823,54 @@ describe('orchestratePromptChatRequest', () => {
 
         expect(mocks.persistPromptActionConfirmation).toHaveBeenCalledWith(expect.objectContaining({ adoptedRecipes }));
     });
+
+    // Red when the planned brief lines, kept positions or workflow are not recorded for a later re-preview (#7142).
+    it('carries the planned brief lines, kept-direction positions and workflow through to the persisted confirmation', async () => {
+        const plannedRunLines = ['- Reading "Warm": warm', '- Reading "Open": airy'];
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [{ type: 'setTrackColor', payload: { trackId: 'track-lead', color: '#ffffff' } }],
+                plannedRunLines,
+                keptDirectionActionIndexes: [0],
+                workflowCapabilityId: 'drum-routing',
+                executionMode: 'apply',
+            },
+            projectRevision: 'revision-planned',
+        });
+        vi.mocked(describePendingActionConfirmation).mockReturnValueOnce({
+            actionLabels: ['Set lead color'],
+            affectedIds: ['track-lead'],
+            protectedUnchanged: [],
+            content: 'Set lead color',
+            risk: { level: 'bounded-reversible', reason: null },
+        });
+        mocks.materializePromptCommandPlan.mockReturnValue({
+            status: 'prepared',
+            commandGroup: 'command-group-fixture',
+            parsedCommandBatch: { commands: [] },
+            compiledActionExecution: {
+                commandEnvelopes: ['command-envelope-fixture'],
+                commandBatch: { commands: [] },
+                requiresConfirmation: true,
+                agentApproval: { kind: 'confirm-required' },
+            },
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'make the lead vocal warmer',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.persistPromptActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({
+                plannedRunLines,
+                keptDirectionActionIndexes: [0],
+                workflowCapabilityId: 'drum-routing',
+            })
+        );
+    });
 });

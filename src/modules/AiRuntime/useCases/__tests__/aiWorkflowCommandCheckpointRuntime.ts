@@ -1,16 +1,13 @@
 import { vi } from 'vitest';
 
-import {
-    commandProjectRevisionPort,
-    configureCommandBatchIdempotency,
-    resetCommandBatchIdempotency,
-} from '#/modules/Command/useCases';
+import { commandProjectRevisionPort, configureCommandBatchIdempotency } from '#/modules/Command/useCases';
 import {
     captureProjectMutationAuthorization,
     captureProjectRevision,
     settledProjectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 
+const canExecuteCommandBatch = () => true;
 const COMMAND_BATCH_IDEMPOTENCY_STORAGE_KEY = 'sourdaw:command-batch-idempotency:v1';
 
 function installNavigatorLocksStub(): void {
@@ -33,7 +30,7 @@ export function configureAiWorkflowCommandCheckpointRuntime(): void {
     // clean commit. jsdom has no navigator.locks; the durable project
     // checkpoint is written under that lock.
     installNavigatorLocksStub();
-    configureCommandBatchIdempotency({ canExecute: () => true });
+    configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
     commandProjectRevisionPort.configureMutationAuthority({
         revisionProvider: captureProjectRevision,
         captureMutationAuthorization: captureProjectMutationAuthorization,
@@ -44,6 +41,5 @@ export function configureAiWorkflowCommandCheckpointRuntime(): void {
 
 export function resetAiWorkflowCommandCheckpointRuntime(): void {
     commandProjectRevisionPort.setProvider(null);
-    resetCommandBatchIdempotency();
     localStorage.removeItem(COMMAND_BATCH_IDEMPOTENCY_STORAGE_KEY);
 }

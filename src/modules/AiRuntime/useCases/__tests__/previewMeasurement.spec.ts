@@ -1156,10 +1156,14 @@ describe('a measured preview through proposal and approval', () => {
         const expansion: unknown = receipts.find(({ callId }) => callId === 'expand-1')?.data;
         const expandedValues =
             typeof expansion === 'object' && expansion !== null && 'values' in expansion ? expansion.values : null;
-        expect(expandedValues).toMatchObject(recipeValues);
-        // A placed Compressor already holds ratio 4 and release 100, so only the other three are written.
+        // The recipe's compressor step also states Auto Makeup on, a single-value window the call leaves
+        // to the recipe, so the expansion reports it first, at its window's middle.
+        expect(expandedValues).toMatchObject([{ paramId: 'comp-auto-makeup', value: 1 }, ...recipeValues]);
+        // A placed Compressor already holds ratio 4 and release 100, so only the other four are written:
+        // the switch on, against a placed Compressor's off, among them.
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-auto-makeup', value: 1 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-threshold', value: -18 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-attack', value: 30 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-makeup', value: 4.5 } },
@@ -1172,7 +1176,7 @@ describe('a measured preview through proposal and approval', () => {
         ]);
         expect(view?.recipes).toHaveLength(1);
         expect(planned.adoptedRecipes ?? []).toEqual([]);
-        expect(planned.actions).toHaveLength(4);
+        expect(planned.actions).toHaveLength(5);
         const [target] = view?.measuredPreview?.targets ?? [];
         const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
         expect(target?.targetId).toBe('drums');
@@ -1229,15 +1233,17 @@ describe('a measured preview through proposal and approval', () => {
                 ['resolve-target', 'discover-1', 'expand-1'].map((callId) => ({ callId, status: 'success' }))
             )
         );
-        // A placed Compressor already holds ratio 4, so only the other four are written.
+        // A placed Compressor already holds ratio 4, so only the other five are written: the recipe's
+        // Auto Makeup on, against a placed Compressor's off, among them.
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-auto-makeup', value: 1 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-threshold', value: -16 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-attack', value: 25 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-release', value: 90 } },
             { type: 'setDeviceParameter', payload: { paramId: 'comp-makeup', value: 4.5 } },
         ]);
-        expect(planned.actions).toHaveLength(5);
+        expect(planned.actions).toHaveLength(6);
         expect(planned.measuredPreview).toBeUndefined();
     });
 

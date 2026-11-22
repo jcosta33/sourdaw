@@ -4,6 +4,7 @@ import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     applyNoteExpression,
     audioEngine,
+    findMidiTransformDevice,
     isBypassedNoteReceiver,
     resolveDrumKitBy,
     resolveDrumKitOutputGain,
@@ -191,7 +192,8 @@ export const handleWebMidiNoteOn = inject({
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
-            const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
+            const yeastDevice =
+                instrumentTrack === undefined ? undefined : findMidiTransformDevice(instrumentTrack.devices);
             if (instrumentTrack && yeastDevice) {
                 noteData.yeastDeviceId = yeastDevice.id;
                 const sampleTime = dispatchFrame;

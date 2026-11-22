@@ -34,6 +34,8 @@ pub enum PluginError {
     Clap(ClapError),
     /// The VST3 backend refused.
     Vst3(Vst3Error),
+    /// The host withdrew the construction before the plugin was opened.
+    ConstructionWithdrawn,
 }
 
 impl std::fmt::Display for PluginError {
@@ -42,6 +44,9 @@ impl std::fmt::Display for PluginError {
             Self::GuiUnsupported => f.write_str("Plugin does not support GUI"),
             Self::Clap(error) => write!(f, "{error}"),
             Self::Vst3(error) => write!(f, "{error}"),
+            Self::ConstructionWithdrawn => {
+                f.write_str("the host withdrew the construction before the plugin was opened")
+            }
         }
     }
 }

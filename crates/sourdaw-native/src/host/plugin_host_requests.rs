@@ -38,17 +38,20 @@
 //! the restart it asks for is carried back to the UI thread from here, because
 //! every lifecycle call in it is one the format makes there.
 //!
-//! It serves engine-owned instances only, which is where the wake is installed.
-//! An instance the native engine never took records a state change nothing
-//! reads, and its `request_resize` is refused outright rather than accepted and
-//! dropped. That mode processes no audio at all — it is what a session runs in
-//! when the engine failed to start — so an edit made in it has no take to be
-//! saved with.
+//! This watcher serves engine-owned instances only, which is where the wake is
+//! installed. An instance the native engine never took records a state change
+//! nothing reads. That mode processes no audio at all — it is what a session
+//! runs in when the engine failed to start — so an edit made in it has no take
+//! to be saved with. Its editor asks are another matter: the editor drain visits
+//! the command-owned store too, so its resize, show and hide are answered.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
 use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
-use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
+use crate::host::{
+    all_editor_runtimes, all_engine_runtimes, retry_unreached_instance, runtime_for_instance,
+    CommandPlugins,
+};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
     signal_pending_editor_resize, signal_pending_latency_requery,
@@ -294,7 +297,8 @@ pub fn state_dirty_payload(
 /// Called from the parameter-event drain's tick, once it has taken the hint the
 /// recording side raised. The hint names no instance — it cannot, because
 /// `gui.request_resize` is `[thread-safe]` and may be raised from the audio
-/// thread — so this visits every engine-owned instance and lets each backend
+/// thread — so this visits every instance an editor can be open on, dormant
+/// ones included, and lets each backend
 /// answer for itself: [`AudioPlugin::apply_pending_editor_resize`] takes the
 /// newest recorded size and moves the host window, and an instance with nothing
 /// recorded applies nothing.
@@ -310,8 +314,17 @@ pub fn state_dirty_payload(
 /// control raises the hint again for the next tick; that retry is unbounded
 /// while the instance lives, which is the flush and tail legs' rule, and costs
 /// nothing once the ask is applied because taking the slot cleared it.
-pub fn apply_pending_editor_resizes(engine_plugins: &EnginePlugins) {
-    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor resize") {
+pub fn apply_pending_editor_resizes(
+    engine_plugins: &EnginePlugins,
+    command_plugins: &CommandPlugins,
+) {
+    let runtimes = all_editor_runtimes(
+        engine_plugins,
+        command_plugins,
+        "editor resize",
+        signal_pending_editor_resize,
+    );
+    for (instance_id, runtime) in runtimes {
         let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
             Ok::<_, std::convert::Infallible>(plugin.apply_pending_editor_resize())
         });

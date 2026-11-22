@@ -24,34 +24,44 @@ import {
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
 
+// Each configure call names the project the provider answers for; the registered provider itself
+// stays one function, because a port refuses a second, different implementation.
+let fixtureProjectId: string | undefined;
+
+function captureFixturePreflightState({
+    projectDocument,
+    targetIds,
+}: Parameters<Parameters<typeof commandBatchPreflightPort.setProvider>[0]>[0]) {
+    const targetFingerprints: Record<string, string> = {
+        ...captureCommandTargetFingerprints({
+            document: projectDocument ?? getCrdtDoc('root'),
+            targetIds,
+        }),
+    };
+    for (const systemTargetId of ['master', 'hw_out']) {
+        if (targetIds.includes(systemTargetId)) {
+            targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
+        }
+    }
+    return {
+        audioGraphValid: true,
+        availableAssetHashes: [],
+        availableAudioBufferIds: [],
+        lockedRanges: [],
+        projectId: fixtureProjectId ?? captureProjectIdentity(),
+        projectInvariantsValid: true,
+        targetFingerprints,
+    };
+}
+
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
+    fixtureProjectId = projectId;
     configureAiWorkflowCommandCheckpointRuntime();
     configureRuntimeGraphProjectRevisionValidator(
         (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
     );
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
-    commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
-        const targetFingerprints: Record<string, string> = {
-            ...captureCommandTargetFingerprints({
-                document: projectDocument ?? getCrdtDoc('root'),
-                targetIds,
-            }),
-        };
-        for (const systemTargetId of ['master', 'hw_out']) {
-            if (targetIds.includes(systemTargetId)) {
-                targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
-            }
-        }
-        return {
-            audioGraphValid: true,
-            availableAssetHashes: [],
-            availableAudioBufferIds: [],
-            lockedRanges: [],
-            projectId: projectId ?? captureProjectIdentity(),
-            projectInvariantsValid: true,
-            targetFingerprints,
-        };
-    });
+    commandBatchPreflightPort.setProvider(captureFixturePreflightState);
     // Bootstrap wires these three from the same providers. A fixture that supplies only the preflight
     // seam leaves divergence classification, project inspection and command preview answering from
     // nothing, so every confirmation route that reads them silently takes its unconfigured branch.
@@ -84,10 +94,8 @@ export function ambiguousSameObjectDivergenceMessage(targetIds: readonly string[
 
 export function resetAiWorkflowCommandPreflightFixture(): void {
     resetAiWorkflowCommandCheckpointRuntime();
-    commandBatchPreflightPort.setProvider(null);
+    fixtureProjectId = undefined;
     agentProjectInspectionPort.setProvider(null);
-    commandProjectDivergencePort.setProvider(null);
-    commandBatchPreviewPort.setProvider(null);
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
 }

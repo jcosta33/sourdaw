@@ -43,6 +43,7 @@ export const PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'read_plugin_tails',
     'render_graph_offline',
     RETIRE_NATIVE_ENGINE,
     SCAN_PLUGINS,
