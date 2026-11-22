@@ -1525,9 +1525,9 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
 /// The keyed columns of whatever is on disk now, at this build's own schema,
 /// whether or not the rest of the document parses.
 ///
-/// [`PluginRegistryStore::persist`] needs this column and nothing else, and it
-/// needs it from a file another writer owns half of. Deserializing the whole
-/// document to reach one column ties a sibling's quarantine record to this
+/// [`PluginRegistryStore::persist`] needs these columns from a file another
+/// writer owns half of. Deserializing the whole document to reach them ties a
+/// sibling's quarantine record to this
 /// build's ability to parse the sibling's rows — a same-schema row this build
 /// cannot parse, or a row this build corrupted, and the column reads as empty
 /// and the persist erases every quarantine decision in it. But the column must not survive a
@@ -2036,9 +2036,14 @@ mod tests {
     fn a_row_a_completed_scan_here_removed_is_not_adopted_from_the_file() {
         let test_root = TestRegistryRoot::create("registry-adopt-removed");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        // Hydrated, never written here: the removal alone is this process's
+        // decision about the key.
         let session = test_root.store();
         let session_registry = Mutex::new(HashMap::new());
-        session.persist(&one_row(&plugin_path, "aaaa1111"));
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
         session.apply_completed_scan_removals(|_| false);
 
         session.adopt_entry_written_elsewhere(
@@ -2083,8 +2088,11 @@ mod tests {
         let test_root = TestRegistryRoot::create("registry-persist-removal");
         let gone_path = test_root.write_plugin_file("Gone.clap", b"clap-bytes");
         let kept_path = test_root.write_plugin_file("Kept.clap", b"clap-bytes-2");
+        test_root.store().persist(&one_row(&gone_path, "gone0001"));
+        // Hydrated, never written here: the scan process removing a plugin the
+        // user uninstalled, which it only ever read from the file.
         let session = test_root.store();
-        session.persist(&one_row(&gone_path, "gone0001"));
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
         session.apply_completed_scan_removals(|_| false);
 
         session.persist(&one_row(&kept_path, "kept0001"));
