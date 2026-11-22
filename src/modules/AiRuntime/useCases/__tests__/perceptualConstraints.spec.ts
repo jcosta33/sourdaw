@@ -2124,6 +2124,133 @@ describe('reading one-way width, brightness and dynamics clauses as bounds', () 
     });
 });
 
+describe('reading a subject before "never", graded comparatives and a comma before a joiner', () => {
+    it.each([
+        // a subject before "never" is the clause's scope, never the mix
+        [
+            'the drums should never get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should never get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the vocal should never get louder',
+            [measured('loudness-not-raised-v1', 'the vocal should never get louder', onTracks('vocal'))],
+            [],
+        ],
+        [
+            'the drums never get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums never get wider', onTracks('drums'))],
+            [],
+        ],
+        // a subject no reader can measure is unsupported, never held on the mix
+        [
+            'the cello should never get wider',
+            [],
+            [
+                unread(
+                    'the cello should never get wider',
+                    '“the cello” names no track or mix whose stereo width can be measured.'
+                ),
+            ],
+        ],
+        ['Cello should never get wider', [], [unread('Cello should never get wider', NET_REASON)]],
+        ['the drums should never widen', [], [unread('the drums should never widen', NET_REASON)]],
+        // a subject's "never" before a describing verb describes the sound as it is and states no bound
+        ['the vocal never sounds louder, make it louder', [], []],
+        ['it never feels wider, make it wider', [], []],
+        // with no subject, or "it", "never" still holds the mix
+        ['never get wider', [measured('stereo-width-not-widened-v1', 'never get wider', MIX)], []],
+        ['it should never get louder', [measured('loudness-not-raised-v1', 'it should never get louder', MIX)], []],
+        // "less" and "more" grade a plain adjective in its family's direction, as "less dynamic" does
+        [
+            "don't make the drums less bright",
+            [measured('brightness-not-lowered-v1', "don't make the drums less bright", onTracks('drums'))],
+            [],
+        ],
+        [
+            "don't make the mix more wide",
+            [measured('stereo-width-not-widened-v1', "don't make the mix more wide", MIX)],
+            [],
+        ],
+        ["don't make it less loud", [measured('loudness-not-lowered-v1', "don't make it less loud", MIX)], []],
+        // other verbs a level is reached or wanted through
+        ["don't go louder", [measured('loudness-not-raised-v1', "don't go louder", MIX)], []],
+        ["I don't want it louder", [measured('loudness-not-raised-v1', "don't want it louder", MIX)], []],
+        [
+            "I don't want the drums louder",
+            [measured('loudness-not-raised-v1', "don't want the drums louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't want the drums to get louder",
+            [measured('loudness-not-raised-v1', "don't want the drums to get louder", onTracks('drums'))],
+            [],
+        ],
+        // a wanted level no reader reads is still a protection the net records
+        [
+            "I don't want the drums louder in the chorus",
+            [],
+            [unread("I don't want the drums louder in the chorus", NET_REASON)],
+        ],
+        // "too" and "much" name no threshold a fixed tolerance states, so they are unsupported, never dropped
+        ["don't make it too loud", [], [unread("don't make it too loud", NET_REASON)]],
+        ["the mix shouldn't be much louder", [], [unread("the mix shouldn't be much louder", NET_REASON)]],
+        [
+            'keep the vocal from getting too bright',
+            [],
+            [unread('keep the vocal from getting too bright', unmeasured('bright'))],
+        ],
+        // a "too" no protection governs states nothing
+        [
+            'keep the vocal bright, but not too bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        ['make the vocal louder but not too loud', [], []],
+        // a request to move states no bound in any form
+        ['make the mix louder', [], []],
+        ['make the mix less loud', [], []],
+        [
+            'keep the drums from getting wider',
+            [measured('stereo-width-not-widened-v1', 'keep the drums from getting wider', onTracks('drums'))],
+            [],
+        ],
+        // a comma before "and" continues the protection as the bare "and" does
+        [
+            "don't make the drums wider, and the mix quieter",
+            [
+                measured(
+                    'stereo-width-not-widened-v1',
+                    "don't make the drums wider, and the mix quieter",
+                    onTracks('drums')
+                ),
+                measured('loudness-not-lowered-v1', "don't make the drums wider, and the mix quieter", MIX),
+            ],
+            [],
+        ],
+        [
+            "don't make the drums wider, and the mix louder in the chorus",
+            [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
+            [unread("don't make the drums wider, and the mix louder in the chorus", NET_REASON)],
+        ],
+        [
+            "don't make the drums wider and the mix louder in the chorus",
+            [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
+            [unread("don't make the drums wider and the mix louder in the chorus", NET_REASON)],
+        ],
+        [
+            "don't raise the level of the drums, and the mix much louder",
+            [measured('loudness-not-raised-v1', "don't raise the level of the drums", onTracks('drums'))],
+            [unread("don't raise the level of the drums, and the mix much louder", NET_REASON)],
+        ],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s"',
+        (prompt, constraints, unsupported) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints, unsupported });
+        }
+    );
+});
+
 describe('reading only governed protections and whole object names', () => {
     it.each([
         // a negated stop, prevent or keep … from permits the move, so it states no bound

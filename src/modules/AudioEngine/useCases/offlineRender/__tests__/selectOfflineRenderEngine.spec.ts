@@ -753,7 +753,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         });
     });
 
-    describe('hosted plugins — a loaded effect renders natively, anything else keeps its route (#4592)', () => {
+    describe('hosted plugins — a loaded effect or instrument renders natively, anything else keeps its route (#4592, #6777)', () => {
         const hostedReverb: Device = {
             id: 'plug-1',
             name: 'Valhalla',
@@ -824,11 +824,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
 
         const degraded: { name: string; runtime: NativeOfflineHostedRuntime; keyed?: boolean; reason: string }[] = [
             {
-                name: 'a loaded hosted instrument, named',
-                runtime: runtime({ pluginKind: () => 'instrument' }),
-                reason: 'track "Vocals" carries hosted instrument "Valhalla", which the native render does not host offline',
-            },
-            {
                 name: 'a loaded hosted plugin the scan holds no kind for',
                 runtime: runtime({ pluginKind: () => null }),
                 reason: 'track "Vocals" carries hosted plugin "Valhalla", which the plugin scan records no kind for',
@@ -883,6 +878,122 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                 expect(selection.engine === 'native/offline').toBe(stamped);
             }
         );
+
+        describe('a MIDI track played by a hosted instrument', () => {
+            function plugin(id: string, name: string, externalPluginId: string): Device {
+                return { ...hostedReverb, id, name, externalPluginId, externalInstanceId: `instance-${id}` };
+            }
+            const instrumentA = plugin('a', 'Synth', 'synth-a');
+            const instrumentB = plugin('b', 'Other', 'synth-b');
+            const effectDevice = plugin('fx', 'Verb', 'verb');
+            const unknownDevice = plugin('u', 'Mystery', 'mystery');
+            const toaster: Device = {
+                id: 'toaster-1',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const gluten: Device = {
+                id: 'glue-1',
+                name: 'Gluten',
+                type: 'gluten',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const scanKinds: Record<string, 'instrument' | 'effect'> = {
+                'synth-a': 'instrument',
+                'synth-b': 'instrument',
+                verb: 'effect',
+            };
+
+            function midiTrack(devices: Device[]): Track {
+                return createTrack({
+                    id: 'track-m',
+                    name: 'Keys',
+                    kind: 'midi',
+                    devices,
+                    clips: [createClip({ id: 'clip-m', trackId: 'track-m', type: 'midi' })],
+                });
+            }
+
+            function loadedRuntime(devices: Device[]): NativeOfflineHostedRuntime {
+                return runtime({
+                    loadedInstanceIds: new Set(devices.flatMap((device) => device.externalInstanceId ?? [])),
+                    pluginKind: (externalPluginId) => scanKinds[externalPluginId] ?? null,
+                });
+            }
+
+            const NATIVE = 'native/offline';
+            const WEB = 'web-audio/offline';
+            type Case = {
+                name: string;
+                devices: Device[];
+                /** The devices whose instance is loaded; the rest sit on the chain with nothing loaded. */
+                loaded: Device[];
+            };
+            const nativeCases: Case[] = [
+                {
+                    name: 'a loaded hosted instrument first',
+                    devices: [instrumentA],
+                    loaded: [instrumentA],
+                },
+                {
+                    name: 'a loaded hosted instrument then an effect',
+                    devices: [instrumentA, gluten],
+                    loaded: [instrumentA],
+                },
+                {
+                    name: 'two loaded hosted instruments',
+                    devices: [instrumentA, instrumentB],
+                    loaded: [instrumentA, instrumentB],
+                },
+            ];
+            const webCases: (Case & { reason: string })[] = [
+                {
+                    name: 'a loaded hosted instrument behind a loaded hosted effect',
+                    devices: [effectDevice, instrumentA],
+                    loaded: [effectDevice, instrumentA],
+                    reason: 'track "Keys" plays MIDI programme',
+                },
+                {
+                    name: 'a built-in instrument',
+                    devices: [toaster],
+                    loaded: [],
+                    reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
+                },
+                {
+                    name: 'a hosted instrument after a built-in instrument',
+                    devices: [toaster, instrumentA],
+                    loaded: [instrumentA],
+                    reason: 'track "Keys" carries instrument "toaster", which renders through Web Audio',
+                },
+                {
+                    name: 'a hosted plugin the scan holds no kind for',
+                    devices: [unknownDevice],
+                    loaded: [unknownDevice],
+                    reason: 'track "Keys" carries hosted plugin "Mystery", which the plugin scan records no kind for',
+                },
+                {
+                    name: 'a hosted instrument with nothing loaded',
+                    devices: [instrumentA],
+                    loaded: [],
+                    reason: 'track "Keys" carries device "external-plugin", which the native render has no body for',
+                },
+            ];
+
+            it.each(nativeCases)('selects the native render for $name', async ({ devices, loaded }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
+
+                expect(selection).toEqual({ engine: NATIVE, transport: stubTransport });
+            });
+
+            it.each(webCases)('keeps Web Audio for $name', async ({ devices, loaded, reason }) => {
+                const selection = await select(midiTrack(devices), loadedRuntime(loaded));
+
+                expect(selection).toEqual({ engine: WEB, reason, degraded: true });
+            });
+        });
 
         it('reads a plugin’s kind from the scan the native chain splices on', () => {
             const scanned = (id: string, category: string) => ({

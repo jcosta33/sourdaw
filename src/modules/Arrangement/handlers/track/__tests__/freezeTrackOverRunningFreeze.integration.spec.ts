@@ -267,6 +267,54 @@ describe('freezeTrack started over a running freeze', () => {
         }
     });
 
+    it('keeps a track unfrozen when its render finishes after an unfreeze, committing and caching no take', async () => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        await executeAppAction({ type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } });
+        expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+        first.release();
+        await running;
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            expect(track.frozen).toBe(false);
+            expect(track.frozenBufferId).toBeUndefined();
+        }
+        expect(render.mock.calls[0]?.[3]?.abortSignal?.aborted).toBe(true);
+    });
+
+    it('unfreezes a committed frozen track as before, with nothing running', async () => {
+        render.mockResolvedValue(buffer(0.5));
+        await freeze();
+        expect(projectedTrack().freezeState.status).toBe('frozen');
+        await executeAppAction({ type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } });
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            expect(track.frozen).toBe(false);
+        }
+    });
+
+    it('settles a track left freezing when the batch holding its unfreeze is rolled back', async () => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        await expect(
+            executeAppAction(
+                { type: 'unfreezeTrack', payload: { trackId: 'freeze-track' } },
+                { shouldCommit: () => false }
+            )
+        ).rejects.toThrow();
+        // The abort is not transactional: the rollback puts the document back to freezing with no task.
+        expect(projectedTrack().freezeState.status).toBe('freezing');
+        expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        first.release();
+        await running;
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+        }
+    });
+
     it('undoes an unfreeze issued while a freeze renders to unfrozen, never freezing', async () => {
         const first = holdFirstRender();
         const running = freeze();

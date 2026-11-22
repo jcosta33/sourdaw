@@ -23,7 +23,6 @@ import {
     commandProjectRevisionPort,
     configureCommandBatchIdempotency,
     resetActionReplayAuthority,
-    resetCommandBatchIdempotency,
 } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
@@ -104,9 +103,7 @@ describe('Prompt Bar canonical approval parity', () => {
         cleanup();
         vi.restoreAllMocks();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        resetCommandBatchIdempotency();
         vi.unstubAllGlobals();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);

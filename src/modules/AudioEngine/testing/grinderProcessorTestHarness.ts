@@ -57,8 +57,7 @@ export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderLoadModelCalls: string[] = [];
 export const grinderProcessSizes: number[] = [];
 export const grinderAutomatedProcessSizes: number[] = [];
-export let grinderResetCalls = 0;
-export let grinderRightPtrCalls = 0;
+export const grinderCallCounts = { reset: 0, rightPtr: 0 };
 let grinderLatencySamples = 0;
 let grinderLatencySamplesAfterSetParam: number | null = null;
 let grinderModelRejection: string | null = null;
@@ -73,7 +72,7 @@ class GrinderInstanceMock {
     }
 
     get_right_ptr(): number {
-        grinderRightPtrCalls++;
+        grinderCallCounts.rightPtr++;
         return OUTPUT_RIGHT_PTR;
     }
 
@@ -86,7 +85,7 @@ class GrinderInstanceMock {
     }
 
     reset(): void {
-        grinderResetCalls++;
+        grinderCallCounts.reset++;
     }
 
     load_neural_model(json: string): void {
@@ -190,8 +189,8 @@ export function resetGrinderProcessorCalls(): void {
     grinderLoadModelCalls.length = 0;
     grinderProcessSizes.length = 0;
     grinderAutomatedProcessSizes.length = 0;
-    grinderResetCalls = 0;
-    grinderRightPtrCalls = 0;
+    grinderCallCounts.reset = 0;
+    grinderCallCounts.rightPtr = 0;
     grinderLatencySamples = 0;
     grinderLatencySamplesAfterSetParam = null;
     grinderModelRejection = null;

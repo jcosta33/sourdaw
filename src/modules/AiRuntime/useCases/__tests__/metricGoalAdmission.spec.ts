@@ -15,11 +15,7 @@ import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/m
 import { audioEngine, initEngineDeviceCollaborators } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '#/modules/Command/stores';
-import {
-    commandBatchPreflightPort,
-    executeVersionedCommandBatchEnvelope,
-    parseVersionedCommandBatchEnvelope,
-} from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
     getCrdtDoc,
@@ -154,7 +150,6 @@ describe('metric goal admission at the final Command boundary', () => {
         trackStore.set(structuredClone(initialTracks));
         clearPendingActionConfirmations();
         clearChatMessages();
-        commandBatchPreflightPort.setProvider(null);
         collaborationStore.set(structuredClone(initialCollaboration));
         audioEngine.setUseCaseDeviceCollaborators(null);
     });

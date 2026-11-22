@@ -92,16 +92,9 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         });
     }
 
-    let divergence: ReturnType<typeof commandProjectDivergencePort.classify> = null;
+    let divergence: ReturnType<typeof commandProjectDivergencePort.classify> | null = null;
     let workspaceRevision = envelope.baseRevision;
     if (revisionDiverged) {
-        if (!commandProjectDivergencePort.isConfigured()) {
-            return {
-                status: 'rejected' as const,
-                reason: 'Command batch base revision does not match current project state',
-                actions: [] as [],
-            };
-        }
         divergence = commandProjectDivergencePort.classify({
             baseRevision: envelope.baseRevision,
             commandsCompatible: preparedActions.every(
@@ -113,14 +106,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             ),
             targetIds: divergenceTargetIds,
         });
-        if (!divergence?.mayReapply) {
+        if (!divergence.mayReapply) {
             return {
                 status: 'conflicted' as const,
-                reason: divergence
-                    ? `Command batch project divergence is ${divergence.kind}`
-                    : 'Command batch project divergence could not be classified',
+                reason: `Command batch project divergence is ${divergence.kind}`,
                 actions: [] as [],
-                ...(divergence ? { divergence } : {}),
+                divergence,
             };
         }
         workspaceRevision = observedRevision;
@@ -142,13 +133,6 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         return {
             status: 'rejected' as const,
             reason: `Command batch preview workspace is unavailable: ${failureReason(error)}`,
-            actions: [] as [],
-        };
-    }
-    if (!workspace) {
-        return {
-            status: 'rejected' as const,
-            reason: 'Command batch preview workspace is unavailable',
             actions: [] as [],
         };
     }

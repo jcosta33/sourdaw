@@ -3683,11 +3683,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.63 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 7.83 dBTP (exact).",
+                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.91 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 8.42 dBTP (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Verse",
-                    "metrics": { "crestFactor": 12.63, "truePeak": 7.83 }
+                    "metrics": { "crestFactor": 12.91, "truePeak": 8.42 }
                 }
             }
         },
@@ -3743,7 +3743,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "comp-threshold",
-                                "value": -34
+                                "value": -40
                             },
                             "dependsOn": ["insert"]
                         },
@@ -3799,7 +3799,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-threshold",
-                            "value": -34
+                            "value": -40
                         }
                     },
                     {
@@ -4293,7 +4293,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "eq-mid-gain",
-                                "value": 5
+                                "value": 8
                             },
                             "dependsOn": ["insert"]
                         },
@@ -4313,7 +4313,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "eq-high-gain",
-                                "value": 5
+                                "value": 8
                             },
                             "dependsOn": ["insert"]
                         }
@@ -4360,7 +4360,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-gain",
-                            "value": 5
+                            "value": 8
                         }
                     },
                     {
@@ -4374,7 +4374,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-high-gain",
-                            "value": 5
+                            "value": 8
                         }
                     }
                 ],
