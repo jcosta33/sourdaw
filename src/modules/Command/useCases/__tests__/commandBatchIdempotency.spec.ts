@@ -3168,6 +3168,253 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
+    it.each(['complete', 'effects-pending'] as const)(
+        'rejects a malformed %s project checkpoint receipt before effects',
+        async (state) => {
+            const batch = compileBatch({ batchId: `malformed-project-${state}`, idempotencyKey: `malformed-${state}` });
+            const proof = await getVersionedCommandBatchCommitProof(batch);
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                projectId: proof.projectId,
+                idempotencyKey: proof.idempotencyKey,
+                contentHash: proof.contentHash,
+                state,
+                serializedReceipt: '{"schemaVersion":1}',
+            });
+            const mutationsBeforeExecution = mutationCount;
+
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Stored project idempotency receipt is invalid',
+                actions: [],
+            });
+            expect(mutationCount).toBe(mutationsBeforeExecution);
+            expect(runtimeEffectCount).toBe(0);
+        }
+    );
+
+    it.each([
+        ['unsupported schema', { schemaVersion: 2, records: [] }, 'Project idempotency ledger schema is unsupported'],
+        [
+            'conflicting content',
+            {
+                records: [
+                    {
+                        id: `project-idempotency\u0000recovery-conflicting-content\u0000sha256:${'f'.repeat(64)}`,
+                        projectId: 'project-idempotency',
+                        idempotencyKey: 'recovery-conflicting-content',
+                        contentHash: `sha256:${'f'.repeat(64)}`,
+                        state: 'complete',
+                        serializedReceipt: '{"schemaVersion":1}',
+                    },
+                ],
+            },
+            'Idempotency key was already used for different batch content',
+        ],
+    ])('rejects recovery re-read truth with %s', async (_case, replacementLedger, reason) => {
+        const batch = compileBatch({ idempotencyKey: `recovery-${_case.replaceAll(' ', '-')}` });
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => Promise.reject(new Error('runtime strip unavailable')),
+                    };
+                },
+            }),
+        });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        expect(first.status).toBe('committed-with-warning');
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => {
+                projectDocument.commandBatchIdempotency = replacementLedger;
+                return Promise.resolve(true);
+            },
+            release: () => Promise.resolve(),
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason, actions: [] });
+        expect(runtimeEffectCount).toBe(0);
+    });
+
+    it('rejects a malformed completed claim receipt without starting execution', async () => {
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'complete', serializedReceipt: '{"schemaVersion":1}' }),
+            complete: () => Promise.resolve(),
+        });
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Stored idempotency receipt is invalid', actions: [] });
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
+    });
+
+    it('replays a valid completed claim receipt without starting execution', async () => {
+        const batch = compileBatch();
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (!('receipt' in first)) {
+            throw new Error('Expected a committed receipt');
+        }
+        delete projectDocument.commandBatchIdempotency;
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'complete', serializedReceipt: JSON.stringify(first.receipt) }),
+            complete: () => Promise.resolve(),
+        });
+
+        const replay = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(replay).toEqual({ status: 'idempotent-replay', actions: [], receipt: first.receipt });
+        expect(mutationCount).toBe(2);
+        expect(runtimeEffectCount).toBe(1);
+    });
+
+    it('releases its claim when command execution throws', async () => {
+        const release = vi.fn(() => Promise.resolve());
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            release,
+        });
+        const batch = compileBatch();
+
+        await expect(
+            executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+                options: {
+                    get authorizeFirstHandler(): never {
+                        throw new Error('execution option exploded');
+                    },
+                },
+            })
+        ).rejects.toThrow('execution option exploded');
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('withholds finalization evidence when the durable project checkpoint is unavailable', async () => {
+        const batch = compileBatch({ batchId: 'finalization-missing-checkpoint' });
+        configureAutomergeStoragePort({
+            getDoc: () => projectDocument,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const draft = structuredClone(projectDocument);
+                changeFn(draft);
+                mutationCount += 1;
+            },
+        });
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+        });
+
+        expect(result.status).toBe('committed');
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledWith({
+            reason: 'The durable project checkpoint is unavailable for finalization evidence.',
+        });
+    });
+
+    it('withholds finalization evidence when the exact durable receipt cannot be decoded', async () => {
+        const batch = compileBatch({ batchId: 'finalization-invalid-checkpoint' });
+        configureAutomergeStoragePort({
+            getDoc: () => projectDocument,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const draft = structuredClone(projectDocument);
+                changeFn(draft);
+                if (mutationCount === 1) {
+                    const ledger = draft.commandBatchIdempotency as { records: { serializedReceipt: string }[] };
+                    ledger.records[0]!.serializedReceipt = '{"schemaVersion":1}';
+                }
+                projectDocument = draft;
+                mutationCount += 1;
+            },
+        });
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+        });
+
+        expect(result.status).toBe('committed');
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledWith({
+            reason: 'The durable project checkpoint does not contain the exact finalized receipt.',
+        });
+    });
+
+    it('adds a verified warning when a non-commit receipt cannot be persisted', async () => {
+        rejectReceiptPersistence = true;
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { shouldExecute: () => false },
+        });
+
+        expect(result).toMatchObject({
+            status: 'cancelled',
+            receipt: {
+                warnings: ['Verified idempotency receipt could not be persisted: durable store unavailable.'],
+            },
+        });
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
+    });
+
     it('rejects an invalid stored receipt before project or runtime effects', async () => {
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'complete', serializedReceipt: '{"schemaVersion":1}' }),
