@@ -768,6 +768,26 @@ describe('ElasticEditorPanel', () => {
                 expect(drawing.fill).not.toHaveBeenCalledWith(16 * BEAT_WIDTH, 0, width - 16 * BEAT_WIDTH, 120);
             });
 
+            it('leaves undimmed the source a stretched looped clip consumes on every pass', () => {
+                const clip = fixtureClip() as StretchedClip & { loopEnabled?: boolean; loopLength?: number };
+                // Playback restarts each 4-beat pass at file beat 0 and reads source at twice the timeline
+                // rate (`offset + ratio * elapsed`), so a pass consumes 4 x 2 = 8 file beats.
+                mocks.source.seconds = 40;
+                clip.endBeat = 16;
+                clip.loopEnabled = true;
+                clip.loopLength = 4;
+                clip.stretchMode = 'repitch';
+                clip.stretchRatio = 2;
+                const drawing = observeDrawing();
+                render(<ElasticEditorPanel />);
+                flushFrame();
+
+                const passEndX = 8 * BEAT_WIDTH;
+                const width = 88 * BEAT_WIDTH;
+                expect(drawing.fill).toHaveBeenCalledWith(passEndX, 0, width - passEndX, 120);
+                expect(drawing.fill).not.toHaveBeenCalledWith(4 * BEAT_WIDTH, 0, width - 4 * BEAT_WIDTH, 120);
+            });
+
             it('sizes the canvas to the whole source when the source is far longer than the clip', () => {
                 const clip = fixtureClip();
                 // A 4-beat clip of a 120-beat source: only the source extent makes the canvas this wide.
