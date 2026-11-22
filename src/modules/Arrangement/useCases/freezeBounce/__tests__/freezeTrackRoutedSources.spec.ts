@@ -9,6 +9,7 @@ import {
     cacheAudioBuffer,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    reportLatency,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -58,6 +59,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
 }));
+
+const { clearReportedLatency: clearLiveReportedLatency } = await vi.importActual<
+    typeof import('#/modules/AudioEngine/useCases')
+>('#/modules/AudioEngine/useCases');
 
 const { digestFreezePrintInput: realDigest } =
     await vi.importActual<typeof import('../digestFreezePrintInput')>('../digestFreezePrintInput');
@@ -230,6 +235,46 @@ describe('a freeze whose render reads a routed source track', () => {
         expect(renderedSourceClipIds).toEqual(['source-clip']);
         expect(findTrack(TRACK_ID).frozen).toBe(true);
         expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    it('pins compensation from the latency the render aligned by, not a figure reported during it', async () => {
+        const deviceId = 'target-delay';
+        updateTrack(TRACK_ID, (track) => ({
+            ...track,
+            devices: [{ id: deviceId, name: 'Delay', type: 'builtin-delay', bypassed: false, parameterValues: {} }],
+        }));
+        reportLatency(deviceId, 20);
+        // Like the real render, the stand-in reports the latency input it captured before it
+        // yielded, and withholds the device so its latency is the residual the take must pin.
+        vi.mocked(renderTrackOffline).mockImplementation((_track, _start, _end, options) => {
+            const project = options?.captured?.source.project;
+            if (!project) {
+                throw new Error('Expected the freeze to hand the render its capture');
+            }
+            const compensationInput = {
+                tracks: project.tracks?.tracks ?? [],
+                routes: project.sidechainRoutes,
+                deviceLatencyMs: new Map([[deviceId, 20]]),
+            };
+            reportLatency(deviceId, 50);
+            options.onScheduled?.({
+                scheduledNotes: 0,
+                scheduledBuffers: [],
+                withheldDeviceTypes: ['builtin-delay'],
+                compensationInput,
+            });
+            return Promise.resolve(renderedBuffer());
+        });
+
+        try {
+            await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
+        } finally {
+            clearLiveReportedLatency(deviceId);
+        }
+
+        const { freezeState } = findTrack(TRACK_ID);
+        expect(freezeState.status).toBe('frozen');
+        expect(freezeState.compensationSeconds).toBeCloseTo(0.02, 9);
     });
 
     it('refuses the take when the source is edited during the render', async () => {
