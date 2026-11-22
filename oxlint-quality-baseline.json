@@ -14079,14 +14079,9 @@
     },
     "src/modules/Knead/handlers/pitch/handleCommitPitchEdit.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
-    "src/modules/Knead/handlers/pitch/handleRestoreClipFileId.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
         }
     },
