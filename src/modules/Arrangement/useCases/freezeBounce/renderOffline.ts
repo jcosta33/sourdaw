@@ -83,12 +83,16 @@ export type RenderOfflineOptions = {
     };
 };
 
-function readLiveRenderSubgraph(targetTrack: Track, includeSendReturns: boolean): OfflineRenderSubgraph {
+/** The caller's captured subgraph, else the one the live stores select. */
+function readRenderSubgraph(targetTrack: Track, options: RenderOfflineOptions | undefined): OfflineRenderSubgraph {
+    if (options?.captured) {
+        return options.captured.subgraph;
+    }
     return selectOfflineRenderSubgraph({
         targetTrack,
         allTracks: trackStore.value?.tracks ?? [],
         sidechainRoutes: sidechainStore.value?.routes ?? [],
-        includeSendReturns,
+        includeSendReturns: options?.includeSends ?? true,
     });
 }
 
@@ -123,8 +127,7 @@ export async function renderTrackOffline(
         return null;
     }
 
-    const { renderTracks, printTrackIds } =
-        options?.captured?.subgraph ?? readLiveRenderSubgraph(targetTrack, options?.includeSends ?? true);
+    const { renderTracks, printTrackIds } = readRenderSubgraph(targetTrack, options);
 
     const buffer = await renderTrackSubgraphOffline({
         targetTrackId: targetTrack.id,

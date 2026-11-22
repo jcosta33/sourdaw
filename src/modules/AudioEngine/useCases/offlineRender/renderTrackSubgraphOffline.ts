@@ -45,6 +45,17 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 } as const;
 
+type CapturedSubgraphInput = ReturnType<typeof captureOfflineSubgraphInput> | null;
+
+function readAdjustmentLayers(captured: CapturedSubgraphInput) {
+    return captured?.adjustmentLayers ?? readOfflineAdjustmentLayerSnapshot();
+}
+
+/** A track's delay under the captured device latencies, or the live ones when nothing was captured. */
+function readCompensationDelay(trackId: string, captured: CapturedSubgraphInput): number {
+    return getCompensationDelay(trackId, undefined, undefined, captured?.scheduling.latency);
+}
+
 type RenderTrackSubgraphOfflineInput = {
     /** Track whose strip output is captured into the returned buffer. */
     targetTrackId: string;
@@ -234,7 +245,7 @@ export async function renderTrackSubgraphOffline({
     // strip, which keeps applying the layers itself, so baking them would
     // apply them twice — the same rule `projectStripTrack` applies to the
     // fader and panner those layers compose onto.
-    const adjustmentLayers = captured?.adjustmentLayers ?? readOfflineAdjustmentLayerSnapshot();
+    const adjustmentLayers = readAdjustmentLayers(captured);
     // An implicit layer position resolves against the full ordered project
     // track list — live `resolveAffectedTrackIds` and the mixdown composition
     // slice that list, not this render's subgraph subset, whose index space
@@ -443,12 +454,7 @@ export async function renderTrackSubgraphOffline({
                 regionStartBeat: renderStartBeat,
                 tickSeconds: adjustmentTickSeconds,
                 projectSecondsToBeat,
-                compensationDelaySec: getCompensationDelay(
-                    track.id,
-                    undefined,
-                    undefined,
-                    captured?.scheduling.latency
-                ),
+                compensationDelaySec: readCompensationDelay(track.id, captured),
             });
         }
 
