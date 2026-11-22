@@ -78,8 +78,8 @@ export type OfflineRenderRuntimeSource = {
 
 /**
  * What a render of the live session reads besides its document: the adjustment-layer stack and the
- * modulator rack. Supplying it with a project source says that document is the live session's own,
- * so device setup is captured from the live instances, not projected from each device record.
+ * modulator rack. Supplied with a project source, the render reads these from it instead of the
+ * live stores, so it reads nothing live once it yields.
  */
 export type OfflineRenderSessionSource = {
     adjustmentLayers: AdjustmentLayer[];

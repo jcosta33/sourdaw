@@ -216,10 +216,13 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         // Pin omittedDelay − liveDelay (clamped at 0): plugin/bridge residual
         // when another track owns session max, or the full omitted figure when
         // this track is session max (live = 0).
-        const liveDelay = getCompensationDelay(trackId);
+        // Both figures read the device latencies the render aligned its strips by, not the live ones.
+        const liveDelay = getCompensationDelay(trackId, undefined, undefined, scheduleTally.compensationInput);
         const omittedDelay = getCompensationDelay(
             trackId,
-            freezeCompensationOmitTypes(track.devices, scheduleTally.withheldDeviceTypes)
+            freezeCompensationOmitTypes(track.devices, scheduleTally.withheldDeviceTypes),
+            undefined,
+            scheduleTally.compensationInput
         );
         const compensationSeconds = freezeCompensationPinSeconds(liveDelay, omittedDelay);
 

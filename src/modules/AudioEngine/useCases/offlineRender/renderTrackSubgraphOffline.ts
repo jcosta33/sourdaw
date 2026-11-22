@@ -51,6 +51,14 @@ function readAdjustmentLayers(captured: CapturedSubgraphInput) {
     return captured?.adjustmentLayers ?? readOfflineAdjustmentLayerSnapshot();
 }
 
+function createScheduleTally(captured: CapturedSubgraphInput): OfflineScheduleTally {
+    const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+    if (!captured) {
+        return tally;
+    }
+    return { ...tally, compensationInput: captured.scheduling.latency };
+}
+
 /** A track's delay under the captured device latencies, or the live ones when nothing was captured. */
 function readCompensationDelay(trackId: string, captured: CapturedSubgraphInput): number {
     return getCompensationDelay(trackId, undefined, undefined, captured?.scheduling.latency);
@@ -462,7 +470,7 @@ export async function renderTrackSubgraphOffline({
         // scheduler only reads note tables, so an empty one is the honest input.
         const midiState = midi ?? EMPTY_MIDI_STATE;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
-        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+        const tally = createScheduleTally(captured);
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             if (!strip) {

@@ -43,7 +43,6 @@ function bakedUnderOlderRules(track: Track): boolean {
  */
 export function initStalenessDetection(): () => void {
     const seen = new Map<string, FreezePrintInput>();
-    let active = true;
     let evaluating = false;
     let passRequested = false;
 
@@ -80,15 +79,12 @@ export function initStalenessDetection(): () => void {
     }
 
     function takePassRequest(): boolean {
-        const requested = passRequested && active;
+        const requested = passRequested;
         passRequested = false;
         return requested;
     }
 
     function evaluate(): void {
-        if (!active) {
-            return;
-        }
         if (evaluating) {
             passRequested = true;
             return;
@@ -115,8 +111,9 @@ export function initStalenessDetection(): () => void {
 
     const unsubscribe = subscribeSubgraphPrintInputStores(evaluate);
 
+    // Unsubscribing is what stops evaluation: no write reaches `evaluate` after it. A pass already
+    // running finishes, but against cleared state it can only record first sightings.
     return () => {
-        active = false;
         seen.clear();
         unsubscribe();
     };

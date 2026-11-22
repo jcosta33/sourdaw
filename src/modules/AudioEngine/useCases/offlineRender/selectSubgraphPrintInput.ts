@@ -1,8 +1,11 @@
 import { type ClipGainEnvelope, type Track } from '#/modules/Arrangement/stores';
 
 import { affectsTrack } from './affectsTrack';
+import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { drivesTrackMixer } from './drivesTrackMixer';
 import { type OfflineRenderProjectSource, type OfflineRenderSessionSource } from './OfflineRenderSource';
+import { readPrintedTrack } from './readPrintedTrack';
+import { resolveMuteHonoringTrackIds } from './resolveMuteHonoringTrackIds';
 
 /** The owner read models a subgraph print reads, live or captured. */
 export type SubgraphPrintInputSource = Pick<
@@ -31,13 +34,15 @@ export type SubgraphPrintInput = {
     tracks: readonly Track[];
     /** The sidechain routes joining two of `tracks`, the only ones the render wires. */
     routes: readonly OfflineRenderProjectSource['sidechainRoutes'][number][];
+    /** The tracks whose mute the render honours: the keys of the detectors `routes` wires. */
+    muteHonoringTrackIds: ReadonlySet<string>;
     /** The lanes on `tracks`, except the target's own fader and pan lanes, which stay live. */
     automationLanes: readonly OfflineRenderProjectSource['automationLanes'][number][];
     midiRows: readonly MidiClipRows[];
     probabilitySeed: number | null;
     takeLanes: readonly NonNullable<OfflineRenderProjectSource['takeLanes']>['lanes'][number][];
     gainEnvelopes: readonly { clipId: string; envelope: ClipGainEnvelope | undefined }[];
-    /** The VCA groups a track of `tracks` belongs to. */
+    /** The VCA groups a source of the render belongs to; the target's master stays live. */
     vcaGroups: readonly OfflineRenderProjectSource['vcaGroups'][number][];
     /** Per track of `tracks`: the adjustment layers reaching it, none for the target, whose strip stays live. */
     adjustmentLayersByTrack: readonly (readonly OfflineRenderSessionSource['adjustmentLayers'][number][])[];
@@ -64,25 +69,35 @@ export function selectSubgraphPrintInput({
         refs.push(value);
         return value;
     }
-    // A track is taken field by field, so a track object rebuilt around the same values (a write to
+    const tracks = renderTracks.toSorted((left, right) => left.id.localeCompare(right.id));
+    const memberIds = new Set(tracks.map((track) => track.id));
+    const routes = source.sidechainRoutes
+        .filter((route) => memberIds.has(route.sourceTrackId) && memberIds.has(route.targetTrackId))
+        .map(take);
+    const muteHonoringTrackIds = resolveMuteHonoringTrackIds(collectWiredSidechainDetectorRoutes({ tracks, routes }));
+    // A track is taken by the fields its print reads, so a write to any other field (a rename, a
+    // resize, the target's own fader) or a track object rebuilt around the same values (a write to
     // another track) selects the same input.
-    function takeTrack(track: Track): Track {
-        for (const [field, value] of Object.entries(track).toSorted(([left], [right]) => left.localeCompare(right))) {
+    for (const track of tracks) {
+        const printed = readPrintedTrack({
+            track,
+            isTarget: track.id === targetTrackId,
+            honoursMute: muteHonoringTrackIds.has(track.id),
+        });
+        refs.push(track.id);
+        for (const [field, value] of Object.entries(printed).toSorted(([left], [right]) => left.localeCompare(right))) {
             refs.push(field, value);
         }
-        return track;
     }
-    const tracks = renderTracks.toSorted((left, right) => left.id.localeCompare(right.id)).map(takeTrack);
-    const memberIds = new Set(tracks.map((track) => track.id));
+    const sourceTracks = tracks.filter((track) => track.id !== targetTrackId);
     const allTrackIds = (source.tracks?.tracks ?? []).map((track) => track.id);
     const clips = tracks.flatMap((track) => track.clips);
     const midi = source.midi;
     return {
         targetTrackId,
         tracks,
-        routes: source.sidechainRoutes
-            .filter((route) => memberIds.has(route.sourceTrackId) && memberIds.has(route.targetTrackId))
-            .map(take),
+        routes,
+        muteHonoringTrackIds,
         automationLanes: source.automationLanes
             .filter((lane) => memberIds.has(lane.trackId) && !drivesTrackMixer(lane, targetTrackId))
             .map(take),
@@ -97,7 +112,9 @@ export function selectSubgraphPrintInput({
         probabilitySeed: take(midi?.probabilitySeed ?? null),
         takeLanes: (source.takeLanes?.lanes ?? []).filter((lane) => memberIds.has(lane.trackId)).map(take),
         gainEnvelopes: clips.map((clip) => ({ clipId: clip.id, envelope: take(source.gainEnvelopes[clip.id]) })),
-        vcaGroups: source.vcaGroups.filter((group) => tracks.some((track) => track.vcaGroupId === group.id)).map(take),
+        vcaGroups: source.vcaGroups
+            .filter((group) => sourceTracks.some((track) => track.vcaGroupId === group.id))
+            .map(take),
         adjustmentLayersByTrack: tracks.map((track) => {
             if (track.id === targetTrackId) {
                 return [];

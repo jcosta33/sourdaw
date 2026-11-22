@@ -613,7 +613,28 @@ describe('a freeze whose render reads a routed source track', () => {
             });
         });
 
-        it('counts both writes that land while an evaluation is in flight', async () => {
+        it('runs no digest when a routed source is renamed or resized', async () => {
+            await freezeWatched();
+            vi.mocked(digestFreezePrintInput).mockClear();
+
+            updateTrack(SOURCE_ID, (track) => ({ ...track, name: 'Renamed source' }));
+            updateTrack(SOURCE_ID, (track) => ({ ...track, height: track.height + 40 }));
+
+            expect(digestFreezePrintInput).not.toHaveBeenCalled();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+        });
+
+        it("runs no digest and keeps the freeze when the frozen track's own fader moves", async () => {
+            await freezeWatched();
+            vi.mocked(digestFreezePrintInput).mockClear();
+
+            updateTrack(TRACK_ID, (track) => ({ ...track, gain: 0.3, pan: -0.5 }));
+
+            expect(digestFreezePrintInput).not.toHaveBeenCalled();
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+        });
+
+        it('marks a track stale when it is written during a pass that already evaluated it', async () => {
             // Two more frozen tracks, ordered ahead of the target, so a pass has already read them
             // by the time the target's evaluation runs.
             const state = trackStore.value!;
@@ -646,18 +667,18 @@ describe('a freeze whose render reads a routed source track', () => {
             await executeAppAction({ type: 'freezeTrack', payload: { trackId: SECOND_EXTRA_ID } });
             await freezeWatched();
             vi.mocked(digestFreezePrintInput).mockImplementationOnce((input) => {
-                addLateClip(FIRST_EXTRA_ID, 'first-extra-late');
-                addLateClip(SECOND_EXTRA_ID, 'second-extra-late');
+                updateTrack(FIRST_EXTRA_ID, (track) => ({ ...track, disabled: true }));
+                updateTrack(SECOND_EXTRA_ID, (track) => ({ ...track, disabled: true }));
                 return realDigest(input);
             });
 
-            addLateClip(SOURCE_ID);
+            updateTrack(SOURCE_ID, (track) => ({ ...track, disabled: true }));
 
-            await vi.waitFor(() => {
-                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
-                expect(findTrack(FIRST_EXTRA_ID).freezeState.status).toBe('stale');
-                expect(findTrack(SECOND_EXTRA_ID).freezeState.status).toBe('stale');
-            });
+            // Evaluation is synchronous: by the time the write returns, the pass the two later
+            // writes asked for has run, so no later notification can stand in for it.
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            expect(findTrack(FIRST_EXTRA_ID).freezeState.status).toBe('stale');
+            expect(findTrack(SECOND_EXTRA_ID).freezeState.status).toBe('stale');
         });
 
         it('evaluates nothing once torn down', async () => {
@@ -665,7 +686,9 @@ describe('a freeze whose render reads a routed source track', () => {
             stopStaleness();
             vi.mocked(digestFreezePrintInput).mockClear();
 
-            addLateClip(SOURCE_ID);
+            // Two edits: a watcher still subscribed would record the first and digest the second.
+            updateTrack(SOURCE_ID, (track) => ({ ...track, gain: 0.3 }));
+            updateTrack(SOURCE_ID, (track) => ({ ...track, gain: 0.2 }));
 
             expect(digestFreezePrintInput).not.toHaveBeenCalled();
             expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
