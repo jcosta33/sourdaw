@@ -56,6 +56,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         isMidiTransformDevice: actual.isMidiTransformDevice,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
         initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
         ensureTrackStrip: mocks.ensureTrackStrip,

@@ -36,6 +36,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: (value: unknown) => value,
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         clampDeviceParamWrite: actual.clampDeviceParamWrite,
         clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
         deriveEffectiveAudibility: actual.deriveEffectiveAudibility,
@@ -101,6 +102,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
@@ -200,7 +203,6 @@ vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRouteSnapshot: vi.fn(),
     getAllSidechainRoutes: vi.fn(),
     getSidechainRoutesForTrack: vi.fn(),
-    getSidechainTargetCapability: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
     removeSend: vi.fn(),
     removeSidechainRoute: vi.fn(),

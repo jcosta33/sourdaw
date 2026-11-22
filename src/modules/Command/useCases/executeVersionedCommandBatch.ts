@@ -101,7 +101,7 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
         return handler?.canReapplyAfterDivergence?.(action, { actions, actionIndex }) === true;
     });
     const divergenceState: {
-        current: ReturnType<typeof commandProjectDivergencePort.classify>;
+        current: ReturnType<typeof commandProjectDivergencePort.classify> | null;
     } = { current: null };
     const prepareValidation = input.options?.prepareValidation;
     const result = await executeAppActionBatch(actions, {
@@ -121,28 +121,20 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
                 // divergence classifier at confirmation admission, so the gate
                 // attaches the same classification here instead of leaving a
                 // sentence-only conflict behind.
-                if (commandProjectDivergencePort.isConfigured()) {
-                    divergenceState.current = commandProjectDivergencePort.classify({
-                        baseRevision: batchRevision,
-                        commandsCompatible,
-                        targetIds,
-                    });
-                }
-                return 'Command batch base revision does not match current project state';
-            }
-            if (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) {
-                if (!commandProjectDivergencePort.isConfigured()) {
-                    return 'Command batch base revision does not match current project state';
-                }
                 divergenceState.current = commandProjectDivergencePort.classify({
                     baseRevision: batchRevision,
                     commandsCompatible,
                     targetIds,
                 });
-                if (!divergenceState.current?.mayReapply) {
-                    if (!divergenceState.current) {
-                        return 'Command batch project divergence could not be classified';
-                    }
+                return 'Command batch base revision does not match current project state';
+            }
+            if (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) {
+                divergenceState.current = commandProjectDivergencePort.classify({
+                    baseRevision: batchRevision,
+                    commandsCompatible,
+                    targetIds,
+                });
+                if (!divergenceState.current.mayReapply) {
                     return describeDivergence(divergenceState.current.kind);
                 }
             } else {
@@ -157,7 +149,7 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
             commandsCompatible: false,
             targetIds,
         });
-        if (incompatibleDivergence && !incompatibleDivergence.mayReapply) {
+        if (!incompatibleDivergence.mayReapply) {
             return {
                 ...result,
                 divergence: incompatibleDivergence,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
 import { commandBatchPreflightPort, commandProjectRevisionPort } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -39,7 +40,7 @@ describe('AI workflow command preflight fixture', () => {
             targetIds: ['layer-live-only'],
         });
 
-        expect(captured?.targetFingerprints).toEqual({});
+        expect(captured.targetFingerprints).toEqual({});
     });
 
     it('fingerprints the persisted document supplied to the preflight seam', () => {
@@ -69,7 +70,7 @@ describe('AI workflow command preflight fixture', () => {
             targetIds: ['layer-persisted'],
         });
 
-        expect(captured?.targetFingerprints).toEqual({
+        expect(captured.targetFingerprints).toEqual({
             'layer-persisted': JSON.stringify([
                 '{"enabled":false,"id":"layer-persisted","name":"Persisted document wins"}',
             ]),
@@ -79,6 +80,6 @@ describe('AI workflow command preflight fixture', () => {
     it('installs the production command-batch checkpoint revision provider', () => {
         configureAiWorkflowCommandPreflightFixture('project-test');
 
-        expect(commandProjectRevisionPort.isConfigured()).toBe(true);
+        expect(commandProjectRevisionPort.capture()).toBe(captureProjectRevision());
     });
 });

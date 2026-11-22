@@ -234,6 +234,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: vi.fn(),
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         clampDeviceParamWrite: actual.clampDeviceParamWrite,
         clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
         deriveEffectiveAudibility: actual.deriveEffectiveAudibility,
@@ -349,6 +350,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,

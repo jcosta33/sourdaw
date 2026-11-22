@@ -33,7 +33,24 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    startRecording: vi.fn(() => []),
+    // Admission is stubbed, but it still opens one take: a start that opens none
+    // never engages the recording.
+    startRecording: vi.fn(() => [
+        {
+            id: 'rec-clip-stub',
+            trackId: 'track-armed-auto',
+            name: 'Recording 1',
+            startBeat: 0,
+            endBeat: 0,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        },
+    ]),
 }));
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));

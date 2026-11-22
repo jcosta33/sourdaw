@@ -618,14 +618,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
-        // Count provenance: measured 10 — six `compileAgentRiskApproval`
-        // references (import identifier and path, two ReturnType projections,
-        // two calls), two `compilePartialCommandBatchAcceptance` (import
+        // Count provenance: measured 11 — seven `compileAgentRiskApproval`
+        // references (import identifier and path, three ReturnType projections,
+        // the third on the re-preview proof refresh's result, two calls), two `compilePartialCommandBatchAcceptance` (import
         // and call) and two `compileSelectedSubset` (declaration and call). The
         // `compilePendingActionCommandEnvelopes` is mentioned only in a comment
         // recording why an original command's position is its action's.
         // Re-proposal compiles command batches only; it reaches no device sink.
-        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 10,
+        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 11,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         // Count provenance: 0 in code, was 2 — pure receipt projection moved to
         // projectAgentRunReceiptSaga (#3052), taking every

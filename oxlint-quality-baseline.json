@@ -4347,9 +4347,6 @@
     "src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts": {
@@ -4928,9 +4925,6 @@
     },
     "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
@@ -5012,9 +5006,6 @@
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/validateActionPayload.ts": {
@@ -12227,7 +12218,7 @@
             "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 2
@@ -12241,7 +12232,7 @@
             "count": 1
         },
         "eslint/max-depth": {
-            "count": 9
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 1
@@ -14088,14 +14079,9 @@
     },
     "src/modules/Knead/handlers/pitch/handleCommitPitchEdit.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
-    "src/modules/Knead/handlers/pitch/handleRestoreClipFileId.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
         }
     },

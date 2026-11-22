@@ -117,7 +117,7 @@ const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
 // Distinct from the seeded `kneadState` values on purpose: the payload is what
 // the render receives, so a fix that drops the forwarding cannot pass by
 // coincidence with a store read (#2058).
-const retuneSpeedMs = 25;
+const retuneSpeedMs = 40;
 const formantPreserve = true;
 
 const storedContour: PitchContour = {
@@ -309,6 +309,30 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
         expect(kneadStore.value?.clips.c1?.blobs).toEqual([]);
         expect(kneadStore.value?.contours.c1).toBeUndefined();
+    });
+
+    // The native render needs no cached source buffer, so a clip with no
+    // `audioBufferId` can commit on desktop. Undo has to give that absence back:
+    // leaving the rendered buffer id on the clip kept it sounding the edit.
+    it('undo removes the rendered buffer id from a clip that had none, and redo puts it back', async () => {
+        trackStore.set({
+            tracks: [createTrack({ clips: [createClip({ id: 'c1', type: 'audio', fileId: 'test.wav' })] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        } satisfies TrackStoreState);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+
+        await undo();
+
+        expect(getFirstClipFileId()).toBe('test.wav');
+        expect(getFirstClipAudioBufferId()).toBeUndefined();
+
+        await redo();
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
     });
 
     it('keeps the clip pitch contour when the render fails', async () => {

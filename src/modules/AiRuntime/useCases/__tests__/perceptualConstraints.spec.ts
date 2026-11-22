@@ -8,6 +8,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { BUILTIN_DEVICE_TYPES } from '#/utils/builtinDeviceTypes';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { getCreativeSelectionSnapshot } from '../../models/CreativeInterpretation';
@@ -4106,5 +4107,90 @@ describe('the card a constraint criterion is shown on', () => {
         expect(criterionTexts('Lower the Vocal Trim and keep it warm')).toEqual([
             'Constraint “keep it warm”: nothing the application measures shows that it holds, so this batch cannot be approved as verified.',
         ]);
+    });
+});
+
+describe('which built-in device types edit a perceptual dimension', () => {
+    const SPECTRAL_TYPES = ['builtin-eq', 'builtin-filter'];
+    const SPATIAL_TYPES = [
+        'builtin-reverb',
+        'builtin-convolution-reverb',
+        'builtin-delay',
+        'builtin-chorus',
+        'builtin-stereo-widener',
+    ];
+
+    function contextWithDevicesOn(trackId: string, types: readonly string[]): ProjectContext {
+        const context = getProjectContext();
+        return {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === trackId ? { ...track, devices: types.map((type) => device(`probe-${type}`, type)) } : track
+            ),
+        };
+    }
+
+    const removing = (type: string): AppAction => ({ type: 'removeDevice', payload: { deviceId: `probe-${type}` } });
+    const adding = (type: string): AppAction => ({
+        type: 'addDevice',
+        payload: { trackId: 'vocal', deviceType: type, deviceId: 'added' },
+    });
+
+    it.each(SPECTRAL_TYPES)('refuses removing %s under the low-end constraint', (type) => {
+        const prompt = "Simplify the Bass chain but don't touch the low end";
+        expect(readExcludedEdit(prompt, [removing(type)], contextWithDevicesOn('bass', [type]))).toContain(
+            'edits the low end of “Bass”'
+        );
+    });
+
+    it.each(SPATIAL_TYPES)('refuses removing and adding %s under the intimate-vocal constraint', (type) => {
+        const prompt = 'Simplify the Vocal chain but keep the vocal intimate';
+        expect(readExcludedEdit(prompt, [removing(type)], contextWithDevicesOn('vocal', [type]))).toContain(
+            'edits the ambience of “Vocal”'
+        );
+        expect(readExcludedEdit(prompt, [adding(type)], getProjectContext())).toContain(
+            'edits the ambience of “Vocal”'
+        );
+    });
+
+    it.each(SPECTRAL_TYPES)('admits adding %s, which sits at its defaults, under either constraint', (type) => {
+        expect(
+            readExcludedEdit('Shape the Vocal chain but keep the vocal intimate', [adding(type)], getProjectContext())
+        ).toBeNull();
+        expect(
+            readExcludedEdit("Shape the Vocal chain but don't touch the low end", [adding(type)], getProjectContext())
+        ).toBeNull();
+    });
+
+    it('admits removing every other built-in device type under either constraint', () => {
+        const others = BUILTIN_DEVICE_TYPES.filter((type) => ![...SPECTRAL_TYPES, ...SPATIAL_TYPES].includes(type));
+        for (const type of others) {
+            expect(
+                readExcludedEdit(
+                    "Simplify the Bass chain but don't touch the low end",
+                    [removing(type)],
+                    contextWithDevicesOn('bass', [type])
+                )
+            ).toBeNull();
+            expect(
+                readExcludedEdit(
+                    'Simplify the Vocal chain but keep the vocal intimate',
+                    [removing(type), adding(type)],
+                    contextWithDevicesOn('vocal', [type])
+                )
+            ).toBeNull();
+        }
+    });
+
+    it('treats a filter parameter write as a low-end edit and an EQ write only on its low band', () => {
+        const prompt = "Tidy the Bass but don't touch the low end";
+        const context = contextWithDevicesOn('bass', ['builtin-eq', 'builtin-filter']);
+        const write = (type: string, paramId: string): AppAction => ({
+            type: 'setDeviceParameter',
+            payload: { deviceId: `probe-${type}`, paramId, value: 0.5 },
+        });
+        expect(readExcludedEdit(prompt, [write('builtin-filter', 'filter-resonance')], context)).toContain('low end');
+        expect(readExcludedEdit(prompt, [write('builtin-eq', 'eq-low-gain')], context)).toContain('low end');
+        expect(readExcludedEdit(prompt, [write('builtin-eq', 'eq-high-gain')], context)).toBeNull();
     });
 });

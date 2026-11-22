@@ -356,7 +356,6 @@ describe('protected target authority under collaborator drift', () => {
 
     afterEach(() => {
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();

@@ -1,7 +1,7 @@
 import { readRecordingEngaged } from '#/modules/Transport/stores';
 
 import { getTrackEligibility } from '../../stores/trackEligibility';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 export const FREEZE_REFUSED_WHILE_RECORDING_MESSAGE = 'Freeze is unavailable while this track is recording.';
 

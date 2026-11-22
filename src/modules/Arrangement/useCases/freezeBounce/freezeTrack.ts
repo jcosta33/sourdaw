@@ -20,7 +20,7 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
-import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { assertFreezeSourceUnchangedUnlessRecording } from './assertFreezeSourceUnchangedUnlessRecording';
 import { assertRenderReadsHashedTrack } from './assertRenderReadsHashedTrack';
 import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
@@ -30,6 +30,7 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { refuseFreezeCommit } from './refuseFreezeCommit';
 import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
@@ -207,12 +208,12 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        await assertFreezeSourceUnchanged(trackId, hash);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        await assertFreezeSourceUnchangedUnlessRecording(trackId, hash, () => isCurrentFreezeTask(taskIdentity));
+        // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
+        if (refuseFreezeCommit(trackId, () => isCurrentFreezeTask(taskIdentity))) {
             return false;
         }
 
-        // Synchronous from here to the commit write: no await can let a note land in between.
         assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();

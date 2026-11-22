@@ -1,4 +1,5 @@
 import {
+    getSidechainTargetCapability,
     initializeTrackStripFromSnapshot,
     isMidiTransformDevice,
     reportLatency,
@@ -10,7 +11,6 @@ import {
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { getAllSidechainRoutes, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
