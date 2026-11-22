@@ -1653,6 +1653,12 @@ fn resolve_registry_entry_once<Rescan>(
 where
     Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
 {
+    // The scan runs in another process, so a plugin it just found reaches
+    // this one only through the file.
+    if read_registry_entry(plugin_registry, plugin_id).is_none() {
+        registry_store.adopt_entry_written_elsewhere(plugin_registry, scan_policy, plugin_id);
+    }
+
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
         return vet_registry_hit(
             plugin_registry,
@@ -12251,6 +12257,35 @@ mod tests {
             },
         )
         .expect("the persisted plugin must resolve in a new session")
+        .entry;
+
+        assert_eq!(entry.path, plugin_path.display().to_string());
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The scan runs in its own process with its own store. A plugin it found
+    /// after this process hydrated loads in the same session, not only after a
+    /// relaunch.
+    #[test]
+    fn an_activation_resolves_a_plugin_the_scan_process_found_after_this_one_hydrated() {
+        let fixture = PersistedRegistryFixture::create("activation-sibling-scan");
+        let session_registry = Mutex::new(HashMap::new());
+        let session_store = fixture.store();
+        session_store.hydrate_into(&session_registry, &fixture.scan_policy());
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        // `persist` writes through a store of its own: the scan process's.
+        fixture.persist("aaaa1111", &plugin_path);
+
+        let entry = resolve_registry_entry(
+            &session_registry,
+            &session_store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("a row the scan process wrote must resolve without rescanning {path:?}")
+            },
+        )
+        .expect("a plugin the scan just found must resolve in the same session")
         .entry;
 
         assert_eq!(entry.path, plugin_path.display().to_string());
