@@ -39,9 +39,9 @@ function buildProductionPorts(): KernelPorts {
  * legacy trim admission undo replays through and the tempo and automation
  * state macro replay reads reach Command, and the transport a branch switch
  * stops reaches CrdtDocument, through ports this composition root fills.
- * Called by bootstrap and again when `App` loads, beside
- * `registerSupportingServicePorts`, because `main.tsx` loads the two
- * independently; registering the same ports twice is a no-op.
+ * Called by `bootstrapApplication` and by `main.tsx` before it first renders
+ * `App`, beside `registerSupportingServicePorts`, because `main.tsx` loads the
+ * two independently; registering the same ports twice is a no-op.
  */
 export function registerKernelPorts(): void {
     productionPorts ??= buildProductionPorts();
