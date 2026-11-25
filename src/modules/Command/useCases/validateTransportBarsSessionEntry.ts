@@ -1,21 +1,25 @@
 import { isRecord } from '#/utils/structuralEquality';
-
-const MIN_BARS = 1;
-const MAX_BARS = 8;
+import { MAX_TRANSPORT_BARS, MIN_TRANSPORT_BARS } from '#/utils/transportBarsLimits';
 
 type TransportBarsActionType = 'setCountInBars' | 'setPreRollBars';
+
+function isWholeBarsInRange(bars: unknown): boolean {
+    return (
+        typeof bars === 'number' && Number.isInteger(bars) && bars >= MIN_TRANSPORT_BARS && bars <= MAX_TRANSPORT_BARS
+    );
+}
 
 function isTransportBarsAction(action: unknown, actionType: TransportBarsActionType): boolean {
     if (!isRecord(action) || action.type !== actionType || !isRecord(action.payload)) {
         return false;
     }
-    const { bars } = action.payload;
-    return typeof bars === 'number' && Number.isInteger(bars) && bars >= MIN_BARS && bars <= MAX_BARS;
+    const { bars, expectedBars } = action.payload;
+    return isWholeBarsInRange(bars) && (expectedBars === undefined || isWholeBarsInRange(expectedBars));
 }
 
 /**
  * A saved count-in or pre-roll entry replays only when its forward, inverse and redo are each that
- * same action with whole bars inside the range the setting accepts.
+ * same action with whole bars, and a whole expected bar count when it carries one, inside the range the setting accepts.
  */
 export function validateTransportBarsSessionEntry(
     actionType: TransportBarsActionType,

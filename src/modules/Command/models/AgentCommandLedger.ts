@@ -253,6 +253,10 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setPunchEnabled', 'project-timeline', 'Transport'],
     ['setMetronomeEnabled', 'project-timeline', 'Transport'],
     ['setMetronomeVolume', 'project-timeline', 'Transport'],
+    ['toggleCountIn', 'project-timeline', 'Transport'],
+    ['setCountInBars', 'project-timeline', 'Transport'],
+    ['togglePreRoll', 'project-timeline', 'Transport'],
+    ['setPreRollBars', 'project-timeline', 'Transport'],
     ['setMasterGain', 'project-timeline', 'Transport'],
 
     // Project — project-timeline. The brief's decisions stay uncovered: a request copies them unchanged.
@@ -383,15 +387,8 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'project-timeline',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Undoable transport settings with no executable descriptor yet. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled; setCountInBars and setPreRollBars describe their inverse, but toggleCountIn and togglePreRoll do not, and none of the four has an executable descriptor yet, so the packet registers the bar setters and gives the toggles an inverse or retires them.',
-        actionTypes: [
-            'toggleLoop',
-            'toggleMetronome',
-            'toggleCountIn',
-            'setCountInBars',
-            'togglePreRoll',
-            'setPreRollBars',
-        ],
+        reason: 'Undoable transport settings with no executable descriptor. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled.',
+        actionTypes: ['toggleLoop', 'toggleMetronome'],
     },
     {
         kind: 'interim-unsupported',

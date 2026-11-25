@@ -71,6 +71,19 @@ describe.each(ACTION_TYPES)('%s session replay contract', (actionType) => {
         expect(validateTransportBarsSessionEntry(actionType, entryOf(actionType, bars))).toBe(false);
     });
 
+    it('admits a guarded inverse and redo and rejects an expected bar count outside the range', () => {
+        const guarded = (expectedBars: unknown) => ({
+            action: barsAction(actionType, 3),
+            inverseAction: { type: actionType, payload: { bars: 2, expectedBars } },
+            redoAction: { type: actionType, payload: { bars: 3, expectedBars: 2 } },
+        });
+
+        expect(validateTransportBarsSessionEntry(actionType, guarded(3))).toBe(true);
+        expect(validateTransportBarsSessionEntry(actionType, guarded(9))).toBe(false);
+        expect(validateTransportBarsSessionEntry(actionType, guarded(2.5))).toBe(false);
+        expect(validateTransportBarsSessionEntry(actionType, guarded('3'))).toBe(false);
+    });
+
     it('rejects an entry whose inverse is a different action type', () => {
         const other = actionType === 'setCountInBars' ? 'setPreRollBars' : 'setCountInBars';
         const entry = {

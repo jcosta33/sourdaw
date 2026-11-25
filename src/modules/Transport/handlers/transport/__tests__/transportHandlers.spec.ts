@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { defaultTransportState } from '../../../models/TransportState';
+import { transportStore } from '../../../stores/transportStore';
 import { handleAddTimeSignatureChange } from '../handleAddTimeSignatureChange';
 import { handleRemoveTimeSignatureChange } from '../handleRemoveTimeSignatureChange';
 import { handleRestorePunchRegion } from '../handleRestorePunchRegion';
@@ -33,9 +35,9 @@ const mocks = vi.hoisted(() => ({
     setPreRollBars: vi.fn(),
     setPunchIn: vi.fn(),
     setPunchOut: vi.fn(),
-    toggleCountIn: vi.fn(),
+    setCountInEnabled: vi.fn(),
+    setPreRollEnabled: vi.fn(),
     toggleMetronome: vi.fn(),
-    togglePreRoll: vi.fn(),
     togglePunchEnabled: vi.fn(),
     toggleRecording: vi.fn(),
 }));
@@ -63,9 +65,13 @@ vi.mock('../../../useCases/transportControls/setMetronomeVolume', () => ({
 vi.mock('../../../useCases/transportControls/setPreRollBars', () => ({ setPreRollBars: mocks.setPreRollBars }));
 vi.mock('../../../useCases/transportControls/setPunchIn', () => ({ setPunchIn: mocks.setPunchIn }));
 vi.mock('../../../useCases/transportControls/setPunchOut', () => ({ setPunchOut: mocks.setPunchOut }));
-vi.mock('../../../useCases/transportControls/toggleCountIn', () => ({ toggleCountIn: mocks.toggleCountIn }));
+vi.mock('../../../useCases/transportControls/setCountInEnabled', () => ({
+    setCountInEnabled: mocks.setCountInEnabled,
+}));
+vi.mock('../../../useCases/transportControls/setPreRollEnabled', () => ({
+    setPreRollEnabled: mocks.setPreRollEnabled,
+}));
 vi.mock('../../../useCases/transportControls/toggleMetronome', () => ({ toggleMetronome: mocks.toggleMetronome }));
-vi.mock('../../../useCases/transportControls/togglePreRoll', () => ({ togglePreRoll: mocks.togglePreRoll }));
 vi.mock('../../../useCases/transportControls/togglePunchEnabled', () => ({
     togglePunchEnabled: mocks.togglePunchEnabled,
 }));
@@ -131,7 +137,7 @@ describe('Transport Handlers', () => {
 
     it('handleSetCountInBars delegates to use case', () => {
         void handleSetCountInBars.execute({ type: 'setCountInBars', payload: { bars: 2 } });
-        expect(mocks.setCountInBars).toHaveBeenCalledWith(2);
+        expect(mocks.setCountInBars).toHaveBeenCalledWith(2, undefined);
     });
 
     it('handleSetMetronomeVolume delegates to use case', () => {
@@ -141,7 +147,7 @@ describe('Transport Handlers', () => {
 
     it('handleSetPreRollBars delegates to use case', () => {
         void handleSetPreRollBars.execute({ type: 'setPreRollBars', payload: { bars: 1 } });
-        expect(mocks.setPreRollBars).toHaveBeenCalledWith(1);
+        expect(mocks.setPreRollBars).toHaveBeenCalledWith(1, undefined);
     });
 
     it('handleSetPunchIn delegates to use case and reports a written outcome', () => {
@@ -186,8 +192,13 @@ describe('Transport Handlers', () => {
     });
 
     it('handleToggleCountIn delegates to use case', () => {
+        transportStore.set({ ...defaultTransportState, countInEnabled: false });
+
         void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: undefined });
-        expect(mocks.toggleCountIn).toHaveBeenCalled();
+        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: { enabled: false, expectedEnabled: true } });
+
+        expect(mocks.setCountInEnabled).toHaveBeenNthCalledWith(1, { enabled: true, expectedEnabled: undefined });
+        expect(mocks.setCountInEnabled).toHaveBeenNthCalledWith(2, { enabled: false, expectedEnabled: true });
     });
 
     it('handleToggleMetronome delegates to use case', () => {
@@ -196,8 +207,13 @@ describe('Transport Handlers', () => {
     });
 
     it('handleTogglePreRoll delegates to use case', () => {
+        transportStore.set({ ...defaultTransportState, preRollEnabled: true });
+
         void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: undefined });
-        expect(mocks.togglePreRoll).toHaveBeenCalled();
+        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: { enabled: true, expectedEnabled: false } });
+
+        expect(mocks.setPreRollEnabled).toHaveBeenNthCalledWith(1, { enabled: false, expectedEnabled: undefined });
+        expect(mocks.setPreRollEnabled).toHaveBeenNthCalledWith(2, { enabled: true, expectedEnabled: false });
     });
 
     it('handleTogglePunch delegates to use case', () => {

@@ -41,6 +41,7 @@ import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRANSPORT_BARS, MIN_TRANSPORT_BARS } from '#/utils/transportBarsLimits';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -753,12 +754,22 @@ const validators = {
     toggleRecording: 'unchecked',
     toggleLoop: 'unchecked',
     toggleMetronome: 'unchecked',
-    toggleCountIn: 'unchecked',
-    togglePreRoll: 'unchecked',
+    toggleCountIn: (param): param is PayloadOf<'toggleCountIn'> =>
+        hasNoPayload(param) || (isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean'),
+    togglePreRoll: (param): param is PayloadOf<'togglePreRoll'> =>
+        hasNoPayload(param) || (isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean'),
     setPunchIn: hasValidPunchInBeat,
     setPunchOut: hasValidPunchOutBeat,
-    setCountInBars: 'unchecked',
-    setPreRollBars: 'unchecked',
+    setCountInBars: (param): param is PayloadOf<'setCountInBars'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['bars']) &&
+        isInRange(param.bars, MIN_TRANSPORT_BARS, MAX_TRANSPORT_BARS) &&
+        Number.isInteger(param.bars),
+    setPreRollBars: (param): param is PayloadOf<'setPreRollBars'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['bars']) &&
+        isInRange(param.bars, MIN_TRANSPORT_BARS, MAX_TRANSPORT_BARS) &&
+        Number.isInteger(param.bars),
     seekPlayhead: (param): param is PayloadOf<'seekPlayhead'> =>
         isObj(param) && hasExactKeys(param, ['beat']) && isNonNegativeNumber(param.beat),
     setEditingTool: 'unchecked',
