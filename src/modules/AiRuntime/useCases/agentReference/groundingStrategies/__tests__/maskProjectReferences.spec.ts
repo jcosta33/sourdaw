@@ -38,7 +38,7 @@ function contextWithClipNamed(clipName: string, trackName = 'Drums'): ProjectCon
                 clipCount: 1,
                 deviceCount: 0,
                 devices: [],
-                clips: [{ id: 'clip-drums', name: clipName, type: 'midi', startBeat: 0, endBeat: 4 }],
+                clips: [{ id: 'clip-drums', name: clipName, type: 'midi', startBeat: 0, endBeat: 4, noteCount: 0 }],
             },
         ],
     };
