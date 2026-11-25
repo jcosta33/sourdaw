@@ -226,12 +226,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // a sink in this family at all — the reason a census that counts sinks
         // could not see the defect.
         // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
-        // Count provenance: measured 5, was 4. The fifth is the flush-side
-        // persist of the algorithm a `style` write derives, written after
-        // `style` so the record's insertion order matches `CRUST_PATCH_PRECEDENCE`,
-        // with no engine push for it.
-        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 5,
+        // The frame flush persists the algorithm derived from style. Presets
+        // replay through the separate sink after the owning command commits.
+        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 3,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
+        'src/modules/Crust/useCases/crustParamBridge/syncCrustPresetRuntime.ts': 1,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
         // import and its single call site. The panel's true-peak reset has to
         // reach the engine as well as the store: Crust's engine holds the
@@ -748,8 +747,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // engine, which is not the worklet that renders. The commit reaches the
         // worklet, and project truth, through `setDeviceParameter`.
         'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
-        'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
-        'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
         // Count provenance: measured 3 each — loader identifier import,
         // module-specifier string and call. These adapters delegate the actual
@@ -1380,7 +1377,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
-    'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts',
+    'src/modules/Crust/useCases/readCrustFactoryPresetTarget.ts',
     'src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts',
     'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts',
     // Preparation guards before optimistic feedback; the Arrangement owner

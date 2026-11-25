@@ -103,6 +103,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setGrandBouleDeviceState: anyArguments,
     setToasterFactoryKit: anyArguments,
     setBacteriaFactoryPatch: anyArguments,
+    setCrustFactoryPreset: anyArguments,
     setGlutenFactoryPreset: anyArguments,
     createBus: (value) =>
         isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId) && isNonEmptyString(value.color),

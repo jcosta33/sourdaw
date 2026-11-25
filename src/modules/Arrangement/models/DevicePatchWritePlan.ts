@@ -182,6 +182,7 @@ const capturedPatchActions = new Set<AppAction['type']>([
     'setFermenterPatch',
     'setToasterFactoryKit',
     'setBacteriaFactoryPatch',
+    'setCrustFactoryPreset',
     'setGlutenFactoryPreset',
     'setLevainIdentity',
 ]);

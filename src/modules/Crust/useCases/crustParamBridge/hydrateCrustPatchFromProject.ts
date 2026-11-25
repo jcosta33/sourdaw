@@ -9,6 +9,7 @@ import {
 } from '../../models/CrustPatch';
 import { getCrustState, loadCrustPatch } from '../../stores/crustStore';
 
+import { algorithmFromStyle } from './algorithmFromStyle';
 import {
     ALGORITHM_INDEX,
     DITHER_INDEX,
@@ -85,7 +86,9 @@ function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, num
     }
 
     for (const field of BOOLEAN_FIELDS) {
-        const stored = parameterValues[field];
+        const stored = Object.hasOwn(parameterValues, field)
+            ? parameterValues[field]
+            : Number(DEFAULT_CRUST_PATCH[field]);
         if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
             next = { ...next, [field]: isStoredTrue(stored) };
         }
@@ -106,10 +109,19 @@ const ENUM_FIELD_NAMES: Readonly<Record<EnumField, readonly string[]>> = {
     scrollSpeed: SCROLL_SPEED_NAMES,
 };
 
+function absentEnumValue(field: EnumField, patch: CrustPatch): string {
+    if (field === 'algorithm') {
+        return algorithmFromStyle(patch.style) ?? DEFAULT_CRUST_PATCH.algorithm;
+    }
+    return field === 'scrollSpeed' ? patch.scrollSpeed : DEFAULT_CRUST_PATCH[field];
+}
+
 function withEnumFields(patch: CrustPatch, parameterValues: Record<string, number>): CrustPatch {
     let next = patch;
     for (const field of Object.keys(ENUM_FIELD_NAMES) as EnumField[]) {
-        const name = nameAt(ENUM_FIELD_NAMES[field], parameterValues[field]);
+        const name = Object.hasOwn(parameterValues, field)
+            ? nameAt(ENUM_FIELD_NAMES[field], parameterValues[field])
+            : absentEnumValue(field, next);
         if (name !== null && next[field] !== name) {
             next = { ...next, [field]: name };
         }
@@ -122,7 +134,7 @@ function withStoredOversampling(patch: CrustPatch, storedOversampling: number | 
         return patch;
     }
     // Oversampling is membership-resolved against the declared factor set, the
-    // same law `loadCrustPatchWithAudio` asks of the Arrangement descriptor: a
+    // same law the preset encoder asks of the Arrangement descriptor: a
     // stored number outside the set leaves the current patch value alone rather
     // than loading the number nobody is playing.
     const declared = asCrustOversampleFactor(storedOversampling as number);
@@ -152,14 +164,17 @@ function withStoredBitDepth(patch: CrustPatch, storedBitDepth: number | undefine
  */
 export function hydrateCrustPatchFromProject(
     deviceId: string,
-    ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map()
+    ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map(),
+    presetMetadata?: Pick<CrustPatch, 'name' | 'streamingPreset'>
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
     }
 
-    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const device = tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
     if (!device) {
         return;
     }
@@ -167,6 +182,12 @@ export function hydrateCrustPatchFromProject(
 
     const currentPatch = getCrustState(deviceId).patch;
     let patch = withGlobalFields(currentPatch, parameterValues);
+    if (
+        presetMetadata &&
+        (patch.name !== presetMetadata.name || patch.streamingPreset !== presetMetadata.streamingPreset)
+    ) {
+        patch = { ...patch, name: presetMetadata.name, streamingPreset: presetMetadata.streamingPreset };
+    }
     patch = withEnumFields(patch, parameterValues);
     patch = withStoredOversampling(
         patch,

@@ -117,6 +117,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setGrandBouleDeviceState: noMutatedTrack,
     setToasterFactoryKit: noMutatedTrack,
     setBacteriaFactoryPatch: noMutatedTrack,
+    setCrustFactoryPreset: noMutatedTrack,
     setGlutenFactoryPreset: noMutatedTrack,
     createBus: noMutatedTrack,
     createFolder: noMutatedTrack,

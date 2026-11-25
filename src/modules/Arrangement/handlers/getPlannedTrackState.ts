@@ -174,6 +174,7 @@ export const plannedTrackByActionType: {
     setGrandBouleDeviceState: noPlannedTrack,
     setToasterFactoryKit: noPlannedTrack,
     setBacteriaFactoryPatch: noPlannedTrack,
+    setCrustFactoryPreset: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
     createBus: planCreatedBus,
     createFolder: noPlannedTrack,

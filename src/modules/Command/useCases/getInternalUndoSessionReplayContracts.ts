@@ -33,7 +33,12 @@ function createInternalReplayContract(actionType: InternalReplayActionType): Ses
 }
 
 function createCapturedDeviceReplayContract(
-    actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
+    actionType:
+        | 'setBacteriaFactoryPatch'
+        | 'setCrustFactoryPreset'
+        | 'setGlutenFactoryPreset'
+        | 'setLevainIdentity'
+        | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -72,6 +77,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
         },
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
+        createCapturedDeviceReplayContract('setCrustFactoryPreset'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),

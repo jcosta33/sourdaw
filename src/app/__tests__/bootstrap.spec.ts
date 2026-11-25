@@ -618,6 +618,11 @@ vi.mock('#/modules/Fermenter/useCases', () => ({
     setFermenterDependencies: noop,
 }));
 
+vi.mock('#/modules/Crust/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crust/useCases')>()),
+    getCrustHandlers: sentinelHandlers('Crust'),
+}));
+
 vi.mock('#/modules/Gluten/useCases', () => ({
     getGlutenHandlers: sentinelHandlers('Gluten'),
 }));
@@ -986,6 +991,7 @@ describe('bootstrap', () => {
         'GrandBoule',
         'Levain',
         'Toaster',
+        'Crust',
         'Gluten',
         'NodeView',
         'WebMidiInput',
