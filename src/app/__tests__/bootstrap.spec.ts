@@ -191,6 +191,7 @@ const {
     getExecutableAppActionGroundingCatalogMock,
     executableAppActionGroundingCatalog,
     registerProductionCommandHandlersMock,
+    initToasterSubscribersMock,
     configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
     initRaveModelsMock,
@@ -292,7 +293,8 @@ const {
         assertCanonicalLlmActionStrategiesMock: vi.fn(),
         getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
         executableAppActionGroundingCatalog,
-        registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
+        registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[], options?: unknown) => void>(),
+        initToasterSubscribersMock: vi.fn(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
         configureCollaborationAssetOwnerMock: vi.fn(),
@@ -841,7 +843,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
 
     return {
         getToasterHandlers: sentinelHandlers('Toaster'),
-        initToasterSubscribers: noop,
+        initToasterSubscribers: initToasterSubscribersMock,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
@@ -1129,6 +1131,19 @@ describe('bootstrap', () => {
 
         expect(registerProductionCommandHandlersMock).toHaveBeenCalledTimes(1);
         expect(registeredModuleIds).toEqual(expectedRegistrationOrder);
+    });
+
+    it('defers the session undo restore while it registers the boot handler maps', () => {
+        expect(registerProductionCommandHandlersMock.mock.calls[0]?.[1]).toEqual({ deferSessionRestore: true });
+    });
+
+    it('registers the command handlers before the device-state subscribers that dispatch through them', () => {
+        const [registeredAt] = registerProductionCommandHandlersMock.mock.invocationCallOrder;
+        const [subscribedAt] = initToasterSubscribersMock.mock.invocationCallOrder;
+
+        expect(registeredAt).toBeDefined();
+        expect(subscribedAt).toBeDefined();
+        expect(registeredAt!).toBeLessThan(subscribedAt!);
     });
 
     it('registers a complete, duplicate-free set of handler maps', () => {

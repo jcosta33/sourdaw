@@ -29,7 +29,6 @@ import {
     commandProjectRevisionPort,
     configureCommandBatchIdempotency,
     resetActionReplayAuthority,
-    undoReplayPreparationPort,
 } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
@@ -625,7 +624,6 @@ describe('stem import and starting mix workflow', () => {
         configureDurableAudioBufferOwnership(null);
         configureLiveAudioBufferReferences(null);
         configureHistoryAudioBufferReferences(null);
-        undoReplayPreparationPort.setProvider(null);
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         await cloudSession.clear();

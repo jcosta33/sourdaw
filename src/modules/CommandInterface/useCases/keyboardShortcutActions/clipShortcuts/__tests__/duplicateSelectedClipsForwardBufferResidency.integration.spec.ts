@@ -203,7 +203,6 @@ describe('duplicateSelectedClipsForward redo never leaves a copy on a non-reside
     afterEach(async () => {
         configureLiveAudioBufferReferences(null);
         configureHistoryAudioBufferReferences(null);
-        undoReplayPreparationPort.setProvider(null);
         configureDurableAudioBufferOwnership(() => Promise.resolve([]));
         clearUndoHistory();
         resetActionReplayAuthority();

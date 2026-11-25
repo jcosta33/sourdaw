@@ -279,7 +279,6 @@ describe('Locate session Undo through production registration and durable reload
         flushAutomergeStorageWrites();
         clearUndoHistory();
         clearHandlerRegistry();
-        sessionUndoWitnessStampPort.setProvider(null);
         setActionHistoryMetadataPort({
             record: () => [],
             markReverted: () => ({ status: 'unavailable' }),

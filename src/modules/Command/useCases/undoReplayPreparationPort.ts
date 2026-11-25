@@ -24,11 +24,13 @@ let provider: UndoReplayPreparationProvider | null = null;
  * its PCM is durably stored, so before an entry's inverse or redo runs the
  * provider puts that buffer back and holds it until the replay settles.
  * Command must not import the modules that own those resources, so the
- * composition root injects the provider. With none registered, replays run
- * as they are.
+ * composition root injects the provider. A replay that runs before
+ * `initAudioBufferCacheAccess()` in `src/app/initAudioBufferCacheAccess.ts`
+ * fills it throws: a replay that skipped its preparation would restore a clip
+ * whose evicted buffer is missing.
  */
 export const undoReplayPreparationPort = {
-    setProvider(next: UndoReplayPreparationProvider | null): void {
+    setProvider(next: UndoReplayPreparationProvider): void {
         provider = next;
     },
 };
@@ -47,7 +49,9 @@ export async function runPreparedUndoReplay<Result>(
     replay: () => Promise<Result>
 ): Promise<Result> {
     if (!provider) {
-        return replay();
+        throw new Error(
+            'runPreparedUndoReplay: no replay preparation provider is registered; call undoReplayPreparationPort.setProvider() from initAudioBufferCacheAccess() in src/app/initAudioBufferCacheAccess.ts'
+        );
     }
     const release = await provider(entries, actions);
     try {

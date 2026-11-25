@@ -4031,7 +4031,7 @@ describe('punch audio capture loop placement', () => {
             await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
             await executeAppAction({ type: 'setPunchOut', payload: { beat: admittedOut } }, { skipUndo: true });
             await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
-            const disposeAdmission = setRecordingMidiAdmissionPort({
+            setRecordingMidiAdmissionPort({
                 admitRecordingMidiNoteOn,
                 admitRecordingMidiNoteOff,
                 admitRecordingMidiExpression,
@@ -4581,7 +4581,6 @@ describe('punch audio capture loop placement', () => {
                 terminalGate?.resolve();
                 await triggerLiveNoteOff(0, 64);
                 setMidiInputTrack(null);
-                disposeAdmission();
                 for (const key of Object.keys(audioEngine.context)) {
                     if (!Object.hasOwn(contextDescriptors, key)) {
                         Reflect.deleteProperty(audioEngine.context, key);

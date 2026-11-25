@@ -4,13 +4,12 @@
  * Transport's stores must stay leaf modules, but an event-time capture has to
  * read the live AudioContext clock at the event and prefer the native engine's
  * cursor while that engine is the audible transport. Those reads are injected
- * once at app init (`src/app/bootstrap.ts`) — the same seam shape
- * `setAutomationRecordingDependencies` uses to break the AudioEngine cycle.
+ * once at app init (`configureDeviceControlDependencies()` in
+ * `src/app/bootstrap.ts`) — the same seam shape `setAutomationRecordingDependencies`
+ * uses to break the AudioEngine cycle.
  *
- * Unregistered (a spec or tool that never ran the bootstrap), the capture
- * degrades to the scheduler's last committed anchor beat: still a moving,
- * tick-fresh position, just without the sub-grain event-time projection and the
- * native cursor. Production always registers before any gesture can arrive.
+ * Reading it before that registrar has run throws: a capture that fell back to
+ * the scheduler's last anchor would date a gesture at a stale beat with no report.
  */
 export type GestureClockSource = {
     /** Live `AudioContext.currentTime`, read at the event's own instant. */
@@ -25,7 +24,12 @@ export function setGestureClockSource(next: GestureClockSource): void {
     source = next;
 }
 
-/** The registered clock reads, or null outside an initialized app. */
-export function getGestureClockSource(): GestureClockSource | null {
+/** The registered clock reads; throws while nothing is registered. */
+export function getGestureClockSource(): GestureClockSource {
+    if (source === null) {
+        throw new Error(
+            'getGestureClockSource: no gesture clock source is registered; call setGestureClockSource() from configureDeviceControlDependencies() in src/app/bootstrap.ts'
+        );
+    }
     return source;
 }

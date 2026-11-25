@@ -11,9 +11,15 @@ const mocks = vi.hoisted(() => ({
     source: null as GestureClockSource | null,
 }));
 
+// The real reader throws while no source is registered; the double mirrors that, which `gestureClockSource.spec.ts` pins.
 vi.mock('../gestureClockSource', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../gestureClockSource')>()),
-    getGestureClockSource: () => mocks.source,
+    getGestureClockSource: () => {
+        if (mocks.source === null) {
+            throw new Error('getGestureClockSource: no gesture clock source is registered');
+        }
+        return mocks.source;
+    },
 }));
 
 /**
@@ -57,7 +63,6 @@ describe('captureGestureBeat', () => {
         'region',
         'hold',
         'native',
-        'no source',
     ] as const)('pairs one carrier read with only its current scheduled seam: %s', (change) => {
         transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 4 });
         const readNativeCursorBeats = vi.fn(() => (change === 'native' ? 0.5 : null));
@@ -98,12 +103,9 @@ describe('captureGestureBeat', () => {
         if (change === 'hold') {
             holdPlayheadClock(12, 7.5);
         }
-        if (change === 'no source') {
-            mocks.source = null;
-        }
         const capture = captureGestureClock();
         expect(capture.pendingLoopSeam).toBe(change === 'current' || change === 'equivalent map' ? expected : null);
-        expect(readNativeCursorBeats).toHaveBeenCalledTimes(change === 'hold' || change === 'no source' ? 0 : 1);
+        expect(readNativeCursorBeats).toHaveBeenCalledTimes(change === 'hold' ? 0 : 1);
         if (change === 'hold') {
             expect(playheadClockRef.pendingLoopSeam).toBeNull();
         }
@@ -142,14 +144,10 @@ describe('captureGestureBeat', () => {
         expect(captureGestureBeat()).toBe(2);
     });
 
-    it('degrades to the committed anchor beat when no clock source is registered', () => {
-        // Outside an initialized app (a spec that never ran the bootstrap)
-        // there is no audio-clock read; the last committed scheduler position —
-        // still a moving, tick-fresh value — is the answer, never the start
-        // beat the store holds.
+    it('does not answer from the anchor while no clock source is registered', () => {
         mocks.source = null;
 
-        expect(captureGestureBeat()).toBe(2);
+        expect(() => captureGestureBeat()).toThrow('no gesture clock source is registered');
     });
 
     it('projects the audio clock while the store still holds the playback-start beat', () => {

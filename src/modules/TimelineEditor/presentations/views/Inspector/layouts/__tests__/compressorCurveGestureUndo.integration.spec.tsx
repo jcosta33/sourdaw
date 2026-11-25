@@ -401,7 +401,6 @@ describe('actual registered Compressor curve through real project and history', 
             markReverted: () => ({ status: 'unavailable' as const }),
             clear: () => undefined,
         });
-        sessionUndoWitnessStampPort.setProvider(null);
         audioEngine.setUseCaseDeviceCollaborators(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });

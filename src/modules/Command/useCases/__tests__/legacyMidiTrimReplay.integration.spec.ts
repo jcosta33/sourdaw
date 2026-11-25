@@ -239,7 +239,6 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
 
     afterAll(async () => {
         unsubscribe();
-        sessionUndoWitnessStampPort.setProvider(null);
         setActionHistoryMetadataPort({
             record: () => [],
             markReverted: () => ({ status: 'unavailable' }),

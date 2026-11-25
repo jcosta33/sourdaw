@@ -15,12 +15,10 @@ type CrumbsEventEmitter = {
  * barrel: AudioEngine imports that barrel (`markAttachedCrumbsInstances`), so
  * a barrel-reachable path to the strip traversal closes a `no-circular` cycle
  * through Arrangement, CrdtDocument, Yeast and MIDI. The emitter is therefore
- * injected — `setCrumbsEventBus` at the composition root — and the traversal
- * lives in the app seam that subscribes.
- *
- * Unset means silent, deliberately: before the composition root wires it, the
- * only Crumbs writes are panel gestures on a device with no strip yet, which
- * is the same silence `resolveCrumbsPadControls` already returns.
+ * injected — `setCrumbsEventBus` from `wireModuleEventBuses()` in
+ * `src/app/bootstrap.ts` — and the traversal lives in the app seam that
+ * subscribes. Emitting before it is filled throws: a mode change that was not
+ * pushed would leave the strip running the previous mode.
  */
 let crumbsEventBus: CrumbsEventEmitter | null = null;
 
@@ -30,7 +28,9 @@ export function setCrumbsEventBus(event_bus: CrumbsEventEmitter): void {
 
 export function emitCrumbsModeChanged(payload: CrumbsModeChangedPayload): void {
     if (!crumbsEventBus) {
-        return;
+        throw new Error(
+            'emitCrumbsModeChanged: no Crumbs event bus is registered; call setCrumbsEventBus() from wireModuleEventBuses() in src/app/bootstrap.ts'
+        );
     }
     void crumbsEventBus.emit('crumbs.modeChanged', payload);
 }

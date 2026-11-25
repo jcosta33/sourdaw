@@ -155,7 +155,6 @@ const commitGate = vi.hoisted(() => ({
 }));
 
 let disposeMidiProcessor = (): void => {};
-let disposeRecordingAdmission = (): void => {};
 
 const liveMidiGate = vi.hoisted(() => ({ pending: null as Promise<void> | null, started: 0, completed: 0 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
@@ -335,7 +334,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
-        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+        setRecordingMidiAdmissionPort({
             admitRecordingMidiNoteOn,
             admitRecordingMidiNoteOff,
             admitRecordingMidiExpression,
@@ -385,7 +384,6 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         disposeMidiProcessor();
-        disposeRecordingAdmission();
         destroyWebMidi();
         setMidiInputTrack(null);
         flushAutomergeStorageWrites();

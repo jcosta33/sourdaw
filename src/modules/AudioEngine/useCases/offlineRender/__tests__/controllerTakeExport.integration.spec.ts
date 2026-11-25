@@ -87,7 +87,6 @@ const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';
 /** At 120 BPM and 48 kHz a beat is 24 000 frames. */
 const BEAT_FRAMES = 24_000;
-let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -135,7 +134,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+        setRecordingMidiAdmissionPort({
             admitRecordingMidiNoteOn,
             admitRecordingMidiNoteOff,
             admitRecordingMidiExpression,
@@ -159,7 +158,6 @@ describe('a recorded controller-only take, rendered by the offline export schedu
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
-        disposeRecordingAdmission();
         playheadClockRef.hold = null;
         playheadWrapCountRef.current = 0;
         clearHandlerRegistry();

@@ -82,7 +82,6 @@ registerDeviceEnginePorts();
 registerSupportingServicePorts();
 
 const TRACK_ID = 'track-midi';
-let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -129,7 +128,7 @@ describe('overdubbed controller rows and undo', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+        setRecordingMidiAdmissionPort({
             admitRecordingMidiNoteOn,
             admitRecordingMidiNoteOff,
             admitRecordingMidiExpression,
@@ -155,7 +154,6 @@ describe('overdubbed controller rows and undo', () => {
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
-        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();

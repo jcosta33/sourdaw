@@ -1,10 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    actionHistoryMetadataPort,
-    setActionHistoryMetadataPort,
-    type ActionHistoryMetadata,
-} from '../actionHistoryMetadataPort';
+import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
+
+type PortModule = typeof import('../actionHistoryMetadataPort');
 
 const sampleEntry: ActionHistoryMetadata = {
     id: 'entry-1',
@@ -15,91 +13,94 @@ const sampleEntry: ActionHistoryMetadata = {
     reverted: false,
 };
 
+const REGISTRAR = 'setActionHistoryMetadataPort() from registerCorePorts() in src/app/bootstrap.ts';
+
 describe('actionHistoryMetadataPort', () => {
-    afterEach(() => {
-        // Reset to the default no-op port after each test.
-        setActionHistoryMetadataPort({
-            record: () => [],
-            markReverted: () => ({ status: 'unavailable' }),
-            clear: () => undefined,
+    let port: PortModule['actionHistoryMetadataPort'];
+    let setPort: PortModule['setActionHistoryMetadataPort'];
+
+    beforeEach(async () => {
+        // A fresh module graph holds an unfilled port; the shared spec fixture only fills the first one.
+        vi.resetModules();
+        const module = await import('../actionHistoryMetadataPort');
+        port = module.actionHistoryMetadataPort;
+        setPort = module.setActionHistoryMetadataPort;
+    });
+
+    describe('read before it is filled', () => {
+        it.each([
+            ['record', () => port.record(sampleEntry)],
+            ['recordBatch', () => port.recordBatch([sampleEntry])],
+            ['markReverted', () => port.markReverted({ entryId: 'x', expectedFingerprint: 'fp' })],
+            ['clear', () => port.clear()],
+        ])('%s throws naming the port and its registrar', (name, read) => {
+            expect(read).toThrow(`actionHistoryMetadataPort.${name}: no action history port is registered`);
+            expect(read).toThrow(REGISTRAR);
         });
     });
 
-    describe('default no-op port', () => {
-        it('record returns an empty array and does not throw', () => {
-            const result = actionHistoryMetadataPort.record(sampleEntry);
-
-            expect(result).toEqual([]);
-        });
-
-        it('markReverted returns {status: "unavailable"}', () => {
-            const result = actionHistoryMetadataPort.markReverted({ entryId: 'x', expectedFingerprint: 'fp' });
-
-            expect(result).toEqual({ status: 'unavailable' });
-        });
-
-        it('clear is a no-op (does not throw)', () => {
-            expect(() => actionHistoryMetadataPort.clear()).not.toThrow();
-        });
-    });
-
-    describe('swappable port', () => {
-        it('delegates record to the swapped implementation and returns its result', () => {
+    describe('filled port', () => {
+        it('delegates record to the filled implementation and returns its result', () => {
             const recordFn = vi.fn(() => ['fp-a', 'fp-b']);
-            setActionHistoryMetadataPort({
-                record: recordFn,
-                markReverted: () => ({ status: 'unavailable' }),
-                clear: () => undefined,
-            });
+            setPort({ record: recordFn, markReverted: () => ({ status: 'unavailable' }), clear: () => undefined });
 
-            const result = actionHistoryMetadataPort.record(sampleEntry);
+            const result = port.record(sampleEntry);
 
             expect(recordFn).toHaveBeenCalledWith(sampleEntry);
             expect(result).toEqual(['fp-a', 'fp-b']);
         });
 
-        it('delegates markReverted to the swapped implementation with the input', () => {
+        it('delegates markReverted to the filled implementation with the input', () => {
             const markFn = vi.fn(() => ({ status: 'marked' as const }));
-            setActionHistoryMetadataPort({
-                record: () => [],
-                markReverted: markFn,
-                clear: () => undefined,
-            });
+            setPort({ record: () => [], markReverted: markFn, clear: () => undefined });
 
-            const result = actionHistoryMetadataPort.markReverted({ entryId: 'e1', expectedFingerprint: 'fp' });
+            const result = port.markReverted({ entryId: 'e1', expectedFingerprint: 'fp' });
 
             expect(markFn).toHaveBeenCalledWith({ entryId: 'e1', expectedFingerprint: 'fp' });
             expect(result).toEqual({ status: 'marked' });
         });
 
-        it('delegates clear to the swapped implementation', () => {
+        it('delegates clear to the filled implementation', () => {
             const clearFn = vi.fn();
-            setActionHistoryMetadataPort({
-                record: () => [],
-                markReverted: () => ({ status: 'unavailable' }),
-                clear: clearFn,
-            });
+            setPort({ record: () => [], markReverted: () => ({ status: 'unavailable' }), clear: clearFn });
 
-            actionHistoryMetadataPort.clear();
+            port.clear();
 
             expect(clearFn).toHaveBeenCalledTimes(1);
         });
 
-        it('a second swap replaces the first (no accumulation)', () => {
-            const firstRecord = vi.fn(() => ['first']);
-            const secondRecord = vi.fn(() => ['second']);
-            setActionHistoryMetadataPort({
-                record: firstRecord,
-                markReverted: () => ({ status: 'unavailable' }),
-                clear: () => undefined,
-            });
-            setActionHistoryMetadataPort({
-                record: secondRecord,
+        it('records a batch one entry at a time when the filled port has no batch method', () => {
+            const recordFn = vi.fn((entry: { id: string }) => [`evicted-${entry.id}`]);
+            setPort({ record: recordFn, markReverted: () => ({ status: 'unavailable' }), clear: () => undefined });
+
+            const result = port.recordBatch([sampleEntry, { ...sampleEntry, id: 'entry-2' }]);
+
+            expect(recordFn).toHaveBeenCalledTimes(2);
+            expect(result).toEqual(['evicted-entry-1', 'evicted-entry-2']);
+        });
+
+        it('hands a batch to the filled port whole when it has a batch method', () => {
+            const recordBatch = vi.fn(() => ['batched']);
+            setPort({
+                record: () => [],
+                recordBatch,
                 markReverted: () => ({ status: 'unavailable' }),
                 clear: () => undefined,
             });
 
-            const result = actionHistoryMetadataPort.record(sampleEntry);
+            const result = port.recordBatch([sampleEntry]);
+
+            expect(recordBatch).toHaveBeenCalledWith([sampleEntry]);
+            expect(result).toEqual(['batched']);
+        });
+
+        it('a second fill replaces the first', () => {
+            const firstRecord = vi.fn(() => ['first']);
+            const secondRecord = vi.fn(() => ['second']);
+            setPort({ record: firstRecord, markReverted: () => ({ status: 'unavailable' }), clear: () => undefined });
+            setPort({ record: secondRecord, markReverted: () => ({ status: 'unavailable' }), clear: () => undefined });
+
+            const result = port.record(sampleEntry);
 
             expect(firstRecord).not.toHaveBeenCalled();
             expect(secondRecord).toHaveBeenCalledWith(sampleEntry);
