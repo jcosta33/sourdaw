@@ -1580,19 +1580,14 @@ export class TrackNode {
         if (node?.type.toLowerCase() !== 'grinder') {
             return Promise.reject(new Error('Grinder preset target is unavailable'));
         }
+        const receipts = captureGrinderPresetReceipts(this.deps.collaborators, this.trackId, deviceId, input);
         const load = this._pendingDeviceLoads.get(deviceId);
         if (load && !load.resolved) {
-            const receipts = captureGrinderPresetReceipts(this.deps.collaborators, this.trackId, deviceId, input);
             return new Promise<void>((resolve, reject) => {
                 load.parameterWrites.push({ kind: 'grinder-preset', input, receipts, resolve, reject });
             });
         }
-        return this.writeGrinderPreset(
-            deviceId,
-            node.controller,
-            input,
-            this.captureGrinderPresetReceipts(deviceId, input)
-        );
+        return this.writeGrinderPreset(deviceId, node.controller, input, receipts);
     }
 
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {

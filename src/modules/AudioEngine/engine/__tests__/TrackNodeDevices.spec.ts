@@ -761,6 +761,39 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await applied;
         });
 
+        it('applies directly to the running Grinder and refuses a late reply from a replaced controller', async () => {
+            const complete = vi.fn();
+            const pending = vi.fn(() => true);
+            const begin = vi.fn(() => complete);
+            const captureParameterWriteReceipt = vi.fn(() => ({ pending, begin }));
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, {
+                    collaborators: { ...engineDeviceCollaborators, captureParameterWriteReceipt },
+                })
+            );
+            const reply = Promise.withResolvers<void>();
+            const controller = { setParam: vi.fn(), applyGrinderPreset: vi.fn(() => reply.promise) };
+            pushControllerDevice(track, { deviceId, type: 'grinder', controller });
+
+            const installing = track.applyGrinderPreset(deviceId, preset);
+            expect(captureParameterWriteReceipt).toHaveBeenCalledExactlyOnceWith('t1', deviceId, 'gain');
+            expect(controller.applyGrinderPreset).toHaveBeenCalledExactlyOnceWith(preset);
+            expect(pending).toHaveBeenCalledBefore(begin);
+            expect(complete).not.toHaveBeenCalled();
+
+            const original = track.strip.deviceNodes[0];
+            if (!original) {
+                throw new Error('The Grinder fixture is missing');
+            }
+            const replace = { setParam: vi.fn(), applyGrinderPreset: vi.fn(async () => {}) };
+            track.strip.deviceNodes[0] = { ...original, controller: replace };
+            reply.resolve();
+            await expect(installing).rejects.toThrow('Grinder was replaced during preset installation');
+            expect(complete).not.toHaveBeenCalled();
+            expect(replace.applyGrinderPreset).not.toHaveBeenCalled();
+        });
+
         it('refuses a queued preset when the track is disposed before loading finishes', async () => {
             const track = new TrackNode('t1', makeDeps(ctx));
             const deferred = installDeferredWasmDevice({ deviceId, deviceType: 'grinder', requiresContent: false });
