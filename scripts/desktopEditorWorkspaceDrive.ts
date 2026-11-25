@@ -16,10 +16,10 @@ import {
     renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     type Rectangle,
-    type ScaleStep,
     type WorkspaceObservation,
     type WorkspaceStage,
 } from './desktopEditorWorkspaceEvidence.ts';
+import { changeScale, observedClick, scaleStep, viewport } from './desktopEditorWorkspaceScale.ts';
 import { launchEditorSession, quitEditorSession, readyWorkspace } from './desktopFermenterDrive.ts';
 import { FermenterDriveError } from './desktopFermenterEvidence.ts';
 import { STEP_TIMEOUT_MS, step } from './packagedAppSession.ts';
@@ -248,102 +248,6 @@ async function titleDrag(dialog: Locator, row: WorkspaceObservation): Promise<vo
     } finally {
         await page.mouse.up();
     }
-}
-
-async function viewport(page: Page): Promise<[number, number, number]> {
-    return await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]);
-}
-
-async function changeScale(page: Page, percent: number, row?: WorkspaceObservation): Promise<void> {
-    const run = async (name: ScaleStep, action: () => Promise<void>): Promise<void> => {
-        if (row) await scaleStep(row, name, action);
-        else await action();
-    };
-    await run('preferences-open', () => page.getByRole('button', { name: 'Open Preferences', exact: true }).click());
-    const preferences = page.getByRole('dialog', { name: 'Preferences', exact: true });
-    await run('preferences-appearance', () => exactButton(preferences, 'Appearance').click());
-    const slider = preferences.getByRole('slider', { name: 'UI Scale', exact: true });
-    // A fresh isolated profile starts at 100%; each Arrow commits a real preference change.
-    await run('preferences-scale', async () => {
-        const old = Number(await slider.getAttribute('aria-valuenow'));
-        assert(old === 100 || old === 125);
-        const key = percent > old ? 'ArrowRight' : 'ArrowLeft';
-        for (let current = old; current !== percent; current += percent > old ? 5 : -5) {
-            await slider.press(key);
-        }
-        assert.equal(Number(await slider.getAttribute('aria-valuenow')), percent);
-    });
-    await run('preferences-dismiss', async () => {
-        await exactButton(preferences, 'Done').click();
-        await preferences.waitFor({ state: 'detached' });
-    });
-}
-
-export async function scaleStep(
-    row: WorkspaceObservation,
-    name: ScaleStep,
-    action: (entry: WorkspaceObservation['scaleSteps'][number]) => Promise<void>
-): Promise<void> {
-    const entry: WorkspaceObservation['scaleSteps'][number] = { name, outcome: 'failed' };
-    row.scaleSteps.push(entry);
-    await action(entry);
-    entry.outcome = 'passed';
-}
-
-async function observedClick(target: Locator, row: WorkspaceObservation, name: ScaleStep): Promise<void> {
-    await scaleStep(row, name, async (entry) => {
-        entry.hit = null;
-        entry.received = null;
-        const witness = await target
-            .evaluateHandle(
-                (element) => {
-                    const rect = element.getBoundingClientRect();
-                    const x = rect.x + rect.width / 2;
-                    const y = rect.y + rect.height / 2;
-                    const hit = document.elementFromPoint(x, y);
-                    const state = {
-                        x,
-                        y,
-                        hit: hit !== null && (hit === element || element.contains(hit)),
-                        received: false,
-                    };
-                    const listener = (event: Event): void => {
-                        state.received = event.isTrusted;
-                    };
-                    element.addEventListener('click', listener, { capture: true, once: true });
-                    return { state, cleanup: () => element.removeEventListener('click', listener, true) };
-                },
-                undefined,
-                { timeout: 1000 }
-            )
-            .catch(() => null);
-        if (witness) {
-            try {
-                Object.assign(entry, await witness.evaluate(({ state }) => state));
-            } catch {
-                // The real click still decides the step.
-            }
-        }
-        try {
-            await target.click();
-        } finally {
-            if (witness) {
-                try {
-                    Object.assign(
-                        entry,
-                        await witness.evaluate(({ state, cleanup }) => {
-                            cleanup();
-                            return state;
-                        })
-                    );
-                } catch {
-                    entry.received = null;
-                } finally {
-                    await witness.dispose().catch(() => {});
-                }
-            }
-        }
-    });
 }
 
 async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
@@ -639,7 +543,9 @@ export async function runWorkspaceGroups(
 ): Promise<boolean> {
     let failed = false;
     for (const name of ['geometry', 'timeline', 'nested-escape', 'remove-instance'] as const) {
-        if (!canContinue()) break;
+        if (!canContinue()) {
+            break;
+        }
         try {
             await run(name);
         } catch {

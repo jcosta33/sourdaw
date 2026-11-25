@@ -19,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
-import { driveDesktopEditorWorkspace, runWorkspaceGroups, scaleStep } from '../desktopEditorWorkspaceDrive.ts';
+import { driveDesktopEditorWorkspace, runWorkspaceGroups } from '../desktopEditorWorkspaceDrive.ts';
+import { scaleStep } from '../desktopEditorWorkspaceScale.ts';
 import {
     pausePreservesProgress,
     renderedPlayheadBeat,
@@ -459,7 +460,9 @@ describe('packaged editor workspace proof', () => {
                         throw new Error('scale-refit');
                     });
                 }
-                if (name === 'timeline') timeline.outcome = 'passed';
+                if (name === 'timeline') {
+                    timeline.outcome = 'passed';
+                }
             },
             () => true
         );
