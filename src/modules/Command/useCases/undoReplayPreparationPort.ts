@@ -9,12 +9,13 @@ type UndoReplayRelease = () => void;
  * Readies what a replay needs before it runs, and returns the release to run
  * once it has applied or failed. `entries` are the undo entries the replay
  * applies; `actions` are actions it applies that no undo entry carries any
- * longer, such as an action history revert's retained inverse.
+ * longer, such as an action history revert's retained inverse. It answers
+ * `null` when the replay needs nothing readied, so the replay starts at once.
  */
 type UndoReplayPreparationProvider = (
     entries: readonly UndoEntry[],
     actions: readonly AppAction[]
-) => Promise<UndoReplayRelease>;
+) => Promise<UndoReplayRelease> | null;
 
 let provider: UndoReplayPreparationProvider | null = null;
 
@@ -53,7 +54,11 @@ export async function runPreparedUndoReplay<Result>(
             'runPreparedUndoReplay: no replay preparation provider is registered; call undoReplayPreparationPort.setProvider() from initAudioBufferCacheAccess() in src/app/initAudioBufferCacheAccess.ts'
         );
     }
-    const release = await provider(entries, actions);
+    const preparation = provider(entries, actions);
+    if (preparation === null) {
+        return replay();
+    }
+    const release = await preparation;
     try {
         return await replay();
     } finally {

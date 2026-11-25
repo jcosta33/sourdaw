@@ -62,13 +62,21 @@ function actionEntry(id: string, inverseAction: AppAction): ActionUndoEntry {
 
 async function loadFreshModules() {
     vi.resetModules();
-    const [{ undo }, { executeActionGroupUndo }, { getLegacyInverseReplayFailure }, { legacyInverseReplayAdmission }] =
-        await Promise.all([
-            import('../undo'),
-            import('../executeActionGroupUndo'),
-            import('../getLegacyInverseReplayFailure'),
-            import('../legacyInverseReplayAdmission'),
-        ]);
+    const [
+        { undo },
+        { executeActionGroupUndo },
+        { getLegacyInverseReplayFailure },
+        { legacyInverseReplayAdmission },
+        { undoReplayPreparationPort },
+    ] = await Promise.all([
+        import('../undo'),
+        import('../executeActionGroupUndo'),
+        import('../getLegacyInverseReplayFailure'),
+        import('../legacyInverseReplayAdmission'),
+        import('../undoReplayPreparationPort'),
+    ]);
+    // The fresh graph holds no shared spec fill; this spec is about the kernel admission, not replay preparation.
+    undoReplayPreparationPort.setProvider(() => null);
     return { undo, executeActionGroupUndo, getLegacyInverseReplayFailure, legacyInverseReplayAdmission };
 }
 

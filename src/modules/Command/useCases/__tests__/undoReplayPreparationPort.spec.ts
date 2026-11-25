@@ -42,6 +42,18 @@ describe('undoReplayPreparationPort', () => {
         expect(order).toEqual(['prepare', 'replay', 'release']);
     });
 
+    it('runs the replay at once when the provider has nothing to ready', async () => {
+        const provider = vi.fn(() => null);
+        port.setProvider(provider);
+        const replay = vi.fn(() => Promise.resolve('done'));
+
+        const result = await runPreparedUndoReplay({}, replay);
+
+        expect(provider).toHaveBeenCalledWith([], []);
+        expect(replay).toHaveBeenCalledTimes(1);
+        expect(result).toBe('done');
+    });
+
     it('releases when the replay fails and rethrows its error', async () => {
         const release = vi.fn();
         port.setProvider(() => Promise.resolve(release));

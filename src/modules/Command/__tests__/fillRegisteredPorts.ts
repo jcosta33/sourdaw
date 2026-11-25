@@ -9,4 +9,4 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
 productionBriefAdmissionPort.setSubscription(() => () => undefined);
-undoReplayPreparationPort.setProvider(() => Promise.resolve(() => undefined));
+undoReplayPreparationPort.setProvider(() => null);

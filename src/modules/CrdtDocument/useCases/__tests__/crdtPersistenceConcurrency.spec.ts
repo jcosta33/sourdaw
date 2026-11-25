@@ -22,6 +22,10 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) =
     ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: vi.fn(),
 }));
+// Every case loads a fresh module graph, which holds no shared spec fill; the stamp is not what this spec observes.
+vi.mock('../sessionUndoWitnessStampPort', () => ({
+    sessionUndoWitnessStampPort: { stamp: vi.fn(), setProvider: vi.fn() },
+}));
 vi.mock('#/utils/HMR/createHmrPersistentState', () => ({
     createHmrPersistentState: <State>(_key: string, factory: () => State): State => factory(),
 }));
