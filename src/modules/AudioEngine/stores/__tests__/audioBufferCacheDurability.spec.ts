@@ -709,6 +709,55 @@ describe('audio buffer save durability', () => {
         receipt.release();
     });
 
+    it('joins concurrent import persistence, rolls back an aborted batch, and retries directly', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        const replacementId = 'concurrent-import-replacement';
+        const newId = 'concurrent-import-new';
+        const replacementSamples = [0.125, -0.5, 0.75];
+        const newSamples = [-0.25, 0.375];
+        seedOrdinaryBuffer(controls, replacementId, [0.5]);
+        const previousData = controls.committed.get(replacementId);
+        const previousMetadata = controls.committedMeta.get(replacementId);
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            decodedBuffers: {
+                [replacementId]: makeBuffer(replacementSamples),
+                [newId]: makeBuffer(newSamples),
+            },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(2);
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const first = imported.persist();
+        await waitForPendingWrite(controls);
+        const second = imported.persist();
+        expect(controls.writeTransactionCount()).toBe(1);
+        expect(controls.pendingWriteSettlementCount()).toBe(1);
+
+        controls.releaseNextWriteSettlement();
+        await expect(Promise.all([first, second])).resolves.toEqual([false, false]);
+        expect(controls.committed.get(replacementId)).toEqual(previousData);
+        expect(controls.committedMeta.get(replacementId)).toEqual(previousMetadata);
+        expect(controls.committed.has(newId)).toBe(false);
+        expect(controls.committedMeta.has(newId)).toBe(false);
+
+        const retry = imported.persist();
+        await expect(settlePromiseWithWrites(retry, controls)).resolves.toBe(true);
+        expect(controls.writeTransactionCount()).toBe(2);
+        await expect(imported.persist()).resolves.toBe(true);
+        expect(controls.writeTransactionCount()).toBe(2);
+        clearRuntimeAudioBufferCache();
+        await expect(
+            audioBufferCache.restoreFromIdb({ context: testContext(), ids: [replacementId, newId] })
+        ).resolves.toBe(2);
+        expect(audioBufferCache.get(replacementId)?.getChannelData(0)).toEqual(new Float32Array(replacementSamples));
+        expect(audioBufferCache.get(newId)?.getChannelData(0)).toEqual(new Float32Array(newSamples));
+    });
+
     it('observes a failed import batch, then retries exact resident and nonresident sources on a later barrier', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         seedOrdinaryBuffer(controls, 'imported-replacement', [0.2]);
