@@ -60,47 +60,95 @@ function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
         .sort((left, right) => right.length - left.length);
 }
 
-type ProjectReferenceMaskSpan = {
+type PromptRange = {
     end: number;
-    replacement: string;
     start: number;
 };
 
-const countedDurationUnits: ReadonlySet<string> = new Set(['beat', 'beats', 'bar', 'bars', 'measure', 'measures']);
+type PromptMatch = PromptRange & {
+    value: string;
+};
 
-function isCountedDurationUnit(prompt: string, start: number, value: string): boolean {
-    if (!countedDurationUnits.has(normalizePromptText(value))) {
-        return false;
-    }
-    return /\d+(?:\.\d+)?\s*-?\s*$/u.test(prompt.slice(0, start));
+type ProjectReferenceMaskSpan = PromptRange & {
+    replacement: string;
+};
+
+type CountedDuration = PromptRange & {
+    numberEnd: number;
+};
+
+const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)[-\s]*(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
+
+function overlaps(left: PromptRange, right: PromptRange): boolean {
+    return left.start < right.end && right.start < left.end;
 }
+
+function findPromptMatches(prompt: string, pattern: RegExp): PromptMatch[] {
+    return [...prompt.matchAll(pattern)].flatMap((match) => {
+        const start = match.index;
+        const value = match[0];
+        if (start === undefined || !value) {
+            return [];
+        }
+        return [{ start, end: start + value.length, value }];
+    });
+}
+
+function findReferenceMatches(prompt: string, references: readonly string[]): PromptMatch[] {
+    return references.flatMap((reference) =>
+        findPromptMatches(prompt, new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu'))
+    );
+}
+
+function findCountedDurations(prompt: string): CountedDuration[] {
+    return findPromptMatches(prompt, countedDurationPattern).map((match) => {
+        const number = /^\d+(?:\.\d+)?/u.exec(match.value)?.[0] ?? '';
+        return { start: match.start, end: match.end, numberEnd: match.start + number.length };
+    });
+}
+
+/**
+ * A counted duration the request states ("4 beat", "2-bar", "8--beats") is not an object reference,
+ * unless its number is part of a reference name ("Take 2"): then the number names that object.
+ */
+function findProtectedCountedDurations(prompt: string, references: readonly string[]): PromptRange[] {
+    const referenceMatches = findReferenceMatches(prompt, references);
+    return findCountedDurations(prompt).filter(
+        (duration) =>
+            !referenceMatches.some((match) => match.start <= duration.start && duration.numberEnd <= match.end)
+    );
+}
+
+type ProjectReferenceMaskState = {
+    protectedRanges: readonly PromptRange[];
+    spans: ProjectReferenceMaskSpan[];
+};
 
 function collectProjectReferenceMaskSpans(
     prompt: string,
     references: readonly string[],
-    spans: ProjectReferenceMaskSpan[],
+    state: ProjectReferenceMaskState,
     getReplacement: (match: string, end: number) => string
 ): void {
-    for (const reference of references) {
-        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        for (const match of prompt.matchAll(pattern)) {
-            const start = match.index;
-            const value = match[0];
-            if (start === undefined || !value || isCountedDurationUnit(prompt, start, value)) {
-                continue;
-            }
-            const end = start + value.length;
-            if (spans.some((span) => start < span.end && end > span.start)) {
-                continue;
-            }
-            spans.push({ start, end, replacement: getReplacement(value, end) });
+    for (const match of findReferenceMatches(prompt, references)) {
+        if (
+            state.protectedRanges.some((range) => overlaps(range, match)) ||
+            state.spans.some((span) => overlaps(span, match))
+        ) {
+            continue;
         }
+        state.spans.push({ start: match.start, end: match.end, replacement: getReplacement(match.value, match.end) });
     }
 }
 
 export function maskProjectReferences(prompt: string, context: ProjectContext): string {
-    const spans: ProjectReferenceMaskSpan[] = [];
-    collectProjectReferenceMaskSpans(prompt, getSemanticClipReferenceTexts(context), spans, (match, end) => {
+    const semanticReferences = getSemanticClipReferenceTexts(context);
+    const projectReferences = getProjectReferenceTexts(context);
+    const state: ProjectReferenceMaskState = {
+        protectedRanges: findProtectedCountedDurations(prompt, [...semanticReferences, ...projectReferences]),
+        spans: [],
+    };
+    collectProjectReferenceMaskSpans(prompt, semanticReferences, state, (match, end) => {
         const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
             prompt.slice(end)
         );
@@ -109,13 +157,13 @@ export function maskProjectReferences(prompt: string, context: ProjectContext): 
         }
         return `clip${PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length - 'clip'.length)}`;
     });
-    collectProjectReferenceMaskSpans(prompt, getProjectReferenceTexts(context), spans, (match) =>
+    collectProjectReferenceMaskSpans(prompt, projectReferences, state, (match) =>
         PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length)
     );
 
     let maskedPrompt = '';
     let cursor = 0;
-    for (const span of spans.toSorted((left, right) => left.start - right.start)) {
+    for (const span of state.spans.toSorted((left, right) => left.start - right.start)) {
         maskedPrompt += prompt.slice(cursor, span.start);
         maskedPrompt += span.replacement;
         cursor = span.end;
