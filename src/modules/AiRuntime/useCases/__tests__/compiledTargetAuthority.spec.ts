@@ -2869,3 +2869,122 @@ describe('a typed name reads every dash as the hyphen and its letters composed',
         expect(siblingResult.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 });
+
+describe('a name picks its track by the words a user types for it (#5395)', () => {
+    it.each([
+        ['set the kick volume to 75%', ['01 Kick', 'Vocals'], '01 Kick'],
+        ['set Guitar2 volume to 75%', ['Guitar 2', 'Vocals'], 'Guitar 2'],
+        ['set Bobs Guitar volume to 75%', ["Bob's Guitar", 'Vocals'], "Bob's Guitar"],
+        ['set the kick volume to 75%', ['Kick', '01 Kick'], 'Kick'],
+        ['set Guitar2 volume to 75%', ['Guitar', 'Guitar 2'], 'Guitar 2'],
+    ])('grounds "%s" among %j for %s', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(picked), { gain: 0.75 })],
+            [],
+            context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track(picked).id]);
+    });
+
+    it.each([
+        ['set the kick volume to 75%', ['Kick', '01 Kick'], '01 Kick'],
+        ['set Guitar2 volume to 75%', ['Guitar', 'Guitar 2'], 'Guitar'],
+        ['set Guitar2 volume to 75%', ['Guitar', 'Vocals'], 'Guitar'],
+        ['set 02 kick volume to 75%', ['01 Kick', 'Vocals'], '01 Kick'],
+    ])('refuses "%s" among %j for %s, which it does not state', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(picked), { gain: 0.75 })],
+            [],
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+});
+
+describe('a user-set device name states that device (#5450)', () => {
+    const fixItVocals = createTrack({
+        id: 'track-fix-it-vocals',
+        name: 'Vocals',
+        devices: [{ id: 'eq-fix-it', type: 'builtin-eq', name: 'Fix It EQ', bypassed: false }],
+    });
+    const plainKeys = createTrack({
+        id: 'track-fix-it-keys',
+        name: 'Keys',
+        kind: 'midi',
+        devices: [namedEq('eq-plain-keys')],
+    });
+
+    it.each([null, plainKeys.id])(
+        'grounds only the Fix It EQ for "bypass the Fix It EQ" with %s selected',
+        (selectedTrackId) => {
+            const result = compileAndBridge('bypass the Fix It EQ', [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)], [], {
+                ...projectContext,
+                tracks: [fixItVocals, plainKeys, master],
+                selectedTrackId,
+            });
+
+            expect(targetsOf(result, 'deviceId')).toEqual(['eq-fix-it']);
+            expect(result.rejections).toEqual([{ index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
+        }
+    );
+    const fixItContext: ProjectContext = { ...projectContext, tracks: [fixItVocals, plainKeys, master] };
+
+    it('grounds only the Keys EQ for "bypass the EQ on Keys"', () => {
+        const result = compileAndBridge(
+            'bypass the EQ on Keys',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+            [],
+            fixItContext
+        );
+
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-plain-keys']);
+        expect(result.rejections).toEqual([{ index: 0, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
+    });
+
+    it('grounds both EQs for "bypass every EQ"', () => {
+        const result = compileAndBridge(
+            'bypass every EQ',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+            [],
+            fixItContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-fix-it', 'eq-plain-keys']);
+    });
+});
+
+describe('punctuation the name lacks breaks it only into a list of two or more siblings (#5450)', () => {
+    it.each([
+        ['set kick/snare/room volume to 50%', ['Kick', 'Snare', 'Kick/Snare', 'Kick Snare Room'], 'Kick Snare Room'],
+    ])('grounds "%s" among %j for %s and refuses every sibling', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const grounded = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(picked), { gain: 0.5 })],
+            [],
+            context
+        );
+        expect(grounded.rejections).toEqual([]);
+        expect(targetsOf(grounded)).toEqual([track(picked).id]);
+
+        for (const sibling of names.filter((name) => name !== picked)) {
+            const refused = compileAndBridge(
+                prompt,
+                [trackItem('setTrackGain', track(sibling), { gain: 0.5 })],
+                [],
+                context
+            );
+            expect(refused.actions).toEqual([]);
+            expect(refused.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        }
+    });
+});

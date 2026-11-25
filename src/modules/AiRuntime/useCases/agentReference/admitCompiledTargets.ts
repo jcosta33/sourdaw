@@ -9,6 +9,7 @@ import {
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
+import { getAgentReferenceCandidates } from './getAgentReferenceCandidates';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -17,6 +18,7 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { listAgentReferenceCandidateNames } from './listAgentReferenceCandidateNames';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
@@ -136,7 +138,9 @@ const PROTECTED: CompiledTargetAuthority = { status: 'refused', reason: 'protect
 
 /**
  * The shared resolver's reading of what the text names by literal id or whole name, and the ranges
- * of the text that state each whole name, as the resolver's own best-reading rule keeps them.
+ * of the text that state each whole name, as the resolver's own best-reading rule keeps them, every
+ * name the resolver reads an object by included (a device by its type's name and the name the user
+ * gave it).
  */
 function readNaming(
     text: string,
@@ -154,10 +158,15 @@ function readNaming(
     }).candidates.filter((candidate) =>
         candidate.evidence.some((evidence) => evidence === 'literal-id' || evidence === 'exact-name')
     );
-    const namedByName = named.filter((candidate) => candidate.evidence.includes('exact-name'));
+    const namedByNameIds = new Set(
+        named.filter((candidate) => candidate.evidence.includes('exact-name')).map((candidate) => candidate.id)
+    );
+    const namedByName = getAgentReferenceCandidates({ prompt: text, capability, context, dependencyId }).filter(
+        (candidate) => namedByNameIds.has(candidate.id)
+    );
     return {
         ids: named.map((candidate) => candidate.id),
-        nameRanges: getBestAgentReferenceNameRanges(text, namedByName, NAME_FORMS),
+        nameRanges: getBestAgentReferenceNameRanges(text, listAgentReferenceCandidateNames(namedByName), NAME_FORMS),
     };
 }
 
