@@ -19,10 +19,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
-import { driveDesktopEditorWorkspace } from '../desktopEditorWorkspaceDrive.ts';
+import { driveDesktopEditorWorkspace, runWorkspaceGroups, scaleStep } from '../desktopEditorWorkspaceDrive.ts';
 import {
     pausePreservesProgress,
     renderedPlayheadBeat,
+    freshWorkspaceObservations,
     type EditorWorkspaceDrive,
     WORKSPACE_STAGES,
 } from '../desktopEditorWorkspaceEvidence.ts';
@@ -444,6 +445,32 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
 };
 
 describe('packaged editor workspace proof', () => {
+    it('keeps the first scale failure while admitting timeline in a fresh session', async () => {
+        const visited: string[] = [];
+        const observations = freshWorkspaceObservations();
+        const scale = observations.stages.find(({ stage }) => stage === 'scale-refit')!;
+        const timeline = observations.stages.find(({ stage }) => stage === 'timeline-transport')!;
+        const result = await runWorkspaceGroups(
+            async (name) => {
+                visited.push(name);
+                if (name === 'geometry') {
+                    scale.outcome = 'failed';
+                    await scaleStep(scale, 'close-click', async () => {
+                        throw new Error('scale-refit');
+                    });
+                }
+                if (name === 'timeline') timeline.outcome = 'passed';
+            },
+            () => true
+        );
+        expect(visited).toEqual(['geometry', 'timeline', 'nested-escape', 'remove-instance']);
+        expect(result).toBe(true);
+        expect(scale).toMatchObject({
+            outcome: 'failed',
+            scaleSteps: [{ name: 'close-click', outcome: 'failed' }],
+        });
+        expect(timeline.outcome).toBe('passed');
+    });
     it.each([
         ['BARS\n1\n.\n1\n.\n000', 0],
         ['Bars2.4.000', 7],
@@ -532,7 +559,7 @@ describe('packaged editor workspace proof', () => {
         }
     );
 
-    it('reports launch-unavailable without teardown credit when all three isolated sessions refuse launch', async () => {
+    it('reports launch-unavailable without teardown credit when all four isolated sessions refuse launch', async () => {
         const { options, env } = fixture();
         const launch = vi
             .spyOn(editorSession, 'launchEditorSession')
@@ -543,7 +570,7 @@ describe('packaged editor workspace proof', () => {
                 hostSupported: true,
                 drive: driveDesktopEditorWorkspace,
             });
-            expect(launch).toHaveBeenCalledTimes(3);
+            expect(launch).toHaveBeenCalledTimes(4);
             expect(quit).not.toHaveBeenCalled();
             expect(record).toMatchObject({
                 verdict: 'not-run',
@@ -553,7 +580,7 @@ describe('packaged editor workspace proof', () => {
             expect(record.observations.stages.filter(({ outcome }) => outcome === 'passed')).toEqual([]);
             expect(
                 record.observations.stages.filter(({ outcome }) => outcome === 'failed').map(({ stage }) => stage)
-            ).toEqual(['workspace-ready', 'nested-escape', 'remove-instance']);
+            ).toEqual(['workspace-ready', 'timeline-transport', 'nested-escape', 'remove-instance']);
         } finally {
             launch.mockRestore();
             quit.mockRestore();

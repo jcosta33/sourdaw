@@ -16,6 +16,7 @@ import {
     renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     type Rectangle,
+    type ScaleStep,
     type WorkspaceObservation,
     type WorkspaceStage,
 } from './desktopEditorWorkspaceEvidence.ts';
@@ -253,21 +254,96 @@ async function viewport(page: Page): Promise<[number, number, number]> {
     return await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]);
 }
 
-async function changeScale(page: Page, percent: number): Promise<void> {
-    await page.getByRole('button', { name: 'Open Preferences', exact: true }).click();
+async function changeScale(page: Page, percent: number, row?: WorkspaceObservation): Promise<void> {
+    const run = async (name: ScaleStep, action: () => Promise<void>): Promise<void> => {
+        if (row) await scaleStep(row, name, action);
+        else await action();
+    };
+    await run('preferences-open', () => page.getByRole('button', { name: 'Open Preferences', exact: true }).click());
     const preferences = page.getByRole('dialog', { name: 'Preferences', exact: true });
-    await exactButton(preferences, 'Appearance').click();
+    await run('preferences-appearance', () => exactButton(preferences, 'Appearance').click());
     const slider = preferences.getByRole('slider', { name: 'UI Scale', exact: true });
     // A fresh isolated profile starts at 100%; each Arrow commits a real preference change.
-    const old = Number(await slider.getAttribute('aria-valuenow'));
-    assert(old === 100 || old === 125);
-    const key = percent > old ? 'ArrowRight' : 'ArrowLeft';
-    for (let current = old; current !== percent; current += percent > old ? 5 : -5) {
-        await slider.press(key);
-    }
-    assert.equal(Number(await slider.getAttribute('aria-valuenow')), percent);
-    await exactButton(preferences, 'Done').click();
-    await preferences.waitFor({ state: 'detached' });
+    await run('preferences-scale', async () => {
+        const old = Number(await slider.getAttribute('aria-valuenow'));
+        assert(old === 100 || old === 125);
+        const key = percent > old ? 'ArrowRight' : 'ArrowLeft';
+        for (let current = old; current !== percent; current += percent > old ? 5 : -5) {
+            await slider.press(key);
+        }
+        assert.equal(Number(await slider.getAttribute('aria-valuenow')), percent);
+    });
+    await run('preferences-dismiss', async () => {
+        await exactButton(preferences, 'Done').click();
+        await preferences.waitFor({ state: 'detached' });
+    });
+}
+
+export async function scaleStep(
+    row: WorkspaceObservation,
+    name: ScaleStep,
+    action: (entry: WorkspaceObservation['scaleSteps'][number]) => Promise<void>
+): Promise<void> {
+    const entry: WorkspaceObservation['scaleSteps'][number] = { name, outcome: 'failed' };
+    row.scaleSteps.push(entry);
+    await action(entry);
+    entry.outcome = 'passed';
+}
+
+async function observedClick(target: Locator, row: WorkspaceObservation, name: ScaleStep): Promise<void> {
+    await scaleStep(row, name, async (entry) => {
+        entry.hit = null;
+        entry.received = null;
+        const witness = await target
+            .evaluateHandle(
+                (element) => {
+                    const rect = element.getBoundingClientRect();
+                    const x = rect.x + rect.width / 2;
+                    const y = rect.y + rect.height / 2;
+                    const hit = document.elementFromPoint(x, y);
+                    const state = {
+                        x,
+                        y,
+                        hit: hit !== null && (hit === element || element.contains(hit)),
+                        received: false,
+                    };
+                    const listener = (event: Event): void => {
+                        state.received = event.isTrusted;
+                    };
+                    element.addEventListener('click', listener, { capture: true, once: true });
+                    return { state, cleanup: () => element.removeEventListener('click', listener, true) };
+                },
+                undefined,
+                { timeout: 1000 }
+            )
+            .catch(() => null);
+        if (witness) {
+            try {
+                Object.assign(entry, await witness.evaluate(({ state }) => state));
+            } catch {
+                // The real click still decides the step.
+            }
+        }
+        try {
+            await target.click();
+        } finally {
+            if (witness) {
+                try {
+                    Object.assign(
+                        entry,
+                        await witness.evaluate(({ state, cleanup }) => {
+                            cleanup();
+                            return state;
+                        })
+                    );
+                } catch {
+                    entry.received = null;
+                } finally {
+                    await witness.dispose().catch(() => {});
+                }
+            }
+        }
+    });
 }
 
 async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
@@ -293,27 +369,30 @@ async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: W
     await waitRectangle(dialog, { width: scaledHost.width - 32, height: scaledHost.height - 32 });
     const shrunk = await fitted(dialog, row);
     assert(shrunk.width < preferred.width && shrunk.height < preferred.height);
-    await exactButton(dialog, 'Move Fermenter panel').click();
-    // This real click must reach Close through the scaled renderer's hit testing.
-    await exactButton(dialog, 'Close Fermenter').click();
-    await dialog.waitFor({ state: 'detached' });
-    await original.getByText('Fermenter', { exact: true }).click();
-    await dialog.waitFor({ state: 'visible' });
-    await changeScale(page, 100);
-    const restored = await until(
-        () => viewport(page),
-        (value) =>
-            Math.abs(value[0] - before[0]) < 2 &&
-            Math.abs(value[1] - before[1]) < 2 &&
-            Math.abs(value[2] - before[2]) < 0.02
-    );
-    row.values.push({ width: restored[0], height: restored[1], dpr: restored[2], scale: 100 });
-    await waitRectangle(dialog, preferred);
-    const after = await fitted(dialog, row);
-    near(after.x, preferred.x);
-    near(after.y, preferred.y);
-    near(after.width, preferred.width);
-    near(after.height, preferred.height);
+    await observedClick(exactButton(dialog, 'Move Fermenter panel'), row, 'title-click');
+    await observedClick(exactButton(dialog, 'Close Fermenter'), row, 'close-click');
+    await scaleStep(row, 'detachment', () => dialog.waitFor({ state: 'detached' }));
+    await observedClick(original.getByText('Fermenter', { exact: true }), row, 'original-reopen-click');
+    await scaleStep(row, 'original-reopen-visible', () => dialog.waitFor({ state: 'visible' }));
+    await changeScale(page, 100, row);
+    await scaleStep(row, 'restore-viewport', async () => {
+        const restored = await until(
+            () => viewport(page),
+            (value) =>
+                Math.abs(value[0] - before[0]) < 2 &&
+                Math.abs(value[1] - before[1]) < 2 &&
+                Math.abs(value[2] - before[2]) < 0.02
+        );
+        row.values.push({ width: restored[0], height: restored[1], dpr: restored[2], scale: 100 });
+    });
+    await scaleStep(row, 'restore-geometry', async () => {
+        await waitRectangle(dialog, preferred);
+        const after = await fitted(dialog, row);
+        near(after.x, preferred.x);
+        near(after.y, preferred.y);
+        near(after.width, preferred.width);
+        near(after.height, preferred.height);
+    });
 }
 
 async function playhead(page: Page): Promise<number> {
@@ -510,6 +589,18 @@ async function removeInstance(
 
 type ObserveStage = (name: WorkspaceStage, action: (row: WorkspaceObservation) => Promise<void>) => Promise<void>;
 
+async function openFermenter(page: Page, browser: Locator, inspector: Locator): Promise<{ id: string; card: Locator }> {
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('button', { name: /^Fermenter\b/u }).click();
+    await deviceEditor(page, 'Fermenter').waitFor({ state: 'visible' });
+    const original = devicesNamed(inspector, 'Fermenter');
+    await original.waitFor({ state: 'visible' });
+    const testId = await original.getAttribute('data-testid');
+    const id = testId?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
+    assert(id);
+    return { id, card: inspector.getByTestId(`device-card-${id}`) };
+}
+
 async function observeFermenterWorkspace(
     page: Page,
     browser: Locator,
@@ -519,14 +610,9 @@ async function observeFermenterWorkspace(
     const dialog = deviceEditor(page, 'Fermenter');
     let original: Locator = devicesNamed(inspector, 'Fermenter');
     await stage('initial-placement', async (row) => {
-        await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
-        await browser.getByRole('button', { name: /^Fermenter\b/u }).click();
-        await dialog.waitFor({ state: 'visible' });
-        await original.waitFor({ state: 'visible' });
-        const testId = await original.getAttribute('data-testid');
-        const id = testId?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
-        assert(id);
-        original = inspector.getByTestId(`device-card-${id}`);
+        const opened = await openFermenter(page, browser, inspector);
+        original = opened.card;
+        const { id } = opened;
         row.instanceIds.push(id);
         const host = await box(dialog.locator('../..'));
         await waitRectangle(dialog, {
@@ -543,12 +629,28 @@ async function observeFermenterWorkspace(
     await stage('keyboard-resize', (row) => keyboardResize(dialog, row));
     await stage('title-drag', (row) => titleDrag(dialog, row));
     await stage('scale-refit', (row) => scaleRefit(page, dialog, original, row));
-    await stage('timeline-transport', (row) => transport(page, dialog, original, row));
+}
+
+type WorkspaceGroup = 'geometry' | 'timeline' | 'nested-escape' | 'remove-instance';
+
+export async function runWorkspaceGroups(
+    run: (name: WorkspaceGroup) => Promise<void>,
+    canContinue: () => boolean
+): Promise<boolean> {
+    let failed = false;
+    for (const name of ['geometry', 'timeline', 'nested-escape', 'remove-instance'] as const) {
+        if (!canContinue()) break;
+        try {
+            await run(name);
+        } catch {
+            failed = true;
+        }
+    }
+    return failed;
 }
 
 export const driveDesktopEditorWorkspace: EditorWorkspaceDrive = async (binary, observations) => {
     const sessions: { acquired: number; allQuit: boolean } = { acquired: 0, allQuit: true };
-    let observationFailed = false;
     async function stage(name: WorkspaceStage, action: (row: WorkspaceObservation) => Promise<void>): Promise<void> {
         const row = observations.stages.find((candidate) => candidate.stage === name);
         assert(row);
@@ -585,40 +687,35 @@ export const driveDesktopEditorWorkspace: EditorWorkspaceDrive = async (binary, 
     const ready = observations.stages.find(({ stage: name }) => name === 'workspace-ready');
     assert(ready);
     ready.outcome = 'failed';
-    try {
-        await session(async (page, browser, inspector) => {
-            // The ready stage passes before its dependent geometry and transport observations.
-            ready.outcome = 'passed';
-            await observeFermenterWorkspace(page, browser, inspector, stage);
-        });
-    } catch {
-        observationFailed = true;
-        // The failed stage remains explicit; its dependent rows remain not-reached.
-        // Independent lifecycle groups below receive fresh isolated profiles.
-    }
-    for (const name of ['nested-escape', 'remove-instance'] as const) {
-        if (!sessions.allQuit) {
-            break;
-        }
-        const row = observations.stages.find(({ stage: stageName }) => stageName === name);
-        assert(row);
-        row.outcome = 'failed';
-        try {
-            await session(async (page, browser, inspector) => {
-                await stage(name, async (observation) => {
-                    if (name === 'nested-escape') {
-                        await nestedEscape(page, browser, inspector, observation);
-                    } else {
-                        await addEffectTrack(page);
-                        await removeInstance(page, browser, inspector, observation);
-                    }
+    const observationFailed = await runWorkspaceGroups(
+        async (name) => {
+            if (name === 'geometry') {
+                await session(async (page, browser, inspector) => {
+                    ready.outcome = 'passed';
+                    await observeFermenterWorkspace(page, browser, inspector, stage);
                 });
-            });
-        } catch {
-            observationFailed = true;
-            // The failed lifecycle stage is retained; the other session remains independently observable.
-        }
-    }
+            } else {
+                const stageName = name === 'timeline' ? 'timeline-transport' : name;
+                const row = observations.stages.find(({ stage: candidate }) => candidate === stageName);
+                assert(row);
+                row.outcome = 'failed';
+                await session(async (page, browser, inspector) => {
+                    await stage(stageName, async (observation) => {
+                        if (name === 'timeline') {
+                            const { card } = await openFermenter(page, browser, inspector);
+                            await transport(page, deviceEditor(page, 'Fermenter'), card, observation);
+                        } else if (name === 'nested-escape') {
+                            await nestedEscape(page, browser, inspector, observation);
+                        } else {
+                            await addEffectTrack(page);
+                            await removeInstance(page, browser, inspector, observation);
+                        }
+                    });
+                });
+            }
+        },
+        () => sessions.allQuit
+    );
     observations.appQuit = sessions.acquired > 0 && sessions.allQuit;
     if (sessions.acquired === 0) {
         throw new FermenterDriveError('launch-unavailable');

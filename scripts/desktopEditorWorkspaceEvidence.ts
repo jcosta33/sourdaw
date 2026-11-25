@@ -12,12 +12,32 @@ export const WORKSPACE_STAGES = [
 
 export type WorkspaceStage = (typeof WORKSPACE_STAGES)[number];
 export type Rectangle = { x: number; y: number; width: number; height: number };
+export type ScaleStep =
+    | 'title-click'
+    | 'close-click'
+    | 'detachment'
+    | 'original-reopen-click'
+    | 'original-reopen-visible'
+    | 'preferences-open'
+    | 'preferences-appearance'
+    | 'preferences-scale'
+    | 'preferences-dismiss'
+    | 'restore-viewport'
+    | 'restore-geometry';
 export type WorkspaceObservation = {
     stage: WorkspaceStage;
     outcome: 'not-reached' | 'failed' | 'passed';
     rectangles: { host: Rectangle; dialog: Rectangle }[];
     values: Record<string, number>[];
     instanceIds: string[];
+    scaleSteps: {
+        name: ScaleStep;
+        outcome: 'failed' | 'passed';
+        hit?: boolean | null;
+        received?: boolean | null;
+        x?: number;
+        y?: number;
+    }[];
 };
 export type WorkspaceObservations = { stages: WorkspaceObservation[]; appQuit: boolean };
 export type EditorWorkspaceDrive = (binary: string, observations: WorkspaceObservations) => Promise<void>;
@@ -30,6 +50,7 @@ export function freshWorkspaceObservations(): WorkspaceObservations {
             rectangles: [],
             values: [],
             instanceIds: [],
+            scaleSteps: [],
         })),
         appQuit: false,
     };
