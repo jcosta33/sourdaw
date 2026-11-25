@@ -8,6 +8,7 @@ import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { proposalCommandShape } from './proposalCommandShape';
 import { refinementCourtesy } from './refinementCourtesy';
+import { refinementProtectionForms } from './refinementProtectionForms';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
 type Command = Parameters<ReadCommandRemoval>[0]['command'];
@@ -491,14 +492,17 @@ function findUnreadQualifier(reading: readonly ClauseReading[]): ClauseReading |
             if (clause.directives.some((directive) => directive.intention === 'remove')) {
                 return false;
             }
-            if (refinementRequestReading.statesNegation(clause)) {
-                return true;
-            }
             // Read with a trailing space, so a clause of connectors alone (the "And" the splitter cuts
             // off "And then remove …") reads as empty rather than as a word.
             const words = refinementRequestReading
                 .withoutLeadingConnectors(`${normalizePromptText(clause.text)} `)
                 .trim();
+            if (refinementProtectionForms.readsRestOfMix(words)) {
+                return false;
+            }
+            if (refinementRequestReading.statesNegation(clause)) {
+                return true;
+            }
             return (
                 words.length > 0 &&
                 clause.mentions.length === 0 &&

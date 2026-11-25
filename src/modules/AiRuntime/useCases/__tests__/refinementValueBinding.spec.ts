@@ -6869,6 +6869,19 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
     );
 
     it.each([
+        "don't change anything else",
+        'do not change anything else',
+        "don't touch anything else",
+        "don't change the rest",
+    ])('reads "mute Bass, %s" as the rest-of-mix protection "without changing anything else" reads', (clause) => {
+        const calls = [vocalsBy(-3), bassMute];
+
+        expect(outcomeOf(refine(P0_CARD, `mute Bass, ${clause}`, calls))).toEqual(
+            outcomeOf(refine(P0_CARD, 'mute Bass, without changing anything else', calls))
+        );
+    });
+
+    it.each([
         [
             'an addition with no negation',
             P0_CARD,
@@ -6972,7 +6985,6 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             ['maybe not', 'maybe not'],
             ['not sure', 'not sure'],
             ["but only if it's loud", "only if it's loud"],
-            ['without changing anything else', 'without changing anything else'],
         ] as const)('asks "%s" beside a removal instead of dropping the pan', (clause, asked) => {
             expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
                 status: 'refused',
@@ -6987,6 +6999,11 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             'Set the vocal gain to 60%, remove the guitar pan, please',
             'Set the vocal gain to 60%, remove the guitar pan, thanks',
             'Set the vocal gain to 60%, remove the guitar pan, leaving the Drum Bus unchanged',
+            'Set the vocal gain to 60%, remove the guitar pan, keep the rest as is',
+            'Set the vocal gain to 60%, remove the guitar pan, everything else stays',
+            'Set the vocal gain to 60%, remove the guitar pan, nothing else',
+            'Set the vocal gain to 60%, remove the guitar pan, keep everything else unchanged',
+            'Set the vocal gain to 60%, remove the guitar pan, without changing anything else',
         ])('admits "%s", whose every other clause it reads', (prompt) => {
             expect(admit(prompt)).toEqual({ status: 'valid' });
         });
