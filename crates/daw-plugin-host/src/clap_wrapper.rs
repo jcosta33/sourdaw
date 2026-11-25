@@ -1641,6 +1641,10 @@ impl ClapWrapper {
     #[cfg(feature = "engine-owned-command-fixture")]
     #[doc(hidden)]
     pub fn latch_engine_owned_command_fixture_processing_start_refusal(&mut self) {
+        // A refusal stands while the host wants processing and the plugin is not
+        // in it, so the gate is left in exactly that state.
+        self.processing.request_start();
+        self.processing.mark_stopped();
         if !self.processing_start_refused {
             self.processing_start_refused = true;
             signal_pending_service_change();
@@ -2798,6 +2802,11 @@ impl ClapWrapper {
             };
             if started {
                 self.processing.mark_started();
+                if self.processing_start_refused {
+                    // A refused start has now succeeded: the slot is served
+                    // again, and the control path publishes it.
+                    signal_pending_service_change();
+                }
             }
             return;
         }
@@ -4104,7 +4113,13 @@ impl HostedPluginRuntime for ClapWrapper {
     }
 
     fn take_service_change(&mut self) -> Option<ServiceChange> {
-        let current = self.processing_start_refused.then(|| {
+        // The latch never resets, so "out of service now" is the refusal still
+        // standing: the host wants processing and the plugin is not in it. A
+        // requested stop is not a refusal.
+        let refused_now = self.processing_start_refused
+            && self.processing.wants_processing()
+            && !self.processing.is_processing();
+        let current = refused_now.then(|| {
             // The refused-start path always hands the engine's input back
             // (`copy_inputs_to_outputs`), instrument or not.
             format!(
@@ -6089,8 +6104,85 @@ mod tests {
         );
     }
 
+    /// Whether the stub below accepts `start_processing`; a test flips it to model
+    /// a plugin that refuses once and then accepts.
+    static STUB_START_ACCEPTS: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
     unsafe extern "C" fn stub_start_processing_refusing(_plugin: *const clap_plugin) -> bool {
-        false
+        STUB_START_ACCEPTS.load(Ordering::Relaxed)
+    }
+
+    /// A refused start publishes out of service once; the start that later
+    /// succeeds raises the hint and publishes back in service once. A requested
+    /// stop after a refusal is not out of service.
+    #[test]
+    fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+        assert_eq!(wrapper.take_service_change(), None);
+        crate::traits::take_pending_service_change_signal();
+
+        STUB_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "the start that succeeds after a refusal raises the service hint"
+        );
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+        assert_eq!(wrapper.take_service_change(), None);
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+    }
+
+    /// A stop requested after a refusal leaves the plugin unprocessed, which is
+    /// not the host taking it out of service.
+    #[test]
+    fn a_requested_stop_after_a_refused_start_is_not_out_of_service() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: as above.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+
+        wrapper.processing_gate().request_stop();
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
     }
 
     /// A plugin that answers `start_processing` with false is taken out of
@@ -8659,6 +8751,7 @@ mod tests {
         assert_eq!(wrapper.take_service_change(), None);
 
         wrapper.processing_start_refused = true;
+        wrapper.processing_gate().request_start();
 
         let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
             panic!("a refused start is published as out of service");

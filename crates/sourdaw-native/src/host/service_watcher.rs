@@ -267,6 +267,9 @@ mod tests {
         gate_taken
             .recv_timeout(Duration::from_secs(2))
             .expect("the holder takes the gate");
+        // The fixture's own refusal raised the hint; clear it so what is
+        // asserted below is the retry's re-raise and nothing earlier.
+        take_pending_service_change_signal();
 
         publish_pending_service_changes(&engine_plugins, &sink);
 

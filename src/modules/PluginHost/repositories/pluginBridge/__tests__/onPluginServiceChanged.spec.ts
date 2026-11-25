@@ -64,8 +64,11 @@ describe('onPluginServiceChanged', () => {
         const { push, received } = await subscribed();
 
         push({ payload });
+        // The same subscription is live: a valid push right after still arrives,
+        // so the empty list above is the validator's drop and not a dead listener.
+        push({ payload: { instance_id: 'live', out_of_service_reason: null } });
 
-        expect(received).toEqual([]);
+        expect(received).toEqual([{ instance_id: 'live', out_of_service_reason: null }]);
     });
 
     it('subscribes to nothing outside the desktop runtime', async () => {

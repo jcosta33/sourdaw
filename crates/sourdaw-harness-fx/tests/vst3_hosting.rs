@@ -367,7 +367,8 @@ fn a_refused_start_of_processing_is_published_once() {
         panic!("a refused start is published as out of service");
     };
     assert!(
-        reason.contains("refused to start processing") && reason.contains("its blocks"),
+        reason.contains("refused to start processing")
+            && reason.ends_with("its blocks pass through unprocessed"),
         "{reason}"
     );
     assert_eq!(wrapper.take_service_change(), None);
@@ -579,6 +580,42 @@ fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_b
 
     block(&mut wrapper, &[]);
     assert_eq!(gain(&wrapper), 0.25);
+}
+
+/// A plugin that refuses its first start and accepts the next is published
+/// out of service by the refused block and back in service by the block that
+/// starts it, each once.
+#[test]
+fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-late-start-service");
+    let mut wrapper = plugin.vst3_class(
+        &VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+        ProcessMode::Realtime,
+    );
+    let (left, right) = distinct_pair();
+
+    process(&mut wrapper, &left, &right);
+    assert!(
+        take_pending_service_change_signal(),
+        "the refused start wakes the service visit"
+    );
+    assert!(matches!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::OutOfService { .. })
+    ));
+    assert_eq!(wrapper.take_service_change(), None);
+
+    process(&mut wrapper, &left, &right);
+    assert!(
+        take_pending_service_change_signal(),
+        "the start that succeeds wakes the service visit"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    assert_eq!(wrapper.take_service_change(), None);
 }
 
 /// The idle flush enters the processing state for its one call and leaves it

@@ -2074,11 +2074,18 @@ impl Vst3Wrapper {
         if let Some(line) = self.layout_refusal_line() {
             return Some(line);
         }
-        self.processing_start_refused.then(|| {
+        // The latch never resets, so a refused start is current only while the
+        // host still wants processing and the plugin is not in it; a requested
+        // stop is not a refusal.
+        let refused_now = self.processing_start_refused
+            && self.processing.wants_processing()
+            && !self.processing.is_processing();
+        // The refused-start path hands the engine's input back for every
+        // plugin, instrument or not (`pass_through`).
+        refused_now.then(|| {
             format!(
-                "'{}' refused to start processing; {}",
-                self.instance.name(),
-                self.unserved_block_handling()
+                "'{}' refused to start processing; its blocks pass through unprocessed",
+                self.instance.name()
             )
         })
     }
@@ -2707,6 +2714,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
         if entered_processing(unsafe { processor.setProcessing(1) }) {
             self.processing.mark_started();
             self.processing_start_refusals = 0;
+            if self.processing_start_refused {
+                // A refused start has now succeeded: the slot is served again.
+                signal_pending_service_change();
+            }
             return;
         }
         self.processing_start_refusals += 1;

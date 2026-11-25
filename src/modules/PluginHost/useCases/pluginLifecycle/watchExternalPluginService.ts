@@ -26,13 +26,29 @@ function setSlot(instanceId: string, entry: ExternalPluginActivationStatus): voi
     });
 }
 
+/**
+ * Whether the slot is free for this watcher to write: healthy, or still holding
+ * the message it wrote itself. A failed restore or another degraded note
+ * (no engine yet) belongs to its own writer and is left standing.
+ */
+function slotIsOurs(instanceId: string, remembered: string | undefined): boolean {
+    const entry = externalPluginActivationStore.value?.byInstanceId[instanceId];
+    if (entry?.status !== 'active') {
+        return false;
+    }
+    return entry.message === undefined || entry.message === remembered;
+}
+
 function takeOutOfService(instanceId: string, reason: string): void {
     const pluginId = loadedExternalInstancePluginIds.get(instanceId) ?? instanceId;
     const message = pluginOutOfServiceMessage(pluginId, reason);
     // 'active' with a message is the slot's degraded rendering: the editor stays
     // openable, so the musician can undo whatever caused it. 'error' would hide it.
+    const remembered = externalPluginServiceMessages.get(instanceId);
     externalPluginServiceMessages.set(instanceId, message);
-    setSlot(instanceId, { status: 'active', message });
+    if (slotIsOurs(instanceId, remembered)) {
+        setSlot(instanceId, { status: 'active', message });
+    }
     logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
     notifyUser(message, 'warning');
 }
