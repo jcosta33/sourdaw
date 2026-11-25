@@ -445,6 +445,8 @@ pub struct GrinderModelUpdate {
     pub admission: NativeGrinderModelRequest,
     /// Resolved, ordered and bounded by the control-side graph mapper.
     pub parameters: Box<[(DeviceParam, f32)]>,
+    /// Constructor defaults that have no equivalent numeric write.
+    pub reset_parameter_ids: Box<[BuiltinParamName]>,
 }
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
@@ -6763,8 +6765,15 @@ impl AudioScheduler {
 
         let slot = self.effect_index.lookup(effect_id)?;
         let effect = &mut self.effects[slot];
-        if !matches!(&effect.instance, PluginCore::Grinder(_)) {
+        let PluginCore::Grinder(body) = &mut effect.instance else {
             return None;
+        };
+        for name in update
+            .reset_parameter_ids
+            .iter()
+            .filter_map(BuiltinParamName::as_str)
+        {
+            body.engine.restore_parameter_default(name);
         }
 
         let mut cleared_model = None;
@@ -24965,6 +24974,7 @@ mod timeline_tests {
                     request: 1,
                     applied: Arc::clone(&applied),
                 },
+                reset_parameter_ids: Box::default(),
                 parameters: values
                     .map(|(name, value)| (DeviceParam::BuiltinNamed(grinder_name(name)), value))
                     .into(),
@@ -25066,6 +25076,7 @@ mod timeline_tests {
                         request: 1,
                         applied: Arc::clone(&applied),
                     },
+                    reset_parameter_ids: Box::default(),
                     parameters: [("neuralPlacement", 1.0), ("outputGain", -18.0)]
                         .map(|(name, value)| (DeviceParam::BuiltinNamed(grinder_name(name)), value))
                         .into(),
@@ -25099,6 +25110,45 @@ mod timeline_tests {
     }
 
     #[test]
+    fn native_grinder_model_resets_constructor_defaults_on_the_same_amp() {
+        use std::sync::atomic::AtomicU64;
+
+        let material = grinder_burst_material(4096);
+        let mut patch = grinder_patch();
+        patch.push((grinder_name("transformerDrive"), 0.95));
+        let mut harness = Harness::new(64);
+        track_with_grinder(&mut harness, material.clone(), &patch);
+        harness.playing();
+        let applied = Arc::new(AtomicBool::new(false));
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: None,
+                        authority: Arc::new(AtomicU64::new(1)),
+                        request: 1,
+                        applied: Arc::clone(&applied),
+                    },
+                    parameters: Box::default(),
+                    reset_parameter_ids: [grinder_name("transformerDrive")].into(),
+                }),
+            })
+            .is_ok());
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        assert!(applied.load(Ordering::Acquire));
+        let (actual, _) = render_master(&mut harness, 512, 8);
+
+        let mut fresh = Harness::new(64);
+        track_with_grinder(&mut fresh, material, &grinder_patch());
+        fresh.playing();
+        let (expected, _) = render_master(&mut fresh, 512, 8);
+        assert!(expected.iter().any(|sample| sample.abs() > 1e-5));
+        assert!(max_abs_difference(&actual, &expected) < 1e-6);
+    }
+
+    #[test]
     fn native_grinder_model_retired_queue_retains_budget_and_stale_incoming_ownership() {
         let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
         use daw_dsp::grinder::nam::native_admission::*;
@@ -25119,6 +25169,7 @@ mod timeline_tests {
                         request,
                         applied: Arc::new(AtomicBool::new(false)),
                     },
+                    reset_parameter_ids: Box::default(),
                     parameters: Box::default(),
                 }),
             });
@@ -25153,6 +25204,7 @@ mod timeline_tests {
                     request: 33,
                     applied: Arc::new(AtomicBool::new(false)),
                 },
+                reset_parameter_ids: Box::default(),
                 parameters: Box::default(),
             }),
         });
@@ -25189,6 +25241,7 @@ mod timeline_tests {
                         request,
                         applied: Arc::new(AtomicBool::new(false)),
                     },
+                    reset_parameter_ids: Box::default(),
                     parameters: Box::default(),
                 }),
             };
@@ -25237,6 +25290,7 @@ mod timeline_tests {
                     request: 4,
                     applied: Arc::new(AtomicBool::new(false)),
                 },
+                reset_parameter_ids: Box::default(),
                 parameters: Box::default(),
             }),
         });
@@ -25265,6 +25319,7 @@ mod timeline_tests {
                         request: 5,
                         applied: Arc::new(AtomicBool::new(false))
                     },
+                    reset_parameter_ids: Box::default(),
                     parameters: Box::default(),
                 })
             })
