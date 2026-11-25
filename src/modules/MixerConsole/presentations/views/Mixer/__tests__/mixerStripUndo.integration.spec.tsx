@@ -283,6 +283,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
+        isToasterDevice: actual.isToasterDevice,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
         resolveLiveNoteControls: actual.resolveLiveNoteControls,
