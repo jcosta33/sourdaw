@@ -8,6 +8,7 @@ import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
+import { computeTrackHash } from '../../../services/computeTrackHash';
 import { cancelFreezeTrack } from '../cancelFreezeTrack';
 import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
@@ -246,6 +247,7 @@ describe('freeze sizes its tail from device tail declarations', () => {
         afterEach(() => {
             externalPluginTailStore.set(defaultExternalPluginTailState);
             vi.mocked(engineSampleRateOf).mockReturnValue(null);
+            vi.mocked(computeTrackHash).mockResolvedValue('mock-hash');
         });
 
         it('starts no render until the refresh settles, then sizes the tail from the figure it wrote', async () => {
@@ -273,6 +275,20 @@ describe('freeze sizes its tail from device tail declarations', () => {
             await vi.waitFor(() => expect(refreshExternalPluginTails).toHaveBeenCalled());
 
             cancelFreezeTrack('t1');
+            release();
+
+            expect(await frozen).toBe(false);
+            expect(renderTrackOffline).not.toHaveBeenCalled();
+        });
+
+        it('renders nothing when the track is edited while the refresh is pending', async () => {
+            seedHostedReverbTrack();
+            const release = holdRefresh();
+
+            const frozen = freezeTrack('t1');
+            await vi.waitFor(() => expect(refreshExternalPluginTails).toHaveBeenCalled());
+
+            vi.mocked(computeTrackHash).mockResolvedValue('edited-hash');
             release();
 
             expect(await frozen).toBe(false);

@@ -161,6 +161,13 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
+        // How far past the content this take has to ring, read from the same device tail
+        // declarations the export path evaluates; see `readFreezeTailSeconds`. Its refresh awaits
+        // the host, so it runs before the source check below, never between that check and the render.
+        const tailSeconds = await readFreezeTailSeconds(track, taskIdentity);
+        if (tailSeconds === null) {
+            return false;
+        }
         // Re-hashes the live source: the render reads it, not `track`. The check that follows is
         // synchronous and the MIDI capture and render call come straight after it, so no edit can
         // land between the last live read and the render's own.
@@ -171,14 +178,6 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         assertRenderReadsHashedTrack(hashedTrack);
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
-
-        // How far past the content this take has to ring, read from the same
-        // device tail declarations the export path evaluates; see
-        // `readFreezeTailSeconds`.
-        const tailSeconds = await readFreezeTailSeconds(track, taskIdentity);
-        if (tailSeconds === null) {
-            return false;
-        }
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         // Read synchronously before the render call: the render reads the MIDI store when it starts,
