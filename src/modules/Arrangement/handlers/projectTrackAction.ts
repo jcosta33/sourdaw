@@ -270,6 +270,7 @@ export const trackProjectionByActionType: {
     setToasterFactoryKit: keepTrack,
     setBacteriaFactoryPatch: keepTrack,
     setGlutenFactoryPreset: keepTrack,
+    setProofPatchSelection: keepTrack,
     createBus: keepTrack,
     createFolder: keepTrack,
     setSend: projectSendLevel,

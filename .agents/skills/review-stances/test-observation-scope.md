@@ -16,8 +16,9 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    `project-integrity.md` probe 6; saved inverses holding bad captures are `project-integrity.md` probe 3;
    exact-inverse inputs are in `moving-coordinate-inverses.md`. For rejected partial merges, pair this with the
    real-store probe in `command-entry-and-state-oracles.md` probe 1. Removing the producer, reload fence or
-   copy must fail the case.
-   (#4036, #5578, #5064, #5157, #4564)
+   copy must fail the case. A no-op request is observed through raw heads and both history stacks, never its
+   returned value (`command-entry-and-state-oracles.md` probe 11).
+   (#4036, #5578, #5064, #5157, #4564, #5926)
 
 2. **Final equality hides a write followed by restoration.**
    Probe: count writes from a sentinel placed before the action and observe settled transitions, since
@@ -66,6 +67,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    raw capture with UTF-8 round-tripping or comparing only decoded strings must fail
    `scripts/__tests__/prepareReview.spec.ts`; an actual large-diff acceptance compares independent
    streaming byte counts and hashes under the same cwd and environment without printing source.
+   A local-model window guard fed a handbuilt prompt stays green while production prompt assembly grows
+   (#5934, #6360): compose the request through production assembly, as
+   `src/modules/AiRuntime/useCases/llmOrchestration/__tests__/localPlanningWindow.integration.spec.ts` does, and
+   require appending text to the `buildPlanningSystemPrompt` result to fail it.
    Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
    SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
    production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A

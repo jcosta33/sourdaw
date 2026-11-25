@@ -1,106 +1,121 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const before = {
-    version: 1,
-    data: {
-        modelA: 'balanced-grand',
-        modelB: 'clear-grand',
-        morphPosition: 0,
-        layerBalance: 0,
-        enabled: false,
-        temperament: 0,
-        hammerHardness: 0,
-        velocityCurve: 1,
-        stereoWidth: 0.6,
-        toneTilt: 0,
-    },
-};
-const after = { ...before, data: { ...before.data, temperament: 2, morphPosition: 0.75, enabled: true } };
+import { type GrandBouleAppAction } from '../../events/grandBouleAppActions';
+import { createDefaultGrandBoulePersistedState, toGrandBouleDeviceState } from '../../models/GrandBouleDeviceState';
+import { handleSetGrandBouleDeviceState } from '../handleSetGrandBouleDeviceState';
+
 const mocks = vi.hoisted(() => ({
-    setDeviceState: vi.fn(),
+    applyDevicePatchState: vi.fn(),
+    captureDevicePatchCommitValidation: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
     reconcile: vi.fn(),
-    trackStore: {
-        value: {
-            tracks: [
-                {
-                    devices: [
-                        {
-                            id: 'grand-1',
-                            type: 'grand-boule',
-                            deviceState: {
-                                version: 1,
-                                data: {
-                                    modelA: 'balanced-grand',
-                                    modelB: 'clear-grand',
-                                    morphPosition: 0,
-                                    layerBalance: 0,
-                                    enabled: false,
-                                    temperament: 0,
-                                    hammerHardness: 0,
-                                    velocityCurve: 1,
-                                    stereoWidth: 0.6,
-                                    toneTilt: 0,
-                                },
-                            },
-                        },
-                    ],
-                },
-            ],
-        },
-    },
+    trackStore: { value: { tracks: [] as unknown[] } },
+    isCurrent: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({ setDeviceState: mocks.setDeviceState }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    applyDevicePatchState: mocks.applyDevicePatchState,
+    captureDevicePatchCommitValidation: mocks.captureDevicePatchCommitValidation,
+}));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: mocks.trackStore,
+    resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+}));
+vi.mock('#/modules/Project/stores', () => ({
+    projectTransitionEpoch: { captureEditAuthority: () => ({ isCurrent: mocks.isCurrent }) },
+}));
 vi.mock('../../useCases/reconcileGrandBouleDeviceStateFromProject', () => ({
     reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,
 }));
 
-import { handleSetGrandBouleDeviceState } from '../handleSetGrandBouleDeviceState';
+const DEVICE_ID = 'grand-1';
+const TRACK_ID = 'piano';
+const neutral = toGrandBouleDeviceState(createDefaultGrandBoulePersistedState());
+const voiced = { ...neutral, data: { ...neutral.data, temperament: 2, morphPosition: 0.75, enabled: true } };
+const action: GrandBouleAppAction = {
+    type: 'setGrandBouleDeviceState',
+    payload: { trackId: TRACK_ID, deviceId: DEVICE_ID, before: null, after: voiced },
+};
+const proof = {
+    captureWrittenState: vi.fn(),
+    validation: { release: vi.fn() },
+};
 
-function grandBouleDevice() {
-    const device = mocks.trackStore.value.tracks.at(0)?.devices.at(0);
-    if (device === undefined) {
-        throw new Error('Grand Boule test fixture is missing its device');
-    }
-    return device;
+function setProjection(chunk?: typeof neutral, frozen = false): void {
+    const device = { id: DEVICE_ID, type: 'grand-boule' };
+    mocks.trackStore.value.tracks = [
+        { id: TRACK_ID, frozen, devices: [chunk === undefined ? device : { ...device, deviceState: chunk }] },
+    ];
 }
 
 describe('handleSetGrandBouleDeviceState', () => {
     beforeEach(() => {
-        mocks.setDeviceState.mockReset().mockReturnValue(true);
-        mocks.reconcile.mockReset();
-        grandBouleDevice().deviceState = before;
+        vi.clearAllMocks();
+        mocks.applyDevicePatchState.mockReturnValue(true);
+        mocks.captureDevicePatchCommitValidation.mockReturnValue({ start: () => proof });
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status: 'eligible', trackId: TRACK_ID });
+        mocks.isCurrent.mockReturnValue(true);
+        proof.captureWrittenState.mockReturnValue(true);
+        setProjection();
     });
 
-    it('writes project truth and reconciles session plus engine after commit', async () => {
-        const action = { type: 'setGrandBouleDeviceState' as const, payload: { deviceId: 'grand-1', before, after } };
+    it('writes the exact chunk footprint and reconciles the addressed device after commit', async () => {
+        handleSetGrandBouleDeviceState.describe(action);
         const result = await handleSetGrandBouleDeviceState.execute(action);
 
-        expect(mocks.setDeviceState).toHaveBeenCalledWith({ deviceId: 'grand-1', state: after });
+        expect(mocks.captureDevicePatchCommitValidation).toHaveBeenCalledWith({
+            deviceId: DEVICE_ID,
+            trackId: TRACK_ID,
+            parameterIds: [],
+            requireCurrentProjection: true,
+        });
+        expect(mocks.applyDevicePatchState).toHaveBeenCalledWith({
+            deviceId: DEVICE_ID,
+            expected: { deviceState: null, parameterValues: {} },
+            next: { deviceState: voiced, parameterValues: {} },
+        });
         expect(result?.status).toBe('written');
+        expect(mocks.reconcile).not.toHaveBeenCalled();
         await result?.afterCommit?.();
-        expect(mocks.reconcile).toHaveBeenCalledWith('grand-1');
+        expect(mocks.reconcile).toHaveBeenCalledWith(DEVICE_ID);
     });
 
-    it('describes an inverse that swaps the versioned states', () => {
-        const action = { type: 'setGrandBouleDeviceState' as const, payload: { deviceId: 'grand-1', before, after } };
+    it('refuses a changed raw source after admission even when the decoded voicing is still neutral', async () => {
+        handleSetGrandBouleDeviceState.describe(action);
+        setProjection(neutral);
 
-        expect(handleSetGrandBouleDeviceState.describe(action).inverseAction).toEqual({
-            type: 'setGrandBouleDeviceState',
-            payload: { deviceId: 'grand-1', before: after, after: before },
+        await expect(Promise.resolve(handleSetGrandBouleDeviceState.execute(action))).resolves.toEqual({
+            status: 'conflict',
         });
+        expect(mocks.applyDevicePatchState).not.toHaveBeenCalled();
     });
 
-    it('conflicts instead of overwriting a changed project state', async () => {
-        grandBouleDevice().deviceState = after;
+    it('refuses a frozen owner before mutation', async () => {
+        handleSetGrandBouleDeviceState.describe(action);
+        setProjection(undefined, true);
+        expect(await handleSetGrandBouleDeviceState.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.applyDevicePatchState).not.toHaveBeenCalled();
+    });
 
-        const result = await handleSetGrandBouleDeviceState.execute({
-            type: 'setGrandBouleDeviceState',
-            payload: { deviceId: 'grand-1', before, after },
-        });
-
-        expect(result).toEqual({ status: 'conflict' });
-        expect(mocks.setDeviceState).not.toHaveBeenCalled();
+    it('requires the saved inverse and redo to match the forward owner and exact raw chunks', () => {
+        const inverseAction: GrandBouleAppAction = {
+            type: action.type,
+            payload: { ...action.payload, before: voiced, after: null },
+        };
+        const entry = { action, inverseAction, redoAction: action };
+        expect(handleSetGrandBouleDeviceState.describe(action).inverseAction).toEqual(inverseAction);
+        expect(handleSetGrandBouleDeviceState.validateSessionEntry?.(entry)).toBe(true);
+        expect(
+            handleSetGrandBouleDeviceState.validateSessionEntry?.({
+                ...entry,
+                inverseAction: { ...inverseAction, payload: { ...inverseAction.payload, after: neutral } },
+            })
+        ).toBe(false);
+        expect(
+            handleSetGrandBouleDeviceState.validateSessionEntry?.({
+                ...entry,
+                redoAction: { ...action, payload: { ...action.payload, trackId: 'other-piano' } },
+            })
+        ).toBe(false);
     });
 });

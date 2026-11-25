@@ -78,6 +78,38 @@ describe('grinderControlRateParams', () => {
         vi.clearAllMocks();
     });
 
+    it('sends newly selected known controls but rejects unsaved neural and arbitrary metadata', async () => {
+        const context = { currentTime: 2, state: 'running' } as unknown as BaseAudioContext;
+        const grinder = await createGrinderNode(context, undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['metadata'],
+        });
+        postMessage.mockClear();
+        for (const key of [
+            'ampModel',
+            'cabIrSlot',
+            'routingMode',
+            'preOverdriveDrive',
+            'mic1Gain',
+            'neuralModelSlot',
+            'metadata',
+        ]) {
+            grinder.setParam(key, 1);
+        }
+        grinder.setPatch({ neuralModelMode: 'builtin' });
+        expect(rafCallbacks).toHaveLength(0);
+        expect(postMessage.mock.calls.at(-1)?.[0].command).toBe('apply-grinder-neural-patch');
+        expect(postMessage.mock.calls.slice(0, -1).map(([message]) => message.target.parameterId)).toEqual([
+            'ampModel',
+            'cabIrSlot',
+            'routingMode',
+            'preOverdriveDrive',
+            'mic1Gain',
+        ]);
+    });
+
     it('keeps non-continuous parameters on the validated message path without rebuilding the graph', async () => {
         const context = { currentTime: 2, state: 'running' } as unknown as BaseAudioContext;
         const grinder = await createGrinderNode(context, undefined, undefined, {
