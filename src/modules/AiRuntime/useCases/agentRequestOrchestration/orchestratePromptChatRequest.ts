@@ -124,6 +124,34 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
     }
 }
 
+/** Ends the request when its adopted proposal was stopped or refused while measured; true when nothing is to be persisted. */
+function settleUnpersistedAdoptedMeasurement(
+    runId: string,
+    assistantMessageId: string,
+    measurement: Awaited<ReturnType<typeof measureAdoptedRecipeProposal>>
+): boolean {
+    if (measurement.status === 'stopped') {
+        updateChatMessage(assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            content: 'Cancelled preparation of the proposal.',
+        });
+        return true;
+    }
+    if (measurement.status === 'refused') {
+        tryRecordTerminalFailure({
+            runId,
+            error: normalizeAgentFailure({ category: 'budget', source: 'provider-planning', knownDomain: true }),
+            terminal: true,
+        });
+        updateChatMessage(assistantMessageId, {
+            content: `Command not executed: ${measurement.reason}`,
+            error: measurement.reason,
+        });
+        return true;
+    }
+    return false;
+}
+
 function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissionResult {
     const runId = `agent-run-${crypto.randomUUID()}`;
     const created = agentRunLifecycle.create({
@@ -758,27 +786,10 @@ async function dispatchPromptPlan(input: {
                           compiled: compiledActionExecution,
                           state: adoptedState,
                       });
-            if (measurement?.status === 'stopped') {
-                updateChatMessage(assistantMessageId, {
-                    pendingActionConfirmationStatus: 'cancelled',
-                    content: 'Cancelled preparation of the proposal.',
-                });
-                return undefined;
-            }
-            if (measurement?.status === 'refused') {
-                tryRecordTerminalFailure({
-                    runId: admission.runId,
-                    error: normalizeAgentFailure({
-                        category: 'budget',
-                        source: 'provider-planning',
-                        knownDomain: true,
-                    }),
-                    terminal: true,
-                });
-                updateChatMessage(assistantMessageId, {
-                    content: `Command not executed: ${measurement.reason}`,
-                    error: measurement.reason,
-                });
+            if (
+                measurement !== null &&
+                settleUnpersistedAdoptedMeasurement(admission.runId, assistantMessageId, measurement)
+            ) {
                 return undefined;
             }
             const measured = measurement?.status === 'measured' ? measurement : null;
