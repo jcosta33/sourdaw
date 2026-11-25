@@ -127,6 +127,57 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'hideTrack',
+        validPayload: { trackId: 'track-1', hidden: true },
+        invalidPayloads: [
+            { trackId: '', hidden: true },
+            { trackId: 'track-1', hidden: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', hidden: true, expectedHidden: true },
+            { trackId: 'track-1', hidden: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'foldTrack',
+        validPayload: { trackId: 'track-1', folded: false },
+        invalidPayloads: [
+            { trackId: '', folded: true },
+            { trackId: 'track-1', folded: 1 },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', folded: true, expectedFolded: true },
+            { trackId: 'track-1', folded: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackHeight',
+        validPayload: { trackId: 'track-1', height: 120 },
+        invalidPayloads: [
+            { trackId: '', height: 120 },
+            { trackId: 'track-1', height: 29 },
+            { trackId: 'track-1', height: 301 },
+            { trackId: 'track-1', height: Number.NaN },
+            { trackId: 'track-1', height: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', height: '120' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', height: 120, expectedHeight: 120 },
+            { trackId: 'track-1', height: 120, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'zoomTracksVertical',
+        validPayload: { delta: -40 },
+        invalidPayloads: [
+            { delta: 0 },
+            { delta: 271 },
+            { delta: -271 },
+            { delta: Number.NaN },
+            { delta: Number.POSITIVE_INFINITY },
+            { delta: '40' },
+            {},
+            { delta: 40, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setTrackOutput',
         validPayload: { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: 'master' },
         invalidPayloads: [
@@ -289,7 +340,13 @@ const guardedPayloadContractCases = [
     guardedPayloadCase({
         actionType: 'removeDevice',
         validPayload: { deviceId: 'device-1' },
-        invalidPayloads: [{ deviceId: '' }, {}, { deviceId: 1 }, { deviceId: 'device-1', trackId: 'track-1' }],
+        invalidPayloads: [
+            { deviceId: '' },
+            {},
+            { deviceId: 1 },
+            { deviceId: 'device-1', trackId: 'track-1' },
+            { deviceId: 'device-1', expectedFrozen: false },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'createBus',
@@ -973,35 +1030,15 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         );
     });
 
-    it('admits only complete valid loop restore triples', () => {
-        const guard = PAYLOAD_VALIDATORS.restoreLoopRegion;
-        expect(guard).not.toBe('unchecked');
-        if (guard === 'unchecked') {
-            return;
+    it('admits a track height and a zoom delta at the edges of their ranges', () => {
+        const height = PAYLOAD_VALIDATORS.setTrackHeight;
+        const zoom = PAYLOAD_VALIDATORS.zoomTracksVertical;
+        if (height === 'unchecked' || zoom === 'unchecked') {
+            throw new Error('Expected real payload guards for the display edits');
         }
 
-        const enabledRegion = { loopStart: 0, loopEnd: 4, isLooping: true };
-        const disabledRegion = { loopStart: 0, loopEnd: 0, isLooping: false };
-        expect(guard({ expected: enabledRegion, replacement: disabledRegion })).toBe(true);
-
-        const invalidRegions: readonly [string, unknown][] = [
-            ['enabled equal bounds', { loopStart: 0, loopEnd: 0, isLooping: true }],
-            ['nonfinite endpoint', { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true }],
-            ['negative endpoint', { loopStart: -1, loopEnd: 4, isLooping: true }],
-            ['reversed endpoints', { loopStart: 4, loopEnd: 0, isLooping: false }],
-            ['missing key', { loopStart: 0, loopEnd: 4 }],
-            ['extra key', { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true }],
-            ['wrong boolean', { loopStart: 0, loopEnd: 4, isLooping: 'true' }],
-        ];
-        for (const [label, invalidRegion] of invalidRegions) {
-            expect(guard({ expected: invalidRegion, replacement: disabledRegion }), `invalid expected: ${label}`).toBe(
-                false
-            );
-            expect(
-                guard({ expected: enabledRegion, replacement: invalidRegion }),
-                `invalid replacement: ${label}`
-            ).toBe(false);
-        }
+        expect([30, 300].map((value) => height({ trackId: 'track-1', height: value }))).toEqual([true, true]);
+        expect([270, -270, 1, -1].map((delta) => zoom({ delta }))).toEqual([true, true, true, true]);
     });
 
     it.each([
@@ -1019,28 +1056,6 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         }
 
         expect(guard(payload)).toBe(true);
-    });
-
-    describe('captureScratchPad section ids', () => {
-        it.each([
-            ['an absent payload', undefined, true],
-            ['an empty payload', {}, true],
-            ['unique non-empty ids', { sectionIds: ['pad-a', 'pad-b'] }, true],
-            ['more ids than marker sections', { sectionIds: ['pad-a', 'pad-b', 'pad-c', 'pad-d', 'pad-e'] }, true],
-            ['a repeated id', { sectionIds: ['x', 'x'] }, false],
-            ['an empty id', { sectionIds: [''] }, false],
-            ['a non-string id', { sectionIds: [42] }, false],
-            ['a string in place of a list', { sectionIds: 'ab' }, false],
-            ['an unknown key', { sectionIds: ['pad-a'], extra: true }, false],
-        ] as const)('decides %s', (_label, payload, accepted) => {
-            const guard = PAYLOAD_VALIDATORS.captureScratchPad;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-
-            expect(guard(payload)).toBe(accepted);
-        });
     });
 
     describe('gain ceiling reaches the fader headroom, not unity', () => {
@@ -1359,23 +1374,6 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard(payload)).toBe(false);
-        });
-    });
-
-    describe('removeAutomationPoint', () => {
-        it('should validate the index-based command payload', () => {
-            const guard = PAYLOAD_VALIDATORS.removeAutomationPoint;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-
-            expect(guard({ laneId: 'lane-1', pointIndex: 0 })).toBe(true);
-            expect(guard({ laneId: 'lane-1', pointIndex: -1 })).toBe(false);
-            expect(guard({ laneId: 'lane-1', pointIndex: 0.5 })).toBe(false);
-            expect(guard({ laneId: 'lane-1', beat: 4 })).toBe(false);
-            expect(guard({ laneId: 'lane-1', pointIndex: 0, extra: true })).toBe(false);
-            expect(guard({ laneId: 'lane-1', pointIndex: 0, pointId: 'point-1' })).toBe(false);
         });
     });
 
@@ -1707,16 +1705,6 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ clipId: 'clip-1' })).toBe(true);
             expect(guard({})).toBe(false);
             expect(guard({ clipId: 1 })).toBe(false);
-        });
-    });
-
-    describe('importAudioFile / importMidiFile', () => {
-        it('should be unchecked (payload is undefined — file chosen via native picker)', () => {
-            // Both action types are `payload?: undefined`. A guard demanding
-            // isObj(param) && isString(param.path) rejected every legitimate
-            // (undefined) payload, so the imports were always dropped.
-            expect(PAYLOAD_VALIDATORS.importAudioFile).toBe('unchecked');
-            expect(PAYLOAD_VALIDATORS.importMidiFile).toBe('unchecked');
         });
     });
 

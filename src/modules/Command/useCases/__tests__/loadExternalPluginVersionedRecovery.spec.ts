@@ -49,8 +49,6 @@ describe('loadExternalPlugin versioned recovery', () => {
         vi.clearAllMocks();
         clearLoadedExternalPlugins();
         clearHandlerRegistry();
-        commandBatchPreviewPort.setRecoveryProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
         projectDocument = {};
         configureAutomergeStoragePort({
             getDoc: () => projectDocument,
@@ -84,8 +82,6 @@ describe('loadExternalPlugin versioned recovery', () => {
         configureAutomergeStoragePort(null);
         clearLoadedExternalPlugins();
         clearHandlerRegistry();
-        commandBatchPreviewPort.setRecoveryProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
     });
 
     it('rebuilds a failed attachment from project truth with the stable persisted instance id', async () => {

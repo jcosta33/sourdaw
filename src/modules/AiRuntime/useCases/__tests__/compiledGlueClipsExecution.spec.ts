@@ -223,7 +223,6 @@ describe('a compiled glueClips command at execution', () => {
 
     afterEach(() => {
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

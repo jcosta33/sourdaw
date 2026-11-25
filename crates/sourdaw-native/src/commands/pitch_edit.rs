@@ -5,12 +5,13 @@ use daw_dsp::knead::pitch_edit::{
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use hound::{WavReader, WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::events::{EventSink, EventSinkExt};
 
-use super::filesystem;
+use super::filesystem::{self, AtomicWriteError, WavWriteError};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,10 +25,10 @@ pub async fn analyze_pitch(
     analysis_id: String,
     audio_path: String,
 ) -> Result<PitchContour, String> {
-    let audio_path = filesystem::resolve_existing_file_path(&audio_path)?;
+    let audio_path =
+        filesystem::resolve_existing_file_path(&audio_path).map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
-        let mut reader =
-            WavReader::open(&audio_path).map_err(|e| format!("Failed to open WAV: {}", e))?;
+        let mut reader = WavReader::open(&audio_path).map_err(PitchEditError::OpenFailed)?;
 
         let spec = reader.spec();
         let sample_rate = spec.sample_rate as f32;
@@ -112,7 +113,7 @@ pub async fn analyze_pitch(
             },
         );
 
-        Ok(PitchContour {
+        Ok::<_, PitchEditError>(PitchContour {
             points,
             sample_rate: spec.sample_rate,
             hop_size: hop_size as u32,
@@ -121,6 +122,7 @@ pub async fn analyze_pitch(
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+    .map_err(|e| e.to_string())
 }
 
 /// The desktop commit request. The renderer sends the envelope keys in
@@ -150,11 +152,12 @@ fn default_true() -> bool {
 }
 
 pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String> {
-    let input_audio_path = filesystem::resolve_existing_file_path(&request.input_audio_path)?;
-    let output_audio_path = filesystem::resolve_writable_file_path(&request.output_audio_path)?;
+    let input_audio_path = filesystem::resolve_existing_file_path(&request.input_audio_path)
+        .map_err(|e| e.to_string())?;
+    let output_audio_path = filesystem::resolve_writable_file_path(&request.output_audio_path)
+        .map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
-        let mut reader =
-            WavReader::open(&input_audio_path).map_err(|e| format!("Failed to open WAV: {}", e))?;
+        let mut reader = WavReader::open(&input_audio_path).map_err(PitchEditError::OpenFailed)?;
 
         let spec = reader.spec();
         let sample_rate = spec.sample_rate as f32;
@@ -199,12 +202,12 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
         // Write the output file.
         write_committed_wav(&output_audio_path, spec.sample_rate, |writer| {
             write_mono_samples(writer, &out_samples)
-        })?;
-
-        Ok(())
+        })
+        .map_err(PitchEditError::WriteFailed)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+    .map_err(|e| e.to_string())
 }
 
 /// The write step of `commit_pitch_edit`: the destination — which
@@ -214,13 +217,13 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
 ///
 /// The sample-streaming closure is the seam that lets the atomicity contract
 /// be exercised with an injected failure.
-fn write_committed_wav(
+fn write_committed_wav<SampleError>(
     path: &Path,
     sample_rate: u32,
     write_samples: impl FnOnce(
         &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
-    ) -> Result<(), String>,
-) -> Result<(), String> {
+    ) -> Result<(), SampleError>,
+) -> Result<(), AtomicWriteError<WavWriteError<SampleError>>> {
     let spec = WavSpec {
         channels: 1,
         sample_rate,
@@ -236,13 +239,52 @@ fn write_committed_wav(
 fn write_mono_samples(
     writer: &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
     samples: &[f32],
-) -> Result<(), String> {
+) -> Result<(), SampleWriteError> {
     for sample in samples {
-        writer
-            .write_sample(*sample)
-            .map_err(|e| format!("Failed to write sample: {}", e))?;
+        writer.write_sample(*sample).map_err(SampleWriteError)?;
     }
     Ok(())
+}
+
+/// A committed sample the WAV writer refused.
+#[derive(Debug)]
+struct SampleWriteError(hound::Error);
+
+impl fmt::Display for SampleWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Failed to write sample: {}", self.0)
+    }
+}
+
+impl std::error::Error for SampleWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+/// Why a pitch analysis or commit failed after its paths resolved.
+#[derive(Debug)]
+enum PitchEditError {
+    OpenFailed(hound::Error),
+    WriteFailed(AtomicWriteError<WavWriteError<SampleWriteError>>),
+}
+
+impl fmt::Display for PitchEditError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OpenFailed(error) => write!(f, "Failed to open WAV: {}", error),
+            Self::WriteFailed(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for PitchEditError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::OpenFailed(error) => Some(error),
+            Self::WriteFailed(error) => Some(error),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -323,7 +365,47 @@ mod tests {
         })
         .unwrap_err();
 
-        assert_eq!(error, "injected write failure");
+        assert_eq!(error.to_string(), "injected write failure");
+        assert_eq!(
+            std::fs::read(&output.path).unwrap(),
+            bytes_before,
+            "a failed write must leave the pre-existing output byte-for-byte intact"
+        );
+        assert!(
+            leftover_temp_files(&output.path).is_empty(),
+            "the temp file must be removed after a failed write"
+        );
+    }
+
+    #[test]
+    fn pitch_edit_refusals_keep_their_text() {
+        assert_eq!(
+            SampleWriteError(hound::Error::TooWide).to_string(),
+            format!("Failed to write sample: {}", hound::Error::TooWide)
+        );
+        assert_eq!(
+            PitchEditError::OpenFailed(hound::Error::Unsupported).to_string(),
+            format!("Failed to open WAV: {}", hound::Error::Unsupported)
+        );
+    }
+
+    #[test]
+    fn a_mid_write_failure_reports_the_writers_own_text() {
+        let output = TempWav::new("atomic-write-failure-text");
+        seed_previous_render(&output.path);
+        let bytes_before = std::fs::read(&output.path).unwrap();
+
+        let error = write_committed_wav(&output.path, 44_100, |writer| {
+            write_mono_samples(writer, &[0.5f32])?;
+            Err(SampleWriteError(hound::Error::TooWide))
+        })
+        .map_err(PitchEditError::WriteFailed)
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Failed to write sample: {}", hound::Error::TooWide)
+        );
         assert_eq!(
             std::fs::read(&output.path).unwrap(),
             bytes_before,

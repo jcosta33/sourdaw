@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, toLevelDb } from '#/utils/audioLevelLaw';
 
@@ -178,12 +179,16 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context' | 'projectPunchRegion'> & {
+type BridgeInput = Omit<
+    Parameters<typeof bridgeLlmToolCalls>[0],
+    'acceptsSidechainInput' | 'context' | 'projectPunchRegion'
+> & {
     context?: ProjectContext;
 };
 
 function bridge({ calls, context = projectContext, markerSignatures, sectionSignatures }: BridgeInput) {
     return bridgeLlmToolCalls({
+        acceptsSidechainInput,
         calls,
         context,
         markerSignatures,

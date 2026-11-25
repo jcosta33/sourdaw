@@ -27,14 +27,17 @@ export type KneadAppAction =
            *  (contour plus the user's edited blobs) the commit dropped. Restoring the
            *  pointers alone would leave the clip un-analysed and the user's blob edits
            *  gone — a lossy undo. Emitted only by the `commitPitchEdit` handler's
-           *  `describe()`. Every field past `clipId` is optional: the commit skips the
-           *  buffer repoint on the native render path, and a clip can legitimately have
-           *  had no blobs or no contour. */
+           *  `describe()`. Every field past `clipId` is optional: a clip can legitimately
+           *  have had no blobs or no contour, and entries recorded before the buffer
+           *  field could say "absent" carry no value for it. */
           type: 'restoreClipFileId';
           payload: {
               clipId: string;
               fileId: string;
-              audioBufferId?: string;
+              /** A string restores that buffer; `null` removes the clip's buffer id
+               *  (the pre-edit clip had none); absent leaves it untouched, which is
+               *  how inverses recorded before `null` existed still behave. */
+              audioBufferId?: string | null;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };

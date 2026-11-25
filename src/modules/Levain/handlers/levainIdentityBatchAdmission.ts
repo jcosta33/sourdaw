@@ -1,19 +1,7 @@
-import { type AppAction, type AppActionType, type HandlerValidationContext } from '#/utils/handlerContract';
+import { changesTrackOutsideDevicePlan } from '#/modules/Arrangement/useCases';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type SetLevainIdentityAction } from '../events/levainAppActions';
-
-const unplannedTrackChanges = new Set<AppActionType>([
-    'freezeTrack',
-    'unfreezeTrack',
-    'restoreFreezeState',
-    'flattenTrack',
-    'bounceInPlace',
-    'loadPreset',
-    'restorePresetDeviceChain',
-    'removeTrack',
-    'restoreTrack',
-    'discardCreatedTrack',
-]);
 
 function replacesDevice(action: AppAction, deviceId: string): boolean {
     if (action.type === 'restoreDevice') {
@@ -43,11 +31,6 @@ export function admitsLevainIdentityBatch(
         if (sibling.type === 'discardImportedStemSet') {
             return sibling.payload.folderId !== trackId && !sibling.payload.stemTrackIds.includes(trackId);
         }
-        return !(
-            unplannedTrackChanges.has(sibling.type) &&
-            sibling.payload &&
-            'trackId' in sibling.payload &&
-            sibling.payload.trackId === trackId
-        );
+        return !changesTrackOutsideDevicePlan(sibling, trackId);
     });
 }

@@ -34,30 +34,56 @@ const mocks = vi.hoisted(() => ({
     soloMode: 'sip',
 }));
 
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    activateExternalPlugin: mocks.activateExternalPlugin,
-}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        activateExternalPlugin: mocks.activateExternalPlugin,
+        isFaustInstrumentModule: actual.isFaustInstrumentModule,
+        isFaustModule: actual.isFaustModule,
+        compileFaustDSP: actual.compileFaustDSP,
+        createFaustNode: actual.createFaustNode,
+        getFaustModuleLatencyMs: actual.getFaustModuleLatencyMs,
+        setPluginBypass: actual.setPluginBypass,
+        setPluginParameter: actual.setPluginParameter,
+        markExternalPluginEngineAttached: actual.markExternalPluginEngineAttached,
+        forgetRetiredPluginInstances: actual.forgetRetiredPluginInstances,
+        readExternalPluginStatesBeforeEngineRetire: actual.readExternalPluginStatesBeforeEngineRetire,
+        registerBuiltinFaustDSP: actual.registerBuiltinFaustDSP,
+    };
+});
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
-    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
-    ensureTrackStrip: mocks.ensureTrackStrip,
-    setTrackOutput: mocks.setTrackOutput,
-    setTrackGain: mocks.setTrackGain,
-    setTrackPan: mocks.setTrackPan,
-    setTrackMute: mocks.setTrackMute,
-    setTrackSoloGate: mocks.setTrackSoloGate,
-    addDeviceToStrip: mocks.addDeviceToStrip,
-    updateDeviceParam: mocks.updateDeviceParam,
-    updateDeviceBypass: mocks.updateDeviceBypass,
-    resolveToasterPadBinding: mocks.resolveToasterPadBinding,
-    reportLatency: mocks.reportLatency,
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
+        getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+        initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
+        ensureTrackStrip: mocks.ensureTrackStrip,
+        setTrackOutput: mocks.setTrackOutput,
+        setTrackGain: mocks.setTrackGain,
+        setTrackPan: mocks.setTrackPan,
+        setTrackMute: mocks.setTrackMute,
+        setTrackSoloGate: mocks.setTrackSoloGate,
+        addDeviceToStrip: mocks.addDeviceToStrip,
+        updateDeviceParam: mocks.updateDeviceParam,
+        updateDeviceBypass: mocks.updateDeviceBypass,
+        resolveToasterPadBinding: mocks.resolveToasterPadBinding,
+        reportLatency: mocks.reportLatency,
+        createRuntimeGraphTopologyFingerprint: vi.fn(),
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isDrumDevice: actual.isDrumDevice,
+    };
+});
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: () => 'project-revision-1',
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        captureProjectRevision: () => 'project-revision-1',
+        captureProjectRootIdentity: actual.captureProjectRootIdentity,
+        getCrdtDoc: actual.getCrdtDoc,
+    };
+});
 
 vi.mock('#/modules/Routing/useCases', () => ({
     setSend: mocks.setSend,

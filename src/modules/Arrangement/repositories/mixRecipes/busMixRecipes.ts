@@ -77,6 +77,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 10, maximum: 20 },
@@ -89,10 +90,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group is the only low-frequency source in the mix.',
             'Skip when one source in the group is loud enough that the compressor only ever tracks that one.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'decrease' },
-            { metric: 'truePeak', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Summing several sources stacks their low-frequency shoulders, so trimming that region before compression stops it dominating the detector. The shorter release then shortens the decay of the group as a whole, which is what tightness means at bus level.',
     },
     {
@@ -105,6 +103,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'edit',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
                     { paramId: 'comp-release', minimum: 60, maximum: 120 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
@@ -119,10 +118,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the existing compressor is doing the peak control the chain depends on.',
             'Skip when the sources feeding the bus have already been individually limited.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
         source: 'A second compressor on a bus that already has one usually costs more than it gains, so the punch comes from lengthening the existing attack past the transient and shortening its release. Stacking a slow stage on a fast one instead produces two overlapping envelopes and audible pumping.',
     },
     {
@@ -306,6 +302,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -321,10 +318,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when one source dominates the detector and pulls the whole group down with it.',
             'Skip when a compressor already sits on this bus; retune that one instead.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'truePeak', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Glue is the audible consequence of every source on a bus sharing one slow gain envelope, which needs a soft knee and a release long enough to span a bar rather than a beat. Two or three decibels of reduction is the working range; past that the envelope itself becomes the thing you hear.',
     },
     {
@@ -412,6 +406,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },

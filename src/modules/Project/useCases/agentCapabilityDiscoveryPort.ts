@@ -3,8 +3,8 @@
  *
  * Capabilities are published by AiRuntime, which imports this module, so the
  * catalog arrives through a provider the composition root registers instead of
- * an import that would close a cycle. With no provider registered there is no
- * catalog to project, and discovery reports that rather than an empty one.
+ * an import that would close a cycle. Reading before registration throws: an
+ * empty or absent catalog would tell an agent no capability exists.
  */
 
 type AgentCapabilityCatalogEntry = {
@@ -23,13 +23,18 @@ type AgentCapabilityCatalog = {
 
 type AgentCapabilityCatalogProvider = () => AgentCapabilityCatalog;
 
-let provider: AgentCapabilityCatalogProvider | null = null;
+let registeredProvider: AgentCapabilityCatalogProvider | null = null;
 
 export const agentCapabilityDiscoveryPort = {
-    read(): AgentCapabilityCatalog | null {
-        return provider?.() ?? null;
+    read(): AgentCapabilityCatalog {
+        if (registeredProvider === null) {
+            throw new Error(
+                'agentCapabilityDiscoveryPort.read: the capability catalog is not registered; call agentCapabilityDiscoveryPort.setProvider() from #/app/bootstrap (bootstrap does this)'
+            );
+        }
+        return registeredProvider();
     },
-    setProvider(nextProvider: AgentCapabilityCatalogProvider | null): void {
-        provider = nextProvider;
+    setProvider(nextProvider: AgentCapabilityCatalogProvider): void {
+        registeredProvider = nextProvider;
     },
 };

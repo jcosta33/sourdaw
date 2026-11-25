@@ -1,4 +1,4 @@
-import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { findPadOutputHost, type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDeviceWriteTarget';
 import { type getAllTracks } from '../getAllTracks';
@@ -21,7 +21,7 @@ export function syncToasterPadParam(trackId: string, paramName: string, value: n
         return;
     }
 
-    const toasterDevice = parent.devices.find((data) => data.type === 'toaster');
+    const toasterDevice = findPadOutputHost(parent.devices);
     if (!toasterDevice) {
         return;
     }

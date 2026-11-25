@@ -1,5 +1,6 @@
 pub mod latency_watcher;
 pub mod native_bridge;
+pub mod plugin_editor_asks;
 pub mod plugin_folder_grants;
 pub mod plugin_host_requests;
 pub mod plugin_parameter_events;
@@ -13,9 +14,9 @@ pub mod tail_watcher;
 pub mod ui_thread;
 
 use crate::host::native_bridge::SharedHostedPlugin;
-use crate::state::EnginePluginInstanceData;
+use crate::state::{EnginePluginInstanceData, PluginInstanceData};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 
 /// Look one engine-owned runtime up for a watcher thread woken by that instance.
 ///
@@ -72,6 +73,38 @@ pub(crate) fn all_engine_runtimes(
         .collect()
 }
 
+/// The command-owned store: instances loaded before the engine ran, dormant
+/// until its first graph batch attaches them.
+pub(crate) type CommandPlugins = Arc<Mutex<HashMap<String, PluginInstanceData>>>;
+
+/// Every runtime an editor can be open on, engine-owned or dormant, for an
+/// editor drain whose wake names no instance.
+///
+/// The command-owned store is only tried. A worker may hold it while it waits
+/// for the shell's UI thread, and the tick this serves also carries every
+/// plugin's knob edits, so a busy store raises `reraise` — the visit's own hint
+/// — and is visited on the next tick instead of being waited on.
+pub(crate) fn all_editor_runtimes(
+    engine_plugins: &Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>,
+    command_plugins: &CommandPlugins,
+    context: &str,
+    reraise: fn(),
+) -> Vec<(String, Arc<SharedHostedPlugin>)> {
+    let mut runtimes = all_engine_runtimes(engine_plugins, context);
+    match command_plugins.try_lock() {
+        Ok(dormant) => runtimes.extend(
+            dormant
+                .iter()
+                .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.plugin))),
+        ),
+        Err(TryLockError::WouldBlock) => reraise(),
+        Err(TryLockError::Poisoned(_)) => {
+            eprintln!("[Plugin] {} failed to lock plugins", context);
+        }
+    }
+    runtimes
+}
+
 /// Raise a hint again for an instance a visit could not get into.
 ///
 /// Only for one still accepting public control. That is the difference between a
@@ -85,7 +118,7 @@ pub(crate) fn retry_unreached_instance(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     context: &str,
-    error: &str,
+    error: &dyn std::fmt::Display,
     reraise: fn(),
 ) {
     if runtime.ensure_public_control_allowed().is_err() {
@@ -97,4 +130,34 @@ pub(crate) fn retry_unreached_instance(
         context, instance_id, error
     );
     reraise();
+}
+
+/// The process-wide hints every watcher reads are shared by every test in the
+/// binary, so a test that raises one, sweeps on one, or asserts one is
+/// absent takes this first, and starts from a slate with none raised.
+#[cfg(test)]
+pub(crate) mod hint_test_support {
+    use daw_plugin_host::{
+        take_pending_editor_resize_signal, take_pending_latency_requery_signal,
+        take_pending_main_thread_callback_signal, take_pending_parameter_events_signal,
+        take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
+        take_pending_tail_change_signal,
+    };
+    use std::sync::{Mutex, MutexGuard};
+
+    static HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(crate) fn guard() -> MutexGuard<'static, ()> {
+        let guard = HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_pending_main_thread_callback_signal();
+        take_pending_parameter_events_signal();
+        take_pending_parameter_flush_signal();
+        take_pending_tail_change_signal();
+        take_pending_process_refusal_signal();
+        take_pending_editor_resize_signal();
+        take_pending_latency_requery_signal();
+        guard
+    }
 }

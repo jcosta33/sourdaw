@@ -1,4 +1,4 @@
-import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
+import { isBuiltinSynthDevice, isDrumDevice } from '../../models/NoteInputKindByDeviceType';
 
 /**
  * Device types that legitimately contribute no node to the offline device
@@ -13,8 +13,8 @@ import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
  * bare `drum-kit` arm, which `scheduleTrackClips` resolves through
  * `getDrumKitDefByIndex` and renders correctly. Two hand-maintained lists that
  * must agree is the defect, not the row that was missing, so the drum and synth
- * families now come straight from the shared matchers in
- * `#/utils/deviceTypeMatching` — the same functions the live and offline
+ * families now come straight from the note-input table in
+ * `models/NoteInputKindByDeviceType.ts` — the same answers the live and offline
  * schedulers select on.
  *
  * Anything that is *not* one of those families needs an individual entry below,
@@ -53,5 +53,5 @@ export function isNodelessOfflineDeviceType(deviceType: string): boolean {
     if (isDrumDevice(deviceType)) {
         return true;
     }
-    return DECLARED_NODELESS_OFFLINE_RENDERERS[deviceType] !== undefined;
+    return Object.hasOwn(DECLARED_NODELESS_OFFLINE_RENDERERS, deviceType);
 }

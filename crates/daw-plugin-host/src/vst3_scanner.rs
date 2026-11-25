@@ -11,9 +11,9 @@ use crate::scanner::{
     ScannedInstanceCapabilities, ScannedParameterDescriptor,
 };
 use crate::vst3_class_id::normalized_class_id;
-use crate::vst3_module::{factory_info, Vst3Module};
+use crate::vst3_module::{factory_info, ModuleError, Vst3Module};
 use crate::vst3_module_info::{parse_module_info, ModuleInfo};
-use crate::vst3_wrapper::{format_class_id, read_parameters, Vst3Instance};
+use crate::vst3_wrapper::{format_class_id, read_parameters, Vst3Error, Vst3Instance};
 use std::path::Path;
 use vst3::ComPtr;
 use vst3::Steinberg::Vst::{BusDirections_, BusInfo, IComponentTrait, MediaTypes_};
@@ -31,6 +31,41 @@ const MAX_SCANNED_AUDIO_BUSES: int32 = 64;
 
 /// The category string VST3 gives an audio processing class.
 const AUDIO_MODULE_CLASS: &str = "Audio Module Class";
+
+/// Why a VST3 scan pass could not describe or inspect a bundle.
+#[derive(Debug)]
+pub enum Vst3ScanError {
+    /// The bundle's module could not be opened.
+    Module(ModuleError),
+    /// The factory lists no audio module class.
+    NoAudioModuleClass,
+    /// The described class could not be instantiated.
+    Instance(Vst3Error),
+}
+
+impl std::fmt::Display for Vst3ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Module(error) => write!(f, "{error}"),
+            Self::NoAudioModuleClass => f.write_str("VST3 bundle declares no audio module class"),
+            Self::Instance(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for Vst3ScanError {}
+
+impl From<ModuleError> for Vst3ScanError {
+    fn from(error: ModuleError) -> Self {
+        Self::Module(error)
+    }
+}
+
+impl From<Vst3Error> for Vst3ScanError {
+    fn from(error: Vst3Error) -> Self {
+        Self::Instance(error)
+    }
+}
 
 /// What a VST3 bundle says about one of its plugin classes.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -103,7 +138,7 @@ pub fn category_from_vst3_sub_categories(sub_categories: &[String]) -> String {
 ///
 /// # Safety
 /// May load and call into a native VST3 module. Bounded scan worker only.
-pub fn extract_vst3_metadata(path: &Path) -> Result<Vst3DescriptorMetadata, String> {
+pub fn extract_vst3_metadata(path: &Path) -> Result<Vst3DescriptorMetadata, Vst3ScanError> {
     if let Some(metadata) = read_metadata_from_module_info(path) {
         return Ok(metadata);
     }
@@ -160,10 +195,9 @@ fn first_audio_module_class(info: &ModuleInfo) -> Option<Vst3DescriptorMetadata>
     })
 }
 
-fn read_metadata_from_module(bundle: &Path) -> Result<Vst3DescriptorMetadata, String> {
+fn read_metadata_from_module(bundle: &Path) -> Result<Vst3DescriptorMetadata, Vst3ScanError> {
     let module = Vst3Module::open(bundle)?;
-    first_audio_module_class_of_factory(module.factory())
-        .ok_or_else(|| "VST3 bundle declares no audio module class".to_string())
+    first_audio_module_class_of_factory(module.factory()).ok_or(Vst3ScanError::NoAudioModuleClass)
 }
 
 /// The first audio module class a factory lists, read through `getClassInfo2`.
@@ -217,7 +251,7 @@ fn first_audio_module_class_of_factory(
 /// # Safety
 /// Calls third-party VST3 entry points and must only run in the bounded scan
 /// worker.
-pub fn extract_vst3_instance_metadata(path: &Path) -> Result<ScannedInstance, String> {
+pub fn extract_vst3_instance_metadata(path: &Path) -> Result<ScannedInstance, Vst3ScanError> {
     let descriptor = extract_vst3_metadata(path)?;
     let instance = Vst3Instance::open(path, &descriptor.class_id)?;
 
@@ -513,6 +547,23 @@ mod tests {
                 .expect("one class is declared")
                 .class_id,
             "ABCDEF0123456789ABCDEF0123456789"
+        );
+    }
+
+    #[test]
+    fn a_module_refusal_keeps_its_cause_and_its_text() {
+        let refusal = Vst3ScanError::from(ModuleError::NoUsableName {
+            bundle: std::path::PathBuf::from("/"),
+        });
+
+        assert!(matches!(
+            refusal,
+            Vst3ScanError::Module(ModuleError::NoUsableName { .. })
+        ));
+        assert_eq!(refusal.to_string(), "VST3 bundle has no usable name: /");
+        assert_eq!(
+            Vst3ScanError::NoAudioModuleClass.to_string(),
+            "VST3 bundle declares no audio module class"
         );
     }
 }

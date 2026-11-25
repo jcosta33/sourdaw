@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { RUNTIME_ACTION_TYPES, type RuntimeAction } from '../RuntimeAction';
+import { isRuntimeActionType, RUNTIME_ACTION_TYPES, type RuntimeAction } from '../RuntimeAction';
 
 type RuntimePayload<ActionType extends RuntimeAction['type']> =
     Extract<RuntimeAction, { type: ActionType }> extends { payload: infer Payload } ? Payload : never;
@@ -9,7 +9,336 @@ type PayloadHasKey<
     Key extends PropertyKey,
 > = Key extends keyof RuntimePayload<ActionType> ? true : false;
 
+// A literal copy of the vocabulary as it stood before the undispatched actions below were retired (#6473).
+const PREVIOUS_RUNTIME_ACTION_TYPES = [
+    'importStemSet',
+    'addTrack',
+    'removeTrack',
+    'removeAllTracks',
+    'renameTrack',
+    'selectTrack',
+    'muteTrack',
+    'soloTrack',
+    'selectTake',
+    'setSoloSafe',
+    'toggleSoloSafe',
+    'armTrack',
+    'freezeTrack',
+    'unfreezeTrack',
+    'flattenTrack',
+    'bounceInPlace',
+    'duplicateTrack',
+    'reorderTrack',
+    'setTrackGain',
+    'setTrackPan',
+    'setTrackColor',
+    'setTempo',
+    'setTimeSignature',
+    'setProductionBrief',
+    'setPlayback',
+    'togglePlayback',
+    'stopPlayback',
+    'toggleRecording',
+    'setMasterGain',
+    'toggleLoop',
+    'toggleMetronome',
+    'setMetronomeVolume',
+    'setLoopRegion',
+    'setLoopEnabled',
+    'setMetronomeEnabled',
+    'restoreLoopRegion',
+    'addClip',
+    'drawClip',
+    'duplicateClipAt',
+    'moveClips',
+    'moveClip',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'removeClip',
+    'splitClip',
+    'trimClipStart',
+    'trimClipEnd',
+    'setClipFade',
+    'copyClip',
+    'cutClip',
+    'pasteClip',
+    'addDevice',
+    'bypassDevice',
+    'removeDevice',
+    'setDeviceParameter',
+    'createBus',
+    'createFolder',
+    'setSend',
+    'setWorkspaceMode',
+    'openPreferencesDialog',
+    'openMixer',
+    'closeMixer',
+    'toggleSidebar',
+    'toggleInspector',
+    'toggleChatPanel',
+    'setEditingTool',
+    'setMarqueeSelection',
+    'addMarker',
+    'removeMarker',
+    'setMarkerColor',
+    'addSection',
+    'removeSection',
+    'renameSection',
+    'addAutomationLane',
+    'automateSendRange',
+    'automateSendRanges',
+    'automateTrackGainRange',
+    'automateParameterRange',
+    'renderProjectSections',
+    'addAutomationPoint',
+    'setAutomationLaneEnabled',
+    'quantizeNotes',
+    'removeShortMidiOverlaps',
+    'createDrumPreviewBranches',
+    'copyMidiArticulations',
+    'quantizeNoteLengths',
+    'transposeNotes',
+    'humanizeNotes',
+    'invertNotes',
+    'retrogradeNotes',
+    'scaleVelocities',
+    'scaleAllVelocities',
+    'setAllVelocities',
+    'importMidiFile',
+    'normalizeClip',
+    'reverseClip',
+    'glueClips',
+    'nudgeClip',
+    'slipClipContent',
+    'crossfadeClips',
+    'setClipGain',
+    'setClipColor',
+    'lockClip',
+    'renameClip',
+    'consolidateSelection',
+    'bounceSelection',
+    'seekPlayhead',
+    'setPunchIn',
+    'setPunchOut',
+    'setPunchEnabled',
+    'toggleCountIn',
+    'setCountInBars',
+    'togglePreRoll',
+    'setPreRollBars',
+    'addTimeSignatureChange',
+    'removeTimeSignatureChange',
+    'setTrackOutput',
+    'addSend',
+    'removeSend',
+    'removeAutomationPoint',
+    'setAutomationMode',
+    'hideTrack',
+    'disableTrack',
+    'setTrackHeight',
+    'setSnapValue',
+    'zoomToFit',
+    'zoomToSelection',
+    'exportProject',
+    'saveProject',
+    'newProject',
+    'importAudioFile',
+    'exportMidi',
+    'foldTrack',
+    'groupTracks',
+    'ungroupTracks',
+    'scaleAutomation',
+    'stretchAutomation',
+    'invertAutomation',
+    'reverseAutomation',
+    'thinAutomation',
+    'quantizeAutomation',
+    'loadPreset',
+    'savePreset',
+    'generateDrumPattern',
+    'generateMelody',
+    'generateChordProgression',
+    'setClipLoop',
+    'setClipLoopLength',
+    'extractGroove',
+    'applyGroove',
+    'setClipStretchMode',
+    'setClipStretchRatio',
+    'fitClipToBeats',
+    'analyzeMix',
+    'autoFixMix',
+    'enableMpe',
+    'disableMpe',
+    'getLatencyReport',
+    'createCollabSession',
+    'joinCollabSession',
+    'leaveCollabSession',
+    'scanPlugins',
+    'loadExternalPlugin',
+    'audioToMidi',
+    'muteClip',
+    'clearSolos',
+    'setTrackNotes',
+    'setTrackInput',
+    'zoomTracksVertical',
+    'deleteTime',
+    'insertTime',
+    'duplicateTimeRange',
+    'stripSilence',
+    'detectTempo',
+    'detectKey',
+    'consolidateAllTracks',
+    'arpeggiate',
+    'addSidechainRoute',
+    'removeSidechainRoute',
+    'bounceToNewTrack',
+    'createTrackAlternative',
+    'switchTrackAlternative',
+    'renameTrackAlternative',
+    'deleteTrackAlternative',
+    'addChordEvent',
+    'addCvOutput',
+    'addNotes',
+    'addYeastProcessor',
+    'assignToVca',
+    'autoOrganizeProject',
+    'captureScratchPad',
+    'clearAllMidiMappings',
+    'clearChordTrack',
+    'clearMidiOutput',
+    'clearScratchPad',
+    'commitScratchPad',
+    'compareToReference',
+    'completeMidi',
+    'connectPush',
+    'createAdjustmentLayer',
+    'addAdjustmentRegion',
+    'createCompGroup',
+    'createPatternInstance',
+    'createProjectVersion',
+    'createVcaGroup',
+    'createVersionBranch',
+    'deleteMacro',
+    'deleteTrackTemplate',
+    'detachPatternInstance',
+    'detectSongStructure',
+    'detectTransients',
+    'disconnectPush',
+    'enableWarping',
+    'exportDawProject',
+    'generateAllTransitions',
+    'generateBassline',
+    'generateFill',
+    'getMentorTips',
+    'labelUndoBranch',
+    'loadRaveModel',
+    'loadTrackTemplate',
+    'nextSetlistItem',
+    'playMacro',
+    'previousSetlistItem',
+    'quantizeTransients',
+    'redo',
+    'removeChordEvent',
+    'removeFromVca',
+    'removeYeastProcessor',
+    'reorderYeastProcessor',
+    'restoreAutomationLanePoints',
+    'restoreClip',
+    'restoreProjectVersion',
+    'restoreTrack',
+    'saveTrackTemplate',
+    'searchSamples',
+    'setControlSurface',
+    'setMidiOutput',
+    'setRaveBlend',
+    'setVcaGain',
+    'setWarpAlgorithm',
+    'setWarpPitchShift',
+    'setYeastArpPattern',
+    'setYeastProcessorBypass',
+    'setYeastProcessorParam',
+    'startMacroRecording',
+    'stopMacroRecording',
+    'switchMonitor',
+    'toggleChordTrack',
+    'toggleControlRoomDim',
+    'toggleControlRoomMono',
+    'toggleLoopRecord',
+    'toggleNodeView',
+    'togglePunchRecording',
+    'toggleScratchPad',
+    'toggleUndoTree',
+    'triggerScene',
+    'undo',
+    'variationMidi',
+] as const;
+
+// Actions no AI runtime path dispatches. Their AppAction handlers stay; only the runtime vocabulary dropped them.
+const RETIRED_RUNTIME_ACTION_TYPES = [
+    'removeAllTracks',
+    'setTrackInput',
+    'autoOrganizeProject',
+    'setWarpAlgorithm',
+    'setWarpPitchShift',
+    'generateBassline',
+    'completeMidi',
+    'variationMidi',
+    'generateFill',
+    'generateAllTransitions',
+    'captureScratchPad',
+    'clearScratchPad',
+    'commitScratchPad',
+    'removeAutomationPoint',
+    'loadPreset',
+    'loadExternalPlugin',
+    'addCvOutput',
+    'loadRaveModel',
+    'setRaveBlend',
+    'clearAllMidiMappings',
+    'importAudioFile',
+    'importMidiFile',
+    'createProjectVersion',
+    'createVersionBranch',
+    'restoreProjectVersion',
+    'restoreLoopRegion',
+    'restoreClip',
+    'restoreTrack',
+    'restoreAutomationLanePoints',
+    'compareToReference',
+    'getMentorTips',
+    'searchSamples',
+    'detectSongStructure',
+    'detectTransients',
+] as const;
+
 describe('RuntimeAction', () => {
+    it('lists the previous vocabulary less the retired types, in its order', () => {
+        const retired: ReadonlySet<string> = new Set(RETIRED_RUNTIME_ACTION_TYPES);
+
+        expect(RUNTIME_ACTION_TYPES).toEqual(PREVIOUS_RUNTIME_ACTION_TYPES.filter((type) => !retired.has(type)));
+    });
+
+    it('retires only types the previous vocabulary held', () => {
+        const previous: ReadonlySet<string> = new Set(PREVIOUS_RUNTIME_ACTION_TYPES);
+
+        expect(RETIRED_RUNTIME_ACTION_TYPES.filter((type) => !previous.has(type))).toEqual([]);
+        expect(new Set(RETIRED_RUNTIME_ACTION_TYPES).size).toBe(RETIRED_RUNTIME_ACTION_TYPES.length);
+    });
+
+    it.each(RETIRED_RUNTIME_ACTION_TYPES)('rejects the retired %s', (type) => {
+        expect(isRuntimeActionType(type)).toBe(false);
+    });
+
+    it.each([...PREVIOUS_RUNTIME_ACTION_TYPES.slice(0, 3), 'undo', 'setTempo'])('admits %s', (type) => {
+        expect(isRuntimeActionType(type)).toBe(true);
+    });
+
+    it.each(['replayGeneratedMidi', 'stemSeparate', 'constructor', 'toString', '__proto__', 'notAnAction'])(
+        'rejects %s',
+        (type) => {
+            expect(isRuntimeActionType(type)).toBe(false);
+        }
+    );
+
     it('admits the exact duplicate-free compatibility action census', () => {
         let digest = 2_166_136_261;
         for (const actionType of RUNTIME_ACTION_TYPES) {
@@ -18,14 +347,14 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(259);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(225);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(2_644_134_533);
+        expect(digest >>> 0).toBe(2_548_119_355);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -39,7 +368,6 @@ describe('RuntimeAction', () => {
                 payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' },
             },
             { type: 'addAutomationPoint', payload: { laneId: 'lane-1', beat: 4, value: 0.5 } },
-            { type: 'removeAutomationPoint', payload: { laneId: 'lane-1', pointIndex: 0 } },
             { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-1', enabled: false } },
             { type: 'setAutomationMode', payload: { trackId: 'track-1', mode: 'touch' } },
             { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
@@ -92,7 +420,6 @@ describe('RuntimeAction', () => {
             'duplicateClip',
             'addAutomationLane',
             'addAutomationPoint',
-            'removeAutomationPoint',
             'setAutomationLaneEnabled',
             'setAutomationMode',
             'addSidechainRoute',
@@ -124,7 +451,6 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'addTrack', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
-        expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<true>();

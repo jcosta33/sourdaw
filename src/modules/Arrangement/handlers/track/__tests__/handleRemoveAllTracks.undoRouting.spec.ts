@@ -66,7 +66,10 @@ vi.mock('../../../stores/clipSatelliteState', () => ({
     readClipSatelliteEntry: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({ rearmCommittedTrackInputMonitoring: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    clearReportedLatency: vi.fn(),
+    rearmCommittedTrackInputMonitoring: vi.fn(),
+}));
 vi.mock('#/modules/Automation/useCases', () => ({
     restoreAutomationLanes: vi.fn(),
     restoreTrackModulationReferences: vi.fn(),

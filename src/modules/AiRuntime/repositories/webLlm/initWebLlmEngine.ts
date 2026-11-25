@@ -3,14 +3,14 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { isLocalModelRefusalError, LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
-import { type LlmEngineStatus, llmStatusStore } from '../../stores/llmStatusStore';
+import { answeringStatus } from '../../stores/answeringStatus';
+import { type LlmEngineStatus } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
 import { getWebLlmRequiredFeatures } from './getWebLlmRequiredFeatures';
 import { readWebGpuAdapterFeatures } from './readWebGpuAdapterFeatures';
 import { retireWebLlmEngine } from './retireWebLlmEngine';
-import { unloadWebLlmEngine } from './unloadWebLlmEngine';
 import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
 import { getWebLlmArtifactManifestModel } from './webLlmArtifactManifest';
 
@@ -25,7 +25,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             if (!MODEL_RELEASE_ADMISSION.webLlm) {
                 return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
             }
-            const targetModel = modelId ?? engineState.activeModelId;
+            // A request that names no model is answered by the loaded engine and leaves a switch
+            // in flight alone. With nothing installed it joins the attempt loading.
+            const inFlightModel = engineState.initSignal?.aborted ? null : engineState.initModelId;
+            const unnamedTarget = engineState.engine ? null : inFlightModel;
+            const targetModel = modelId ?? unnamedTarget ?? engineState.activeModelId;
             let targetArtifactSetDigest: string;
             try {
                 targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
@@ -45,16 +49,21 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 targetModel === engineState.activeModelId &&
                 targetArtifactSetDigest === engineState.activeArtifactSetDigest
             ) {
+                // Naming the loaded model withdraws a switch still in flight for another one.
+                if (modelId !== undefined && engineState.initPromise) {
+                    engineState.initController?.abort(
+                        new DOMException('WebLLM initialization superseded', 'AbortError')
+                    );
+                }
+                // A refused load leaves its error showing while this one answers, and an aborted one its loading
+                // text until its own rejection republishes the engine's status; a switch still loading owns the
+                // status.
+                const shown = answeringStatus.readEngineStatus()?.state;
+                const switchLoading = engineState.initPromise !== null && !engineState.initSignal?.aborted;
+                if (shown === 'error' || (shown === 'loading' && !switchLoading)) {
+                    answeringStatus.publishEngineStatus({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                }
                 return Promise.resolve(engineState.engine);
-            }
-
-            // If switching models, unload the current one first
-            if (
-                engineState.engine &&
-                (targetModel !== engineState.activeModelId ||
-                    targetArtifactSetDigest !== engineState.activeArtifactSetDigest)
-            ) {
-                unloadWebLlmEngine();
             }
 
             if (
@@ -71,7 +80,8 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
 
             if (engineState.initPromise) {
                 engineState.initController?.abort(new DOMException('WebLLM initialization superseded', 'AbortError'));
-                if (engineState.worker) {
+                // While the previous engine is installed, the worker is its, not the attempt's.
+                if (engineState.worker && !engineState.engine) {
                     engineState.worker.terminate();
                     engineState.worker = null;
                 }
@@ -89,7 +99,6 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 );
             }
 
-            engineState.activeModelId = targetModel;
             const attemptId = crypto.randomUUID();
             const attemptController = new AbortController();
             const attemptSignal = attemptController.signal;
@@ -102,7 +111,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
 
             const attemptPromise = (async () => {
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
+                    answeringStatus.publishEngineStatus({
+                        state: 'loading',
+                        progress: 0,
+                        text: 'Loading AI engine...',
+                    });
                 }
 
                 // Before admission, so a machine that cannot run the model neither fetches nor
@@ -119,6 +132,12 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
                         attemptSignal.throwIfAborted();
 
+                        // Two models must not hold GPU memory at once, so the previous engine goes here,
+                        // just before the new worker. Adapter and admission refusals, and an abort before
+                        // this point, keep it; a creation failure after it leaves no engine, and
+                        // activeModelId keeps its previous target: the last loaded model, or the default
+                        // when none has loaded.
+                        retirePreviousWebLlmEngine();
                         const worker = new Worker(new URL('../../workers/llmWorker.ts', import.meta.url), {
                             type: 'module',
                         });
@@ -147,7 +166,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                                                 if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
                                                     return;
                                                 }
-                                                llmStatusStore.set({
+                                                answeringStatus.publishEngineStatus({
                                                     state: 'loading',
                                                     progress: report.progress,
                                                     text: report.text,
@@ -176,7 +195,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
                             return;
                         }
-                        llmStatusStore.set({
+                        answeringStatus.publishEngineStatus({
                             state: 'loading',
                             progress: report.progress,
                             text: report.text,
@@ -190,10 +209,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 }
 
                 engineState.engine = initializedEngine;
+                engineState.activeModelId = targetModel;
                 engineState.activeArtifactSetDigest = admission.artifactSetDigest;
                 installWorkerRetirement(workerForAttempt(attemptWorker), initializedEngine);
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                    answeringStatus.publishEngineStatus({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
@@ -214,8 +234,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                     attemptWorker.terminate();
                     engineState.worker = null;
                 }
-                if (!attemptSignal.aborted) {
-                    llmStatusStore.set(describeLoadFailure(error));
+                if (attemptSignal.aborted) {
+                    // An abandoned load must not leave its loading text behind with no load running.
+                    answeringStatus.publishEngineStatus(describeEngineStatus());
+                } else {
+                    answeringStatus.publishEngineStatus(describeLoadFailure(error));
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
@@ -223,8 +246,6 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                 engineState.initController = null;
                 engineState.initSignal = null;
                 engineState.initWaiterCount = 0;
-                engineState.engine = null;
-                engineState.activeArtifactSetDigest = null;
             });
 
             return waitForWebLlmAttempt({
@@ -234,6 +255,20 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             });
         }
 );
+
+function describeEngineStatus(): LlmEngineStatus {
+    if (engineState.engine) {
+        return { state: 'ready', backend: 'webllm', modelId: engineState.activeModelId };
+    }
+    return { state: 'idle' };
+}
+
+function retirePreviousWebLlmEngine(): void {
+    const previous = engineState.engine;
+    if (previous) {
+        retireWebLlmEngine(previous, new DOMException('WebLLM engine unloaded', 'AbortError'));
+    }
+}
 
 function describeLoadFailure(error: unknown): LlmEngineStatus {
     if (isLocalModelRefusalError(error)) {
@@ -383,7 +418,12 @@ function raceWorkerEngineCreation<Engine>(input: {
 
 function installWorkerRetirement(worker: Worker, engine: WebLlmEngine): void {
     function retire(event: Event): void {
-        retireWebLlmEngine(engine, createWorkerFailure(event));
+        const wasCurrent = engineState.engine === engine;
+        const failure = createWorkerFailure(event);
+        retireWebLlmEngine(engine, failure);
+        if (wasCurrent) {
+            answeringStatus.publishEngineStatus(describeLoadFailure(failure));
+        }
     }
     worker.addEventListener('error', retire, { once: true });
     worker.addEventListener('messageerror', retire, { once: true });

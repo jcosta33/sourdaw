@@ -12,10 +12,10 @@ import { getMacroHandlers, getUndoRedoHandlers, getUndoTreeHandlers } from '#/mo
 import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers } from '#/modules/ControlSurface/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
+import { getCrustHandlers } from '#/modules/Crust/useCases';
 import { getCvGateHandlers } from '#/modules/CvGate/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
-import { getCrustHandlers } from '#/modules/Crust/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../models/AgentRunPlanBounds';
 import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import {
     admitTurnReadReceipts,
     byteLength,
     serializeReceiptContext,
 } from '../../services/applicationToolReceiptBudget';
-import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../stores/agentRunStore';
 import { readApplicationVerificationReceiptLimits } from '../readApplicationVerificationReceiptLimits';
 
 /** A success receipt that serializes to exactly the per-receipt bound, the largest `boundReceipt` keeps. */

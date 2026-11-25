@@ -210,7 +210,6 @@ describe('recording replay preserves peer ownership (#5288)', () => {
     });
     afterEach(() => {
         vi.restoreAllMocks();
-        commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();

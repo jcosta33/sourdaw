@@ -36,6 +36,7 @@ type TestTrack = {
     id: string;
     kind: 'audio' | 'midi' | 'vca';
     armed: boolean;
+    frozen?: boolean;
 };
 
 type TestTrackState = {
@@ -92,9 +93,14 @@ const mocks = vi.hoisted(() => {
 const previewIntents = vi.hoisted(() => {
     let exclusive: AbortController | null = null;
     let ordinarySignal: AbortSignal | null = null;
+    let restoration: Promise<void> | undefined;
     return {
         get ordinarySignal() {
             return ordinarySignal;
+        },
+        /** The output restoration an aborted exclusive preview leaves pending; the next ordinary intent waits on it. */
+        holdRestoration(held: Promise<void> | undefined) {
+            restoration = held;
         },
         beginExclusive() {
             const controller = new AbortController();
@@ -107,11 +113,12 @@ const previewIntents = vi.hoisted(() => {
             previous?.abort('preempted');
             const controller = new AbortController();
             ordinarySignal = controller.signal;
-            return { signal: controller.signal, release: () => controller.abort('released') };
+            return { signal: controller.signal, release: () => controller.abort('released'), ready: restoration };
         },
         reset() {
             exclusive?.abort('reset');
             exclusive = null;
+            restoration = undefined;
         },
     };
 });
@@ -301,6 +308,80 @@ describe('toggleRecording', () => {
         expect(events).toEqual(['preview-abort', 'recording-admission']);
     });
 
+    describe('count-in while an exclusive preview owns the listening output', () => {
+        const countInTransport = () =>
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: true,
+                countInBars: 1,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+                playheadPosition: 0,
+            });
+
+        it('ends the preview before the first count-in click is scheduled', () => {
+            const events: string[] = [];
+            previewIntents.beginExclusive().signal.addEventListener('abort', () => events.push('preview-abort'));
+            mocks.scheduleClick.mockImplementation(() => events.push('click'));
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+
+            expect(events).toEqual(['preview-abort', 'click', 'click', 'click', 'click']);
+        });
+
+        it('schedules no click until the preview output is restored, then counts in from that moment', async () => {
+            const restored = Promise.withResolvers<void>();
+            const exclusive = previewIntents.beginExclusive();
+            previewIntents.holdRestoration(restored.promise);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+            audioClock.currentTime = 1;
+
+            toggleRecording();
+
+            expect(exclusive.signal.aborted).toBe(true);
+            expect(mocks.scheduleClick).not.toHaveBeenCalled();
+            audioClock.currentTime = 1.25;
+            restored.resolve();
+            await vi.waitFor(() => expect(mocks.scheduleClick).toHaveBeenCalledTimes(4));
+            expect(mocks.scheduleClick.mock.calls.map((call) => call[0])).toEqual([1.25, 1.75, 2.25, 2.75]);
+        });
+
+        it('still counts in, with a warning, when the preview output could not be restored', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            previewIntents.beginExclusive();
+            previewIntents.holdRestoration(Promise.reject(new Error('restore refused')));
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+            await vi.waitFor(() => expect(mocks.scheduleClick).toHaveBeenCalledTimes(4));
+
+            expect(warn).toHaveBeenCalledOnce();
+        });
+
+        it('a Record press during the restoration wait cancels the count-in instead of stacking a second one', async () => {
+            const restored = Promise.withResolvers<void>();
+            previewIntents.beginExclusive();
+            previewIntents.holdRestoration(restored.promise);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+            countInTransport();
+
+            toggleRecording();
+            toggleRecording();
+            restored.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+            expect(mocks.scheduleClick).not.toHaveBeenCalled();
+        });
+    });
+
     it('should count in using the resolved meter at the playhead, not the flat numerator', () => {
         // Flat numerator is 4, but a 3/4 change lands at the record point (beat 12).
         mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
@@ -354,6 +435,35 @@ describe('toggleRecording', () => {
         // The take opens after the recorder start answers, so the assertion
         // must wait out the microtask the await introduces.
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalled());
+    });
+
+    it('does not engage a recording when the only armed track froze during the count-in (#7239)', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-midi', kind: 'midi', armed: true }] });
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 0,
+        });
+
+        toggleRecording();
+        // The track freezes while the count-in runs, so no take can open on it.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
+        });
+        elapse(2000);
+
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning')
+        );
+        expect(mocks.startRecording).toHaveBeenCalledOnce();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
     });
 
     it('should count a compound meter in its own beat unit rather than in quarter notes', async () => {
@@ -1374,6 +1484,46 @@ describe('toggleRecording', () => {
             expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         });
 
+        it('refuses when the only armed track is frozen, since a take on it would be silent (#7239)', () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
+            });
+
+            toggleRecording();
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning');
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('starts hardware capture only for the armed audio track that is not frozen (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 'track-frozen', kind: 'audio', armed: true, frozen: true },
+                    { id: 'track-live', kind: 'audio', armed: true },
+                ],
+            });
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+            expect(mocks.startAudioRecording.mock.calls[0]?.[0]).toBe('track-live');
+        });
+
         it('admits recording with a single armed MIDI track — takes are not audio-only', async () => {
             vi.mocked(getTransportState).mockReturnValue({
                 ...defaultTransportState,
@@ -1391,6 +1541,27 @@ describe('toggleRecording', () => {
             await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
             expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('engages an overdub that opens no new clip on an unfrozen armed MIDI track (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                overdubEnabled: true,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true }],
+            });
+            // An overdub records into the existing clip, so `startRecording` opens none.
+            mocks.startRecording.mockReturnValue([]);
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
         });
     });
 

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AgentDataRetention } from '../../models/AgentDataPolicy';
+import { answeringStatus } from '../../stores/answeringStatus';
+import { type LlmEngineStatus } from '../../stores/llmStatusStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProviderRouteView } from '../getProviderRouteView';
 import { createRouteCandidate } from '../llmOrchestration/backendResolution/createRouteCandidate';
@@ -10,13 +12,18 @@ const defaultCandidateMocks = vi.hoisted(() => ({
     admission: { webLlm: true },
     isWebGpuAvailable: vi.fn(),
     isCloudAvailable: vi.fn(),
-    llmStatus: { value: { state: 'idle' as const } } as {
-        value: { state: 'idle' } | { state: 'ready'; backend: 'webllm' | 'cloud'; modelId: string };
+    llmStatus: { value: { state: 'idle' } } as {
+        value: LlmEngineStatus | null;
+        set: (status: LlmEngineStatus | null) => void;
     },
     hostedLlmProviderStatus: {
         value: null as null | { provider: 'anthropic'; model: string; baseUrl: null; authentication: 'api-key' },
     },
 }));
+
+defaultCandidateMocks.llmStatus.set = (status) => {
+    defaultCandidateMocks.llmStatus.value = status;
+};
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({
     MODEL_RELEASE_ADMISSION: defaultCandidateMocks.admission,
@@ -140,7 +147,7 @@ describe('provider route view', () => {
             capability: { operations: ['text', 'tools', 'structured-output'], modalities: ['text'], streaming: true },
             fidelity: 'configured-remote',
             fallback: { attempted: true, reasons: ['unhealthy'] },
-            fallbackPolicy: 'hosted-then-local',
+            fallbackPolicy: 'hosted-only',
             dataDisclosure: { categories: ['prompt-text'], retention: UNKNOWN_RETENTION },
             usage: {
                 provenance: 'provider-reported',
@@ -384,7 +391,7 @@ describe('provider route view', () => {
         expect(view?.fallbackPolicy).toBe('local-only');
     });
 
-    it('admits the requested hosted route and reports a hosted-then-local fallback policy', () => {
+    it('admits the requested hosted route and reports a hosted-only policy with no local fallback', () => {
         agentRunLifecycle.create({
             runId: 'route-cloud-options',
             request: 'Render the chorus using the configured provider.',
@@ -399,7 +406,7 @@ describe('provider route view', () => {
         });
 
         expect(view?.options).toEqual([{ routeId: 'cloud', admitted: true, reasons: [] }]);
-        expect(view?.fallbackPolicy).toBe('hosted-then-local');
+        expect(view?.fallbackPolicy).toBe('hosted-only');
     });
 
     it('returns null for an unknown run', () => {
@@ -730,6 +737,7 @@ describe('provider route view', () => {
             vi.clearAllMocks();
             defaultCandidateMocks.admission.webLlm = true;
             defaultCandidateMocks.llmStatus.value = { state: 'idle' };
+            answeringStatus.clear();
             defaultCandidateMocks.hostedLlmProviderStatus.value = null;
             defaultCandidateMocks.isWebGpuAvailable.mockReturnValue(false);
             defaultCandidateMocks.isCloudAvailable.mockReturnValue(false);
@@ -756,6 +764,21 @@ describe('provider route view', () => {
             });
             expect(view?.fidelity).toBe(expectedCandidate.trust);
             expect(view?.capability).toEqual(expectedCandidate.capabilities);
+        });
+
+        it('names the loaded model on the candidate while a turn answers', () => {
+            defaultCandidateMocks.isCloudAvailable.mockReturnValue(true);
+            defaultCandidateMocks.llmStatus.value = { state: 'ready', backend: 'cloud', modelId: 'loaded-model' };
+            const turn = answeringStatus.openTurn();
+            answeringStatus.publish(turn, {
+                state: 'generating',
+                backend: 'cloud',
+                provider: 'anthropic',
+                modelId: 'loaded-model',
+            });
+
+            expect(defaultCandidateMocks.llmStatus.value).toMatchObject({ state: 'generating' });
+            expect(createRouteCandidate('cloud')).toMatchObject({ modelId: 'loaded-model', modelInstalled: true });
         });
 
         it('projects the real cloud candidate when no candidates are supplied and the cloud session is available', () => {

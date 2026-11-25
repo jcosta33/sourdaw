@@ -7,12 +7,17 @@
 
 use crate::plugin_slot::MidiNoteEvent;
 
-/// Notes one instrument can hold at once.
+/// Events a live instrument's store holds at once.
 ///
-/// Fixed, because the store is written from the audio thread and a store that
-/// grew would allocate inside the deadline. A batch that would take the store
-/// past it is refused whole and counted, so a producer hears the ceiling
-/// instead of losing the tail of what it wrote.
+/// Fixed per store, because the store is written from the audio thread and a
+/// store that grew would allocate inside the deadline. A batch that would take
+/// the store past its reserve is refused whole and counted, so a producer
+/// hears the ceiling instead of losing the tail of what it wrote.
+///
+/// Live playback streams its arrangement a few seconds at a time, so this is
+/// never a song-length limit there. A caller that holds a whole arrangement at
+/// once, as an offline render does, reserves what it needs on the control
+/// thread through [`MidiNoteStore::with_capacity`].
 pub const MIDI_NOTE_STORE_CAPACITY: usize = 2048;
 
 /// One MIDI event and the timeline frame it sounds on.
@@ -39,9 +44,12 @@ pub struct TimedMidiNote {
 /// a locate behave the way a musician expects — the store describes the
 /// arrangement, not a queue the render path consumes.
 pub struct MidiNoteStore {
-    /// Reserved once at [`MIDI_NOTE_STORE_CAPACITY`] and never grown. Every
-    /// route that adds entries refuses past the reserve, so no write from the
-    /// audio thread can reallocate it.
+    /// Events this store was built to hold: the size both buffers below were
+    /// reserved at, and the limit every route that adds entries refuses past.
+    capacity: usize,
+    /// Reserved once at `capacity` and never grown. Every route that adds
+    /// entries refuses past the reserve, so no write from the audio thread can
+    /// reallocate it.
     entries: Vec<TimedMidiNote>,
     /// Where a merge writes its result before the two buffers swap roles.
     /// Reserved with `entries` and for the same reason: the merge runs on the
@@ -55,10 +63,27 @@ impl MidiNoteStore {
     /// the only allocations the store ever makes (ADR 0020), which is why it
     /// ships boxed on the command that registers the instrument it belongs to.
     pub fn new() -> Box<Self> {
+        Self::with_capacity(MIDI_NOTE_STORE_CAPACITY)
+    }
+
+    /// Build an empty store reserved for `events`, with its memory. Control
+    /// thread only, on the same terms as [`Self::new`].
+    ///
+    /// Both buffers are reserved at `events`, so a store costs twice
+    /// `events * size_of::<TimedMidiNote>()` whether or not it fills. A caller
+    /// that knows the whole of what it will schedule, as an offline render
+    /// does, sizes the store from it instead of inheriting the live reserve.
+    pub fn with_capacity(events: usize) -> Box<Self> {
         Box::new(Self {
-            entries: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
-            scratch: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
+            capacity: events,
+            entries: Vec::with_capacity(events),
+            scratch: Vec::with_capacity(events),
         })
+    }
+
+    /// Events this store can hold, and the most a batch may bring it to.
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub fn entries(&self) -> &[TimedMidiNote] {
@@ -84,7 +109,7 @@ impl MidiNoteStore {
     /// tracked as sounding, so no stop, locate, wrap or clear could ever
     /// release it, and an instrument handed it would hold that key for good.
     pub fn try_extend(&mut self, notes: &[TimedMidiNote]) -> bool {
-        if notes.len() > MIDI_NOTE_STORE_CAPACITY - self.entries.len() {
+        if notes.len() > self.capacity - self.entries.len() {
             return false;
         }
         if !is_frame_ordered(notes) {
@@ -145,7 +170,7 @@ fn is_frame_ordered(notes: &[TimedMidiNote]) -> bool {
 /// landing ahead of a full store rewrites that store once per arriving entry —
 /// quadratic work inside the deadline.
 ///
-/// `out` is the store's own scratch: reserved at [`MIDI_NOTE_STORE_CAPACITY`],
+/// `out` is the store's own scratch: reserved at the store's capacity,
 /// emptied by the caller, and only ever asked to hold a total the caller has
 /// already admitted against the free capacity. So nothing here reallocates,
 /// which is what lets a merge run on the audio thread at all (ADR 0020).
@@ -397,6 +422,48 @@ mod tests {
 
         let held: Vec<u64> = store.entries().iter().map(|entry| entry.at_frame).collect();
         assert_eq!(held, vec![10], "neither batch left anything behind");
+    }
+
+    /// A store built for more than the live reserve takes a batch the live
+    /// store refuses, and refuses past its own reserve rather than the
+    /// constant: the audio thread's merge may not reallocate either buffer.
+    #[test]
+    fn a_sized_store_holds_its_own_capacity_and_refuses_past_it() {
+        const SIZED: usize = MIDI_NOTE_STORE_CAPACITY * 3;
+        let mut store = MidiNoteStore::with_capacity(SIZED);
+        let notes: Vec<TimedMidiNote> = (0..SIZED as u64 + 1)
+            .map(|frame| note_at(frame, 60))
+            .collect();
+
+        assert_eq!(store.capacity(), SIZED);
+        assert!(!store.try_extend(&notes), "one past the reserve");
+        assert!(store.entries().is_empty(), "refused whole");
+
+        assert!(store.try_extend(&notes[..SIZED - 1]));
+        assert!(!store.try_extend(&notes[..2]));
+        assert!(store.try_extend(&notes[..1]));
+        assert_eq!(store.entries().len(), SIZED);
+        assert_eq!(
+            store.entries.capacity(),
+            SIZED,
+            "the audio-thread merge never grew the reserve"
+        );
+        assert_eq!(store.scratch.capacity(), SIZED);
+    }
+
+    /// Offline sizing arithmetic elsewhere (the offline ceiling's memory
+    /// bound) reads this size, so growing it must be seen.
+    #[test]
+    fn a_timed_note_stays_within_the_size_the_offline_ceiling_is_costed_at() {
+        assert!(std::mem::size_of::<TimedMidiNote>() <= 64);
+    }
+
+    #[test]
+    fn the_live_constructor_keeps_the_live_reserve() {
+        let store = MidiNoteStore::new();
+
+        assert_eq!(store.capacity(), MIDI_NOTE_STORE_CAPACITY);
+        assert_eq!(MidiNoteStore::with_capacity(0).capacity(), 0);
     }
 
     #[test]

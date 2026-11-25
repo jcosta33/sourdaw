@@ -23,7 +23,6 @@ import {
 } from '../../../stores/kneadStore';
 import { getPitchHandlers } from '../../getPitchHandlers';
 import { commitPitchEdit } from '../commitPitchEdit';
-import { setPitchEditDependencies } from '../pitchEditDependencies';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -34,6 +33,11 @@ const mockNotificationEventBus = {
 };
 
 const commitPitchEditMock = vi.fn();
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    commitPitchEdit: (...args: unknown[]) => commitPitchEditMock(...args),
+}));
 
 type PitchEditTestClip = Clip & {
     fileId?: string;
@@ -113,7 +117,7 @@ const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
 // Distinct from the seeded `kneadState` values on purpose: the payload is what
 // the render receives, so a fix that drops the forwarding cannot pass by
 // coincidence with a store read (#2058).
-const retuneSpeedMs = 25;
+const retuneSpeedMs = 40;
 const formantPreserve = true;
 
 const storedContour: PitchContour = {
@@ -168,7 +172,6 @@ describe('commitPitchEdit through action dispatch', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         const clipOverrides: Partial<PitchEditTestClip>[] = [
@@ -308,6 +311,30 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(kneadStore.value?.contours.c1).toBeUndefined();
     });
 
+    // The native render needs no cached source buffer, so a clip with no
+    // `audioBufferId` can commit on desktop. Undo has to give that absence back:
+    // leaving the rendered buffer id on the clip kept it sounding the edit.
+    it('undo removes the rendered buffer id from a clip that had none, and redo puts it back', async () => {
+        trackStore.set({
+            tracks: [createTrack({ clips: [createClip({ id: 'c1', type: 'audio', fileId: 'test.wav' })] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        } satisfies TrackStoreState);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+
+        await undo();
+
+        expect(getFirstClipFileId()).toBe('test.wav');
+        expect(getFirstClipAudioBufferId()).toBeUndefined();
+
+        await redo();
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+    });
+
     it('keeps the clip pitch contour when the render fails', async () => {
         commitPitchEditMock.mockRejectedValueOnce(new Error('test error'));
 
@@ -364,7 +391,6 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         doc = {};
@@ -475,7 +501,6 @@ describe('commitPitchEdit native output path (#3406)', () => {
         clearHandlerRegistry();
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
-        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
         kneadStore.set({ ...defaultKneadState, contours: {}, clips: {} });
     });

@@ -16,7 +16,10 @@ import {
 import { RECIPE_EXPANSION_MAX_COMMANDS } from '../../models/RecipeExpansionLimits';
 import { type VibeRunBatch, type VibeRunMeasurement } from '../../models/VibeRunPlan';
 import { expandMixRecipe } from '../expandMixRecipe';
+import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
+import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
+import { toScheduledVibeRunBatch } from '../vibeRun/toScheduledVibeRunBatch';
 
 registerDeviceEnginePorts();
 
@@ -427,6 +430,52 @@ describe('planWholeProjectVibeRun tracks recipe.expand refuses', () => {
     });
 });
 
+describe('planWholeProjectVibeRun drum parts', () => {
+    // Red when the planner matches drum recipes by the drums role alone: the thin low shelf and
+    // low-mid bell then land on the hi-hat and the overheads beside the kick and snare.
+    it('plans the thin rebuild on the shells and leaves the hi-hat and the overheads out', () => {
+        const context = projectContext([
+            contextTrack('t-kick', 'Kick', 'kick'),
+            contextTrack('t-snare', 'Snare', 'snare'),
+            contextTrack('t-hat', 'Hi-Hat', 'hi-hat'),
+            contextTrack('t-overheads', 'Overheads', 'overhead'),
+        ]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['thin'],
+            recipes: CATALOG_RECIPES,
+            measurements: [],
+        });
+
+        expect(result.batches[0]?.objective.role).toBe('drums');
+        expect(result.batches[0]?.targets).toEqual([
+            expect.objectContaining({ targetId: 't-kick', recipeIds: ['drums-thin'] }),
+            expect.objectContaining({ targetId: 't-snare', recipeIds: ['drums-thin'] }),
+        ]);
+        expect(result.excludedTargets).toEqual([
+            { targetId: 't-hat', reason: 'no-applicable-recipe' },
+            { targetId: 't-overheads', reason: 'no-applicable-recipe' },
+        ]);
+    });
+
+    it('still plans a recipe serving every drum part on the hi-hat and the overheads', () => {
+        const context = projectContext([
+            contextTrack('t-hat', 'Hi-Hat', 'hi-hat'),
+            contextTrack('t-overheads', 'Overheads', 'overhead'),
+        ]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['bright'],
+            recipes: [catalogRecipe('drums-bright')],
+            measurements: [],
+        });
+
+        expect(plannedTargetIds(result)).toEqual(['t-hat', 't-overheads']);
+    });
+});
+
 describe('planWholeProjectVibeRun baselines', () => {
     const tracks = [
         contextTrack('t-kick', 'Kick', 'kick'),
@@ -714,6 +763,66 @@ describe('planWholeProjectVibeRun batches', () => {
         expect(batch.commandCount).toBe(batch.targets.reduce((total, target) => total + target.commandCount, 0));
     });
 
+    // Red when the tight recipe states the bass band falling again: the run pools both descriptors'
+    // goals on the bus and the whole-run fit refuses a batch whose goals contradict.
+    it('plans warm and tight together on a bus, whose pooled goals the run does not refuse', () => {
+        const context = projectContext([contextTrack('t-bus', 'Group', 'bus')]);
+        const catalog = getMixRecipeCatalog();
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['warm', 'tight'],
+            recipes: [catalogRecipe('bus-warm'), catalogRecipe('bus-tight')],
+            measurements: [],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the bus to plan one batch.');
+        }
+        expect(batch.targets.map((target) => target.recipeIds)).toEqual([['bus-warm', 'bus-tight']]);
+        const goals = readVibeBatchRecipeGoals({
+            batch: toScheduledVibeRunBatch(batch),
+            catalog,
+            range: { startBeat: 0, endBeat: 16, sectionId: null },
+        });
+        if (goals.status === 'refused') {
+            throw new TypeError(goals.reason);
+        }
+        expect(goals.goals.map((goal) => goal.source.kind === 'recipe' && goal.source.recipeId)).toEqual(
+            expect.arrayContaining(['bus-warm', 'bus-tight'])
+        );
+        expect(hasContradictoryMetricGoals(goals.goals)).toBe(false);
+    });
+
+    // Red when hasContradictoryMetricGoals stops reporting: the bus case above would stay green on a
+    // predicate that always answers false, so this pins a pair the catalogue knows contradicts.
+    it('pools the goals of warm and tight vocals as contradictory', () => {
+        const context = projectContext([contextTrack('t-vocal', 'Lead', 'lead vocal')]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['warm', 'tight'],
+            recipes: [catalogRecipe('vocal-warm'), catalogRecipe('vocal-tight')],
+            measurements: [],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the vocal to plan one batch.');
+        }
+        expect(batch.targets.map((target) => target.recipeIds)).toEqual([['vocal-warm', 'vocal-tight']]);
+        const goals = readVibeBatchRecipeGoals({
+            batch: toScheduledVibeRunBatch(batch),
+            catalog: getMixRecipeCatalog(),
+            range: { startBeat: 0, endBeat: 16, sectionId: null },
+        });
+        if (goals.status === 'refused') {
+            throw new TypeError(goals.reason);
+        }
+        expect(hasContradictoryMetricGoals(goals.goals)).toBe(true);
+    });
+
     it('reports a role no requested character has a measurable recipe for instead of planning an empty batch', () => {
         const result = plan({
             tracks: [contextTrack('t-kick', 'Kick', 'kick'), contextTrack('t-lead', 'Lead', 'lead vocal')],
@@ -823,12 +932,7 @@ describe('planWholeProjectVibeRun recipe admission', () => {
             Object.keys(
                 batch.baselines.find((baseline) => baseline.targetId === targetId)?.measurements ?? {}
             ).toSorted();
-        expect(metricsOf('t-bus-ready')).toEqual([
-            'crestFactor',
-            'frequencyBandEnergy',
-            'spectralCentroid',
-            'transientDensity',
-        ]);
+        expect(metricsOf('t-bus-ready')).toEqual(['frequencyBandEnergy', 'spectralCentroid', 'transientDensity']);
         expect(metricsOf('t-bus-bare')).toEqual(['frequencyBandEnergy', 'spectralCentroid']);
     });
 });

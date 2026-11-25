@@ -1,11 +1,21 @@
 import { type OfflineDeviceNode } from '../types';
 
-import { applyCompressorParams } from './applyCompressorParams';
-
 function setWorkletParam(workletNode: AudioWorkletNode, name: string, value: number): void {
     const param = workletNode.parameters.get(name);
     if (param) {
         param.value = value;
+    }
+}
+
+function isGainNode(node: AudioNode): node is GainNode {
+    return 'gain' in node;
+}
+
+// Worklet unavailable: the node is a Makeup gain, the only parameter that still has an effect.
+function applyDegradedMakeup(dn: OfflineDeviceNode, makeupDb: number | undefined): void {
+    const makeupNode = dn.namedNodes?.makeup;
+    if (makeupNode && isGainNode(makeupNode) && makeupDb !== undefined) {
+        makeupNode.gain.value = 10 ** (makeupDb / 20);
     }
 }
 
@@ -38,5 +48,5 @@ export function applySidechainCompressorParams(dn: OfflineDeviceNode, params: Re
         return;
     }
 
-    applyCompressorParams(dn, params, 'sc-comp');
+    applyDegradedMakeup(dn, params['sc-comp-makeup']);
 }

@@ -410,3 +410,37 @@ describe('a vibe batch card shows what admission measured', () => {
         expect(summary).not.toContain('1900');
     });
 });
+
+describe('a vibe batch card prints figures that read as their verdict', () => {
+    const WIDE = 'drums-wide';
+    const SIDE_UP = { sideEnergyFraction: { baseline: 0.2, preview: 0.4 } };
+
+    function wideLine(lowFrequencyStereoContent: Reading, side: PreviewFigures = SIDE_UP): string {
+        const { cardLines } = admitAndDescribe({
+            recipeIds: [WIDE],
+            kept: [{ recipeId: WIDE, metricId: 'lowFrequencyStereoContent' }],
+            previews: [{ ...side, lowFrequencyStereoContent }],
+        });
+        return cardLines.join('\n');
+    }
+
+    it('prints a hold that broke by a hundredth of a tenth at figures that differ by more than the tolerance', () => {
+        expect(wideLine({ baseline: 0.5, preview: 0.5101 })).toBe(
+            'Fresh approval preview on Kick, arrangement [0, 4]: low-frequency stereo content held within 0.01 0.5 → 0.5101 (blocked): not met, expected to hold, a movement of 0.0101.'
+        );
+    });
+
+    it('prints a met hold at the figures it always did', () => {
+        expect(wideLine({ baseline: 0.5, preview: 0.509 })).toContain('0.5 → 0.51 (verified)');
+    });
+
+    it('prints a rise that two decimals would show as no rise at the digit that shows it', () => {
+        const { evaluation, cardLines } = admitAndDescribe({
+            recipeIds: [WIDE],
+            kept: [{ recipeId: WIDE, metricId: 'sideEnergyFraction' }],
+            previews: [{ sideEnergyFraction: { baseline: 0.5, preview: 0.501 } }],
+        });
+        expect(evaluation.status).toBe('verified');
+        expect(cardLines.join('\n')).toContain('side energy fraction 0.5 → 0.501 (verified)');
+    });
+});

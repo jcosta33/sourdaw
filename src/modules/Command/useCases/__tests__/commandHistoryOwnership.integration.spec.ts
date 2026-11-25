@@ -25,8 +25,6 @@ import { hasActionReplayCapability, registerActionReplayCapability } from '../..
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
-import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
-import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
@@ -129,11 +127,8 @@ describe('command-owned durable history publication', () => {
         });
         clearHandlerRegistry();
         commandProjectRevisionPort.setProvider(null);
-        commandBatchIdempotencyPort.setRepository(null);
-        commandBatchExecutionAuthorityPort.setProvider(null);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
-        commandBatchPreflightPort.setProvider(null);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });

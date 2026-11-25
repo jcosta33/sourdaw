@@ -1,11 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
     resumeEngine,
     getAudioContext,
-    scheduleClick,
     startAudioRecording,
     stopAudioRecording,
     getCompensationDelay,
@@ -30,8 +28,13 @@ import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry'
 
 import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
+import { readTakeTargetAudioTracks } from './readTakeTargetAudioTracks';
 import { recordingLifecycle } from './recordingLifecycle';
+import { refusesWithoutTakeTarget } from './refusesWithoutTakeTarget';
+import { releaseStartWithoutTakeTarget } from './releaseStartWithoutTakeTarget';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
+import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
+import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
@@ -504,8 +507,7 @@ async function beginActualRecording(
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
-    const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
+    const audioTracks = readTakeTargetAudioTracks();
     let clips: ReturnType<typeof startRecording> = [];
 
     const captureClocks = createManualCaptureClocks(ctx, transportHold);
@@ -595,6 +597,9 @@ async function beginActualRecording(
     admissionTempo = admitted.tempo;
     admissionChanges = admitted.changes;
     clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    if (await releaseStartWithoutTakeTarget(detachReaders)) {
+        return false;
+    }
     bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });
     return true;
@@ -715,7 +720,8 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
 }
 
 export function toggleRecording(): void {
-    audioEngine.beginAudioPreviewIntent().release();
+    const preview = audioEngine.beginAudioPreviewIntent();
+    preview.release();
     playheadSeekRequestRef.current++;
     const state = getTransportState();
     if (!state) {
@@ -760,11 +766,7 @@ export function toggleRecording(): void {
     // that cannot exist is the same defect one count earlier. The punch arm
     // above stays open — it engages no recording, and the scheduler owns the
     // window it arms.
-    const hasArmedTakeTarget =
-        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
-        false;
-    if (!hasArmedTakeTarget) {
-        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
+    if (refusesWithoutTakeTarget()) {
         return;
     }
 
@@ -790,7 +792,6 @@ export function toggleRecording(): void {
         // tempo rather than the one the recording starts at.
         const secondsPerCountInBeat = (60 / countInTempo) * (4 / denominator);
         const countInBeats = state.countInBars * numerator;
-        const countInDurationSec = countInBeats * secondsPerCountInBeat;
 
         // Surface a failed resume rather than swallowing it: if the context stays
         // suspended the count-in clicks are inaudible, so warn the user to re-arm.
@@ -800,21 +801,16 @@ export function toggleRecording(): void {
         });
         ensureTrackStrips();
 
-        const ctx = getAudioContext();
-        // The clicks and the boundary they count to sit on the same audio clock,
-        // so capture both from one read: the take must open when *this* clock
-        // reaches the boundary, never when the JS timer wheel gets around to it.
-        const countInStartTime = ctx.currentTime;
-        const countInEndTime = countInStartTime + countInDurationSec;
-        for (let index = 0; index < countInBeats; index++) {
-            scheduleClick(
-                countInStartTime + index * secondsPerCountInBeat,
-                index % numerator === 0,
-                state.metronomeVolume ?? 0.5
-            );
-        }
-
-        armCountInRecordingStart(countInEndTime, countInDurationSec, state.playheadPosition);
+        const countIn: CountIn = {
+            beats: countInBeats,
+            beatsPerBar: numerator,
+            secondsPerBeat: secondsPerCountInBeat,
+            volume: state.metronomeVolume ?? 0.5,
+        };
+        runAfterPreviewOutputRestored(preview.ready, () => {
+            const { endTimeSec, durationSec } = scheduleCountInClicks(countIn);
+            armCountInRecordingStart(endTimeSec, durationSec, state.playheadPosition);
+        });
         return;
     }
 

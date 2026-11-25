@@ -39,7 +39,6 @@ export { resolveBouncedClipEndBeat } from './freezeBounce/resolveBouncedClipEndB
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
-export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { resolveAgentMeasurementTargets } from './resolveAgentMeasurementTargets';
 export { renderAgentMeasurementTarget } from './renderAgentMeasurementTarget';
@@ -178,6 +177,7 @@ export { executeAddDeviceAction } from './device/executeAddDeviceAction';
 export { isExternalPluginDeviceType } from './device/externalPluginDeviceType';
 export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
+export { captureRemovedTrackPluginRelease } from './device/captureRemovedTrackPluginRelease';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';
@@ -189,6 +189,7 @@ export { compileSendPreFaderAction } from './device/sendManagement/compileSendPr
 export { listSendDestinations } from './device/sendManagement/listSendDestinations';
 export { commitSendEdit } from './device/sendManagement/commitSendEdit';
 export { commitSendLevel } from './device/sendManagement/commitSendLevel';
+export { createDeviceParameterControl } from './device/setDeviceParameter/createDeviceParameterControl';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
@@ -279,6 +280,10 @@ export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
 export { setSnapValue } from './timelineEditing/setSnapValue';
 export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+export { setShowHiddenTracks } from './timelineEditing/setShowHiddenTracks';
+export { getTracksShownInViews } from './getTracksShownInViews';
+export { getHiddenTrackIds } from './getHiddenTrackIds';
+export { selectTrackRevealingHidden } from './toggleTrackState/selectTrackRevealingHidden';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
@@ -352,3 +357,4 @@ export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
 
 export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';
+export { changesTrackOutsideDevicePlan } from './device/changesTrackOutsideDevicePlan';

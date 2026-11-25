@@ -7,7 +7,7 @@ import { isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import {
     RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
     RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
-    RUNTIME_ACTION_TYPES,
+    isRuntimeActionType,
     type RuntimeAction,
     type RuntimeActionType,
 } from '../models/RuntimeAction';
@@ -15,8 +15,6 @@ import { unawaitedAiActionByActionType } from '../models/UnawaitedAiActionByActi
 
 import { type BatchLocalActionIdentity } from './agentReference/BatchLocalActionIdentity';
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
-
-const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTION_TYPES);
 
 type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
 
@@ -134,7 +132,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     importStemSet: noVcaTargets,
     addTrack: noVcaTargets,
     removeTrack: noVcaTargets,
-    removeAllTracks: noVcaTargets,
     renameTrack: noVcaTargets,
     selectTrack: noVcaTargets,
     muteTrack: noVcaTargets,
@@ -166,7 +163,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     setLoopRegion: noVcaTargets,
     setLoopEnabled: noVcaTargets,
     setMetronomeEnabled: noVcaTargets,
-    restoreLoopRegion: noVcaTargets,
     addClip: noVcaTargets,
     drawClip: noVcaTargets,
     duplicateClipAt: noVcaTargets,
@@ -224,7 +220,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     scaleVelocities: noVcaTargets,
     scaleAllVelocities: noVcaTargets,
     setAllVelocities: noVcaTargets,
-    importMidiFile: noVcaTargets,
     normalizeClip: noVcaTargets,
     reverseClip: noVcaTargets,
     glueClips: noVcaTargets,
@@ -250,7 +245,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     setTrackOutput: noVcaTargets,
     addSend: noVcaTargets,
     removeSend: noVcaTargets,
-    removeAutomationPoint: noVcaTargets,
     setAutomationMode: noVcaTargets,
     hideTrack: noVcaTargets,
     disableTrack: noVcaTargets,
@@ -261,7 +255,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     exportProject: noVcaTargets,
     saveProject: noVcaTargets,
     newProject: noVcaTargets,
-    importAudioFile: noVcaTargets,
     exportMidi: noVcaTargets,
     foldTrack: noVcaTargets,
     groupTracks: noVcaTargets,
@@ -272,7 +265,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     reverseAutomation: noVcaTargets,
     thinAutomation: noVcaTargets,
     quantizeAutomation: noVcaTargets,
-    loadPreset: noVcaTargets,
     savePreset: noVcaTargets,
     generateDrumPattern: noVcaTargets,
     generateMelody: noVcaTargets,
@@ -293,12 +285,10 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     joinCollabSession: noVcaTargets,
     leaveCollabSession: noVcaTargets,
     scanPlugins: noVcaTargets,
-    loadExternalPlugin: noVcaTargets,
     audioToMidi: noVcaTargets,
     muteClip: noVcaTargets,
     clearSolos: noVcaTargets,
     setTrackNotes: noVcaTargets,
-    setTrackInput: noVcaTargets,
     zoomTracksVertical: noVcaTargets,
     deleteTime: noVcaTargets,
     insertTime: noVcaTargets,
@@ -316,41 +306,24 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     renameTrackAlternative: noVcaTargets,
     deleteTrackAlternative: noVcaTargets,
     addChordEvent: noVcaTargets,
-    addCvOutput: noVcaTargets,
     addNotes: noVcaTargets,
     addYeastProcessor: noVcaTargets,
     assignToVca: trackAndGroupExist,
-    autoOrganizeProject: noVcaTargets,
-    captureScratchPad: noVcaTargets,
-    clearAllMidiMappings: noVcaTargets,
     clearChordTrack: noVcaTargets,
     clearMidiOutput: noVcaTargets,
-    clearScratchPad: noVcaTargets,
-    commitScratchPad: noVcaTargets,
-    compareToReference: noVcaTargets,
-    completeMidi: noVcaTargets,
     connectPush: noVcaTargets,
     createAdjustmentLayer: noVcaTargets,
     addAdjustmentRegion: noVcaTargets,
     createCompGroup: noVcaTargets,
     createPatternInstance: noVcaTargets,
-    createProjectVersion: noVcaTargets,
     createVcaGroup: allTracksExist,
-    createVersionBranch: noVcaTargets,
     deleteMacro: noVcaTargets,
     deleteTrackTemplate: noVcaTargets,
     detachPatternInstance: noVcaTargets,
-    detectSongStructure: noVcaTargets,
-    detectTransients: noVcaTargets,
     disconnectPush: noVcaTargets,
     enableWarping: noVcaTargets,
     exportDawProject: noVcaTargets,
-    generateAllTransitions: noVcaTargets,
-    generateBassline: noVcaTargets,
-    generateFill: noVcaTargets,
-    getMentorTips: noVcaTargets,
     labelUndoBranch: noVcaTargets,
-    loadRaveModel: noVcaTargets,
     loadTrackTemplate: noVcaTargets,
     nextSetlistItem: noVcaTargets,
     playMacro: noVcaTargets,
@@ -361,18 +334,10 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     removeFromVca: trackExists,
     removeYeastProcessor: noVcaTargets,
     reorderYeastProcessor: noVcaTargets,
-    restoreAutomationLanePoints: noVcaTargets,
-    restoreClip: noVcaTargets,
-    restoreProjectVersion: noVcaTargets,
-    restoreTrack: noVcaTargets,
     saveTrackTemplate: noVcaTargets,
-    searchSamples: noVcaTargets,
     setControlSurface: noVcaTargets,
     setMidiOutput: noVcaTargets,
-    setRaveBlend: noVcaTargets,
     setVcaGain: groupExists,
-    setWarpAlgorithm: noVcaTargets,
-    setWarpPitchShift: noVcaTargets,
     setYeastArpPattern: noVcaTargets,
     setYeastProcessorBypass: noVcaTargets,
     setYeastProcessorParam: noVcaTargets,
@@ -389,7 +354,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     toggleUndoTree: noVcaTargets,
     triggerScene: noVcaTargets,
     undo: noVcaTargets,
-    variationMidi: noVcaTargets,
 };
 
 function lookupVcaTargetAvailability<Type extends RuntimeActionType>(action: ActionOf<Type>): boolean {
@@ -408,8 +372,9 @@ export const validateActions = inject({ logger })(
         ): RuntimeAction[] {
             const batchCreatedLanes = indexBatchCreatedLanes(actions, batchLocalActionIdentities);
             return actions.filter((action, actionIndex) => {
-                if (!KNOWN_ACTION_TYPES.has(action.type)) {
-                    logger.warn(`Unknown action type rejected: ${action.type}`);
+                const declaredType: string = action.type;
+                if (!isRuntimeActionType(declaredType)) {
+                    logger.warn(`Unknown action type rejected: ${declaredType}`);
                     return false;
                 }
 
