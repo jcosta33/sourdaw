@@ -136,6 +136,7 @@ export async function createLofiTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Compressor',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 4,
                     'comp-attack': 10,

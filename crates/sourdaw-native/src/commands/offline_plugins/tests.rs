@@ -28,9 +28,10 @@ use daw_plugin_host::{ClapWrapper, HostParameterUpdate, ProcessingGate, Vst3Wrap
 use serde_json::{json, Value};
 use sourdaw_harness_fx::state::{decode, RecordedState, MODE_NEVER_SET};
 use sourdaw_harness_fx::{
-    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID,
-    CLAP_START_REFUSED_PLUGIN_ID, ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_PARAM_ID, LATENCY_FRAMES,
-    VST3_CLASS_ID, VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
+    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_INSTRUMENT_PLUGIN_ID, CLAP_PLUGIN_ID,
+    CLAP_PROCESS_ERROR_PLUGIN_ID, CLAP_START_REFUSED_PLUGIN_ID, ECHO_FRAMES, FAILING_PROCESS_CALL,
+    GAIN_PARAM_ID, LATENCY_FRAMES, VST3_CLASS_ID, VST3_INSTRUMENT_CLASS_ID,
+    VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -158,14 +159,24 @@ impl InstalledFx {
         }
     }
 
+    /// What a load records about an instrument class: the same file, scanned
+    /// as a generator.
+    fn instrument_resolution(&self, format: Format, descriptor_id: &str) -> VettedRegistryEntry {
+        let mut resolution = self.load_resolution(format, descriptor_id);
+        resolution.entry.chain_kind = DeviceKind::Generator;
+        resolution
+    }
+
     fn seams(&self) -> OfflinePluginSeams {
         OfflinePluginSeams {
             scan_policy: PluginScanPolicy::with_allowed_roots(vec![self.root.clone()]),
             capture_state: read_live_state,
             construct: create_hosted_runtime,
             after_build: None,
+            after_admission: None,
             after_mapping: None,
             before_restore: None,
+            before_runtime_gate: None,
         }
     }
 }
@@ -235,14 +246,12 @@ impl RecordingUiThread {
         let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
         let (announce, announced) = mpsc::channel();
         let tasks_run = Arc::new(AtomicUsize::new(0));
-        let counted = Arc::clone(&tasks_run);
         let thread = thread::spawn(move || {
             announce
                 .send(thread::current().id())
                 .expect("the UI thread announces itself");
             while let Ok(task) = queued.recv() {
                 task.run();
-                counted.fetch_add(1, Ordering::SeqCst);
             }
         });
         let thread_id = announced.recv().expect("the UI thread starts");
@@ -274,18 +283,88 @@ impl UiThread for RecordingUiThread {
         thread::current().id() == self.thread_id
     }
 
-    fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+    fn run_on_ui_thread(
+        &self,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), crate::host::ui_thread::UiThreadError> {
         let (done, waited) = mpsc::sync_channel(1);
         let queued = Arc::clone(task);
+        let counted = Arc::clone(&self.tasks_run);
         self.work
             .send(UiThreadTask::new(move || {
                 queued.run();
+                // Counted before the answer: the caller reads the count as soon
+                // as it is answered.
+                counted.fetch_add(1, Ordering::SeqCst);
                 let _ = done.send(());
             }))
             .map_err(|_| "the UI thread is gone".to_string())?;
         waited
             .recv()
-            .map_err(|_| "the UI thread never answered".to_string())
+            .map_err(|_| "the UI thread never answered".to_string().into())
+    }
+}
+
+/// Every count below is read straight after the call that ran the task
+/// returns, so a task has to be counted before its caller is answered.
+///
+/// The window between the answer and a late count is a few instructions, so
+/// the loop runs with half the cores kept busy: preempting the UI thread inside
+/// it is what a loaded CI runner does. The other half, and the time bound, are
+/// for the tests of this process running beside it, several of which hold
+/// wall-clock deadlines.
+#[test]
+fn a_ui_thread_task_is_counted_before_its_caller_is_answered() {
+    const ROUND_TRIPS: usize = 20_000;
+    const LOAD_BOUND: std::time::Duration = std::time::Duration::from_millis(500);
+    let cores = thread::available_parallelism().map_or(2, usize::from);
+    let _load = SpinLoad::start((cores / 2).max(1));
+    let ui = RecordingUiThread::start();
+    let started = std::time::Instant::now();
+
+    for expected in 1..=ROUND_TRIPS {
+        if started.elapsed() > LOAD_BOUND {
+            break;
+        }
+        ui.run_on_ui_thread(&UiThreadTask::new(|| {}))
+            .expect("the UI thread runs the task");
+        assert_eq!(
+            ui.tasks_run(),
+            expected,
+            "an answered task must already be counted"
+        );
+    }
+}
+
+/// Threads that keep cores busy until dropped, on every path out of a test.
+struct SpinLoad {
+    spinning: Arc<std::sync::atomic::AtomicBool>,
+    spinners: Vec<thread::JoinHandle<()>>,
+}
+
+impl SpinLoad {
+    fn start(threads: usize) -> Self {
+        let spinning = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let spinners = (0..threads)
+            .map(|_| {
+                let spinning = Arc::clone(&spinning);
+                thread::spawn(move || {
+                    while spinning.load(Ordering::Relaxed) {
+                        std::hint::spin_loop();
+                    }
+                })
+            })
+            .collect();
+        Self { spinning, spinners }
+    }
+}
+
+impl Drop for SpinLoad {
+    fn drop(&mut self) {
+        self.spinning.store(false, Ordering::Relaxed);
+        for spinner in self.spinners.drain(..) {
+            let _ = spinner.join();
+        }
     }
 }
 
@@ -389,6 +468,32 @@ fn start_refusing_class(format: Format) -> String {
     }
 }
 
+/// The descriptor id of the class that sounds the notes it is sent.
+fn instrument_class(format: Format) -> String {
+    match format {
+        Format::Clap => CLAP_INSTRUMENT_PLUGIN_ID.to_string(),
+        Format::Vst3 => format_class_id(&VST3_INSTRUMENT_CLASS_ID),
+    }
+}
+
+/// An engine holding one live instance of the instrument class, attached as a
+/// generator, with Gain at `LIVE_GAIN`.
+fn state_with_live_instrument(
+    fx: &InstalledFx,
+    format: Format,
+) -> (AppState, Arc<SharedHostedPlugin>) {
+    let state = AppState::default();
+    let descriptor = instrument_class(format);
+    let live = attach(
+        &state,
+        live_runtime(fx, format, &descriptor),
+        fx.instrument_resolution(format, &descriptor),
+        DeviceKind::Generator,
+    );
+    register_material(&state);
+    (state, live)
+}
+
 fn state_with_live_fx(fx: &InstalledFx, format: Format) -> (AppState, Arc<SharedHostedPlugin>) {
     state_with_live_class(fx, format, &processing_class(format))
 }
@@ -480,15 +585,27 @@ fn render(
     seams: &OfflinePluginSeams,
     render_id: Option<&str>,
 ) -> Result<Vec<f32>, String> {
+    render_frames(batch, FRAMES as u32, state, ui, seams, render_id)
+}
+
+fn render_frames(
+    batch: Value,
+    frames: u32,
+    state: &AppState,
+    ui: &dyn UiThread,
+    seams: &OfflinePluginSeams,
+    render_id: Option<&str>,
+) -> Result<Vec<f32>, String> {
     block_on_test(render_graph_offline_with(
         batch,
-        FRAMES as u32,
+        frames,
         EXPORT_RATE,
         render_id.map(str::to_string),
         ui,
         state,
         seams,
     ))
+    .map_err(|refusal| refusal.to_string())
     .map(|bytes| {
         let (frames, _) = bytes.as_chunks::<8>();
         frames
@@ -585,7 +702,7 @@ fn record_offline_state(runtimes: &[Arc<SharedHostedPlugin>]) {
             .expect("the offline instance gives its state");
         let rate = runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                Ok(plugin.activation_sample_rate())
+                Ok::<_, String>(plugin.activation_sample_rate())
             })
             .expect("the offline instance answers");
         OFFLINE_STATE.with(|states| states.borrow_mut().push((chunk, rate)));
@@ -651,7 +768,7 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
     assert_eq!(live_recorded.gain, LIVE_GAIN);
     let live_rate = live
         .with_control(Duration::from_secs(2), |plugin| {
-            Ok(plugin.activation_sample_rate())
+            Ok::<_, String>(plugin.activation_sample_rate())
         })
         .expect("the live instance answers");
     assert_eq!(live_rate, LIVE_RATE, "the live instance was never re-rated");
@@ -824,7 +941,7 @@ fn construct_recording_its_file(
     descriptor_id: &str,
     sample_rate: f64,
     mode: ProcessMode,
-) -> Result<HostedRuntime, String> {
+) -> Result<HostedRuntime, PluginError> {
     CONSTRUCTED_FROM
         .lock()
         .expect("constructed")
@@ -837,8 +954,9 @@ fn construct_recording_its_file(
 fn capture_then_reload_under_the_same_id(
     runtime: &SharedHostedPlugin,
     state: &AppState,
-) -> Result<Vec<u8>, String> {
-    let chunk = read_live_state(runtime, state)?;
+    render_control: &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError> {
+    let chunk = read_live_state(runtime, state, render_control)?;
     if let Some((reloaded, load_resolution)) = RELOAD.with(|reload| reload.borrow_mut().take()) {
         attach(state, reloaded, load_resolution, DeviceKind::Effect);
     }
@@ -1004,6 +1122,108 @@ fn a_reload_between_the_mapping_and_the_build_refuses_the_render_by_name() {
     assert_eq!(ui.tasks_run(), 0, "nothing is built");
 }
 
+/// An engine plugin id restarts with the engine, so a replacement loaded from
+/// another file whose plugin reports the same name and kind can land under the
+/// very id the batch was mapped with. It is still not the plugin the batch was
+/// mapped against, and the render refuses it by name.
+#[test]
+fn a_same_named_replacement_under_the_mapped_engine_id_refuses_the_render_by_name() {
+    let fx = InstalledFx::create("same-name-first");
+    let replacement_fx = InstalledFx::create("same-name-second");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    let replacement = Arc::new(SharedHostedPlugin::new(live_runtime(
+        &replacement_fx,
+        Format::Clap,
+        &descriptor,
+    )));
+    let reload = Mutex::new(Some((
+        replacement,
+        replacement_fx.load_resolution(Format::Clap, &descriptor),
+    )));
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), replacement_fx.root.clone()]);
+    seams.after_mapping = Some(Box::new(move |state: &AppState| {
+        if let Some((shared, load_resolution)) = reload.lock().expect("reload").take() {
+            record_engine_instance(
+                state,
+                shared,
+                load_resolution,
+                DeviceKind::Effect,
+                ENGINE_PLUGIN_ID,
+            );
+        }
+    }));
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .map(|print| print.len())
+    .expect_err("a print of a replacement under the mapped id is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("its live instance was replaced while the render started"),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing is built");
+}
+
+/// The same live runtime re-attached under a new engine plugin id between the
+/// mapping and the build is the plugin the batch was mapped against: the
+/// render prints it, exactly as it prints with the id unchanged.
+#[test]
+fn an_unchanged_instance_re_attached_under_a_new_engine_id_still_prints() {
+    let fx = InstalledFx::create("re-attached");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    let unchanged = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("the instance prints under the id it was mapped with");
+
+    let reattach = Mutex::new(Some((live, fx.load_resolution(Format::Clap, &descriptor))));
+    let mut seams = fx.seams();
+    seams.after_mapping = Some(Box::new(move |state: &AppState| {
+        if let Some((shared, load_resolution)) = reattach.lock().expect("reattach").take() {
+            record_engine_instance(
+                state,
+                shared,
+                load_resolution,
+                DeviceKind::Effect,
+                ENGINE_PLUGIN_ID + 1,
+            );
+        }
+    }));
+
+    let reattached = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect("the same runtime under a new engine id prints");
+
+    assert!(
+        reattached.iter().any(|sample| *sample != 0.0),
+        "the print carries the effect's output"
+    );
+    assert_frames_equal(&reattached, &unchanged);
+}
+
 // ── Granted plugin folders ──────────────────────────────────────────────
 
 /// A forbidden set inside `tree`, clear of the fixture's own folder.
@@ -1069,7 +1289,13 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| Err("the seam keeps it".to_string());
+    seams.capture_state = |_, _, _| {
+        Err(PluginCommandError::Control(
+            PluginControlRefusal::TimedOut {
+                plugin: "the seam keeps it".to_string(),
+            },
+        ))
+    };
 
     let refusal = render(
         batch(impulse_track(json!([fx_device()]))),
@@ -1083,46 +1309,13 @@ fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     assert!(
         refusal.contains("'d-fx'")
             && refusal.contains("'Sourdaw Harness Fx'")
-            && refusal.contains("its live state could not be read: the seam keeps it"),
+            && refusal.contains(
+                "its live state could not be read: Timed out waiting for plugin control access: \
+                 the seam keeps it"
+            ),
         "{refusal}"
     );
     assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
-}
-
-#[test]
-fn a_hosted_instrument_refuses_the_render_and_the_probe_alike() {
-    let fx = InstalledFx::create("instrument");
-    let state = AppState::default();
-    attach(
-        &state,
-        live_runtime(&fx, Format::Clap, CLAP_PLUGIN_ID),
-        fx.load_resolution(Format::Clap, CLAP_PLUGIN_ID),
-        DeviceKind::Generator,
-    );
-    register_material(&state);
-    let ui = RecordingUiThread::start();
-    let commands = impulse_track(json!([fx_device()]));
-
-    let refusal = render(batch(commands.clone()), &state, &ui, &fx.seams(), None)
-        .expect_err("a hosted instrument does not render offline yet");
-    let probe = block_on_test(crate::commands::graph::map_graph_batch(
-        json!([]),
-        batch(commands),
-        EXPORT_RATE,
-        None,
-        &state,
-    ))
-    .expect("the probe answers");
-
-    assert!(
-        refusal.contains("'d-fx'")
-            && refusal.contains("'Sourdaw Harness Fx'")
-            && refusal.contains("hosted instruments do not render offline yet"),
-        "{refusal}"
-    );
-    assert_eq!(probe["acceptance"], "rejected");
-    assert_eq!(probe["reason"].as_str(), Some(refusal.as_str()));
-    assert_eq!(ui.tasks_run(), 0);
 }
 
 #[test]
@@ -1141,6 +1334,261 @@ fn the_probe_admits_the_attached_effect_the_render_prints() {
 
     assert_eq!(probe["acceptance"], "accepted", "{probe}");
     assert_eq!(probe["reports"][0]["deviceIds"], json!(["d-fx"]));
+}
+
+// ── (d2) A hosted instrument ────────────────────────────────────────────
+
+/// One scheduled note on the instrument's device, at an export-rate frame.
+fn note(frame: usize, key: u8, velocity: u8, is_note_on: bool) -> Value {
+    json!({ "time": frame as f64 / EXPORT_RATE, "note": key, "velocity": velocity,
+            "channel": 0, "isNoteOn": is_note_on })
+}
+
+fn schedule_notes(notes: Vec<Value>) -> Value {
+    json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-fx",
+            "probabilitySeed": 0, "notes": notes })
+}
+
+/// Three held notes, none sharing a velocity: one starting and ending inside
+/// a block, one inside another, and one on block edges (blocks are 512 frames).
+/// Each is `(on, off, key, velocity)`.
+const HELD_NOTES: [(usize, usize, u8, u8); 3] = [
+    (700, 1_300, 60, 127),
+    (1_800, 2_000, 64, 64),
+    (2_560, 3_072, 67, 32),
+];
+
+fn held_note_commands() -> Vec<Value> {
+    let notes = HELD_NOTES
+        .iter()
+        .flat_map(|(on, off, key, velocity)| {
+            [
+                note(*on, *key, *velocity, true),
+                note(*off, *key, *velocity, false),
+            ]
+        })
+        .collect();
+    vec![strip("t1", json!([fx_device()])), schedule_notes(notes)]
+}
+
+/// What the instrument class writes for a velocity at `LIVE_GAIN`: the
+/// velocity as the format's wrapper normalises it, times the gain.
+fn instrument_level(format: Format, velocity: u8) -> f32 {
+    let normalised = match format {
+        Format::Clap => (f64::from(velocity) / 127.0) as f32,
+        Format::Vst3 => f32::from(velocity) / 127.0,
+    };
+    LIVE_GAIN as f32 * normalised
+}
+
+/// The print the held notes owe: each note's level from its note-on's frame up
+/// to, not including, its note-off's frame, and silence elsewhere.
+fn the_held_notes_printed(format: Format) -> Vec<f32> {
+    let mut expected = vec![0.0f32; FRAMES];
+    for (on, off, _, velocity) in HELD_NOTES {
+        expected[on..off].fill(instrument_level(format, velocity));
+    }
+    expected
+}
+
+fn a_hosted_instrument_prints_the_notes_scheduled_on_it(format: Format) {
+    let fx = InstalledFx::create(&format!("instrument-{format:?}"));
+    let (state, _live) = state_with_live_instrument(&fx, format);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(Some(record_offline_state)));
+    OFFLINE_STATE.with(|states| states.borrow_mut().clear());
+
+    let print = render(batch(held_note_commands()), &state, &ui, &seams, None)
+        .expect("the attached instrument renders offline");
+
+    assert_frames_equal(&print, &the_held_notes_printed(format));
+    let offline_states = OFFLINE_STATE.with(|states| states.borrow().clone());
+    assert_eq!(offline_states.len(), 1, "one offline instance was built");
+    let (offline_chunk, offline_rate) = &offline_states[0];
+    let expected_offline = match format {
+        Format::Clap => CLAP_RENDER_OFFLINE,
+        Format::Vst3 => VST3_OFFLINE,
+    };
+    assert_eq!(
+        recorded(offline_chunk, format).configured_mode,
+        expected_offline
+    );
+    assert_eq!(*offline_rate, EXPORT_RATE);
+    watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "one construction and one release, both on the UI thread"
+    );
+}
+
+#[test]
+fn a_clap_instrument_prints_the_notes_scheduled_on_it_on_their_samples() {
+    a_hosted_instrument_prints_the_notes_scheduled_on_it(Format::Clap);
+}
+
+#[test]
+fn a_vst3_instrument_prints_the_notes_scheduled_on_it_on_their_samples() {
+    a_hosted_instrument_prints_the_notes_scheduled_on_it(Format::Vst3);
+}
+
+/// The notes land on the one device the batch addresses: the same render with
+/// no notes prints silence, so the level above is the notes' and not the
+/// instrument's idle output.
+#[test]
+fn a_hosted_instrument_with_no_notes_prints_silence() {
+    let fx = InstalledFx::create("instrument-idle");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+
+    let print = render(
+        batch(vec![strip("t1", json!([fx_device()]))]),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("the attached instrument renders offline");
+
+    assert_frames_equal(&print, &vec![0.0; FRAMES]);
+}
+
+#[test]
+fn the_probe_admits_the_attached_instrument_the_render_prints() {
+    let fx = InstalledFx::create("instrument-probe");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Vst3);
+
+    let probe = block_on_test(crate::commands::graph::map_graph_batch(
+        json!([]),
+        batch(held_note_commands()),
+        EXPORT_RATE,
+        None,
+        &state,
+    ))
+    .expect("the probe answers");
+
+    assert_eq!(probe["acceptance"], "accepted", "{probe}");
+    assert_eq!(probe["reports"][0]["deviceIds"], json!(["d-fx"]));
+}
+
+/// A device on a strip that contributes nothing is omitted whatever it is, so
+/// an instrument there builds no offline instance.
+#[test]
+fn a_hosted_instrument_on_a_silent_strip_builds_no_instance() {
+    let fx = InstalledFx::create("instrument-silent");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut silent = strip("t1", json!([fx_device()]));
+    silent["contributesAudio"] = json!(false);
+
+    let print = render(batch(vec![silent]), &state, &ui, &fx.seams(), None)
+        .expect("a silent strip renders");
+
+    assert_frames_equal(&print, &vec![0.0; FRAMES]);
+    assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
+}
+
+/// Notes in the long part below: past the live store's reserve of events.
+const LONG_PART_NOTES: usize = 3_000;
+/// Frames between one note's on and the next's, and how long each is held.
+/// Ten frames apart puts about fifty events in a 512-frame block, under the
+/// block's event buffer, so only the store's size is under test.
+const LONG_PART_SPACING: usize = 10;
+const LONG_PART_HELD: usize = 4;
+const LONG_PART_START: usize = 1_000;
+
+fn long_part_velocity(index: usize) -> u8 {
+    (1 + index % 127) as u8
+}
+
+fn long_part_on(index: usize) -> usize {
+    LONG_PART_START + LONG_PART_SPACING * index
+}
+
+/// 3,000 notes is 6,000 events, three times what a live store holds.
+fn a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(format: Format) {
+    const {
+        assert!(2 * LONG_PART_NOTES > daw_engine::midi::note_store::MIDI_NOTE_STORE_CAPACITY);
+    }
+    let fx = InstalledFx::create(&format!("instrument-long-{format:?}"));
+    let (state, _live) = state_with_live_instrument(&fx, format);
+    let ui = RecordingUiThread::start();
+    let notes = (0..LONG_PART_NOTES)
+        .flat_map(|index| {
+            let velocity = long_part_velocity(index);
+            [
+                note(long_part_on(index), 60, velocity, true),
+                note(long_part_on(index) + LONG_PART_HELD, 60, velocity, false),
+            ]
+        })
+        .collect();
+    let frames = long_part_on(LONG_PART_NOTES) + 2_048;
+    let commands = vec![strip("t1", json!([fx_device()])), schedule_notes(notes)];
+
+    let print = render_frames(
+        batch(commands),
+        frames as u32,
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect("a part longer than the live store holds prints whole");
+
+    let level = |index: usize| instrument_level(format, long_part_velocity(index));
+    for index in [0, LONG_PART_NOTES / 2, LONG_PART_NOTES - 1] {
+        let on = long_part_on(index);
+        assert_eq!(print[on - 1], 0.0, "silent before note {index}");
+        assert_eq!(
+            print[on..on + LONG_PART_HELD],
+            [level(index); LONG_PART_HELD],
+            "note {index} held"
+        );
+        assert_eq!(print[on + LONG_PART_HELD], 0.0, "silent after note {index}");
+    }
+    let sounding = print.iter().filter(|sample| **sample != 0.0).count();
+    assert_eq!(sounding, LONG_PART_NOTES * LONG_PART_HELD);
+}
+
+#[test]
+fn a_clap_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Clap);
+}
+
+#[test]
+fn a_vst3_instrument_prints_a_part_longer_than_the_live_store_holds() {
+    a_hosted_instrument_prints_a_part_longer_than_the_live_store_holds(Format::Vst3);
+}
+
+/// Two batches at one device that together pass the offline ceiling are
+/// refused by name before an instance is built: each fits the per-batch
+/// ceiling, so only the per-device total can refuse them.
+#[test]
+fn notes_past_the_offline_ceiling_across_batches_refuse_the_render_by_name() {
+    const CEILING: usize = super::OFFLINE_NOTE_EVENT_CEILING;
+    let fx = InstalledFx::create("instrument-ceiling");
+    let (state, _live) = state_with_live_instrument(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let half = (0..CEILING / 2 + 1)
+        .map(|index| note(index, 60, 100, true))
+        .collect::<Vec<_>>();
+    let commands = vec![
+        strip("t1", json!([fx_device()])),
+        schedule_notes(half.clone()),
+        schedule_notes(half),
+    ];
+
+    let refusal = render(batch(commands), &state, &ui, &fx.seams(), None)
+        .expect_err("a store past the offline ceiling is refused");
+
+    assert!(
+        refusal.contains(&format!("past the store's ceiling of {CEILING}")),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing was constructed");
 }
 
 // ── (e) Cancellation ────────────────────────────────────────────────────
@@ -1162,6 +1610,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
             state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     let outcome = thread::scope(|scope| {
@@ -1209,6 +1658,622 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
             .in_flight("render-1")
             .is_none(),
         "a finished render leaves the registry"
+    );
+}
+
+const SECOND_INSTANCE: &str = "fx-live-second";
+
+/// A second engine-attached instance of the processing class, under its own
+/// instance and engine plugin ids, and the device that names it.
+fn attach_second_live_fx(fx: &InstalledFx, state: &AppState) -> Value {
+    let format = Format::Clap;
+    let descriptor = processing_class(format);
+    state.engine_plugins.lock().expect("engine plugins").insert(
+        SECOND_INSTANCE.to_string(),
+        EnginePluginInstanceData {
+            engine_plugin_id: ENGINE_PLUGIN_ID + 7,
+            runtime: Arc::new(SharedHostedPlugin::new(live_runtime(
+                fx,
+                format,
+                &descriptor,
+            ))),
+            name: "Sourdaw Harness Fx".to_string(),
+            parameters: Vec::new(),
+            has_gui: false,
+            chain_kind: DeviceKind::Effect,
+            parameter_events: None,
+            load_resolution: fx.load_resolution(format, &descriptor),
+        },
+    );
+    json!({ "id": "d-fx-second", "name": "Harness Fx", "type": "plugin", "bypassed": false,
+            "parameterValues": {}, "externalPluginId": "com.sourdaw.harness-fx",
+            "externalInstanceId": SECOND_INSTANCE })
+}
+
+/// A cancel that lands after the mapping, before any instance is constructed,
+/// stops the build there: nothing is constructed for a render nobody wants.
+#[test]
+fn a_cancel_after_the_mapping_constructs_no_instance() {
+    let fx = InstalledFx::create("cancel-before-construct");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.after_mapping = Some(Box::new(|state: &AppState| {
+        cancel_graph_offline("render-mapped".to_string(), state).expect("the cancel lands");
+    }));
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        Some("render-mapped"),
+    )
+    .expect_err("the render was cancelled before it built anything");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+/// A cancel that lands while the build is under way stops it before the next
+/// restore and the next construction: the instance already built is released
+/// on the UI thread and no further one is constructed.
+#[test]
+fn a_cancel_while_building_constructs_no_further_instance() {
+    let fx = InstalledFx::create("cancel-while-building");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let second_fx_device = attach_second_live_fx(&fx, &state);
+    let ui = RecordingUiThread::start();
+    let (restoring, restore_reached) = mpsc::channel::<()>();
+    let (release_restore, restore_released) = mpsc::channel::<()>();
+    let first_restore = Mutex::new(Some((restoring, restore_released)));
+    let mut seams = fx.seams();
+    seams.before_restore = Some(Box::new(move || {
+        let Some((restoring, restore_released)) = first_restore.lock().expect("first").take()
+        else {
+            return;
+        };
+        restoring.send(()).expect("the test is watching the build");
+        restore_released
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the restore");
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device(), second_fx_device]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-building"),
+            )
+        });
+        restore_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build constructs its first instance");
+        cancel_graph_offline("render-building".to_string(), &state).expect("the cancel lands");
+        release_restore.send(()).expect("the build is waiting");
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled while building returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the first instance's construction and release ran; nothing further was built"
+    );
+    assert!(state
+        .retired_engine_plugins
+        .lock()
+        .expect("retired")
+        .is_empty());
+}
+
+/// A cancel that lands while the build waits its turn on the runtime gate,
+/// behind an exclusive holder, is read once the gate is taken: nothing is
+/// constructed for it. The seam runs after the check ahead of the wait, so
+/// only a read behind the gate can see this cancel.
+#[test]
+fn a_cancel_while_the_build_waits_on_the_runtime_gate_constructs_no_instance() {
+    let fx = InstalledFx::create("cancel-at-gate");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let gate_hold = crate::commands::plugins::hold_plugin_runtime_gate_exclusively();
+    let (waiting, wait_reached) = mpsc::channel::<()>();
+    let waiting = Mutex::new(waiting);
+    let mut seams = fx.seams();
+    seams.before_runtime_gate = Some(Box::new(move || {
+        waiting
+            .lock()
+            .expect("waiting")
+            .send(())
+            .expect("the test is watching the gate");
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-gated"),
+            )
+        });
+        wait_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build reaches the runtime gate");
+        cancel_graph_offline("render-gated".to_string(), &state).expect("the cancel lands");
+        drop(gate_hold);
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled at the gate returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+/// A UI thread whose queue the test pumps itself, as the shell's loop does:
+/// a task posted from a worker waits there, unrun, until the test drains it.
+struct PumpedUiThread {
+    posted: crate::host::ui_thread::PostedUiThread,
+    announce_post: Mutex<mpsc::Sender<()>>,
+}
+
+impl UiThread for PumpedUiThread {
+    fn is_ui_thread(&self) -> bool {
+        false
+    }
+
+    fn run_on_ui_thread(
+        &self,
+        task: &Arc<UiThreadTask>,
+    ) -> Result<(), crate::host::ui_thread::UiThreadError> {
+        self.posted.post_and_wait(task, || {
+            self.announce_post
+                .lock()
+                .expect("announce")
+                .send(())
+                .expect("the test is watching the queue");
+            Ok(())
+        })
+    }
+}
+
+/// Constructions the counting seam was asked for. A process static, because
+/// the construct seam is a plain function; only one test reads it.
+static COUNTED_CONSTRUCTIONS: AtomicUsize = AtomicUsize::new(0);
+
+fn count_then_construct(
+    backend: crate::commands::plugins::HostBackend,
+    path: &str,
+    descriptor_id: &str,
+    sample_rate: f64,
+    mode: ProcessMode,
+) -> Result<HostedRuntime, daw_plugin_host::PluginError> {
+    COUNTED_CONSTRUCTIONS.fetch_add(1, Ordering::SeqCst);
+    create_hosted_runtime(backend, path, descriptor_id, sample_rate, mode)
+}
+
+/// A construction posted to the UI thread before quit cancels the render, and
+/// run only after, opens no plugin: the hop reads the cancel itself, because
+/// the hop's deadline bounds only the wait for the UI thread to start it.
+#[test]
+fn a_construction_posted_before_quit_and_run_after_it_opens_no_plugin() {
+    let fx = InstalledFx::create("cancel-posted-construction");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let (announce_post, post_announced) = mpsc::channel();
+    let ui = PumpedUiThread {
+        posted: crate::host::ui_thread::PostedUiThread::new(Duration::from_secs(10)),
+        announce_post: Mutex::new(announce_post),
+    };
+    COUNTED_CONSTRUCTIONS.store(0, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.construct = count_then_construct;
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-posted"),
+            )
+        });
+        post_announced
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build posts its construction");
+        cancel_every_offline_render(&state);
+        ui.posted.drain();
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal = outcome.expect_err("a render cancelled at quit returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        COUNTED_CONSTRUCTIONS.load(Ordering::SeqCst),
+        0,
+        "the plugin was not opened"
+    );
+}
+
+/// A cancel that lands between the last live state read and the first
+/// construction stops the build before it waits on the runtime gate: with the
+/// gate held, only the read ahead of the wait can end the render.
+#[test]
+fn a_cancel_between_the_capture_and_the_first_construction_runs_no_ui_task() {
+    let fx = InstalledFx::create("cancel-before-first-construction");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.capture_state = capture_then_cancel_the_render;
+    let gate_hold = crate::commands::plugins::hold_plugin_runtime_gate_exclusively();
+    let (finished, outcome) = mpsc::channel();
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let _ = finished.send(render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some(CAPTURE_CANCELLED_RENDER),
+            ));
+        });
+        let answered = outcome.recv_timeout(Duration::from_secs(5));
+        drop(gate_hold);
+        let refusal = answered
+            .expect("the render ended while the runtime gate was still held")
+            .expect_err("a render cancelled before its first construction returns no print");
+        assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    });
+
+    assert_eq!(ui.tasks_run(), 0, "no UI-thread task ran");
+}
+
+/// Set by [`enter_then_read_live_state`] once the capture is under way.
+static CAPTURE_ENTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn enter_then_read_live_state(
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+    render_control: &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError> {
+    CAPTURE_ENTERED.store(true, Ordering::SeqCst);
+    read_live_state(runtime, state, render_control)
+}
+
+/// A capture waiting on the live instance's held control gate ends once the
+/// render is cancelled, instead of waiting out the control timeout.
+#[test]
+fn a_cancel_cuts_short_a_live_state_capture_waiting_on_a_held_control_gate() {
+    const HELD_FOR: Duration = Duration::from_secs(10);
+    const CUT_SHORT_WITHIN: Duration = Duration::from_millis(500);
+    let fx = InstalledFx::create("cancel-held-gate");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    CAPTURE_ENTERED.store(false, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.capture_state = enter_then_read_live_state;
+    let (holding, hold_reached) = mpsc::channel::<()>();
+    let (release_hold, hold_released) = mpsc::channel::<()>();
+
+    let (outcome, cut_short_in) = thread::scope(|scope| {
+        let held = &live;
+        scope.spawn(move || {
+            held.with_control(OFFLINE_CONTROL_TIMEOUT, |_| {
+                holding.send(()).expect("the test is watching the hold");
+                let _ = hold_released.recv_timeout(HELD_FOR);
+                Ok::<_, std::convert::Infallible>(())
+            })
+            .expect("the hold runs");
+        });
+        hold_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the live control gate is held");
+        let rendering = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-held-gate"),
+            )
+        });
+        while !CAPTURE_ENTERED.load(Ordering::SeqCst) {
+            assert!(!rendering.is_finished(), "the render ended before capture");
+            thread::yield_now();
+        }
+        cancel_graph_offline("render-held-gate".to_string(), &state).expect("the cancel lands");
+        let cancelled_at = std::time::Instant::now();
+        let outcome = rendering.join().expect("the render thread returns");
+        let cut_short_in = cancelled_at.elapsed();
+        release_hold.send(()).expect("the hold is waiting");
+        (outcome, cut_short_in)
+    });
+
+    let refusal = outcome.expect_err("a render cancelled while capturing returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert!(
+        cut_short_in < CUT_SHORT_WITHIN,
+        "the cancel ended the wait on the held gate: {cut_short_in:?}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+}
+
+/// Hold `runtime`'s control gate on a thread of its own until `release` is
+/// sent or `at_most` passes; returns once the gate is held.
+fn hold_control_gate<'scope>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    runtime: &'scope SharedHostedPlugin,
+    at_most: Duration,
+) -> mpsc::Sender<()> {
+    let (holding, hold_reached) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    scope.spawn(move || {
+        let _ = runtime.with_control(OFFLINE_CONTROL_TIMEOUT, |_| {
+            holding.send(()).expect("the test is watching the hold");
+            let _ = released.recv_timeout(at_most);
+            Ok::<_, std::convert::Infallible>(())
+        });
+    });
+    hold_reached
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the live control gate is held");
+    release
+}
+
+/// A capture nobody cancelled waits the live instance's own gate deadline, as
+/// a state save does, so an export started behind a gate held for longer than
+/// the offline control timeout still prints.
+#[test]
+fn an_uncancelled_capture_waits_out_a_gate_held_past_the_offline_control_timeout() {
+    let fx = InstalledFx::create("held-gate-print");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+
+    let printed = thread::scope(|scope| {
+        let release = hold_control_gate(scope, &live, Duration::from_secs(3));
+        let printed = render(
+            batch(impulse_track(json!([fx_device()]))),
+            &state,
+            &ui,
+            &seams,
+            Some("render-held-print"),
+        );
+        let _ = release.send(());
+        printed
+    });
+
+    printed.expect("the render waited out the hold and printed");
+}
+
+/// A capture that outwaits the live instance's own gate deadline gives the
+/// state save's verdict: the render is refused as unresponsive and the live
+/// instance is marked, which a try-lock capture would never do.
+#[test]
+fn a_capture_behind_a_gate_held_past_its_deadline_marks_the_live_instance_unresponsive() {
+    let fx = InstalledFx::create("held-gate-verdict");
+    let (state, _first) = state_with_live_fx(&fx, Format::Clap);
+    let descriptor = processing_class(Format::Clap);
+    let live = Arc::new(
+        SharedHostedPlugin::new(live_runtime(&fx, Format::Clap, &descriptor))
+            .with_control_gate_deadline(Duration::from_millis(150)),
+    );
+    record_engine_instance(
+        &state,
+        Arc::clone(&live),
+        fx.load_resolution(Format::Clap, &descriptor),
+        DeviceKind::Effect,
+        ENGINE_PLUGIN_ID,
+    );
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+
+    thread::scope(|scope| {
+        let release = hold_control_gate(scope, &live, Duration::from_secs(10));
+        let refusal = render(
+            batch(impulse_track(json!([fx_device()]))),
+            &state,
+            &ui,
+            &seams,
+            Some("render-held-verdict"),
+        )
+        .expect_err("a gate held past its deadline refuses the render");
+        let later = live.try_with_control(Duration::from_millis(10), |_| {
+            Ok::<_, std::convert::Infallible>(())
+        });
+        let _ = release.send(());
+
+        assert!(refusal.contains("plugin-unresponsive:"), "{refusal}");
+        assert!(
+            matches!(
+                later,
+                Err(crate::host::native_bridge::PluginControlError::Refused(
+                    PluginControlRefusal::Unresponsive { .. }
+                ))
+            ),
+            "the live instance is marked unresponsive"
+        );
+    });
+}
+
+const UNACTIVATED_RENDER: &str = "render-unactivated";
+
+/// The state the construct seam below cancels the render through. A process
+/// static, because the construct seam is a plain function.
+static CANCELLING_CONSTRUCTION: Mutex<Option<Arc<AppState>>> = Mutex::new(None);
+
+/// Cancel the render, then hand back a runtime whose activation failed.
+fn cancel_then_construct_an_unactivated_runtime(
+    _backend: crate::commands::plugins::HostBackend,
+    _path: &str,
+    _descriptor_id: &str,
+    _sample_rate: f64,
+    _mode: ProcessMode,
+) -> Result<HostedRuntime, daw_plugin_host::PluginError> {
+    let state = CANCELLING_CONSTRUCTION
+        .lock()
+        .expect("state")
+        .take()
+        .expect("the test names the state to cancel through");
+    cancel_graph_offline(UNACTIVATED_RENDER.to_string(), &state).expect("the cancel lands");
+    let mut wrapper =
+        ClapWrapper::new_engine_owned_command_fixture("unactivated", Vec::new(), false);
+    wrapper.deactivate_engine_owned_command_fixture();
+    Ok(wrapper.into())
+}
+
+/// A construction that finishes after the cancel, with a runtime that would
+/// refuse the render as a failed activation, ends the render as cancelled:
+/// a cancel is never reported as a plugin's failure.
+#[test]
+fn a_cancel_during_construction_wins_over_the_activation_refusal() {
+    let fx = InstalledFx::create("cancel-then-unactivated");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let state = Arc::new(state);
+    *CANCELLING_CONSTRUCTION.lock().expect("state") = Some(Arc::clone(&state));
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.construct = cancel_then_construct_an_unactivated_runtime;
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        Some(UNACTIVATED_RENDER),
+    )
+    .expect_err("a render cancelled during its construction returns no print");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+}
+
+const CAPTURE_CANCELLED_RENDER: &str = "render-capturing";
+
+/// Live state reads by [`capture_then_cancel_the_render`]. A process static,
+/// because the capture seam is a plain function; only one test reads it.
+static CANCELLING_CAPTURES: AtomicUsize = AtomicUsize::new(0);
+
+/// Read the live state, then cancel the render reading it.
+fn capture_then_cancel_the_render(
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+    render_control: &OfflineRenderControl,
+) -> Result<Vec<u8>, PluginCommandError> {
+    CANCELLING_CAPTURES.fetch_add(1, Ordering::SeqCst);
+    let chunk = read_live_state(runtime, state, render_control)?;
+    cancel_graph_offline(CAPTURE_CANCELLED_RENDER.to_string(), state).expect("the cancel lands");
+    Ok(chunk)
+}
+
+/// A cancel that lands while the live states are read stops the reads there:
+/// no further live state is read, every live runtime the render took is given
+/// back, and nothing is constructed.
+#[test]
+fn a_cancel_during_the_live_state_capture_reads_no_further_state_and_returns_every_runtime() {
+    let fx = InstalledFx::create("cancel-while-capturing");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let second_fx_device = attach_second_live_fx(&fx, &state);
+    let ui = RecordingUiThread::start();
+    CANCELLING_CAPTURES.store(0, Ordering::SeqCst);
+    let mut seams = fx.seams();
+    seams.capture_state = capture_then_cancel_the_render;
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device(), second_fx_device]))),
+        &state,
+        &ui,
+        &seams,
+        Some(CAPTURE_CANCELLED_RENDER),
+    )
+    .expect_err("a render cancelled while capturing returns no print");
+
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        CANCELLING_CAPTURES.load(Ordering::SeqCst),
+        1,
+        "the second instance's live state was not read"
+    );
+    assert_eq!(ui.tasks_run(), 0, "no instance was constructed");
+    let engine_plugins = state.engine_plugins.lock().expect("engine plugins");
+    assert_eq!(
+        Arc::strong_count(&engine_plugins[INSTANCE].runtime),
+        2,
+        "the first runtime is held by its record and this test alone"
+    );
+    assert!(Arc::ptr_eq(&engine_plugins[INSTANCE].runtime, &live));
+    assert_eq!(
+        Arc::strong_count(&engine_plugins[SECOND_INSTANCE].runtime),
+        1,
+        "the second runtime is held by its record alone"
+    );
+    assert!(state
+        .retired_engine_plugins
+        .lock()
+        .expect("retired")
+        .is_empty());
+}
+
+/// A cancel that lands once the final instance is constructed, before its
+/// state is restored, refuses the build there: the restore does not run, so
+/// the build never reaches the look every restored instance gets.
+#[test]
+fn a_cancel_before_the_final_instances_restore_refuses_the_build_without_restoring_it() {
+    let fx = InstalledFx::create("cancel-before-final-restore");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let (restoring, restore_reached) = mpsc::channel::<()>();
+    let (release_restore, restore_released) = mpsc::channel::<()>();
+    let restore_handshake = Mutex::new((restoring, restore_released));
+    let restored_builds = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&restored_builds);
+    let mut seams = fx.seams();
+    seams.before_restore = Some(Box::new(move || {
+        let (restoring, restore_released) = &*restore_handshake.lock().expect("handshake");
+        restoring.send(()).expect("the test is watching the build");
+        restore_released
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the restore");
+    }));
+    seams.after_build = Some(Box::new(move |_: &[Arc<SharedHostedPlugin>]| {
+        counted.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    let outcome = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                Some("render-final-restore"),
+            )
+        });
+        restore_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build constructs its only instance");
+        cancel_graph_offline("render-final-restore".to_string(), &state).expect("the cancel lands");
+        release_restore.send(()).expect("the build is waiting");
+        building.join().expect("the build thread returns")
+    });
+
+    let refusal =
+        outcome.expect_err("a render cancelled before its final restore returns no print");
+    assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    assert_eq!(
+        restored_builds.load(Ordering::SeqCst),
+        0,
+        "the build stopped before restoring its final instance"
+    );
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the instance's construction and release ran"
     );
 }
 
@@ -1385,7 +2450,13 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.capture_state = |_, _| Err("a refused rate reads no live state".to_string());
+    seams.capture_state = |_, _, _| {
+        Err(PluginCommandError::Control(
+            PluginControlRefusal::TimedOut {
+                plugin: "a refused rate reads no live state".to_string(),
+            },
+        ))
+    };
     let render_at = |devices: Value, sample_rate: f64| {
         block_on_test(render_graph_offline_with(
             batch(impulse_track(devices)),
@@ -1396,6 +2467,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
             &state,
             &seams,
         ))
+        .map_err(|refusal| refusal.to_string())
     };
 
     for sample_rate in [7_999.0, 384_001.0, f64::NAN, f64::INFINITY] {
@@ -1420,6 +2492,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
 /// have its state restored completes before the export finishes building.
 #[test]
 fn an_unload_of_every_plugin_does_not_wait_out_an_exports_build() {
+    let _hint_guard = crate::host::hint_test_support::guard();
     let _serial = crate::commands::plugins::serialize_against_exclusive_gate_holds();
     let fx = InstalledFx::create("gate-scope");
     let (state, _live) = state_with_live_fx(&fx, Format::Clap);
@@ -1507,6 +2580,172 @@ fn a_live_instance_with_parameter_writes_pending_refuses_the_render_by_that_reas
         live.has_pending_parameter_writes(),
         "the render leaves the live writes for the live engine"
     );
+}
+
+// ── (e2) Admission ──────────────────────────────────────────────────────
+
+/// The seams of a render that holds its slot until `release` sends, after
+/// announcing on `admitted` that it holds one.
+fn holding_its_slot(
+    fx: &InstalledFx,
+    admitted: mpsc::Sender<()>,
+    release: Arc<Mutex<mpsc::Receiver<()>>>,
+) -> OfflinePluginSeams {
+    let mut seams = fx.seams();
+    let admitted = Mutex::new(admitted);
+    seams.after_admission = Some(Box::new(move || {
+        admitted
+            .lock()
+            .expect("admitted")
+            .send(())
+            .expect("the test is watching admission");
+        release
+            .lock()
+            .expect("release")
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the test releases the slot");
+    }));
+    seams
+}
+
+/// Renders in flight are bounded, the ones nobody can cancel included: past
+/// the limit a render is refused by name before it maps or builds anything,
+/// and a slot given back admits the next one.
+#[test]
+fn a_render_past_the_in_flight_limit_is_refused_by_name_until_a_slot_is_released() {
+    let fx = InstalledFx::create("admission-limit");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let (admitted, admissions) = mpsc::channel();
+    let (release_unnamed, unnamed_released) = mpsc::channel();
+    let (release_named, named_released) = mpsc::channel();
+    let holding_unnamed = holding_its_slot(
+        &fx,
+        admitted.clone(),
+        Arc::new(Mutex::new(unnamed_released)),
+    );
+    let holding_named = holding_its_slot(&fx, admitted, Arc::new(Mutex::new(named_released)));
+    let plain = fx.seams();
+    let with_the_fx = || batch(impulse_track(json!([fx_device()])));
+    let built_in_only = || batch(impulse_track(json!([])));
+
+    thread::scope(|scope| {
+        let unnamed = scope.spawn(|| render(built_in_only(), &state, &ui, &holding_unnamed, None));
+        let named =
+            scope.spawn(|| render(built_in_only(), &state, &ui, &holding_named, Some("held")));
+        for _ in 0..MAX_OFFLINE_RENDERS_IN_FLIGHT {
+            admissions
+                .recv_timeout(Duration::from_secs(10))
+                .expect("each held render is admitted");
+        }
+
+        let refusal = render(with_the_fx(), &state, &ui, &plain, Some("over"))
+            .map(|print| print.len())
+            .expect_err("a render past the limit is refused");
+        assert!(
+            refusal.starts_with(OFFLINE_RENDER_LIMIT_REACHED),
+            "{refusal}"
+        );
+        assert_eq!(ui.tasks_run(), 0, "the refused render built nothing");
+        assert!(
+            state
+                .offline_renders
+                .lock()
+                .expect("renders")
+                .in_flight("over")
+                .is_none(),
+            "a refused render is not registered"
+        );
+
+        release_unnamed
+            .send(())
+            .expect("the unnamed render is waiting");
+        unnamed
+            .join()
+            .expect("the unnamed render returns")
+            .expect("the unnamed render prints");
+        render(with_the_fx(), &state, &ui, &plain, Some("after"))
+            .expect("a released slot admits the next render");
+
+        release_named.send(()).expect("the named render is waiting");
+        named
+            .join()
+            .expect("the named render returns")
+            .expect("the named render prints");
+    });
+}
+
+/// Quit's first step cancels a hosted-effect render mid-flight, whatever its
+/// caller named it, and returns once the render has released its offline
+/// instance on the UI thread — well inside the stop budget.
+#[test]
+fn the_quit_step_cancels_an_offline_render_in_flight_and_returns_within_its_budget() {
+    let fx = InstalledFx::create("quit-cancel");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(None));
+
+    let (outcome, left_running, stopped_in, charged) = thread::scope(|scope| {
+        let rendering = scope.spawn(|| {
+            block_on_test(render_graph_offline_with(
+                batch(impulse_track(json!([fx_device()]))),
+                LONG_RENDER_FRAMES,
+                EXPORT_RATE,
+                Some("export-at-quit".to_string()),
+                &ui,
+                &state,
+                &seams,
+            ))
+        });
+        // The observable: the render is registered and has rendered a block.
+        loop {
+            let started = state
+                .offline_renders
+                .lock()
+                .expect("renders")
+                .in_flight("export-at-quit")
+                .is_some_and(|control| control.rendered_frames() > 0);
+            if started {
+                break;
+            }
+            assert!(
+                !rendering.is_finished(),
+                "the render ended before quit cancelled it"
+            );
+            thread::yield_now();
+        }
+        let mut charged = Duration::ZERO;
+        let started = std::time::Instant::now();
+        let left_running = crate::shutdown::stop_offline_renders(&state, &ui, &mut |poll| {
+            thread::sleep(poll);
+            charged += poll;
+            poll
+        });
+        let stopped_in = started.elapsed();
+        let outcome = rendering.join().expect("the render thread returns");
+        (outcome, left_running, stopped_in, charged)
+    });
+
+    let refusal = outcome
+        .map(|bytes| bytes.len())
+        .expect_err("a render cancelled at quit returns no print");
+    assert!(
+        refusal.to_string().starts_with(OFFLINE_RENDER_CANCELLED),
+        "{refusal}"
+    );
+    assert_eq!(left_running, 0, "the render gave its slot back");
+    assert!(
+        charged < crate::shutdown::OFFLINE_RENDER_STOP_BUDGET,
+        "the step stopped waiting before its budget ran out: {charged:?}"
+    );
+    assert!(
+        stopped_in < crate::shutdown::SHELL_FORCE_EXIT_DEADLINE,
+        "the step returned inside the shell's force-exit deadline: {stopped_in:?}"
+    );
+    watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
 }
 
 #[test]
@@ -1653,4 +2892,27 @@ fn an_offline_clap_instance_that_refuses_to_start_processing_refuses_the_render(
 #[test]
 fn an_offline_vst3_instance_that_refuses_to_start_processing_refuses_the_render() {
     an_offline_instance_that_refuses_to_start_processing_refuses_the_render(Format::Vst3);
+}
+
+/// The renderer recognises a cancel by its `offline-render-cancelled` prefix
+/// (`isNativeOfflineRenderCancelled.ts`), so the whole text is pinned, with
+/// and without the caller's render id.
+#[test]
+fn a_cancelled_render_answers_in_the_text_the_renderer_matches() {
+    assert_eq!(
+        OfflineRenderError::Cancelled {
+            render_id: Some("render-1".to_string()),
+            frames: 512,
+        }
+        .to_string(),
+        "offline-render-cancelled: render 'render-1' was cancelled after 512 frames; nothing was returned"
+    );
+    assert_eq!(
+        OfflineRenderError::Cancelled {
+            render_id: None,
+            frames: 0,
+        }
+        .to_string(),
+        "offline-render-cancelled: render was cancelled after 0 frames; nothing was returned"
+    );
 }

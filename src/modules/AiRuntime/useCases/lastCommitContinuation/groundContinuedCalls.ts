@@ -1,3 +1,4 @@
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { denied } from '../../models/LastCommitRefusal';
@@ -19,7 +20,12 @@ export function groundContinuedCalls(
             `Repeating the last committed change there takes ${String(calls.length)} commands, more than one batch of ${String(MAX_LLM_ACTIONS_PER_BATCH)} holds.`
         );
     }
-    const converted = bridgeLlmToolCalls({ calls, context, projectPunchRegion: createPunchRegionPatch });
+    const converted = bridgeLlmToolCalls({
+        acceptsSidechainInput,
+        calls,
+        context,
+        projectPunchRegion: createPunchRegionPatch,
+    });
     const [rejection] = converted.rejections;
     if (rejection !== undefined) {
         return denied(`The continued ${rejection.name} could not be compiled: ${rejection.reason}.`);

@@ -49,14 +49,13 @@
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
+import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
+
 import { isCrumbsChainDevice } from './isCrumbsChainDevice';
 import { soundsNativeNotes } from './soundsNativeNotes';
 
 /** What a `yeast` strip is told, and the one exclusion this law reports. */
 export const GENERATIVE_MIDI_EXCLUSION_REASON = 'generative device stays on Web Audio';
-
-/** The device type whose notes are produced on the Web Audio path. */
-const GENERATIVE_DEVICE_TYPE = 'yeast';
 
 export type NativeMidiNoteSinkInput = Readonly<{
     track: Track;
@@ -96,7 +95,7 @@ export function nativeMidiNoteSink(input: NativeMidiNoteSinkInput): NativeMidiNo
     if (!device) {
         return { outcome: 'none' };
     }
-    if (track.devices.some((candidate) => candidate.type === GENERATIVE_DEVICE_TYPE)) {
+    if (track.devices.some((candidate) => isMidiTransformDevice(candidate.type))) {
         return { outcome: 'excluded', reason: GENERATIVE_MIDI_EXCLUSION_REASON };
     }
     return { outcome: 'voiced', device };

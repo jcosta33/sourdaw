@@ -86,6 +86,10 @@ vi.mock('../resolveAppComposition', () => ({
 
 vi.mock('../reloadApplication', () => ({ reloadApplication: vi.fn() }));
 
+vi.mock('../registerDeviceEnginePorts', () => ({ registerDeviceEnginePorts: vi.fn() }));
+vi.mock('../registerSupportingServicePorts', () => ({ registerSupportingServicePorts: vi.fn() }));
+vi.mock('../registerKernelPorts', () => ({ registerKernelPorts: vi.fn() }));
+
 vi.mock('#/styles/main.css', () => ({
     __esModule: true,
     then(onFulfilled: (value: Record<string, never>) => unknown, onRejected?: (reason: unknown) => unknown) {

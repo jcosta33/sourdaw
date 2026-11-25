@@ -40,6 +40,7 @@ import {
     type GuardFailureReceipt,
 } from './prContract.ts';
 import { captureProcessGroupOfPid, captureProcessGroupSnapshot } from './processSnapshot.ts';
+import { isVerifiedE2eServerStop } from './resourceGuardE2eStop.ts';
 import {
     boundedProcessTreeObservation,
     createProcessTreeState,
@@ -134,6 +135,9 @@ export type GuardedCommandResult = {
     retainedStorage?: { path: string; reason: string };
     // The census that left storage retained as a leak, recorded in the guard-failure receipt.
     census?: string;
+    // Set when the process-tree exit or the storage release could not be proved, whatever the
+    // reported reason: an operator interrupt keeps reason 'signal' but must not discharge a proof.
+    cleanupUnproved?: true;
     // Set when disk pressure refused the command before it started and the guard storage was
     // released: nothing ran and nothing leaked, so the refusal is not a lane-stopping guard failure.
     // Held storage is a leak and keeps its receipt.
@@ -184,18 +188,20 @@ const measuredScriptBudgets = new Map<string, number>([
     ['lint', 4864 * 1024 ** 2],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
-    // The focused batch that touched seven spec files at once peaked at 4423 MiB.
-    ['test:run', 6144 * 1024 ** 2],
+    // The agent campaign harness and acceptance corpora specs run together peaked at 6794 MiB.
+    ['test:run', 7680 * 1024 ** 2],
     // A focused single-crate cargo:test filter peaked at about 4710 MiB under the guard.
     ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
-    ['typecheck', 3072 * 1024 ** 2],
+    // A guarded pnpm typecheck peaked at 4101 MiB under the guard.
+    ['typecheck', 4864 * 1024 ** 2],
     // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 7966 MiB.
     ['typecheck:test', 9216 * 1024 ** 2],
     // A single-worker targeted browser diagnostic peaked at 7034 MiB under the guard.
     ['test:e2e', 8 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],
-    ['deps:validate', 6.5 * 1024 ** 3],
+    // A guarded pnpm deps:validate peaked at 6660 MiB under the guard.
+    ['deps:validate', 7424 * 1024 ** 2],
 ]);
 
 export function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
@@ -238,6 +244,10 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         return arg;
     }
     return undefined;
+}
+
+function isCleanExit(result: GuardedCommandResult): boolean {
+    return result.code === 0 && result.reason === undefined;
 }
 
 type ExplicitRecoveryProof = {
@@ -579,6 +589,7 @@ type ResourceSessionInput = {
     availableMemoryBytes?: number;
     memorySampler?: () => number | undefined;
     activeRssSampler?: (owner: ReservationRecord) => number | undefined;
+    processHost?: ProcessTreeHost;
     memoryReserveBytes?: number;
     waitIntervalMs?: number;
     onWait?: (message: string) => void;
@@ -681,7 +692,7 @@ export function reservationRssBytes(
     return reservationTreeRssBytes(owner, reservationProcessTree(owner), host);
 }
 
-export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
+function reservationProcessesAlive(owner: ReservationRecord, host: ProcessTreeHost): boolean {
     if (isSameProcess(owner.pid, owner.processStartedAt, host)) {
         return true;
     }
@@ -694,17 +705,26 @@ export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHos
         owner.childPid !== undefined &&
         childStartedAt !== undefined &&
         tree.invalidated.get(owner.childPid)?.has(childStartedAt) === true;
-    if (owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, childStartedAt, host)) {
+    return owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, childStartedAt, host);
+}
+
+function reservationInOrphanGrace(owner: ReservationRecord): boolean {
+    return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
+}
+
+export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
+    if (reservationProcessesAlive(owner, host)) {
         return true;
     }
+    const tree = reservationProcessTree(owner);
     const rssBytes = reservationTreeRssBytes(owner, tree, host);
     if (rssBytes === undefined || rssBytes > 0) {
         return true;
     }
-    return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
+    return reservationInOrphanGrace(owner);
 }
 
-function liveReservations(root: string): Array<{ owner: ReservationRecord; path: string }> {
+function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
     for (const name of readdirSync(root)) {
@@ -714,7 +734,7 @@ function liveReservations(root: string): Array<{ owner: ReservationRecord; path:
         const path = join(root, name);
         try {
             const owner = reservationWithState(path);
-            if (reservationIsLive(owner)) {
+            if (reservationIsLive(owner, host)) {
                 live.push({ owner, path });
             } else {
                 removeReservation(path);
@@ -757,7 +777,8 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
     );
     const reserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
-    const sampleActiveRss = input.activeRssSampler ?? reservationRssBytes;
+    const processHost = input.processHost ?? processTreeHost;
+    const sampleActiveRss = input.activeRssSampler ?? ((owner) => reservationRssBytes(owner, processHost));
     const waitIntervalMs = input.waitIntervalMs ?? 1_000;
     const token = randomUUID();
     const reservationPath = join(reservationsRoot, `${token}.json`);
@@ -788,12 +809,25 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
             if (availableBytes === undefined) {
                 throw new Error('available memory could not be measured');
             }
-            const reservations = liveReservations(reservationsRoot);
+            const reservations = liveReservations(reservationsRoot, processHost);
             let activeHeadroomBytes = 0;
             for (const reservation of reservations) {
                 const rssBytes = sampleActiveRss(reservation.owner);
                 if (rssBytes === undefined) {
-                    throw new Error('active validation memory could not be measured');
+                    if (!existsSync(reservation.path)) {
+                        continue;
+                    }
+                    // reservationIsLive keeps an unreadable reservation alive, so an unreadable
+                    // sample is unknown usage: hold its full reservation and keep waiting while
+                    // its owner may still run. A dead owner past its orphan grace never recovers.
+                    if (
+                        !reservationProcessesAlive(reservation.owner, processHost) &&
+                        !reservationInOrphanGrace(reservation.owner)
+                    ) {
+                        throw new Error('active validation memory could not be measured');
+                    }
+                    activeHeadroomBytes += reservation.owner.reservedRssBytes;
+                    continue;
                 }
                 activeHeadroomBytes += Math.max(0, reservation.owner.reservedRssBytes - rssBytes);
             }
@@ -2450,7 +2484,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         );
     }
     const tail = output.result();
-    return {
+    const guarded: GuardedCommandResult = {
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
@@ -2461,6 +2495,10 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         maxRssBytes,
         durationMs: Date.now() - startedAt,
     };
+    if (!storageRemoved || (child.pid !== undefined && !treeExitProved)) {
+        guarded.cleanupUnproved = true;
+    }
+    return guarded;
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {
@@ -3264,9 +3302,18 @@ export async function main(
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
-            const explicitProof = hasExplicitProof
-                ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
-                : undefined;
+            // A bare recovery of a recorded e2e server re-runs that server itself, so it is
+            // observed under a run token exactly like an explicit proof; a lint-target
+            // replacement keeps its own refusal in resolveRecoveryLintArgs.
+            const observesRecordedE2eServer =
+                !hasExplicitProof &&
+                input.lintTargetReplacements.length === 0 &&
+                receipt.command === 'node' &&
+                receipt.args[0] === 'scripts/e2eDevServer.ts';
+            const explicitProof =
+                hasExplicitProof || observesRecordedE2eServer
+                    ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
+                    : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args
@@ -3321,7 +3368,7 @@ export async function main(
                     profile: resolvedProfile,
                     maxRssBytes:
                         input.maxRssBytes ??
-                        (explicitProof === undefined
+                        (!hasExplicitProof
                             ? receipt.maxRssBytes
                             : resolveDefaultMaxRssBytes({
                                   profile: resolvedProfile,
@@ -3346,7 +3393,7 @@ export async function main(
             }
             if (explicitProof !== undefined && observationResult !== undefined) {
                 const { observed, mismatch } = observationResult;
-                if (result.code === 0 && result.reason === undefined && !observed) {
+                if (isCleanExit(result) && !observed) {
                     emitGuardedResult(recoveryCommand, result, input.showOutput);
                     error(
                         `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped${mismatch === undefined ? '' : `: ${mismatch}`}`
@@ -3354,7 +3401,11 @@ export async function main(
                     return 1;
                 }
             }
-            if (result.code === 0 && result.reason === undefined) {
+            const stoppedVerifiedE2eServer =
+                receipt.command === 'node' &&
+                observationResult !== undefined &&
+                isVerifiedE2eServerStop(result, observationResult);
+            if (isCleanExit(result) || stoppedVerifiedE2eServer) {
                 emitGuardedResult(recoveryCommand, result, input.showOutput);
                 const cleared = clearGuardFailureReceiptIfUnchanged(
                     lane.primaryRoot,

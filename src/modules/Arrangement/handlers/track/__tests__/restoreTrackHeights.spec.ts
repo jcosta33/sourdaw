@@ -132,4 +132,54 @@ describe('handleRestoreTrackHeights', () => {
         // An inverse that records its own undo entry stops undo from converging.
         expect(handleRestoreTrackHeights.undoable).toBe(false);
     });
+
+    describe('batch validation', () => {
+        const moved = { type: 'setTrackHeight', payload: { trackId: 't1', height: 90 } } as const;
+        const restoreAction = (height: number) =>
+            ({
+                type: 'restoreTrackHeights',
+                payload: { expected: [{ trackId: 't1', height }], replacement: [{ trackId: 't1', height: 74 }] },
+            }) as const;
+
+        beforeEach(() => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', name: 'Track 1', height: 74, devices: [] }],
+                selectedTrackId: null,
+            });
+        });
+
+        it('admits a restore whose expected heights the planned batch state matches', () => {
+            const action = restoreAction(90);
+            const context = { actions: [moved, action], actionIndex: 1 };
+
+            expect(handleRestoreTrackHeights.validate?.(action, context)).toBe(true);
+            expect(handleRestoreTrackHeights.validationRefusalReason?.(action, context)).toBeNull();
+        });
+
+        it('refuses a restore whose expected heights the planned batch state contradicts, with its reason', () => {
+            const action = restoreAction(74);
+            const context = { actions: [moved, action], actionIndex: 1 };
+
+            expect(handleRestoreTrackHeights.validate?.(action, context)).toBe(false);
+            expect(handleRestoreTrackHeights.validationRefusalReason?.(action, context)).toBe(
+                'Track heights changed after the zoom or resize this restores'
+            );
+        });
+
+        it('refuses a restore naming a track the batch state does not hold', () => {
+            const action = {
+                type: 'restoreTrackHeights',
+                payload: {
+                    expected: [{ trackId: 'ghost', height: 74 }],
+                    replacement: [{ trackId: 'ghost', height: 64 }],
+                },
+            } as const;
+
+            expect(handleRestoreTrackHeights.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        });
+
+        it('may always be replayed after divergence, since every restore names the heights it expects', () => {
+            expect(handleRestoreTrackHeights.canReapplyAfterDivergence?.(restoreAction(74), undefined)).toBe(true);
+        });
+    });
 });

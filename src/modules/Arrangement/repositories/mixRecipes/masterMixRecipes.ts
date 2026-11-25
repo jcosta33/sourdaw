@@ -71,6 +71,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'edit',
                 deviceType: 'builtin-limiter',
                 parameters: [
+                    { paramId: 'lim-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'lim-release', minimum: 30, maximum: 80 },
                     { paramId: 'lim-threshold', minimum: -6, maximum: -2 },
                     { paramId: 'lim-ceiling', minimum: -1, maximum: -0.3 },
@@ -100,6 +101,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -16, maximum: -8 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -168,6 +170,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -16, maximum: -8 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -311,6 +314,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -14, maximum: -6 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 25, maximum: 30 },
@@ -418,6 +422,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -14, maximum: -6 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 25, maximum: 30 },

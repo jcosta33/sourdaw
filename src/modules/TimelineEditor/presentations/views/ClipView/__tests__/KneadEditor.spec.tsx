@@ -91,7 +91,8 @@ vi.mock('#/modules/Knead/stores', () => ({
     kneadStore: { value: { clips: {} } },
 }));
 
-vi.mock('#/modules/Knead/useCases', () => ({
+vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
+    hostsKnead: (await importOriginal<typeof import('#/modules/Knead/useCases')>()).hostsKnead,
     updateClipKneadState: vi.fn(),
     analyzeClipPitch: vi.fn(() => Promise.resolve({ status: 'no-buffer', reason: 'missing-clip-or-buffer' })),
     captureClipPitchAnalysis: vi.fn(),

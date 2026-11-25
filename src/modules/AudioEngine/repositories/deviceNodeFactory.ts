@@ -15,7 +15,7 @@ import {
 import { createCompressor } from './devices/dynamics/createCompressor';
 import { createEq } from './devices/dynamics/createEq';
 import { createLimiter } from './devices/dynamics/createLimiter';
-import { createSidechainCompressorFallback } from './devices/dynamics/createSidechainCompressorFallback';
+import { createOfflineSidechainCompressor } from './devices/dynamics/createOfflineSidechainCompressor';
 import { createAutoPan } from './devices/modulation/createAutoPan';
 import { createChorus } from './devices/modulation/createChorus';
 import { createFlanger } from './devices/modulation/createFlanger';
@@ -69,7 +69,7 @@ export const BUILTIN_DEVICE_NODE_FACTORIES: readonly BuiltinDeviceNodeFactory[] 
     { type: 'builtin-compressor', create: createCompressor, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
     {
         type: 'builtin-sidechain-compressor',
-        create: createSidechainCompressorFallback,
+        create: createOfflineSidechainCompressor,
         runtime: SIDECHAIN_COMPRESSOR_RUNTIME_STRATEGY,
     },
     { type: 'builtin-limiter', create: createLimiter, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },

@@ -73,6 +73,7 @@ vi.mock('#/infra/di/Container', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     sanitizeTrackSnapshot: vi.fn(),
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     persistDeviceParam: vi.fn(),
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
@@ -246,6 +247,10 @@ describe('initWebMidi', () => {
 
         expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
         expect(routeYeastNoteOffsMock.mock.calls[0]?.[1]).toEqual([leftover]);
+        expect(routeYeastNoteOffsMock.mock.calls[0]?.[0]).toEqual({
+            id: 'track-a',
+            receiver: { id: 'fermenter-a', type: 'fermenter', controlsKey: 'fermenterControls' },
+        });
     });
 
     it('releases only the retired voice through the real handler path, never a same-pitch successor on the replacement (#4873)', async () => {

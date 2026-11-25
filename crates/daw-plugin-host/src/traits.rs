@@ -11,11 +11,59 @@
 //! and a second format's backend has to speak them without depending on the
 //! CLAP backend module.
 
+use crate::clap_wrapper::ClapError;
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
+use crate::vst3_wrapper::Vst3Error;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+
+/// Why a loaded plugin refused a seam operation: its state, its editor, or a
+/// latency re-query.
+///
+/// The seam's own refusal is [`PluginError::GuiUnsupported`], the answer of a
+/// backend with no editor. Every other variant carries the backend's own
+/// error, so a caller can tell which format refused and why without reading
+/// text. Every variant is built on the control path.
+#[derive(Debug)]
+pub enum PluginError {
+    /// The backend has no editor to open, resize or re-scale.
+    GuiUnsupported,
+    /// The CLAP backend refused.
+    Clap(ClapError),
+    /// The VST3 backend refused.
+    Vst3(Vst3Error),
+    /// The host withdrew the construction before the plugin was opened.
+    ConstructionWithdrawn,
+}
+
+impl std::fmt::Display for PluginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GuiUnsupported => f.write_str("Plugin does not support GUI"),
+            Self::Clap(error) => write!(f, "{error}"),
+            Self::Vst3(error) => write!(f, "{error}"),
+            Self::ConstructionWithdrawn => {
+                f.write_str("the host withdrew the construction before the plugin was opened")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PluginError {}
+
+impl From<ClapError> for PluginError {
+    fn from(error: ClapError) -> Self {
+        Self::Clap(error)
+    }
+}
+
+impl From<Vst3Error> for PluginError {
+    fn from(error: Vst3Error) -> Self {
+        Self::Vst3(error)
+    }
+}
 
 /// Host-supplied wake invoked whenever a plugin flags a latency change.
 ///
@@ -52,6 +100,12 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
+    /// The plugin changed what its component is — its buses, or the whole
+    /// component — and asked to be deactivated and activated again so the host
+    /// re-reads it. The cycle calls the plugin's own lifecycle, which both its
+    /// format and this host bind to the host's UI thread, so the follow-up is
+    /// carried there under the runtime owner's exclusive claim.
+    ComponentRestart,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -75,6 +129,68 @@ pub type PluginHostRequestNotifier = Box<dyn Fn(PluginHostRequest) + Send + Sync
 /// the backend hands a clone to whichever host object the format routes the
 /// request through. Called on the control path only.
 pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
+
+/// The host window an open editor is drawn into, as the control path
+/// addresses it when it answers what the plugin asked of that window.
+///
+/// The asks arrive from inside the plugin — CLAP's `gui.request_show`,
+/// `request_hide`, `closed` and `resize_hints_changed` are all
+/// `[thread-safe]` — so the backend only records them, and the host carries
+/// them out later. Answering takes both halves of this seam: plugin calls
+/// that belong to the thread owning the window, and window operations.
+pub trait EditorWindowHost: Send + Sync {
+    /// Make the window visible without taking focus from the DAW.
+    fn show(&self);
+
+    /// Hide the window, leaving the editor parented into it.
+    fn hide(&self);
+
+    /// Whether the user may drag this window's edges.
+    fn set_resizable(&self, resizable: bool);
+
+    /// End the window. Only after the editor has left it.
+    fn destroy(&self);
+
+    /// Run `work` on the thread that owns this window, and return once it has
+    /// run. `Err` means it did not run and never will.
+    fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
+}
+
+/// Shared because the backend keeps it for the editor's life and hands a clone
+/// to whoever answers the plugin's asks.
+pub type SharedEditorWindow = Arc<dyn EditorWindowHost>;
+
+/// What the plugin asked of its editor's window since the host last looked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EditorWindowAsks {
+    /// The newest show or hide request; an older one it overrides is moot.
+    pub visibility: Option<EditorVisibility>,
+    /// The plugin reported that its editor is gone.
+    pub closed: Option<EditorClosed>,
+    /// The plugin's resize constraints changed and must be read again.
+    pub resize_hints_changed: bool,
+}
+
+impl EditorWindowAsks {
+    pub fn is_empty(&self) -> bool {
+        self.visibility.is_none() && self.closed.is_none() && !self.resize_hints_changed
+    }
+}
+
+/// Which way a plugin asked its editor window to go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorVisibility {
+    Show,
+    Hide,
+}
+
+/// A plugin's report that its editor ended on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorClosed {
+    /// Whether the plugin already released its editor resources. When it has,
+    /// the host acknowledges with `destroy` and must not call into the view.
+    pub was_destroyed: bool,
+}
 
 /// The display scale a backend assumes until the host states one.
 ///
@@ -272,10 +388,10 @@ pub trait AudioPlugin: Send + Sync {
     ///
     /// Fallible because a refusal and an empty state are different answers, and
     /// only the first one must never be written over a project's last good save.
-    fn get_state(&self) -> Result<Vec<u8>, String>;
+    fn get_state(&self) -> Result<Vec<u8>, PluginError>;
 
     /// Set the opaque binary state of the plugin.
-    fn set_state(&mut self, state: &[u8]) -> Result<(), String>;
+    fn set_state(&mut self, state: &[u8]) -> Result<(), PluginError>;
 
     /// The plugin's display name.
     ///
@@ -294,8 +410,8 @@ pub trait AudioPlugin: Send + Sync {
     }
 
     /// Open the plugin's editor, parenting it into the given native handle.
-    fn open_gui(&mut self, _handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        Err("Plugin does not support GUI".to_string())
+    fn open_gui(&mut self, _handle_ptr: *mut c_void) -> Result<(u32, u32), PluginError> {
+        Err(PluginError::GuiUnsupported)
     }
 
     /// Close the plugin's editor. A plugin with no editor has nothing to close.
@@ -354,8 +470,12 @@ pub trait AudioPlugin: Send + Sync {
     ///
     /// The default refuses, because a backend with no editor has no size to
     /// negotiate.
-    fn request_editor_size(&mut self, _width: u32, _height: u32) -> Result<(u32, u32), String> {
-        Err("Plugin does not support GUI".to_string())
+    fn request_editor_size(
+        &mut self,
+        _width: u32,
+        _height: u32,
+    ) -> Result<(u32, u32), PluginError> {
+        Err(PluginError::GuiUnsupported)
     }
 
     /// Restate the display scale for an editor that is already open, reporting
@@ -370,8 +490,8 @@ pub trait AudioPlugin: Send + Sync {
     /// sized for another.
     ///
     /// The default refuses, for the same reason the resize does.
-    fn apply_editor_content_scale(&mut self, _scale: f64) -> Result<(u32, u32), String> {
-        Err("Plugin does not support GUI".to_string())
+    fn apply_editor_content_scale(&mut self, _scale: f64) -> Result<(u32, u32), PluginError> {
+        Err(PluginError::GuiUnsupported)
     }
 
     /// Carry out an editor resize the plugin asked for, reporting the size that
@@ -389,6 +509,35 @@ pub trait AudioPlugin: Send + Sync {
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         None
     }
+
+    /// Install the window the editor is about to open into, so the asks the
+    /// plugin makes of it later have somewhere to go. Released when the editor
+    /// closes. The default ignores it: a format whose plugin cannot ask
+    /// anything of its window has nothing to route.
+    fn set_editor_window(&mut self, _window: SharedEditorWindow) {}
+
+    /// The window to answer the plugin's pending editor-window asks through,
+    /// without taking them. **Control path only**; it makes no plugin call.
+    ///
+    /// `None` when nothing is pending or no window is installed. Lets a caller
+    /// learn where the asks go before it commits to the hop that takes them, so
+    /// a hop that fails leaves them recorded.
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        None
+    }
+
+    /// Take what the plugin asked of its editor window, with the window to
+    /// answer it through. **Control path only**; it makes no plugin call.
+    ///
+    /// `None` when nothing is pending or no window is installed.
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        None
+    }
+
+    /// Carry out asks taken by [`Self::take_editor_window_asks`]. **On the
+    /// thread that owns the editor's window**, because answering them calls
+    /// into the editor.
+    fn answer_editor_window_asks(&mut self, _asks: EditorWindowAsks) {}
 
     /// Read and clear the "plugin state changed" signal the plugin raised.
     /// **Control path only.**
@@ -510,7 +659,21 @@ pub trait HostedPluginRuntime: AudioPlugin {
 
     /// Apply a latency change the plugin flagged, returning the new latency in
     /// frames, or `None` when nothing was pending. Control path only.
-    fn poll_latency_change(&mut self) -> Result<Option<u32>, String>;
+    fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError>;
+
+    /// Run the deactivate/re-read/reactivate cycle the plugin asked for when it
+    /// changed its buses or its whole component, and report whether one ran.
+    /// **Control path, on the host's UI thread**, under the runtime owner's
+    /// exclusive claim: the cycle is the plugin's own lifecycle, which its
+    /// format binds to the UI thread.
+    ///
+    /// A layout the host cannot route is an `Err`, and the instance is left
+    /// out of service on its slot rather than processed with the geometry it
+    /// had before. The default answers that nothing was asked for, for a
+    /// format whose restart requests arrive some other way.
+    fn apply_component_restart(&mut self) -> Result<bool, PluginError> {
+        Ok(false)
+    }
 
     /// Answer the plugin's request that the host call `on_main_thread` on it,
     /// making that call if one is pending. Control path only.
@@ -623,3 +786,53 @@ pub fn take_pending_process_refusal_signal() -> bool {
 /// signal.
 #[cfg(test)]
 pub(crate) static PROCESS_REFUSAL_HINT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct EditorlessPlugin;
+
+    impl AudioPlugin for EditorlessPlugin {
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
+            Ok(Vec::new())
+        }
+        fn set_state(&mut self, _: &[u8]) -> Result<(), PluginError> {
+            Ok(())
+        }
+    }
+
+    /// A backend with no editor refuses every editor call with the seam's own
+    /// variant, and the renderer receives the text it always has.
+    #[test]
+    fn a_backend_with_no_editor_refuses_with_the_seams_own_variant() {
+        let mut plugin = EditorlessPlugin;
+
+        for refusal in [
+            plugin.open_gui(std::ptr::null_mut()),
+            plugin.request_editor_size(640, 480),
+            plugin.apply_editor_content_scale(2.0),
+        ] {
+            let refusal = refusal.expect_err("no editor to address");
+            assert!(matches!(refusal, PluginError::GuiUnsupported));
+            assert_eq!(refusal.to_string(), "Plugin does not support GUI");
+        }
+    }
+
+    /// A backend's refusal keeps its format and its own text through the seam.
+    #[test]
+    fn a_backend_refusal_keeps_its_format_and_its_text() {
+        let clap = PluginError::from(ClapError::GuiAlreadyOpen);
+        let vst3 = PluginError::from(Vst3Error::StateForeign);
+
+        assert!(matches!(clap, PluginError::Clap(ClapError::GuiAlreadyOpen)));
+        assert_eq!(clap.to_string(), "GUI is already open");
+        assert!(matches!(vst3, PluginError::Vst3(Vst3Error::StateForeign)));
+        assert_eq!(vst3.to_string(), "VST3 state was not written by this host");
+    }
+}

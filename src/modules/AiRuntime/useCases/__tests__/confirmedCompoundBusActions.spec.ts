@@ -25,6 +25,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectDivergencePort,
     compileVersionedCommandBatchEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
@@ -36,6 +37,7 @@ import {
 import {
     captureProjectIdentity,
     captureProjectRevision,
+    inspectAgentProjectDivergence,
     createCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
@@ -486,6 +488,7 @@ describe('confirmed compound bus actions', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
         configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:confirmed-compound-bus',
         });
@@ -517,7 +520,6 @@ describe('confirmed compound bus actions', () => {
         vi.restoreAllMocks();
         audioEngine.resetGraph();
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();

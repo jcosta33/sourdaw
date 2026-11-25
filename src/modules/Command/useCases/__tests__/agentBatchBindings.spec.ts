@@ -129,8 +129,6 @@ function registerCreationHandlers(): void {
 describe('agent batch bindings', () => {
     afterEach(() => {
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
-        commandProjectDivergencePort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });

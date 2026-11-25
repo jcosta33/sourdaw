@@ -2,15 +2,20 @@ import { captureAutomationRecordingRollback } from '#/modules/Automation/useCase
 import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { clampTrackPan } from '../../useCases/setTrackGainPan/clampTrackPan';
 import { setTrackPan } from '../../useCases/setTrackGainPan/setTrackPan';
 import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+
+import { readPlannedDisplayTrack } from './readPlannedDisplayTrack';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
     canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
         const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
-        return currentPan === action.payload.expectedPan;
+        // A NaN pan would be stored, and its inverse's `expectedPan` could never match it.
+        // Batches refuse here; a single dispatch skips `validate`, so `execute` refuses too.
+        return Number.isFinite(action.payload.pan) && currentPan === action.payload.expectedPan;
     },
     // A suppressed edit cannot reach the recording maps, so snapshotting and
     // restoring them on abort would only be able to discard a pass some other
@@ -21,7 +26,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
             : captureAutomationRecordingRollback(),
     execute: (action) => {
         const currentPan = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan;
-        if (currentPan !== action.payload.expectedPan) {
+        if (currentPan !== action.payload.expectedPan || !Number.isFinite(action.payload.pan)) {
             return { status: 'conflict' };
         }
         setTrackPan(action.payload.trackId, action.payload.pan, false, {
@@ -32,14 +37,17 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
     validateSessionEntry: sessionEntryAgreesOnAutomationRecordingPolicy,
     isNoop: (action) => {
         const currentPan = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan;
-        return currentPan === action.payload.expectedPan && currentPan === action.payload.pan;
+        return currentPan === action.payload.expectedPan && currentPan === clampTrackPan(action.payload.pan);
     },
-    describe: (alpha) => {
-        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+    describe: (alpha, context) => {
+        const prev = readPlannedDisplayTrack(alpha.payload.trackId, context);
         // Both replay legs inherit the forward policy: undoing or redoing a
         // static edit is still not a pan gesture.
         const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
         const carriedPolicy = automationRecordingPolicy === undefined ? {} : { automationRecordingPolicy };
+        // The writer clamps, and the inverse's `expectedPan` is compared with the
+        // stored value on the way back, so predict the written pan, not the request.
+        const written = clampTrackPan(alpha.payload.pan);
         return {
             label: 'Set track pan',
             inverseAction: prev
@@ -48,7 +56,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
                       payload: {
                           trackId: alpha.payload.trackId,
                           pan: prev.pan,
-                          expectedPan: alpha.payload.pan,
+                          expectedPan: written,
                           ...carriedPolicy,
                       },
                   }
@@ -58,7 +66,7 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
                       type: 'setTrackPan',
                       payload: {
                           trackId: alpha.payload.trackId,
-                          pan: alpha.payload.pan,
+                          pan: written,
                           expectedPan: prev.pan,
                           ...carriedPolicy,
                       },

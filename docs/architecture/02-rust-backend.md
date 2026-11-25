@@ -782,7 +782,9 @@ interpolates a value, and wraps a source error where the message prints one.
 Do not leak raw internal error chains directly to the frontend as your API contract. `String`
 survives only at the edges where an error leaves Rust: a napi command body or a wasm-bindgen
 `JsError` converts the typed error with `to_string()` there, and nowhere else. Real-time paths never
-build an owned error. See
+build an owned error. The workspace lint table denies `clippy::all` for every crate, which enforces
+`clippy::result_large_err` and `clippy::result_unit_err`: box a large error rather than suppress
+either lint. See
 [ADR 0059](../../.agents/decisions/0059-type-rust-errors-where-callers-distinguish-them.md).
 
 ---

@@ -20,7 +20,7 @@ import {
     type HandlerValidationContext,
 } from '#/utils/handlerContract';
 
-import { AppActionConflictError } from '../errors/AppActionExecutionError';
+import { AppActionBlockedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { undoEntryStoresCommandIdByActionType } from '../models/UndoEntryCommandIdPolicy';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 import {
@@ -107,6 +107,8 @@ type ExecuteAppActionBatchResult =
           reason: string;
           actions: [];
           failureKind?: 'verification';
+          /** With `conflicted`: a handler refused for a transient runtime state, not a diverged document (`AppActionBlockedError`). */
+          blocked?: true;
       };
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
@@ -432,7 +434,7 @@ async function executePreparedBatch(
             prepared.commitValidation = result?.commitValidation ?? null;
             if (result?.status === 'no-write' || result?.status === 'conflict') {
                 attemptedActions.pop();
-                throw new AppActionConflictError(prepared.action.type, result.reason);
+                throw handlerRefusalError(prepared.action.type, result);
             }
             prepared.afterCommit = result?.afterCommit ?? null;
             prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
@@ -446,6 +448,22 @@ async function executePreparedBatch(
             prepared.commitValidation?.release();
         }
     }
+}
+
+/** A handler refusal is a blocked conflict only when the handler said it reflects transient runtime state. */
+function handlerRefusalError(actionType: string, result: HandlerExecutionResult): AppActionConflictError {
+    if (result.blocked === true) {
+        return new AppActionBlockedError(actionType, result.reason);
+    }
+    return new AppActionConflictError(actionType, result.reason);
+}
+
+/** A conflict keeps `blocked` only when a handler refused for a transient runtime state. */
+function conflictedBatchResult(error: unknown, reason: string): ExecuteAppActionBatchResult {
+    if (error instanceof AppActionBlockedError) {
+        return { status: 'conflicted', reason, actions: [], blocked: true };
+    }
+    return { status: 'conflicted', reason, actions: [] };
 }
 
 function rollbackAttemptedBatch(
@@ -1033,7 +1051,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     !compensationFailure &&
                     !rollbackFailure
                 ) {
-                    return { status: 'conflicted', reason, actions: [] };
+                    return conflictedBatchResult(error, reason);
                 }
                 if (error instanceof AppActionBatchApprovalError && !compensationFailure && !rollbackFailure) {
                     return { status: 'rejected', reason, actions: [] };

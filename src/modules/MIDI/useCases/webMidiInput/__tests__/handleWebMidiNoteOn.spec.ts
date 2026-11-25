@@ -20,7 +20,8 @@ const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getRecordingMidiAdmission: () => undefined,
     retireRecordingMidiAdmission: () => undefined,
     takeOwnsRecordingRoot: () => true,
@@ -51,27 +52,42 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => target_track_id.value,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    applyNoteExpression: apply_note_expression,
-    builtinSynthVoice: { read: () => synthVoices },
-    audioEngine: {
-        context: audio_clock,
-        ensureTrackStrip: ensure_track_strip,
-        getTrackStrip: get_track_strip,
-        scheduleDeviceKeyOn: schedule_device_key_on,
-        scheduleDeviceKeyOff: schedule_device_key_off,
-    },
-    getCompensationDelay: () => 0,
-    getDefaultBendRangeSemitones: () => 48,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-    soundsNativeNotes: (type: string) => type === 'fermenter',
-    startFaustNote: start_faust_note,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        applyNoteExpression: apply_note_expression,
+        builtinSynthVoice: { read: () => synthVoices },
+        audioEngine: {
+            context: audio_clock,
+            ensureTrackStrip: ensure_track_strip,
+            getTrackStrip: get_track_strip,
+            scheduleDeviceKeyOn: schedule_device_key_on,
+            scheduleDeviceKeyOff: schedule_device_key_off,
+        },
+        getCompensationDelay: () => 0,
+        getDefaultBendRangeSemitones: () => 48,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: (type: string) => type === 'fermenter',
+        startFaustNote: start_faust_note,
+        // The note-input answers are the real ones: which instrument takes a key is the subject here.
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+    };
+});
 
-vi.mock('#/modules/PluginHost/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     registerFaustDSP: vi.fn(),
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));

@@ -120,3 +120,15 @@ describe('normalizeTrack', () => {
         expect(time.outputId).toBe('hw_out');
     });
 });
+
+describe('normalizeTrack height', () => {
+    it.each([
+        [500, 300],
+        [10, 30],
+        [0, 80],
+        [undefined, 80],
+        [150, 150],
+    ])('decodes a stored height of %s to %s', (stored, shown) => {
+        expect(normalizeTrack({ id: 't', name: 'T', kind: 'audio', height: stored }).height).toBe(shown);
+    });
+});

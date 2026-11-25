@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Track } from '#/modules/Arrangement/stores';
+import { externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -125,6 +126,7 @@ type ExportDialogMocks = {
     loggerWarn: ReturnType<typeof vi.fn>;
     midiStore: TestStore<TestMidiState>;
     notifyUser: ReturnType<typeof vi.fn>;
+    refreshExternalPluginTails: ReturnType<typeof vi.fn<() => Promise<void>>>;
     renderOffline: ReturnType<typeof vi.fn<RenderOffline>>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<RestoreAudioBuffers>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
@@ -182,6 +184,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         loggerWarn: vi.fn(),
         midiStore,
         notifyUser: vi.fn(),
+        refreshExternalPluginTails: vi.fn<() => Promise<void>>(async () => {}),
         renderOffline: vi.fn<RenderOffline>(),
         restoreCachedAudioBuffersFromIdb: vi.fn<RestoreAudioBuffers>(),
         selectNativeAudioExportFile: vi.fn(),
@@ -227,58 +230,75 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: mocks.useStore,
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    sanitizeTrackSnapshot: vi.fn(),
-    activeRecordingRef: { current: [] },
-    readMusicalRangeInputs: vi.fn(() => []),
-    defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
-    trackStore: mocks.trackStore,
-    defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
-    clipSelectionStore: mocks.clipSelectionStore,
-    defaultSoloModeState: { soloMode: 'sip' },
-    soloModeStore: mocks.soloModeStore,
-    // Not exercised by this spec — stubbed only because this spec's module graph
-    // reaches these transitively (through unrelated use cases that share the
-    // barrel) and the widened barrel-mock-coverage gate (`stores`) treats every
-    // reachable import as required, even one only read inside a function body
-    // this spec's tests never call.
-    persistDeviceParam: vi.fn(),
-    readMusicalRange: vi.fn(),
-    resolveEligibleDeviceWriteTarget: vi.fn(),
-    getTrackEligibility: vi.fn(),
-    gainEnvelopeStore: { value: null },
-    warpStateStore: { value: null },
-    getWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getWarpState>(() => ({
-        enabled: false,
-        markers: [],
-        stretchMode: 'repitch',
-        originalTempo: null,
-    })),
-    getStoredWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getStoredWarpState>(() => undefined),
-    setWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').setWarpState>(() => {
-        throw new Error('Unexpected warp-state mutation in this fixture');
-    }),
-    addWarpMarker: vi.fn<typeof import('#/modules/Arrangement/stores').addWarpMarker>(() => {
-        throw new Error('Unexpected warp-marker mutation in this fixture');
-    }),
-    markerStore: { value: null },
-    resolveEligibleClipWriteTarget: vi.fn(),
-    updateClipInStore: vi.fn(),
-    appendClipToTrack: vi.fn(),
-    takeLaneStore: { value: null },
-    vcaGroupStore: { value: null },
-    adjustmentLayerStore: { value: null },
-}));
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        sanitizeTrackSnapshot: vi.fn(),
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
+        clampDeviceParamWrite: actual.clampDeviceParamWrite,
+        clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
+        deriveEffectiveAudibility: actual.deriveEffectiveAudibility,
+        deriveVcaMultiplier: actual.deriveVcaMultiplier,
+        getGainEnvelopeSeries: actual.getGainEnvelopeSeries,
+        getVcaGroupsState: actual.getVcaGroupsState,
+        shouldCreateLiveTrackStrip: actual.shouldCreateLiveTrackStrip,
+        activeRecordingRef: { current: [] },
+        readMusicalRangeInputs: vi.fn(() => []),
+        defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
+        trackStore: mocks.trackStore,
+        defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+        clipSelectionStore: mocks.clipSelectionStore,
+        defaultSoloModeState: { soloMode: 'sip' },
+        soloModeStore: mocks.soloModeStore,
+        // Not exercised by this spec — stubbed only because this spec's module graph
+        // reaches these transitively (through unrelated use cases that share the
+        // barrel) and the widened barrel-mock-coverage gate (`stores`) treats every
+        // reachable import as required, even one only read inside a function body
+        // this spec's tests never call.
+        persistDeviceParam: vi.fn(),
+        readMusicalRange: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn(),
+        getTrackEligibility: vi.fn(),
+        gainEnvelopeStore: { value: null },
+        warpStateStore: { value: null },
+        getWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getWarpState>(() => ({
+            enabled: false,
+            markers: [],
+            stretchMode: 'repitch',
+            originalTempo: null,
+        })),
+        getStoredWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getStoredWarpState>(() => undefined),
+        setWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').setWarpState>(() => {
+            throw new Error('Unexpected warp-state mutation in this fixture');
+        }),
+        addWarpMarker: vi.fn<typeof import('#/modules/Arrangement/stores').addWarpMarker>(() => {
+            throw new Error('Unexpected warp-marker mutation in this fixture');
+        }),
+        markerStore: { value: null },
+        resolveEligibleClipWriteTarget: vi.fn(),
+        updateClipInStore: vi.fn(),
+        appendClipToTrack: vi.fn(),
+        takeLaneStore: { value: null },
+        vcaGroupStore: { value: null },
+        adjustmentLayerStore: { value: null },
+    };
+});
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const {
         frozenMidiTakeOccurrenceOriginBeat,
+        frozenMidiTakeRepeats,
         isFrozenMidiTakeSource,
         isValidMidiNoteExpression,
+        projectFrozenMidiTakeWindow,
         sanitizeMidiStoreState,
+        selectMidiNotesForRecordingPass,
     } = await importOriginal<typeof import('#/modules/MIDI/stores')>();
     return {
         frozenMidiTakeOccurrenceOriginBeat,
+        frozenMidiTakeRepeats,
+        projectFrozenMidiTakeWindow,
+        selectMidiNotesForRecordingPass,
         isFrozenMidiTakeSource,
         isValidMidiNoteExpression,
         sanitizeMidiStoreState,
@@ -309,6 +329,14 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     listToasterPatternsOutsideArrangement: mocks.listToasterPatternsOutsideArrangement,
 }));
 
+// Only the refresh is replaced: one case loads the real AudioEngine, which needs the
+// rest of this barrel. The refresh's own behaviour is pinned in PluginHost; this spec
+// observes only when the dialog asks for it.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    refreshExternalPluginTails: mocks.refreshExternalPluginTails,
+}));
+
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: mocks.automationStore,
     // Not exercised by this spec — stubbed for the same reason as above.
@@ -318,99 +346,117 @@ vi.mock('#/modules/Automation/stores', () => ({
 // Export assertions spy through the `mocks.*` bindings below; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    openCachedAudioBufferHold: vi.fn(() => {
-        throw new Error('Unexpected audio buffer residency hold in this fixture');
-    }),
-    captureOfflineRenderProjectSource: vi.fn(() => {
-        throw new Error('Unexpected selection render capture in this fixture');
-    }),
-    captureOfflineRenderRuntimeInput: vi.fn(() => {
-        throw new Error('Unexpected selection render capture in this fixture');
-    }),
-    builtinSynthVoice: { read: vi.fn() },
-    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
-    reconcileAutoInputMonitoring: vi.fn(),
-    stopTrackInputMonitoring: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        isDrumDevice: actual.isDrumDevice,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        openCachedAudioBufferHold: vi.fn(() => {
+            throw new Error('Unexpected audio buffer residency hold in this fixture');
+        }),
+        captureOfflineRenderProjectSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        captureOfflineRenderRuntimeInput: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        builtinSynthVoice: { read: vi.fn() },
+        rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
+        reconcileAutoInputMonitoring: vi.fn(),
+        stopTrackInputMonitoring: vi.fn(),
 
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    projectsToDifferentNativeBank: vi.fn(() => false),
-    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    discardDecodedAudioFile: vi.fn(),
-    cancelExport: vi.fn(),
-    exportStems: async (options: Parameters<ExportStems>[0]) => {
-        const stems: Map<string, AudioBuffer> = await mocks.exportStems(options);
-        options.onStemPlan?.([...stems.keys()]);
-        let index = 0;
-        for (const [id, buffer] of stems) {
-            await options.onStem?.(id, buffer, index++, stems.size);
-        }
-        return new Map();
-    },
-    getAudioContext: mocks.getAudioContext,
-    getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
-    isExportActive: mocks.isExportActive,
-    renderOffline: async (options: Parameters<RenderOffline>[0]) => {
-        const buffer = await mocks.renderOffline(options);
-        await options.onRendered?.(buffer);
-        return buffer;
-    },
-    restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
-    addMidiFxToStrip: vi.fn(),
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
-    audioEngine: {},
-    cacheAudioBuffer: vi.fn(),
-    clearReportedLatency: vi.fn(),
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-    decodeAudioFile: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    garbageCollectCachedAudioBuffersByAge: vi.fn(),
-    garbageCollectCachedAudioBuffersBySize: vi.fn(),
-    garbageCollectFreezeAudioBuffers: vi.fn(),
-    getCachedAudioBuffer: vi.fn(),
-    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
-    holdAudioBufferForSession: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getDeviceChainTailSeconds: vi.fn(),
-    getEngineState: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    getRuntimeGraphRevision: vi.fn(),
-    getTrackStrip: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
-    matchesRuntimeDeviceChainTopology: vi.fn(),
-    removeBusStrip: vi.fn(),
-    removeMidiFxFromStrip: vi.fn(),
-    removeSend: vi.fn(),
-    removeTrackStrip: vi.fn(),
-    deactivateTrackStrip: vi.fn(),
-    renderTrackSubgraphOffline: vi.fn(),
-    reportLatency: vi.fn(),
-    resolveToasterPadBinding: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackOutput: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    startInputMonitoring: vi.fn(),
-    stopInputMonitoring: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    updateDeviceBypass: vi.fn(),
-    updateDeviceParam: vi.fn(),
-    updateMidiFxBypass: vi.fn(),
-    updateMidiFxParam: vi.fn(),
-    wireSidechainRoute: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        projectsToDifferentNativeBank: vi.fn(() => false),
+        nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        discardDecodedAudioFile: vi.fn(),
+        cancelExport: vi.fn(),
+        exportStems: async (options: Parameters<ExportStems>[0]) => {
+            const stems: Map<string, AudioBuffer> = await mocks.exportStems(options);
+            options.onStemPlan?.([...stems.keys()]);
+            let index = 0;
+            for (const [id, buffer] of stems) {
+                await options.onStem?.(id, buffer, index++, stems.size);
+            }
+            return new Map();
+        },
+        getAudioContext: mocks.getAudioContext,
+        getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        isExportActive: mocks.isExportActive,
+        renderOffline: async (options: Parameters<RenderOffline>[0]) => {
+            const buffer = await mocks.renderOffline(options);
+            await options.onRendered?.(buffer);
+            return buffer;
+        },
+        restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
+        addMidiFxToStrip: vi.fn(),
+        analyzePitchForClip: vi.fn(),
+        applyNoteExpression: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(),
+        audioEngine: {},
+        cacheAudioBuffer: vi.fn(),
+        clearReportedLatency: vi.fn(),
+        createRuntimeGraphTopologyFingerprint: vi.fn(),
+        decodeAudioFile: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        garbageCollectCachedAudioBuffersByAge: vi.fn(),
+        garbageCollectCachedAudioBuffersBySize: vi.fn(),
+        garbageCollectFreezeAudioBuffers: vi.fn(),
+        getCachedAudioBuffer: vi.fn(),
+        restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+        holdAudioBufferForSession: vi.fn(),
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getDeviceChainTailSeconds: vi.fn(),
+        getEngineState: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        getRuntimeGraphRevision: vi.fn(),
+        getTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(),
+        matchesRuntimeDeviceChainTopology: vi.fn(),
+        removeBusStrip: vi.fn(),
+        removeMidiFxFromStrip: vi.fn(),
+        removeSend: vi.fn(),
+        removeTrackStrip: vi.fn(),
+        deactivateTrackStrip: vi.fn(),
+        renderTrackSubgraphOffline: vi.fn(),
+        reportLatency: vi.fn(),
+        resolveToasterPadBinding: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackMute: vi.fn(),
+        setTrackOutput: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackSoloGate: vi.fn(),
+        startInputMonitoring: vi.fn(),
+        stopInputMonitoring: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        updateDeviceBypass: vi.fn(),
+        updateDeviceParam: vi.fn(),
+        updateMidiFxBypass: vi.fn(),
+        updateMidiFxParam: vi.fn(),
+        wireSidechainRoute: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+    };
+});
 
 // UI controllers retain their encoding pause points. The connected memory and codec specs own
 // real streaming allocations, packet boundaries and bytes; these controllers teach each UI outcome.
@@ -1363,6 +1409,41 @@ describe('ExportDialog', () => {
         expect(screen.getByRole('checkbox', { name: /auto-detect/i })).toBeChecked();
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 9.25 }));
         expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalledTimes(2);
+    });
+
+    it('sizes the render from the tail the hosted plugins report when the export starts', async () => {
+        // The dialog is open and the label shows the load-time figure; the
+        // plugin is then switched to a longer preset, which only a re-read sees.
+        let hostedTailSeconds = 2;
+        mocks.getAutoDetectedTailSeconds.mockImplementation(() => ({
+            seconds: hostedTailSeconds,
+            uncappedSeconds: hostedTailSeconds,
+            clamped: false,
+        }));
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        expect(mocks.refreshExternalPluginTails).toHaveBeenCalledTimes(1);
+        const hostAnswer = Promise.withResolvers<void>();
+        mocks.refreshExternalPluginTails.mockReturnValueOnce(hostAnswer.promise);
+
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+
+        // The export has prepared everything but the tail, and the host has not answered:
+        // a render started now would be sized from the stale figure.
+        await waitFor(() => expect(mocks.refreshExternalPluginTails).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        hostedTailSeconds = 20;
+        hostAnswer.resolve();
+
+        await waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledTimes(1));
+        expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 20 }));
+    });
+
+    it('repaints the detected tail label when the hosted tail store changes', () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        const subscribedStores = mocks.useStore.mock.calls.map(([store]) => store);
+        expect(subscribedStores).toContain(externalPluginTailStore);
     });
 
     it('re-reads the project snapshot for tail detection after async export preparation', async () => {

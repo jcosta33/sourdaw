@@ -5,16 +5,11 @@ import {
     type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecoveryCapsule,
 } from '../../models/AgentRun';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from '../../models/AgentRunPlanBounds';
 import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
-import {
-    MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
-    MAX_PLAN_CAPABILITIES,
-    persistAgentRunState,
-    readAgentRunState,
-    sanitizeAgentRunState,
-} from '../agentRunStore';
+import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
 import { selectAgentRunPendingEffectRecoveries } from '../selectAgentRunPendingEffectRecoveries';
 
 const grants = {

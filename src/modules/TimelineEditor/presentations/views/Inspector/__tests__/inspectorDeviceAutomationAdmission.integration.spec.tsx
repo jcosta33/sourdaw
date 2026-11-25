@@ -10,9 +10,10 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, markerStore, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { createTrack, getAutomationParameterRange, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { audioEngine, initEngineDeviceCollaborators } from '#/modules/AudioEngine/useCases';
 import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
+import { setAutomationParameterRangeResolver } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
 import {
@@ -59,6 +60,7 @@ describe('Inspector device automation target admission', () => {
     beforeEach(async () => {
         Object.assign(audioEngine.context, createMockAudioContext());
         initEngineDeviceCollaborators();
+        setAutomationParameterRangeResolver(getAutomationParameterRange);
         Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
             configurable: true,
             value: vi.fn(),

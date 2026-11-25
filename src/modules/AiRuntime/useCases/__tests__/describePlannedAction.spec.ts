@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     sanitizeTrackSnapshot: (await importOriginal<typeof import('#/modules/Arrangement/stores')>())
         .sanitizeTrackSnapshot,
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     readMusicalRangeInputs: vi.fn(() => []),
     timelineEditingStore: { value: null },
     getGainEnvelopeSeries: vi.fn(),

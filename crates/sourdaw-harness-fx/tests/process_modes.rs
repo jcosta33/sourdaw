@@ -8,11 +8,10 @@
     reason = "tests assert by unwrapping"
 )]
 
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+mod support;
 
 use clap_sys::ext::render::CLAP_RENDER_OFFLINE;
+use daw_plugin_host::clap_wrapper::{ClapError, MIN_PROCESS_FRAMES};
 use daw_plugin_host::vst3_wrapper::{decode_state as decode_vst3_container, format_class_id};
 use daw_plugin_host::{
     AudioPlugin, ClapWrapper, HostParameterUpdate, HostedPluginRuntime, ProcessMode, Vst3Wrapper,
@@ -22,151 +21,15 @@ use sourdaw_harness_fx::{
     CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, ECHO_FRAMES, GAIN_DEFAULT, GAIN_PARAM_ID,
     LATENCY_FRAMES, VST3_CLASS_ID,
 };
+use support::{InstalledPlugin, SAMPLE_RATE};
 use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::ProcessModes_;
 
-const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 128;
 /// Enough whole blocks to carry the impulse, its echo, and silence after both.
 const BLOCKS: usize = (LATENCY_FRAMES + ECHO_FRAMES) / BLOCK_FRAMES + 2;
 const VST3_REALTIME: int32 = ProcessModes_::kRealtime as int32;
 const VST3_OFFLINE: int32 = ProcessModes_::kOffline as int32;
-
-/// The cdylib this crate's build produced, found the way
-/// `sourdaw-harness-tone`'s acceptance test finds its own: `deps/` first, the
-/// profile directory as the fallback.
-fn built_cdylib_path() -> PathBuf {
-    let test_binary = env::current_exe().expect("the test binary path should resolve");
-    let deps_dir = test_binary
-        .parent()
-        .expect("the test binary should live in a deps directory");
-    let in_deps = deps_dir.join(cdylib_file_name());
-    if in_deps.exists() {
-        return in_deps;
-    }
-    deps_dir
-        .parent()
-        .expect("the deps directory should live in a profile directory")
-        .join(cdylib_file_name())
-}
-
-fn cdylib_file_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "libsourdaw_harness_fx.dylib"
-    } else if cfg!(target_os = "windows") {
-        "sourdaw_harness_fx.dll"
-    } else {
-        "libsourdaw_harness_fx.so"
-    }
-}
-
-/// A fresh temp directory holding the dylib as a `.clap` file and as a `.vst3`
-/// bundle, torn down on drop.
-struct InstalledPlugin {
-    root: PathBuf,
-    clap_path: PathBuf,
-    vst3_bundle: PathBuf,
-}
-
-impl InstalledPlugin {
-    fn create(test_name: &str) -> Self {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the system clock should be after the unix epoch")
-            .as_nanos();
-        let root = fs::canonicalize(env::temp_dir())
-            .expect("the temp directory should resolve")
-            .join(format!(
-                "sourdaw-harness-fx-{test_name}-{}-{unique}",
-                std::process::id()
-            ));
-        fs::create_dir_all(&root).expect("the temp root should be created");
-
-        let source = built_cdylib_path();
-        assert!(source.exists(), "the cdylib must be built: {source:?}");
-
-        let clap_path = root.join("HarnessFx.clap");
-        fs::copy(&source, &clap_path).expect("the cdylib should copy into the .clap path");
-
-        let vst3_bundle = root.join("HarnessFx.vst3");
-        install_vst3_module(&source, &vst3_bundle);
-
-        Self {
-            root,
-            clap_path,
-            vst3_bundle,
-        }
-    }
-
-    fn clap(&self, plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, String> {
-        let path = self.clap_path.to_str().expect("the path should be utf8");
-        ClapWrapper::new_with_mode(path, plugin_id, SAMPLE_RATE, mode)
-    }
-
-    fn vst3(&self, mode: ProcessMode) -> Vst3Wrapper {
-        Vst3Wrapper::new_with_mode(
-            &self.vst3_bundle,
-            &format_class_id(&VST3_CLASS_ID),
-            SAMPLE_RATE,
-            mode,
-        )
-        .expect("the VST3 class should load and activate")
-    }
-}
-
-impl Drop for InstalledPlugin {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
-}
-
-/// Place the module where `Vst3Instance::open` looks for it on this platform:
-/// a CFBundle executable on macOS, `Contents/<machine>-linux/<name>.so` on
-/// Linux, `Contents/<arch>-win/<name>.vst3` on Windows. The VST3 cases run on
-/// all three, the platforms that loader supports.
-fn install_vst3_module(source: &Path, bundle: &Path) {
-    let module = vst3_module_path(bundle);
-    fs::create_dir_all(module.parent().expect("the module path has a parent"))
-        .expect("the bundle directories should be created");
-    fs::copy(source, &module).expect("the cdylib should copy into the bundle");
-    if cfg!(target_os = "macos") {
-        fs::write(bundle.join("Contents").join("Info.plist"), INFO_PLIST)
-            .expect("the bundle's Info.plist should be written");
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::macos_executable_path(bundle).unwrap()
-}
-
-#[cfg(target_os = "windows")]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::windows_module_paths(bundle, env::consts::ARCH)
-        .unwrap()
-        .remove(0)
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn vst3_module_path(bundle: &Path) -> PathBuf {
-    daw_plugin_host::vst3_module::linux_module_path(bundle, env::consts::ARCH)
-        .unwrap()
-        .expect("the VST3 layout names this architecture")
-}
-
-/// The keys CoreFoundation needs to load the bundle's executable.
-const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>HarnessFx</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.sourdaw.harness-fx</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
-</dict>
-</plist>
-"#;
 
 /// Render a unit impulse at frame zero through `BLOCKS` blocks, with
 /// `updates` delivered in the first block, and return both output channels.
@@ -345,11 +208,61 @@ fn a_clap_plugin_with_a_hard_realtime_requirement_is_refused_offline_by_name() {
         .expect("an offline instance of a hard-realtime plugin must be refused");
 
     assert!(
-        error.contains("Sourdaw Harness Fx Hard Realtime")
-            && error.contains("requires real-time rendering and cannot render offline"),
+        matches!(&error, ClapError::RequiresRealtime { name } if name == "Sourdaw Harness Fx Hard Realtime"),
         "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "[CLAP] 'Sourdaw Harness Fx Hard Realtime' requires real-time rendering and cannot \
+         render offline"
     );
     assert!(plugin
         .clap(CLAP_HARD_REALTIME_PLUGIN_ID, ProcessMode::Realtime)
         .is_ok());
+}
+
+// ── The block sizes activation promised ─────────────────────────────────
+
+/// Render one block of silence of `frames` frames.
+fn render_silence(plugin: &mut impl HostedPluginRuntime, frames: usize) {
+    let input = vec![0.0f32; frames];
+    let inputs: [&[f32]; 2] = [&input, &input];
+    let (mut left, mut right) = (vec![0.0f32; frames], vec![0.0f32; frames]);
+    let mut outputs: [&mut [f32]; 2] = [&mut left, &mut right];
+    plugin.process_with_parameter_updates(&inputs, &mut outputs, frames, &[]);
+}
+
+#[test]
+fn a_short_block_after_a_long_one_is_never_below_the_minimum_activation_promised() {
+    let plugin = InstalledPlugin::create("clap-min-frames");
+    let mut wrapper = plugin.clap(CLAP_PLUGIN_ID, ProcessMode::Realtime).unwrap();
+
+    // The shape a loop seam cuts a callback into: most of it, then the rest.
+    render_silence(&mut wrapper, 123);
+    render_silence(&mut wrapper, 5);
+
+    let recorded = clap_recorded_state(&wrapper);
+    assert_eq!(recorded.declared_min_frames, MIN_PROCESS_FRAMES);
+    assert_eq!(recorded.smallest_block_frames, 5);
+    assert!(
+        recorded.smallest_block_frames >= recorded.declared_min_frames,
+        "activate promised blocks of at least {} frames and process was handed {}",
+        recorded.declared_min_frames,
+        recorded.smallest_block_frames
+    );
+}
+
+#[test]
+fn a_reactivation_for_latency_promises_a_minimum_of_one_frame() {
+    let plugin = InstalledPlugin::create("clap-min-frames-reactivated");
+    let mut wrapper = plugin.clap(CLAP_PLUGIN_ID, ProcessMode::Realtime).unwrap();
+
+    wrapper
+        .reactivate_for_latency()
+        .expect("the fixture reactivates");
+    render_silence(&mut wrapper, 5);
+
+    let recorded = clap_recorded_state(&wrapper);
+    assert_eq!(recorded.declared_min_frames, 1);
+    assert_eq!(recorded.smallest_block_frames, 5);
 }

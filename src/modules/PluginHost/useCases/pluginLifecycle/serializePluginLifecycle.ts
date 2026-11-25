@@ -3,6 +3,48 @@ type RebuildFence = {
     open: () => void;
 };
 
+/**
+ * How long a rebuild fence waits for the lifecycle operations admitted before
+ * it. An operation still pending then is a call inside a plugin that has not
+ * returned and may never return, and the fence goes on without it.
+ *
+ * Above the native control gate's own deadline (`CONTROL_GATE_DEADLINE`, 10 s,
+ * in `crates/sourdaw-native/src/host/native_bridge.rs`) plus the 2 s real-time
+ * seam wait a control call adds after it, with room for the IPC answer: a call
+ * queued natively behind a hung one answers with the unresponsive refusal
+ * before this fires, so it fires only for the hung call itself, whose IPC never
+ * answers.
+ */
+export const LIFECYCLE_SETTLEMENT_DEADLINE_MS = 15_000;
+
+type RebuildFenceLease = {
+    /**
+     * Wait for every lifecycle operation admitted before the fence, and for
+     * `alongside` (keyed by instance id), up to the settlement deadline, and
+     * answer the instance ids whose operations had not settled by then.
+     */
+    waitForExistingOperations: (alongside: ReadonlyMap<string, Promise<unknown>>) => Promise<ReadonlySet<string>>;
+    end: () => void;
+};
+
+type InstanceOperation = readonly [instanceId: string, operation: Promise<unknown>];
+
+/** The instance ids of `operations` still pending at the settlement deadline. */
+async function unsettledAtDeadline(operations: readonly InstanceOperation[]): Promise<ReadonlySet<string>> {
+    const pending = new Set(operations);
+    // Settlement is all that is waited for; each failure stays its own caller's.
+    const settlements = operations.map(async (entry) => {
+        await Promise.allSettled([entry[1]]);
+        pending.delete(entry);
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+    });
+    await Promise.race([Promise.all(settlements), deadline]).finally(() => clearTimeout(timer));
+    return new Set(Array.from(pending, ([instanceId]) => instanceId));
+}
+
 const lifecycleTails = new Map<string, Promise<void>>();
 let rebuildFence: RebuildFence | null = null;
 
@@ -65,24 +107,33 @@ export const pluginLifecycleScheduler = {
      * check, so another rebuild cannot slip in between a session-retirement
      * join and its own admission fence.
      */
-    async beginRebuildAfterCurrent(): Promise<{ waitForExistingOperations: () => Promise<void>; end: () => void }> {
+    async beginRebuildAfterCurrent(): Promise<RebuildFenceLease> {
         while (rebuildFence !== null) {
             await rebuildFence.completion;
         }
         return pluginLifecycleScheduler.beginRebuild();
     },
 
-    beginRebuild(): { waitForExistingOperations: () => Promise<void>; end: () => void } {
+    beginRebuild(): RebuildFenceLease {
         if (rebuildFence) {
             throw new Error('External plugin runtime rebuild is already in progress');
         }
-        const existingOperations = [...lifecycleTails.values()];
+        const existingOperations = [...lifecycleTails.entries()];
         const fence = createRebuildFence();
         rebuildFence = fence;
         let ended = false;
         return {
-            waitForExistingOperations: async () => {
-                await Promise.allSettled(existingOperations);
+            waitForExistingOperations: async (alongside) => {
+                const unsettled = await unsettledAtDeadline([...existingOperations, ...alongside]);
+                // A tail that cannot settle would hold the instance's next turn
+                // forever, so it is let go; its own late settlement deletes
+                // nothing, because it is no longer the stored tail.
+                for (const [instanceId, tail] of existingOperations) {
+                    if (unsettled.has(instanceId) && lifecycleTails.get(instanceId) === tail) {
+                        lifecycleTails.delete(instanceId);
+                    }
+                }
+                return unsettled;
             },
             end: () => {
                 if (ended) {

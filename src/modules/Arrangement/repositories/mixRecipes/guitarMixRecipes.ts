@@ -77,6 +77,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 15 },
@@ -91,10 +92,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip on a solo acoustic arrangement where the guitar is the only source below 200 Hz.',
             'Skip when the performance depends on dynamic contrast between strummed and picked passages.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
         source: 'Trimming below 150 Hz before compression stops the low shoulder driving gain reduction, so the remaining reduction tracks the strum rather than the body. The two moves together shorten the perceived decay of each chord, which is what tightness means on a guitar.',
     },
     {
@@ -107,6 +105,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -120,10 +119,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip on a heavily distorted part, whose transients the distortion has already removed.',
             'Skip when a fast limiter sits earlier in the chain.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
         source: 'An attack longer than the pick transient lets that transient through and clamps the ringing behind it, and makeup gain then raises the strike relative to the sustain. Peak-to-average widens as a result even though the part gets louder overall.',
     },
     {
@@ -308,6 +304,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -323,10 +320,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip when no earlier stage controls peaks; this one alone will chase them and pump.',
             'Skip on a sustained pad-like part with no dynamic movement to settle.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Cohesion comes from a slow shared gain envelope rather than from peak control, which is why the knee is soft and the release spans several strums. Splitting the work across two gentle stages keeps each one below the point where the envelope becomes audible.',
     },
     {
@@ -416,6 +410,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 15 },

@@ -65,6 +65,7 @@ import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { skipPendingVibeBatch } from '../../useCases/skipPendingVibeBatch';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { AnswerEvidenceDisclosure } from '../components/AnswerEvidenceDisclosure';
+import { BriefReadingChoices } from '../components/BriefReadingChoices';
 import { ChatComposer } from '../components/ChatComposer';
 
 import { MeasuredPreviewAudition } from './MeasuredPreviewAudition';
@@ -284,23 +285,12 @@ const ChatMessageItem = ({
                                 Skip batch
                             </Button>
                         ) : null}
-                        {readings.map((reading) => (
-                            <Button
-                                key={reading.id}
-                                size="xs"
-                                variant="secondary"
-                                onClick={() => {
-                                    void chooseVibeBriefReading({
-                                        confirmationId: pendingConfirmationId,
-                                        readingId: reading.id,
-                                    });
-                                }}
-                                aria-label={`Plan reading: ${reading.name}`}
-                                className="h-7 gap-1.5 text-[11px]"
-                            >
-                                {reading.name} <span className="opacity-60">{reading.descriptors.join(', ')}</span>
-                            </Button>
-                        ))}
+                        <BriefReadingChoices
+                            readings={readings}
+                            onChoose={(readingId) => {
+                                void chooseVibeBriefReading({ confirmationId: pendingConfirmationId, readingId });
+                            }}
+                        />
                         <Button
                             size="xs"
                             variant="ghost"

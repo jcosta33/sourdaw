@@ -1,5 +1,7 @@
 import {
+    getSidechainTargetCapability,
     initializeTrackStripFromSnapshot,
+    isMidiTransformDevice,
     reportLatency,
     setTrackGain,
     setTrackPan,
@@ -9,7 +11,6 @@ import {
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { getAllSidechainRoutes, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -203,7 +204,7 @@ export function projectTrackToLiveStrip(
     }
     const { deferSidechainWiring = false, deferSends = false } = input;
 
-    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
+    const audioDevices = track.devices.filter((device) => !isMidiTransformDevice(device.type));
     for (const device of audioDevices) {
         const target = resolveEligibleDeviceWriteTarget(device.id);
         if (target.status !== 'eligible' || target.trackId !== track.id || target.deviceId !== device.id) {

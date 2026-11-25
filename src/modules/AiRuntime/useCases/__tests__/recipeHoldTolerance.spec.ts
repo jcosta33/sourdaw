@@ -265,26 +265,44 @@ describe('recipe holds at admission', () => {
         expect(evaluation).toMatchObject({ status: 'blocked', failure: 'stale' });
     });
 
+    it.each([
+        ['at a large magnitude, by less than its relative rounding', 1e7, 10000000.010000002, 'verified'],
+        ['at a large magnitude, by more than its relative rounding', 1e7, 10000000.01000003, 'blocked'],
+        ['at a small magnitude, by a ten-billionth', 0.5, 0.5100000001, 'blocked'],
+    ] as const)('judges a movement past its tolerance %s', (_label, baseline, preview, status) => {
+        expect(wide({ baseline, preview }).status).toBe(status);
+    });
+
+    it('blocks a hold with no measurable metric but a tolerance as a stale source', () => {
+        const evaluation = admit(
+            'bass-wide',
+            { sideEnergyFraction: WIDE_SIDE, lowFrequencyStereoContent: { baseline: 0.5, preview: 0.5 } },
+            (goals) =>
+                goals.map((goal) => (goal.relation === 'hold' ? { ...goal, metricId: null, tolerance: 0.01 } : goal))
+        );
+        expect(evaluation).toMatchObject({ status: 'blocked', failure: 'stale' });
+    });
+
     it('keeps increase and decrease goals at tolerance zero and judged by direction alone', () => {
-        const goals = readGoals('bass-intimate').map(({ metricId, relation, tolerance }) => ({
+        const goals = readGoals('bus-intimate').map(({ metricId, relation, tolerance }) => ({
             metricId,
             relation,
             tolerance,
         }));
         expect(goals).toEqual([
-            { metricId: 'dynamicRangeEstimate', relation: 'decrease', tolerance: 0 },
             { metricId: 'rms', relation: 'increase', tolerance: 0 },
+            { metricId: 'dynamicRangeEstimate', relation: 'decrease', tolerance: 0 },
         ]);
         const figures = (range: [number, number], level: [number, number]): Figures => ({
             dynamicRangeEstimate: { baseline: range[0], preview: range[1] },
             rms: { baseline: level[0], preview: level[1] },
         });
-        expect(admit('bass-intimate', figures([10, 9.999], [-20, -19.999]))).toMatchObject({ status: 'verified' });
-        expect(admit('bass-intimate', figures([10, 10], [-20, -19]))).toMatchObject({
+        expect(admit('bus-intimate', figures([10, 9.999], [-20, -19.999]))).toMatchObject({ status: 'verified' });
+        expect(admit('bus-intimate', figures([10, 10], [-20, -19]))).toMatchObject({
             status: 'blocked',
             failure: 'out-of-tolerance',
         });
-        expect(admit('bass-intimate', figures([10, 9], [-20, -20]))).toMatchObject({
+        expect(admit('bus-intimate', figures([10, 9], [-20, -20]))).toMatchObject({
             status: 'blocked',
             failure: 'out-of-tolerance',
         });
@@ -296,6 +314,12 @@ describe('the refusal of a broken recipe hold', () => {
         const evaluation = wide({ baseline: 0.5, preview: 0.5123 });
         expect(evaluation.reason).toBe(
             "The preview breaks the recipe's hold on low-frequency stereo content on “Bass”: it moved from 0.5 to 0.5123 ratio, a movement of 0.0123 ratio, beyond its 0.01 ratio tolerance."
+        );
+    });
+
+    it('prints the endpoint it moved to at the precision that makes the movement read', () => {
+        expect(wide({ baseline: 0.5, preview: 0.5123000004 }).reason).toContain(
+            'it moved from 0.5 to 0.5123 ratio, a movement of 0.0123 ratio'
         );
     });
 

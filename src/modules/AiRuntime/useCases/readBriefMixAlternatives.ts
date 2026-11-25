@@ -1,19 +1,20 @@
-import { type BriefMixAlternative } from '../models/BriefReading';
+import { type RequestedBriefMixAlternative } from '../models/BriefReading';
 
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
-import { readBriefMixIntent } from './readBriefMixIntent';
+import { type CatalogBriefMixIntent, readBriefMixIntent } from './readBriefMixIntent';
 
 export const BRIEF_ALTERNATIVES_MAX = 3;
 export const BRIEF_ALTERNATIVE_NAME_MAX_LENGTH = 40;
 
-type MixIntent = NonNullable<ReturnType<typeof readBriefMixIntent>>;
-type MixDescriptor = MixIntent['requestedDescriptors'][number];
+type MixDescriptor = CatalogBriefMixIntent['requestedDescriptors'][number];
 
 /** A reading whose characters are the recipe catalogue's own descriptors, not any string. */
-export type CatalogBriefMixAlternative = BriefMixAlternative & { requestedDescriptors: readonly MixDescriptor[] };
+export type CatalogBriefMixAlternative = RequestedBriefMixAlternative & {
+    requestedDescriptors: readonly MixDescriptor[];
+};
 
 type ReadMixIntentWithAlternatives =
-    | { status: 'read'; mixIntent: MixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
+    | { status: 'read'; mixIntent: CatalogBriefMixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
     | { status: 'invalid'; reason: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,7 +57,7 @@ function readAlternative(value: unknown, descriptors: readonly MixDescriptor[]):
     return { name, requestedDescriptors: selected };
 }
 
-function describeDuplicate(alternatives: readonly BriefMixAlternative[]): string | null {
+function describeDuplicate(alternatives: readonly RequestedBriefMixAlternative[]): string | null {
     const names = new Set<string>();
     const sets = new Set<string>();
     for (const alternative of alternatives) {

@@ -1133,6 +1133,42 @@ describe('TrackContextMenu', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
+    it('offers Hide Track on a shown track and dispatches hideTrack with hidden true', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        expect(screen.queryByText('Show Track')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Hide Track'));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'hideTrack',
+            payload: { trackId: 'track1', hidden: true },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('offers Show Track on a hidden track and dispatches hideTrack with hidden false', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={{ ...mockTrack, hidden: true }}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        expect(screen.queryByText('Hide Track')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Show Track'));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'hideTrack',
+            payload: { trackId: 'track1', hidden: false },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
     it('should render Enable Track when track is disabled and dispatch disableTrack on click', () => {
         const disabledTrack = { ...mockTrack, disabled: true };
         renderWithTooltip(

@@ -9,7 +9,8 @@
         "builtin": true
     },
     // Default categories off: every enforced rule is enumerated explicitly below so
-    // the enabled set is exactly the migrated ESLint set — nothing more, nothing less.
+    // the enabled set is the migrated ESLint set plus rules added directly in Oxlint
+    // (`import/no-mutable-exports`, ADR 0065's guard).
     "categories": {
         "correctness": "off",
         "suspicious": "off",
@@ -231,6 +232,7 @@
         "import/first": "error",
         "import/newline-after-import": "error",
         "import/no-duplicates": "error",
+        "import/no-mutable-exports": "error",
 
         // ── eslint-plugin-jsx-a11y-x → oxlint jsx-a11y plugin ────────────────
         "jsx-a11y/alt-text": "error",

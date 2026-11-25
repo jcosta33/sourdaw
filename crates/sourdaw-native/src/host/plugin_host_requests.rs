@@ -33,25 +33,36 @@
 //! (`request_restart` is `[thread-safe]` the same way; its hint is serviced by
 //! the latency watcher.)
 //!
-//! It serves engine-owned instances only, which is where the wake is installed.
-//! An instance the native engine never took records a state change nothing
-//! reads, and its `request_resize` is refused outright rather than accepted and
-//! dropped. That mode processes no audio at all — it is what a session runs in
-//! when the engine failed to start — so an edit made in it has no take to be
-//! saved with.
+//! A VST3 `restartComponent` asking for a bus change or a reload is routed
+//! here too: the plugin raises it on the UI thread, which may allocate, and
+//! the restart it asks for is carried back to the UI thread from here, because
+//! every lifecycle call in it is one the format makes there.
+//!
+//! This watcher serves engine-owned instances only, which is where the wake is
+//! installed. An instance the native engine never took records a state change
+//! nothing reads. That mode processes no audio at all — it is what a session
+//! runs in when the engine failed to start — so an edit made in it has no take
+//! to be saved with. Its editor asks are another matter: the editor drain visits
+//! the command-owned store too, so its resize, show and hide are answered.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
+use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
+use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
+use crate::host::{
+    all_editor_runtimes, all_engine_runtimes, retry_unreached_instance, runtime_for_instance,
+    CommandPlugins,
+};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
-    signal_pending_editor_resize, signal_pending_main_thread_callback,
-    take_pending_main_thread_callback_signal, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
+    signal_pending_editor_resize, signal_pending_latency_requery,
+    signal_pending_main_thread_callback, signal_pending_parameter_flush,
+    signal_pending_tail_change, take_pending_main_thread_callback_signal, AudioPlugin,
+    HostedPluginRuntime, PluginHostRequest,
 };
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
@@ -134,6 +145,35 @@ pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest)
     queue_request((instance_id.to_string(), request, 0));
 }
 
+/// Carry every ask an instance may be holding, after an unload of it was
+/// cancelled.
+///
+/// An unload makes the instance refuse public control, and both retry rules give
+/// up on a refusing instance — rightly, since an unloading one is never coming
+/// back. A cancelled unload brings it back, but the asks it recorded meanwhile
+/// had their wakes spent on those refused visits, and a flag with no wake behind
+/// it waits until the plugin asks again. So this raises every process-wide hint
+/// and replays every channel ask for `instance_id`.
+///
+/// Replaying is safe because every ask is a recorded flag the visit reads and
+/// clears: an instance that recorded nothing has a visit that finds nothing and
+/// emits nothing. Call it only after the instance accepts public control again,
+/// from a control path — it allocates, so never from the audio thread.
+pub(crate) fn carry_standing_asks(instance_id: &str) {
+    carry_standing_asks_through(instance_id, notify_plugin_host_request);
+}
+
+fn carry_standing_asks_through(instance_id: &str, wake: impl Fn(&str, PluginHostRequest)) {
+    signal_pending_main_thread_callback();
+    signal_pending_parameter_flush();
+    signal_pending_editor_resize();
+    signal_pending_tail_change();
+    signal_pending_latency_requery();
+    wake(instance_id, PluginHostRequest::StateDirty);
+    wake(instance_id, PluginHostRequest::ParametersRescan);
+    wake(instance_id, PluginHostRequest::ComponentRestart);
+}
+
 fn queue_request(queued: QueuedRequest) {
     if let Some(sender) = REQUEST_SENDER.get() {
         let _ = sender.send(queued);
@@ -155,6 +195,46 @@ fn queue_request(queued: QueuedRequest) {
 /// a block, and the next attempt finds it free — and an instance that is
 /// unloading or retired, which will refuse every attempt until the budget runs
 /// out and is never coming back.
+/// Why a follow-up did not reach the plugin, which is what decides a retry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HostRequestError {
+    /// The control path refused the visit.
+    Refused(PluginControlRefusal),
+    /// No shell UI thread is registered to carry a component restart.
+    NoUiThread,
+    /// The UI thread hop for a component restart did not run.
+    UiThread(UiThreadError),
+}
+
+impl std::fmt::Display for HostRequestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(refusal) => refusal.fmt(formatter),
+            Self::NoUiThread => {
+                formatter.write_str("no UI thread is registered to carry a component restart")
+            }
+            Self::UiThread(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for HostRequestError {}
+
+impl From<PluginControlRefusal> for HostRequestError {
+    fn from(refusal: PluginControlRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl From<PluginControlError<UiThreadError>> for HostRequestError {
+    fn from(error: PluginControlError<UiThreadError>) -> Self {
+        match error {
+            PluginControlError::Refused(refusal) => Self::Refused(refusal),
+            PluginControlError::Operation(error) => Self::UiThread(error),
+        }
+    }
+}
+
 fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
     control_still_allowed && attempt + 1 < MAX_FOLLOW_UP_ATTEMPTS
 }
@@ -166,9 +246,9 @@ fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
 /// the lifecycle. Split that way so the retry can be driven to its end — a
 /// failure replayed and then succeeding, and a run of failures giving up — which
 /// a test cannot do against a real control lock it has no way to hold.
-fn serve_queued_request(
+fn serve_queued_request<CarryError>(
     queued: QueuedRequest,
-    carry: impl FnOnce(&str, PluginHostRequest) -> Result<(), String>,
+    carry: impl FnOnce(&str, PluginHostRequest) -> Result<(), CarryError>,
     control_still_allowed: impl FnOnce() -> bool,
 ) -> Option<QueuedRequest> {
     let (instance_id, request, attempt) = queued;
@@ -194,7 +274,7 @@ fn serve_queued_request(
 /// saved over work the user never did.
 pub fn state_dirty_payload(
     instance_id: &str,
-    taken: Result<bool, String>,
+    taken: Result<bool, PluginControlRefusal>,
 ) -> Option<PluginStateDirty> {
     match taken {
         Ok(true) => Some(PluginStateDirty {
@@ -217,7 +297,8 @@ pub fn state_dirty_payload(
 /// Called from the parameter-event drain's tick, once it has taken the hint the
 /// recording side raised. The hint names no instance — it cannot, because
 /// `gui.request_resize` is `[thread-safe]` and may be raised from the audio
-/// thread — so this visits every engine-owned instance and lets each backend
+/// thread — so this visits every instance an editor can be open on, dormant
+/// ones included, and lets each backend
 /// answer for itself: [`AudioPlugin::apply_pending_editor_resize`] takes the
 /// newest recorded size and moves the host window, and an instance with nothing
 /// recorded applies nothing.
@@ -233,10 +314,19 @@ pub fn state_dirty_payload(
 /// control raises the hint again for the next tick; that retry is unbounded
 /// while the instance lives, which is the flush and tail legs' rule, and costs
 /// nothing once the ask is applied because taking the slot cleared it.
-pub fn apply_pending_editor_resizes(engine_plugins: &EnginePlugins) {
-    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor resize") {
+pub fn apply_pending_editor_resizes(
+    engine_plugins: &EnginePlugins,
+    command_plugins: &CommandPlugins,
+) {
+    let runtimes = all_editor_runtimes(
+        engine_plugins,
+        command_plugins,
+        "editor resize",
+        signal_pending_editor_resize,
+    );
+    for (instance_id, runtime) in runtimes {
         let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
-            Ok(plugin.apply_pending_editor_resize())
+            Ok::<_, std::convert::Infallible>(plugin.apply_pending_editor_resize())
         });
 
         if let Err(error) = &applied {
@@ -268,14 +358,16 @@ fn rescan_parameters(
     instance_id: &str,
     engine_plugins: &EnginePlugins,
     events: &dyn EventSink,
-) -> Result<(), String> {
-    let rescanned = runtime.with_control(CONTROL_TIMEOUT, |plugin| {
-        if !plugin.take_parameters_rescan() {
-            return Ok(None);
-        }
-        Ok(Some(plugin.get_parameters()))
-    });
-    let reached_plugin = rescanned.as_ref().map(|_| ()).map_err(String::clone);
+) -> Result<(), PluginControlRefusal> {
+    let rescanned = runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            if !plugin.take_parameters_rescan() {
+                return Ok::<_, std::convert::Infallible>(None);
+            }
+            Ok(Some(plugin.get_parameters()))
+        })
+        .map_err(PluginControlError::into_refusal);
+    let reached_plugin = rescanned.as_ref().map(|_| ()).map_err(Clone::clone);
 
     if let Some(parameters) = rescanned_parameters(instance_id, rescanned) {
         cache_parameters(engine_plugins, instance_id, parameters);
@@ -300,7 +392,7 @@ fn rescan_parameters(
 /// ranges out of nowhere.
 pub fn rescanned_parameters(
     instance_id: &str,
-    rescanned: Result<Option<Vec<daw_plugin_host::PluginParameter>>, String>,
+    rescanned: Result<Option<Vec<daw_plugin_host::PluginParameter>>, PluginControlRefusal>,
 ) -> Option<Vec<daw_plugin_host::PluginParameter>> {
     match rescanned {
         Ok(parameters) => parameters,
@@ -359,7 +451,7 @@ fn service_pending_main_thread_callbacks(engine_plugins: &EnginePlugins) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "main-thread callback") {
         let serviced = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
             plugin.service_main_thread_callback();
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         });
 
         if let Err(error) = &serviced {
@@ -381,15 +473,63 @@ fn report_state_change(
     runtime: &SharedHostedPlugin,
     instance_id: &str,
     events: &dyn EventSink,
-) -> Result<(), String> {
-    let taken = runtime.with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_state_dirty()));
-    let reached_plugin = taken.as_ref().map(|_| ()).map_err(String::clone);
+) -> Result<(), PluginControlRefusal> {
+    let taken = runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            Ok::<_, std::convert::Infallible>(plugin.take_state_dirty())
+        })
+        .map_err(PluginControlError::into_refusal);
+    let reached_plugin = taken.as_ref().map(|_| ()).map_err(Clone::clone);
 
     if let Some(payload) = state_dirty_payload(instance_id, taken) {
         events.emit(PLUGIN_STATE_DIRTY_EVENT, payload);
     }
 
     reached_plugin
+}
+
+/// The shell's UI thread, once it has registered its window host.
+///
+/// A VST3 component restart is a sequence of host-to-plugin lifecycle calls —
+/// `setActive`, `getBusInfo`, `setBusArrangements`, `setupProcessing` — and the
+/// format makes every one of them on the UI thread. This watcher is not that
+/// thread, so it carries the restart there through the same lending seam the
+/// editor commands use.
+static UI_THREAD: RwLock<Option<Arc<dyn UiThread>>> = RwLock::new(None);
+
+/// Name the thread component restarts are carried to. The shell's window host
+/// is that thread; registering a later one replaces the first.
+pub fn use_ui_thread(ui: Arc<dyn UiThread>) {
+    *UI_THREAD
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ui);
+}
+
+fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
+    UI_THREAD
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Carry a recorded bus or reload restart out on the UI thread.
+///
+/// A layout the host cannot route is not a failed follow-up: the instance
+/// latches the refusal, reports it and passes its blocks dry, and asking again
+/// would refuse the same layout. Only not reaching the plugin is retried.
+fn restart_component(
+    runtime: &SharedHostedPlugin,
+    ui: Option<&dyn UiThread>,
+) -> Result<(), HostRequestError> {
+    let Some(ui) = ui else {
+        return Err(HostRequestError::NoUiThread);
+    };
+    runtime
+        .with_control(CONTROL_TIMEOUT, |plugin| {
+            lend_on_ui_thread(ui, plugin, |plugin| plugin.apply_component_restart())
+        })
+        .map(|_routed_or_refused| ())
+        .map_err(HostRequestError::from)
 }
 
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
@@ -459,11 +599,8 @@ fn serve_channel_wake(
 
     let again = serve_queued_request(
         queued,
-        |instance_id, request| match request {
-            PluginHostRequest::StateDirty => report_state_change(&runtime, instance_id, events),
-            PluginHostRequest::ParametersRescan => {
-                rescan_parameters(&runtime, instance_id, engine_plugins, events)
-            }
+        |instance_id, request| {
+            carry_request(&runtime, instance_id, request, engine_plugins, events)
         },
         || runtime.ensure_public_control_allowed().is_ok(),
     );
@@ -473,11 +610,153 @@ fn serve_channel_wake(
     }
 }
 
+/// Carry one ask out to the follow-up that answers it.
+fn carry_request(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    request: PluginHostRequest,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) -> Result<(), HostRequestError> {
+    match request {
+        PluginHostRequest::StateDirty => {
+            report_state_change(runtime, instance_id, events).map_err(HostRequestError::from)
+        }
+        PluginHostRequest::ParametersRescan => {
+            rescan_parameters(runtime, instance_id, engine_plugins, events)
+                .map_err(HostRequestError::from)
+        }
+        PluginHostRequest::ComponentRestart => {
+            restart_component(runtime, registered_ui_thread().as_deref())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
+
+    /// A UI thread that is never the caller's, and runs what it is handed
+    /// inline while counting it.
+    #[derive(Default)]
+    struct CountingUiThread {
+        lent: std::sync::atomic::AtomicUsize,
+    }
+
+    impl UiThread for CountingUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), UiThreadError> {
+            self.lent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.run();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_component_restart_is_carried_to_the_ui_thread() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+        let ui = CountingUiThread::default();
+
+        assert_eq!(restart_component(&runtime, Some(&ui)), Ok(()));
+
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the restart runs on the UI thread, never on the watcher"
+        );
+    }
+
+    /// The registered UI thread is process-wide, so every test here that
+    /// registers or clears it takes this first.
+    static UI_THREAD_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn registered_ui_thread_guard(
+        ui: Option<Arc<dyn UiThread>>,
+    ) -> std::sync::MutexGuard<'static, ()> {
+        let guard = UI_THREAD_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *UI_THREAD
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ui;
+        guard
+    }
+
+    #[test]
+    fn a_component_restart_wake_reaches_the_registered_ui_thread() {
+        let ui = Arc::new(CountingUiThread::default());
+        let _registered = registered_ui_thread_guard(None);
+        use_ui_thread(Arc::clone(&ui) as Arc<dyn UiThread>);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
+        assert_eq!(
+            carry_request(
+                &runtime,
+                "inst-1",
+                PluginHostRequest::ComponentRestart,
+                &engine_plugins,
+                &events,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            ui.lent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the wake carries the restart to the thread the shell registered"
+        );
+    }
+
+    #[test]
+    fn a_component_restart_wake_with_no_ui_thread_registered_is_retried() {
+        let _registered = registered_ui_thread_guard(None);
+        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let events = RecordingEventSink::default();
+
+        let again = serve_queued_request(
+            ("inst-1".to_string(), PluginHostRequest::ComponentRestart, 0),
+            |instance_id, request| {
+                carry_request(&runtime, instance_id, request, &engine_plugins, &events)
+            },
+            || runtime.ensure_public_control_allowed().is_ok(),
+        );
+        assert_eq!(
+            again,
+            Some(("inst-1".to_string(), PluginHostRequest::ComponentRestart, 1)),
+            "the wake is queued again for when a UI thread is registered"
+        );
+    }
+
+    fn timed_out() -> PluginControlRefusal {
+        PluginControlRefusal::TimedOut {
+            plugin: "fixture".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_missing_ui_thread_refuses_a_restart_with_its_historical_text() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+
+        let refused = restart_component(&runtime, None);
+
+        assert_eq!(refused, Err(HostRequestError::NoUiThread));
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "no UI thread is registered to carry a component restart"
+        );
+    }
 
     #[test]
     fn a_recorded_state_change_becomes_an_event_naming_the_instance() {
@@ -500,7 +779,7 @@ mod tests {
     #[test]
     fn a_failed_follow_up_emits_nothing_rather_than_a_dirty_mark_it_cannot_confirm() {
         assert_eq!(
-            state_dirty_payload("inst-1", Err("control path timed out".to_string())),
+            state_dirty_payload("inst-1", Err(timed_out())),
             None,
             "a failed follow-up must not ask the user to save work the plugin never reported"
         );
@@ -657,10 +936,7 @@ mod tests {
     #[test]
     fn a_failed_rescan_leaves_the_cached_contract_standing() {
         assert_eq!(
-            published_ids(rescanned_parameters(
-                "inst-1",
-                Err("control path timed out".to_string())
-            )),
+            published_ids(rescanned_parameters("inst-1", Err(timed_out()))),
             None,
             "a failed re-enumeration must not replace a contract it could not read"
         );
@@ -777,16 +1053,10 @@ mod tests {
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
     }
 
-    /// The main-thread callback hint is process-wide, so every test here that
-    /// raises it, sweeps on it or asserts it takes this first.
-    static MAIN_THREAD_CALLBACK_HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
-
+    /// The hints are process-wide, so every test here that raises one, sweeps on
+    /// it or asserts it takes the shared guard first.
     fn main_thread_callback_hint_guard() -> std::sync::MutexGuard<'static, ()> {
-        let guard = MAIN_THREAD_CALLBACK_HINT_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        take_pending_main_thread_callback_signal();
-        guard
+        crate::host::hint_test_support::guard()
     }
 
     /// One engine-owned instance in a real map, whose fixture has already
@@ -881,7 +1151,7 @@ mod tests {
                 .with_control(CONTROL_TIMEOUT, |_| {
                     entered_sender.send(()).expect("signal entry");
                     release_receiver.recv().expect("wait for release");
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .expect("the holder reaches the control seam");
         });
@@ -932,5 +1202,92 @@ mod tests {
         // The sender is only installed by `start`, which no unit test runs; this
         // asserts a plugin loaded in a headless build cannot panic on its wake.
         notify_plugin_host_request("never-started", PluginHostRequest::StateDirty);
+    }
+
+    /// #6651. An ask recorded before an unload began, whose visit the unload
+    /// refused and the retry rule dropped, is carried once the unload is
+    /// cancelled: the cancel replays both channel asks, and serving them reaches
+    /// the plugin's recorded flag.
+    #[test]
+    fn a_state_change_asked_during_a_cancelled_unload_is_carried_afterwards() {
+        let _guard = main_thread_callback_hint_guard();
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("Dirty Fixture", vec![], false);
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_state_dirty();
+        let runtime = SharedHostedPlugin::new(wrapper.into());
+        let sink = RecordingEventSink::default();
+
+        // The visit the plugin's wake bought, refused by the unload and dropped
+        // by the retry rule: no event, no replay.
+        runtime.begin_unload();
+        let dropped = serve_queued_request(
+            ("inst-1".to_string(), PluginHostRequest::StateDirty, 0),
+            |instance_id, _| report_state_change(&runtime, instance_id, &sink),
+            || runtime.ensure_public_control_allowed().is_ok(),
+        );
+        assert!(
+            dropped.is_none(),
+            "the retry rule gives up on an unloading instance"
+        );
+        assert!(sink.events.lock().expect("event log").is_empty());
+
+        runtime.cancel_unload();
+        let queued = std::cell::RefCell::new(Vec::new());
+        carry_standing_asks_through("inst-1", |instance_id, request| {
+            queued
+                .borrow_mut()
+                .push((instance_id.to_string(), request, 0u8));
+        });
+
+        for ask in queued.into_inner() {
+            serve_queued_request(
+                ask,
+                |instance_id, request| match request {
+                    PluginHostRequest::StateDirty => {
+                        report_state_change(&runtime, instance_id, &sink)
+                    }
+                    PluginHostRequest::ParametersRescan | PluginHostRequest::ComponentRestart => {
+                        Ok(())
+                    }
+                },
+                || true,
+            );
+        }
+
+        assert_eq!(
+            sink.events.lock().expect("event log").len(),
+            1,
+            "the standing state-change ask must reach the project after the cancel"
+        );
+    }
+
+    /// The replay is every channel ask, and it is every hint: an instance may be
+    /// holding any of them, and a hint the cancel left down is an ask nothing
+    /// carries.
+    #[test]
+    fn carrying_standing_asks_replays_every_channel_ask_and_raises_every_hint() {
+        let _guard = main_thread_callback_hint_guard();
+        let replayed = std::cell::RefCell::new(Vec::new());
+
+        carry_standing_asks_through("inst-1", |instance_id, request| {
+            replayed
+                .borrow_mut()
+                .push((instance_id.to_string(), request));
+        });
+
+        assert_eq!(
+            replayed.into_inner(),
+            [
+                ("inst-1".to_string(), PluginHostRequest::StateDirty),
+                ("inst-1".to_string(), PluginHostRequest::ParametersRescan),
+                ("inst-1".to_string(), PluginHostRequest::ComponentRestart),
+            ]
+        );
+        assert!(take_pending_main_thread_callback_signal());
+        assert!(daw_plugin_host::take_pending_parameter_flush_signal());
+        assert!(daw_plugin_host::take_pending_editor_resize_signal());
+        assert!(daw_plugin_host::take_pending_tail_change_signal());
+        assert!(daw_plugin_host::take_pending_latency_requery_signal());
     }
 }

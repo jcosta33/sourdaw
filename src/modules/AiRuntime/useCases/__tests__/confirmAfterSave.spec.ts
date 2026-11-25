@@ -15,7 +15,6 @@ import {
     configureCommandBatchIdempotency,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
-    resetCommandBatchIdempotency,
     serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
@@ -435,7 +434,6 @@ describe('Direct commit after a save', () => {
         agentProjectRepairStateStore.set(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         projectStore.set(defaultProjectStoreState);
-        resetCommandBatchIdempotency();
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');

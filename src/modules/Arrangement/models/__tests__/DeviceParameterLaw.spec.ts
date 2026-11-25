@@ -293,8 +293,10 @@ describe('quantiseDeviceParameterValue', () => {
         const steppedDevices = BUILTIN_PLUGINS.filter((plugin) =>
             plugin.parameters.some((parameter) => parameter.type !== 'float')
         );
-        // 28 since Yeast undeclared its arpeggiator parameters (#4650); it was 29.
-        expect(steppedDevices.length).toBe(28);
+        // 28 since Yeast undeclared its arpeggiator parameters (#4650); 29 since
+        // the built-in compressor declared its Auto Makeup switch (ADR 0064); 30
+        // since the built-in limiter declared its own (ADR 0066).
+        expect(steppedDevices.length).toBe(30);
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('crust');
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('builtin-crumbs');
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('grand-boule');

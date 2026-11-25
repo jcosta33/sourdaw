@@ -9,6 +9,8 @@ import {
     WORKFLOW_ACTION_TOOL_NAMES,
     WORKFLOW_CAPABILITY_IDS,
     WORKFLOW_CAPABILITY_TOOL_NAME,
+    type LocalWorkflowGrounding,
+    type WorkflowCapabilityId,
 } from '../../../models/WorkflowCapability';
 import { AUTO_TOOL_CHOICE } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
@@ -76,6 +78,7 @@ type Turn = {
     prompt: string;
     reply?: unknown[];
     capabilityData?: (project: ProjectContext) => LlmActionCapabilityData;
+    admittedCapabilityId?: WorkflowCapabilityId;
 };
 
 /** One production-shaped planning turn: its context, tools and local message, as parsePromptToActions builds them. */
@@ -101,6 +104,13 @@ function planningTurn({ prompt, capabilityData }: Turn) {
     return { context, system, built, creative, tools };
 }
 
+function localGrounding(turn: Turn, keptCapabilityIds: readonly WorkflowCapabilityId[]): LocalWorkflowGrounding {
+    if (turn.admittedCapabilityId === undefined) {
+        return { keptCapabilityIds };
+    }
+    return { keptCapabilityIds, admittedCapabilityId: turn.admittedCapabilityId };
+}
+
 async function sendLocalTurn(turn: Turn) {
     const planned = planningTurn(turn);
     mocks.completion.mockResolvedValue(JSON.stringify(turn.reply ?? []));
@@ -116,7 +126,7 @@ async function sendLocalTurn(turn: Turn) {
         AUTO_TOOL_CHOICE,
         { firstUserMessage: planned.built.message, history: [], budgetNote: '', answersSchemaInvalidCalls: true },
         planned.built.localMessage,
-        { keptCapabilityIds: planned.built.localWorkflowCapabilityIds }
+        localGrounding(turn, planned.built.localWorkflowCapabilityIds)
     );
     const advertised = (mocks.toolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[];
     return { ...planned, outcome, advertised, names: advertised.map((tool) => tool.function.name) };
@@ -162,6 +172,19 @@ describe('local workflow offer', () => {
 
             expect(selectableWorkflows(advertised)).toEqual(['stem-import-starting-mix']);
             expect(names.filter((name) => WORKFLOW_ACTION_TOOL_NAMES.has(name))).toEqual([]);
+        });
+
+        // Red when the admitted workflow is dropped from the selectable set or from the action-tool offer.
+        it('offers an admitted workflow with no kept capability data as its choice, with the action tools', async () => {
+            const { names, advertised } = await sendLocalTurn({
+                prompt: 'copy the bass processing from the verse to the chorus',
+                admittedCapabilityId: 'bass-processing-copy',
+            });
+
+            expect(selectableWorkflows(advertised)).toEqual(['bass-processing-copy', 'stem-import-starting-mix']);
+            expect(names.filter((name) => WORKFLOW_ACTION_TOOL_NAMES.has(name)).sort()).toEqual(
+                [...WORKFLOW_ACTION_TOOL_NAMES].sort()
+            );
         });
 
         it.each([
@@ -280,8 +303,9 @@ describe('local workflow offer', () => {
             });
         });
 
-        // Red when the workflow action tools are offered without a groundable workflow.
-        it('refuses a workflow action tool the turn did not offer, running nothing', async () => {
+        // Red when the workflow action tools are offered without a groundable workflow. Only a
+        // `complete` outcome carries calls to execute, so the rejection, compared whole, shows none reached.
+        it('refuses a workflow action tool the turn did not offer and hands no call onward', async () => {
             const context = createPlanningProject(getProjectContext(), 5);
             const sent = await sendLocalTurn({
                 prompt: 'list the tracks',
