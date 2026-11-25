@@ -2,6 +2,7 @@ export { analyzeClipPitch } from './analyzeClipPitch';
 export { captureClipPitchAnalysis } from './captureClipPitchAnalysis';
 export { clearClipPitchAnalysis } from './clearClipPitchAnalysis';
 export { restoreClipPitchAnalysis } from './restoreClipPitchAnalysis';
+export { hostsKnead } from './hostsKnead';
 export { hydrateKneadFromTrackStore } from './hydrateKneadFromTrackStore';
 export { syncKneadToEngine } from './syncKneadToEngine';
 export { updateClipKneadState } from './updateClipKneadState';

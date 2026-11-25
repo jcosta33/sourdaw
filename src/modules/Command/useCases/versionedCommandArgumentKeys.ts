@@ -4912,7 +4912,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            audioBufferId: 1,
+            audioBufferId: 126,
             blobs: 616,
             clipId: 1,
             contour: 165,

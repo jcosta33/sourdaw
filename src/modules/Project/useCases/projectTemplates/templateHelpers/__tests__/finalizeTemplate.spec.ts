@@ -33,6 +33,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
@@ -121,7 +123,6 @@ vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: vi.fn(),
     getSidechainRoutesForTrack: vi.fn(),
-    getSidechainTargetCapability: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
     removeSend: vi.fn(),
     removeSidechainRoute: vi.fn(),

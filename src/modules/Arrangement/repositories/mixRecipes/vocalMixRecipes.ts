@@ -97,10 +97,7 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
             'Skip on a take that is already level-ridden or heavily compressed at the source.',
             'Skip when the delivery depends on dynamic contrast between verse and chorus.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'decrease' },
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
         source: 'A 3:1 to 5:1 ratio with a release inside a syllable length keeps the vocal at a steady distance without audible pumping. The low shelf trim removes proximity buildup that compression would otherwise pull up along with everything else.',
     },
     {
@@ -348,10 +345,7 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
             'Skip when no earlier stage controls peaks; this stage alone will chase them and pump.',
             'Skip when the vocal is a single sustained pad-like part with no dynamic movement to settle.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Splitting the work across two gentle stages keeps each one under a few decibels of reduction, which is why the second stage uses a soft knee and a long release. The second stage sets the constant seat in the mix; it is not where peaks are caught.',
     },
     {

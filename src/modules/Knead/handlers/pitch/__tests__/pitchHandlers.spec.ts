@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
+import { trackStore, updateClipInStore, type Clip } from '#/modules/Arrangement/stores';
 
 import { getPitchHandlers } from '../../../useCases/getPitchHandlers';
 import { handleCommitPitchEdit } from '../handleCommitPitchEdit';
@@ -95,7 +95,57 @@ describe('Command Pitch Handlers', () => {
             // to carry — but the key is present, because an absent `blobs` would make
             // the restore preserve whatever is there at undo time instead of putting
             // the clip back the way the commit found it.
-            inverseAction: { type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'orig.wav', blobs: [] } },
+            // The seeded clip has no `audioBufferId`; `null` records that absence so
+            // undo can remove the buffer the commit wrote.
+            inverseAction: {
+                type: 'restoreClipFileId',
+                payload: { clipId: 'c1', fileId: 'orig.wav', audioBufferId: null, blobs: [] },
+            },
+        });
+    });
+
+    describe('handleRestoreClipFileId buffer id', () => {
+        const committedClip: Clip = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Clip 1',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ff0000',
+            locked: false,
+            muted: false,
+            fileId: 'pitch-edits/c1/orig_pitch.wav',
+            audioBufferId: 'audio-pitch:rendered',
+        };
+
+        async function restoreOnto(audioBufferId: string | null | undefined): Promise<Clip> {
+            await handleRestoreClipFileId.execute({
+                type: 'restoreClipFileId',
+                payload: { clipId: 'c1', fileId: 'orig.wav', audioBufferId },
+            });
+            const updater = vi.mocked(updateClipInStore).mock.calls[0]?.[1];
+            if (!updater) {
+                throw new Error('restore did not update the clip');
+            }
+            return updater(committedClip);
+        }
+
+        it('removes the buffer id when the pre-edit clip had none', async () => {
+            const restored = await restoreOnto(null);
+            expect(restored.fileId).toBe('orig.wav');
+            expect('audioBufferId' in restored).toBe(false);
+        });
+
+        it('puts back a recorded buffer id', async () => {
+            expect((await restoreOnto('buffer-c1')).audioBufferId).toBe('buffer-c1');
+        });
+
+        it('leaves the buffer id alone for an inverse recorded before absence was explicit', async () => {
+            expect((await restoreOnto(undefined)).audioBufferId).toBe('audio-pitch:rendered');
         });
     });
 
