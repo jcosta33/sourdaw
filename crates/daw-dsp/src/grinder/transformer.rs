@@ -28,60 +28,6 @@ pub struct Transformer {
     sample_rate: f32,
 }
 
-#[cfg(test)]
-mod restore_default_tests {
-    use super::Transformer;
-
-    #[test]
-    fn restores_transformer_configuration_without_touching_history() {
-        let original = Transformer::new(48_000.0);
-        let mut transformer = Transformer::new(48_000.0);
-        transformer.process_sample(0.5);
-        let history = (
-            transformer.flux_state,
-            transformer.prev_input,
-            transformer.lf_state,
-        );
-        for name in [
-            "transformerDrive",
-            "transformerHysteresis",
-            "transformerLfSaturation",
-        ] {
-            transformer.set_param(name, 0.3);
-        }
-        assert_ne!(transformer.phi_sat, original.phi_sat);
-        assert_ne!(transformer.h_c, original.h_c);
-        assert_ne!(transformer.h_sat, original.h_sat);
-        for name in [
-            "transformerDrive",
-            "transformerHysteresis",
-            "transformerLfSaturation",
-        ] {
-            assert!(transformer.restore_parameter_default(name));
-        }
-        assert_eq!(
-            (transformer.phi_sat, transformer.h_c, transformer.h_sat),
-            (original.phi_sat, original.h_c, original.h_sat)
-        );
-        assert_eq!(
-            (
-                transformer.drive,
-                transformer.hysteresis,
-                transformer.lf_saturation
-            ),
-            (original.drive, original.hysteresis, original.lf_saturation)
-        );
-        assert_eq!(
-            (
-                transformer.flux_state,
-                transformer.prev_input,
-                transformer.lf_state
-            ),
-            history
-        );
-    }
-}
-
 impl Transformer {
     const DEFAULT_PHI_SAT: f32 = 1.0;
     const DEFAULT_H_C: f32 = 0.1;
@@ -197,5 +143,59 @@ impl Transformer {
         self.flux_state = 0.0;
         self.prev_input = 0.0;
         self.lf_state = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod restore_default_tests {
+    use super::Transformer;
+
+    #[test]
+    fn restores_transformer_configuration_without_touching_history() {
+        let original = Transformer::new(48_000.0);
+        let mut transformer = Transformer::new(48_000.0);
+        transformer.process_sample(0.5);
+        let history = (
+            transformer.flux_state,
+            transformer.prev_input,
+            transformer.lf_state,
+        );
+        for name in [
+            "transformerDrive",
+            "transformerHysteresis",
+            "transformerLfSaturation",
+        ] {
+            transformer.set_param(name, 0.3);
+        }
+        assert_ne!(transformer.phi_sat, original.phi_sat);
+        assert_ne!(transformer.h_c, original.h_c);
+        assert_ne!(transformer.h_sat, original.h_sat);
+        for name in [
+            "transformerDrive",
+            "transformerHysteresis",
+            "transformerLfSaturation",
+        ] {
+            assert!(transformer.restore_parameter_default(name));
+        }
+        assert_eq!(
+            (transformer.phi_sat, transformer.h_c, transformer.h_sat),
+            (original.phi_sat, original.h_c, original.h_sat)
+        );
+        assert_eq!(
+            (
+                transformer.drive,
+                transformer.hysteresis,
+                transformer.lf_saturation
+            ),
+            (original.drive, original.hysteresis, original.lf_saturation)
+        );
+        assert_eq!(
+            (
+                transformer.flux_state,
+                transformer.prev_input,
+                transformer.lf_state
+            ),
+            history
+        );
     }
 }
