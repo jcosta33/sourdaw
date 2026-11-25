@@ -298,7 +298,6 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

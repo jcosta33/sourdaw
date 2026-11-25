@@ -312,7 +312,6 @@ export const automationReferenceByActionType: {
     variationMidi: automationReferenceRules.namesLaneOrContent,
     generateBassline: automationReferenceRules.namesLaneOrContent,
     replayGeneratedMidi: automationReferenceRules.namesLaneOrContent,
-    stemSeparate: automationReferenceRules.namesLaneOrContent,
     autoOrganizeProject: automationReferenceRules.namesLaneOrContent,
     addChordEvent: automationReferenceRules.namesLaneOrContent,
     moveChordEvent: automationReferenceRules.namesLaneOrContent,

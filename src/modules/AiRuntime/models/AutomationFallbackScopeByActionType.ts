@@ -315,7 +315,6 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     variationMidi: noFallbackScope,
     generateBassline: noFallbackScope,
     replayGeneratedMidi: noFallbackScope,
-    stemSeparate: noFallbackScope,
     autoOrganizeProject: noFallbackScope,
     addChordEvent: noFallbackScope,
     moveChordEvent: noFallbackScope,

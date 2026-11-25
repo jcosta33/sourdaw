@@ -374,7 +374,6 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     variationMidi: describeAsPlanned,
     generateBassline: describeAsPlanned,
     replayGeneratedMidi: describeAsPlanned,
-    stemSeparate: describeAsPlanned,
     autoOrganizeProject: describeAsPlanned,
     addChordEvent: describeAsPlanned,
     moveChordEvent: describeAsPlanned,

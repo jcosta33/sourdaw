@@ -305,7 +305,6 @@ export const preservesTrimCoordinatesByActionType: {
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

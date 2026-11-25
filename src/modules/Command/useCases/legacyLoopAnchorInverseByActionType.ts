@@ -328,7 +328,6 @@ export const legacyLoopAnchorInverseByActionType: {
     variationMidi: keepAction,
     generateBassline: keepAction,
     replayGeneratedMidi: keepAction,
-    stemSeparate: keepAction,
     autoOrganizeProject: keepAction,
     addChordEvent: keepAction,
     moveChordEvent: keepAction,

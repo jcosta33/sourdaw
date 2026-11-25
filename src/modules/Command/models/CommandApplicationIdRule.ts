@@ -305,7 +305,6 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     variationMidi: noApplicationIdRule,
     generateBassline: noApplicationIdRule,
     replayGeneratedMidi: noApplicationIdRule,
-    stemSeparate: noApplicationIdRule,
     autoOrganizeProject: noApplicationIdRule,
     addChordEvent: { argument: 'eventId', prefix: 'chord-command-' },
     moveChordEvent: noApplicationIdRule,

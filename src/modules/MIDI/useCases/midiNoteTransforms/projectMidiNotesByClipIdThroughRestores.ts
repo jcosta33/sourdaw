@@ -361,7 +361,6 @@ const notesProjectionByActionType: {
     variationMidi: noNotesProjection,
     generateBassline: noNotesProjection,
     replayGeneratedMidi: noNotesProjection,
-    stemSeparate: noNotesProjection,
     autoOrganizeProject: noNotesProjection,
     addChordEvent: noNotesProjection,
     moveChordEvent: noNotesProjection,

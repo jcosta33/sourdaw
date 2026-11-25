@@ -303,7 +303,6 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     variationMidi: true,
     generateBassline: true,
     replayGeneratedMidi: true,
-    stemSeparate: true,
     autoOrganizeProject: true,
     addChordEvent: true,
     moveChordEvent: true,

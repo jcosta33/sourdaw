@@ -298,7 +298,6 @@ export const globalTimeMutatesTrackByActionType: { readonly [Type in AppActionTy
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

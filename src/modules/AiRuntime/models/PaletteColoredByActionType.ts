@@ -298,7 +298,6 @@ export const paletteColoredByActionType: { readonly [Type in AppActionType]: boo
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

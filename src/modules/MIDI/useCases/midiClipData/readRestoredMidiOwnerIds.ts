@@ -314,7 +314,6 @@ const restoredMidiOwnerIdsByActionType: {
     variationMidi: noOwnerIds,
     generateBassline: noOwnerIds,
     replayGeneratedMidi: noOwnerIds,
-    stemSeparate: noOwnerIds,
     autoOrganizeProject: noOwnerIds,
     addChordEvent: noOwnerIds,
     moveChordEvent: noOwnerIds,

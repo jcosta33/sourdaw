@@ -301,7 +301,6 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

@@ -298,7 +298,6 @@ export const projectsTakeLaneStateByActionType: { readonly [Type in AppActionTyp
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

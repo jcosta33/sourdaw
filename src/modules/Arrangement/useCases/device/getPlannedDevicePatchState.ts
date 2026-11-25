@@ -403,7 +403,6 @@ export const plannedDeviceWriteStepByActionType: {
     variationMidi: commandStep,
     generateBassline: commandStep,
     replayGeneratedMidi: commandStep,
-    stemSeparate: commandStep,
     autoOrganizeProject: commandStep,
     addChordEvent: commandStep,
     moveChordEvent: commandStep,

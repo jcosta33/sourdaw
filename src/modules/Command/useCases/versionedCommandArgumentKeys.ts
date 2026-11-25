@@ -7619,7 +7619,6 @@ const schemaIdByActionType = {
     soloTrack: 866,
     splitClip: 867,
     startMacroRecording: 116,
-    stemSeparate: 868,
     stopMacroRecording: 233,
     stopPlayback: 116,
     stretchAutomation: 869,

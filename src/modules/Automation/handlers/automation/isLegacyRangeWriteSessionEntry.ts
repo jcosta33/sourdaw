@@ -325,7 +325,6 @@ export const legacyRangeRemovalByActionType: {
     variationMidi: notLegacyRangeWrite,
     generateBassline: notLegacyRangeWrite,
     replayGeneratedMidi: notLegacyRangeWrite,
-    stemSeparate: notLegacyRangeWrite,
     autoOrganizeProject: notLegacyRangeWrite,
     addChordEvent: notLegacyRangeWrite,
     moveChordEvent: notLegacyRangeWrite,

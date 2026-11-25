@@ -312,7 +312,6 @@ export const automationRecordingPolicyByActionType: {
     variationMidi: noPolicy,
     generateBassline: noPolicy,
     replayGeneratedMidi: noPolicy,
-    stemSeparate: noPolicy,
     autoOrganizeProject: noPolicy,
     addChordEvent: noPolicy,
     moveChordEvent: noPolicy,

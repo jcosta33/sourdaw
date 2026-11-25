@@ -368,7 +368,6 @@ export const trackNameProjectionByActionType: {
     variationMidi: keepTrackNames,
     generateBassline: keepTrackNames,
     replayGeneratedMidi: keepTrackNames,
-    stemSeparate: keepTrackNames,
     autoOrganizeProject: keepTrackNames,
     addChordEvent: keepTrackNames,
     moveChordEvent: keepTrackNames,

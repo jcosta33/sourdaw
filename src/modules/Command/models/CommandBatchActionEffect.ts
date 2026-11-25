@@ -372,7 +372,6 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     variationMidi: NONE,
     generateBassline: NONE,
     replayGeneratedMidi: NONE,
-    stemSeparate: NONE,
     autoOrganizeProject: NONE,
     addChordEvent: NONE,
     moveChordEvent: NONE,

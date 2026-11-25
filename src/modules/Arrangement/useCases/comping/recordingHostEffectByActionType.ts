@@ -315,7 +315,6 @@ export const recordingHostEffectByActionType: {
     variationMidi: leaveHosts,
     generateBassline: leaveHosts,
     replayGeneratedMidi: leaveHosts,
-    stemSeparate: leaveHosts,
     autoOrganizeProject: leaveHosts,
     addChordEvent: leaveHosts,
     moveChordEvent: leaveHosts,

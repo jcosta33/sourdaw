@@ -423,7 +423,6 @@ const relinkPrefixStepByActionType: {
     variationMidi: keepTracks,
     generateBassline: keepTracks,
     replayGeneratedMidi: keepTracks,
-    stemSeparate: keepTracks,
     autoOrganizeProject: keepTracks,
     addChordEvent: keepTracks,
     moveChordEvent: keepTracks,

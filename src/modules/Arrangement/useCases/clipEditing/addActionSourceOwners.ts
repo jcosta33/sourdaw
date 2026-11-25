@@ -474,7 +474,6 @@ const addActionSourceOwnersByActionType: {
     variationMidi: addNoOwners,
     generateBassline: addNoOwners,
     replayGeneratedMidi: addNoOwners,
-    stemSeparate: addNoOwners,
     autoOrganizeProject: addNoOwners,
     addChordEvent: addNoOwners,
     moveChordEvent: addNoOwners,

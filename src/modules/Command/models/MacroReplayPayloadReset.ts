@@ -369,7 +369,6 @@ export const macroReplayPayloadResetByActionType: {
     variationMidi: keepRecordedPayload,
     generateBassline: keepRecordedPayload,
     replayGeneratedMidi: keepRecordedPayload,
-    stemSeparate: keepRecordedPayload,
     autoOrganizeProject: keepRecordedPayload,
     addChordEvent: keepRecordedPayload,
     moveChordEvent: keepRecordedPayload,

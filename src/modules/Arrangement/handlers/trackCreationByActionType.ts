@@ -306,7 +306,6 @@ export const trackCreationByActionType: { readonly [Type in AppActionType]: Trac
     variationMidi: 'none',
     generateBassline: 'unplanned',
     replayGeneratedMidi: 'none',
-    stemSeparate: 'unplanned',
     autoOrganizeProject: 'unplanned',
     addChordEvent: 'none',
     moveChordEvent: 'none',
