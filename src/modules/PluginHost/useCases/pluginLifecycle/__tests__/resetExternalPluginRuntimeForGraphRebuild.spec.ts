@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { bytesToBase64 } from '#/utils/base64';
+
 import { type PluginInstance } from '../../../repositories/pluginBridge/types';
 import {
     defaultExternalPluginActivationState,
@@ -517,12 +519,40 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
             expectReactivatedInstanceKept(activationStatus);
         });
 
-        it('leaves no carry for the next activation when it answers before any reactivation', async () => {
+        it('hands the removal read to the next activation when it succeeds before any reactivation', async () => {
             const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
             await letGoThroughGraphRebuild();
+            // The rebuild's own read finds the hung instance unreadable-empty, so only the removal's read exists.
+            carriedExternalPluginStates.clear();
 
             held.resolve({ unloadedInstanceIds: [LATE_INSTANCE_ID], errors: [], reports: [] });
             await unload;
+
+            expect(carriedExternalPluginStates.get(LATE_INSTANCE_ID)).toEqual({
+                pluginId: 'hung-compressor',
+                stateChunk: bytesToBase64(new Uint8Array([1, 2, 3])),
+            });
+        });
+
+        it('rejects a late answer that carries native errors and leaves the reactivated instance untouched', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            await letGoThroughGraphRebuild();
+            await reactivate(1001);
+            const activationStatus = externalPluginActivationStore.value?.byInstanceId[LATE_INSTANCE_ID];
+
+            held.resolve({ unloadedInstanceIds: [], errors: ['plugin refused to unload'], reports: [] });
+            await expect(unload).rejects.toThrow('plugin refused to unload');
+
+            expectReactivatedInstanceKept(activationStatus);
+        });
+
+        it('keeps no removal carry when the late answer is a refusal', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            await letGoThroughGraphRebuild();
+            carriedExternalPluginStates.clear();
+
+            held.resolve({ unloadedInstanceIds: [], errors: ['plugin refused to unload'], reports: [] });
+            await expect(unload).rejects.toThrow('plugin refused to unload');
 
             expect(carriedExternalPluginStates.has(LATE_INSTANCE_ID)).toBe(false);
         });

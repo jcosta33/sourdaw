@@ -58,13 +58,16 @@
  * not depend on whether some other instance in the same cascade also errored,
  * nor on whether a rebuild fence let go of the unload before it answered.
  *
- * ── A let-go unload's answer reconciles nothing ───────────────────────────
+ * ── A let-go unload's answer writes nothing, but still reports ────────────
  *
  * A rebuild fence that stops waiting for a keyed unload lets go of it, and the
  * rebuild may activate the same instance id again before the native call
  * answers. Its answer then describes the old generation, so neither a success
  * (forgetting the instance) nor a failure (restoring the captured attachment)
- * is applied to the instance now standing under that id.
+ * is applied to the instance now standing under that id. The answer is still
+ * validated and a refusal still rejects to the caller, because a throw writes
+ * nothing and a device removal must not report a plugin removed that the
+ * native side kept.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
@@ -80,7 +83,8 @@ import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 
 function reconcileUnloadResult(
     result: Awaited<ReturnType<typeof unloadPluginRepo>>,
-    expectedInstanceId?: string
+    expectedInstanceId: string | undefined,
+    writesInstanceRecord: boolean
 ): void {
     const mismatchedSuccess =
         expectedInstanceId !== undefined && result.unloadedInstanceIds.some((id) => id !== expectedInstanceId);
@@ -89,8 +93,10 @@ function reconcileUnloadResult(
     if (mismatchedSuccess || missingOutcome) {
         throw new Error('Invalid keyed unload_plugin response');
     }
-    for (const instanceId of result.unloadedInstanceIds) {
-        forgetPluginInstance(instanceId);
+    if (writesInstanceRecord) {
+        for (const instanceId of result.unloadedInstanceIds) {
+            forgetPluginInstance(instanceId);
+        }
     }
     if (result.errors.length > 0) {
         throw new Error(result.errors.join('; '));
@@ -133,10 +139,7 @@ export async function unloadWithRetractedMirror(
         if (unloaded.reports.length > 0) {
             forwardReleasedStripReports(unloaded.reports);
         }
-        if (wasLetGo()) {
-            return;
-        }
-        reconcileUnloadResult(unloaded, instanceId);
+        reconcileUnloadResult(unloaded, instanceId, !wasLetGo());
     } catch (error) {
         if (!wasLetGo()) {
             markExternalPluginParameterSnapshotsAttached(attached);

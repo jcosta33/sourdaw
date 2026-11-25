@@ -12,13 +12,18 @@ import { unloadWithRetractedMirror } from './unloadWithRetractedMirror';
 export function unloadPluginCarryingLiveState(instanceId: string): Promise<void> {
     return scheduleKeyedUnload(instanceId, async (wasLetGo) => {
         const reads = await readLiveStatesForTeardown([instanceId], 'inside-lifecycle');
+        let refusedAfterLetGo = false;
         try {
             await unloadWithRetractedMirror(instanceId, wasLetGo);
+        } catch (error) {
+            refusedAfterLetGo = wasLetGo();
+            throw error;
         } finally {
-            // A let-go read is the old generation's; the id may be live again.
-            if (!wasLetGo()) {
-                commitCarriedLiveStates(reads, loadedExternalInstances.has(instanceId) ? [] : [instanceId]);
-            }
+            // A let-go unload no longer decides `loadedExternalInstances` (the rebuild emptied it and the id may
+            // be live again), so its refusal is the evidence the instance survived. A later activation of the id
+            // moved its carry slot, so the commit discards the read it overtook.
+            const survived = refusedAfterLetGo || loadedExternalInstances.has(instanceId);
+            commitCarriedLiveStates(reads, survived ? [] : [instanceId]);
         }
     });
 }
