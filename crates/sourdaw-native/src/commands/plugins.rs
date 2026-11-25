@@ -511,7 +511,7 @@ pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleL
 ///
 /// For [`attach_dormant_plugins`], which runs inside a graph batch holding the
 /// registry guard and so cannot await anything. A lease it cannot take means a
-/// load, an unload or an editor close owns this instance right now: the attach
+/// load, an unload or another attach owns this instance right now: the attach
 /// leaves it dormant and the next batch tries again, which is the same answer
 /// an engine refusal gets.
 pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {

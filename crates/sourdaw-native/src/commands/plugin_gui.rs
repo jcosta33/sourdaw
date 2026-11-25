@@ -421,10 +421,12 @@ pub async fn open_plugin_gui(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginGuiInfo, String> {
-    open_editor_in_new_window(instance_id, windows_host, state).map_err(|error| error.to_string())
+    open_editor_in_new_window(instance_id, windows_host, state)
+        .await
+        .map_err(|error| error.to_string())
 }
 
-fn open_editor_in_new_window(
+async fn open_editor_in_new_window(
     instance_id: String,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
@@ -510,7 +512,7 @@ fn open_editor_in_new_window(
     // and an unreachable host must not have a live editor closed on its say-so.
     if let Some(stale_label) = open_window_label.take() {
         if let Err(error) =
-            retire_stale_editor_for_reopen(&instance_id, &stale_label, windows_host, state)
+            retire_stale_editor_for_reopen(&instance_id, &stale_label, windows_host, state).await
         {
             plugin_window.destroy();
             return Err(error);
@@ -780,13 +782,11 @@ fn remove_recorded_editor_window(
 /// running this inline risks a circular-wait deadlock with GUI-affine plugins
 /// and freezes the whole app event loop otherwise.
 ///
-/// Takes the instance's lifecycle lease first, before the window claim, and holds
-/// it across the plugin's close, because an attach holds that lease while the
-/// instance is in neither store, and a close that ignored it would skip the
-/// plugin's `close_gui`. Taken before the claim so that a reopen made while this
-/// report waits still finds the record and retires it through its own handshake,
-/// rather than opening a second editor this report would then close. The lease
-/// is released before the event is emitted.
+/// Holds no lifecycle lease: a load or unload can keep that lease past the
+/// shell's detach deadline, and a close queued behind it would run against a
+/// window the shell has already destroyed, or against an editor reopened in the
+/// meantime. An attach moving the instance between the stores is waited out at
+/// the plugin lookup instead, for a bounded time ([`ATTACH_TRANSIT_WAIT`]).
 ///
 /// Emits `plugin-gui-closed` on the same condition that removes the label, and
 /// only then. The frontend shows an open editor as open, and the OS is free to
@@ -804,15 +804,7 @@ pub async fn reset_plugin_gui_state_after_os_close(
     state: &AppState,
     events: &dyn EventSink,
 ) {
-    // The lease comes before the claim. Waiting for it after the claim would
-    // leave the record gone while this report is parked, so a reopen in that
-    // window finds no stale editor to retire, opens a second one inside the
-    // plugin, and has it closed by this report's close. Held first, the record
-    // stays put and a reopen retires it through its own handshake, which this
-    // report then loses.
-    let lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
-
-    // Claim the window next, and do nothing at all unless the claim succeeds.
+    // Claim the window, and do nothing at all unless the claim succeeds.
     // Taken before the plugin is touched so the record — the one piece of shared
     // state a concurrent open also writes — decides which report owns this
     // teardown. A claim lost to a reopen's retirement is captured in the same
@@ -834,9 +826,6 @@ pub async fn reset_plugin_gui_state_after_os_close(
     };
 
     if !removed_this_window {
-        // The lease guarded the claim; the wait below needs none and must not
-        // hold other commands for this instance behind it.
-        drop(lifecycle_guard);
         // Lost the claim. Lost to a newer opening's published record, there is
         // nothing to wait for: that opening retired the old editor before it
         // published, so the plugin has already left this window. Lost to a
@@ -850,11 +839,7 @@ pub async fn reset_plugin_gui_state_after_os_close(
         return;
     }
 
-    // Held across the plugin's close: an attach moves the instance between the
-    // stores under this lease, and a close that ran mid-move found it in neither
-    // and left the plugin's editor open.
-    close_owning_plugin_gui(instance_id, windows_host, state);
-    drop(lifecycle_guard);
+    close_owning_plugin_gui(instance_id, windows_host, state).await;
 
     events.emit(
         PLUGIN_GUI_CLOSED_EVENT,
@@ -869,11 +854,16 @@ pub async fn reset_plugin_gui_state_after_os_close(
 /// Command-owned first, then engine-owned: an instance lives in exactly one of
 /// them. Either way the close runs under the instance's own control gate with
 /// the map released.
-fn close_owning_plugin_gui(
+///
+/// An instance found in neither store gets one bounded wait for an attach's
+/// move before the lookup is repeated; see [`wait_out_attach_transit`].
+async fn close_owning_plugin_gui(
     instance_id: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) {
+    wait_out_attach_transit(instance_id, state).await;
+
     if let Ok(Some(runtime)) = command_owned_runtime(state, instance_id) {
         let _ = runtime.with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
             lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
@@ -892,6 +882,43 @@ fn close_owning_plugin_gui(
             lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
         });
     }
+}
+
+/// How long a close looks for an instance that is in neither store. It stays
+/// under the shell's 5 s detach deadline (electron/pluginGui.ts) with room for
+/// the UI-thread hop of the plugin's own close.
+const ATTACH_TRANSIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn is_in_a_plugin_store(instance_id: &str, state: &AppState) -> bool {
+    // A poisoned store cannot be waited out; the caller's own lookup reports it.
+    let command_owned = state
+        .plugins
+        .lock()
+        .map(|plugins| plugins.contains_key(instance_id))
+        .unwrap_or(true);
+    command_owned
+        || state
+            .engine_plugins
+            .lock()
+            .map(|engine_plugins| engine_plugins.contains_key(instance_id))
+            .unwrap_or(true)
+}
+
+/// Wait for an attach that is moving the instance between the stores.
+///
+/// An attach holds the instance's lifecycle lease for the whole move, and in the
+/// middle the instance is in neither store, so a close that looked then would
+/// skip the plugin's `close_gui` and let the shell destroy the window over an
+/// editor the plugin still holds. Acquiring the lease means the move is done.
+/// A lease still held at the bound is a load or unload, not an attach, which
+/// only try-locks and moves quickly; the close then proceeds as an unloaded
+/// instance's does. The lease is never held across the close itself.
+async fn wait_out_attach_transit(instance_id: &str, state: &AppState) {
+    if is_in_a_plugin_store(instance_id, state) {
+        return;
+    }
+    let transit = tokio::time::timeout(ATTACH_TRANSIT_WAIT, lock_plugin_lifecycle(instance_id));
+    drop(transit.await);
 }
 
 /// Claim a recorded editor whose window the shell no longer has, and close the
@@ -921,7 +948,7 @@ fn close_owning_plugin_gui(
 /// changed under this opening means someone else's teardown or opening owns the
 /// editor now, and showing this window over either would put it on screen over
 /// an editor this open does not control.
-fn retire_stale_editor_for_reopen(
+async fn retire_stale_editor_for_reopen(
     instance_id: &str,
     stale_label: &str,
     windows_host: &dyn PluginWindowHost,
@@ -943,7 +970,7 @@ fn retire_stale_editor_for_reopen(
         teardown
     };
 
-    close_owning_plugin_gui(instance_id, windows_host, state);
+    close_owning_plugin_gui(instance_id, windows_host, state).await;
 
     // Completed before the records are touched again: a waiting report answers
     // the moment the plugin has left the window, not after this function's own
@@ -978,20 +1005,18 @@ pub async fn close_plugin_gui(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), String> {
-    // An attach moves the instance from the command store to the engine's
-    // under this lease, and in between it is in neither. Holding the lease puts
-    // the close on one side of the move, where the plugin is found and its
-    // editor closed, instead of destroying the window over an editor the
-    // plugin still holds open.
-    let _lifecycle_guard = lock_plugin_lifecycle(&instance_id).await;
-    close_editor_and_window(&instance_id, windows_host, state).map_err(|error| error.to_string())
+    close_editor_and_window(&instance_id, windows_host, state)
+        .await
+        .map_err(|error| error.to_string())
 }
 
-fn close_editor_and_window(
+async fn close_editor_and_window(
     instance_id: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), PluginGuiError> {
+    wait_out_attach_transit(instance_id, state).await;
+
     let command_owned = command_owned_runtime(state, instance_id)?;
     if let Some(runtime) = &command_owned {
         runtime
@@ -1670,6 +1695,55 @@ mod tests {
         );
     }
 
+    /// Runs `close` while an attach is mid-move, as the attach does it: the test
+    /// holds the instance's lifecycle lease with the instance out of both
+    /// stores. Returns once `close` has parked on the lease; the instance is then
+    /// put into the engine's store and the lease released, and `close`'s result
+    /// is returned.
+    fn closing_during_an_attach_move<Closed: Send>(
+        state: &AppState,
+        instance_id: &str,
+        close: impl FnOnce() -> Closed + Send,
+    ) -> Closed {
+        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle(instance_id)
+            .expect("nothing else holds the instance");
+        let in_transit = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove(instance_id)
+            .expect("the fixture is engine-owned");
+        let gate = super::super::plugins::plugin_lifecycle_gate(instance_id);
+        // The map, the attach's lease and its guard, and `gate` above.
+        let idle_holders = Arc::strong_count(&gate);
+
+        std::thread::scope(|scope| {
+            let closing = scope.spawn(close);
+            // A close parked on the lease holds two more clones of its gate.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while Arc::strong_count(&gate) < idle_holders + 2 {
+                assert!(
+                    !closing.is_finished(),
+                    "the close ran inside the attach's move instead of waiting for it"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the close never reached the lifecycle lease"
+                );
+                std::thread::yield_now();
+            }
+
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .insert(instance_id.to_string(), in_transit);
+            drop(attach_lease);
+
+            closing.join().expect("the close thread should not panic")
+        })
+    }
+
     /// An attach moves an instance between the two stores under its lifecycle
     /// lease, and in between it is in neither. A close that ran there found no
     /// plugin, destroyed the window and left the plugin's editor open, so it
@@ -1688,78 +1762,25 @@ mod tests {
         ))
         .expect("the fixture editor should open");
 
-        // The attach's hold: its lease, with the record out of every store.
-        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("in-transit-command")
-            .expect("nothing else holds the instance");
-        let in_transit = state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock")
-            .remove("in-transit-command")
-            .expect("the fixture is engine-owned");
-        let gate = super::super::plugins::plugin_lifecycle_gate("in-transit-command");
-        // The map, the attach's lease and its guard, and `gate` above.
-        let idle_holders = Arc::strong_count(&gate);
-
-        let lease_held_while_plugin_closes = std::thread::scope(|scope| {
-            // Parks the plugin's `close_gui` on the shell thread, where the
-            // lease can be observed while the plugin is being closed.
-            let held_close = windows.hold_next_task();
-            let close = scope.spawn(|| {
-                crate::block_on_test(close_plugin_gui(
-                    "in-transit-command".to_string(),
-                    &windows,
-                    &state,
-                ))
-            });
-            // A close parked on the lease holds two more clones of its gate.
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while Arc::strong_count(&gate) < idle_holders + 2 {
-                assert!(
-                    !close.is_finished(),
-                    "the close ran inside the attach's move instead of waiting for it"
-                );
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the close never reached the lifecycle lease"
-                );
-                std::thread::yield_now();
-            }
-
-            state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock")
-                .insert("in-transit-command".to_string(), in_transit);
-            drop(attach_lease);
-
-            held_close.until_held();
-            let lease_held =
-                super::super::plugins::try_lock_plugin_lifecycle("in-transit-command").is_none();
-            held_close.release();
-
-            close
-                .join()
-                .expect("the close thread should not panic")
-                .expect("the close should succeed once the move is done");
-            lease_held
-        });
+        closing_during_an_attach_move(&state, "in-transit-command", || {
+            crate::block_on_test(close_plugin_gui(
+                "in-transit-command".to_string(),
+                &windows,
+                &state,
+            ))
+        })
+        .expect("the close should succeed once the move is done");
 
         assert_eq!(
             recorded_threads(&gui_threads),
             [windows.thread_id, windows.thread_id],
             "the plugin's editor must be closed, not only its window destroyed"
         );
-        assert!(
-            lease_held_while_plugin_closes,
-            "the close must hold the lifecycle lease while the plugin's editor closes, or an \
-             attach can move the instance out from under it"
-        );
     }
 
     /// The title-bar close takes the same path as a command through an attach:
     /// the report claims the window record, finds the instance in neither store
-    /// and, without the lease, skips the plugin's `close_gui` while still
+    /// and, without the wait, skips the plugin's `close_gui` while still
     /// telling the frontend the editor closed.
     #[test]
     fn an_os_close_made_while_an_attach_moves_the_instance_still_closes_the_plugins_editor() {
@@ -1780,72 +1801,22 @@ mod tests {
             .get("in-transit-os-close")
             .cloned()
             .expect("the open must have recorded a window");
-
-        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("in-transit-os-close")
-            .expect("nothing else holds the instance");
-        let in_transit = state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock")
-            .remove("in-transit-os-close")
-            .expect("the fixture is engine-owned");
-        let gate = super::super::plugins::plugin_lifecycle_gate("in-transit-os-close");
-        // The map, the attach's lease and its guard, and `gate` above.
-        let idle_holders = Arc::strong_count(&gate);
         let events = RecordingEventSink::default();
 
-        let lease_held_while_plugin_closes = std::thread::scope(|scope| {
-            // Parks the plugin's `close_gui` on the shell thread, where the
-            // lease can be observed while the plugin is being closed.
-            let held_close = windows.hold_next_task();
-            let report = scope.spawn(|| {
-                crate::block_on_test(reset_plugin_gui_state_after_os_close(
-                    "in-transit-os-close",
-                    &label,
-                    &windows,
-                    &state,
-                    &events,
-                ))
-            });
-            // A report parked on the lease holds two more clones of its gate.
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while Arc::strong_count(&gate) < idle_holders + 2 {
-                assert!(
-                    !report.is_finished(),
-                    "the OS-close report ran inside the attach's move instead of waiting for it"
-                );
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the OS-close report never reached the lifecycle lease"
-                );
-                std::thread::yield_now();
-            }
-
-            state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock")
-                .insert("in-transit-os-close".to_string(), in_transit);
-            drop(attach_lease);
-
-            held_close.until_held();
-            let lease_held =
-                super::super::plugins::try_lock_plugin_lifecycle("in-transit-os-close").is_none();
-            held_close.release();
-
-            report.join().expect("the report thread should not panic");
-            lease_held
+        closing_during_an_attach_move(&state, "in-transit-os-close", || {
+            crate::block_on_test(reset_plugin_gui_state_after_os_close(
+                "in-transit-os-close",
+                &label,
+                &windows,
+                &state,
+                &events,
+            ))
         });
 
         assert_eq!(
             recorded_threads(&gui_threads),
             [windows.thread_id, windows.thread_id],
             "the plugin's editor must be closed on the shell's thread, not only its window gone"
-        );
-        assert!(
-            lease_held_while_plugin_closes,
-            "the OS-close report must hold the lifecycle lease while the plugin's editor closes, \
-             or an attach can move the instance out from under it"
         );
         let emitted: Vec<String> = events
             .events()
@@ -1859,15 +1830,10 @@ mod tests {
         );
     }
 
-    /// A reopen made while an OS-close report waits for the instance's lease.
-    /// The report must not have claimed the window record yet: a record claimed
-    /// before the wait leaves the reopen no stale editor to retire, so it opens
-    /// a second editor inside the plugin and the report then closes the new
-    /// one while its window stays recorded. Waiting first leaves the record in
-    /// place, the reopen retires the old editor and opens its own, and the
-    /// report finds a newer opening and changes nothing.
+    /// A reopen retires the stale editor behind a window the shell no longer
+    /// has, and that retirement can meet an attach's move like any other close.
     #[test]
-    fn a_reopen_made_while_an_os_close_waits_for_the_lease_keeps_its_editor() {
+    fn a_reopen_retiring_an_editor_while_an_attach_moves_the_instance_closes_it() {
         let state = AppState::default();
         let gui_threads =
             insert_engine_owned_fixture_watching_gui_threads(&state, "in-transit-reopen", true);
@@ -1878,89 +1844,150 @@ mod tests {
             &state,
         ))
         .expect("the fixture editor should open");
-        let closed_label = state
+        let stale_label = state
             .plugin_windows
             .lock()
             .expect("plugin_windows lock")
             .get("in-transit-reopen")
             .cloned()
             .expect("the open must have recorded a window");
-        windows.os_closed(&closed_label);
+        windows.os_closed(&stale_label);
 
-        // Another holder of the instance's lease, standing for an attach.
-        let other_holder = super::super::plugins::try_lock_plugin_lifecycle("in-transit-reopen")
-            .expect("nothing else holds the instance");
-        let gate = super::super::plugins::plugin_lifecycle_gate("in-transit-reopen");
-        // The map, the other holder's lease and its guard, and `gate` above.
-        let idle_holders = Arc::strong_count(&gate);
-        let events = RecordingEventSink::default();
-
-        let reopened = std::thread::scope(|scope| {
-            let report = scope.spawn(|| {
-                crate::block_on_test(reset_plugin_gui_state_after_os_close(
-                    "in-transit-reopen",
-                    &closed_label,
-                    &windows,
-                    &state,
-                    &events,
-                ))
-            });
-            // A report parked on the lease holds two more clones of its gate.
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while Arc::strong_count(&gate) < idle_holders + 2 {
-                assert!(
-                    !report.is_finished(),
-                    "the OS-close report ran past the lease another holder had"
-                );
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the OS-close report never reached the lifecycle lease"
-                );
-                std::thread::yield_now();
-            }
-
-            let reopened = crate::block_on_test(open_plugin_gui(
-                "in-transit-reopen".to_string(),
+        closing_during_an_attach_move(&state, "in-transit-reopen", || {
+            crate::block_on_test(retire_stale_editor_for_reopen(
+                "in-transit-reopen",
+                &stale_label,
                 &windows,
                 &state,
-            ));
-            drop(other_holder);
-            report.join().expect("the report thread should not panic");
-            reopened
-        });
+            ))
+        })
+        .expect("the retirement should succeed once the move is done");
 
-        let reopened = reopened
-            .expect("a reopen made while the report waits for the lease must open the editor");
-        assert!(reopened.is_open);
         assert_eq!(
             recorded_threads(&gui_threads),
-            [windows.thread_id, windows.thread_id, windows.thread_id],
-            "the reopen must close the stale editor and open its own, and the report must \
-             close nothing after it"
+            [windows.thread_id, windows.thread_id],
+            "the stale editor must be closed inside the plugin before the reopen opens"
         );
-        let runtime = engine_fixture_runtime(&state, "in-transit-reopen");
-        let editor_is_open = runtime
-            .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-                Ok::<bool, PluginError>(plugin.open_gui(std::ptr::null_mut()).is_err())
-            })
-            .expect("the fixture's control should be free");
+    }
+
+    /// A lease another holder keeps while the instance is in a store says
+    /// nothing about a move: the close finds the plugin at once and never waits
+    /// for it, so a slow load or unload cannot stall an editor's close past the
+    /// shell's detach deadline.
+    #[test]
+    fn a_close_of_a_present_instance_does_not_wait_for_a_lease_another_holder_keeps() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "lease-held-present", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "lease-held-present".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+        let other_holder = super::super::plugins::try_lock_plugin_lifecycle("lease-held-present")
+            .expect("nothing else holds the instance");
+
+        // Well inside the bound a close would wait for, so a close that waited
+        // for the lease anyway is still running when this expires.
+        let patience = ATTACH_TRANSIT_WAIT / 2;
+        let finished_within_patience = std::thread::scope(|scope| {
+            let started = std::time::Instant::now();
+            let close = scope.spawn(|| {
+                crate::block_on_test(close_plugin_gui(
+                    "lease-held-present".to_string(),
+                    &windows,
+                    &state,
+                ))
+            });
+            while !close.is_finished() && started.elapsed() < patience {
+                std::thread::yield_now();
+            }
+            let finished = close.is_finished();
+            close
+                .join()
+                .expect("the close thread should not panic")
+                .expect("the close should succeed");
+            finished
+        });
+        drop(other_holder);
+
         assert!(
-            editor_is_open,
-            "the reopened editor must still be open inside the plugin"
+            finished_within_patience,
+            "a close of an instance in a store must not wait for its lifecycle lease"
         );
-        let recorded = state
-            .plugin_windows
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the close must reach the plugin while the other holder still has the lease"
+        );
+    }
+
+    /// An instance in neither store while another holder keeps its lease past
+    /// the bound is being loaded or unloaded, not attached. The close gives up
+    /// the wait and answers, so the shell's detach does not run out its deadline,
+    /// and it has no plugin to close.
+    #[test]
+    fn a_close_of_an_absent_instance_stops_waiting_for_a_lease_held_past_the_bound() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "lease-held-absent", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "lease-held-absent".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+        let other_holder = super::super::plugins::try_lock_plugin_lifecycle("lease-held-absent")
+            .expect("nothing else holds the instance");
+        let unloading = state
+            .engine_plugins
             .lock()
-            .expect("plugin_windows lock")
-            .get("in-transit-reopen")
-            .cloned()
-            .expect("the reopened editor's window must stay recorded");
-        assert_ne!(recorded, closed_label, "the reopen records its own window");
+            .expect("engine_plugins lock")
+            .remove("lease-held-absent")
+            .expect("the fixture is engine-owned");
+
+        let (finished_with_lease_held, waited) = std::thread::scope(|scope| {
+            let started = std::time::Instant::now();
+            let close = scope.spawn(|| {
+                crate::block_on_test(close_plugin_gui(
+                    "lease-held-absent".to_string(),
+                    &windows,
+                    &state,
+                ))
+            });
+            let deadline = started + ATTACH_TRANSIT_WAIT + std::time::Duration::from_secs(4);
+            while !close.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::yield_now();
+            }
+            let finished = close.is_finished();
+            let waited = started.elapsed();
+            // Released only now, so a close still parked on it can end.
+            drop(other_holder);
+            close
+                .join()
+                .expect("the close thread should not panic")
+                .expect("the close should succeed");
+            (finished, waited)
+        });
+
         assert!(
-            events.events().is_empty(),
-            "a report for an opening the reopen replaced must not tell the frontend the live \
-             editor closed"
+            finished_with_lease_held,
+            "the close must stop waiting at the bound while the lease is still held"
         );
+        assert!(
+            waited >= ATTACH_TRANSIT_WAIT,
+            "the close must wait out the bound for a move before giving up: {waited:?}"
+        );
+        // Read before the instance is dropped, which closes its editor too.
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id],
+            "an instance in neither store has no plugin to close"
+        );
+        drop(unloading);
     }
 
     /// The OS-close path reaches the same lifecycle from the shell's own report
@@ -3373,7 +3400,7 @@ mod tests {
         let (state, calls) = state_with_a_held_dormant_editor();
         let (map_was_free, other_answer, closed) =
             editor_call_held_inside_the_plugin(&state, calls, |state| {
-                close_editor_and_window("held", &NoWindowHost, state)
+                crate::block_on_test(close_editor_and_window("held", &NoWindowHost, state))
                     .map_err(|error| error.to_string())
             });
 
@@ -3393,9 +3420,13 @@ mod tests {
         let opening_windows = Arc::clone(&windows);
         let (map_was_free, other_answer, opened) =
             editor_call_held_inside_the_plugin(&state, calls, move |state| {
-                open_editor_in_new_window("held".to_string(), opening_windows.as_ref(), state)
-                    .map(|info| info.is_open)
-                    .map_err(|error| error.to_string())
+                crate::block_on_test(open_editor_in_new_window(
+                    "held".to_string(),
+                    opening_windows.as_ref(),
+                    state,
+                ))
+                .map(|info| info.is_open)
+                .map_err(|error| error.to_string())
             });
 
         assert_only_the_held_instance_was_held(map_was_free, other_answer);
