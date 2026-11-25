@@ -1,3 +1,4 @@
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { type Track } from '../models/Track';
@@ -109,7 +110,7 @@ function collectSidechainKeySourceIds(
         const targetDevice = trackById
             .get(route.targetTrackId)
             ?.devices.find((device) => device.id === route.targetDeviceId && !device.bypassed);
-        if (targetDevice?.type === 'builtin-sidechain-compressor') {
+        if (targetDevice && acceptsSidechainInput(targetDevice.type)) {
             keySourceIds.add(route.sourceTrackId);
         }
     }

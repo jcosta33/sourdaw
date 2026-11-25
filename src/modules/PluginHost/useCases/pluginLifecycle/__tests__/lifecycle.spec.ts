@@ -347,7 +347,9 @@ describe('pluginLifecycleScheduler', () => {
         });
 
         let drained = false;
-        void rebuild.waitForExistingOperations().then(() => {
+        let unsettledAfterDrain: ReadonlySet<string> | undefined;
+        void rebuild.waitForExistingOperations(new Map()).then((unsettled) => {
+            unsettledAfterDrain = unsettled;
             drained = true;
         });
         await flushLifecycleTurns();
@@ -358,6 +360,7 @@ describe('pluginLifecycleScheduler', () => {
         await expect(succeeding).resolves.toBe('succeeding-ran');
         await flushLifecycleTurns();
         expect(drained).toBe(true);
+        expect(unsettledAfterDrain).toEqual(new Set());
         expect(admitted).toBe(false);
 
         rebuild.end();

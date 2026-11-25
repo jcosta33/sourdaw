@@ -39,7 +39,6 @@ export { resolveBouncedClipEndBeat } from './freezeBounce/resolveBouncedClipEndB
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
-export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { resolveAgentMeasurementTargets } from './resolveAgentMeasurementTargets';
 export { renderAgentMeasurementTarget } from './renderAgentMeasurementTarget';
@@ -190,6 +189,7 @@ export { compileSendPreFaderAction } from './device/sendManagement/compileSendPr
 export { listSendDestinations } from './device/sendManagement/listSendDestinations';
 export { commitSendEdit } from './device/sendManagement/commitSendEdit';
 export { commitSendLevel } from './device/sendManagement/commitSendLevel';
+export { createDeviceParameterControl } from './device/setDeviceParameter/createDeviceParameterControl';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 

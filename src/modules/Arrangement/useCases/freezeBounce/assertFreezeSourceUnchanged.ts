@@ -1,8 +1,7 @@
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { type Track, trackStore } from '../../stores/trackStore';
 
-// Carries no "Freeze failed" prefix: the failure paths in freezeTrack add it where they need it.
-const CHANGED_DURING_FREEZE = 'The track changed while it was freezing. Freeze it again.';
+import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
 
 function findLiveTrack(trackId: string): Track {
     const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
@@ -20,8 +19,10 @@ function findLiveTrack(trackId: string): Track {
  *
  * Hashing is itself asynchronous, so the track is re-read after the digest: a hash only counts
  * for the clips and devices it was taken from, and an edit that landed meanwhile is hashed again.
+ * Returns the live track whose clips and devices were hashed, so a caller can tell whether they are
+ * still the live ones once the returned promise settles.
  */
-export async function assertFreezeSourceUnchanged(trackId: string, renderedSourceHash: string): Promise<void> {
+export async function assertFreezeSourceUnchanged(trackId: string, renderedSourceHash: string): Promise<Track> {
     let hashed = findLiveTrack(trackId);
     for (;;) {
         const liveHash = await computeTrackHash(hashed.clips, hashed.devices);
@@ -33,6 +34,6 @@ export async function assertFreezeSourceUnchanged(trackId: string, renderedSourc
         if (liveHash !== renderedSourceHash) {
             throw new Error(CHANGED_DURING_FREEZE);
         }
-        return;
+        return current;
     }
 }

@@ -36,6 +36,8 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { listToasterPatternsOutsideArrangement } from '#/modules/Toaster/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
@@ -160,6 +162,9 @@ const AutoDetectedTailLabel = ({
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
+    // The estimate reads each hosted instance's tail from this store; subscribing
+    // is what repaints the label when a refresh revises one.
+    useStore(externalPluginTailStore, defaultExternalPluginTailState);
     const detected = getAutoDetectedTailSeconds({
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         honorMuted,
@@ -262,6 +267,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setProgress(0);
             setStatusText('');
             setErrorText('');
+            // A VST3 plugin never announces a revised tail, so the label would
+            // keep the load-time figure; ask the instances when the dialog opens.
+            void refreshExternalPluginTails();
             return () => {
                 openSessionRef.current += 1;
                 clearTimers(sessionTimersRef.current);
@@ -668,6 +676,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     'AudioContext not available during export — skipping IDB restore. Buffers may be incomplete.'
                 );
             }
+
+            // The tail is sized from what each hosted plugin reports now: a preset switched
+            // after load lengthens a decay the load-time figure would cut off.
+            await refreshExternalPluginTails();
 
             // Cancel only raises the render's flag while a render holds the lock, so one pressed
             // during the restore above is seen here or nowhere: no render may start after it.

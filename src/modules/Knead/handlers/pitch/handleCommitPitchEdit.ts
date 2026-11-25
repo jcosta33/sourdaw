@@ -37,7 +37,9 @@ export const handleCommitPitchEdit = createHandler<'commitPitchEdit'>({
                 payload: {
                     clipId: action.payload.clipId,
                     fileId: targetClip.fileId,
-                    ...(targetClip.audioBufferId === undefined ? {} : { audioBufferId: targetClip.audioBufferId }),
+                    // `null` records that the clip had no buffer, so undo removes the
+                    // rendered one instead of leaving it (native renders need none).
+                    audioBufferId: targetClip.audioBufferId ?? null,
                     blobs,
                     ...(storedContour === undefined
                         ? {}

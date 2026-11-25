@@ -28,16 +28,27 @@ type CommandProjectDivergenceProvider = (input: {
     targetIds: readonly string[];
 }) => CommandProjectDivergence;
 
-let provider: CommandProjectDivergenceProvider | null = null;
+let registeredProvider: CommandProjectDivergenceProvider | null = null;
 
+/**
+ * Command may not import the module that inspects the project document, so
+ * the composition root (`#/app/bootstrap`) fills this once at boot.
+ */
 export const commandProjectDivergencePort = {
-    classify(input: Parameters<CommandProjectDivergenceProvider>[0]): CommandProjectDivergence | null {
-        return provider?.(input) ?? null;
+    /**
+     * Reading before registration throws rather than answering `null`: an
+     * unclassified divergence would be read as "could not be classified" and
+     * hide the wiring fault behind a conflict.
+     */
+    classify(input: Parameters<CommandProjectDivergenceProvider>[0]): CommandProjectDivergence {
+        if (registeredProvider === null) {
+            throw new Error(
+                'commandProjectDivergencePort.classify: the divergence classifier is not registered; call commandProjectDivergencePort.setProvider() from #/app/bootstrap'
+            );
+        }
+        return registeredProvider(input);
     },
-    isConfigured(): boolean {
-        return provider !== null;
-    },
-    setProvider(nextProvider: CommandProjectDivergenceProvider | null): void {
-        provider = nextProvider;
+    setProvider(nextProvider: CommandProjectDivergenceProvider): void {
+        registeredProvider = nextProvider;
     },
 };

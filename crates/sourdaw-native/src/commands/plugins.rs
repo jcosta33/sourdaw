@@ -28,8 +28,8 @@ use daw_plugin_host::scanner::{
     ScannedPlugin,
 };
 use daw_plugin_host::{
-    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, PluginError, ProcessMode,
-    Vst3Wrapper,
+    signal_pending_editor_resize, AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime,
+    PluginError, ProcessMode, Vst3Wrapper,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -196,6 +196,9 @@ pub(crate) enum PluginCommandError {
     UiThread(UiThreadError),
     RuntimeGateHeld,
     LifecycleHeld,
+    /// A control call is still inside this dormant instance, so it cannot be
+    /// handed to the engine yet.
+    DormantCallInFlight,
     NoEngineRunning,
     EngineNotRunning,
     NoInstance {
@@ -319,6 +322,9 @@ impl fmt::Display for PluginCommandError {
                 f.write_str("the plugin runtime gate is held by another operation")
             }
             Self::LifecycleHeld => f.write_str("a load or unload holds this instance"),
+            Self::DormantCallInFlight => {
+                f.write_str("a control call is still running inside this instance")
+            }
             Self::NoEngineRunning => f.write_str("no native engine is running"),
             Self::EngineNotRunning => f.write_str("Native engine not running"),
             Self::NoInstance { instance_id } => write!(f, "No plugin instance: {instance_id}"),
@@ -2721,7 +2727,7 @@ async fn load_plugin_under_runtime_gate(
             plugins.insert(
                 instance_id.0.clone(),
                 PluginInstanceData {
-                    plugin: wrapper,
+                    plugin: Arc::new(SharedHostedPlugin::new(wrapper)),
                     name: name.clone(),
                     parameters: params.clone(),
                     has_gui,
@@ -3210,15 +3216,14 @@ fn register_runtime_with_engine(
 /// state change, a parameter rescan), and the drain thread answers the
 /// `[thread-safe]` ones (an editor resize, a flush).
 ///
-/// Engine-owned only, because both carriers reach an instance through
-/// `engine_plugins`: one the engine never took is not reachable from there, and
-/// installing the wake on one would have the plugin told its resize was accepted
-/// by a follow-up that could never run. So it is installed past every refusal
+/// Engine-owned only, because the watcher reaches an instance through
+/// `engine_plugins` alone: one the engine never took is not reachable from
+/// there, and the install's re-raise of an ask the plugin made before it would
+/// be spent where no watcher visits. So it is installed past every refusal
 /// rather than on the runtime before it moved — the wake is a `OnceLock`, first
 /// install wins for the instance's whole life, and a refusal hands the runtime
-/// back to be parked. A parked instance carrying a wake answers `request_resize`
-/// with true while `apply_pending_editor_resizes` walks only `engine_plugins`, so
-/// the plugin lays its editor out to a size no window will ever take.
+/// back to be parked. The editor asks need no wake: the drain answers them on
+/// a dormant or parked instance as well, through its editor window.
 ///
 /// **Called clear of `state.engine`.** Reaching the runtime waits twice: on the
 /// instance's non-RT control gate, which an open editor holds across the
@@ -3311,6 +3316,7 @@ pub(crate) fn attach_dormant_plugins(
         ids
     };
 
+    let attempted = !dormant_instance_ids.is_empty();
     let mut attached = Vec::new();
     for instance_id in dormant_instance_ids {
         // Refusals cost the caller nothing, so only an instance actually taken
@@ -3327,6 +3333,13 @@ pub(crate) fn attach_dormant_plugins(
                 );
             }
         }
+    }
+
+    // An instance in transit between the two stores is in neither snapshot an
+    // editor visit takes, so an editor ask raised while it moved was taken by
+    // a tick that could not see it. The next tick visits it in its new place.
+    if attempted {
+        signal_pending_editor_resize();
     }
 
     Ok(attached)
@@ -3386,6 +3399,31 @@ fn attach_one_dormant_plugin(
         chain_kind,
         load_resolution,
     } = dormant;
+    // A dormant control call clones the owner out of the map and calls the
+    // plugin with the map released, so the record leaving the map does not
+    // mean nothing is inside it. Sole ownership is the proof: a clone still
+    // held is a call still running, and registering under it would put the
+    // audio thread or an engine-side control call into the plugin beside it.
+    // The instance stays dormant for the next batch instead.
+    let plugin = match Arc::try_unwrap(plugin) {
+        Ok(owner) => owner.into_inner(),
+        Err(plugin) => {
+            drop(engine_guard);
+            park_dormant_plugin(
+                state,
+                instance_id,
+                PluginInstanceData {
+                    plugin,
+                    name,
+                    parameters,
+                    has_gui,
+                    chain_kind,
+                    load_resolution,
+                },
+            );
+            return Err(PluginCommandError::DormantCallInFlight);
+        }
+    };
 
     let registration = {
         let mut engine_guard = engine_guard;
@@ -3429,7 +3467,7 @@ fn attach_one_dormant_plugin(
                     state,
                     instance_id,
                     PluginInstanceData {
-                        plugin: runtime,
+                        plugin: Arc::new(SharedHostedPlugin::new(runtime)),
                         name,
                         parameters,
                         has_gui,
@@ -3666,18 +3704,31 @@ async fn unload_plugin_runtime(
             .map_err(PluginCommandError::lock("plugins"))?;
         plugins.remove(instance_id)
     };
-    if let Some(mut instance) = command_plugin {
+    if let Some(instance) = command_plugin {
+        // The engine path's order, without the scheduler: close the lifecycle
+        // so a call that cloned the runtime before the removal is refused from
+        // here on, and retain before this pass lets go of its own reference.
+        // A dormant call still inside the plugin holds a clone, so the sweep
+        // frees the runtime only once that call returns — never under it.
+        let runtime = instance.plugin;
+        runtime.begin_unload();
+        state.retain_retired_engine_plugin(Arc::clone(&runtime));
         // Removing a device closes its editor, and closing an editor is the same
         // thread-affine lifecycle a GUI command runs: `close_gui` reaches VST3
         // `removed` and CLAP `gui.destroy`, and running them on this worker
-        // un-parents an NSView off the main thread.
-        let _ = lend_on_ui_thread(
-            editor_thread(windows_host),
-            &mut instance.plugin,
-            |plugin| plugin.close_gui(),
-        );
+        // un-parents an NSView off the main thread. Behind a hung call the
+        // close waits out the gate's deadline and is skipped.
+        if let Err(error) =
+            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
+                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
+                    plugin.close_gui()
+                })
+            })
+        {
+            eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
+        }
         remove_plugin_window(instance_id, windows_host, state);
-        tear_down_runtime_on_ui_thread(editor_thread(windows_host), state, instance.plugin);
+        runtime.retire();
         // A command-owned instance names no chain entry: it never bound to
         // a strip, so there is no strip to report.
         return Ok(Vec::new());
@@ -3760,6 +3811,26 @@ async fn unload_plugin_runtime(
 
 // ── Parameter commands ──────────────────────────────────────────────────
 
+/// The runtime of the dormant instance `instance_id` names, cloned out of the
+/// map so the caller reaches the plugin with the map released.
+///
+/// Every vendor call on a dormant instance goes through this: the call runs
+/// under the instance's own bounded control gate, so one plugin that never
+/// returns holds only itself, and every other command that reads the map —
+/// loads, unloads, the engine attach, quit — proceeds.
+fn dormant_plugin_runtime(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<Option<Arc<SharedHostedPlugin>>, PluginCommandError> {
+    let plugins = state
+        .plugins
+        .lock()
+        .map_err(PluginCommandError::lock("plugins"))?;
+    Ok(plugins
+        .get(instance_id)
+        .map(|instance| Arc::clone(&instance.plugin)))
+}
+
 fn update_parameter_cache_after_enqueue(
     parameters: &mut [PluginParameter],
     param_id: u32,
@@ -3793,22 +3864,20 @@ fn write_plugin_parameter(
     value: f64,
     state: &AppState,
 ) -> Result<(), PluginCommandError> {
-    {
-        let mut plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginCommandError::lock("plugins"))?;
-
-        if let Some(instance) = plugins.get_mut(&instance_id.0) {
-            instance.plugin.set_parameter(param_id, value);
-            return Ok(());
-        }
+    if let Some(runtime) = dormant_plugin_runtime(state, &instance_id.0)? {
+        return runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                plugin.set_parameter(param_id, value);
+                Ok(())
+            })
+            .map_err(|error| PluginCommandError::Control(error.into_refusal()));
     }
 
     // Resolve the runtime under the map lock and release it before the write.
-    // `enqueue_parameter` blocks unbounded on the instance's non-RT control
-    // lock, so holding the map lock across the write parks every other reader of
-    // this map for as long as control is held.
+    // `enqueue_parameter` waits on the instance's control gate — up to the
+    // gate's deadline behind a call that is still inside the plugin — so
+    // holding the map lock across the write would park every other reader of
+    // this map for that whole wait.
     let runtime = {
         let engine_plugins = state
             .engine_plugins
@@ -3859,15 +3928,12 @@ fn read_plugin_parameters(
     instance_id: PluginInstanceId,
     state: &AppState,
 ) -> Result<Vec<PluginParameter>, PluginCommandError> {
-    {
-        let plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginCommandError::lock("plugins"))?;
-
-        if let Some(instance) = plugins.get(&instance_id.0) {
-            return Ok(instance.plugin.get_parameters());
-        }
+    if let Some(runtime) = dormant_plugin_runtime(state, &instance_id.0)? {
+        return runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                Ok(plugin.get_parameters())
+            })
+            .map_err(|error| PluginCommandError::Control(error.into_refusal()));
     }
 
     let runtime = {
@@ -3940,18 +4006,12 @@ pub(crate) fn read_plugin_state_chunk(
     instance_id: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, PluginCommandError> {
-    {
-        let plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginCommandError::lock("plugins"))?;
-
-        if let Some(instance) = plugins.get(instance_id) {
-            return instance
-                .plugin
-                .get_state()
-                .map_err(PluginCommandError::Runtime);
-        }
+    if let Some(runtime) = dormant_plugin_runtime(state, instance_id)? {
+        return runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                plugin.get_state().map_err(PluginStateError::Plugin)
+            })
+            .map_err(PluginCommandError::StateRead);
     }
 
     let runtime = {
@@ -3983,19 +4043,12 @@ fn write_plugin_state_chunk(
     plugin_state: &[u8],
     state: &AppState,
 ) -> Result<(), PluginCommandError> {
-    {
-        let mut plugins = state
-            .plugins
-            .lock()
-            .map_err(PluginCommandError::lock("plugins"))?;
-
-        if let Some(instance) = plugins.get_mut(instance_id) {
-            instance
-                .plugin
-                .set_state(plugin_state)
-                .map_err(PluginCommandError::Runtime)?;
-            return Ok(());
-        }
+    if let Some(runtime) = dormant_plugin_runtime(state, instance_id)? {
+        return runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                plugin.set_state(plugin_state)
+            })
+            .map_err(PluginCommandError::StateWrite);
     }
 
     // Resolve the runtime under the map lock and release it before the restore.
@@ -4063,6 +4116,79 @@ pub async fn set_plugin_state_bytes(
     state: &AppState,
 ) -> Result<(), String> {
     write_plugin_state_chunk(&instance_id, plugin_state, state).map_err(|error| error.to_string())
+}
+
+/// How long reading one instance's tail may wait for the audio thread to
+/// release it: the audio thread holds the seam for the length of a block, so
+/// this is sized for a block and not for a plugin command of unbounded duration.
+const TAIL_READ_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// One instance's processing tail as the plugin reports it now.
+///
+/// snake_case on the wire, matching `PluginInstance` and the `plugin-tail-changed`
+/// payload; mirrored by hand in the frontend as `PluginTailReading`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PluginTailReading {
+    pub instance_id: String,
+    /// Frames at the rate the instance was activated with, never converted: both
+    /// formats' infinite sentinel would not survive a conversion (see
+    /// `PluginInstance::tail_samples`).
+    pub tail_samples: u32,
+}
+
+/// Re-read the tail of each named instance from the plugin itself.
+///
+/// VST3 has no tail-changed notification, so a tail revised after load is only
+/// visible to a host that asks; an export asks here when it needs the figure. An
+/// unknown instance, or one the control path could not be reached for, is left
+/// out of the answer: a fabricated tail would read downstream as a shorter decay.
+pub async fn read_plugin_tails(
+    instance_ids: Vec<String>,
+    state: &AppState,
+) -> Result<Vec<PluginTailReading>, String> {
+    // Resolve the runtimes under the map lock and release it before reading:
+    // the reads wait on the audio thread and must not park every other reader
+    // of this map.
+    let runtimes = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        instance_ids
+            .into_iter()
+            .filter_map(|instance_id| {
+                let runtime = Arc::clone(&engine_plugins.get(&instance_id)?.runtime);
+                Some((instance_id, runtime))
+            })
+            .collect::<Vec<_>>()
+    };
+    Ok(read_tails(runtimes))
+}
+
+fn read_tails<Runtime: HostedPluginRuntime>(
+    runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
+) -> Vec<PluginTailReading> {
+    runtimes
+        .into_iter()
+        .filter_map(|(instance_id, runtime)| {
+            let read = runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| {
+                Ok::<_, std::convert::Infallible>(plugin.tail_samples())
+            });
+            match read {
+                Ok(tail_samples) => Some(PluginTailReading {
+                    instance_id,
+                    tail_samples,
+                }),
+                Err(error) => {
+                    eprintln!(
+                        "[Plugin] tail read failed for instance {}: {}",
+                        instance_id, error
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
@@ -4703,9 +4829,9 @@ mod tests {
     }
 
     /// `set_plugin_parameter` used to hold the `engine_plugins` map lock across
-    /// `enqueue_parameter`, which blocks unbounded on the instance's non-RT
-    /// control lock — so a plugin holding control parked every other reader of
-    /// that map with it. The map must be free while the control write is in
+    /// `enqueue_parameter`, which waits on the instance's control gate for up
+    /// to the gate's deadline — so a plugin holding control parked every other
+    /// reader of that map with it. The map must be free while the control write is in
     /// flight.
     ///
     /// And once it is free, an unload+reload can land in that window: the value
@@ -5314,9 +5440,8 @@ mod tests {
         );
         // And it comes back clean. The host-request wake is a `OnceLock` — one
         // install for the instance's whole life, with no way to take it off —
-        // and a parked instance carrying one answers `request_resize` with true
-        // while the follow-up that would honour it walks only `engine_plugins`,
-        // so the plugin lays its editor out to a size no window ever takes. A
+        // and one installed on a parked instance would spend its re-raise where
+        // the watcher, which walks only `engine_plugins`, never visits. A
         // successful install here is the proof that nothing was installed
         // before.
         assert!(
@@ -5721,7 +5846,7 @@ mod tests {
             .insert(
                 "dormant-instrument".to_string(),
                 PluginInstanceData {
-                    plugin: HostedRuntime::from(wrapper),
+                    plugin: Arc::new(SharedHostedPlugin::new(HostedRuntime::from(wrapper))),
                     name: "Dormant Synth".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
@@ -5940,7 +6065,7 @@ mod tests {
             .insert(
                 "wake-attached".to_string(),
                 PluginInstanceData {
-                    plugin: HostedRuntime::from(wrapper),
+                    plugin: Arc::new(SharedHostedPlugin::new(HostedRuntime::from(wrapper))),
                     name: "Wake Attached".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
@@ -11641,6 +11766,187 @@ mod tests {
         assert_eq!(restored, chunk);
     }
 
+    /// A backend whose tail the test moves after construction, standing in for
+    /// a VST3 plugin switched to a longer preset: nothing tells the host, and
+    /// only asking the plugin again shows it.
+    struct MovableTailPlugin {
+        tail_samples: Arc<std::sync::atomic::AtomicU32>,
+        processing: Arc<daw_plugin_host::ProcessingGate>,
+    }
+
+    impl AudioPlugin for MovableTailPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, PluginError> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), PluginError> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "movable-tail"
+        }
+    }
+
+    impl HostedPluginRuntime for MovableTailPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<daw_plugin_host::ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: daw_plugin_host::HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _parameter_updates: &[daw_plugin_host::HostParameterUpdate],
+        ) {
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _midi_events: &[daw_plugin_host::HostMidiEvent],
+            _parameter_updates: &[daw_plugin_host::HostParameterUpdate],
+        ) {
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+
+        fn tail_samples(&self) -> u32 {
+            self.tail_samples.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    fn movable_tail_runtime(
+        initial: u32,
+    ) -> (
+        Arc<SharedHostedPlugin<MovableTailPlugin>>,
+        Arc<std::sync::atomic::AtomicU32>,
+    ) {
+        let tail_samples = Arc::new(std::sync::atomic::AtomicU32::new(initial));
+        let runtime = Arc::new(SharedHostedPlugin::new(MovableTailPlugin {
+            tail_samples: Arc::clone(&tail_samples),
+            processing: Arc::new(daw_plugin_host::ProcessingGate::default()),
+        }));
+        (runtime, tail_samples)
+    }
+
+    #[test]
+    fn a_tail_that_changed_after_load_is_read_back_from_the_plugin() {
+        let (runtime, tail_samples) = movable_tail_runtime(96_000);
+        let reading = |tail| PluginTailReading {
+            instance_id: "inst-1".to_string(),
+            tail_samples: tail,
+        };
+
+        assert_eq!(
+            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))]),
+            vec![reading(96_000)]
+        );
+
+        tail_samples.store(240_000, std::sync::atomic::Ordering::SeqCst);
+
+        assert_eq!(
+            read_tails(vec![("inst-1".to_string(), runtime)]),
+            vec![reading(240_000)],
+            "a tail revised after load must be the one the read answers"
+        );
+    }
+
+    #[test]
+    fn an_instance_whose_control_path_is_busy_is_left_out_of_the_tail_answer() {
+        let (busy, _busy_tail) = movable_tail_runtime(96_000);
+        let (idle, _idle_tail) = movable_tail_runtime(48_000);
+
+        let answer = busy
+            .with_control(Duration::from_millis(50), |_| {
+                Ok::<_, std::convert::Infallible>(read_tails(vec![
+                    ("busy".to_string(), Arc::clone(&busy)),
+                    ("idle".to_string(), Arc::clone(&idle)),
+                ]))
+            })
+            .expect("the control path is free for the outer call");
+
+        assert_eq!(
+            answer,
+            vec![PluginTailReading {
+                instance_id: "idle".to_string(),
+                tail_samples: 48_000,
+            }],
+            "an unreached instance must be omitted, not answered with a made-up tail"
+        );
+    }
+
+    #[test]
+    fn read_plugin_tails_omits_an_unknown_instance_and_answers_the_known_one() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+
+        let answer = crate::block_on_test(read_plugin_tails(
+            vec![
+                "no-such-instance".to_string(),
+                "engine-owned-fixture".to_string(),
+            ],
+            &state,
+        ))
+        .expect("the tail read should succeed");
+
+        assert_eq!(
+            answer,
+            vec![PluginTailReading {
+                instance_id: "engine-owned-fixture".to_string(),
+                tail_samples: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn the_tail_reading_serializes_with_the_snake_case_wire_names_the_frontend_reads() {
+        let json = serde_json::to_string(&PluginTailReading {
+            instance_id: "inst-7".to_string(),
+            tail_samples: 1024,
+        })
+        .expect("reading serialises");
+
+        assert_eq!(json, r#"{"instance_id":"inst-7","tail_samples":1024}"#);
+    }
+
     #[test]
     fn plugin_state_accessors_reject_an_unknown_instance() {
         let state = AppState::default();
@@ -13308,5 +13614,306 @@ mod tests {
         assert_eq!(first_recorded, None);
         assert_eq!(next_recorded, Some(filled));
         assert_eq!(other_recorded, None);
+    }
+
+    // ── Dormant vendor calls ────────────────────────────────────────────
+
+    /// How long a held call may take to answer before the test calls it hung.
+    /// A bound on failure, never an ordering: every ordering below is a
+    /// channel.
+    const HUNG_CALL_BOUND: Duration = Duration::from_secs(5);
+
+    /// The shortened gate deadline the held fixtures run under, so a call
+    /// queued behind a held one gives up without waiting out the production
+    /// figure.
+    const SHORT_GATE_DEADLINE: Duration = Duration::from_millis(50);
+
+    /// Run `call` on its own thread and answer what it returned, or `None`
+    /// once [`HUNG_CALL_BOUND`] has passed — a call still parked then is the
+    /// failure, and the test must report it rather than hang the run.
+    fn answer_within<Answer: Send + 'static>(
+        call: impl FnOnce() -> Answer + Send + 'static,
+    ) -> Option<Answer> {
+        let (answered, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = answered.send(call());
+        });
+        answer.recv_timeout(HUNG_CALL_BOUND).ok()
+    }
+
+    /// Park a dormant instance whose vendor calls wait inside the plugin, plus
+    /// an ordinary dormant instance beside it.
+    fn dormant_state_with_a_held_instance() -> (Arc<AppState>, crate::state::HeldVendorCalls) {
+        let state = Arc::new(AppState::default());
+        let (held, calls) = PluginInstanceData::dormant_fixture_holding_vendor_calls(
+            "Held Dormant",
+            SHORT_GATE_DEADLINE,
+        );
+        let mut plugins = state.plugins.lock().expect("plugins lock");
+        plugins.insert("held".to_string(), held);
+        plugins.insert(
+            "other".to_string(),
+            PluginInstanceData::dormant_fixture(HostedRuntime::from(
+                ClapWrapper::new_engine_owned_command_fixture("Other Dormant", vec![7], false),
+            )),
+        );
+        drop(plugins);
+        (state, calls)
+    }
+
+    /// Start `call` on the held instance and wait until it is inside the plugin.
+    fn hold_a_call_inside_the_plugin<Answer: Send + 'static>(
+        state: &Arc<AppState>,
+        calls: &crate::state::HeldVendorCalls,
+        call: impl FnOnce(&AppState) -> Answer + Send + 'static,
+    ) -> std::thread::JoinHandle<Answer> {
+        let caller_state = Arc::clone(state);
+        let held_call = std::thread::spawn(move || call(&caller_state));
+        calls
+            .entered
+            .recv_timeout(HUNG_CALL_BOUND)
+            .expect("the held call must reach the plugin");
+        held_call
+    }
+
+    /// While one dormant instance's call is still inside the plugin, the map
+    /// is free and a command on another instance answers.
+    fn assert_a_held_dormant_call_holds_only_its_own_instance<Answer: Send + 'static>(
+        call: impl FnOnce(&AppState) -> Answer + Send + 'static,
+    ) -> Answer {
+        let (state, calls) = dormant_state_with_a_held_instance();
+        let held_call = hold_a_call_inside_the_plugin(&state, &calls, call);
+
+        assert!(
+            state.plugins.try_lock().is_ok(),
+            "a vendor call on a dormant instance must not run under the plugin map lock"
+        );
+        let other_state = Arc::clone(&state);
+        let other = answer_within(move || {
+            (
+                write_plugin_parameter(
+                    PluginInstanceId("other".to_string()),
+                    1,
+                    0.25,
+                    &other_state,
+                )
+                .map_err(|error| error.to_string()),
+                read_plugin_state_chunk("other", &other_state).map_err(|error| error.to_string()),
+            )
+        })
+        .expect("a command on another dormant instance must not wait for the held call");
+        assert_eq!(other, (Ok(()), Ok(vec![7])));
+
+        drop(calls.release);
+        held_call.join().expect("the held call must return")
+    }
+
+    #[test]
+    fn a_dormant_parameter_write_left_inside_the_plugin_holds_only_its_own_instance() {
+        let written = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
+            write_plugin_parameter(PluginInstanceId("held".to_string()), 3, 0.5, state)
+                .map_err(|error| error.to_string())
+        });
+        assert_eq!(written, Ok(()));
+    }
+
+    #[test]
+    fn a_dormant_parameter_read_left_inside_the_plugin_holds_only_its_own_instance() {
+        let read = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
+            read_plugin_parameters(PluginInstanceId("held".to_string()), state)
+                .map(|parameters| parameters.len())
+                .map_err(|error| error.to_string())
+        });
+        assert_eq!(read, Ok(0));
+    }
+
+    #[test]
+    fn a_dormant_state_read_left_inside_the_plugin_holds_only_its_own_instance() {
+        let read = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
+            read_plugin_state_chunk("held", state).map_err(|error| error.to_string())
+        });
+        assert_eq!(read, Ok(Vec::new()));
+    }
+
+    #[test]
+    fn a_dormant_state_write_left_inside_the_plugin_holds_only_its_own_instance() {
+        let written = assert_a_held_dormant_call_holds_only_its_own_instance(|state| {
+            write_plugin_state_chunk("held", &[1, 2], state).map_err(|error| error.to_string())
+        });
+        assert_eq!(written, Ok(()));
+    }
+
+    /// A call queued behind one still inside a dormant plugin gives up at the
+    /// gate deadline with the unresponsive refusal, later calls refuse the same
+    /// way at once, and the instance answers again once the held call returns.
+    #[test]
+    fn a_call_behind_a_hung_dormant_call_refuses_as_unresponsive_until_it_returns() {
+        let (state, calls) = dormant_state_with_a_held_instance();
+        let held_call = hold_a_call_inside_the_plugin(&state, &calls, |state| {
+            write_plugin_parameter(PluginInstanceId("held".to_string()), 3, 0.5, state)
+                .map_err(|error| error.to_string())
+        });
+
+        let queued_state = Arc::clone(&state);
+        let refusals = answer_within(move || {
+            [
+                write_plugin_parameter(
+                    PluginInstanceId("held".to_string()),
+                    3,
+                    0.75,
+                    &queued_state,
+                )
+                .map_err(|error| error.to_string()),
+                read_plugin_state_chunk("held", &queued_state)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string()),
+                read_plugin_parameters(PluginInstanceId("held".to_string()), &queued_state)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string()),
+            ]
+        })
+        .expect("a call behind a hung dormant call must give up at the gate deadline");
+        for refusal in &refusals {
+            let reason = refusal
+                .as_ref()
+                .expect_err("a call behind a hung dormant call must be refused");
+            assert!(
+                reason.starts_with("plugin-unresponsive:"),
+                "the refusal must carry the unresponsive marker: {reason}"
+            );
+        }
+
+        drop(calls.release);
+        assert_eq!(held_call.join().expect("the held call must return"), Ok(()));
+        assert_eq!(
+            write_plugin_parameter(PluginInstanceId("held".to_string()), 3, 1.0, &state)
+                .map_err(|error| error.to_string()),
+            Ok(()),
+            "the instance must answer again once the held call has returned"
+        );
+    }
+
+    /// An unload of a dormant instance whose call is still inside the plugin
+    /// returns, and the runtime outlives that call: it is torn down by a sweep
+    /// on the sweeping thread once the call lets go, never under the call and
+    /// never on the call's own thread.
+    #[test]
+    fn unloading_a_dormant_instance_mid_call_keeps_it_alive_until_the_call_returns() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let (state, calls) = dormant_state_with_a_held_instance();
+        let held_call = hold_a_call_inside_the_plugin(&state, &calls, |state| {
+            write_plugin_parameter(PluginInstanceId("held".to_string()), 3, 0.5, state)
+                .map_err(|error| error.to_string())
+        });
+
+        let unload_state = Arc::clone(&state);
+        let unloaded = answer_within(move || {
+            crate::block_on_test(unload_plugin(
+                Some(PluginInstanceId("held".to_string())),
+                &NoWindowHost,
+                &unload_state,
+            ))
+            .map(|reply| reply.unloaded_instance_ids)
+        })
+        .expect("an unload must not wait for the call still inside the plugin");
+        assert_eq!(unloaded, Ok(vec!["held".to_string()]));
+        assert!(!locked_or_poisoned(&state.plugins).contains_key("held"));
+        assert!(
+            locked_or_poisoned(&calls.teardown_threads).is_empty(),
+            "the runtime must not be torn down while a call is still inside it"
+        );
+
+        drop(calls.release);
+        assert_eq!(held_call.join().expect("the held call must return"), Ok(()));
+        assert!(
+            locked_or_poisoned(&calls.teardown_threads).is_empty(),
+            "the returning call must not become the runtime's final owner"
+        );
+
+        state.sweep_retired_engine_plugins(&NoWindowHost);
+        assert_eq!(
+            locked_or_poisoned(&calls.teardown_threads).clone(),
+            [std::thread::current().id()],
+            "the sweep must tear the released runtime down, on the sweeping thread"
+        );
+    }
+
+    /// The engine attach never takes a dormant instance a call is still inside:
+    /// handing it over would put a second thread into the plugin beside that
+    /// call. It stays dormant, and the attach after the call returns takes it.
+    #[test]
+    fn the_attach_leaves_a_dormant_instance_a_call_is_inside_for_the_next_batch() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let (state, calls) = dormant_state_with_a_held_instance();
+        locked_or_poisoned(&state.plugins).remove("other");
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        let held_call = hold_a_call_inside_the_plugin(&state, &calls, |state| {
+            write_plugin_parameter(PluginInstanceId("held".to_string()), 3, 0.5, state)
+                .map_err(|error| error.to_string())
+        });
+
+        let attach_state = Arc::clone(&state);
+        let attached = answer_within(move || {
+            attach_dormant_plugins(&attach_state, 1)
+                .map(|attached| attached.len())
+                .map_err(|error| error.to_string())
+        })
+        .expect("the attach must not wait for the call still inside the plugin");
+        assert_eq!(attached, Ok(0));
+        assert!(locked_or_poisoned(&state.plugins).contains_key("held"));
+        assert!(locked_or_poisoned(&state.engine_plugins).is_empty());
+
+        drop(calls.release);
+        assert_eq!(held_call.join().expect("the held call must return"), Ok(()));
+        assert_eq!(
+            attach_dormant_plugins(&state, 1)
+                .map(|attached| attached.len())
+                .map_err(|error| error.to_string()),
+            Ok(1)
+        );
+        assert!(locked_or_poisoned(&state.engine_plugins).contains_key("held"));
+    }
+
+    /// An editor visit snapshots each store in turn, so a tick that ran while
+    /// the attach moved an instance between them saw it in neither and spent
+    /// the hint. The attach wakes the next tick to look again.
+    #[test]
+    fn an_attach_wakes_the_editor_drain_for_the_instances_it_moved() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        locked_or_poisoned(&state.plugins).insert(
+            "moved".to_string(),
+            PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper)),
+        );
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        daw_plugin_host::take_pending_editor_resize_signal();
+
+        let attached = attach_dormant_plugins(&state, 1).map(|attached| attached.len());
+
+        assert_eq!(attached.map_err(|error| error.to_string()), Ok(1));
+        assert!(
+            daw_plugin_host::take_pending_editor_resize_signal(),
+            "the moved instance is visited again in its new store"
+        );
+    }
+
+    #[test]
+    fn an_attach_with_nothing_dormant_raises_no_editor_wake() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        daw_plugin_host::take_pending_editor_resize_signal();
+
+        let attached = attach_dormant_plugins(&state, 1).map(|attached| attached.len());
+
+        assert_eq!(attached.map_err(|error| error.to_string()), Ok(0));
+        assert!(!daw_plugin_host::take_pending_editor_resize_signal());
     }
 }

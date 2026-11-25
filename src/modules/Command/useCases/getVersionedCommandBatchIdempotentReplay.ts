@@ -51,7 +51,7 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
         idempotencyKey: parsed.envelope.idempotencyKey,
         contentHash,
     });
-    if (lookup?.status !== 'complete') {
+    if (lookup.status !== 'complete') {
         return null;
     }
     return parseStoredVerifiedBatchReceipt({

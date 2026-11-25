@@ -107,6 +107,7 @@ export const EXPOSED_COMMANDS = [
     'parse_scl',
     'provider_gateway_request',
     'read_file_bytes',
+    'read_plugin_tails',
     'register_levain_sample',
     'register_timeline_material',
     'register_timeline_sample',

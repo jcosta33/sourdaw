@@ -16,13 +16,16 @@ import {
 
 import { composeRePreviewedCard } from './agentRequestOrchestration/composeRePreviewedCard';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { readRePreviewedPlannedLines } from './agentRequestOrchestration/readRePreviewedPlannedLines';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
+import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { watchVibeBatchRePreview } from './agentRequestOrchestration/watchVibeBatchRePreview';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getProjectContext } from './getProjectContext';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
@@ -364,6 +367,9 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     }
     return {
         status: 'prepared' as const,
+        keptDirectionActionIndexes: includedActionIndexes.flatMap((originalIndex, index) =>
+            confirmation.approvalSnapshot.keptDirectionActionIndexes?.includes(originalIndex) ? [index] : []
+        ),
         confirmation,
         parsedOriginal,
         originalCommandIds,
@@ -422,6 +428,13 @@ function persistReproposalConfirmation(
         // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
         measuredPreview: card.measuredPreview,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
+        // A brief card is one action, so only the whole proposal keeps the lines.
+        plannedRunLines: readRePreviewedPlannedLines(confirmation, selectsSubset),
+        // The offered readings stay bound to the original revision's goals, so a re-preview offers none to choose;
+        // the lines above list them without promising a choice.
+        briefReadings: undefined,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
+        workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
@@ -437,6 +450,67 @@ function persistReproposalConfirmation(
         content: card.content,
         supersedes: confirmation.id,
     });
+}
+
+/**
+ * Measure the re-previewed batch again and record the fresh proof on the live run, refusing
+ * when the card or run moved meanwhile or the run plan cannot hold the new evidence.
+ */
+async function refreshMetricProof(
+    prepared: PreparedReproposal,
+    goalState: NonNullable<ReturnType<typeof metricGoalStateCodec>>,
+    context: ReturnType<typeof getProjectContext>
+): Promise<
+    | { status: 'rejected'; reason: string }
+    | { status: 'refreshed'; state: typeof goalState; approval: ReturnType<typeof compileAgentRiskApproval> }
+> {
+    const { confirmation, refreshed } = prepared;
+    let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    const watch = watchVibeBatchRePreview(confirmation, context);
+    try {
+        refreshedProof = await prepareMetricGoalPreview({
+            state: goalState,
+            commandBatch: refreshed.commandBatch,
+            context,
+            prompt: confirmation.prompt,
+            runId: confirmation.runId,
+            onBegin: watch.onBegin,
+            onProgress: watch.onProgress,
+        });
+    } catch (error) {
+        return { status: 'rejected', reason: failureReason(error) };
+    } finally {
+        await watch.settle();
+    }
+    const live = getPendingActionConfirmation(confirmation.id);
+    const liveRun = agentRunLifecycle.get(confirmation.runId);
+    if (
+        live?.status !== 'proposed' ||
+        live.supersededBy !== null ||
+        live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
+        liveRun === null ||
+        TERMINAL_RUN_PHASES.has(liveRun.phase)
+    ) {
+        return {
+            status: 'rejected',
+            reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+        };
+    }
+    const approval = compileAgentRiskApproval({
+        commandBatch: refreshed.commandBatch,
+        requireExplicitApproval: true,
+        metricGoalState: JSON.stringify(refreshedProof.state),
+    });
+    const refusal = recordBatchPreviewEvidence(
+        liveRun,
+        refreshed.currentRevision,
+        approval.metricGoalState,
+        refreshedProof.receipts
+    );
+    if (refusal !== null) {
+        return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
+    }
+    return { status: 'refreshed', state: refreshedProof.state, approval };
 }
 
 /**
@@ -463,66 +537,18 @@ export async function reproposePendingChatActions(
         if (selectsSubset) {
             goalState = { ...goalState, proofs: [] };
         }
-        let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
-        const watch = watchVibeBatchRePreview(confirmation, context);
-        try {
-            refreshedProof = await prepareMetricGoalPreview({
-                state: goalState,
-                commandBatch: refreshed.commandBatch,
-                context,
-                prompt: confirmation.prompt,
-                runId: confirmation.runId,
-                onBegin: watch.onBegin,
-                onProgress: watch.onProgress,
-            });
-        } catch (error) {
-            return { status: 'rejected', reason: failureReason(error) };
-        } finally {
-            await watch.settle();
+        const refreshedPreview = await refreshMetricProof(prepared, goalState, context);
+        if (refreshedPreview.status !== 'refreshed') {
+            return refreshedPreview;
         }
-        const live = getPendingActionConfirmation(confirmation.id);
-        const liveRun = agentRunLifecycle.get(confirmation.runId);
-        if (
-            live?.status !== 'proposed' ||
-            live.supersededBy !== null ||
-            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
-            liveRun === null ||
-            TERMINAL_RUN_PHASES.has(liveRun.phase)
-        ) {
-            return {
-                status: 'rejected',
-                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
-            };
-        }
-        goalState = refreshedProof.state;
+        goalState = refreshedPreview.state;
         measuredState = goalState;
-        approval = compileAgentRiskApproval({
-            commandBatch: refreshed.commandBatch,
-            requireExplicitApproval: true,
-            metricGoalState: JSON.stringify(goalState),
-        });
-        if (liveRun.plan !== null) {
-            const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-            agentRunLifecycle.recordPlan({
-                runId: liveRun.runId,
-                summary: liveRun.plan.summary,
-                commandIds: liveRun.plan.commandIds,
-                serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-                revision: refreshed.currentRevision,
-                scope: liveRun.scope,
-                grants: liveRun.grants,
-                budgets: liveRun.budgets,
-                plan: {
-                    ...liveRun.plan,
-                    metricGoalState: approval.metricGoalState ?? undefined,
-                    applicationToolReceipts: [...priorReceipts, ...refreshedProof.receipts],
-                },
-            });
-        }
+        approval = refreshedPreview.approval;
     }
     const card = composeRePreviewedCard({
         confirmation,
         actions: prepared.actions,
+        keptDirectionActionIndexes: prepared.keptDirectionActionIndexes,
         context,
         commandBatch: refreshed.commandBatch,
         envelope: parsedRefreshed.envelope,

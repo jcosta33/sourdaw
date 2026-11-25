@@ -628,8 +628,8 @@ describe('parsePromptToActions', () => {
             producer: 'parameterized' as const,
         },
         {
-            prompt: 'remove all tracks',
-            action: { type: 'removeAllTracks' as const },
+            prompt: 'remove the vocals track',
+            action: { type: 'removeTrack' as const, payload: { trackId: 'track-vocals' } },
             producer: 'preset' as const,
         },
     ])('applies app-owned confirmation policy to a single $producer action', async ({ prompt, action, producer }) => {

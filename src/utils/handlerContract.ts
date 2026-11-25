@@ -83,6 +83,8 @@ export type HandlerExecutionResult = {
      *  Carried into the conflict the dispatcher raises so the caller learns the
      *  bound rather than only that the write did not happen. */
     reason?: string;
+    /** With `conflict`: the refusal reflects a transient runtime state, not a diverged document, so undo and redo keep the entry in place and step over nothing. */
+    blocked?: true;
     /** Only a written project result may supply a commit guard. */
     commitValidation?: HandlerCommitValidation;
 } & HandlerDeferredEffects;

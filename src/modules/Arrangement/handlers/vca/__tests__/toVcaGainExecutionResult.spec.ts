@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setVcaRuntimeProjectionDependencies } from '../../../useCases/vca/vcaRuntimeProjectionDependencies';
 import { toVcaGainExecutionResult } from '../toVcaGainExecutionResult';
@@ -6,15 +6,14 @@ import { toVcaGainExecutionResult } from '../toVcaGainExecutionResult';
 const mocks = vi.hoisted(() => ({ reconcileVcaRuntimeGain: vi.fn() }));
 
 describe('toVcaGainExecutionResult', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+    beforeAll(() => {
         setVcaRuntimeProjectionDependencies({
             reconcileVcaRuntimeGain: mocks.reconcileVcaRuntimeGain,
         });
     });
 
-    afterEach(() => {
-        setVcaRuntimeProjectionDependencies(null);
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
 
     it('defers deduplicated runtime reconciliation until commit resolution', async () => {

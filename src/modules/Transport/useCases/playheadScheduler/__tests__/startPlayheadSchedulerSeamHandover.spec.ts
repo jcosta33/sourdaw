@@ -64,6 +64,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         addWarpMarker: actual.addWarpMarker,
         readMusicalRange: actual.readMusicalRange,
         readMusicalRangeInputs: actual.readMusicalRangeInputs,
@@ -220,6 +221,14 @@ const frozenBuffer = vi.hoisted(() => ({ duration: 8 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hostsStoredControllers: actual.hostsStoredControllers,
+        readStoredControllerDefault: actual.readStoredControllerDefault,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,

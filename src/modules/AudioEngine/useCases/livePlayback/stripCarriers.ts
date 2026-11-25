@@ -37,6 +37,7 @@
 import { type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphDeviceChain } from '../../models/AudioGraphBackend';
+import { hasPadOutputHost } from '../deviceCapabilities/hasPadOutputHost';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 import { resolveToasterPadBinding } from '../resolveToasterPadBinding';
 
@@ -232,7 +233,7 @@ function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): 
  * binding `resolveToasterPadBinding` just resolved.
  */
 function padBindingReason(track: Track, context: CarrierContext): string | null {
-    const hostsToaster = track.devices.some((device) => device.type === 'toaster');
+    const hostsToaster = hasPadOutputHost(track.devices);
     if (hostsToaster && context.projectTracks.some((candidate) => candidate.parentId === track.id)) {
         return 'its pads route to child tracks';
     }

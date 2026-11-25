@@ -15,7 +15,7 @@
 use crate::host::native_bridge::{PluginControlError, SharedHostedPlugin};
 use crate::host::plugin_window::PluginEditorWindow;
 use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError, UiThreadTask};
-use crate::host::{all_engine_runtimes, retry_unreached_instance};
+use crate::host::{all_editor_runtimes, retry_unreached_instance, CommandPlugins};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
     signal_pending_editor_resize, AudioPlugin, EditorWindowHost, SharedEditorWindow,
@@ -90,14 +90,25 @@ impl UiThread for EditorWindowThread {
     }
 }
 
-/// Take and answer every engine-owned instance's editor-window asks.
+/// Take and answer every instance's editor-window asks, engine-owned or
+/// dormant: an editor opens on either, and a dormant one may wait for its
+/// first graph batch for as long as playback has not started.
 ///
 /// The hint names no instance — it is raised from callbacks a plugin may make
 /// on the audio thread — so every instance is visited and each backend says
 /// whether it asked anything. One the seam could not reach keeps its asks and
 /// raises the hint again for the next tick.
-pub fn answer_pending_editor_window_asks(engine_plugins: &EnginePlugins) {
-    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor window ask") {
+pub fn answer_pending_editor_window_asks(
+    engine_plugins: &EnginePlugins,
+    command_plugins: &CommandPlugins,
+) {
+    let runtimes = all_editor_runtimes(
+        engine_plugins,
+        command_plugins,
+        "editor window ask",
+        signal_pending_editor_resize,
+    );
+    for (instance_id, runtime) in runtimes {
         if let Err(error) = answer_instance_asks(&runtime) {
             retry_unreached_instance(
                 &runtime,

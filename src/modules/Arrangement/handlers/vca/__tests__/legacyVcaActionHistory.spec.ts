@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -36,6 +36,7 @@ import { createTrack, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../../../stores/vcaGroupStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { setVcaRuntimeProjectionDependencies } from '../../../useCases/vca/vcaRuntimeProjectionDependencies';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -154,6 +155,10 @@ async function expectRoundTrip(action: AppAction): Promise<void> {
 }
 
 describe('legacy VCA action history', () => {
+    beforeAll(() => {
+        setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain: vi.fn() });
+    });
+
     beforeEach(() => {
         Container.clear();
         configureAutomergeStoragePort(null);

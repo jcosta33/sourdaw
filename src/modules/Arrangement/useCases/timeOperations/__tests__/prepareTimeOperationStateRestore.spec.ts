@@ -368,13 +368,11 @@ describe('prepareTimeOperationStateRestore', () => {
         mocks.markerWriteEffect = null;
         __resetGainEnvelopesForTest();
         takeLaneStore.set({ lanes: [] });
-        setTimeOperationDependencies(null);
     });
 
     afterEach(() => {
         __resetGainEnvelopesForTest();
         takeLaneStore.set({ lanes: [] });
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 
