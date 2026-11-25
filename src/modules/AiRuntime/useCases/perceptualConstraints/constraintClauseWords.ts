@@ -445,8 +445,13 @@ const RELEASE_LEAD = words([
     'drop the constraint',
     'lift the constraint',
 ]);
-/** A negation or permission governing the verb right after it: "don't", "you don't have to", "nobody needs to". */
-const GOVERNING_NEGATION = String.raw`\b(?:${ANY_NEGATION}|${NOBODY}|${NO_LONGER})${STRESSED}(?:\s+${PERMISSION_LEAD})?\s+`;
+/**
+ * A negation or permission governing the verb right after it: "don't", "you don't have to", "nobody needs
+ * to". The negations that already end in their stressing adverbs are listed apart from those that take
+ * them here, so a run of one adverb is read by exactly one of two adjacent repeats and never split
+ * between them.
+ */
+const GOVERNING_NEGATION = String.raw`\b(?:${NEGATION}|${MODAL_VERB_NEGATION}|${SUBJECT_NEVER}|(?:${DOES_NEGATION}|${BARE_NEGATION}|${NEGATED_CONTRACTION}|${NOBODY}|${NO_LONGER})${STRESSED})(?:\s+${PERMISSION_LEAD})?\s+`;
 /** A verb's gerund, the "-ing" form a release or a continued move goes through: "keeping", "making". */
 const GERUND = String.raw`\p{L}+ing${WORD_END}`;
 /** A release lead no negation or permission governs: "stop", never the "stop" of "don't stop". */

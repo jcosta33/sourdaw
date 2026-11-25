@@ -3128,6 +3128,15 @@ describe('reading only governed protections and whole object names', () => {
             ],
             [],
         ],
+        // a long run of one stressing or degree word is read in linear time, never split between adjacent repeats
+        [`keep the drums as they are${' even'.repeat(1600)} the vocal louder`, [], []],
+        [`make sure${' even'.repeat(1600)} the vocal louder`, [], []],
+        [
+            `I don't want${' even'.repeat(1600)} the vocal louder`,
+            [],
+            [unread(`I don't want${' even'.repeat(1600)} the vocal louder`, NET_REASON)],
+        ],
+        [`Raise the vocal by 2 dB instead${' even'.repeat(1600)} the vocal louder`, [], []],
         [
             "don't make the mix wider&keep the vocal bright",
             [
