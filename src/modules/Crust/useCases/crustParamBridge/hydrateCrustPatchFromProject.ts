@@ -128,11 +128,12 @@ function withEnumFields(
 ): CrustPatch {
     let next = patch;
     for (const field of Object.keys(ENUM_FIELD_NAMES) as EnumField[]) {
-        const name = Object.hasOwn(parameterValues, field)
-            ? nameAt(ENUM_FIELD_NAMES[field], parameterValues[field])
-            : restorePresetDefaults || (field === 'algorithm' && Object.hasOwn(parameterValues, 'style'))
-              ? absentEnumValue(field, next)
-              : null;
+        let name: string | null = null;
+        if (Object.hasOwn(parameterValues, field)) {
+            name = nameAt(ENUM_FIELD_NAMES[field], parameterValues[field]);
+        } else if (restorePresetDefaults || (field === 'algorithm' && Object.hasOwn(parameterValues, 'style'))) {
+            name = absentEnumValue(field, next);
+        }
         if (name !== null && next[field] !== name) {
             next = { ...next, [field]: name };
         }

@@ -32,20 +32,22 @@ export async function selectCrustFactoryPreset(deviceId: string, presetId: strin
         notifyUser(`Could not load ${preset.name} on this Crust device.`, 'warning');
         return;
     }
-    const before = owner.state.parameterValues;
+    const { trackId, trackObjectId, deviceObjectId, deviceIds, state } = owner;
+    const { isCurrent } = authority;
+    const before = state.parameterValues;
     const alreadyApplied = valuesEqual(before, after);
-    const matchesCurrentSelection = (): boolean => {
-        if (!authority.isCurrent()) {
+    function matchesCurrentSelection(): boolean {
+        if (!isCurrent()) {
             return false;
         }
         const current = readCrustFactoryPresetTarget(deviceId);
         return (
-            current?.trackObjectId === owner.trackObjectId &&
-            current.deviceObjectId === owner.deviceObjectId &&
-            valuesEqual(current.deviceIds, owner.deviceIds) &&
-            valuesEqual(current.state, owner.state)
+            current?.trackObjectId === trackObjectId &&
+            current.deviceObjectId === deviceObjectId &&
+            valuesEqual(current.deviceIds, deviceIds) &&
+            valuesEqual(current.state, state)
         );
-    };
+    }
     const admission: { observed: boolean } = { observed: false };
     try {
         await executeUserAppAction(
@@ -53,18 +55,18 @@ export async function selectCrustFactoryPreset(deviceId: string, presetId: strin
                 type: 'setCrustFactoryPreset',
                 payload: {
                     deviceId,
-                    trackId: owner.trackId,
-                    trackObjectId: owner.trackObjectId,
-                    deviceObjectId: owner.deviceObjectId,
-                    deviceIds: owner.deviceIds,
+                    trackId,
+                    trackObjectId,
+                    deviceObjectId,
+                    deviceIds,
                     presetId,
                     before,
                     after,
                 },
             },
             {
-                shouldExecute: authority.isCurrent,
-                shouldCommit: authority.isCurrent,
+                shouldExecute: isCurrent,
+                shouldCommit: isCurrent,
                 skipMacroRecording: true,
                 observeMaterializedAction: () => {
                     admission.observed = true;
@@ -73,7 +75,7 @@ export async function selectCrustFactoryPreset(deviceId: string, presetId: strin
         );
         if (alreadyApplied && admission.observed) {
             // Command drops equal project writes. The explicit pick still selects and reasserts the sound.
-            syncCrustPresetRuntime(owner.trackId, deviceId, after, preset.patch, matchesCurrentSelection);
+            syncCrustPresetRuntime(trackId, deviceId, after, preset.patch, matchesCurrentSelection);
         }
     } catch (error) {
         logger.error(new Error('Crust factory preset selection failed', { cause: error }));

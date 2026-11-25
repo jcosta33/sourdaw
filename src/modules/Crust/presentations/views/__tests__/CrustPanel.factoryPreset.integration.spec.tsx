@@ -91,7 +91,9 @@ const PROJECT = 'crust-factory-preset-view';
 type Root = { tracks: { tracks: Track[] } };
 function rawTrack(): Track {
     const track = getCrdtDoc<Root>('root')?.tracks.tracks[0];
-    if (!track) throw new Error('Expected the Crust track');
+    if (!track) {
+        throw new Error('Expected the Crust track');
+    }
     return track;
 }
 function expectEngine(values: Record<string, number>): void {
@@ -302,6 +304,7 @@ describe('Crust factory preset history on the mounted panel', () => {
                     doc.tracks.tracks[0]!.devices.splice(0, 1, replacement);
                 },
             });
+            return Promise.resolve();
         });
         expect(getObjectId(rawTrack().devices[0]!)).not.toBe(originalId);
         expect((await undo()).headConsumed).toBe(false);

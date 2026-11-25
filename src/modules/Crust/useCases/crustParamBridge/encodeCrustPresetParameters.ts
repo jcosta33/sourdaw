@@ -5,7 +5,9 @@ import { CRUST_PRESET_PARAMETER_ORDER } from '../../models/CrustPresetParameterO
 
 import { encodeCrustValue } from './helpers';
 
-export function encodeCrustPresetParameters(patch: CrustPatch): Record<string, number> | null {
+type EncodableCrustPatch = Omit<CrustPatch, 'oversampling'> & { oversampling: number };
+
+export function encodeCrustPresetParameters(patch: EncodableCrustPatch): Record<string, number> | null {
     const parameters: Record<string, number> = {};
     for (const key of CRUST_PRESET_PARAMETER_ORDER) {
         const input =

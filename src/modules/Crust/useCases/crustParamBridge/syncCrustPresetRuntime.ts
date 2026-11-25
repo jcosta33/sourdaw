@@ -31,7 +31,7 @@ export function syncCrustPresetRuntime(
         const defaultValue = key === 'algorithm' ? algorithm : DEFAULT_CRUST_PATCH[key];
         const value = parameters[key] ?? encodeCrustValue(key, defaultValue);
         if (typeof value !== 'number') {
-            throw new Error(`Crust has no encoded default for ${key}`);
+            throw new TypeError(`Crust has no encoded default for ${key}`);
         }
         crustBridgeDeps.updateDeviceParam(trackId, deviceId, key, value);
     }
