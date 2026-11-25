@@ -1,4 +1,4 @@
-import { EXTERNAL_PLUGIN_DEVICE_TYPE } from './externalPluginDeviceType';
+import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { mintExternalInstanceId } from './mintExternalInstanceId';
 
 /**
@@ -7,7 +7,7 @@ import { mintExternalInstanceId } from './mintExternalInstanceId';
  * (including a legacy one carrying a stale id) gets none.
  */
 export function copyExternalInstanceId(source: { type: string; externalPluginId?: string }): string | undefined {
-    if (source.type !== EXTERNAL_PLUGIN_DEVICE_TYPE || !source.externalPluginId) {
+    if (!isHostedPluginDevice(source) || !source.externalPluginId) {
         return undefined;
     }
     return mintExternalInstanceId(source.externalPluginId);

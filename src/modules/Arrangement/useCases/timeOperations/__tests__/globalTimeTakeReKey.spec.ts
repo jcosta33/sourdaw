@@ -184,13 +184,11 @@ describe('delete time re-keys take-lane state (#4841)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.batchDepth = 0;
-        setTimeOperationDependencies(null);
         setTracks([]);
         takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         takeLaneStore.set({ lanes: [] });
     });
 

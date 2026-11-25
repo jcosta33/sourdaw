@@ -24,7 +24,7 @@ export function toVcaGainExecutionResult({
     }
 
     const reconcileRuntime = () => {
-        vcaRuntimeProjectionDependencies?.reconcileVcaRuntimeGain({
+        vcaRuntimeProjectionDependencies.read('toVcaGainExecutionResult').reconcileVcaRuntimeGain({
             groupIds: uniqueGroupIds,
             trackIds: uniqueTrackIds,
         });

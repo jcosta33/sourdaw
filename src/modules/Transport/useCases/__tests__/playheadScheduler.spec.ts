@@ -112,7 +112,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     ),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
-    getTrackEligibility: vi.fn(),
+    getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     markerStore: { value: null },
     updateClipInStore: vi.fn(() => false),
     vcaGroupStore: { value: null },
@@ -189,6 +190,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    // No device in this fixture hosts stored controllers: `scheduleMidiNotes` is
+    // mocked, so nothing records stored engagement for the release to ask about.
+    hostsStoredControllers: vi.fn(() => false),
+    readStoredControllerDefault: vi.fn((): number | undefined => undefined),
+    resolveStoredControllerHosting: vi.fn(() => null),
     // No cached/frozen programme in this scheduler-window fixture.
     getCachedAudioBuffer: vi.fn(() => null),
     getCurrentTime: () => harness.clock,

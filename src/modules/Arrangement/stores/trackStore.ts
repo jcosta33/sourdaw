@@ -7,7 +7,10 @@ import {
 import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
+import {
+    encodeStoredDeviceParameterValues,
+    migrateStoredDeviceParameterValues,
+} from '../models/StoredDeviceParameterMigration';
 import { normalizeTrack } from '../models/Track';
 
 import {
@@ -930,12 +933,33 @@ function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
     };
 }
 
+function encode_device_for_crdt(device: Device): Device {
+    const parameterValues = encodeStoredDeviceParameterValues(device.type, device.parameterValues);
+    return parameterValues === device.parameterValues ? device : { ...device, parameterValues };
+}
+
+function encode_track_for_crdt(track: Track): Track {
+    const devices = track.devices.map(encode_device_for_crdt);
+    return devices.every((device, index) => device === track.devices[index]) ? track : { ...track, devices };
+}
+
+/**
+ * The document holds the stored encoding of each device's parameter values,
+ * the inverse of the fill `normalize_device` applies on the way in, so a
+ * filled legacy value never lands in the document on an unrelated write. See
+ * `StoredDeviceParameterMigration`.
+ */
+function encode_tracks_for_crdt(tracks: Track[]): Track[] {
+    const encoded = tracks.map(encode_track_for_crdt);
+    return encoded.every((track, index) => track === tracks[index]) ? tracks : encoded;
+}
+
 export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage<TrackStoreState, readonly TempoAudioSourceWriteIntent[]>(
         DOC_PREFIX_ROOT,
         'tracks',
         {
-            toCrdt: ({ tracks }) => ({ tracks }),
+            toCrdt: ({ tracks }) => ({ tracks: encode_tracks_for_crdt(tracks) }),
             fromCrdt: sanitize_track_store_state_from_crdt,
             isLocalRuntimeStateUpdate: ({ currentValue, nextValue }) => nextValue.tracks === currentValue.tracks,
             preserveLocalRuntimeStateOnRecompute: true,

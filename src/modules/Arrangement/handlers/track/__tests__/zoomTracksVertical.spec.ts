@@ -330,7 +330,9 @@ describe('handleZoomTracksVertical', () => {
         };
 
         it('names a folder an earlier createFolder creates, and a copy an earlier duplicateTrack creates', () => {
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 64, devices: [] }] });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ ...createTrack({ id: 't1', name: 'T1', kind: 'audio' }), height: 64 }],
+            });
             const create = { type: 'createFolder', payload: { name: 'F', folderTrackId: 'folder' } } as const;
             const duplicate = { type: 'duplicateTrack', payload: { trackId: 't1', targetTrackId: 'copy' } } as const;
 
@@ -339,7 +341,7 @@ describe('handleZoomTracksVertical', () => {
                 actionIndex: 2,
             });
 
-            expect(heightsOf(description)).toEqual(['t1:64', 'folder:80', 'copy:64']);
+            expect(heightsOf(description)).toEqual(['t1:64', 'folder:80', 'copy:80']);
         });
 
         it('names a track an earlier restoreTrack restores, at the height its snapshot holds', () => {

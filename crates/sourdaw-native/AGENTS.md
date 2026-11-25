@@ -15,8 +15,10 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - A shell adds a command by adding a body here and a wrapper there. The wrapper unwraps transport
   and calls the body; it never holds behaviour, and no command may exist in one shell only.
 - A shell's quit path calls `shutdown::shutdown` and never reassembles the cascade. Its steps and
-  their order are a contract: a shell that inlines them can silently drop one, and the sweep must
-  follow the editor close because closing an editor is what retires a runtime.
+  their order are a contract: a shell that inlines them can silently drop one. Offline renders are
+  cancelled and waited for first, because every later step tears down what a render may still be
+  touching, and the sweep must follow the editor close because closing an editor is what retires
+  a runtime.
 - A threadsafe function registered for the life of the process must be weak. A referenced one pins
   the Node event loop, so a shell can never drain it and quit, and anything held by a thread that
   does not stop has no other release path.
@@ -67,14 +69,19 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   from a chain returns it there rather than onto the master mix.
 - No instance can be bound where no engine holds one: a batch mapped before its own attach ran maps
   with an empty lookup and falls back on the degradation law.
-- An offline render never borrows a live instance. For every engine-attached hosted effect on a
-  sounding strip it builds an independent offline instance (`commands/offline_plugins.rs`): the live
-  instance's state captured once at render start, construction on the UI thread from the file its
-  load vetted, activation at the export rate in offline mode, and release on the UI thread on every
-  path out. The live instance is touched only by that state read. An instance the engine does not
-  hold, a hosted instrument, an unreadable state, a failed construction, and a block the offline
-  instance was not served or failed to process each refuse the render by device and plugin name;
-  nothing prints dry.
+- An offline render never borrows a live instance. For every engine-attached hosted effect or
+  instrument on a sounding strip it builds an independent offline instance
+  (`commands/offline_plugins.rs`): the live instance's state captured once at render start,
+  construction on the UI thread from the file its load vetted, activation at the export rate in
+  offline mode, and release on the UI thread on every path out. The live instance is touched only by
+  that state read. An instrument is fed by the `schedule-midi` batch through the note store its
+  offline slot owns, exactly as a built-in instrument is. That store is sized control-side from the
+  events the batch sends the device, since a render holds the whole arrangement where live playback
+  streams it; a device sent more than `OFFLINE_NOTE_EVENT_CEILING` events is refused by name. An
+  instance the engine does not hold, an unreadable state, a failed construction, a block the
+  offline instance was not served or failed to process, and a scheduled-note batch the engine
+  refused on the render thread (a block's event buffer) each refuse the render, by device and plugin name where a plugin is
+  involved; nothing prints dry and no note prints as a rest.
   `map_graph_batch` admits and refuses exactly that set, through the same mapping.
 
 ## Constraints

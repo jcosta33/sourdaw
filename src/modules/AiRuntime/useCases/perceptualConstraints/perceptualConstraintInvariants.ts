@@ -6,7 +6,7 @@ import { METRIC_HOLD_TOLERANCES } from '../metricHoldTolerances';
  * `hold` keeps a metric within its tolerance either way; a bound lets it move freely one way and by at
  * most its tolerance the other, so "don't make it louder" admits a quieter preview.
  */
-export type InvariantRelation = 'hold' | 'no-increase' | 'no-decrease';
+type InvariantRelation = 'hold' | 'no-increase' | 'no-decrease';
 
 type InvariantMetric = {
     metricId: ObjectiveMetricId;
@@ -39,7 +39,8 @@ const CENTROID_TOLERANCE_HZ = toleranceOf('spectralCentroid');
  * intimate vocal is the recipe catalog's own reading of intimacy, a forward level with held dynamics;
  * the space no metric measures is excluded as an edit dimension instead. Loudness is the mix's or the
  * track's integrated loudness, stereo width its side share, dynamics its crest factor and brightness
- * its spectral centroid, each over the whole arrangement.
+ * its spectral centroid, each over the whole arrangement; a one-way bound on any of them shares its
+ * family's hold tolerance.
  */
 export const PERCEPTUAL_CONSTRAINT_INVARIANTS: Readonly<
     Record<PerceptualConstraint['constraintId'], readonly InvariantMetric[]>
@@ -65,11 +66,29 @@ export const PERCEPTUAL_CONSTRAINT_INVARIANTS: Readonly<
     'stereo-width-held-v1': [
         { metricId: 'sideEnergyFraction', band: null, relation: 'hold', tolerance: SIDE_SHARE_TOLERANCE },
     ],
+    'stereo-width-not-widened-v1': [
+        { metricId: 'sideEnergyFraction', band: null, relation: 'no-increase', tolerance: SIDE_SHARE_TOLERANCE },
+    ],
+    'stereo-width-not-narrowed-v1': [
+        { metricId: 'sideEnergyFraction', band: null, relation: 'no-decrease', tolerance: SIDE_SHARE_TOLERANCE },
+    ],
     'dynamics-held-v1': [
         { metricId: 'crestFactor', band: null, relation: 'hold', tolerance: CREST_FACTOR_TOLERANCE_DB },
     ],
+    'dynamics-not-raised-v1': [
+        { metricId: 'crestFactor', band: null, relation: 'no-increase', tolerance: CREST_FACTOR_TOLERANCE_DB },
+    ],
+    'dynamics-not-reduced-v1': [
+        { metricId: 'crestFactor', band: null, relation: 'no-decrease', tolerance: CREST_FACTOR_TOLERANCE_DB },
+    ],
     'brightness-held-v1': [
         { metricId: 'spectralCentroid', band: null, relation: 'hold', tolerance: CENTROID_TOLERANCE_HZ },
+    ],
+    'brightness-not-raised-v1': [
+        { metricId: 'spectralCentroid', band: null, relation: 'no-increase', tolerance: CENTROID_TOLERANCE_HZ },
+    ],
+    'brightness-not-lowered-v1': [
+        { metricId: 'spectralCentroid', band: null, relation: 'no-decrease', tolerance: CENTROID_TOLERANCE_HZ },
     ],
 };
 

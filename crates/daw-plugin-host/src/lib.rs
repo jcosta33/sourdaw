@@ -11,7 +11,16 @@
 #[cfg(test)]
 mod allocation_counter;
 pub mod clap_host;
+/// The run loop a CLAP editor's `clap.timer-support` and `clap.posix-fd-support`
+/// registrations land in. Compiled and tested on every unix, offered to a plugin
+/// only on Linux (see `clap_host::host_get_extension`).
+#[cfg(unix)]
+pub mod clap_run_loop;
 pub mod clap_wrapper;
+/// The format-neutral pump every open editor's run loop is serviced from.
+#[cfg(unix)]
+pub mod editor_run_loop;
+pub mod output_notes;
 pub mod parameter_events;
 pub mod params;
 pub mod runtime;

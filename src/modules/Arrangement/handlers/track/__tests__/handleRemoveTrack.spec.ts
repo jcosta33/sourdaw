@@ -243,6 +243,24 @@ describe('handleRemoveTrack', () => {
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
         });
 
+        it('keeps hosted plugins loaded when an ambiguous commit leaves the track in committed truth only', async () => {
+            const track = TrackDummy.create({ id: 't1', devices: [hostedDevice()] });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+            const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null });
+            mutateCrdtDoc<{ tracks: unknown }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks = { tracks: [track], selectedTrackId: null };
+                },
+            });
+
+            await result?.afterAmbiguousCommit?.();
+
+            expect(mocks.unloadDiscardedHostedPlugins).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+        });
+
         it('rejects an alternative-content guard mismatch before project or runtime removal', async () => {
             const alternativeClip = ClipDummy.create({ id: 'c-hidden', trackId: 't1' });
             const track = TrackDummy.create({

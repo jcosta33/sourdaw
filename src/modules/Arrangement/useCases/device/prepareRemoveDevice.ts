@@ -54,9 +54,7 @@ export function prepareRemoveDevice(
     const afterTrack = { ...track, devices: remainingDevices };
     const trackEligibility = getTrackEligibility(track.kind);
     const wasLive = shouldCreateLiveTrackStrip(track);
-    const remainsLive =
-        trackEligibility.createsLiveStrip ||
-        (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
+    const remainsLive = shouldCreateLiveTrackStrip(afterTrack);
     const deactivatesStrip = wasLive && !remainsLive;
     const isProjectOnlyFolder = track.kind === 'folder' && !wasLive;
     const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;

@@ -1,11 +1,12 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerMaterializationContext } from '#/utils/handlerContract';
 
-import { reserveNextTrackColor } from '../../models/Track';
 import { addTrack } from '../../useCases/addTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planDefaultTrackName } from '../planDefaultTrackName';
 import { isAddTrackSessionEntry } from '../validateCreationSessionEntries';
+
+import { ensureStableCreationInputs } from './pinTrackCreationInputs';
 
 type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
 
@@ -16,39 +17,6 @@ function ensureTrackName(action: AddTrackAction, context?: HandlerMaterializatio
         action.payload.name = planDefaultTrackName(action.payload.kind, context);
     }
     return action.payload.name;
-}
-
-function ensureTrackId(action: AddTrackAction): string {
-    if (action.payload.id) {
-        return action.payload.id;
-    }
-    const trackId = `track-ai-${crypto.randomUUID()}`;
-    action.payload.id = trackId;
-    return trackId;
-}
-
-// Every creation input the model would otherwise mint per execute — the
-// palette color (an advancing counter), the initial alternative id, and the
-// MIDI default-device id — is pinned onto the action once, alongside the id.
-// Without this, redo's re-execution produces a track that differs from the
-// content the discard guard captured, so the undo after a redo refuses with a
-// conflict and wedges the history head (#3696 round-trip).
-function ensureStableCreationInputs(action: AddTrackAction): string {
-    const trackId = ensureTrackId(action);
-    if (action.payload.color === undefined) {
-        action.payload.color = reserveNextTrackColor();
-    }
-    if (action.payload.initialAlternativeId === undefined) {
-        action.payload.initialAlternativeId = `alt-${crypto.randomUUID()}`;
-    }
-    if (
-        action.payload.initialDeviceId === undefined &&
-        action.payload.kind === 'midi' &&
-        action.payload.withoutDefaultDevice !== true
-    ) {
-        action.payload.initialDeviceId = `dev-synth-${crypto.randomUUID()}`;
-    }
-    return trackId;
 }
 
 // Guards for tracks this handler creates, keyed by action so describe-time

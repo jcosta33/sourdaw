@@ -1,5 +1,5 @@
 import { type OfflineDeviceNode } from './deviceNodeFactory';
-import { applyCompressorParams } from './devices/dynamics/applyCompressorParams';
+import { applyBuiltinCompressorParams } from './devices/dynamics/applyCompressorAutoMakeup';
 import { applyEqParams } from './devices/dynamics/applyEqParams';
 import { applyLimiterParams } from './devices/dynamics/applyLimiterParams';
 import { applySidechainCompressorParams } from './devices/dynamics/applySidechainCompressorParams';
@@ -21,7 +21,7 @@ import { applyLufsMeterParams } from './devices/toneShaping/applyLufsMeterParams
 
 const PARAM_APPLIERS: Record<string, (dn: OfflineDeviceNode, params: Record<string, number>) => void> = {
     'builtin-eq': applyEqParams,
-    'builtin-compressor': applyCompressorParams,
+    'builtin-compressor': applyBuiltinCompressorParams,
     'builtin-sidechain-compressor': applySidechainCompressorParams,
     'builtin-limiter': applyLimiterParams,
     'builtin-reverb': applyReverbParams,

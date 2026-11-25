@@ -100,6 +100,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         addWarpMarker: actual.addWarpMarker,
         readMusicalRange: actual.readMusicalRange,
         readMusicalRangeInputs: actual.readMusicalRangeInputs,
@@ -115,7 +116,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         soloModeStore: actual.soloModeStore,
         adjustmentLayerStore: { value: null },
         gainEnvelopeStore: { value: null },
-        getTrackEligibility: vi.fn(),
+        getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
         markerStore: { value: null },
         vcaGroupStore: { value: null },
         warpStateStore: { value: null },
@@ -220,6 +221,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hostsStoredControllers: actual.hostsStoredControllers,
+        readStoredControllerDefault: actual.readStoredControllerDefault,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,

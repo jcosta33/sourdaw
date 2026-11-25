@@ -6,14 +6,9 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getAllTracks } from '../getAllTracks';
 
+import { clampTrackPan, PAN_FIELD_FULL_SCALE } from './clampTrackPan';
 import { syncToasterPadParam } from './helpers';
 import { type AutomationRecordingOptions, maybeRecordAutomation } from './maybeRecordAutomation';
-
-/**
- * Full-left to full-right on the track's own `pan` field. The automation lane is
- * normalised instead, so the two are not interchangeable — see below.
- */
-const PAN_FIELD_FULL_SCALE = 50;
 
 /**
  * `isTransient` skips persistence, not recording, and not the engine — see
@@ -44,7 +39,7 @@ export function setTrackPan(
     isTransient = false,
     options: AutomationRecordingOptions = {}
 ): void {
-    const clamped = Math.max(-PAN_FIELD_FULL_SCALE, Math.min(PAN_FIELD_FULL_SCALE, pan));
+    const clamped = clampTrackPan(pan);
     engineSetTrackPan(trackId, clamped);
     syncToasterPadParam(trackId, 'pan', clamped / PAN_FIELD_FULL_SCALE, { updateDeviceParam, getAllTracks });
 

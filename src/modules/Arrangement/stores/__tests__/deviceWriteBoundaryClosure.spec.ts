@@ -320,7 +320,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // parameter write now reaches the DSP through instead of the worklet
         // bridge directly, so a natively carried Proof hears the same write.
         'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 2,
-        'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
         // Count provenance: new file entry, measured 2 — the `updateDevicePatch`
         // import and its single call sending the five `chain_order_{n}` keys as
         // one patch, so a natively carried Proof's module order matches a panel
@@ -328,7 +327,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
-        'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
         // Count provenance: measured 2 in code — the `updateDeviceParam`
         // import plus the single canonical call on the tick path (#746/#760
         // slew snap + a-rate gain/pan scheduling restructured around it); the
@@ -566,13 +564,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and call). These pure helpers compile or admit data into a versioned Command
         // envelope; they do not perform device IO or hydration.
         'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
-        // Count provenance: measured 7 — the `compilePreviewMeasurementProposal`
-        // import, module-path literal, two calls and type-level
-        // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
-        // local `compileProposal` declaration and call. The type reference adds no IO;
-        // measurement still uses the same grounding and versioned-envelope route, with
-        // no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
+        // Count provenance: measured 10 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, one call and two type-level references
+        // (`Parameters<…>` and `ReturnType<…>`), plus the local `compileSource`
+        // declaration and its two calls and the `compileProposals` declaration and
+        // call. A preview of several recipes compiles each cumulative prefix through
+        // that one call; the type references add no IO, and measurement keeps the
+        // same grounding and versioned-envelope route with no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 10,
         // Count provenance: new file, measured 4 — the `compilePreviewMeasurementProposal`
         // import, module-path literal and one call, plus the `compilePreviewPrefix`
         // declaration. It compiles one prefix's prepared batch into an immutable Command
@@ -617,14 +616,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
-        // Count provenance: measured 10 — six `compileAgentRiskApproval`
-        // references (import identifier and path, two ReturnType projections,
-        // two calls), two `compilePartialCommandBatchAcceptance` (import
+        // Count provenance: measured 11 — seven `compileAgentRiskApproval`
+        // references (import identifier and path, three ReturnType projections,
+        // the third on the re-preview proof refresh's result, two calls), two `compilePartialCommandBatchAcceptance` (import
         // and call) and two `compileSelectedSubset` (declaration and call). The
         // `compilePendingActionCommandEnvelopes` is mentioned only in a comment
         // recording why an original command's position is its action's.
         // Re-proposal compiles command batches only; it reaches no device sink.
-        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 10,
+        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 11,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         // Count provenance: 0 in code, was 2 — pure receipt projection moved to
         // projectAgentRunReceiptSaga (#3052), taking every
@@ -797,7 +796,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 4,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
-        'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
+        // The committed selection applies its decoded patch through the runtime bridge.
+        'src/modules/Proof/useCases/proofParamBridge/syncProofPatchSelection.ts': 3,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `setPadParamImmediate` naming one of the two pad-param entry points
         // that call this transform. `toPadStoreUpdate` is a pure function from
@@ -1127,6 +1127,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: new file entry, measured 1 — the `devices:` copies a planned
+        // duplicate takes, cloned from the planned source with planned ids. A pure plan
+        // value returned to the batch planner; nothing is published.
+        'src/modules/Arrangement/handlers/plannedTrackConstruction.ts': 1,
         // Count provenance: member assignment, measured 1 — `projected.devices = devices`
         // in the prior-batch track projection (#7166 counts member writes).
         'src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts': 1,
@@ -1154,6 +1158,11 @@ const DEVICE_DATA_COUNTS = {
         // assignment (#7166): `target.owner.devices = …map(…)`.
         'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 4,
         'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        // Count provenance: new file entry, measured 2 — the copies type's `devices`
+        // field and the `devices:` the duplicate field law returns. A pure function of
+        // its arguments: duplicateTrack writes its result through `updateTrack` (counted
+        // there) and the batch planner keeps it as a plan value.
+        'src/modules/Arrangement/models/DuplicatedTrackFields.ts': 2,
         // Count provenance: measured 2 — the `Owner` type's `devices` field and
         // the owner pushed from a track's devices, both moved unchanged out of
         // DevicePatchWritePlan, plus 1 member assignment (#7166):
@@ -1351,13 +1360,14 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/models/PlannedDeviceWrite.ts': 1,
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
         // Count provenance: new file entry from #2347 ("migrate stored device
-        // parameters before preset load"), measured 1 — the `parameterValues:
-        // Record<string, number>` parameter type on
-        // `migrateStoredDeviceParameterValues`. Type-only device-data shape, the
-        // same class as `trackEligibility.ts` below: a static declaration, not
-        // an executable access. The module imports nothing, holds no store or
-        // CRDT write, and returns its input untouched when no migration applies.
-        'src/modules/Arrangement/models/StoredDeviceParameterMigration.ts': 1,
+        // parameters before preset load"), was 1, measured 2 — the `parameterValues:
+        // Record<string, number>` parameter types on
+        // `migrateStoredDeviceParameterValues` and its inverse
+        // `encodeStoredDeviceParameterValues`. Type-only device-data shapes, the
+        // same class as `trackEligibility.ts` below: static declarations, not
+        // executable accesses. The module holds no store or CRDT write, and both
+        // functions return their input untouched when nothing applies.
+        'src/modules/Arrangement/models/StoredDeviceParameterMigration.ts': 2,
         'src/modules/Arrangement/models/Track.ts': 7,
         'src/modules/Arrangement/models/TrackTemplate.ts': 1,
         'src/modules/Arrangement/repositories/presets/bassPresets.ts': 7,
@@ -1451,9 +1461,9 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Levain/useCases/commitLevainIdentity.ts',
     'src/modules/Levain/useCases/levainParamBridge/helpers.ts',
     'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts',
+    'src/modules/Proof/useCases/readProofPatchSelectionOwner.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
-    'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts',
     'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts',
     'src/modules/Toaster/useCases/setPadParamImmediate.ts',
     'src/modules/Toaster/useCases/loadToasterKit.ts',

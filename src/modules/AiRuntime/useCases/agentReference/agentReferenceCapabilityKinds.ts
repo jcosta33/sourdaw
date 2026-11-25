@@ -14,6 +14,7 @@ const TRACK_REFERENCE_CAPABILITIES: readonly AgentReferenceCapability[] = [
     'armable-track',
     'duplicable-track',
     'removable-track',
+    'hideable-track',
     'routable-source',
     'bus',
     'output',

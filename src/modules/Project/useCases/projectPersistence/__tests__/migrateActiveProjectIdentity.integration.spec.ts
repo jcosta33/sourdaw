@@ -30,7 +30,9 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
     return { ...actual, persistCrdtProject: mocks.persistCrdtProject };
 });
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    getSidechainTargetCapability: (await importOriginal<typeof import('#/modules/AudioEngine/useCases')>())
+        .getSidechainTargetCapability,
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

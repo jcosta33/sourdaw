@@ -7,6 +7,7 @@ import { type getProjectContext } from '../getProjectContext';
 import { type MetricGoalState } from '../metricGoalContractTypes';
 import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardContent';
 
+import { readRePreviewedPlannedLines } from './readRePreviewedPlannedLines';
 import { readStoredVibeRunBatch } from './readStoredVibeRunBatch';
 
 export const RE_PREVIEWED_SENTENCE = 'Re-previewed against the current project.';
@@ -17,6 +18,8 @@ type ComposeRePreviewedCardInput = {
     confirmation: PendingAppActionConfirmation;
     /** The actions the replacement keeps: every one, or the subset the musician selected. */
     actions: PendingAppActionConfirmation['actions'];
+    /** Positions within `actions` of those a refinement kept from the card it replaced. */
+    keptDirectionActionIndexes: readonly number[];
     context: ReturnType<typeof getProjectContext>;
     commandBatch: WorkingBatch;
     envelope: DeriveMeasuredAudibleImpactInput['envelope'];
@@ -74,11 +77,17 @@ export function composeRePreviewedCard(input: ComposeRePreviewedCardInput): {
         prompt: confirmation.prompt,
         inheritedProtectedUnchanged: confirmation.protectedUnchanged,
         requestProtectionFacts: confirmation.approvalSnapshot.protectionFacts,
+        keptDirectionActionIndexes: input.keptDirectionActionIndexes,
+        workflowCapabilityId: confirmation.approvalSnapshot.workflowCapabilityId,
     });
     const vibe = readVibeCardSource(input);
     if (vibe === null) {
+        // A brief card shows its readings or planned batches after its description, as its first proposal did.
+        const plannedLines = readRePreviewedPlannedLines(confirmation, input.selectsSubset) ?? [];
+        const body =
+            plannedLines.length === 0 ? description.content : [description.content, '', ...plannedLines].join('\n');
         return {
-            content: `${description.content}\n\n${RE_PREVIEWED_SENTENCE}`,
+            content: `${body}\n\n${RE_PREVIEWED_SENTENCE}`,
             measuredPreview: readRePreviewedMeasurement(input),
         };
     }

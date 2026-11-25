@@ -4,8 +4,12 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
+    type ExternalPluginActivationStatus,
 } from '../../stores/externalPluginActivationStore';
-import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import {
+    externalPluginParameterStore,
+    writeExternalPluginParameterSnapshot,
+} from '../../stores/externalPluginParameterStore';
 import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { activationFailureMessage } from './activationFailureMessage';
@@ -22,6 +26,7 @@ import {
     externalPluginActivationTasks,
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
@@ -53,29 +58,27 @@ type ActivateExternalPluginInput = {
     onLatencyMs?: (latencyMs: number) => void;
 };
 
+const NO_ENGINE_MESSAGE = 'Loaded without a running native engine — this plugin processes no audio yet.';
+
 const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
     status: 'failed',
     stage: 'restore',
     reason: 'External plugin activation was superseded by a runtime teardown',
 };
 
-const SUPERSEDED_RETRY: ExternalPluginActivationResult = {
-    status: 'failed',
-    stage: 'restore',
-    reason: 'External plugin activation was superseded by a runtime graph rebuild',
-};
+function activationSlot(instanceId: string): ExternalPluginActivationStatus | undefined {
+    return externalPluginActivationStore.value?.byInstanceId[instanceId];
+}
 
-function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+function writeActivationSlot(instanceId: string, slot: ExternalPluginActivationStatus): void {
     externalPluginActivationStore.update((state) => {
         const current = state ?? defaultExternalPluginActivationState;
-        return {
-            ...current,
-            byInstanceId: {
-                ...current.byInstanceId,
-                [instanceId]: message ? { status, message } : { status },
-            },
-        };
+        return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: slot } };
     });
+}
+
+function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+    writeActivationSlot(instanceId, message ? { status, message } : { status });
 }
 
 /**
@@ -161,6 +164,30 @@ function waitForPendingUnload(pendingUnload: Promise<void>): Promise<PendingUnlo
     return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
 }
 
+/** What the slot of a loaded instance shows, from its restore outcome and its engine attachment now. */
+function loadedInstanceSlot(instanceId: string, pluginId: string): ExternalPluginActivationStatus {
+    const outcome = externalPluginActivationOutcomes.get(instanceId);
+    if (outcome?.status === 'failed' && outcome.stage === 'restore' && externalPluginRestoreFailures.has(instanceId)) {
+        return { status: 'error', message: activationFailureMessage(pluginId, outcome.reason) };
+    }
+    if (externalPluginParameterStore.value?.byInstanceId[instanceId]?.engineAttached === false) {
+        return { status: 'active', message: NO_ENGINE_MESSAGE };
+    }
+    return { status: 'active' };
+}
+
+/**
+ * The timeout error describes an unload still pending. One that then rejects leaves the instance
+ * loaded and live, and a later activation of a loaded instance answers without writing its slot,
+ * so the slot shows the instance as it now stands, unless another writer replaced the error since.
+ */
+function reviveSlotAfterRejectedUnload(instanceId: string, pluginId: string, timeoutReason: string): void {
+    if (activationSlot(instanceId)?.message !== timeoutReason || !loadedExternalInstances.has(instanceId)) {
+        return;
+    }
+    writeActivationSlot(instanceId, loadedInstanceSlot(instanceId, pluginId));
+}
+
 /**
  * Activate once the queued unload of the same instance settles, so the
  * activation reflects the instance the unload leaves. An unload still pending
@@ -191,6 +218,7 @@ async function activateAfterPendingUnload(
     }
     const reason = `${input.pluginId} is still unloading and did not finish; it was not reactivated.`;
     setActivationStatus(input.instanceId, 'error', reason);
+    void pendingUnload.catch(() => reviveSlotAfterRejectedUnload(input.instanceId, input.pluginId, reason));
     logger.warn(`Failed to reactivate external plugin ${input.pluginId} for instance ${input.instanceId}: ${reason}`);
     return { status: 'failed', stage: 'load', reason };
 }
@@ -239,18 +267,16 @@ export function activateExternalPlugin({
     if (loadedExternalInstances.has(instanceId)) {
         const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
-            // A rebuild fence can give up on this task, so its answer may land in
-            // a later generation that reuses the instance ID.
-            function isCurrentRetry(): boolean {
-                return (
-                    activationEpoch === externalPluginActivationEpoch.current &&
-                    externalPluginActivationTasks.get(instanceId) === restoreTask
-                );
+            // Every teardown that destroys or replaces the instance drops this task with it. A rebuild
+            // or session retirement ends the graph generation but waits on this retry with the
+            // instance still loaded, so its outcome still describes the instance the rebuild reads.
+            function retryHoldsInstance(): boolean {
+                return externalPluginActivationTasks.get(instanceId) === restoreTask;
             }
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
-                    if (!isCurrentRetry()) {
-                        return SUPERSEDED_RETRY;
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     setActivationStatus(instanceId, 'active');
                     // The saved chunk is in the plugin again, so what it reports
@@ -259,8 +285,8 @@ export function activateExternalPlugin({
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
-                    if (!isCurrentRetry()) {
-                        return SUPERSEDED_RETRY;
+                    if (!retryHoldsInstance()) {
+                        return SUPERSEDED_RESTORE;
                     }
                     const reason = String(error);
                     setActivationStatus(instanceId, 'error', activationFailureMessage(pluginId, reason));
@@ -321,6 +347,13 @@ export function activateExternalPlugin({
         );
     }
 
+    // The project chunk's restore settles on the instance whatever the epoch: a rebuild or session
+    // retirement waits on this activation with the instance still loaded and reads its marker,
+    // while every teardown that destroys or replaces the instance drops this task with it.
+    function activationHoldsInstance(): boolean {
+        return externalPluginActivationTasks.get(instanceId) === activationTask;
+    }
+
     let restoredCarry: CarriedExternalPluginState | undefined;
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
@@ -355,9 +388,8 @@ export function activateExternalPlugin({
                 // attachment, not a failed one. Reporting it as failed made
                 // every plugin loaded before the first play raise out of the
                 // committed action that loaded it.
-                const message = 'Loaded without a running native engine — this plugin processes no audio yet.';
-                setActivationStatus(instanceId, 'active', message);
-                logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
+                setActivationStatus(instanceId, 'active', NO_ENGINE_MESSAGE);
+                logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${NO_ENGINE_MESSAGE}`);
                 attachment = { status: 'active', attachment: 'pending' };
             } else {
                 setActivationStatus(instanceId, 'active');
@@ -390,11 +422,7 @@ export function activateExternalPlugin({
         if (carried !== undefined) {
             const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, isCurrentActivation);
             if (carriedRestore === 'superseded') {
-                return {
-                    status: 'failed',
-                    stage: 'restore',
-                    reason: 'External plugin activation was superseded by a runtime teardown',
-                };
+                return SUPERSEDED_RESTORE;
             }
             if (carriedRestore === 'restored') {
                 restoredCarry = carried;
@@ -407,10 +435,7 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
-            // A rebuild fence can give up on this activation while its restore
-            // is still out, and a later generation can hold the instance ID by
-            // the time it answers.
-            if (!isCurrentActivation()) {
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // The saved chunk is in the plugin again, so what it reports over
@@ -418,7 +443,9 @@ export function activateExternalPlugin({
             clearExternalPluginRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
-            if (!isCurrentActivation()) {
+            // A teardown that overtook the load owns the instance now, and a newer activation may hold
+            // the same id: this restore's outcome is no longer this instance's state.
+            if (!activationHoldsInstance()) {
                 return SUPERSEDED_RESTORE;
             }
             // Restore failure must not reload: the instance is loaded, so keep the

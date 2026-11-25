@@ -42,6 +42,7 @@ const OWNER_READERS: Readonly<Record<TargetCapability, OwnerReader>> = {
     'armable-track': ownsItself,
     'duplicable-track': ownsItself,
     'removable-track': ownsItself,
+    'hideable-track': ownsItself,
     'routable-source': ownsItself,
     bus: ownsItself,
     output: ownsItself,

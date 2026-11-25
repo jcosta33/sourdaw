@@ -111,10 +111,7 @@ describe('preview same-content and compatible-divergence authority', () => {
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        commandBatchPreviewPort.setProvider(null);
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        commandProjectDivergencePort.setProvider(null);
         clearHandlerRegistry();
     });
 

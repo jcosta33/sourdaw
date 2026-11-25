@@ -3,14 +3,14 @@ import { type getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
-import { type readBriefMixIntent } from '../readBriefMixIntent';
+import { type CatalogBriefMixIntent } from '../readBriefMixIntent';
 
 import { withBriefTrackRoles } from './withBriefTrackRoles';
 
 type VibeRunCandidateInput = {
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
-    descriptors: NonNullable<ReturnType<typeof readBriefMixIntent>>['requestedDescriptors'];
+    descriptors: CatalogBriefMixIntent['requestedDescriptors'];
 };
 
 /** The batches the authored recipes would plan for these characters, before anything is measured. */

@@ -49,6 +49,31 @@ describe('pendingActionConfirmationStore', () => {
         );
     });
 
+    // Red when the snapshot drops what a re-preview recomposes the card from, or shares the caller's arrays (#7142).
+    it('records the brief lines, kept-direction positions and workflow on the snapshot as copies', () => {
+        const plannedRunLines = ['- Reading "Warm": warm'];
+        const keptDirectionActionIndexes = [0];
+        const proposed = proposePendingActionConfirmation({
+            id: 'confirmation-reproposal-sources',
+            prompt: 'make Snare quieter',
+            assistantMessageId: 'message-reproposal-sources',
+            actions: [{ type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -3, expectedGain: 1 } }],
+            actionLabels: ['Turn Snare down'],
+            plannedRunLines,
+            keptDirectionActionIndexes,
+            workflowCapabilityId: 'drum-routing',
+            projectRevision: 'revision-reproposal-sources',
+        });
+        plannedRunLines.push('changed');
+        keptDirectionActionIndexes.push(1);
+
+        expect(proposed?.approvalSnapshot).toMatchObject({
+            plannedRunLines: ['- Reading "Warm": warm'],
+            keptDirectionActionIndexes: [0],
+            workflowCapabilityId: 'drum-routing',
+        });
+    });
+
     it('preserves one materialized bus identity across a pending compound confirmation', () => {
         const busId = 'bus-ai-12345678-1234-4123-8123-123456789abc';
         const actions = [
