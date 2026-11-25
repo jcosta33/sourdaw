@@ -444,6 +444,52 @@ impl CompletedScanScope {
     }
 }
 
+/// The removals of every completed scan this process has applied and not yet
+/// written, folded into the two sets that decide them.
+///
+/// A file row survives the queued scans in order only when every scan keeps
+/// it, so it is removed exactly when some scan removes it: a complete scan
+/// removes the rows under its roots, a partial one the rows at its scanned
+/// paths. The union of those two kinds is the same answer as applying the
+/// scans one by one, and it grows with the distinct roots and paths seen, not
+/// with the number of scans, which a write that keeps failing would otherwise
+/// let grow for the life of the process.
+#[derive(Debug, Default)]
+struct PendingRemovals {
+    roots: BTreeSet<PathBuf>,
+    paths: BTreeSet<PathBuf>,
+}
+
+impl PendingRemovals {
+    fn record(&mut self, scope: &CompletedScanScope) {
+        if scope.complete {
+            self.roots.extend(scope.authorized_roots.iter().cloned());
+            let roots = &self.roots;
+            self.paths
+                .retain(|path| !roots.iter().any(|root| path.starts_with(root)));
+            return;
+        }
+        for path in &scope.scanned_paths {
+            if !self.roots.iter().any(|root| path.starts_with(root)) {
+                self.paths.insert(path.clone());
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.roots.is_empty() && self.paths.is_empty()
+    }
+
+    fn keeps(&self, path: &Path) -> bool {
+        !self.paths.contains(path) && !self.roots.iter().any(|root| path.starts_with(root))
+    }
+
+    fn clear(&mut self) {
+        self.roots.clear();
+        self.paths.clear();
+    }
+}
+
 #[derive(Debug, Default)]
 struct StoredRegistry {
     /// Whether the file has been read this process. Read-once: hydration is a
@@ -475,11 +521,11 @@ struct StoredRegistry {
     /// file carries the decision it is the file's row like any other, and a
     /// later write by the other process outranks it.
     entries_touched: BTreeSet<String>,
-    /// The completed scans whose removals this process has applied to its own
-    /// view and not yet written. `persist` applies them to the file's rows too,
-    /// so a row the other process wrote after this one hydrated, for a plugin
-    /// this scan found gone, does not outlive the scan.
-    pending_removal_scopes: Vec<CompletedScanScope>,
+    /// The completed scans' removals this process has applied to its own view
+    /// and not yet written. `persist` applies them to the file's rows too, so a
+    /// row the other process wrote after this one hydrated, for a plugin this
+    /// scan found gone, does not outlive the scan.
+    pending_removals: PendingRemovals,
     /// One entry per registry key whose miss this process has already tried to
     /// resolve. Bounds the targeted rescan to once per key per process, plus
     /// one retry when the first attempt's helper timed out; see
@@ -769,6 +815,16 @@ impl PluginRegistryStore {
         self.lock_stored().entries_touched.contains(plugin_id)
     }
 
+    /// How many roots and paths the unwritten completed-scan removals hold.
+    #[cfg(test)]
+    fn pending_removal_extent(&self) -> (usize, usize) {
+        let stored = self.lock_stored();
+        (
+            stored.pending_removals.roots.len(),
+            stored.pending_removals.paths.len(),
+        )
+    }
+
     /// The rows a fresh scan of `path` would only reproduce, or nothing.
     ///
     /// `Some` means the file at `path` is the file the scan that wrote these
@@ -1011,8 +1067,8 @@ impl PluginRegistryStore {
     /// ever restore it. Quarantine keys are the candidate path's display
     /// string, the same string a row stores as its `plugin.path`.
     ///
-    /// The scope is also kept until the next successful [`persist`](Self::persist),
-    /// which applies it to the rows the other process wrote to the file after
+    /// The scope is also kept, folded into a bounded set of removed roots and
+    /// paths, until the next successful [`persist`](Self::persist), which applies it to the rows the other process wrote to the file after
     /// this one hydrated: a row this view never held is still a row for a
     /// plugin this scan found gone.
     pub fn apply_completed_scan_removals(&self, scope: CompletedScanScope) {
@@ -1033,7 +1089,7 @@ impl PluginRegistryStore {
         }
         stored.resolutions.clear();
         if self.location.is_some() {
-            stored.pending_removal_scopes.push(scope);
+            stored.pending_removals.record(&scope);
         }
     }
 
@@ -1054,16 +1110,19 @@ impl PluginRegistryStore {
     /// and the removals
     /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
     /// made here, and then those scans' scopes applied to the file's rows that
-    /// no decision here covers. For writes that do not overlap in time, a
-    /// persist keeps the rows the other process wrote, does not restore a row a
-    /// completed scan in either process removed and wrote, and applies this
-    /// process's completed-scan removals to rows the other process wrote.
-    /// Overlapping writes have no cross-process lock: when both processes read
+    /// no decision here covers. Rows the other process wrote that this process
+    /// has decided nothing about are kept, and a persist applies this process's
+    /// completed-scan removals to them.
+    ///
+    /// A decision made here and not yet written outranks every file row for
+    /// its key, including one the other process wrote after the decision,
+    /// until this process writes: the file cannot say which came later.
+    /// Cross-process writes have no lock either, so when both processes read
     /// the file before either renames its temporary file over it, the later
-    /// rename wins. The merge guarantee holds only when the file reads; one
-    /// that exists and cannot be read is replaced by this process's view alone.
-    /// A successful write empties the decisions, so a row written once stops
-    /// outranking the file.
+    /// rename wins. The known cases are tracked in #7366. The merge holds only
+    /// when the file reads; one that exists and cannot be read is replaced by
+    /// this process's view alone. A successful write empties the decisions, so
+    /// a row written once stops outranking the file.
     ///
     /// Each row is written with the fingerprint it carries, and this function
     /// never stats the file itself: the caller fingerprinted the file while its
@@ -1172,7 +1231,7 @@ impl PluginRegistryStore {
                 stored.quarantine = quarantine;
                 stored.scan_consumption = scan_consumption;
                 stored.entries_touched.clear();
-                stored.pending_removal_scopes.clear();
+                stored.pending_removals.clear();
             }
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
@@ -1676,16 +1735,13 @@ fn remove_rows_of_completed_scans(
     stored: &StoredRegistry,
     quarantine: &BTreeMap<String, PersistedQuarantineEntry>,
 ) {
-    if stored.pending_removal_scopes.is_empty() {
+    if stored.pending_removals.is_empty() {
         return;
     }
     entries.retain(|key, entry| {
         stored.entries_touched.contains(key)
             || quarantine.contains_key(&entry.plugin.path)
-            || stored
-                .pending_removal_scopes
-                .iter()
-                .all(|scope| scope.keeps(Path::new(&entry.plugin.path)))
+            || stored.pending_removals.keeps(Path::new(&entry.plugin.path))
     });
 }
 
@@ -2364,6 +2420,14 @@ mod tests {
                 .contains_key("aaaa1111"),
             "the fresh row for the rewritten plugin must be a registry hit"
         );
+        assert_eq!(
+            session
+                .last_known_entry("aaaa1111")
+                .expect("the key keeps a last-known row")
+                .file_size_bytes,
+            b"clap-bytes-of-another-length".len() as u64,
+            "the last-known row must be the fresh one, not the refused stale one"
+        );
     }
 
     /// A removal written to the file is the file's news like any other: when
@@ -2494,6 +2558,122 @@ mod tests {
         assert!(
             next_launch.last_known_entry("aaaa1111").is_none(),
             "the removal a failed write could not carry must reach the file on the next persist"
+        );
+    }
+
+    /// A write that fails leaves the file as it was, so a row scanned here
+    /// stays a decision not yet written and the next persist carries it.
+    ///
+    /// Mutation this catches: clearing `entries_touched` before the write
+    /// result is checked, which lets the file's rows outrank the unwritten one.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_persist_keeps_a_row_scanned_here_for_the_next_one() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_root = TestRegistryRoot::create("registry-failed-write-keeps-scanned-row");
+        let other_path = test_root.write_plugin_file("Other.clap", b"clap-bytes");
+        let scanned_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes-reverb");
+        // The file must exist so a persist reads it rather than taking this
+        // process's view whole.
+        test_root.store().persist(&one_row(&other_path, "bbbb2222"));
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        fs::set_permissions(&test_root.root, fs::Permissions::from_mode(0o555))
+            .expect("the registry directory should become read-only");
+        session.persist(&one_row(&scanned_path, "aaaa1111"));
+        fs::set_permissions(&test_root.root, fs::Permissions::from_mode(0o755))
+            .expect("the registry directory should become writable again");
+        let after_failed_write = test_root.store();
+        after_failed_write.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            after_failed_write.last_known_entry("aaaa1111").is_none(),
+            "the fixture's write must have failed, or it proves nothing about retaining the row"
+        );
+
+        session.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_some(),
+            "the row a failed write could not carry must reach the file on the next persist"
+        );
+    }
+
+    /// Completed scans of one root that never reach a write fold into one
+    /// pending root, however many there are.
+    #[test]
+    fn many_completed_scans_of_one_root_keep_bounded_pending_removals() {
+        let test_root = TestRegistryRoot::create("registry-pending-removals-bounded");
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        for _ in 0..100 {
+            session.apply_completed_scan_removals(removing_every_row_under(&test_root));
+        }
+
+        assert_eq!(session.pending_removal_extent(), (1, 0));
+    }
+
+    /// Two completed scans of one root: the second finds a plugin the first
+    /// missed, and the row of a plugin neither found is still removed.
+    #[test]
+    fn a_later_scan_refinding_a_path_keeps_its_row_and_a_path_neither_found_is_removed() {
+        let test_root = TestRegistryRoot::create("registry-two-scans-one-root");
+        let refound_path = test_root.write_plugin_file("Refound.clap", b"clap-bytes-refound");
+        let missed_path = test_root.write_plugin_file("Missed.clap", b"clap-bytes-missed");
+        let other_process = test_root.store();
+        other_process.persist(&one_row(&refound_path, "aaaa1111"));
+        other_process.persist(&one_row(&missed_path, "bbbb2222"));
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        session.apply_completed_scan_removals(removing_every_row_under(&test_root));
+        session.apply_completed_scan_removals(removing_every_row_under(&test_root));
+        session.persist(&one_row(&refound_path, "aaaa1111"));
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_some(),
+            "the second scan found this plugin, so its row must be in the file"
+        );
+        assert!(
+            next_launch.last_known_entry("bbbb2222").is_none(),
+            "no scan found this plugin, so its row must not outlive them"
+        );
+    }
+
+    /// A path this process quarantined and has not written is quarantined for
+    /// adoption too: the file's row becomes the last-known location and no
+    /// registry hit.
+    ///
+    /// Mutation this catches: dropping the `stored.quarantine` half of the
+    /// quarantine check in `adopt_entry_written_elsewhere`.
+    #[test]
+    fn a_path_quarantined_here_and_unwritten_is_not_adopted_as_a_hit() {
+        let test_root = TestRegistryRoot::create("registry-adopt-unwritten-quarantine");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let session = test_root.store();
+        let session_registry = Mutex::new(HashMap::new());
+        session.hydrate_into(&session_registry, &test_root.scan_policy());
+        session.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+
+        session.adopt_entry_written_elsewhere(
+            &session_registry,
+            &test_root.scan_policy(),
+            "aaaa1111",
+        );
+
+        assert!(session.last_known_entry("aaaa1111").is_some());
+        assert!(
+            session_registry.lock().expect("registry lock").is_empty(),
+            "a path quarantined in this process must not load from the file's row"
         );
     }
 
