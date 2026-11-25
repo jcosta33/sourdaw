@@ -460,7 +460,7 @@ function readCreationRemoval(input: {
             const onNamedHost = sameName.filter((creation) => creation.hostIds.some((id) => hosts.has(id)));
             const picked = hosts.size === 0 ? sameName : onNamedHost;
             if (picked.length === 1 && picked[0]!.command === input.command) {
-                return settleRemoval(reading);
+                return settleRemoval(reading, readProtectionScope(input.pendingActions, input.context));
             }
         }
     }
@@ -477,6 +477,25 @@ function readCreationRemoval(input: {
     return { status: 'keeps' };
 }
 
+type ProtectionScope = Parameters<typeof refinementProtectionForms.read>[1];
+
+/** The project objects a clause can protect, and every object id a pending command of the card acts on. */
+function readProtectionScope(pendingActions: readonly Command[], context: ProjectContext): ProtectionScope {
+    return {
+        candidates: refinementRequestReading.candidates(context),
+        pendingIds: new Set(
+            pendingActions.flatMap(
+                (pending) => readStoredCommandObjects(pending, proposalCommandShape.createdObject, context).targetIds
+            )
+        ),
+    };
+}
+
+/** Whether a clause is a closed protection naming whole project objects the batch changes none of. */
+function protectsOffCardObjects(words: string, scope: ProtectionScope): boolean {
+    return refinementProtectionForms.read(words, scope)?.kind === 'protects';
+}
+
 /**
  * The first clause beside a removal that may withdraw or qualify it, read as the refinement reader
  * reads a clause it cannot consume: one stating a negation ("or not", "never mind", "without changing
@@ -485,7 +504,7 @@ function readCreationRemoval(input: {
  * if it's loud"). A clause that itself removes is the removal, and one stating an action ("add an EQ")
  * asks for a change the batch answers, so neither stands beside it.
  */
-function findUnreadQualifier(reading: readonly ClauseReading[]): ClauseReading | null {
+function findUnreadQualifier(reading: readonly ClauseReading[], scope: ProtectionScope): ClauseReading | null {
     const catalog = getExecutableAppActionGroundingCatalog();
     return (
         reading.find((clause) => {
@@ -497,7 +516,7 @@ function findUnreadQualifier(reading: readonly ClauseReading[]): ClauseReading |
             const words = refinementRequestReading
                 .withoutLeadingConnectors(`${normalizePromptText(clause.text)} `)
                 .trim();
-            if (refinementProtectionForms.readsRestOfMix(words)) {
+            if (refinementProtectionForms.readsRestOfMix(words) || protectsOffCardObjects(words, scope)) {
                 return false;
             }
             if (refinementRequestReading.statesNegation(clause)) {
@@ -518,8 +537,8 @@ function findUnreadQualifier(reading: readonly ClauseReading[]): ClauseReading |
 }
 
 /** A removal the request reads, unless a clause beside it may withdraw or qualify it, which is asked. */
-function settleRemoval(reading: readonly ClauseReading[]): RemovalReading {
-    const qualifier = findUnreadQualifier(reading);
+function settleRemoval(reading: readonly ClauseReading[], scope: ProtectionScope): RemovalReading {
+    const qualifier = findUnreadQualifier(reading, scope);
     if (qualifier === null) {
         return { status: 'removes' };
     }
@@ -551,5 +570,5 @@ export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pen
         targetIds.map((id) => ({ name: id, id }))
     );
     const removes = targetIds.every((id) => removesMentioned(readMentionIntentions(reading, id, operation)));
-    return removes ? settleRemoval(reading) : { status: 'keeps' };
+    return removes ? settleRemoval(reading, readProtectionScope(pendingActions, context)) : { status: 'keeps' };
 };

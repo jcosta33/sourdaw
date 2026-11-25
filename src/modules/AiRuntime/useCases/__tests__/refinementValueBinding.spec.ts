@@ -7005,17 +7005,29 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             });
         });
 
-        it.each(["don't touch Bass", "don't change Snare", 'do not touch Bass'])(
-            'asks the named "%s" beside a removal, which is no protection of that object',
+        it.each(["don't touch Bass", "don't change Snare", 'do not touch Bass', "don't touch the drum bus"])(
+            'admits "%s" beside a removal, which names nothing the removal drops',
             (clause) => {
                 expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
-                    status: 'refused',
-                    reason: expect.stringContaining(
-                        `"${clause}" beside a removal does not say whether that change is removed`
-                    ),
+                    status: 'valid',
                 });
             }
         );
+
+        it.each([
+            "don't touch the guitar pan",
+            "don't touch the guitar",
+            "don't touch the vocal",
+            "don't touch it",
+            "don't worry about the rest",
+        ])('asks "%s" beside a removal, which names a change the batch makes or nothing', (clause) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${clause}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
 
         it.each([
             'Set the vocal gain to 60%, remove the guitar pan',
