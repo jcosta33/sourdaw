@@ -166,6 +166,16 @@ src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integ
     in `getHandlerByType`. Probe: through `executeAppActionBatch`, feed such a type (a `JSON.parse` literal) ahead
     of an admission-mode action (`splitClip`, `setTempo`) and assert `rejected` with `No registered handler for
 action: <type>`; reverting a reachable lookup's guard must fail it.
+11. **A zero-delta relative level request writes anyway (#5926, resolver from #4392, fixed by #6354).** Failure:
+    `current === dbToGain(gainToDb(current) + deltaDb)` is false for a linear value that does not round-trip (0.3,
+    0.0123), so a 0 dB request writes a value one ulp away and records an Undo step; #5853's approval treated it
+    as optional. Probe: dispatch `deltaDb: 0` (and `-0`) through the real registered Command (`setVcaGain`,
+    `setMetronomeVolume`, `setTrackGain`) at 0.3 and assert raw CRDT heads, projections and both history stacks
+    unchanged, with a nonzero dB request and real Undo/Redo as the control. Removing the `deltaDb === 0` identity
+    return in `resolveLevelArgument` must fail `relative level identity` in
+    `src/utils/__tests__/audioLevelLaw.spec.ts` and the zero-delta heads case in
+    `src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts`; silence, range and malformed-delta
+    refusals stay refused.
 
 ## Relocated
 
