@@ -106,6 +106,9 @@ async function answer(data: unknown): Promise<AudioBufferDurabilityResponse> {
     }
 }
 
-self.onmessage = ({ data }: MessageEvent<unknown>) => {
-    void answer(data).then((result) => self.postMessage(result));
+self.onmessage = (event: MessageEvent<unknown>) => {
+    // The browser delivers dedicated Worker messages through its implicit port with no source object.
+    if (event.isTrusted && event.source === null) {
+        void answer(event.data).then((result) => self.postMessage(result));
+    }
 };

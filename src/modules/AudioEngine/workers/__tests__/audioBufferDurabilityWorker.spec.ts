@@ -19,9 +19,11 @@ const metadata = { sizeInBytes: 8, lastAccessed: 11 };
 const owner = { schemaVersion: 1, leaseId: 'lease', status: 'project-owned', persistenceRevision: 'promoted' };
 const namedStores = [AUDIO_BUFFER_PCM_STORE, AUDIO_BUFFER_METADATA_STORE];
 
+type WorkerMessageEvent = Pick<MessageEvent<unknown>, 'data' | 'isTrusted' | 'source'>;
+
 let databaseFactory: IDBFactory;
 let worker: {
-    onmessage?: (event: MessageEvent<unknown>) => void;
+    onmessage?: (event: WorkerMessageEvent) => void;
     postMessage: (data: unknown) => void;
 };
 
@@ -50,13 +52,18 @@ async function seedDatabase(): Promise<void> {
     });
 }
 
-async function send(data: unknown): Promise<unknown> {
-    const reply = Promise.withResolvers<unknown>();
-    worker.postMessage = reply.resolve;
+function receive(event: WorkerMessageEvent): void {
     if (!worker.onmessage) {
         throw new Error('Audio durability worker did not register its message handler');
     }
-    worker.onmessage(new MessageEvent('message', { data }));
+    worker.onmessage(event);
+}
+
+async function send(data: unknown): Promise<unknown> {
+    const reply = Promise.withResolvers<unknown>();
+    worker.postMessage = reply.resolve;
+    // Model the browser's dedicated Worker dispatch at the handler boundary.
+    receive({ data, isTrusted: true, source: null });
     return reply.promise;
 }
 
@@ -95,6 +102,19 @@ describe('audioBufferDurabilityWorker', () => {
         expect(transaction).toHaveBeenCalledExactlyOnceWith(namedStores, 'readonly');
         expect(order).toEqual(['committed', 'replied']);
         expect(reply).toEqual({ status: 'complete', revisions: ['promoted', 'original', null, null, null, null] });
+    });
+
+    it.each([
+        { name: 'a synthetic event', isTrusted: false, source: null },
+        { name: 'a message with a source window', isTrusted: true, source: window },
+    ])('ignores $name before database access or reply', ({ isTrusted, source }) => {
+        const open = vi.spyOn(databaseFactory, 'open');
+        const reply = vi.spyOn(worker, 'postMessage');
+
+        receive({ data: { ids: ['a-ordinary'] }, isTrusted, source });
+
+        expect(open).not.toHaveBeenCalled();
+        expect(reply).not.toHaveBeenCalled();
     });
 
     it('rejects malformed requests before opening the database', async () => {
