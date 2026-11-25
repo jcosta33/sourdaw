@@ -18,7 +18,6 @@ import {
     readCheckpointAudioRetention,
     readCheckpointAudioVersionKey,
 } from '../models/CheckpointAudioRetention';
-
 import {
     isValidPreparedSerializedAudioBuffer,
     readDurableAudioBufferRevision,
