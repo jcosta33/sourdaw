@@ -6,12 +6,28 @@ import {
 } from '#/infra/storage/withProjectAudioStorageLock';
 
 import {
+    AUDIO_BUFFER_DATABASE_NAME as DB_NAME,
+    AUDIO_BUFFER_DATABASE_VERSION as DB_VERSION,
+    AUDIO_BUFFER_METADATA_STORE as META_STORE_NAME,
+    AUDIO_BUFFER_PCM_STORE as STORE_NAME,
+} from '../models/AudioBufferStorageSchema';
+import {
     CHECKPOINT_AUDIO_VERSION_META_STORE_NAME,
     CHECKPOINT_AUDIO_VERSION_STORE_NAME,
     CHECKPOINT_RETENTION_STORE_NAME,
     readCheckpointAudioRetention,
     readCheckpointAudioVersionKey,
 } from '../models/CheckpointAudioRetention';
+
+import {
+    isValidPreparedSerializedAudioBuffer,
+    readDurableAudioBufferRevision,
+    readPersistentPcmRevision,
+    readPreparedOwner,
+    requiresPromotionReconciliation,
+    type PreparedAudioBufferMetadata,
+    type PreparedSerializedAudioBuffer,
+} from '../transformers/audioBufferPersistenceIdentity';
 
 import { isAudioBufferHeld } from './audioBufferResidencyHolds';
 import {
@@ -23,14 +39,6 @@ import {
     createPreparedAudioBufferLifecycle,
     PreparedAudioStoragePhaseUnavailableError,
 } from './preparedAudioBufferLifecycle';
-import {
-    isValidPreparedSerializedAudioBuffer,
-    readPersistentPcmRevision,
-    readPreparedOwner,
-    requiresPromotionReconciliation,
-    type PreparedAudioBufferMetadata,
-    type PreparedSerializedAudioBuffer,
-} from './preparedAudioBufferOwnership';
 
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
  * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
@@ -214,32 +222,6 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
     waveformCache.set(key, peaks);
 }
 
-const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 5;
-const STORE_NAME = 'buffers';
-
-/** Everything the age and size collectors read, split out of the record so that
- * moving a timestamp does not rewrite the audio next to it.
- *
- * A record is `sampleRate` and `numberOfChannels` and then however many
- * megabytes of `Float32Array`; the two numbers the collectors want are 16 bytes
- * of it. IndexedDB has no partial update, so `put`ting a record back to change
- * `lastAccessed` rewrites the PCM — 384 KB per second of 48 kHz stereo, so
- * ~1.5 MB for a four-second loop and ~69 MB for a three-minute freeze bounce,
- * once per id per refresh window, forever. And both collectors reached those
- * two numbers through `getAll()`, materialising every record in the store to
- * read them; `cleanupUnusedFreezeFiles` caps that store at 2 GiB.
- *
- * Measured in `audioBufferCacheMetadataStore.spec.ts` on one second of 48 kHz
- * stereo: a refresh wrote 384 152 bytes and now writes 62, and a two-record
- * collector pass read 768 322 bytes (age) / 768 324 (size) and now reads 142 /
- * 144 — the rows and their keys, and no PCM at all.
- *
- * The record keeps its own `lastAccessed` and `sizeInBytes` fields. They stop
- * being the collectors' input at this version and become what the record was
- * persisted with — which is exactly what the lazy back-fill needs to seed a row
- * for a record written before this store existed. */
-const META_STORE_NAME = 'bufferMeta';
 const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
 type BufferMeta = PreparedAudioBufferMetadata;
 
@@ -1991,38 +1973,6 @@ type CachedAudioBuffersDurabilityResult =
           status: 'superseded';
       };
 
-function readDurableAudioBufferRevision(data: unknown, metadata: unknown): string | null {
-    if (
-        !isValidSerializedBuffer(data) ||
-        metadata === null ||
-        typeof metadata !== 'object' ||
-        Array.isArray(metadata)
-    ) {
-        return null;
-    }
-    const candidate = metadata as Record<string, unknown>;
-    if (
-        typeof candidate.lastAccessed !== 'number' ||
-        !Number.isFinite(candidate.lastAccessed) ||
-        candidate.sizeInBytes !== data.sizeInBytes ||
-        (candidate.freezeProjectId !== undefined &&
-            (typeof candidate.freezeProjectId !== 'number' ||
-                !Number.isSafeInteger(candidate.freezeProjectId) ||
-                candidate.freezeProjectId < 0))
-    ) {
-        return null;
-    }
-    const owner = readPreparedOwner(metadata);
-    if (!(
-        owner === null ||
-        (owner !== 'invalid' && owner.status === 'project-owned' && !requiresPromotionReconciliation(owner))
-    )) {
-        return null;
-    }
-    const revision = readPersistentPcmRevision(metadata);
-    return typeof revision === 'string' ? revision : null;
-}
-
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
@@ -2059,11 +2009,22 @@ export function authenticateCheckpointAudioRetentionReceipt(
     return authority;
 }
 
-async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
+type ReadAudioDurabilityInWorker = (ids: readonly string[]) => Promise<readonly (string | null)[] | undefined>;
+
+async function readDurableAudioBufferRevisions(
+    ids: readonly string[],
+    readInWorker?: ReadAudioDurabilityInWorker
+): Promise<ReadonlyMap<string, string | null>> {
     if (ids.length === 0) {
         return new Map();
     }
     const database = await openDb();
+    if (readInWorker) {
+        const revisions = await readInWorker(ids);
+        if (revisions !== undefined) {
+            return new Map(ids.map((id, index) => [id, revisions[index] ?? null] as const));
+        }
+    }
     const transaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
     const bufferStore = transaction.objectStore(STORE_NAME);
     const metadataStore = transaction.objectStore(META_STORE_NAME);
@@ -2085,8 +2046,15 @@ async function ensureDurableAudioBuffersInScope(
     requiredIds: readonly string[],
     admissionWitness: AudioStorageWriteAdmissionWitness,
     scope: ProjectAudioStorageLockScope,
-    lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
-    settlementsSettled = false
+    {
+        readInWorker,
+        lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
+        settlementsSettled = false,
+    }: {
+        readInWorker?: ReadAudioDurabilityInWorker;
+        lifecycleWitness?: ReturnType<typeof preparedAudioBufferLifecycle.captureProjectDurabilityWitness>;
+        settlementsSettled?: boolean;
+    }
 ): Promise<CachedAudioBuffersDurabilityResult> {
     if (
         !settlementsSettled &&
@@ -2183,7 +2151,7 @@ async function ensureDurableAudioBuffersInScope(
         if (recovery === 'failed') {
             return failAndRelease(requiredIds);
         }
-        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds);
+        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds, readInWorker);
         if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
@@ -2267,13 +2235,14 @@ async function ensureDurableAudioBuffersInScope(
 
 function ensureDurableAudioBuffers(
     ids: readonly string[],
-    scope?: ProjectAudioStorageLockScope
+    scope?: ProjectAudioStorageLockScope,
+    readInWorker?: ReadAudioDurabilityInWorker
 ): Promise<CachedAudioBuffersDurabilityResult> {
     const requiredIds = [...new Set(ids)];
     const admissionWitness = captureAudioStorageWriteAdmission(requiredIds);
     if (scope !== undefined) {
         return runInProjectAudioStorageLock(scope, () =>
-            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope)
+            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope, { readInWorker })
         );
     }
     const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
@@ -2286,7 +2255,11 @@ function ensureDurableAudioBuffers(
                 return Promise.resolve({ status: 'superseded' as const });
             }
             return runInProjectAudioStorageLock(activeScope, () =>
-                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, lifecycleWitness, true)
+                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, {
+                    readInWorker,
+                    lifecycleWitness,
+                    settlementsSettled: true,
+                })
             );
         });
     if (
