@@ -6882,6 +6882,17 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
     });
 
     it.each([
+        ["mute Bass, don't touch Bass", [vocalsBy(-3), bassMute], "don't touch Bass"],
+        ["mute Bass, don't change Snare", [vocalsBy(-3), bassMute], "don't change Snare"],
+        ["turn Vocals down 3 dB, don't touch Bass", [vocalsBy(-3)], "don't touch Bass"],
+    ] as const)('asks the named "%s", which is no protection of that object', (refinement, calls, clause) => {
+        expect(outcomeOf(refine(P0_CARD, refinement, calls))).toEqual({
+            status: 'clarify',
+            said: expect.stringContaining(`"${clause}" says what not to do`),
+        });
+    });
+
+    it.each([
         [
             'an addition with no negation',
             P0_CARD,
@@ -6993,6 +7004,18 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
                 ),
             });
         });
+
+        it.each(["don't touch Bass", "don't change Snare", 'do not touch Bass'])(
+            'asks the named "%s" beside a removal, which is no protection of that object',
+            (clause) => {
+                expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                    status: 'refused',
+                    reason: expect.stringContaining(
+                        `"${clause}" beside a removal does not say whether that change is removed`
+                    ),
+                });
+            }
+        );
 
         it.each([
             'Set the vocal gain to 60%, remove the guitar pan',
