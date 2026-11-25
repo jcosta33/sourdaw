@@ -8,7 +8,13 @@ const mocks = vi.hoisted(() => ({
         () => {
             tracks: {
                 id: string;
-                clips: { id: string; startBeat: number; type?: 'audio' | 'midi'; midiOffsetBeats?: number }[];
+                clips: {
+                    id: string;
+                    startBeat: number;
+                    endBeat?: number;
+                    type?: 'audio' | 'midi';
+                    midiOffsetBeats?: number;
+                }[];
             }[];
         } | null
     >(),

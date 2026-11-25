@@ -217,6 +217,9 @@ function registerHandlers(describeOverride?: { type: AppAction['type']; strip: s
                 if (!inverse) {
                     return description;
                 }
+                if (inverse.payload === undefined) {
+                    throw new Error('Expected the recorded inverse to carry a payload');
+                }
                 const payload = Object.fromEntries(
                     Object.entries(inverse.payload).filter(([key]) => !describeOverride.strip.includes(key))
                 );

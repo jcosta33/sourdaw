@@ -4,7 +4,10 @@ import { handleTrimClipEnd } from '../handleTrimClipEnd';
 
 const mocks = vi.hoisted(() => ({
     trimClipEnd: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; clips: { id: string; endBeat: number }[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<
+            () => { tracks: { id: string; clips: { id: string; startBeat?: number; endBeat: number }[] }[] } | null
+        >(),
 }));
 
 vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({
