@@ -14289,11 +14289,6 @@
             "count": 1
         }
     },
-    "src/modules/MIDI/handlers/groove/handleExtractGroove.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/handlers/groove/handleRenameGrooveTemplate.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 1
