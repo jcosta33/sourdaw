@@ -55,6 +55,7 @@ describe('maskProjectReferences', () => {
         ['a 4--beat loop', 'Beat', 'a 4--beat loop'],
         ['a 4 bar loop', '4 Bar Loop', 'a 4 bar loop'],
         ['for 8 bars', '8 Bars', 'for 8 bars'],
+        ['for 4 beats', '4', 'for 4 beats'],
     ])('keeps the counted duration in %s when a clip is named %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -63,6 +64,7 @@ describe('maskProjectReferences', () => {
         ['mute the Beat clip', 'Beat', 'mute the □□□□ clip'],
         ['make the beat louder', 'Beat', 'make the clip louder'],
         ['mute the Beat Loop', 'Beat Loop', 'mute the clip□□□□□'],
+        ['mute Verse and Chorus 8 Bars', 'Verse and Chorus 8 Bars', `mute clip${'□'.repeat(19)}`],
     ])('still masks a clip reference in %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });

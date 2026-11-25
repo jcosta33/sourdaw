@@ -75,10 +75,9 @@ type ProjectReferenceMaskSpan = PromptRange & {
 
 type CountedDuration = PromptRange & {
     numberEnd: number;
-    unitStart: number;
 };
 
-const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)([-\s]*)(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
+const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)[-\s]*(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
 
 function overlaps(left: PromptRange, right: PromptRange): boolean {
     return left.start < right.end && right.start < left.end;
@@ -105,25 +104,22 @@ function findCountedDurations(prompt: string): CountedDuration[] {
     return [...prompt.matchAll(countedDurationPattern)].flatMap((match) => {
         const start = match.index;
         const number = match[1] ?? '';
-        const separator = match[2] ?? '';
         if (start === undefined || !number) {
             return [];
         }
-        const numberEnd = start + number.length;
-        return [{ start, end: start + match[0].length, numberEnd, unitStart: numberEnd + separator.length }];
+        return [{ start, end: start + match[0].length, numberEnd: start + number.length }];
     });
 }
 
 function namesDurationNumber(reference: PromptRange, duration: CountedDuration): boolean {
-    return (
-        reference.start <= duration.start && duration.numberEnd <= reference.end && reference.end <= duration.unitStart
-    );
+    return reference.start < duration.start && duration.numberEnd <= reference.end;
 }
 
 /**
  * A counted duration the request states ("4 beat", "2-bar", "8--beats") is not an object reference,
- * unless a reference name ends its number before the unit ("Take 2" in "mute Take 2 Beat"): then the
- * number names that object. A name that repeats the unit too ("4 Bar Loop" in "a 4 bar loop") is not.
+ * unless a reference name that starts before its number covers it ("Take 2" in "mute Take 2 Beat",
+ * "Verse and Chorus 8 Bars"): then the number belongs to that name. A name starting at the number
+ * ("4 Bar Loop" in "a 4 bar loop") or none covering it ("4" in "for 4 beats") leaves the duration counted.
  */
 function findProtectedCountedDurations(prompt: string, references: readonly string[]): PromptRange[] {
     const referenceMatches = findReferenceMatches(prompt, references);
