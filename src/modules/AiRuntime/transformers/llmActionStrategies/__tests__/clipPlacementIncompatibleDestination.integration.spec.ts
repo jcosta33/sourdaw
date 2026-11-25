@@ -6,6 +6,7 @@ import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, defaultTrackState, markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore } from '#/modules/Command/stores';
 import {
@@ -90,7 +91,12 @@ function clipCountOn(trackId: string): number {
 }
 
 async function runAiCall(call: ToolCallResult): Promise<void> {
-    const bridged = bridgeLlmToolCalls({ calls: [call], context: getProjectContext(), projectPunchRegion: () => null });
+    const bridged = bridgeLlmToolCalls({
+        acceptsSidechainInput,
+        calls: [call],
+        context: getProjectContext(),
+        projectPunchRegion: () => null,
+    });
     for (const action of bridged.actions) {
         await executeAppAction(action as AppAction).catch(() => undefined);
     }

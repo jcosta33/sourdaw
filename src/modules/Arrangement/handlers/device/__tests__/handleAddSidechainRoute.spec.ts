@@ -11,8 +11,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRouteSnapshot: mocks.addSidechainRouteSnapshot,
-    getSidechainTargetCapability: (deviceType: string) =>
-        deviceType === 'builtin-sidechain-compressor' ? { targetParameterId: 'threshold' } : null,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({

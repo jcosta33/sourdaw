@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
@@ -29,7 +28,10 @@ import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry'
 
 import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
+import { readTakeTargetAudioTracks } from './readTakeTargetAudioTracks';
 import { recordingLifecycle } from './recordingLifecycle';
+import { refusesWithoutTakeTarget } from './refusesWithoutTakeTarget';
+import { releaseStartWithoutTakeTarget } from './releaseStartWithoutTakeTarget';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { runAfterPreviewOutputRestored } from './runAfterPreviewOutputRestored';
 import { scheduleCountInClicks, type CountIn } from './scheduleCountInClicks';
@@ -505,8 +507,7 @@ async function beginActualRecording(
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
-    const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
+    const audioTracks = readTakeTargetAudioTracks();
     let clips: ReturnType<typeof startRecording> = [];
 
     const captureClocks = createManualCaptureClocks(ctx, transportHold);
@@ -596,6 +597,9 @@ async function beginActualRecording(
     admissionTempo = admitted.tempo;
     admissionChanges = admitted.changes;
     clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    if (await releaseStartWithoutTakeTarget(detachReaders)) {
+        return false;
+    }
     bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });
     return true;
@@ -762,11 +766,7 @@ export function toggleRecording(): void {
     // that cannot exist is the same defect one count earlier. The punch arm
     // above stays open — it engages no recording, and the scheduler owns the
     // window it arms.
-    const hasArmedTakeTarget =
-        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
-        false;
-    if (!hasArmedTakeTarget) {
-        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
+    if (refusesWithoutTakeTarget()) {
         return;
     }
 

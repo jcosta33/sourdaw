@@ -398,7 +398,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts",
-                    "digest": "98b952fb3dc047b19f14140824e9e057abaee71be9e25c3513078402f7944282"
+                    "digest": "afc51487ca68228f2f995ac9131197e1749c3fc3a480577ffe758e9741d49cb0"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
@@ -506,7 +506,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
-                    "digest": "e96b0910378f34213fa773040b7f7f276afb47449cfd86d8c77bea447329e034"
+                    "digest": "5c2acdfef10d46cae9961681a86a5a733d0c75ff3b01449d32e73585202fe406"
                 }
             ]
         },
