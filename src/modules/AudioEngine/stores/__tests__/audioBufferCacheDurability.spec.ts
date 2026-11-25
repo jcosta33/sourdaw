@@ -746,8 +746,12 @@ describe('audio buffer save durability', () => {
         expect(controls.committedMeta.has(newId)).toBe(false);
 
         const retry = imported.persist();
-        await expect(settlePromiseWithWrites(retry, controls)).resolves.toBe(true);
+        await waitForPendingWrite(controls);
+        const joinedRetry = imported.persist();
         expect(controls.writeTransactionCount()).toBe(2);
+        expect(controls.pendingWriteSettlementCount()).toBe(1);
+        controls.releaseNextWriteSettlement();
+        await expect(Promise.all([retry, joinedRetry])).resolves.toEqual([true, true]);
         await expect(imported.persist()).resolves.toBe(true);
         expect(controls.writeTransactionCount()).toBe(2);
         clearRuntimeAudioBufferCache();
