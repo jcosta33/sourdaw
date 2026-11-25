@@ -3,16 +3,25 @@ import { CRUST_PRESET_PARAMETER_ORDER } from '../../models/CrustPresetParameterO
 import { crustPresetPreviewAuthority } from '../createCrustParameterGesture';
 
 import { algorithmFromStyle } from './algorithmFromStyle';
-import { crustBridgeDeps, decodeCrustStyle, encodeCrustValue, paramBatcher } from './helpers';
+import { decodeCrustStyle } from './decodeCrustStyle';
+import { crustBridgeDeps, encodeCrustValue, paramBatcher } from './helpers';
 import { hydrateCrustPatchFromProject } from './hydrateCrustPatchFromProject';
 
-export function syncCrustPresetRuntime(
-    trackId: string,
-    deviceId: string,
-    parameters: Readonly<Record<string, number | null>>,
-    metadata: Pick<CrustPatch, 'name' | 'streamingPreset'>,
-    isCurrent: () => boolean
-): void {
+type SyncCrustPresetRuntimeInput = {
+    trackId: string;
+    deviceId: string;
+    parameters: Readonly<Record<string, number | null>>;
+    metadata: Pick<CrustPatch, 'name' | 'streamingPreset'>;
+    isCurrent: () => boolean;
+};
+
+export function syncCrustPresetRuntime({
+    trackId,
+    deviceId,
+    parameters,
+    metadata,
+    isCurrent,
+}: SyncCrustPresetRuntimeInput): void {
     if (!isCurrent()) {
         return;
     }

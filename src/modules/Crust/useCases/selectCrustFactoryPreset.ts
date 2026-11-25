@@ -6,9 +6,9 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { CRUST_PRESET_PARAMETER_ORDER } from '../models/CrustPresetParameterOrder';
 
-import { getCrustFactoryPreset } from './crustPresets';
 import { encodeCrustPresetParameters } from './crustParamBridge/encodeCrustPresetParameters';
 import { syncCrustPresetRuntime } from './crustParamBridge/syncCrustPresetRuntime';
+import { getCrustFactoryPreset } from './crustPresets';
 import { readCrustFactoryPresetTarget } from './readCrustFactoryPresetTarget';
 
 export async function selectCrustFactoryPreset(deviceId: string, presetId: string): Promise<void> {
@@ -75,7 +75,13 @@ export async function selectCrustFactoryPreset(deviceId: string, presetId: strin
         );
         if (alreadyApplied && admission.observed) {
             // Command drops equal project writes. The explicit pick still selects and reasserts the sound.
-            syncCrustPresetRuntime(trackId, deviceId, after, preset.patch, matchesCurrentSelection);
+            syncCrustPresetRuntime({
+                trackId,
+                deviceId,
+                parameters: after,
+                metadata: preset.patch,
+                isCurrent: matchesCurrentSelection,
+            });
         }
     } catch (error) {
         logger.error(new Error('Crust factory preset selection failed', { cause: error }));

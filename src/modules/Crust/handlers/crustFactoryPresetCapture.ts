@@ -4,8 +4,8 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type CrustFactoryPresetAction } from '../events/crustAppActions';
 import { CRUST_PRESET_PARAMETER_ORDER } from '../models/CrustPresetParameterOrder';
-import { getCrustFactoryPreset } from '../useCases/crustPresets';
 import { encodeCrustPresetParameters } from '../useCases/crustParamBridge/encodeCrustPresetParameters';
+import { getCrustFactoryPreset } from '../useCases/crustPresets';
 
 type Payload = CrustFactoryPresetAction['payload'];
 

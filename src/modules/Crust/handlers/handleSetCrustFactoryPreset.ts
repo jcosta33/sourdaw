@@ -109,13 +109,13 @@ function executePreset(action: CrustFactoryPresetAction): HandlerExecutionResult
         }
         const sync = (): void => {
             crustPresetPreviewAuthority.release(action);
-            syncCrustPresetRuntime(
-                payload.trackId,
-                payload.deviceId,
-                payload.after,
-                committedPresetMetadata(payload),
-                isCurrent
-            );
+            syncCrustPresetRuntime({
+                trackId: payload.trackId,
+                deviceId: payload.deviceId,
+                parameters: payload.after,
+                metadata: committedPresetMetadata(payload),
+                isCurrent,
+            });
         };
         validationTransferred = true;
         return { status: 'written', commitValidation: proof.validation, afterCommit: sync, afterAmbiguousCommit: sync };

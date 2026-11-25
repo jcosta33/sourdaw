@@ -90,10 +90,10 @@ function withGlobalFields(
     }
 
     for (const field of BOOLEAN_FIELDS) {
-        const stored =
-            restorePresetDefaults && !Object.hasOwn(parameterValues, field)
-                ? Number(DEFAULT_CRUST_PATCH[field])
-                : parameterValues[field];
+        let stored = parameterValues[field];
+        if (restorePresetDefaults && !Object.hasOwn(parameterValues, field)) {
+            stored = Number(DEFAULT_CRUST_PATCH[field]);
+        }
         if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
             next = { ...next, [field]: isStoredTrue(stored) };
         }
@@ -166,6 +166,22 @@ function withStoredBitDepth(patch: CrustPatch, storedBitDepth: number | undefine
     return patch;
 }
 
+function readCrustDevice(deviceId: string) {
+    return trackStore.value?.tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
+}
+
+function withOwnedPreviews(patch: CrustPatch, ownedPreviews: ReadonlyMap<keyof CrustPatch, number>): CrustPatch {
+    let next = patch;
+    for (const [key, value] of ownedPreviews) {
+        if (typeof DEFAULT_CRUST_PATCH[key] === 'number') {
+            next = { ...next, [key]: value };
+        }
+    }
+    return next;
+}
+
 /**
  * Re-project the device's own store slice from its persisted `parameterValues`
  * (#3673): the store holds defaults until the panel's first write, so a
@@ -179,14 +195,7 @@ export function hydrateCrustPatchFromProject(
     ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map(),
     presetMetadata?: Pick<CrustPatch, 'name' | 'streamingPreset'>
 ): void {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return;
-    }
-
-    const device = tracks
-        .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
+    const device = readCrustDevice(deviceId);
     if (!device) {
         return;
     }
@@ -216,11 +225,7 @@ export function hydrateCrustPatchFromProject(
             ? parameterValues[CRUST_PARAM_IDS.outputBitDepth]
             : DEFAULT_CRUST_PATCH.outputBitDepth
     );
-    for (const [key, value] of ownedPreviews) {
-        if (typeof DEFAULT_CRUST_PATCH[key] === 'number') {
-            patch = { ...patch, [key]: value };
-        }
-    }
+    patch = withOwnedPreviews(patch, ownedPreviews);
     const uiLevel = crustDisclosureLevelFromState(device.deviceState);
     if (patch.uiLevel !== uiLevel) {
         patch = { ...patch, uiLevel };

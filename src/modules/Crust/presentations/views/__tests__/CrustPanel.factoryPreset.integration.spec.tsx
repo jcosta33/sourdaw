@@ -1,6 +1,7 @@
 import { getObjectId } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -35,6 +36,7 @@ import {
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+
 import { crustMeterStore, crustStore } from '../../../stores/crustStore';
 import { selectCrustFactoryPreset } from '../../../useCases/selectCrustFactoryPreset';
 import { CrustPanel } from '../CrustPanel';

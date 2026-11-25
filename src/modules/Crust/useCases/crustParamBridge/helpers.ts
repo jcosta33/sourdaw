@@ -39,10 +39,6 @@ export const STYLE_INDEX = {
     loud: 2,
 } as const;
 
-export function decodeCrustStyle(value: number | null | undefined): keyof typeof STYLE_INDEX | undefined {
-    return (Object.keys(STYLE_INDEX) as (keyof typeof STYLE_INDEX)[]).find((style) => STYLE_INDEX[style] === value);
-}
-
 export const ALGORITHM_INDEX = {
     transparent: 0,
     punchy: 1,
