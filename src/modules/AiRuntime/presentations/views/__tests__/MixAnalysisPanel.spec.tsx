@@ -21,6 +21,10 @@ vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/runAppAction', () => ({
     runAppAction: vi.fn(),
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
+}));
+
 vi.mock('../../components/mixAnalysis/MixAnalysisSections', () => ({
     EvidenceStatus: ({ status }: any) => (
         <div data-testid="evidence-status">Availability: {status?.availability ?? 'unknown'}</div>
@@ -37,6 +41,7 @@ vi.mock('../../components/mixAnalysis/MixAnalysisSections', () => ({
 const { useStore } = await import('#/infra/store/useStore');
 const { toggleMixAnalysisPanel } = await import('#/modules/AiRuntime/stores/mixAnalysisStore');
 const { runAppAction } = await import('#/modules/AiRuntime/useCases/aiPanelActions/runAppAction');
+const { executeUserAppAction } = await import('#/modules/Command/useCases');
 
 // Mock store state
 const mockState = {
@@ -54,6 +59,7 @@ describe('MixAnalysisPanel', () => {
         mockState.isAnalyzing = false;
         mockState.panelOpen = true;
         vi.mocked(runAppAction).mockResolvedValue(undefined);
+        vi.mocked(executeUserAppAction).mockResolvedValue(undefined);
     });
 
     it('should render without crashing when panel is open', () => {
@@ -116,7 +122,7 @@ describe('MixAnalysisPanel', () => {
         expect(screen.getByTestId('suggestions-list')).toBeInTheDocument();
     });
 
-    it('should call runAppAction with autoFixMix when auto-fix button is clicked', () => {
+    it('should dispatch autoFixMix through executeUserAppAction when auto-fix button is clicked', () => {
         mockState.result = {
             status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
             overallLevel: -12,
@@ -129,7 +135,8 @@ describe('MixAnalysisPanel', () => {
         render(<MixAnalysisPanel />);
         const autoFixButton = screen.getByText('Auto-Fix');
         fireEvent.click(autoFixButton);
-        expect(runAppAction).toHaveBeenCalledWith({ type: 'autoFixMix' });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'autoFixMix' });
+        expect(runAppAction).not.toHaveBeenCalled();
     });
 
     it('should disable auto-fix while the measurement is insufficient', () => {

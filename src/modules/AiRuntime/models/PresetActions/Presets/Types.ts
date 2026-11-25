@@ -9,6 +9,11 @@ export type PresetContext = {
     selectedClipId: string | undefined;
     selectedClipType: 'audio' | 'midi' | undefined;
     trackCount: number;
+    /** The selected track's solo-safe state; absent when no track is selected. */
+    selectedTrackSoloSafe?: boolean;
+    /** Transport state a toggle preset negates; absent when the builder does not know it. */
+    loopEnabled?: boolean;
+    metronomeEnabled?: boolean;
 };
 
 // ── Preset definition ───────────────────────────────────────────────────

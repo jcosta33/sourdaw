@@ -318,6 +318,15 @@ const RETIRED_RUNTIME_ACTION_TYPES = [
     'searchSamples',
     'detectSongStructure',
     'detectTransients',
+    'toggleSoloSafe',
+    'toggleLoop',
+    'toggleMetronome',
+    'copyClip',
+    'cutClip',
+    'pasteClip',
+    'audioToMidi',
+    'autoFixMix',
+    'enableWarping',
 ] as const;
 
 describe('RuntimeAction', () => {
@@ -357,14 +366,14 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(215);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(206);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(127_851_336);
+        expect(digest >>> 0).toBe(2_621_482_657);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

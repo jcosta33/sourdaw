@@ -16,7 +16,6 @@ describe('mixPresets', () => {
     it('builds the expected action type for each mix preset', () => {
         const expected: Record<string, string> = {
             'analyze-mix': 'analyzeMix',
-            'autofix-mix': 'autoFixMix',
             'latency-report': 'getLatencyReport',
         };
         for (const preset of mixPresets) {

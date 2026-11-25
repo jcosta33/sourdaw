@@ -1,4 +1,13 @@
-import { type PresetAction, trackAction } from './Types';
+import { type RuntimeAction } from '../../RuntimeAction';
+
+import { type PresetAction, type PresetContext, trackAction } from './Types';
+
+function buildSoloSafeToggle(ctx: PresetContext): RuntimeAction | null {
+    if (ctx.selectedTrackId === undefined || ctx.selectedTrackSoloSafe === undefined) {
+        return null;
+    }
+    return { type: 'setSoloSafe', payload: { trackId: ctx.selectedTrackId, soloSafe: !ctx.selectedTrackSoloSafe } };
+}
 
 export const trackPresets: readonly PresetAction[] = [
     // ─── Creation ───────────────────────────────────────────────────────
@@ -188,6 +197,6 @@ export const trackPresets: readonly PresetAction[] = [
         keywords: ['solo safe', 'solo lock'],
         category: 'Track',
         requiresSelection: 'track',
-        buildAction: trackAction('toggleSoloSafe', (id) => ({ trackId: id })),
+        buildAction: buildSoloSafeToggle,
     },
 ];
