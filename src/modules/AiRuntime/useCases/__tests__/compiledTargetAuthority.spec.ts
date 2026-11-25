@@ -1433,12 +1433,13 @@ describe('supported named prohibitions protect rather than state their object', 
         });
     });
 
-    it('retains the unsupported skip-Keys name-pick gap tracked by open #5385', () => {
+    it('refuses the Keys selector the request skips', () => {
         const result = compileMix('set Vocals volume to 75%, skip Keys', [
             trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
         ]);
 
-        expect(authorityRefusals(result)).toEqual([]);
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([{ index: 0, name: 'setTrackGain', reason: PROTECTED_TRACK }]);
     });
 
     it.each([
@@ -2867,5 +2868,167 @@ describe('a typed name reads every dash as the hyphen and its letters composed',
         );
         expect(siblingResult.actions).toEqual([]);
         expect(siblingResult.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+});
+
+const ROLE_AUDIO_TRACK_IDS = roleContext.tracks.filter((track) => track.kind === 'audio').map((track) => track.id);
+
+describe('#5351 a role, family or kind selection never widens past the role its clause states', () => {
+    it('refuses the backing vocals a vocal-family selection reaches for "turn down the lead vocal by 3 dB"', () => {
+        const result = compileAndBridge(
+            'turn down the lead vocal by 3 dB',
+            [turnDown({ roleFamily: 'vocal' }, 3)],
+            [],
+            roleContext
+        );
+
+        expect(targetsOf(result)).not.toContain(backingVoxOne.id);
+        expect(targetsOf(result)).not.toContain(backingVoxTwo.id);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('refuses the backing vocals a role protection names for "... but not the backing vocals"', () => {
+        const result = compileAndBridge(
+            'turn down the vocals by 3 dB but not the backing vocals',
+            [turnDown({ roleFamily: 'vocal' }, 3)],
+            [],
+            roleContext
+        );
+
+        expect(targetsOf(result)).not.toContain(backingVoxOne.id);
+        expect(targetsOf(result)).not.toContain(backingVoxTwo.id);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('refuses the vocals a kind selection reaches for "turn down every audio track by 3 dB, not the vocals"', () => {
+        const result = compileAndBridge(
+            'turn down every audio track by 3 dB, not the vocals',
+            [
+                roleItem(
+                    'setTrackGain',
+                    { deltaDb: -3 },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                    ROLE_AUDIO_TRACK_IDS.length
+                ),
+            ],
+            [],
+            roleContext
+        );
+
+        expect(targetsOf(result)).not.toContain(leadVox.id);
+        expect(targetsOf(result)).not.toContain(backingVoxOne.id);
+        expect(result.rejections).not.toEqual([]);
+    });
+});
+
+describe('#5353 a compiled value pairs with the track its clause states it for', () => {
+    it('refuses Drums at the value "set Vocals volume to 75%, Drums to 60%" gives Vocals', () => {
+        const result = compileMix('set Vocals volume to 75%, Drums to 60%', [
+            trackItem('setTrackGain', mixDrums, { gain: 0.75 }),
+            trackItem('setTrackGain', mixVocals, { gain: 0.6 }),
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(2);
+    });
+
+    it('grounds the correctly paired "set Vocals volume to 75%, Drums to 60%"', () => {
+        const result = compileMix('set Vocals volume to 75%, Drums to 60%', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
+    });
+});
+
+describe('#5378 a name fragment picks only tracks whose name has it as a word start', () => {
+    it('refuses Launchpad for "turn down the pads by 3 dB"', () => {
+        const { context, track } = namedTracksContext(['Warm Pad', 'Dark Pad', 'Launchpad']);
+        const result = compileAndBridge('turn down the pads by 3 dB', [nameFragmentItem('pad', 3)], [], context);
+
+        expect(targetsOf(result)).not.toContain(track('Launchpad').id);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('refuses Bass Guitar for "turn down Bass Drum by 3 dB" with a "bass" fragment', () => {
+        const { context, track } = namedTracksContext(['Bass Drum', 'Bass Guitar']);
+        const result = compileAndBridge('turn down Bass Drum by 3 dB', [nameFragmentItem('bass', 2)], [], context);
+
+        expect(targetsOf(result)).not.toContain(track('Bass Guitar').id);
+        expect(result.rejections).not.toEqual([]);
+    });
+});
+
+describe('#5385 a name inside a negation protects rather than states its track', () => {
+    it.each([
+        "set Vocals volume to 75% but don't touch Keys",
+        'set Vocals volume to 75% and skip Keys',
+        'set Vocals volume to 75%, skip Keys',
+        'set Vocals volume to 75%, Keys should stay as is',
+    ])('refuses the Keys selector in "%s"', (prompt) => {
+        const result = compileMix(prompt, [trackItem('setTrackGain', mixKeys, { gain: 0.75 })]);
+
+        expect(result.actions).toEqual([]);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+
+    it('refuses the selected Keys for "set the first track volume to 75% so it sits better"', () => {
+        const result = compileAndBridge(
+            'set the first track volume to 75% so it sits better',
+            [trackItem('setTrackGain', mixKeys, { gain: 0.75 })],
+            [],
+            { ...mixContext, selectedTrackId: mixKeys.id }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+});
+
+describe('#5393 a compiled pick is stated only by the instruction that asks for its change', () => {
+    it('refuses a Keys gain for "set Vocals volume to 75% and mute Keys"', () => {
+        const result = compileMix('set Vocals volume to 75% and mute Keys', [
+            trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+
+    it('grounds the correctly paired "set Vocals volume to 75% and mute Keys"', () => {
+        const result = compileMix('set Vocals volume to 75% and mute Keys', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('muteTrack', mixKeys, { muted: true }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixKeys.id]);
+    });
+
+    it('refuses a Keys gain for "set Vocals volume to 50% and rename Keys to Vocals"', () => {
+        const result = compileMix('set Vocals volume to 50% and rename Keys to Vocals', [
+            trackItem('setTrackGain', mixKeys, { gain: 0.5 }),
+            trackItem('renameTrack', mixKeys, { name: 'Vocals' }),
+        ]);
+
+        expect(result.actions).not.toContainEqual(
+            expect.objectContaining({ type: 'setTrackGain', payload: expect.objectContaining({ trackId: mixKeys.id }) })
+        );
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+
+    it('refuses a Lead gain for "set Lead Vox volume to 75% and mute Lead"', () => {
+        const { context, track } = namedTracksContext(['Lead Vox', 'Lead']);
+        const result = compileAndBridge(
+            'set Lead Vox volume to 75% and mute Lead',
+            [trackItem('setTrackGain', track('Lead'), { gain: 0.75 })],
+            [],
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(authorityRefusals(result)).not.toEqual([]);
     });
 });

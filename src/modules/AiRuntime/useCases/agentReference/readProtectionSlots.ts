@@ -17,10 +17,14 @@ const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
     { kind: 'prohibition', pattern: /\b(?:keep\s+(?:your\s+)?)?hands\s+off\b/giu },
     { kind: 'prohibition', pattern: /\bwithout\s+(?:touching|changing|altering|moving|editing)\b/giu },
     { kind: 'prohibition', pattern: /\bno\s+changes?\s+to\b/giu },
+    { kind: 'prohibition', pattern: /\b(?:skip|skipping|ignore|ignoring)\b/giu },
     {
         kind: 'carve-out',
         pattern: /\b(?:except(?:\s+for)?|excluding|but\s+not|apart\s+from|other\s+than|besides)\b/giu,
     },
+    // A "not" opening a clause after a comma sets its member apart as "but not" does ("..., not the vocals").
+    // "not including" is the track-control restriction's own phrase, which the grounding routes read there.
+    { kind: 'carve-out', pattern: /(?<=,\s*)\bnot\b(?!\s+including\b)/giu },
 ];
 const instructionPattern = new RegExp(String.raw`\b${INSTRUCTION_VERBS}\b`, 'giu');
 const instructionStartPattern = new RegExp(String.raw`^\s+${INSTRUCTION_VERBS}\b`, 'iu');

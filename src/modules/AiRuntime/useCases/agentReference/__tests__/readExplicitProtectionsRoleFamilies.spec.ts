@@ -295,3 +295,28 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 });
+
+describe('readExplicitProtections over a canonical role phrase and the negating forms', () => {
+    it.each([
+        ['turn down the vocals by 3 dB but not the backing vocals', [backingVox.id]],
+        ['make the mix warmer, leave the lead vocal alone', [leadVox.id]],
+        ['make the mix warmer but not the kick track', [kick.id]],
+    ])('"%s" protects the tracks of the role it names alone', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+    });
+
+    it.each([
+        ['turn down every audio track by 3 dB, not the vocals', VOCAL_IDS],
+        ['make the mix warmer and skip the drums', DRUM_IDS],
+        ['make the mix warmer, ignoring Bass', [bass.id]],
+    ])('"%s" protects what a skip, ignore or clause-opening not names', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+    });
+
+    it.each(['turn the mix down, not too much', 'make the vocals warmer but not harsh', 'turn the kick down'])(
+        '"%s" protects nothing',
+        (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
+        }
+    );
+});

@@ -1,9 +1,9 @@
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
 import { blankRanges } from './blankRanges';
 import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
+import { POSITION_REFERENCE } from './namesTrackPosition';
 import { protectionCandidates } from './protectionCandidates';
 import {
     CONNECTIVE_WORDS,
@@ -19,14 +19,15 @@ import {
 } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
-import { readRoleFamilyProtection } from './readRoleFamilyProtection';
+import { readRoleFamilyProtection, type RoleTrackIds } from './readRoleFamilyProtection';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
 /**
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
  * stays as is"), a prohibition ("do not change the fader of Strings", "without touching Keys",
- * "no changes to Keys") or a carve-out ("except the second one"). Its closing words are the
+ * "no changes to Keys", "skip Keys") or a carve-out ("except the second one", "..., not the vocals").
+ * Its closing words are the
  * refinement grammar's own closed forms.
  *
  * Protection wording cannot tell a project object that is absent from a quality, a brand or a name
@@ -41,7 +42,8 @@ import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
  *
  * A member that is a role family word alone ("leave the drums alone", "the drum tracks", "the
  * drums' faders"), outside every project name and quotation, keeps every track the shared selector
- * resolver places in that family, as naming each of them would.
+ * resolver places in that family, as naming each of them would; one that is a whole canonical role
+ * phrase ("the backing vocals", "the kick track") keeps the tracks of that role alone.
  */
 
 export type ProtectionReading = {
@@ -64,8 +66,6 @@ export type ProtectionReading = {
 
 const { isControl, readObjectForm, readTokens } = protectionObjectForms;
 
-const POSITION =
-    /\b(?:the\s+)?(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final|next|previous|\d+(?:st|nd|rd|th))\s+(?:audio\s+|midi\s+|bus\s+)?(?:tracks?|ones?|channels?|buses|bus|clips?)|tracks?\s+\d+)\b/iu;
 const SELECTION_PHRASES: ReadonlyMap<string, 'any' | 'track'> = new Map([
     ['it', 'any'],
     ['its', 'any'],
@@ -98,8 +98,6 @@ type MemberReading =
     | { kind: 'family'; trackIds: string[]; controls: string[] }
     | { kind: 'selection'; phrase: string; scope: 'any' | 'track'; controls: string[]; pronoun: boolean };
 
-type FamilyTrackIds = (family: SemanticCommandListRoleFamily) => string[];
-
 function countLeadingVerbs(tokens: readonly Token[]): number {
     const firstOther = tokens.findIndex((token) => !PROTECTION_VERB_WORD.test(token.lower));
     return firstOther === -1 ? tokens.length : firstOther;
@@ -125,7 +123,7 @@ function readMember(input: MemberInput): MemberReading {
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
     const controls = content.filter((token) => isControl(token.lower)).map((token) => token.lower);
-    const position = slot.strict ? POSITION.exec(lowered) : null;
+    const position = slot.strict ? POSITION_REFERENCE.exec(lowered) : null;
     if (position !== null) {
         const leftover = lowered
             .replace(position[0], ' ')
@@ -282,7 +280,7 @@ function parseSlotMember(input: {
     slot: Slot;
     range: MemberRange;
     objects: readonly ProtectableObjectName[];
-    familyTrackIds: FamilyTrackIds;
+    familyTrackIds: RoleTrackIds;
 }): { member: MemberReading; tokens: Token[]; complete: boolean } {
     const { prompt, blanked, masked, slot, range, objects, familyTrackIds } = input;
     const raw = readTokens(blanked, masked, range);
@@ -304,7 +302,7 @@ function parseSlotMember(input: {
 }
 
 /** A member naming a role family, read after its protection verbs. */
-function readFamilyMember(tokens: readonly Token[], familyTrackIds: FamilyTrackIds): MemberReading | null {
+function readFamilyMember(tokens: readonly Token[], familyTrackIds: RoleTrackIds): MemberReading | null {
     const family = readRoleFamilyProtection(tokens.slice(countLeadingVerbs(tokens)), familyTrackIds);
     if (family === null) {
         return null;
@@ -385,7 +383,7 @@ function readSlotMembers(input: {
     references: readonly NamedRange[];
     context: ProjectContext;
     objects: readonly ProtectableObjectName[];
-    familyTrackIds: FamilyTrackIds;
+    familyTrackIds: RoleTrackIds;
 }): SlotReading {
     const { prompt, blanked, masked, slot, references, context, objects, familyTrackIds } = input;
     const reading: SlotReading = {
@@ -617,8 +615,8 @@ export function readExplicitProtections(
     let found = createAccumulator();
     const slots = protectionSlots.read(masked);
     const objects = protectionCandidates.protectableObjects(context);
-    const familyTrackIds: FamilyTrackIds = (family) =>
-        resolveWorkflowTrackIds(context, `protection-role-${family}`, { all: [{ roleFamily: family }] });
+    const familyTrackIds: RoleTrackIds = (predicate) =>
+        resolveWorkflowTrackIds(context, 'protection-role', { all: [predicate] });
     const targetTrackIds = readRequestTargetTrackIds(references, slots, context, scanned);
     let wholeBeforeCarveOut: string[] = [];
     for (const slot of slots) {
