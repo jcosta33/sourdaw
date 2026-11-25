@@ -211,6 +211,13 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    a matched observer entry must still pass with valid reference and app-work evidence even when
    the cold SDK span exceeds the relative allowance. Match observer long tasks to exactly one
    qualified trace task and keep the full 100 ms frame-gap predicate.
+   Save-only checkpoints discarded agent work on preset planning, workflow intake, decision resume and preview
+   mode (#6240; guard #1989, preset gates #5852; fixed by #6316, #6324, #6315, #6326, #6340): a spec that mocks
+   the revision matcher as plain equality never sees a save move the revision. Call a real `writeProjectSave`
+   and require the route to stay eligible, with saved-edit, unflushed-edit, edit-and-revert and child-document
+   controls that still refuse (`submitAdmittedPromptRequestSave.spec.ts`, `resumeAgentRunDecision.spec.ts`
+   under `src/modules/AiRuntime/useCases/__tests__/`); generic probes: `ai-request-authority.md` probe 7,
+   `replay-authority.md` probe 5.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**

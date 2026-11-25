@@ -22,8 +22,11 @@ Report a probe that cannot run with its exact mutation, named check and limitati
 2. **Final equality hides a write followed by restoration.**
    Probe: count writes from a sentinel placed before the action and observe settled transitions, since
    notifications can miss a root install; keep identical-content replacement and an aborted private preview
-   as clean controls, and compare any reported verdict with the final state it describes.
-   (#5649, #5274)
+   as clean controls, and compare any reported verdict with the final state it describes. A no-op request is
+   observed through raw heads and both history stacks: asserting the returned or resolved value cannot see the
+   one-ulp write and Undo step a 0 dB relative level request recorded
+   (`command-entry-and-state-oracles.md` probe 11).
+   (#5649, #5274, #5926)
 
 3. **A flag, setter or presence stands for what the musician consumes.**
    Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during
@@ -66,6 +69,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    raw capture with UTF-8 round-tripping or comparing only decoded strings must fail
    `scripts/__tests__/prepareReview.spec.ts`; an actual large-diff acceptance compares independent
    streaming byte counts and hashes under the same cwd and environment without printing source.
+   A local-model window guard fed a handbuilt prompt stays green while production prompt assembly grows
+   (#5934, #6360): compose the request through production assembly, as
+   `src/modules/AiRuntime/useCases/llmOrchestration/__tests__/localPlanningWindow.integration.spec.ts` does, and
+   require appending text to the `buildPlanningSystemPrompt` result to fail it.
    Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
    SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
    production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A
