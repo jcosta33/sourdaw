@@ -1259,9 +1259,9 @@ describe('section references beside a section whose name the other contains', ()
         expect(groundSectionCall(call, prompt, [CHORUS, VERSE])).toEqual({ actions: [action], rejections: [] });
     });
 
-    // The stated name and every section name are read alike and compared whole: a section named with
-    // "or" or ending in punctuation is still that section, and only the intent closest before the
-    // range opens the name.
+    // The stated name and every section name are read alike and compared whole, so a section named with
+    // "or" or ending in punctuation is still that section, and an earlier clause holding its own
+    // section intent leaves the name alone.
     it.each([
         {
             prompt: 'remove the section Call or Response from beat 16 to beat 32',
@@ -1273,6 +1273,10 @@ describe('section references beside a section whose name the other contains', ()
         },
         {
             prompt: 'I will add a section later; remove the section Chorus from beat 16 to beat 32',
+            section: CHORUS,
+        },
+        {
+            prompt: 'Skip the add a section step and remove the section Chorus from beat 16 to beat 32',
             section: CHORUS,
         },
     ])('grounds "$prompt" as the section it names whole', ({ prompt, section }) => {

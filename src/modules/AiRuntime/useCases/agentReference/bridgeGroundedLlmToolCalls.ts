@@ -3281,25 +3281,14 @@ function parseExplicitSectionName(value: string): string | null {
     return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
 }
 
-/**
- * The text a section request states between its beat range and the section intent closest before
- * it, or null. An earlier clause ("I will add a section later; remove the section Chorus …") states
- * no part of the name.
- */
+/** The text a section request states between its section intent and its beat range, or null. */
 function getSectionNameSlot(promptText: string): string | null {
+    const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
     const range = getSectionRangeFromPrompt(promptText);
-    if (!range) {
+    if (!intent || !range || range.startIndex <= intent.index + intent[0].length) {
         return null;
     }
-    const intentEnds = Array.from(
-        promptText.matchAll(/\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/giu),
-        (intent) => intent.index + intent[0].length
-    );
-    const slotStart = intentEnds.findLast((end) => end < range.startIndex);
-    if (slotStart === undefined) {
-        return null;
-    }
-    return promptText.slice(slotStart, range.startIndex).trim();
+    return promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
 }
 
 function getSectionNameFromPrompt(promptText: string): string | null {
