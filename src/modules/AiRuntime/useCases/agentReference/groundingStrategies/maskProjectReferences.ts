@@ -78,8 +78,9 @@ type CountedDuration = PromptRange & {
 };
 
 const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)[-\s]*(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
-const explicitEntitySuffixPattern = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu;
-const precedingEntityWordPattern = /(?<![\p{L}\p{N}])(?:clips?|tracks?|devices?|bus|section|the)\s+$/iu;
+const entityVocabulary = '(?:clips?|tracks?|devices?|buses|bus|masters?|outputs?|sends?|parameters?|sections?)';
+const explicitEntitySuffixPattern = new RegExp(`^\\s+${entityVocabulary}(?![\\p{L}\\p{N}])`, 'iu');
+const precedingEntityWordPattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${entityVocabulary}|the)\\s+$`, 'iu');
 const openingQuotes = new Set(['"', "'", '\u201C', '\u2018']);
 const closingQuotes = new Set(['"', "'", '\u201D', '\u2019']);
 

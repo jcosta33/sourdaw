@@ -59,6 +59,7 @@ describe('maskProjectReferences', () => {
         ['add a 2 beat send', 'Beat', 'add a 2 beat send'],
         ['add a 4 bar track', '4 Bar', 'add a 4 bar track'],
         ['mute 8 Bars Drums', '8 Bars Drums', 'mute 8 Bars Drums'],
+        ['mute "8 Bars loop', '8 Bars', 'mute "8 Bars loop'],
     ])('keeps the counted duration in %s when a clip is named %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -72,6 +73,7 @@ describe('maskProjectReferences', () => {
         ['rename the clip 8 Bars to Intro', '8 Bars', 'rename the clip clip□□ to Intro'],
         ['mute the 8 Bars', '8 Bars', 'mute the clip□□'],
         ['mute "8 Bars"', '8 Bars', 'mute "clip□□"'],
+        ['mute the clips 8 Bars', '8 Bars', 'mute the clips clip□□'],
     ])('still masks a clip reference in %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -79,6 +81,12 @@ describe('maskProjectReferences', () => {
     it('masks a track named by a counted phrase after the word track', () => {
         expect(maskProjectReferences('mute track 4 Beat', contextWithClipNamed('Intro', '4 Beat'))).toBe(
             'mute track □□□□□□'
+        );
+    });
+
+    it('masks a track named after the word send', () => {
+        expect(maskProjectReferences('mute send 8 Bars', contextWithClipNamed('Intro', '8 Bars'))).toBe(
+            'mute send □□□□□□'
         );
     });
 
