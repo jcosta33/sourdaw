@@ -975,7 +975,8 @@ jobs:
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
-      # sourdaw-native is not linted here: it has no Windows build anywhere (see the `win:` comment in electron-builder.yml).
+      # This job checks the Windows audio crates. The desktop package smoke independently
+      # builds sourdaw-native for the configured installer and exercises the installed app.
       - name: Lint the Windows audio crates
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}

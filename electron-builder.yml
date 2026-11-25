@@ -157,10 +157,7 @@ mac:
 dmg:
     writeUpdateInfo: false
 
-# Configuration only. The `sourdaw-native` addon has no Windows build on this
-# machine; see `docs/architecture/10-desktop-packaging.md` for the cargo-xwin
-# cross-compile contract that has to be satisfied before this target produces a
-# working installer.
+# The Windows installer uses the addon and scan helper built on a native x64 runner.
 win:
     icon: build/icons/icon.ico
     target:

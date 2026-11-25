@@ -44,9 +44,8 @@ nonzero with `CARGO_BUILD_TARGET must be the native Cargo host ... or host-tuple
 before compilation. Process-boundary doubles cover output routing and staging;
 they do not establish actual Windows or Linux compilation, loadability, or package
 acceptance. The CI native-parity job invokes this same CLI and requires the staged
-addon before loading it for parity checks. Broader native-runner and portable
-entry-point acceptance remains tracked in
-[#6288](https://github.com/jcosta33/sourdaw/issues/6288).
+addon before loading it for parity checks. The `Desktop package smoke` workflow
+exercises `desktop:build` on native runners and verifies the finished packages.
 
 ## Native artifact admission
 
@@ -78,8 +77,12 @@ Linux arm64 identity does not add a distribution target.
 
 Each offered platform needs native addon and helper builds from the same source
 revision on its corresponding native runner, followed by packaging and verification
-of the final artifacts. Portable build-entry-point work is tracked in
-[#6288](https://github.com/jcosta33/sourdaw/issues/6288).
+of the final artifacts. The package smoke workflow mounts the macOS ARM64 DMG,
+extracts the macOS ARM64 ZIP, silently installs the Windows x64 NSIS installer,
+and extracts and runs the Linux x64 AppImage under Xvfb. Each launch uses a fresh
+profile and checks the packaged `app://` renderer, a bundled sample, native IPC and
+CLAP discovery through the shipped scanner. Receipts bind those observations to
+the source revision and package checksum.
 
 - macOS distribution requires a Developer ID signing setup, notarization and
   verification of the downloaded app. `identity: '-'` provides ad-hoc signing only.
