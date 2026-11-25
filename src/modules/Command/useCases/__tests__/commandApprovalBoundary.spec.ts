@@ -14,7 +14,7 @@ import { issueCommandApprovalBinding } from '../issueCommandApprovalBinding';
 import {
     registerInMemoryCommandBatchIdempotency,
     resetUnwiredProjectCommandBatchLedger,
-} from './registerInMemoryCommandBatchIdempotency';
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 

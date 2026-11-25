@@ -14,7 +14,7 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import { registerInMemoryCommandBatchIdempotency } from './registerInMemoryCommandBatchIdempotency';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 function applyTransactionalMutation(
     document: Record<string, unknown>,

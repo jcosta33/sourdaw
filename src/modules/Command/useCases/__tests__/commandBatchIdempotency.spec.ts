@@ -32,6 +32,7 @@ import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectComman
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
 import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
 import { getVersionedCommandBatchIdempotentReplay } from '../getVersionedCommandBatchIdempotentReplay';
+import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchReceipt';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
@@ -68,6 +69,10 @@ vi.mock('../actionHistoryMetadataPort', () => ({
 }));
 vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
+vi.mock('../parseStoredVerifiedBatchReceipt', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../parseStoredVerifiedBatchReceipt')>();
+    return { ...actual, parseStoredVerifiedBatchReceipt: vi.fn(actual.parseStoredVerifiedBatchReceipt) };
+});
 
 function revision(head: number): string {
     return JSON.stringify({
@@ -3363,21 +3368,7 @@ describe('command batch idempotency', () => {
 
     it('withholds finalization evidence when the exact durable receipt cannot be decoded', async () => {
         const batch = compileBatch({ batchId: 'finalization-invalid-checkpoint' });
-        configureAutomergeStoragePort({
-            getDoc: () => projectDocument,
-            getSemanticMessage: () => undefined,
-            hasDoc: () => true,
-            mutateDoc: ({ changeFn }) => {
-                const draft = structuredClone(projectDocument);
-                changeFn(draft);
-                if (mutationCount === 1) {
-                    const ledger = draft.commandBatchIdempotency as { records: { serializedReceipt: string }[] };
-                    ledger.records[0]!.serializedReceipt = '{"schemaVersion":1}';
-                }
-                projectDocument = draft;
-                mutationCount += 1;
-            },
-        });
+        const decode = vi.mocked(parseStoredVerifiedBatchReceipt).mockReturnValueOnce(null);
         const onProjectCommitFinalized = vi.fn();
         const onProjectCommitFinalizationUnavailable = vi.fn();
 
@@ -3388,10 +3379,15 @@ describe('command batch idempotency', () => {
             options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
         });
 
-        expect(result.status).toBe('committed');
+        if (result.status !== 'committed') {
+            throw new Error('Expected a committed result with its finalized receipt.');
+        }
+        expect(decode).toHaveBeenCalledWith(
+            expect.objectContaining({ serializedReceipt: JSON.stringify(result.receipt) })
+        );
         expect(onProjectCommitFinalized).not.toHaveBeenCalled();
-        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledWith({
-            reason: 'The durable project checkpoint does not contain the exact finalized receipt.',
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'The durable project checkpoint receipt is invalid for finalization evidence.',
         });
     });
 

@@ -54,7 +54,7 @@ import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalT
 import {
     registerInMemoryCommandBatchIdempotency,
     resetUnwiredProjectCommandBatchLedger,
-} from './registerInMemoryCommandBatchIdempotency';
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
 

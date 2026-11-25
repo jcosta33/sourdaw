@@ -31,7 +31,7 @@ import { type previewVersionedCommandBatchEnvelope } from '../previewVersionedCo
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import { registerInMemoryCommandBatchIdempotency } from './registerInMemoryCommandBatchIdempotency';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;

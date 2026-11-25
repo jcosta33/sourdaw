@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { COMMAND_BATCH_IDEMPOTENCY_REGISTRAR } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
-
-const REGISTRAR_CALL = 'call configureCommandBatchIdempotency() from #/app/bootstrap';
 const key = { projectId: 'project-1', idempotencyKey: 'key-1', contentHash: 'hash-1' };
 const lookup = vi.fn(() => Promise.resolve({ status: 'missing' as const }));
 const repository = {
@@ -17,11 +16,15 @@ const repository = {
 // order: the unfilled reads first, then the fill.
 describe('commandBatchIdempotencyPort', () => {
     it('throws on each read before registration, naming the registrar', () => {
-        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow(REGISTRAR_CALL);
-        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow(REGISTRAR_CALL);
-        expect(() => commandBatchIdempotencyPort.release(key)).toThrow(REGISTRAR_CALL);
-        expect(() => commandBatchIdempotencyPort.complete({ ...key, serializedReceipt: '{}' })).toThrow(REGISTRAR_CALL);
-        expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow(REGISTRAR_CALL);
+        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
+        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
+        expect(() => commandBatchIdempotencyPort.release(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
+        expect(() => commandBatchIdempotencyPort.complete({ ...key, serializedReceipt: '{}' })).toThrow(
+            COMMAND_BATCH_IDEMPOTENCY_REGISTRAR
+        );
+        expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow(
+            COMMAND_BATCH_IDEMPOTENCY_REGISTRAR
+        );
     });
 
     it('serves the registered repository', async () => {

@@ -19,7 +19,7 @@ import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommand
 import {
     registerInMemoryCommandBatchIdempotency,
     resetUnwiredProjectCommandBatchLedger,
-} from './registerInMemoryCommandBatchIdempotency';
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 /**
  * The linear amplitude a fixture action states. Level commands accept decibel

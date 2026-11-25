@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { COMMAND_BATCH_IDEMPOTENCY_REGISTRAR } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -12,7 +13,6 @@ import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalT
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
-const REGISTRAR = 'call configureCommandBatchIdempotency() from #/app/bootstrap';
 const execute = vi.fn(() => ({ status: 'written' as const }));
 
 function compileBatch() {
@@ -75,7 +75,7 @@ describe('a batch run with its idempotency ports unregistered', () => {
                 confirmed: true,
                 serialized: batch.serialized,
             })
-        ).rejects.toThrow(REGISTRAR);
+        ).rejects.toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -89,7 +89,7 @@ describe('a batch run with its idempotency ports unregistered', () => {
 
         for (const result of [first, second]) {
             expect(result).toMatchObject({ status: 'rejected' });
-            expect('reason' in result ? result.reason : '').toContain(REGISTRAR);
+            expect('reason' in result ? result.reason : '').toContain(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
         }
         expect(execute).not.toHaveBeenCalled();
     });
@@ -99,6 +99,6 @@ describe('a batch run with its idempotency ports unregistered', () => {
 
         await expect(
             getVersionedCommandBatchIdempotentReplay({ authority: batch.authority, serialized: batch.serialized })
-        ).rejects.toThrow(REGISTRAR);
+        ).rejects.toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
     });
 });

@@ -1,7 +1,9 @@
-import { type CommandBatchIdempotencyRepository } from '../../models/CommandBatchIdempotency';
-import { commandBatchIdempotencyStore } from '../../stores/commandBatchIdempotencyStore';
-import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
-import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
+import { type CommandBatchIdempotencyRepository } from '../models/CommandBatchIdempotency';
+import { commandBatchIdempotencyStore } from '../stores/commandBatchIdempotencyStore';
+import { commandBatchExecutionAuthorityPort } from '../useCases/commandBatchExecutionAuthorityPort';
+import { commandBatchIdempotencyPort } from '../useCases/commandBatchIdempotencyPort';
+
+export const COMMAND_BATCH_IDEMPOTENCY_REGISTRAR = 'call configureCommandBatchIdempotency() from #/app/bootstrap';
 
 type StoredRecord = { contentHash: string; serializedReceipt?: string };
 

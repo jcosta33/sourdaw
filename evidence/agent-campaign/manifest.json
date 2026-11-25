@@ -198,7 +198,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
-                    "digest": "f5893c41b033af25ba51c26c7261381aac530049ba0e738156ed0ab9103dc964"
+                    "digest": "dd4f1de929f69cab66facb512b21b1ec35a7e006f7ae08399d95d3277018ba7c"
                 }
             ]
         },
@@ -210,7 +210,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
-                    "digest": "5de55ae836b888c1e3489e3a15122d58cc320b5d486fc61487495dedc2f8e33c"
+                    "digest": "b24de3f4126706423c9f612b38e51a659614d145cb2bc8defd27a5f5255cf9a7"
                 }
             ]
         },
@@ -258,7 +258,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "b53b3475f477ff096a7804b0cdac46ad8514d3b1e700154baddbd81373b9916e"
+                    "digest": "593ae670e7d720ab619d389f9c0bb75713fca1bc195b1b46062034e8aad1a1c1"
                 }
             ]
         },
@@ -270,7 +270,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "bc2e2e4549cd8a3adac0b44f5fb2756f81f48d345596815b6f9fff4b2813913e"
+                    "digest": "4b1544ba4ee7740f3f2361f1378410446050b39390c80146c5f5181e56f09574"
                 }
             ]
         },
@@ -310,7 +310,7 @@
                 },
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts",
-                    "digest": "eae696d6fb7727a1df1c86c89b3e7848802c281699ef2915ef01ac191d7f2994"
+                    "digest": "2dd07035aa8372507e4d5a9316942d4619a95dcd0bdd540a446583e8dd7e3b41"
                 }
             ]
         },
@@ -866,7 +866,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "d416cbe861b042314e99dc54cc6091343860d4f7370c3ba9608b516b9cf5b493"
+                    "digest": "09a6f0605b2a2ee68dff4c5de6053547d294068d2058bcd63541adddd71f288b"
                 }
             ]
         },
