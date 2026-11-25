@@ -1,5 +1,8 @@
 import { type Track } from '#/modules/Arrangement/stores';
 
+import { readPrintedAdjustmentLayer } from './readPrintedAdjustmentLayer';
+import { readPrintedModulator } from './readPrintedModulator';
+import { readPrintedTakeLane } from './readPrintedTakeLane';
 import { readPrintedTrack } from './readPrintedTrack';
 import { resolveContributorVcaMultiplier } from './resolveContributorVcaMultiplier';
 import { type SubgraphPrintInput } from './selectSubgraphPrintInput';
@@ -62,9 +65,9 @@ export function describeSubgraphPrintInput(input: SubgraphPrintInput, describeTr
             pitchBend: sortedById(rows.pitchBend),
         })),
         probabilitySeed: input.probabilitySeed,
-        takeLanes: input.takeLanes,
+        takeLanes: input.takeLanes.map(readPrintedTakeLane),
         gainEnvelopes: input.gainEnvelopes.filter((entry) => entry.envelope !== undefined),
-        adjustmentLayersByTrack: input.adjustmentLayersByTrack,
-        modulators: input.modulators,
+        adjustmentLayersByTrack: input.adjustmentLayersByTrack.map((layers) => layers.map(readPrintedAdjustmentLayer)),
+        modulators: input.modulators.map(readPrintedModulator),
     };
 }

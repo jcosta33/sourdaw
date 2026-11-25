@@ -3,7 +3,11 @@ import { type ClipGainEnvelope, type Track } from '#/modules/Arrangement/stores'
 import { affectsTrack } from './affectsTrack';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { drivesTrackMixer } from './drivesTrackMixer';
+import { listPrintedFieldRefs } from './listPrintedFieldRefs';
+import { listPrintedTakeLaneRefs } from './listPrintedTakeLaneRefs';
 import { type OfflineRenderProjectSource, type OfflineRenderSessionSource } from './OfflineRenderSource';
+import { readPrintedAdjustmentLayer } from './readPrintedAdjustmentLayer';
+import { readPrintedModulator } from './readPrintedModulator';
 import { readPrintedTrack } from './readPrintedTrack';
 import { resolveMuteHonoringTrackIds } from './resolveMuteHonoringTrackIds';
 
@@ -69,6 +73,11 @@ export function selectSubgraphPrintInput({
         refs.push(value);
         return value;
     }
+    // A row of the session or take lanes is taken by the fields its print reads, as a track is.
+    function takePrinted<Row>(row: Row, printedRefs: readonly unknown[]): Row {
+        refs.push(...printedRefs);
+        return row;
+    }
     const tracks = renderTracks.toSorted((left, right) => left.id.localeCompare(right.id));
     const memberIds = new Set(tracks.map((track) => track.id));
     const routes = source.sidechainRoutes
@@ -110,7 +119,9 @@ export function selectSubgraphPrintInput({
                 pitchBend: take(midi?.pitchBendByClipId[clip.id]),
             })),
         probabilitySeed: take(midi?.probabilitySeed ?? null),
-        takeLanes: (source.takeLanes?.lanes ?? []).filter((lane) => memberIds.has(lane.trackId)).map(take),
+        takeLanes: (source.takeLanes?.lanes ?? [])
+            .filter((lane) => memberIds.has(lane.trackId))
+            .map((lane) => takePrinted(lane, listPrintedTakeLaneRefs(lane))),
         gainEnvelopes: clips.map((clip) => ({ clipId: clip.id, envelope: take(source.gainEnvelopes[clip.id]) })),
         vcaGroups: source.vcaGroups
             .filter((group) => sourceTracks.some((track) => track.vcaGroupId === group.id))
@@ -119,11 +130,13 @@ export function selectSubgraphPrintInput({
             if (track.id === targetTrackId) {
                 return [];
             }
-            return source.adjustmentLayers.filter((layer) => affectsTrack(layer, track.id, allTrackIds)).map(take);
+            return source.adjustmentLayers
+                .filter((layer) => affectsTrack(layer, track.id, allTrackIds))
+                .map((layer) => takePrinted(layer, listPrintedFieldRefs(readPrintedAdjustmentLayer(layer))));
         }),
         modulators: source.modulators
             .filter((modulator) => modulator.mappings.some((mapping) => memberIds.has(mapping.targetTrackId)))
-            .map(take),
+            .map((modulator) => takePrinted(modulator, listPrintedFieldRefs(readPrintedModulator(modulator)))),
         refs,
     };
 }

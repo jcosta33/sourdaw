@@ -11,7 +11,7 @@ import {
     configureRuntimeGraphTopologyValidator,
     reportLatency,
 } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, modulationStore, type ModulationStoreState } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
@@ -33,7 +33,14 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Track } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { trackStore, vcaGroupStore } from '../../../stores';
+import {
+    type AdjustmentLayer,
+    adjustmentLayerStore,
+    takeLaneStore,
+    type TakeLaneStoreState,
+    trackStore,
+    vcaGroupStore,
+} from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, removeClip, setArrangementEventBus } from '../../index';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
@@ -120,6 +127,77 @@ function setSourceNotePitch(pitch: number): void {
             'source-clip': [{ id: 'note-1', pitch, startBeat: 0, duration: 1, velocity: 90 }],
         },
     });
+}
+
+/** A take lane on the routed source, an adjustment layer reaching it and a modulator mapped onto it. */
+function seedSessionRows(): void {
+    takeLaneStore.set({
+        lanes: [
+            {
+                id: 'lane-1',
+                trackId: SOURCE_ID,
+                takes: [
+                    {
+                        id: 'take-1',
+                        clipId: 'source-clip',
+                        name: 'Take 1',
+                        startBeat: 0,
+                        endBeat: 4,
+                        selected: true,
+                    },
+                ],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+            },
+        ],
+    });
+    adjustmentLayerStore.set({
+        layers: [
+            {
+                id: 'layer-1',
+                name: 'Layer',
+                effectType: 'volume',
+                parameters: [{ name: 'Gain', value: -3, min: -24, max: 12, unit: 'dB' }],
+                affectedTrackIds: [SOURCE_ID],
+                insertionIndex: 0,
+                regions: [],
+                enabled: true,
+                mix: 1,
+                color: '#abcdef',
+            },
+        ],
+    });
+    modulationStore.set({
+        modulators: [
+            {
+                id: 'mod-1',
+                name: 'LFO',
+                trackId: SOURCE_ID,
+                kind: 'lfo',
+                config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: false, phase: 0, depth: 0.5 },
+                mappings: [
+                    { targetTrackId: SOURCE_ID, targetDeviceId: 'device-1', targetParamId: 'cutoff', amount: 0.5 },
+                ],
+                enabled: true,
+            },
+        ],
+    });
+}
+
+type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
+type Modulator = ModulationStoreState['modulators'][number];
+
+function editTakeLane(edit: (take: Take) => Take): void {
+    takeLaneStore.set({
+        lanes: takeLaneStore.value!.lanes.map((lane) => ({ ...lane, takes: lane.takes.map(edit) })),
+    });
+}
+
+function editLayer(edit: (layer: AdjustmentLayer) => AdjustmentLayer): void {
+    adjustmentLayerStore.set({ layers: adjustmentLayerStore.value!.layers.map(edit) });
+}
+
+function editModulator(edit: (modulator: Modulator) => Modulator): void {
+    modulationStore.set({ modulators: modulationStore.value!.modulators.map(edit) });
 }
 
 function findTrack(trackId: string) {
@@ -211,6 +289,9 @@ afterEach(() => {
     sidechainStore.set({ routes: [] });
     vcaGroupStore.set({ groups: [] });
     automationStore.set({ lanes: [] });
+    takeLaneStore.set({ lanes: [] });
+    adjustmentLayerStore.set({ layers: [] });
+    modulationStore.set({ modulators: [] });
     projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
@@ -667,6 +748,65 @@ describe('a freeze whose render reads a routed source track', () => {
 
             expect(digestFreezePrintInput).not.toHaveBeenCalled();
             expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+        });
+
+        it('marks the track stale when a routed source joins a VCA group with a non-unity gain', async () => {
+            setVcaGain(0.5);
+            await freezeWatched();
+
+            updateTrack(SOURCE_ID, (track) => ({ ...track, vcaGroupId: 'vca-1' }));
+
+            await vi.waitFor(() => {
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+            });
+        });
+
+        describe('with a take lane, an adjustment layer and a modulator on a covered track', () => {
+            beforeEach(async () => {
+                seedSessionRows();
+                await freezeWatched();
+            });
+
+            it.each([
+                ['another take is selected', () => editTakeLane((take) => ({ ...take, selected: !take.selected }))],
+                ['a take is renamed', () => editTakeLane((take) => ({ ...take, name: 'Renamed take' }))],
+                ['an adjustment layer is renamed', () => editLayer((layer) => ({ ...layer, name: 'Renamed layer' }))],
+                ['an adjustment layer is recoloured', () => editLayer((layer) => ({ ...layer, color: '#123456' }))],
+                ['a modulator is renamed', () => editModulator((modulator) => ({ ...modulator, name: 'Renamed' }))],
+            ])('keeps the freeze and runs no digest when %s', (_name, edit) => {
+                vi.mocked(digestFreezePrintInput).mockClear();
+
+                edit();
+
+                expect(digestFreezePrintInput).not.toHaveBeenCalled();
+                expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+            });
+
+            it.each([
+                ['a take moves', () => editTakeLane((take) => ({ ...take, endBeat: take.endBeat + 1 }))],
+                ['an adjustment layer mix changes', () => editLayer((layer) => ({ ...layer, mix: 0.25 }))],
+                [
+                    "a modulator's config changes",
+                    () =>
+                        editModulator((modulator) => ({
+                            ...modulator,
+                            config: {
+                                kind: 'lfo' as const,
+                                waveform: 'saw' as const,
+                                rate: 2,
+                                sync: false,
+                                phase: 0,
+                                depth: 0.9,
+                            },
+                        })),
+                ],
+            ])('marks the track stale when %s', async (_name, edit) => {
+                edit();
+
+                await vi.waitFor(() => {
+                    expect(findTrack(TRACK_ID).freezeState.status).toBe('stale');
+                });
+            });
         });
 
         it("runs no digest and keeps the freeze when the frozen track's own fader moves", async () => {
