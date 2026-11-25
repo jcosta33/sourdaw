@@ -710,6 +710,10 @@ vi.mock('#/modules/Gluten/useCases', () => ({
     getGlutenHandlers: sentinelHandlers('Gluten'),
 }));
 
+vi.mock('#/modules/Grinder/useCases', () => ({
+    getGrinderHandlers: sentinelHandlers('Grinder'),
+}));
+
 vi.mock('#/modules/Gluten/stores', () => ({
     updateGlutenMeters: noop,
     deleteGlutenMeters: noop,
@@ -1092,6 +1096,7 @@ describe('bootstrap', () => {
         'Levain',
         'Toaster',
         'Gluten',
+        'Grinder',
         'Proof',
         'NodeView',
         'WebMidiInput',

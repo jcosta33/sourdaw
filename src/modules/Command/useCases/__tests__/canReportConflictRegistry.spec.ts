@@ -39,6 +39,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules/Fermenter/useCases';
+import { captureRectifierHeavyPreset } from '#/modules/Grinder/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
@@ -913,6 +914,80 @@ function createGlutenConflictFixture(): DivergedFixture {
     };
 }
 
+function createGrinderConflictFixture(): DivergedFixture {
+    type Root = { tracks: { tracks: Track[] } };
+    let peer: Record<string, number> | undefined;
+    return {
+        title: 'setGrinderFactoryPreset refuses when a peer changes a captured parameter after validation',
+        actionType: 'setGrinderFactoryPreset',
+        reason: 'Grinder preset source changed.',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Grinder registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({
+                            id: 'grinder-owner',
+                            name: 'Grinder',
+                            kind: 'audio',
+                            withoutDefaultDevice: true,
+                        }),
+                        devices: [
+                            {
+                                id: 'grinder-conflict',
+                                name: 'Grinder',
+                                type: 'grinder',
+                                bypassed: false,
+                                parameterValues: { master: 999 },
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            const capture = captureRectifierHeavyPreset('grinder-conflict');
+            if (!capture) throw new Error('Expected Grinder capture');
+            const action = {
+                type: 'setGrinderFactoryPreset',
+                payload: {
+                    trackId: capture.trackId,
+                    deviceId: capture.deviceId,
+                    deviceIds: capture.deviceIds,
+                    presetId: 'gr-rectifier-heavy',
+                    before: capture.before.parameterValues,
+                    after: capture.after.parameterValues,
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(action);
+            const context = { actions: [action], actionIndex: 0 };
+            expect(handler?.validate?.(action, context)).toBe(true);
+            expect(handler?.describe?.(action, context)?.label).toBe('Load Rectifier Heavy');
+            mutateCrdtDoc<Root>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0]!.devices[0]!.parameterValues.master = 3;
+                },
+            });
+            trackStore.hydrate();
+            peer = { master: 3 };
+            return action;
+        },
+        verifyRefusalNonEffects: () => {
+            expect(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.devices[0]?.parameterValues).toEqual(peer);
+        },
+    };
+}
+
 function createLevainConflictFixture(): DivergedFixture {
     type LevainRoot = { tracks: { tracks: Track[] } };
     let verifyNonEffects: (() => void) | undefined;
@@ -1076,6 +1151,7 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createToasterConflictFixture(),
     createBacteriaConflictFixture(),
     createGlutenConflictFixture(),
+    createGrinderConflictFixture(),
     createLevainConflictFixture(),
     createProofConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({

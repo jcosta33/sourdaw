@@ -118,6 +118,7 @@ export const deviceChainProjectorByActionType: {
     setBacteriaFactoryPatch: (action, devices) =>
         projectFactoryPatch(devices, { ...action.payload, deviceType: DEVICE_TYPE_IDS.bacteria }),
     setGlutenFactoryPreset: null,
+    setGrinderFactoryPreset: null,
     setProofPatchSelection: null,
     createBus: null,
     createFolder: null,

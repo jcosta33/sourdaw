@@ -243,6 +243,7 @@ const applicationIdMaterializerByActionType: {
     setToasterFactoryKit: materializeByIdRule,
     setBacteriaFactoryPatch: materializeByIdRule,
     setGlutenFactoryPreset: materializeByIdRule,
+    setGrinderFactoryPreset: materializeByIdRule,
     setProofPatchSelection: materializeByIdRule,
     createBus: materializeBusCreationIds,
     createFolder: materializeByIdRule,

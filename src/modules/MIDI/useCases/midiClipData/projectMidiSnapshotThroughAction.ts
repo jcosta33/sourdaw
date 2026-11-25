@@ -157,6 +157,7 @@ const midiSnapshotByActionType: {
     setToasterFactoryKit: unchangedSnapshot,
     setBacteriaFactoryPatch: unchangedSnapshot,
     setGlutenFactoryPreset: unchangedSnapshot,
+    setGrinderFactoryPreset: unchangedSnapshot,
     setProofPatchSelection: unchangedSnapshot,
     createBus: unchangedSnapshot,
     createFolder: unchangedSnapshot,

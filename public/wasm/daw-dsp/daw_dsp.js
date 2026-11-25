@@ -1376,6 +1376,16 @@ export class GrinderInstance {
     }
     /**
      * @param {string} name
+     * @returns {boolean}
+     */
+    restore_parameter_default(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.grinderinstance_restore_parameter_default(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * @param {string} name
      * @param {number} value
      */
     set_param(name, value) {

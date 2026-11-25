@@ -10,3 +10,9 @@ export * from './importGrinderNeuralModels';
 export * from './removeGrinderNeuralModel';
 export * from './restoreGrinderNeuralLibrary';
 export { resetGrinderForProject } from './resetGrinderForProject';
+
+export { getGrinderHandlers } from './getGrinderHandlers';
+export { applyRectifierHeavyRuntime } from './grinderParamBridge/applyRectifierHeavyRuntime';
+export { grinderFactoryPresetRuntimePort } from './grinderFactoryPresetRuntimePort';
+export { selectRectifierHeavyPreset } from './selectRectifierHeavyPreset';
+export { captureRectifierHeavyPreset } from './grinderParamBridge/captureRectifierHeavyPreset';

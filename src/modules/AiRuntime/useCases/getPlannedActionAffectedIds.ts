@@ -239,6 +239,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     setToasterFactoryKit: unaffected,
     setBacteriaFactoryPatch: unaffected,
     setGlutenFactoryPreset: unaffected,
+    setGrinderFactoryPreset: unaffected,
     setProofPatchSelection: unaffected,
     createBus: { before: noIds, after: readCreateBusIds },
     createFolder: unaffected,

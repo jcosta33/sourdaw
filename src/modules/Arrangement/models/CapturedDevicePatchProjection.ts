@@ -9,7 +9,8 @@ import { type Device, type DeviceStateChunk } from './Track';
 export function projectCapturedDevicePatch(
     device: Device,
     expected: DevicePatchState,
-    next: DevicePatchState
+    next: DevicePatchState,
+    mode: 'authored' | 'restore-captured' = 'authored'
 ): Device | null {
     if (
         Object.hasOwn(device, 'deviceState') !== (expected.deviceState !== null) ||
@@ -36,7 +37,10 @@ export function projectCapturedDevicePatch(
         if (value === null) {
             delete parameterValues[key];
         } else if (typeof value === 'number' && Number.isFinite(value)) {
-            parameterValues[key] = clampDeviceParameterValue({ deviceType: device.type, paramId: key, value });
+            parameterValues[key] =
+                mode === 'restore-captured'
+                    ? value
+                    : clampDeviceParameterValue({ deviceType: device.type, paramId: key, value });
         } else {
             return null;
         }

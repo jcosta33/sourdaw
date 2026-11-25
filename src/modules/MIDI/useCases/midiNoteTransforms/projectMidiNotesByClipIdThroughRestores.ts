@@ -148,6 +148,7 @@ const notesProjectionByActionType: {
     setToasterFactoryKit: noNotesProjection,
     setBacteriaFactoryPatch: noNotesProjection,
     setGlutenFactoryPreset: noNotesProjection,
+    setGrinderFactoryPreset: noNotesProjection,
     setProofPatchSelection: noNotesProjection,
     createBus: noNotesProjection,
     createFolder: noNotesProjection,

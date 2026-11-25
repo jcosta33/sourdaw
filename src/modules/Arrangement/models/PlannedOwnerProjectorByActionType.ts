@@ -104,6 +104,7 @@ export const plannedOwnerProjectorByActionType: {
     setToasterFactoryKit: projectCapturedPatchUnsupported,
     setBacteriaFactoryPatch: projectCapturedPatchUnsupported,
     setGlutenFactoryPreset: projectCapturedPatchUnsupported,
+    setGrinderFactoryPreset: projectCapturedPatchUnsupported,
     setProofPatchSelection: projectCapturedPatchUnsupported,
     createBus: projectMaterializedTrack,
     createFolder: projectEveryOwner,

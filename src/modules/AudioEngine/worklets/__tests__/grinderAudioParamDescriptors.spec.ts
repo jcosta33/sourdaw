@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { getGrinderTimedParameterName } from '../../models/GrinderTimedParameterControl';
 import { loadGrinderProcessorConstructor } from '../../testing/grinderProcessorTestHarness';
 
 describe('grinderAudioParamDescriptors', () => {
     it('publishes exactly the canonical continuous Grinder contract', async () => {
         const Processor = await loadGrinderProcessorConstructor();
 
-        expect(Processor.parameterDescriptors).toEqual([
+        const continuous = [
             { name: 'gain', defaultValue: 5, minValue: 0, maxValue: 10, automationRate: 'a-rate' },
             { name: 'bass', defaultValue: 5, minValue: 0, maxValue: 10, automationRate: 'a-rate' },
             { name: 'mid', defaultValue: 5, minValue: 0, maxValue: 10, automationRate: 'a-rate' },
@@ -18,6 +19,16 @@ describe('grinderAudioParamDescriptors', () => {
             { name: 'outputGain', defaultValue: 0, minValue: -24, maxValue: 24, automationRate: 'a-rate' },
             { name: 'transformerDrive', defaultValue: 0.3, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
             { name: 'negFeedback', defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
+        ];
+        expect(Processor.parameterDescriptors).toEqual([
+            ...continuous,
+            ...continuous.map(({ name }) => ({
+                name: getGrinderTimedParameterName(name),
+                defaultValue: 0,
+                minValue: 0,
+                maxValue: 16_777_215,
+                automationRate: 'a-rate',
+            })),
         ]);
     });
 });

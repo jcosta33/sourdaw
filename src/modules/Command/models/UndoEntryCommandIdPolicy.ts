@@ -85,6 +85,7 @@ export const undoEntryStoresCommandIdByActionType: { readonly [Type in AppAction
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,
     setGlutenFactoryPreset: false,
+    setGrinderFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,
     createFolder: false,

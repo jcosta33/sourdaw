@@ -7,6 +7,8 @@ import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
 import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
+import { appliedAutomationBases } from '../../scheduling/applyAutomation/appliedAutomationBases';
+import { readAppliedAutomationValue } from '../../scheduling/applyAutomation/readAppliedAutomationValue';
 
 /** The device nodes each track's strip holds, as the engine double answers `getTrackStrip`. */
 const deviceNodesByTrack = vi.hoisted(() => new Map<string, unknown[]>());
@@ -52,6 +54,13 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         vi.clearAllMocks();
         deviceNodesByTrack.clear();
         forgetStoredControllerEngagements();
+    });
+
+    it('retires the previous scheduler automation observation on stop', () => {
+        appliedAutomationBases.set('device', new Map([['param', 0.75]]));
+        expect(readAppliedAutomationValue('device', 'param')?.value).toBe(0.75);
+        stopPlayheadScheduler();
+        expect(readAppliedAutomationValue('device', 'param')).toBeUndefined();
     });
 
     it('lifts a pedal stored playback left down on that device only, never one the user holds live', () => {

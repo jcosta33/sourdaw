@@ -99,6 +99,7 @@ export const automationReferenceByActionType: {
     setToasterFactoryKit: automationReferenceRules.namesLaneOrContent,
     setBacteriaFactoryPatch: automationReferenceRules.namesLaneOrContent,
     setGlutenFactoryPreset: automationReferenceRules.namesLaneOrContent,
+    setGrinderFactoryPreset: automationReferenceRules.namesLaneOrContent,
     setProofPatchSelection: automationReferenceRules.namesLaneOrContent,
     createBus: automationReferenceRules.namesLaneOrContent,
     createFolder: automationReferenceRules.namesLaneOrContent,

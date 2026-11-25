@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90
+// @wasm-bindgen-dts crate-source: sha256:b9f48e6e29dcd21736da5f4badbb602784f3b0f6d90ac89601125712d68288c4
 /* tslint:disable */
 /* eslint-disable */
 
@@ -653,6 +653,7 @@ export class GrinderInstance {
      * carry one playhead position into another on transport stop or seek.
      */
     reset(): void;
+    restore_parameter_default(name: string): boolean;
     set_param(name: string, value: number): void;
 }
 
@@ -1318,6 +1319,7 @@ export interface InitOutput {
     readonly grinderinstance_process: (a: number, b: number) => number;
     readonly grinderinstance_process_automated: (a: number, b: number) => number;
     readonly grinderinstance_reset: (a: number) => void;
+    readonly grinderinstance_restore_parameter_default: (a: number, b: number, c: number) => number;
     readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly init_panic_hook: () => void;
     readonly kneadinstance_get_f0: (a: number) => number;

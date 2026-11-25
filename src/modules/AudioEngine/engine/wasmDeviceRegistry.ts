@@ -1379,6 +1379,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     controller: {
                         setParam: result.setParam,
                         setPatch: result.setPatch,
+                        applyGrinderPreset: result.applyPreset,
                         setBypass: result.setBypass,
                         reset: result.reset,
                         destroy: () => {

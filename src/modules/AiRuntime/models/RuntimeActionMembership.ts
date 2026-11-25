@@ -292,6 +292,7 @@ const runtimeActionMembershipByActionType = {
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,
     setGlutenFactoryPreset: false,
+    setGrinderFactoryPreset: false,
     setProofPatchSelection: false,
     restoreTrackInput: false,
     renameMarker: false,

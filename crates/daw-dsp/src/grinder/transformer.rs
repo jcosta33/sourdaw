@@ -28,21 +28,98 @@ pub struct Transformer {
     sample_rate: f32,
 }
 
+#[cfg(test)]
+mod restore_default_tests {
+    use super::Transformer;
+
+    #[test]
+    fn restores_transformer_configuration_without_touching_history() {
+        let original = Transformer::new(48_000.0);
+        let mut transformer = Transformer::new(48_000.0);
+        transformer.process_sample(0.5);
+        let history = (
+            transformer.flux_state,
+            transformer.prev_input,
+            transformer.lf_state,
+        );
+        for name in [
+            "transformerDrive",
+            "transformerHysteresis",
+            "transformerLfSaturation",
+        ] {
+            transformer.set_param(name, 0.3);
+        }
+        assert_ne!(transformer.phi_sat, original.phi_sat);
+        assert_ne!(transformer.h_c, original.h_c);
+        assert_ne!(transformer.h_sat, original.h_sat);
+        for name in [
+            "transformerDrive",
+            "transformerHysteresis",
+            "transformerLfSaturation",
+        ] {
+            assert!(transformer.restore_parameter_default(name));
+        }
+        assert_eq!(
+            (transformer.phi_sat, transformer.h_c, transformer.h_sat),
+            (original.phi_sat, original.h_c, original.h_sat)
+        );
+        assert_eq!(
+            (
+                transformer.drive,
+                transformer.hysteresis,
+                transformer.lf_saturation
+            ),
+            (original.drive, original.hysteresis, original.lf_saturation)
+        );
+        assert_eq!(
+            (
+                transformer.flux_state,
+                transformer.prev_input,
+                transformer.lf_state
+            ),
+            history
+        );
+    }
+}
+
 impl Transformer {
+    const DEFAULT_PHI_SAT: f32 = 1.0;
+    const DEFAULT_H_C: f32 = 0.1;
+    const DEFAULT_H_SAT: f32 = 0.5;
+    const DEFAULT_CONTROL: f32 = 0.3;
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            phi_sat: 1.0,
-            h_c: 0.1,
-            h_sat: 0.5,
+            phi_sat: Self::DEFAULT_PHI_SAT,
+            h_c: Self::DEFAULT_H_C,
+            h_sat: Self::DEFAULT_H_SAT,
             flux_state: 0.0,
             prev_input: 0.0,
-            drive: 0.3,
-            hysteresis: 0.3,
-            lf_saturation: 0.3,
+            drive: Self::DEFAULT_CONTROL,
+            hysteresis: Self::DEFAULT_CONTROL,
+            lf_saturation: Self::DEFAULT_CONTROL,
             lf_state: 0.0,
             lf_freq: 120.0,
             sample_rate,
         }
+    }
+
+    pub(super) fn restore_parameter_default(&mut self, name: &str) -> bool {
+        match name {
+            "transformerDrive" => {
+                self.drive = Self::DEFAULT_CONTROL;
+                self.phi_sat = Self::DEFAULT_PHI_SAT;
+            }
+            "transformerHysteresis" => {
+                self.hysteresis = Self::DEFAULT_CONTROL;
+                self.h_c = Self::DEFAULT_H_C;
+            }
+            "transformerLfSaturation" => {
+                self.lf_saturation = Self::DEFAULT_CONTROL;
+                self.h_sat = Self::DEFAULT_H_SAT;
+            }
+            _ => return false,
+        }
+        true
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

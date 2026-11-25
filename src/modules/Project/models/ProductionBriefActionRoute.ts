@@ -90,6 +90,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setToasterFactoryKit: 'content',
     setBacteriaFactoryPatch: 'content',
     setGlutenFactoryPreset: 'content',
+    setGrinderFactoryPreset: 'content',
     setProofPatchSelection: 'content',
     createBus: 'content',
     createFolder: 'content',

@@ -18,6 +18,7 @@ import {
     meteringProcessorUrl,
     recordingProcessorUrl,
 } from '../engine/workletProcessorUrls';
+import { type RuntimeGrinderPresetInput } from '../models/RuntimeGrinderPreset';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import {
     type RuntimeGraphDeltaResult,
@@ -1097,6 +1098,20 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         this.trackNodes.get(trackId)?.updatePatch(deviceId, patch);
+    }
+
+    public async applyGrinderPreset(
+        trackId: string,
+        deviceId: string,
+        input: RuntimeGrinderPresetInput
+    ): Promise<void> {
+        if (this.fallbackMode) {
+            return;
+        }
+        const strip = this.trackNodes.get(trackId);
+        if (strip) {
+            await strip.applyGrinderPreset(deviceId, input);
+        }
     }
 
     public scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void {

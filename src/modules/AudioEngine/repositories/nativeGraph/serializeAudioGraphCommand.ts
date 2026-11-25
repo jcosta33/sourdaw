@@ -158,6 +158,7 @@ export type NativeGraphWireCommand =
           requestId: string;
           modelJson: string | null;
           values: Readonly<Record<string, number>>;
+          resetParameterIds?: readonly string[];
       }>
     | Readonly<{ kind: 'set-device-bypass'; trackId: string; deviceId: string; bypassed: boolean }>
     | Readonly<{
@@ -439,14 +440,7 @@ function serializeDeviceWrite(
         case 'write-device-parameter':
             return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
         case 'set-grinder-model':
-            return {
-                kind: 'set-grinder-model',
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                requestId: command.requestId,
-                modelJson: command.modelJson,
-                values: { ...command.values },
-            };
+            return serializeGrinderModel(command);
         case 'set-device-parameters':
             return {
                 kind: 'set-device-parameters',
@@ -494,6 +488,21 @@ const DEVICE_WRITE_COMMAND_KINDS: ReadonlySet<AudioGraphDeviceWriteCommand['kind
 /** Narrows to the {@link serializeDeviceWrite} family by one membership test, not five case labels. */
 function isDeviceWriteCommand(command: AudioGraphCommand): command is AudioGraphDeviceWriteCommand {
     return DEVICE_WRITE_COMMAND_KINDS.has(command.kind as AudioGraphDeviceWriteCommand['kind']);
+}
+
+function serializeGrinderModel(command: AudioGraphSetGrinderModelCommand): NativeGraphWireCommand {
+    const base = {
+        kind: command.kind,
+        trackId: command.target.trackId,
+        deviceId: command.target.deviceId,
+        requestId: command.requestId,
+        modelJson: command.modelJson,
+        values: { ...command.values },
+    };
+    if (!command.resetParameterIds) {
+        return base;
+    }
+    return { ...base, resetParameterIds: [...command.resetParameterIds] };
 }
 
 export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGraphWireCommand {

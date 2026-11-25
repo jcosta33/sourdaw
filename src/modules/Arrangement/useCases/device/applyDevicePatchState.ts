@@ -8,10 +8,11 @@ type ApplyDevicePatchStateInput = {
     deviceId: string;
     expected: DevicePatchState;
     next: DevicePatchState;
+    mode?: 'authored' | 'restore-captured';
 };
 
-/** Apply only the captured chunk and numeric-leaf footprint in the caller's transaction. */
-export function applyDevicePatchState({ deviceId, expected, next }: ApplyDevicePatchStateInput): boolean {
+/** Restore mode is reserved for an owner-validated inverse of a captured command. */
+export function applyDevicePatchState({ deviceId, expected, next, mode }: ApplyDevicePatchStateInput): boolean {
     const target = resolveEligibleDeviceWriteTarget(deviceId);
     const state = getTrackState();
     if (target.status !== 'eligible' || !state) {
@@ -22,7 +23,7 @@ export function applyDevicePatchState({ deviceId, expected, next }: ApplyDeviceP
     if (!owner || !device || owner.frozen === true) {
         return false;
     }
-    const nextDevice = projectCapturedDevicePatch(device, expected, next);
+    const nextDevice = projectCapturedDevicePatch(device, expected, next, mode);
     if (!nextDevice) {
         return false;
     }

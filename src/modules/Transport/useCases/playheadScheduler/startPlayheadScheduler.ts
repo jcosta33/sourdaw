@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     startRecording,
@@ -34,7 +35,10 @@ import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore, type TempoChange } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
-import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
+import {
+    appliedAutomationBases,
+    appliedAutomationWriteSequences,
+} from '../scheduling/applyAutomation/appliedAutomationBases';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
@@ -2040,6 +2044,7 @@ export function startPlayheadScheduler(
         // These appliers drive what is audible, so they follow the published
         // clock — the dying pass on a seam tick and while the seam is still
         // pending — not the scheduler's negative-phase integration.
+        const beforeAutomation = readLastObservationSequence();
         const gainAutomatedTrackIds = applyAutomation(publishedBeat);
         applyVcaGains(gainAutomatedTrackIds);
         // FX-5 — same per-tick recompute discipline applyAutomation uses for its
@@ -2058,7 +2063,9 @@ export function startPlayheadScheduler(
             publishedBeat,
             schedulerSession.discontinuityEpoch,
             appliedAutomationBases,
-            deviceReadBeatByTrack
+            deviceReadBeatByTrack,
+            (deviceId, parameterId) =>
+                (appliedAutomationWriteSequences.get(deviceId)?.get(parameterId) ?? 0) > beforeAutomation
         );
         scheduleAdjustmentLayers(publishedBeat);
     }

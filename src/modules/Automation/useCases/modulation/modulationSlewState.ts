@@ -13,3 +13,6 @@ export const modulationParamSlew = new Map<string, number>();
  * first tick that carries an epoch.
  */
 export const modulationSlewEpoch: { last: number | undefined } = { last: undefined };
+
+export const appliedModulationValues = new Map<string, number>();
+export const visitedModulationValues = new Set<string>();

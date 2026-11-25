@@ -104,6 +104,7 @@ const retiredClipIdsByActionType: {
     setToasterFactoryKit: retiresNoClip,
     setBacteriaFactoryPatch: retiresNoClip,
     setGlutenFactoryPreset: retiresNoClip,
+    setGrinderFactoryPreset: retiresNoClip,
     setProofPatchSelection: retiresNoClip,
     createBus: retiresNoClip,
     createFolder: retiresNoClip,

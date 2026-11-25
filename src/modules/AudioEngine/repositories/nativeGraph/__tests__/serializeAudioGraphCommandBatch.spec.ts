@@ -836,6 +836,26 @@ describe('collectBufferedClipSources', () => {
 });
 
 describe('native NAM protocol migration', () => {
+    it('keeps the grouped admission field even when the preset needs no constructor resets', () => {
+        const command = {
+            kind: 'set-grinder-model' as const,
+            target: { trackId: 'track', deviceId: 'device' },
+            requestId: 'request',
+            modelJson: null,
+            values: { gain: 9 },
+        };
+        function encode(resetParameterIds?: readonly string[]) {
+            return serializeAudioGraphCommandBatch({
+                schemaVersion: 1,
+                commands: [{ ...command, resetParameterIds }],
+            }).commands[0];
+        }
+
+        expect(encode()).not.toHaveProperty('resetParameterIds');
+        expect(encode([])).toHaveProperty('resetParameterIds', []);
+        expect(encode(['gateAttack'])).toHaveProperty('resetParameterIds', ['gateAttack']);
+    });
+
     it('carries NAM wire v2 and the consumer exact PCM lease and version together', () => {
         const batch: AudioGraphCommandBatch = {
             schemaVersion: 1,

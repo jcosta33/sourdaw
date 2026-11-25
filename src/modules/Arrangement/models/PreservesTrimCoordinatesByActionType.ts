@@ -92,6 +92,7 @@ export const preservesTrimCoordinatesByActionType: {
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,
     setGlutenFactoryPreset: false,
+    setGrinderFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,
     createFolder: false,

@@ -283,6 +283,7 @@ vi.mock('../scheduling/applyAutomation/applyAutomation', () => ({
 vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: vi.fn(),
     stopAutomationRecording: vi.fn(),
+    clearAppliedModulationValues: vi.fn(),
     applyModulation: vi.fn(),
     applyModulationToEngine: vi.fn(),
 }));

@@ -1,8 +1,10 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { clearAppliedModulationValues } from '#/modules/Automation/useCases';
 
 import { forgetStoredControllerEngagements } from '../../services/storedControllerEngagement';
 import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
+import { clearAppliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
 import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
@@ -28,6 +30,8 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
+    clearAppliedAutomationBases();
+    clearAppliedModulationValues();
     schedulerSession.loopAudioSchedule?.reset();
     schedulerSession.loopAudioSchedule = null;
     advanceSchedulerDiscontinuityEpoch();

@@ -55,14 +55,17 @@ const AUTOMATABLE_PARAM_COUNT = grinderAudioParamContract.length;
 
 export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderLoadModelCalls: string[] = [];
+export const grinderDefaultRestoreCalls: string[] = [];
 export const grinderProcessSizes: number[] = [];
 export const grinderAutomatedProcessSizes: number[] = [];
 export const grinderCallCounts = { reset: 0, rightPtr: 0 };
 let grinderLatencySamples = 0;
 let grinderLatencySamplesAfterSetParam: number | null = null;
-let grinderModelRejection: string | null = null;
+let grinderModelRejection: string | Error | null = null;
 
 class GrinderInstanceMock {
+    private hasModel = false;
+
     get_input_left_ptr(): number {
         return INPUT_LEFT_PTR;
     }
@@ -91,12 +94,25 @@ class GrinderInstanceMock {
     load_neural_model(json: string): void {
         grinderLoadModelCalls.push(json);
         if (grinderModelRejection !== null) {
-            throw new Error(grinderModelRejection);
+            throw grinderModelRejection;
         }
+        this.hasModel = true;
+    }
+
+    has_loaded_neural_model(): boolean {
+        return this.hasModel;
+    }
+
+    restore_parameter_default(name: string): boolean {
+        grinderDefaultRestoreCalls.push(name);
+        return true;
     }
 
     set_param(name: string, value: number): void {
         grinderSetParamCalls.push({ name, value });
+        if (name === 'neuralModelSlot' || (name === 'neuralModelMode' && value <= 0.5)) {
+            this.hasModel = false;
+        }
         if (grinderLatencySamplesAfterSetParam !== null) {
             grinderLatencySamples = grinderLatencySamplesAfterSetParam;
         }
@@ -177,9 +193,11 @@ export async function loadGrinderProcessorConstructor(): Promise<GrinderProcesso
     return processor;
 }
 
-export async function createReadyGrinderProcessor(): Promise<GrinderProcessorLike> {
+export async function createReadyGrinderProcessor(
+    grinderTimedParameters?: SharedArrayBuffer
+): Promise<GrinderProcessorLike> {
     const Processor = await loadGrinderProcessorConstructor();
-    const processor = new Processor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
+    const processor = new Processor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE, grinderTimedParameters } });
     processor.port.onmessage?.({ data: { type: 'init', wasmModule: MINIMAL_WASM_MODULE } });
     return processor;
 }
@@ -187,6 +205,7 @@ export async function createReadyGrinderProcessor(): Promise<GrinderProcessorLik
 export function resetGrinderProcessorCalls(): void {
     grinderSetParamCalls.length = 0;
     grinderLoadModelCalls.length = 0;
+    grinderDefaultRestoreCalls.length = 0;
     grinderProcessSizes.length = 0;
     grinderAutomatedProcessSizes.length = 0;
     grinderCallCounts.reset = 0;
@@ -200,7 +219,7 @@ export function setGrinderLatencySamplesAfterSetParam(latency: number): void {
     grinderLatencySamplesAfterSetParam = latency;
 }
 
-export function setGrinderModelRejection(message: string | null): void {
+export function setGrinderModelRejection(message: string | Error | null): void {
     grinderModelRejection = message;
 }
 

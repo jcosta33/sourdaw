@@ -85,6 +85,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,
     setGlutenFactoryPreset: false,
+    setGrinderFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,
     createFolder: false,

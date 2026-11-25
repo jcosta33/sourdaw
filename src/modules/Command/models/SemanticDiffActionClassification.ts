@@ -107,6 +107,7 @@ export const semanticDiffClassificationByActionType: {
     setToasterFactoryKit: NONE,
     setBacteriaFactoryPatch: NONE,
     setGlutenFactoryPreset: NONE,
+    setGrinderFactoryPreset: NONE,
     setProofPatchSelection: NONE,
     createBus: { created: true, routed: true, structuralAudio: true },
     createFolder: NONE,

@@ -5,11 +5,12 @@ import {
     getAudioContext,
     cancelTrackAutomationRamps,
 } from '#/modules/AudioEngine/useCases';
-import { stopAutomationRecording } from '#/modules/Automation/useCases';
+import { clearAppliedModulationValues, stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { clearAppliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
 import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
@@ -31,6 +32,8 @@ export function stopPlayheadScheduler(): void {
     schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
+    clearAppliedAutomationBases();
+    clearAppliedModulationValues();
     schedulerSession.loopAudioSchedule?.reset();
     schedulerSession.loopAudioSchedule = null;
     stopAutomationRecording(boundaryBeat);

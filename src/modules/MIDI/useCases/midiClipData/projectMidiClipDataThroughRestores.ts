@@ -131,6 +131,7 @@ const controllerRestoresByActionType: {
     setToasterFactoryKit: noControllerRestores,
     setBacteriaFactoryPatch: noControllerRestores,
     setGlutenFactoryPreset: noControllerRestores,
+    setGrinderFactoryPreset: noControllerRestores,
     setProofPatchSelection: noControllerRestores,
     createBus: noControllerRestores,
     createFolder: noControllerRestores,

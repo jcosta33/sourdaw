@@ -120,6 +120,7 @@ const sourceTrackStepByActionType: {
     setToasterFactoryKit: keepTracks,
     setBacteriaFactoryPatch: keepTracks,
     setGlutenFactoryPreset: keepTracks,
+    setGrinderFactoryPreset: keepTracks,
     setProofPatchSelection: keepTracks,
     createBus: keepTracks,
     createFolder: keepTracks,

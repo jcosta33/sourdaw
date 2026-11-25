@@ -90,6 +90,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setToasterFactoryKit: true,
     setBacteriaFactoryPatch: true,
     setGlutenFactoryPreset: true,
+    setGrinderFactoryPreset: true,
     setProofPatchSelection: true,
     createBus: true,
     createFolder: true,

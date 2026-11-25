@@ -702,6 +702,77 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
     });
 
+    describe('grouped Grinder controls', () => {
+        const deviceId = 'grinder-1';
+        const preset = {
+            parameters: [{ parameterId: 'gain', value: 7 }],
+            overrides: [],
+            neural: { neuralModelMode: 'builtin' },
+        };
+
+        it('keeps the preset between the scalar and patch writes queued around it during loading', async () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const pendingController = { setParam: vi.fn(), setPatch: vi.fn() };
+            const deferred = installDeferredWasmDevice({
+                deviceId,
+                deviceType: 'grinder',
+                controller: pendingController,
+                requiresContent: false,
+            });
+            expect(track.addDevice(deviceId, 'grinder')).toBe(true);
+            const ready = Promise.withResolvers<void>();
+            const controller = {
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                applyGrinderPreset: vi.fn(() => ready.promise),
+            };
+            const node = createMockAudioNode('gain');
+            const builtIn: BuiltinDeviceNode = {
+                deviceId,
+                type: 'grinder',
+                inputNode: node,
+                outputNode: node,
+                nodes: [node],
+                controller,
+            };
+
+            track.updateParam(deviceId, 'gain', 2);
+            const applied = track.applyGrinderPreset(deviceId, preset);
+            track.updatePatch(deviceId, { neuralModelMode: 'builtin' });
+            track.updateParam(deviceId, 'gain', 4);
+            expect(pendingController.setParam).not.toHaveBeenCalled();
+            expect(pendingController.setPatch).not.toHaveBeenCalled();
+            deferred.resolve(builtIn);
+            deferred.settle();
+
+            expect(controller.setParam.mock.calls).toEqual([
+                ['gain', 2],
+                ['gain', 4],
+            ]);
+            expect(controller.applyGrinderPreset).toHaveBeenCalledExactlyOnceWith(preset);
+            expect(controller.setPatch).toHaveBeenCalledAfter(controller.applyGrinderPreset);
+            expect(controller.setParam.mock.invocationCallOrder[0]).toBeLessThan(
+                controller.applyGrinderPreset.mock.invocationCallOrder[0]!
+            );
+            expect(controller.setParam.mock.invocationCallOrder[1]).toBeGreaterThan(
+                controller.setPatch.mock.invocationCallOrder[0]!
+            );
+            ready.resolve();
+            await applied;
+        });
+
+        it('refuses a queued preset when the track is disposed before loading finishes', async () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const deferred = installDeferredWasmDevice({ deviceId, deviceType: 'grinder', requiresContent: false });
+            expect(track.addDevice(deviceId, 'grinder')).toBe(true);
+            const applied = track.applyGrinderPreset(deviceId, preset);
+            track.dispose();
+            deferred.settle();
+
+            await expect(applied).rejects.toThrow('Grinder was replaced before its preset could be applied');
+        });
+    });
+
     // The native engine hosts and sounds an external plugin, so Web Audio keeps
     // only a pass-through where the two-clock audio relay used to be. What is
     // left to prove is that nothing is constructed or awaited for it, and that

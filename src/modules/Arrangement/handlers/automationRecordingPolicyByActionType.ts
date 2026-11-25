@@ -99,6 +99,7 @@ export const automationRecordingPolicyByActionType: {
     setToasterFactoryKit: noPolicy,
     setBacteriaFactoryPatch: noPolicy,
     setGlutenFactoryPreset: noPolicy,
+    setGrinderFactoryPreset: noPolicy,
     setProofPatchSelection: noPolicy,
     createBus: noPolicy,
     createFolder: noPolicy,

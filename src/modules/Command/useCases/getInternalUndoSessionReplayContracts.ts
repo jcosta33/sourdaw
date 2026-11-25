@@ -48,6 +48,7 @@ function createCapturedDeviceReplayContract(
     actionType:
         | 'setBacteriaFactoryPatch'
         | 'setGlutenFactoryPreset'
+        | 'setGrinderFactoryPreset'
         | 'setLevainIdentity'
         | 'setProofPatchSelection'
         | 'setToasterFactoryKit'
@@ -60,6 +61,7 @@ function createCapturedDeviceReplayContract(
             validateVersionedCommandArguments(actionType, payload) &&
             getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
         validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+        restoreEntry: (entry) => getHandlerByType(actionType)?.restoreSessionEntry?.(entry),
     };
 }
 
@@ -119,6 +121,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         },
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setGrinderFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),

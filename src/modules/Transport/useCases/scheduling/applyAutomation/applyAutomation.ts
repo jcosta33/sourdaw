@@ -856,10 +856,6 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     isDiscontinuity ||
                     enteredLaneScope ||
                     (Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
-                if (moved) {
-                    // A write of an unchanged value is invisible to a display that compares values.
-                    recordAppliedAutomationWrite(device.id, paramId);
-                }
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 // A device the native session carries has its parameters
                 // stamped on the audio thread from the engine's own queue,
@@ -893,8 +889,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     // persistence so the user's manual base and CRDT history
                     // remain unchanged.
                     if (carried ? released : moved) {
+                        recordAppliedAutomationWrite(device.id, paramId);
                         runtimeWriter.write({ deviceId: device.id, paramId, value: delivered });
                     } else if (carried && moved) {
+                        recordAppliedAutomationWrite(device.id, paramId);
                         holdWebFallbackDeviceParam(
                             targetOwner.trackId,
                             targetOwner.deviceId,
@@ -905,8 +903,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     continue;
                 }
                 if (carried ? released : moved) {
+                    recordAppliedAutomationWrite(device.id, paramId);
                     updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                 } else if (carried && moved) {
+                    recordAppliedAutomationWrite(device.id, paramId);
                     holdWebFallbackDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                 }
                 continue;

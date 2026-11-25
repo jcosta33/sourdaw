@@ -131,6 +131,18 @@ function projectPedals(
     );
     return [...retained, ...projected];
 }
+function projectBuiltinNeuralModel(patch: GrinderPatch, slot: number, values: Readonly<Record<string, unknown>>): void {
+    const model = GRINDER_NEURAL_LIBRARY[slot];
+    if (!model && !Object.hasOwn(values, 'neuralModelMode')) {
+        return;
+    }
+    patch.neuralModelId = model?.id ?? DEFAULT_PATCH.neuralModelId;
+    patch.neuralModelName = model?.name ?? DEFAULT_PATCH.neuralModelName;
+    patch.neuralModelFamily = model?.family ?? DEFAULT_PATCH.neuralModelFamily;
+    patch.neuralModelSource = 'builtin';
+    patch.neuralModelProfile = null;
+}
+
 export function applyGrinderProjectParameters(
     patch: GrinderPatch,
     parameterValues: Readonly<Record<string, unknown>>,
@@ -140,7 +152,6 @@ export function applyGrinderProjectParameters(
     const neuralSlot = Math.round(readNumber(parameterValues, 'neuralModelSlot', -1));
     const importedModel =
         readNumber(parameterValues, 'neuralModelMode', Number(patch.neuralModelSource === 'imported')) > 0.5;
-    const neuralModel = importedModel ? undefined : GRINDER_NEURAL_LIBRARY[neuralSlot];
     const next: GrinderPatch = {
         ...patch,
         cabIrId: GRINDER_CAB_LIBRARY[cabSlot]?.id ?? DEFAULT_PATCH.cabIrId,
@@ -149,11 +160,8 @@ export function applyGrinderProjectParameters(
         prePedals: projectPedals(patch.prePedals, false, parameterValues),
         postPedals: projectPedals(patch.postPedals, true, parameterValues),
     };
-    if (neuralModel) {
-        next.neuralModelId = neuralModel.id;
-        next.neuralModelName = neuralModel.name;
-        next.neuralModelFamily = neuralModel.family;
-        Object.assign(next, { neuralModelSource: 'builtin', neuralModelProfile: null });
+    if (!importedModel) {
+        projectBuiltinNeuralModel(next, neuralSlot, parameterValues);
     }
     for (const key of GRINDER_PROJECT_PARAM_KEYS) {
         const raw = parameterValues[key];

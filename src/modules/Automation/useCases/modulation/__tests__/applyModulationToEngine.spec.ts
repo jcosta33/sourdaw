@@ -64,6 +64,8 @@ import { modulationStore } from '../../../stores/modulationStore';
 import { applyModulationToEngine } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
 import { resetModulationSlew } from '../resetModulationSlew';
+import { readAppliedModulationValue } from '../readAppliedModulationValue';
+import { revertMappingsToBase } from '../revertMappingsToBase';
 
 function createAutomationLaneFixture(input: {
     id: string;
@@ -197,6 +199,53 @@ describe('applyModulationToEngine', () => {
 
         const tracks = mocks.trackStore.value?.tracks;
         expect(tracks?.[0]?.devices[0]?.parameterValues.cutoff).toBe(500);
+    });
+
+    it('reads the held delivered value and retires it on release, missing owner, and reset', () => {
+        applyModulationToEngine(1);
+        const delivered = mocks.updateDeviceParam.mock.calls[0]![3];
+        applyModulationToEngine(1);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(delivered);
+        expect(readAppliedModulationValue('other', 'd1', 'cutoff')).toBeUndefined();
+
+        revertMappingsToBase([{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0.5 }]);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        resetModulationSlew();
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        mocks.trackStore.value = { tracks: [] };
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        resetModulationSlew();
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+    });
+
+    it('observes an automation write that overwrites a suppressed modulation write', () => {
+        applyModulationToEngine(1);
+        const delivered = mocks.updateDeviceParam.mock.calls[0]![3];
+        const bases = new Map([['d1', new Map([['cutoff', 900]])]]);
+        applyModulationToEngine(1, undefined, bases, undefined, () => false);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(delivered);
+
+        applyModulationToEngine(
+            1,
+            undefined,
+            bases,
+            undefined,
+            (deviceId, parameterId) => deviceId === 'd1' && parameterId === 'cutoff'
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(900);
+    });
+
+    it('retires a destination when no mapping is active on the next tick', () => {
+        applyModulationToEngine(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeDefined();
+        modulationStore.set({ modulators: [] });
+        applyModulationToEngine(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
     });
 
     it('clamps the engine value inside the param range', () => {
