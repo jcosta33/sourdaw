@@ -5515,7 +5515,7 @@ impl RetiredGraphObjects {
         let mut pending = pending.unwrap_or_else(|| Self::removed(None, None));
 
         Self {
-            grinder_request: pending.grinder_request.take(),
+            grinder_update: pending.grinder_update.take(),
             grinder_model: pending.grinder_model.take(),
             effect: pending.effect.take(),
             midi_fx: pending.midi_fx.take(),
