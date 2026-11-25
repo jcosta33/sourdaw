@@ -29,7 +29,12 @@ function widenForLatency(input: {
     if (latencySeconds <= 0) {
         return input.resolved;
     }
-    return resolveHistoryAwareRenderContext({ ...input.request, latencySeconds }, input.project);
+    // Only the widened span is kept from this resolution; the render context keeps the
+    // musician's own tail, so adding the depth to the tail here moves nothing else.
+    return resolveHistoryAwareRenderContext(
+        { ...input.request, tailSeconds: (input.request.tailSeconds ?? 0) + latencySeconds },
+        input.project
+    );
 }
 
 /** Capture every project-dependent render input synchronously, before backend discovery or device I/O. */

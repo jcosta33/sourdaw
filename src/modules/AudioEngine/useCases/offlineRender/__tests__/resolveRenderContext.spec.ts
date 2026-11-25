@@ -48,17 +48,6 @@ describe('resolveRenderContext', () => {
         expect(ctx.tailSeconds).toBe(3);
     });
 
-    it('widens the span by the session latency and keeps it out of the tail', () => {
-        const ctx = resolveRenderContext({ durationBeats: 4, latencySeconds: 0.25 });
-
-        expect(ctx.durationSeconds).toBeCloseTo(2.25, 9);
-        expect(ctx.tailSeconds).toBe(0);
-    });
-
-    it('leaves the span unchanged when the session latency is zero', () => {
-        expect(resolveRenderContext({ durationBeats: 4, latencySeconds: 0 }).durationSeconds).toBeCloseTo(2, 9);
-    });
-
     it('uses canonical linear-tempo projection for a cropped render duration', () => {
         const changes = [
             { id: 'start', beat: 0, tempo: 60, curve: 'linear' as const },

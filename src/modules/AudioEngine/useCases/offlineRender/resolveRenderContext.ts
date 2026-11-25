@@ -60,33 +60,21 @@ export type ResolveRenderContextInput = {
     startBeat?: number;
     tailSeconds?: number;
     sampleRate?: number;
-    /**
-     * The session's deepest latency, in seconds. Latency compensation holds
-     * every strip back until it meets that depth, so the content reaches the
-     * output that much later and the span grows by it. Not part of the tail,
-     * which stays the musician's own setting.
-     */
-    latencySeconds?: number;
 };
-
-function normalizeRenderRequest(input: ResolveRenderContextInput | number): Required<ResolveRenderContextInput> {
-    if (typeof input === 'number') {
-        return { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100, latencySeconds: 0 };
-    }
-    return {
-        durationBeats: input.durationBeats,
-        startBeat: input.startBeat ?? 0,
-        tailSeconds: input.tailSeconds ?? 0,
-        sampleRate: input.sampleRate ?? 44_100,
-        latencySeconds: input.latencySeconds ?? 0,
-    };
-}
 
 export function resolveRenderContext(
     input: ResolveRenderContextInput | number,
     source?: OfflineRenderProjectSource
 ): OfflineRenderContext {
-    const normalized = normalizeRenderRequest(input);
+    const normalized: Required<ResolveRenderContextInput> =
+        typeof input === 'number'
+            ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100 }
+            : {
+                  durationBeats: input.durationBeats,
+                  startBeat: input.startBeat ?? 0,
+                  tailSeconds: input.tailSeconds ?? 0,
+                  sampleRate: input.sampleRate ?? 44_100,
+              };
 
     const transport = source ? source.transport : transportStore.value;
     const tracks = source ? source.tracks : trackStore.value;
@@ -110,10 +98,7 @@ export function resolveRenderContext(
         sampleRate: normalized.sampleRate,
         changes,
     });
-    const durationSeconds =
-        Math.max(0, projection.durationSeconds) +
-        Math.max(0, normalized.tailSeconds) +
-        Math.max(0, normalized.latencySeconds);
+    const durationSeconds = Math.max(0, projection.durationSeconds) + Math.max(0, normalized.tailSeconds);
 
     return {
         tracks,
