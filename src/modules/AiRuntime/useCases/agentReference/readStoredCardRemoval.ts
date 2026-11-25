@@ -1,9 +1,13 @@
+import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { readStoredCommandObjects, type ReadCommandRemoval } from '../../validators/admitProposalRefinement';
 
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { proposalCommandShape } from './proposalCommandShape';
+import { refinementCourtesy } from './refinementCourtesy';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
 type Command = Parameters<ReadCommandRemoval>[0]['command'];
@@ -16,7 +20,7 @@ type Mention = { id: string | null; start: number; end: number };
 
 type Directive = { start: number; end: number; intention: 'remove' | 'preserve' };
 
-type ClauseReading = { text: string; mentions: Mention[]; directives: Directive[] };
+type ClauseReading = { text: string; masked: string; mentions: Mention[]; directives: Directive[] };
 
 type MentionIntention = { clause: ClauseReading; mention: Mention; intention: 'remove' | 'preserve' };
 
@@ -308,7 +312,7 @@ function readRequest(prompt: string, context: ProjectContext, extra: readonly Ex
             directives.some((directive) => directive.intention === 'remove') &&
             lastMention !== undefined &&
             endsAtObject({ text: clause.text, mentions }, lastMention.end);
-        return { text: clause.text, mentions, directives };
+        return { text: clause.text, masked: clause.masked, mentions, directives };
     });
 }
 
@@ -455,7 +459,7 @@ function readCreationRemoval(input: {
             const onNamedHost = sameName.filter((creation) => creation.hostIds.some((id) => hosts.has(id)));
             const picked = hosts.size === 0 ? sameName : onNamedHost;
             if (picked.length === 1 && picked[0]!.command === input.command) {
-                return { status: 'removes' };
+                return settleRemoval(reading);
             }
         }
     }
@@ -473,11 +477,60 @@ function readCreationRemoval(input: {
 }
 
 /**
+ * The first clause beside a removal that may withdraw or qualify it, read as the refinement reader
+ * reads a clause it cannot consume: one stating a negation ("or not", "never mind", "without changing
+ * anything else"), or one stating no action, naming no object and stating no figure that is not exactly
+ * one entry of the closed filler or courtesy list ("actually keep it", "no wait", "scratch that", "only
+ * if it's loud"). A clause that itself removes is the removal, and one stating an action ("add an EQ")
+ * asks for a change the batch answers, so neither stands beside it.
+ */
+function findUnreadQualifier(reading: readonly ClauseReading[]): ClauseReading | null {
+    const catalog = getExecutableAppActionGroundingCatalog();
+    return (
+        reading.find((clause) => {
+            if (clause.directives.some((directive) => directive.intention === 'remove')) {
+                return false;
+            }
+            if (refinementRequestReading.statesNegation(clause)) {
+                return true;
+            }
+            // Read with a trailing space, so a clause of connectors alone (the "And" the splitter cuts
+            // off "And then remove …") reads as empty rather than as a word.
+            const words = refinementRequestReading
+                .withoutLeadingConnectors(`${normalizePromptText(clause.text)} `)
+                .trim();
+            return (
+                words.length > 0 &&
+                clause.mentions.length === 0 &&
+                !refinementRequestReading.statesFigure(clause) &&
+                resolveClauseActionIntent(clause.masked, catalog) === null &&
+                !refinementCourtesy.filler.has(words) &&
+                !refinementCourtesy.clauses.has(
+                    refinementRequestReading.withoutLeadingConnectors(normalizePromptText(clause.masked))
+                )
+            );
+        }) ?? null
+    );
+}
+
+/** A removal the request reads, unless a clause beside it may withdraw or qualify it, which is asked. */
+function settleRemoval(reading: readonly ClauseReading[]): RemovalReading {
+    const qualifier = findUnreadQualifier(reading);
+    if (qualifier === null) {
+        return { status: 'removes' };
+    }
+    return {
+        status: 'ambiguous',
+        reason: `"${qualifier.text.trim()}" beside a removal does not say whether that change is removed. Name each pending change to remove, as in "remove the snare".`,
+    };
+}
+
+/**
  * Whether a request expressly drops one command of the stored card it refines, read in the same
  * clauses, whole names and removal vocabulary the refinement reader reads a card with a grounding
  * basis by. A command acting on objects is dropped by its own target and operation, every object id
  * it states named by a removal verb opening its clause and no clause keeping it; a creation by the
- * name of what it creates.
+ * name of what it creates. A removal beside a clause that may withdraw or qualify it is asked.
  */
 export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pendingActions, context }) => {
     const { created, targetIds } = readStoredCommandObjects(command, proposalCommandShape.createdObject, context);
@@ -494,5 +547,5 @@ export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pen
         targetIds.map((id) => ({ name: id, id }))
     );
     const removes = targetIds.every((id) => removesMentioned(readMentionIntentions(reading, id, operation)));
-    return removes ? { status: 'removes' } : { status: 'keeps' };
+    return removes ? settleRemoval(reading) : { status: 'keeps' };
 };

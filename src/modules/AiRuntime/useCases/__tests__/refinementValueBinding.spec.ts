@@ -6815,3 +6815,180 @@ describe('recorded protection facet owners', () => {
         ).toBe('refused');
     });
 });
+
+describe('#5541 and #5479: a refinement asks a retraction, negation or mark it cannot read', () => {
+    const bassMute: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-bass', muted: true } };
+    const keysBy = (deltaDb: number): ProviderCall => ({
+        name: 'setTrackGain',
+        arguments: { trackId: 'track-keys', deltaDb },
+    });
+    const keysArm: ProviderCall = { name: 'armTrack', arguments: { trackId: 'track-keys', armed: true } };
+    const CUT_AND_MUTE_CARD = { prompt: 'turn Vocals down 3 dB and mute Bass', calls: [vocalsBy(-3), bassMute] };
+    const NAMED_CONTEXT = projectContext([
+        ...BASE_TRACKS,
+        projectTrack('track-cafe', 'Café'),
+        projectTrack('track-lead-vox', 'Lead-Vox'),
+    ]);
+    const muteOf = (trackId: string): ProviderCall => ({ name: 'muteTrack', arguments: { trackId, muted: true } });
+
+    function outcomeOf(result: ReturnType<typeof ground>) {
+        if (result.status === 'rejected') {
+            return { status: result.status, said: result.rejectionReason };
+        }
+        if (result.status === 'clarify') {
+            return { status: result.status, said: result.planningOutcome.questions.join(' ') };
+        }
+        return { status: result.status, said: commandsOf(result) };
+    }
+
+    const negationBesideAddition = (clause: string) => ({
+        status: 'clarify',
+        said: expect.stringContaining(`"${clause}" beside an added change does not say whether that change stands`),
+    });
+    const unreadMark = { status: 'clarify', said: expect.stringContaining('What does') };
+
+    it.each([
+        ['mute Bass, never mind', [vocalsBy(-3), bassMute], 'never mind'],
+        ['mute Bass, or not', [vocalsBy(-3), bassMute], 'or not'],
+        ['mute Bass, maybe not', [vocalsBy(-3), bassMute], 'maybe not'],
+        ['mute Bass, not sure', [vocalsBy(-3), bassMute], 'not sure'],
+        ['mute Bass, not now', [vocalsBy(-3), bassMute], 'not now'],
+        ['mute Bass, not yet', [vocalsBy(-3), bassMute], 'not yet'],
+        ['mute Bass, never', [vocalsBy(-3), bassMute], 'never'],
+        ["mute Bass, don't touch it", [vocalsBy(-3), bassMute], "don't touch it"],
+        ["mute Bass, don't do that", [vocalsBy(-3), bassMute], "don't do that"],
+        ['mute Bass, without it', [vocalsBy(-3), bassMute], 'without it'],
+        ['never mind, mute Bass', [vocalsBy(-3), bassMute], 'never mind'],
+        ['turn Keys down 2 dB, never mind', [vocalsBy(-3), keysBy(-2)], 'never mind'],
+        ['arm Keys, never mind', [vocalsBy(-3), keysArm], 'never mind'],
+    ] as const)(
+        'asks "%s" on a "turn Vocals down 3 dB" card: a negation naming nothing beside an addition',
+        (refinement, calls, clause) => {
+            expect(outcomeOf(refine(P0_CARD, refinement, calls))).toEqual(negationBesideAddition(clause));
+        }
+    );
+
+    it.each([
+        [
+            'an addition with no negation',
+            P0_CARD,
+            'mute Bass',
+            [vocalsBy(-3), bassMute],
+            CONTEXT,
+            ['track-vocals', 'track-bass'],
+        ],
+        ['a plain restatement', P0_CARD, 'turn Vocals down 3 dB', [vocalsBy(-3)], CONTEXT, ['track-vocals']],
+        [
+            'a negation naming nothing beside a restatement',
+            P1_CARD,
+            'turn Vocals down, not too loud',
+            P1_PLAN,
+            CONTEXT,
+            ['track-vocals', 'track-snare'],
+        ],
+        [
+            'a composed accent in a name',
+            P0_CARD,
+            'mute Café',
+            [vocalsBy(-3), muteOf('track-cafe')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-cafe'],
+        ],
+        [
+            'a decomposed accent in a name',
+            P0_CARD,
+            'mute Cafe\u0301',
+            [vocalsBy(-3), muteOf('track-cafe')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-cafe'],
+        ],
+        [
+            'a hyphen inside a name',
+            P0_CARD,
+            'mute Lead-Vox',
+            [vocalsBy(-3), muteOf('track-lead-vox')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-lead-vox'],
+        ],
+    ] as const)('admits %s', (_kind, card, refinement, calls, context, trackIds) => {
+        const result = refine(card, refinement, calls, context);
+
+        expect({
+            status: result.status,
+            tracks: result.status === 'grounded' ? result.actions.map((action) => payloadOf(action).trackId) : [],
+        }).toEqual({
+            status: 'grounded',
+            tracks: trackIds,
+        });
+    });
+
+    it.each([
+        ['mute Bass\u20E0', [vocalsBy(-3), bassMute]],
+        ['mute Bass \u20E0', [vocalsBy(-3), bassMute]],
+        ['mute Bass\u0336', [vocalsBy(-3), bassMute]],
+        ['turn Vocals down 2 dB\u0338', [vocalsBy(-2), bassMute]],
+        ['turn Vocals down 2 dB \u0336', [vocalsBy(-2), bassMute]],
+    ] as const)('asks the combining mark in %j, which composes no read character', (refinement, calls) => {
+        expect(outcomeOf(refine(CUT_AND_MUTE_CARD, refinement, calls))).toEqual(unreadMark);
+    });
+
+    it.each([' - ', ' — ', ': ', ' / ', ' -- ', '? ', '! ', ' ('])(
+        'asks a retraction after %j on the refinement route rather than applying the cuts',
+        (separator) => {
+            const refinement = `turn Vocals down 2 dB and turn Snare down 2 dB${separator}forget that`;
+
+            expect(outcomeOf(refine(P1_CARD, refinement, [vocalsBy(-2), snareBy(-2)]))).toEqual(unreadMark);
+        }
+    );
+
+    describe('a card without a basis, held against its stored batch', () => {
+        const STORED_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-guitar', 'Guitar'),
+            projectTrack('track-vocal', 'Vocal'),
+        ]);
+        const pendingActions = [
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: 20 } },
+            { type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.5 } },
+        ];
+        const admit = (prompt: string) =>
+            validateRefinedProposalActions({
+                pendingActions,
+                actions: [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.6 } }],
+                prompt,
+                context: STORED_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+            });
+
+        // The splitter cuts at `but`, so the asked clause is the qualifier after it.
+        it.each([
+            ['actually keep it', 'actually keep it'],
+            ['no wait', 'no wait'],
+            ['never mind', 'never mind'],
+            ['scratch that', 'scratch that'],
+            ['forget that', 'forget that'],
+            ['or not', 'or not'],
+            ['maybe not', 'maybe not'],
+            ['not sure', 'not sure'],
+            ["but only if it's loud", "only if it's loud"],
+            ['without changing anything else', 'without changing anything else'],
+        ] as const)('asks "%s" beside a removal instead of dropping the pan', (clause, asked) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${asked}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
+
+        it.each([
+            'Set the vocal gain to 60%, remove the guitar pan',
+            'Set the vocal gain to 60%, remove the guitar pan, please',
+            'Set the vocal gain to 60%, remove the guitar pan, thanks',
+            'Set the vocal gain to 60%, remove the guitar pan, leaving the Drum Bus unchanged',
+        ])('admits "%s", whose every other clause it reads', (prompt) => {
+            expect(admit(prompt)).toEqual({ status: 'valid' });
+        });
+    });
+});

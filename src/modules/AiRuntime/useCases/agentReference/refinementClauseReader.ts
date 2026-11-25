@@ -405,16 +405,18 @@ function bindRefinementValues(input: {
 
 /**
  * A negation naming no object ("not as much", "never mind", "not less", "or not") says something about
- * a change no clause names. On its own it is read and left alone; beside a removal, a value the
- * refinement binds or changes, or a comparative it states, it is asked, whichever route grounded the
- * batch: it may withdraw that removal or change that value ("remove the snare, or not"). The inherited
- * route asks it while binding, and the final check every route passes asks it beside a removal or a
- * pending value the batch changes.
+ * a change no clause names. On its own it is read and left alone; beside a removal, an addition, a value
+ * the refinement binds or changes, or a comparative it states, it is asked, whichever route grounded the
+ * batch: it may withdraw that removal, that added change or that value ("remove the snare, or not",
+ * "mute Bass, never mind"). The inherited route asks it while binding, and the final check every route
+ * passes asks it beside a removal, an addition or a pending value the batch changes.
  */
 function askUnreadNegation(input: {
     text: string;
+    basis: ProposalGroundingBasis;
     context: ProjectContext;
     unreadNegations: readonly RefinementClause[];
+    removalClauseStarts: ReadonlySet<number>;
     removedCommandIndexes: ReadonlySet<number>;
     bindsValue: boolean;
 }): { reason: string; question: string } | null {
@@ -422,10 +424,17 @@ function askUnreadNegation(input: {
     if (unreadNegation === undefined) {
         return null;
     }
+    const negation = unreadNegation.text.trim();
     if (input.removedCommandIndexes.size > 0) {
         return {
             reason: refinementRemovalReading.negatedClauseReason,
-            question: `"${unreadNegation.text.trim()}" beside a removal does not say whether that change is removed. Name each pending change to remove, as in "remove the snare".`,
+            question: `"${negation}" beside a removal does not say whether that change is removed. Name each pending change to remove, as in "remove the snare".`,
+        };
+    }
+    if (statesAddition(input)) {
+        return {
+            reason: refinementRemovalReading.negatedClauseReason,
+            question: `"${negation}" beside an added change does not say whether that change stands. State only the changes you want, as in "mute Bass".`,
         };
     }
     if (!input.bindsValue && readRefinementComparative(input.text, input.context) === null) {
@@ -433,8 +442,24 @@ function askUnreadNegation(input: {
     }
     return {
         reason: OPEN_VALUE_REASON,
-        question: `"${unreadNegation.text.trim()}" does not say what the value should be. State the new value alone, for example "make it 1.5 dB".`,
+        question: `"${negation}" does not say what the value should be. State the new value alone, for example "make it 1.5 dB".`,
     };
+}
+
+/** Whether a clause the refinement does not remove adds a change beside the pending card. */
+function statesAddition(input: {
+    text: string;
+    basis: ProposalGroundingBasis;
+    context: ProjectContext;
+    removalClauseStarts: ReadonlySet<number>;
+    removedCommandIndexes: ReadonlySet<number>;
+}): boolean {
+    const scopeInput = createClauseScopeInput(input);
+    return refinementRequestReading
+        .clauses(input.text, input.context)
+        .some(
+            (clause) => !input.removalClauseStarts.has(clause.start) && addsChange(readClauseScope(clause, scopeInput))
+        );
 }
 
 /**
