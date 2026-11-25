@@ -7,9 +7,9 @@ use crate::host::native_bridge::{
     PluginStateError, SharedHostedPlugin,
 };
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
-    RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, CompletedScanScope, FileFingerprint,
+    InconclusiveOutcome, PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore,
+    RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::{PluginScanPolicy, ScanPathRefusal};
 use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
@@ -748,20 +748,19 @@ fn publish_scan_results_in_registry(
     plugins: &[ScannedPlugin],
     fingerprints: &ScanFingerprints,
 ) {
-    let survives_this_scan = |path: &Path| {
-        if scan_complete {
-            return !authorized_paths.iter().any(|root| path.starts_with(root));
-        }
-        !scanned_paths.iter().any(|scanned| scanned == path)
-    };
+    let scope = CompletedScanScope::new(
+        scan_complete,
+        authorized_paths.to_vec(),
+        scanned_paths.to_vec(),
+    );
 
-    registry_store.apply_completed_scan_removals(survives_this_scan);
+    registry_store.apply_completed_scan_removals(scope.clone());
 
     let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
+    registry.retain(|_, entry| scope.keeps(Path::new(&entry.path)));
     registry.extend(indexed);
 }
 
