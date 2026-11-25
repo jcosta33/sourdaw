@@ -105,6 +105,7 @@ const retiredClipIdsByActionType: {
     setBacteriaFactoryPatch: retiresNoClip,
     setCrustFactoryPreset: retiresNoClip,
     setGlutenFactoryPreset: retiresNoClip,
+    setProofPatchSelection: retiresNoClip,
     createBus: retiresNoClip,
     createFolder: retiresNoClip,
     setSend: retiresNoClip,

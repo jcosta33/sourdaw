@@ -86,6 +86,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
+    setProofPatchSelection: false,
     createBus: false,
     createFolder: false,
     setSend: false,

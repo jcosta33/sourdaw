@@ -7,6 +7,7 @@ import { getExecutableCommandRegistrations, registerProductionCommandHandlers } 
 import { getCrustHandlers } from '#/modules/Crust/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
@@ -82,7 +83,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(43);
+        expect(handlerMaps).toHaveLength(44);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -107,6 +108,9 @@ describe('getProductionCommandHandlerMaps', () => {
         ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
             { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
+        ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setProofPatchSelection')).toEqual([
+            { actionType: 'setProofPatchSelection', handler: getProofHandlers().setProofPatchSelection },
         ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setLevainIdentity')).toEqual([
             { actionType: 'setLevainIdentity', handler: getLevainHandlers().setLevainIdentity },
@@ -133,6 +137,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setBacteriaFactoryPatch');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setProofPatchSelection');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setCrustFactoryPreset');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');

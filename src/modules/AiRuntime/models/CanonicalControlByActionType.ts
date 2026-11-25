@@ -94,6 +94,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     setBacteriaFactoryPatch: ownControl,
     setCrustFactoryPreset: ownControl,
     setGlutenFactoryPreset: ownControl,
+    setProofPatchSelection: ownControl,
     createBus: ownControl,
     createFolder: ownControl,
     setSend: ownControl,

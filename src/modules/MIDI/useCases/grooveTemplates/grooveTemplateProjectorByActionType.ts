@@ -270,6 +270,7 @@ export const grooveTemplateProjectorByActionType: {
     setBacteriaFactoryPatch: leaveGrooveTemplateStateUnchanged,
     setCrustFactoryPreset: leaveGrooveTemplateStateUnchanged,
     setGlutenFactoryPreset: leaveGrooveTemplateStateUnchanged,
+    setProofPatchSelection: leaveGrooveTemplateStateUnchanged,
     createBus: leaveGrooveTemplateStateUnchanged,
     createFolder: leaveGrooveTemplateStateUnchanged,
     setSend: leaveGrooveTemplateStateUnchanged,

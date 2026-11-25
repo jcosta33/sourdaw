@@ -102,15 +102,95 @@ impl PluginParameterEvent {
 ///
 /// # Producer discipline
 ///
-/// One producer at a time, not one producer thread. The two callers that push —
-/// the plugin's `process()` and the plugin's `params.flush()` — each hold the
+/// Two lanes, each with one producer at a time, not one producer thread.
+///
+/// [`push`](Self::push) feeds the edit lane. In CLAP its two callers — the
+/// plugin's `process()` and the plugin's `params.flush()` — each hold the
 /// wrapper exclusively (`&mut ClapWrapper`), and the runtime owner never lets
-/// the audio path and the control path into the wrapper at once. That, not
-/// thread identity, is what makes the single-producer indices sound.
+/// the audio path and the control path into the wrapper at once. In VST3 its
+/// caller is the plugin's `IComponentHandler`, which the plugin calls from its
+/// editor's thread without any host claim.
+///
+/// [`push_processor_report`](Self::push_processor_report) feeds the processor
+/// lane: a VST3 processor's output parameter changes, recorded after `process`
+/// under the wrapper's exclusive access. It is a lane of its own because that
+/// producer and the VST3 edit handler run concurrently on different threads,
+/// and two producers on one set of single-producer indices overwrite each
+/// other's slot without counting the loss.
 ///
 /// The consumer is the drain thread, and it is single by construction: the queue
 /// is drained from one watcher and nowhere else.
 pub struct PluginParameterEventQueue {
+    /// What the plugin's edit path reported: CLAP output events, VST3
+    /// `IComponentHandler` edits and gesture boundaries.
+    edits: EventRing,
+    /// What a VST3 processor reported through its output parameter changes.
+    processor_reports: EventRing,
+}
+
+impl Default for PluginParameterEventQueue {
+    fn default() -> Self {
+        Self::with_capacity(PARAMETER_EVENT_CAPACITY)
+    }
+}
+
+impl PluginParameterEventQueue {
+    /// Build a queue holding `capacity` events in each lane.
+    ///
+    /// # Panics
+    /// When `capacity` is not a power of two. It is a constant at every call
+    /// site, so this cannot fire at runtime for a reason a user could produce —
+    /// and a silently rounded capacity would make the mask index the wrong slot.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            edits: EventRing::with_capacity(capacity),
+            processor_reports: EventRing::with_capacity(capacity),
+        }
+    }
+
+    /// Record one event on the edit lane. **Wait-free; safe on the audio
+    /// thread.**
+    ///
+    /// Reports whether the queue took it. A full queue counts the loss and
+    /// answers `false`, which is what the CLAP output list is allowed to tell a
+    /// plugin — an honest refusal the plugin may retry on its next block beats
+    /// an acceptance that silently discards.
+    pub fn push(&self, event: PluginParameterEvent) -> bool {
+        self.edits.push(event)
+    }
+
+    /// Record one value a processor reported, on the processor lane.
+    /// **Wait-free; safe on the audio thread.** Same answer as
+    /// [`push`](Self::push).
+    pub fn push_processor_report(&self, event: PluginParameterEvent) -> bool {
+        self.processor_reports.push(event)
+    }
+
+    /// Move every waiting event into `out`: the edit lane in the order the
+    /// plugin produced it, then the processor lane in its own order. The lanes
+    /// come from different threads, so no order between them was ever stated;
+    /// the processor's report lands last because the processor is the one
+    /// rendering the value. **Consumer thread only.**
+    pub fn drain(&self, out: &mut Vec<PluginParameterEvent>) {
+        self.edits.drain(out);
+        self.processor_reports.drain(out);
+    }
+
+    /// Read and clear how many events either lane had no room for.
+    pub fn take_dropped(&self) -> u32 {
+        self.edits
+            .take_dropped()
+            .saturating_add(self.processor_reports.take_dropped())
+    }
+
+    /// Whether anything is waiting. Cheap enough to ask on every drain pass.
+    pub fn has_pending(&self) -> bool {
+        self.edits.has_pending() || self.processor_reports.has_pending()
+    }
+}
+
+/// One single-producer, single-consumer lane of a [`PluginParameterEventQueue`].
+struct EventRing {
     /// Preallocated slots. `UnsafeCell` because the producer writes a slot the
     /// consumer is not looking at, which the index discipline below guarantees
     /// and the borrow checker cannot see.
@@ -122,35 +202,23 @@ pub struct PluginParameterEventQueue {
     write: AtomicUsize,
     /// Monotonic read cursor. Written by the consumer only.
     read: AtomicUsize,
-    /// Events the queue had no room for since the last drain.
+    /// Events the lane had no room for since the last drain.
     dropped: AtomicU32,
 }
 
 // SAFETY: every field is either immutable after construction or an atomic, and
 // the slots are only ever touched under the single-producer / single-consumer
-// index discipline documented on the type, so moving the queue between threads
+// index discipline documented on the queue, so moving a lane between threads
 // hands over owned `Copy` event data with no thread affinity.
-unsafe impl Send for PluginParameterEventQueue {}
+unsafe impl Send for EventRing {}
 // SAFETY: shared access goes through atomics, or through the slot cells under
 // the same single-producer / single-consumer index discipline: a slot is
 // written only while ahead of the read cursor and read only after the write
 // cursor is published, so no slot is accessed concurrently.
-unsafe impl Sync for PluginParameterEventQueue {}
+unsafe impl Sync for EventRing {}
 
-impl Default for PluginParameterEventQueue {
-    fn default() -> Self {
-        Self::with_capacity(PARAMETER_EVENT_CAPACITY)
-    }
-}
-
-impl PluginParameterEventQueue {
-    /// Build a queue holding `capacity` events.
-    ///
-    /// # Panics
-    /// When `capacity` is not a power of two. It is a constant at every call
-    /// site, so this cannot fire at runtime for a reason a user could produce —
-    /// and a silently rounded capacity would make the mask index the wrong slot.
-    pub fn with_capacity(capacity: usize) -> Self {
+impl EventRing {
+    fn with_capacity(capacity: usize) -> Self {
         assert!(
             capacity.is_power_of_two(),
             "parameter event queue capacity must be a power of two"
@@ -168,13 +236,7 @@ impl PluginParameterEventQueue {
         }
     }
 
-    /// Record one event. **Wait-free; safe on the audio thread.**
-    ///
-    /// Reports whether the queue took it. A full queue counts the loss and
-    /// answers `false`, which is what the CLAP output list is allowed to tell a
-    /// plugin — an honest refusal the plugin may retry on its next block beats
-    /// an acceptance that silently discards.
-    pub fn push(&self, event: PluginParameterEvent) -> bool {
+    fn push(&self, event: PluginParameterEvent) -> bool {
         let write = self.write.load(Ordering::Relaxed);
         let read = self.read.load(Ordering::Acquire);
 
@@ -193,9 +255,7 @@ impl PluginParameterEventQueue {
         true
     }
 
-    /// Move every waiting event into `out`, in the order the plugin produced
-    /// them. **Consumer thread only.**
-    pub fn drain(&self, out: &mut Vec<PluginParameterEvent>) {
+    fn drain(&self, out: &mut Vec<PluginParameterEvent>) {
         let read = self.read.load(Ordering::Relaxed);
         let write = self.write.load(Ordering::Acquire);
 
@@ -210,13 +270,11 @@ impl PluginParameterEventQueue {
         self.read.store(cursor, Ordering::Release);
     }
 
-    /// Read and clear how many events the queue had no room for.
-    pub fn take_dropped(&self) -> u32 {
+    fn take_dropped(&self) -> u32 {
         self.dropped.swap(0, Ordering::AcqRel)
     }
 
-    /// Whether anything is waiting. Cheap enough to ask on every drain pass.
-    pub fn has_pending(&self) -> bool {
+    fn has_pending(&self) -> bool {
         self.write.load(Ordering::Acquire) != self.read.load(Ordering::Relaxed)
     }
 }

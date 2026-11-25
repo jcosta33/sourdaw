@@ -108,6 +108,7 @@ const midiReplayProducerByActionType: {
     setBacteriaFactoryPatch: producesNothing,
     setCrustFactoryPreset: producesNothing,
     setGlutenFactoryPreset: producesNothing,
+    setProofPatchSelection: producesNothing,
     createBus: producesNothing,
     createFolder: producesNothing,
     setSend: producesNothing,

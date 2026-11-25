@@ -230,6 +230,7 @@ const projectTakeLaneOwnersByActionType: {
     setBacteriaFactoryPatch: keepOwners,
     setCrustFactoryPreset: keepOwners,
     setGlutenFactoryPreset: keepOwners,
+    setProofPatchSelection: keepOwners,
     createBus: keepOwners,
     createFolder: keepOwners,
     setSend: keepOwners,

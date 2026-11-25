@@ -86,6 +86,7 @@ export const paletteColoredByActionType: { readonly [Type in AppActionType]: boo
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
+    setProofPatchSelection: false,
     createBus: true,
     createFolder: false,
     setSend: false,

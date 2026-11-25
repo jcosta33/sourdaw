@@ -1119,6 +1119,79 @@ function createLevainConflictFixture(): DivergedFixture {
     };
 }
 
+function createProofConflictFixture(): DivergedFixture {
+    type Root = { tracks: { tracks: Track[] } };
+    const deviceId = 'proof-conflict';
+    const trackId = 'proof-owner';
+    const peer = { target_mode: 4, target_lufs: -16, lim_ceiling: -3 };
+    const rawDevice = () => getCrdtDoc<Root>('root')?.tracks.tracks[0]?.devices[0];
+
+    return {
+        title: 'setProofPatchSelection refuses replay after a peer changes the captured target pair',
+        actionType: 'setProofPatchSelection',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Proof registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+
+            const before = { target_mode: 3, target_lufs: -23 };
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Proof', kind: 'audio', withoutDefaultDevice: true }),
+                        devices: [
+                            { id: deviceId, name: 'Proof', type: 'proof', bypassed: false, parameterValues: before },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.parameterValues).toEqual(before);
+
+            const inverse = {
+                type: 'setProofPatchSelection',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    selection: { kind: 'target', target: 'broadcast' },
+                    before: { parameters: before, name: 'Init', presetId: null },
+                    after: { parameters: { target_mode: null, target_lufs: -18 }, name: 'Init', presetId: null },
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(inverse);
+            const context = { actions: [inverse], actionIndex: 0 };
+            expect(handler?.validate?.(inverse, context)).toBe(true);
+            expect(handler?.describe?.(inverse, context)?.label).toBe('Set Proof target to Broadcast');
+            mutateCrdtDoc<Root>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected Proof before the peer write');
+                    }
+                    device.parameterValues = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+        },
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
     createToasterConflictFixture(),
@@ -1126,6 +1199,7 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createGlutenConflictFixture(),
     createCrustConflictFixture(),
     createLevainConflictFixture(),
+    createProofConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
         actionType: 'relinkClipAudioSources',

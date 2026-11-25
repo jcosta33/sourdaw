@@ -102,6 +102,7 @@ const restoredMidiOwnerIdsByActionType: {
     setBacteriaFactoryPatch: noOwnerIds,
     setCrustFactoryPreset: noOwnerIds,
     setGlutenFactoryPreset: noOwnerIds,
+    setProofPatchSelection: noOwnerIds,
     createBus: noOwnerIds,
     createFolder: noOwnerIds,
     setSend: noOwnerIds,

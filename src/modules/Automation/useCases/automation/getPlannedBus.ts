@@ -171,6 +171,7 @@ const plannedBusByActionType: {
     setBacteriaFactoryPatch: unchangedBus,
     setCrustFactoryPreset: unchangedBus,
     setGlutenFactoryPreset: unchangedBus,
+    setProofPatchSelection: unchangedBus,
     createBus: afterCreateBus,
     createFolder: unchangedBus,
     setSend: unchangedBus,

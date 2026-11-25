@@ -99,6 +99,7 @@ export const rangeOverlapByActionType: {
     setBacteriaFactoryPatch: rangeOverlapRules.none,
     setCrustFactoryPreset: rangeOverlapRules.none,
     setGlutenFactoryPreset: rangeOverlapRules.none,
+    setProofPatchSelection: rangeOverlapRules.none,
     createBus: rangeOverlapRules.none,
     createFolder: rangeOverlapRules.none,
     setSend: rangeOverlapRules.none,

@@ -240,6 +240,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     setBacteriaFactoryPatch: unaffected,
     setCrustFactoryPreset: unaffected,
     setGlutenFactoryPreset: unaffected,
+    setProofPatchSelection: unaffected,
     createBus: { before: noIds, after: readCreateBusIds },
     createFolder: unaffected,
     setSend: unaffected,

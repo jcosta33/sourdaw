@@ -153,6 +153,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     setBacteriaFactoryPatch: defaultPolicy,
     setCrustFactoryPreset: defaultPolicy,
     setGlutenFactoryPreset: defaultPolicy,
+    setProofPatchSelection: defaultPolicy,
     createBus: defaultPolicy,
     createFolder: boundedPolicy,
     setSend: defaultPolicy,

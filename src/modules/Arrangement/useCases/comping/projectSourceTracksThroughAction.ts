@@ -121,6 +121,7 @@ const sourceTrackStepByActionType: {
     setBacteriaFactoryPatch: keepTracks,
     setCrustFactoryPreset: keepTracks,
     setGlutenFactoryPreset: keepTracks,
+    setProofPatchSelection: keepTracks,
     createBus: keepTracks,
     createFolder: keepTracks,
     setSend: keepTracks,

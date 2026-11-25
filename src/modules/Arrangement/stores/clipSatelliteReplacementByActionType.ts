@@ -95,6 +95,7 @@ export const clipSatelliteReplacementByActionType: {
     setBacteriaFactoryPatch: noReplacements,
     setCrustFactoryPreset: noReplacements,
     setGlutenFactoryPreset: noReplacements,
+    setProofPatchSelection: noReplacements,
     createBus: noReplacements,
     createFolder: noReplacements,
     setSend: noReplacements,

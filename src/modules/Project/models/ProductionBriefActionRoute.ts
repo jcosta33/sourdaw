@@ -91,6 +91,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setBacteriaFactoryPatch: 'content',
     setCrustFactoryPreset: 'content',
     setGlutenFactoryPreset: 'content',
+    setProofPatchSelection: 'content',
     createBus: 'content',
     createFolder: 'content',
     setSend: 'content',

@@ -91,6 +91,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setBacteriaFactoryPatch: true,
     setCrustFactoryPreset: true,
     setGlutenFactoryPreset: true,
+    setProofPatchSelection: true,
     createBus: true,
     createFolder: true,
     setSend: true,

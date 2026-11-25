@@ -119,6 +119,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setBacteriaFactoryPatch: noMutatedTrack,
     setCrustFactoryPreset: noMutatedTrack,
     setGlutenFactoryPreset: noMutatedTrack,
+    setProofPatchSelection: noMutatedTrack,
     createBus: noMutatedTrack,
     createFolder: noMutatedTrack,
     setSend: noMutatedTrack,

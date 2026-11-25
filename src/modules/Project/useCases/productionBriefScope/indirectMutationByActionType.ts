@@ -95,6 +95,7 @@ export const indirectMutationByActionType: {
     setBacteriaFactoryPatch: indirectMutationRules.none,
     setCrustFactoryPreset: indirectMutationRules.none,
     setGlutenFactoryPreset: indirectMutationRules.none,
+    setProofPatchSelection: indirectMutationRules.none,
     createBus: indirectMutationRules.none,
     createFolder: indirectMutationRules.none,
     setSend: indirectMutationRules.none,

@@ -105,6 +105,7 @@ export const plannedOwnerProjectorByActionType: {
     setBacteriaFactoryPatch: projectCapturedPatchUnsupported,
     setCrustFactoryPreset: projectCapturedPatchUnsupported,
     setGlutenFactoryPreset: projectCapturedPatchUnsupported,
+    setProofPatchSelection: projectCapturedPatchUnsupported,
     createBus: projectMaterializedTrack,
     createFolder: projectEveryOwner,
     setSend: projectEveryOwner,

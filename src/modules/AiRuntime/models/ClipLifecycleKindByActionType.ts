@@ -91,6 +91,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     setBacteriaFactoryPatch: 'none',
     setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
+    setProofPatchSelection: 'none',
     createBus: 'none',
     createFolder: 'none',
     setSend: 'none',

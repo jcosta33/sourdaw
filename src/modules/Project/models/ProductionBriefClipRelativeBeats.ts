@@ -90,6 +90,7 @@ export const carriesClipRelativeBeatsByActionType: { readonly [Type in AppAction
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
+    setProofPatchSelection: false,
     createBus: false,
     createFolder: false,
     setSend: false,

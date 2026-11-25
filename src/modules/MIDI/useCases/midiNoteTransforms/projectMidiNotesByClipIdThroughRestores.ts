@@ -149,6 +149,7 @@ const notesProjectionByActionType: {
     setBacteriaFactoryPatch: noNotesProjection,
     setCrustFactoryPreset: noNotesProjection,
     setGlutenFactoryPreset: noNotesProjection,
+    setProofPatchSelection: noNotesProjection,
     createBus: noNotesProjection,
     createFolder: noNotesProjection,
     setSend: noNotesProjection,

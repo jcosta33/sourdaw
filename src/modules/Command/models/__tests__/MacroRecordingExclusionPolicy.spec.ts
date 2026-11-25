@@ -16,6 +16,7 @@ const EXPECTED = new Set<string>([
     'setBacteriaFactoryPatch',
     'setCrustFactoryPreset',
     'setGlutenFactoryPreset',
+    'setProofPatchSelection',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {

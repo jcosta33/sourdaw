@@ -139,6 +139,7 @@ const projectClipActionByActionType: {
     setBacteriaFactoryPatch: keepState,
     setCrustFactoryPreset: keepState,
     setGlutenFactoryPreset: keepState,
+    setProofPatchSelection: keepState,
     createBus: keepState,
     createFolder: keepState,
     setSend: keepState,

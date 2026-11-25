@@ -214,6 +214,7 @@ export const plannedTrackByActionType: {
     setBacteriaFactoryPatch: noPlannedTrack,
     setCrustFactoryPreset: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
+    setProofPatchSelection: noPlannedTrack,
     createBus: planCreatedBus,
     createFolder: planCreatedFolder,
     setSend: noPlannedTrack,

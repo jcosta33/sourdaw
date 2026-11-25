@@ -146,6 +146,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setBacteriaFactoryPatch: noUnprojectedWrite,
     setCrustFactoryPreset: noUnprojectedWrite,
     setGlutenFactoryPreset: noUnprojectedWrite,
+    setProofPatchSelection: noUnprojectedWrite,
     createBus: noUnprojectedWrite,
     createFolder: noUnprojectedWrite,
     setSend: noUnprojectedWrite,

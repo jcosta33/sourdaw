@@ -106,6 +106,7 @@ const tempoScalarTransitionByActionType: {
     setBacteriaFactoryPatch: notATempoAction,
     setCrustFactoryPreset: notATempoAction,
     setGlutenFactoryPreset: notATempoAction,
+    setProofPatchSelection: notATempoAction,
     createBus: notATempoAction,
     createFolder: notATempoAction,
     setSend: notATempoAction,

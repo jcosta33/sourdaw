@@ -104,6 +104,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setBacteriaFactoryPatch: noSupportPath,
     setCrustFactoryPreset: noSupportPath,
     setGlutenFactoryPreset: noSupportPath,
+    setProofPatchSelection: noSupportPath,
     createBus: noSupportPath,
     createFolder: noSupportPath,
     setSend: noSupportPath,

@@ -101,6 +101,7 @@ const renderReceiptGateByActionType: GateLookup = {
     setBacteriaFactoryPatch: notRenderReceiptGated,
     setCrustFactoryPreset: notRenderReceiptGated,
     setGlutenFactoryPreset: notRenderReceiptGated,
+    setProofPatchSelection: notRenderReceiptGated,
     createBus: notRenderReceiptGated,
     createFolder: notRenderReceiptGated,
     setSend: notRenderReceiptGated,

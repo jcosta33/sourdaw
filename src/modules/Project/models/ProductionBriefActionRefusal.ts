@@ -91,6 +91,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     setBacteriaFactoryPatch: 'none',
     setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
+    setProofPatchSelection: 'none',
     createBus: 'none',
     createFolder: 'none',
     setSend: 'none',

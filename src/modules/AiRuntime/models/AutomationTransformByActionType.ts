@@ -86,6 +86,7 @@ export const automationTransformByActionType: { readonly [Type in AppActionType]
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
+    setProofPatchSelection: false,
     createBus: false,
     createFolder: false,
     setSend: false,

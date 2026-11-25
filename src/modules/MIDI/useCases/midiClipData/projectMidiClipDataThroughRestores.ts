@@ -132,6 +132,7 @@ const controllerRestoresByActionType: {
     setBacteriaFactoryPatch: noControllerRestores,
     setCrustFactoryPreset: noControllerRestores,
     setGlutenFactoryPreset: noControllerRestores,
+    setProofPatchSelection: noControllerRestores,
     createBus: noControllerRestores,
     createFolder: noControllerRestores,
     setSend: noControllerRestores,
