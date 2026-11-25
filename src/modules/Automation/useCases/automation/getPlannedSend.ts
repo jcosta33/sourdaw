@@ -248,6 +248,7 @@ const plannedSendByActionType: {
     setToasterFactoryKit: unchangedSend,
     setBacteriaFactoryPatch: unchangedSend,
     setGlutenFactoryPreset: unchangedSend,
+    setProofPatchSelection: unchangedSend,
     createBus: unchangedSend,
     createFolder: unchangedSend,
     setSend: afterSetSend,
