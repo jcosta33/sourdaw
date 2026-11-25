@@ -3086,13 +3086,31 @@ describe('agent acceptance corpora', () => {
 
                 expect(readChatThreadContext()).toBeNull();
                 runtimeMocks.generateWebLlmCompletion.mockReset();
-                const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
-                    () => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })],
-                ]);
-                await sendChatMessage('Keep that tone, but make the lick less busy', { mode: 'apply' });
+                const systemPrompts: string[] = [];
+                const prompt = 'Keep that tone, but make the lick less busy';
+                const messages = scriptProviderTurns(
+                    runtimeMocks.generateWebLlmCompletion,
+                    [() => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })]],
+                    systemPrompts
+                );
+                vi.stubGlobal(
+                    'fetch',
+                    vi.fn(() => {
+                        throw new Error('The planner must not reach the network');
+                    })
+                );
+                try {
+                    await sendChatMessage(prompt, { mode: 'apply' });
+                } finally {
+                    vi.unstubAllGlobals();
+                }
                 expect(messages).toHaveLength(1);
-                for (const carried of ['A small vintage receiver', batchId, committed.confirmationId]) {
-                    expect(messages[0]).not.toContain(carried);
+                expect(systemPrompts).toHaveLength(1);
+                expect(messages[0]).toContain(prompt);
+                for (const outbound of [systemPrompts[0], messages[0]]) {
+                    for (const carried of ['A small vintage receiver', batchId, committed.confirmationId]) {
+                        expect(outbound).not.toContain(carried);
+                    }
                 }
             })
         ));

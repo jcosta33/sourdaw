@@ -2697,6 +2697,146 @@ describe('parsePromptToActions', () => {
         }
     });
 
+    it('sends both contrasting phrase readings, with their own pitches and velocities, in the provider message', async () => {
+        const previousTrack = structuredClone(trackStore.value);
+        const previousMidi = structuredClone(midiStore.value);
+        const previousProject = structuredClone(projectStore.value);
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => {
+                throw new Error('The planner must not reach the network');
+            })
+        );
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Two phrases');
+            const track = createTrack({ id: 'track-phrases', name: 'Phrases', kind: 'midi' });
+            track.clips = ['phrase-a', 'phrase-b'].map((id) => ({
+                id,
+                trackId: track.id,
+                name: id,
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            }));
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track], selectedTrackId: track.id });
+            setMidiStoreState({
+                ...structuredClone(defaultMidiStoreState),
+                notesByClipId: {
+                    'phrase-a': [
+                        { id: 'a1', pitch: 61, startBeat: 0, duration: 1, velocity: 41 },
+                        { id: 'a2', pitch: 63, startBeat: 2, duration: 1, velocity: 51 },
+                    ],
+                    'phrase-b': [
+                        { id: 'b1', pitch: 78, startBeat: 0, duration: 1, velocity: 118 },
+                        { id: 'b2', pitch: 84, startBeat: 2, duration: 1, velocity: 124 },
+                    ],
+                },
+            });
+            projectStore.set(structuredClone(defaultProjectStoreState));
+            setPianoRollSelection('phrase-a', [], ['phrase-a']);
+            const musicalContentBinding = captureMusicalContentBinding();
+            mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+            const clips = ['phrase-a', 'phrase-b'].map((id) => ({
+                id,
+                name: id,
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                noteCount: 2,
+            }));
+            const providerContext: ProjectContext = {
+                ...baseContext,
+                tracks: [
+                    {
+                        id: 'track-phrases',
+                        name: 'Phrases',
+                        kind: 'midi',
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        armed: false,
+                        gain: 0.8,
+                        pan: 0,
+                        automationMode: 'read',
+                        outputId: 'master',
+                        clipCount: 2,
+                        deviceCount: 0,
+                        clips,
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+                selectedTrackId: 'track-phrases',
+                selectedClipId: 'phrase-a',
+                selectedClipIds: ['phrase-a'],
+            };
+            const query = (stableId: string) => ({
+                name: 'project.query',
+                arguments: { type: 'musical-content', filters: { stableId, startBeat: 0, endBeat: 4 } },
+            });
+            vi.mocked(generateToolCalls).mockResolvedValue(
+                scriptedPlan(
+                    nonAcousticMetricIntakeTurn({
+                        modeId: 'edit',
+                        targetObjectIds: ['phrase-a', 'phrase-b'],
+                        dimensions: ['midi-content'],
+                    }),
+                    [
+                        { status: 'complete', toolCalls: [query('phrase-a'), query('phrase-b')] },
+                        {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    name: 'command.batch.decline',
+                                    arguments: { kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] },
+                                },
+                            ],
+                        },
+                    ]
+                )
+            );
+
+            await parsePromptToActions({
+                prompt: 'compare the phrase-a and phrase-b clips',
+                context: providerContext,
+                musicalContentBinding,
+                projectRevision: musicalContentBinding.expectedRevision,
+            });
+
+            // Receipts ride the message as an escaped JSON string inside the context section.
+            const outbound = vi
+                .mocked(generateToolCalls)
+                .mock.calls.map(([, userMessage]) => userMessage.replaceAll('\\"', '"'));
+            const [firstTurn] = outbound;
+            const finalTurn = outbound.at(-1);
+            expect(outbound.length).toBeGreaterThanOrEqual(3);
+            for (const reading of ['"pitch":61', '"pitch":78']) {
+                expect(firstTurn).not.toContain(reading);
+            }
+            for (const reading of [
+                ['"pitch":61', '"velocity":41', '"pitch":63', '"velocity":51'],
+                ['"pitch":78', '"velocity":118', '"pitch":84', '"velocity":124'],
+            ].flat()) {
+                expect(finalTurn).toContain(reading);
+            }
+        } finally {
+            clearPianoRollSelection();
+            trackStore.set(previousTrack);
+            midiStore.set(previousMidi);
+            projectStore.set(previousProject);
+            await database.dispose();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('rejects provider MIDI transforms for audio, locked, empty, or missing selected clips', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
