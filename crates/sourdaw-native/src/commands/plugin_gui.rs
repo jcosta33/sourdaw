@@ -1307,6 +1307,7 @@ mod tests {
     use daw_plugin_host::clap_wrapper::ClapError;
     use daw_plugin_host::{ClapWrapper, PluginError};
     use std::cell::Cell;
+    use std::future::Future;
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
@@ -1889,38 +1890,77 @@ mod tests {
         let other_holder = super::super::plugins::try_lock_plugin_lifecycle("lease-held-present")
             .expect("nothing else holds the instance");
 
-        // Well inside the bound a close would wait for, so a close that waited
-        // for the lease anyway is still running when this expires.
-        let patience = ATTACH_TRANSIT_WAIT / 2;
-        let finished_within_patience = std::thread::scope(|scope| {
-            let started = std::time::Instant::now();
-            let close = scope.spawn(|| {
-                crate::block_on_test(close_plugin_gui(
-                    "lease-held-present".to_string(),
-                    &windows,
-                    &state,
-                ))
-            });
-            while !close.is_finished() && started.elapsed() < patience {
-                std::thread::yield_now();
-            }
-            let finished = close.is_finished();
-            close
-                .join()
-                .expect("the close thread should not panic")
-                .expect("the close should succeed");
-            finished
-        });
-        drop(other_holder);
+        crate::block_on_test(close_plugin_gui(
+            "lease-held-present".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the close should succeed");
 
-        assert!(
-            finished_within_patience,
-            "a close of an instance in a store must not wait for its lifecycle lease"
-        );
         assert_eq!(
             recorded_threads(&gui_threads),
             [windows.thread_id, windows.thread_id],
-            "the close must reach the plugin while the other holder still has the lease"
+            "the close must reach the plugin"
+        );
+        assert!(
+            super::super::plugins::try_lock_plugin_lifecycle("lease-held-present").is_none(),
+            "the other holder must have kept the lease throughout"
+        );
+        drop(other_holder);
+    }
+
+    /// The wait itself, polled once so that no clock decides the outcome: an
+    /// instance in a store is not waited for even though another holder keeps
+    /// its lease.
+    #[test]
+    fn the_transit_wait_is_ready_at_once_for_an_instance_in_a_store() {
+        let state = AppState::default();
+        let _gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "poll-present", true);
+        let _other_holder = super::super::plugins::try_lock_plugin_lifecycle("poll-present")
+            .expect("nothing else holds the instance");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should build");
+        let _entered = runtime.enter();
+        let mut wait = std::pin::pin!(wait_out_attach_transit("poll-present", &state));
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+
+        assert!(
+            wait.as_mut().poll(&mut context).is_ready(),
+            "an instance in a store must not be waited for"
+        );
+    }
+
+    /// The other half of the same poll: an instance in neither store, with its
+    /// lease held, is waited for.
+    #[test]
+    fn the_transit_wait_is_pending_for_an_instance_in_neither_store_while_its_lease_is_held() {
+        let state = AppState::default();
+        let _gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "poll-absent", true);
+        let _other_holder = super::super::plugins::try_lock_plugin_lifecycle("poll-absent")
+            .expect("nothing else holds the instance");
+        let _unloading = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("poll-absent")
+            .expect("the fixture is engine-owned");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should build");
+        let _entered = runtime.enter();
+        let mut wait = std::pin::pin!(wait_out_attach_transit("poll-absent", &state));
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+
+        assert!(
+            wait.as_mut().poll(&mut context).is_pending(),
+            "an instance in neither store must be waited for while its lease is held"
         );
     }
 
@@ -1949,7 +1989,7 @@ mod tests {
             .remove("lease-held-absent")
             .expect("the fixture is engine-owned");
 
-        let (finished_with_lease_held, waited) = std::thread::scope(|scope| {
+        let waited = std::thread::scope(|scope| {
             let started = std::time::Instant::now();
             let close = scope.spawn(|| {
                 crate::block_on_test(close_plugin_gui(
@@ -1958,25 +1998,22 @@ mod tests {
                     &state,
                 ))
             });
-            let deadline = started + ATTACH_TRANSIT_WAIT + std::time::Duration::from_secs(4);
-            while !close.is_finished() && std::time::Instant::now() < deadline {
+            // No upper time limit: a close that never gives up the lease hangs
+            // here rather than passing or failing on a clock.
+            while !close.is_finished() {
                 std::thread::yield_now();
             }
-            let finished = close.is_finished();
             let waited = started.elapsed();
-            // Released only now, so a close still parked on it can end.
+            // Released only after the close answered, so it answered with the
+            // lease still held.
             drop(other_holder);
             close
                 .join()
                 .expect("the close thread should not panic")
                 .expect("the close should succeed");
-            (finished, waited)
+            waited
         });
 
-        assert!(
-            finished_with_lease_held,
-            "the close must stop waiting at the bound while the lease is still held"
-        );
         assert!(
             waited >= ATTACH_TRANSIT_WAIT,
             "the close must wait out the bound for a move before giving up: {waited:?}"
